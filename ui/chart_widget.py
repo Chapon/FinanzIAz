@@ -19,7 +19,8 @@ import numpy as np
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtCore import pyqtSignal
 from analysis.technical import (
-    compute_rsi, compute_macd, compute_bollinger_bands, compute_sma, compute_ema
+    compute_rsi, compute_macd, compute_bollinger_bands, compute_sma, compute_ema,
+    get_cached_indicators,
 )
 from ui.styles import CHART_STYLE
 
@@ -83,22 +84,26 @@ class ChartWidget(QWidget):
         close = df["Close"].squeeze()
         dates = df.index
 
+        # Retrieve (or compute) all indicators from the shared LRU cache.
+        # If analyze() was already called for this ticker+dataset, this is free.
+        indic = get_cached_indicators(ticker, df)
+        sma20                            = indic['sma20']
+        sma50                            = indic['sma50']
+        upper, middle, lower             = indic['bollinger']
+        rsi                              = indic['rsi']
+        macd_line, signal_line, histogram = indic['macd']
+
         # ── Price ──────────────────────────────────────────────────────────────
         _apply_style(ax_price)
         ax_price.plot(dates, close, color="#58a6ff", linewidth=1.5, label="Precio")
 
-        sma20 = sma50 = None
-        if len(df) >= 20:
-            sma20 = compute_sma(df, 20)
+        if sma20 is not None:
             ax_price.plot(dates, sma20, color="#d29922", linewidth=1, alpha=0.8, label="SMA 20")
-        if len(df) >= 50:
-            sma50 = compute_sma(df, 50)
+        if sma50 is not None:
             ax_price.plot(dates, sma50, color="#f78166", linewidth=1, alpha=0.8, label="SMA 50")
 
         # ── Bollinger Bands ────────────────────────────────────────────────────
-        upper = lower = middle = None
-        if show_bb and len(df) >= 20:
-            upper, middle, lower = compute_bollinger_bands(df)
+        if show_bb and upper is not None:
             ax_price.fill_between(dates, upper, lower, alpha=0.08, color="#58a6ff", label="Bollinger")
             ax_price.plot(dates, upper, color="#58a6ff", linewidth=0.6, alpha=0.4, linestyle="--")
             ax_price.plot(dates, lower, color="#58a6ff", linewidth=0.6, alpha=0.4, linestyle="--")
@@ -115,7 +120,6 @@ class ChartWidget(QWidget):
 
         # ── RSI ────────────────────────────────────────────────────────────────
         _apply_style(ax_rsi)
-        rsi = compute_rsi(df)
         ax_rsi.plot(dates, rsi, color="#a371f7", linewidth=1.2)
         ax_rsi.axhline(70, color="#f85149", linewidth=0.8, linestyle="--", alpha=0.7)
         ax_rsi.axhline(30, color="#3fb950", linewidth=0.8, linestyle="--", alpha=0.7)
@@ -128,7 +132,6 @@ class ChartWidget(QWidget):
 
         # ── MACD ───────────────────────────────────────────────────────────────
         _apply_style(ax_macd)
-        macd_line, signal_line, histogram = compute_macd(df)
         bar_colors = ["#3fb950" if h >= 0 else "#f85149" for h in histogram.fillna(0)]
         ax_macd.bar(dates, histogram, color=bar_colors, alpha=0.5, width=0.8)
         ax_macd.plot(dates, macd_line, color="#58a6ff", linewidth=1.2, label="MACD")

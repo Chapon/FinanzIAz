@@ -14,6 +14,7 @@ from ui.widgets import MetricCard, MiniProgressBar, SectionHeader, HSeparator, S
 from ui.dialogs import AddPositionDialog, SellPositionDialog, AddPortfolioDialog, RenamePortfolioDialog
 from ui.import_dialog import ImportDialog
 from ui.styles import PALETTE, SIGNAL_COLORS
+from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from config.settings_manager import settings
 
 # Spanish labels for Yahoo Finance 5-level system (mirrors SignalBadge._LABELS)
@@ -53,6 +54,7 @@ class SignalWorker(QThread):
     """
     Background worker: fetches 1 year of historical data for each ticker
     and returns the Yahoo Finance 5-level signal for every one.
+    Tickers are analyzed in parallel (up to 4 threads).
     """
     signals_ready = pyqtSignal(dict)   # {ticker: yahoo_level_str}
 
@@ -61,32 +63,43 @@ class SignalWorker(QThread):
         self.tickers = tickers
 
     def run(self):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from data.yahoo_finance import get_historical_data
         from analysis.technical import analyze
         from config.settings_manager import settings as _settings
-        results = {}
-        for ticker in self.tickers:
+
+        sma_cross = _settings.get("sma_cross")
+
+        def _analyze_one(ticker: str) -> tuple[str, str]:
             try:
                 df = get_historical_data(ticker, period="1y")
                 if df is None or len(df) < 50:
-                    print(f"[SignalWorker] {ticker}: datos insuficientes ({len(df) if df is not None else 0} filas)")
-                    results[ticker] = "Hold"
-                    continue
+                    print(f"[SignalWorker] {ticker}: datos insuficientes "
+                          f"({len(df) if df is not None else 0} filas)")
+                    return ticker, "Hold"
                 result = analyze(
                     ticker, df,
-                    enable_sma_cross=_settings.get("sma_cross"),
+                    enable_sma_cross=sma_cross,
                     enable_xgboost=False,   # skip ML in batch scan to stay fast
                 )
                 if result:
-                    results[ticker] = result.yahoo_level
                     print(f"[SignalWorker] {ticker}: {result.yahoo_level} "
                           f"(buy={result.overall_signal}, strength={result.overall_strength}, "
                           f"conf={result.confidence_score}%)")
-                else:
-                    results[ticker] = "Hold"
+                    return ticker, result.yahoo_level
+                return ticker, "Hold"
             except Exception as e:
                 print(f"[SignalWorker] {ticker}: error — {e}")
-                results[ticker] = "Hold"
+                return ticker, "Hold"
+
+        results = {}
+        max_workers = min(4, len(self.tickers))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_analyze_one, t): t for t in self.tickers}
+            for future in as_completed(futures):
+                ticker, signal = future.result()
+                results[ticker] = signal
+
         self.signals_ready.emit(results)
 
 
@@ -254,6 +267,8 @@ class PortfolioTab(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
+        # Tooltip on hover over the Ticker column (col 0)
+        install_ticker_tooltips(self.table, 0)
         root.addWidget(self.table, stretch=1)
 
         # ── Bottom bar ─────────────────────────────────────────────────────
@@ -408,7 +423,9 @@ class PortfolioTab(QWidget):
                     item.setFont(f)
                 return item
 
-            self.table.setItem(row, 0, cell(pos.ticker, bold=True))
+            ticker_item = cell(pos.ticker, bold=True)
+            apply_ticker_tooltip(ticker_item, pos.ticker)
+            self.table.setItem(row, 0, ticker_item)
             self.table.setItem(row, 1, cell(pos.company_name or pos.ticker))
             self.table.setItem(row, 2, cell(f"{pos.quantity:.1f}", right=True))
             self.table.setItem(row, 3, cell(f"${pos.avg_buy_price:,.1f}", right=True))

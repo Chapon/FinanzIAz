@@ -13,6 +13,7 @@ from database.models import get_session, Position
 from data.yahoo_finance import get_historical_data
 from analysis.technical import compute_rsi
 from alerts.alert_manager import AlertManager
+from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 
 
 class RsiScanWorker(QThread):
@@ -85,6 +86,8 @@ class RsiScanDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # Tooltip on hover over the Ticker column (col 0)
+        install_ticker_tooltips(self.table, 0)
         root.addWidget(self.table, stretch=1)
 
         self.status_lbl = QLabel("Iniciando escaneo…")
@@ -127,7 +130,9 @@ class RsiScanDialog(QDialog):
         self.table.setRowCount(len(self._tickers))
 
         for i, ticker in enumerate(self._tickers):
-            self.table.setItem(i, 0, QTableWidgetItem(ticker))
+            ticker_item = QTableWidgetItem(ticker)
+            apply_ticker_tooltip(ticker_item, ticker)
+            self.table.setItem(i, 0, ticker_item)
             pending = QTableWidgetItem("—")
             pending.setForeground(QColor("#4b5563"))
             self.table.setItem(i, 1, pending)

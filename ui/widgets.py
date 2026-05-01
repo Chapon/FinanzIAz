@@ -4,7 +4,8 @@ Reusable UI widgets for FinanzIAs — IQON design system.
 import math
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
-    QPushButton, QSizePolicy, QGraphicsDropShadowEffect
+    QPushButton, QSizePolicy, QGraphicsDropShadowEffect,
+    QSpinBox, QDoubleSpinBox, QComboBox,
 )
 from PyQt6.QtCore import Qt, QRect, QRectF, QSize, pyqtSignal, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt6.QtGui import (
@@ -461,6 +462,161 @@ class SettingsRow(QWidget):
             layout.addWidget(tip_lbl)
 
 
+# ── Numeric Settings Row ──────────────────────────────────────────────────
+
+class NumericSettingsRow(QWidget):
+    """A label + numeric spin box row for the Settings panel.
+
+    Use ``value_type='int'`` for integer values (uses QSpinBox) or
+    ``value_type='float'`` for decimals (uses QDoubleSpinBox). The signal
+    ``value_changed(key, value)`` emits a float; callers should cast to int
+    when persisting if the setting is logically an integer.
+    """
+    value_changed = pyqtSignal(str, float)
+
+    def __init__(self, key: str, label: str, value,
+                 *, value_type: str = "int", suffix: str = "",
+                 minimum=0, maximum=100_000, step=1, decimals: int = 2,
+                 tooltip: str = "", parent=None):
+        super().__init__(parent)
+        self._key = key
+        self._is_int = (value_type == "int")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 6, 0, 6)
+        layout.setSpacing(2)
+
+        top_row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 13px;")
+        top_row.addWidget(lbl)
+        top_row.addStretch()
+
+        if self._is_int:
+            self.spin = QSpinBox()
+            self.spin.setRange(int(minimum), int(maximum))
+            self.spin.setSingleStep(int(step))
+            self.spin.setValue(int(value))
+        else:
+            self.spin = QDoubleSpinBox()
+            self.spin.setDecimals(decimals)
+            self.spin.setRange(float(minimum), float(maximum))
+            self.spin.setSingleStep(float(step))
+            self.spin.setValue(float(value))
+        if suffix:
+            self.spin.setSuffix(f" {suffix}")
+        self.spin.setFixedWidth(120)
+        self.spin.setStyleSheet(
+            f"background-color: {PALETTE['elevated']}; "
+            f"color: {PALETTE['text1']}; "
+            f"border: 1px solid {PALETTE['border_lt']}; "
+            f"border-radius: 6px; padding: 2px 6px; font-size: 12px;"
+        )
+        self.spin.valueChanged.connect(
+            lambda v: self.value_changed.emit(self._key, float(v))
+        )
+        top_row.addWidget(self.spin)
+        layout.addLayout(top_row)
+
+        if tooltip:
+            tip_lbl = QLabel(tooltip)
+            tip_lbl.setStyleSheet(
+                f"color: {PALETTE['text3']}; font-size: 11px;"
+            )
+            tip_lbl.setWordWrap(True)
+            layout.addWidget(tip_lbl)
+
+    def set_value(self, value):
+        # Block the signal so programmatic updates (reset / reload) don't
+        # round-trip back into settings.set.
+        self.spin.blockSignals(True)
+        try:
+            if self._is_int:
+                self.spin.setValue(int(value))
+            else:
+                self.spin.setValue(float(value))
+        finally:
+            self.spin.blockSignals(False)
+
+
+# ── Choice Settings Row ───────────────────────────────────────────────────
+
+class ChoiceSettingsRow(QWidget):
+    """A label + dropdown row for the Settings panel.
+
+    ``choices`` is a list of ``(value, display_label)`` tuples. The signal
+    ``value_changed(key, value)`` emits the underlying value (string).
+    """
+    value_changed = pyqtSignal(str, str)
+
+    def __init__(self, key: str, label: str, value,
+                 *, choices: list, tooltip: str = "", parent=None):
+        super().__init__(parent)
+        self._key = key
+        self._choices = list(choices)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 6, 0, 6)
+        layout.setSpacing(2)
+
+        top_row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 13px;")
+        top_row.addWidget(lbl)
+        top_row.addStretch()
+
+        self.combo = QComboBox()
+        for v, display in self._choices:
+            self.combo.addItem(str(display), userData=str(v))
+        # Pre-select current value (fall back to first option)
+        for i, (v, _d) in enumerate(self._choices):
+            if str(v) == str(value):
+                self.combo.setCurrentIndex(i)
+                break
+        self.combo.setFixedWidth(140)
+        self.combo.setStyleSheet(
+            f"QComboBox {{"
+            f"  background-color: {PALETTE['elevated']};"
+            f"  color: {PALETTE['text1']};"
+            f"  border: 1px solid {PALETTE['border_lt']};"
+            f"  border-radius: 6px; padding: 2px 8px; font-size: 12px;"
+            f"}}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{"
+            f"  background-color: {PALETTE['elevated']};"
+            f"  color: {PALETTE['text1']};"
+            f"  selection-background-color: {PALETTE['accent']};"
+            f"  selection-color: #000;"
+            f"  border: 1px solid {PALETTE['border_lt']};"
+            f"}}"
+        )
+        self.combo.currentIndexChanged.connect(self._on_change)
+        top_row.addWidget(self.combo)
+        layout.addLayout(top_row)
+
+        if tooltip:
+            tip_lbl = QLabel(tooltip)
+            tip_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
+            tip_lbl.setWordWrap(True)
+            layout.addWidget(tip_lbl)
+
+    def _on_change(self, idx: int):
+        v = self.combo.itemData(idx)
+        if v is not None:
+            self.value_changed.emit(self._key, str(v))
+
+    def set_value(self, value):
+        self.combo.blockSignals(True)
+        try:
+            target = str(value)
+            for i, (v, _d) in enumerate(self._choices):
+                if str(v) == target:
+                    self.combo.setCurrentIndex(i)
+                    return
+        finally:
+            self.combo.blockSignals(False)
+
+
 # ── Signal Badge ──────────────────────────────────────────────────────────
 
 class SignalBadge(QLabel):
@@ -533,3 +689,4 @@ class HSeparator(QFrame):
         self.setObjectName("separator")
         self.setFrameShape(QFrame.Shape.HLine)
         self.setFixedHeight(1)
+

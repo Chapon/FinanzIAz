@@ -34,6 +34,16 @@ DEFAULTS: dict = {
     "paper_daily_scan_time_et":    "16:05",# HH:MM in US/Eastern (~5 min after NYSE close)
     "paper_scan_on_startup":       True,   # scan all active accounts at app launch
     "paper_market_hours_only":     True,   # interval ticks skip outside RTH
+
+    # Paper trading guardrails (lite-pro execution gates)
+    "paper_enforce_market_hours":  True,   # engine refuses to fill when market is closed
+    "paper_min_holding_minutes":   60,     # cannot SELL a position opened within last N min
+    "paper_anti_flap_minutes":     30,     # cannot BUY a ticker we filled-SELL on within last N min
+    "paper_min_trade_dollars":     50.0,   # skip BUYs whose target_dollars is below this notional
+
+    # Paper trading analysis tuning
+    "paper_history_period":        "2y",   # ventana histórica que el scanner pasa a analyze() / XGBoost
+                                           # valores aceptados: "1y", "2y", "5y", "10y"
 }
 
 _CONFIG_PATH = Path.home() / ".finanzias" / "settings.json"

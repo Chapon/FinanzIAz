@@ -15,6 +15,7 @@ from data.csv_importer import parse_csv_file, ImportRow, ImportResult
 from data.yahoo_finance import get_company_info
 from database.models import get_session, Position, Transaction
 from datetime import datetime
+from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
 
 
 class ValidateWorker(QThread):
@@ -141,6 +142,8 @@ class ImportDialog(QDialog):
             QAbstractItemView.EditTrigger.SelectedClicked
         )
         self.table.setVisible(False)
+        # Tooltip on hover over the Ticker column (col 0)
+        install_ticker_tooltips(self.table, 0)
         root.addWidget(self.table, stretch=1)
 
         # Progress bar (shown during validation)
@@ -219,6 +222,7 @@ class ImportDialog(QDialog):
             ticker_item = QTableWidgetItem(row.ticker)
             ticker_item.setFlags(ticker_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             ticker_item.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            apply_ticker_tooltip(ticker_item, row.ticker)
             self.table.setItem(r, 0, ticker_item)
 
             name_item = QTableWidgetItem("Verificando...")
@@ -276,11 +280,23 @@ class ImportDialog(QDialog):
         self._company_sectors[row_idx] = sector
         name_item = self.table.item(row_idx, 1)
         sector_item = self.table.item(row_idx, 2)
+        ticker_item = self.table.item(row_idx, 0)
         if name_item:
             name_item.setText(name)
             name_item.setForeground(QColor("#e6edf3"))
         if sector_item:
             sector_item.setText(sector)
+        # Seed the global ticker cache so tooltips reflect what we just learned.
+        if ticker_item:
+            ticker = ticker_item.text().strip().upper()
+            if ticker:
+                ticker_cache._cache[ticker] = {
+                    "ticker": ticker,
+                    "name": name or ticker,
+                    "sector": sector if sector and sector != "N/A" else None,
+                    "source": "import",
+                }
+                ticker_cache.info_updated.emit(ticker)
         self.progress_bar.setValue(row_idx + 1)
 
     def _on_validation_done(self):

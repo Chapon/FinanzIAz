@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 from dataclasses import dataclass, field
+from collections import OrderedDict
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -111,6 +112,48 @@ def compute_ema(df: pd.DataFrame, period: int) -> pd.Series:
 
 def compute_volume_sma(df: pd.DataFrame, period: int = 20) -> pd.Series:
     return df["Volume"].squeeze().rolling(window=period).mean()
+
+
+# ── Indicator LRU cache ───────────────────────────────────────────────────────
+
+_INDICATOR_CACHE: OrderedDict = OrderedDict()
+_INDICATOR_CACHE_MAX = 50   # max cached (ticker, dataset) combinations
+
+
+def _df_fingerprint(df: pd.DataFrame) -> tuple:
+    """Cheap key that identifies a specific OHLCV dataset."""
+    return (len(df), str(df.index[-1]) if len(df) > 0 else "")
+
+
+def get_cached_indicators(ticker: str, df: pd.DataFrame) -> dict:
+    """
+    Compute (or return cached) all standard indicators for df.
+    Shared between chart_widget and analyze() — avoids double computation
+    when both are called for the same ticker in the same session.
+
+    Returns dict with:
+      rsi, macd (line, signal, histogram), bollinger (upper, middle, lower),
+      sma20, sma50, sma200  — None when df is too short.
+    """
+    key = (ticker.upper(), *_df_fingerprint(df))
+    if key in _INDICATOR_CACHE:
+        _INDICATOR_CACHE.move_to_end(key)   # mark as recently used
+        return _INDICATOR_CACHE[key]
+
+    result = {
+        'rsi':       compute_rsi(df),
+        'macd':      compute_macd(df),
+        'bollinger': compute_bollinger_bands(df) if len(df) >= 20 else (None, None, None),
+        'sma20':     compute_sma(df, 20)  if len(df) >= 20  else None,
+        'sma50':     compute_sma(df, 50)  if len(df) >= 50  else None,
+        'sma200':    compute_sma(df, 200) if len(df) >= 200 else None,
+    }
+
+    if len(_INDICATOR_CACHE) >= _INDICATOR_CACHE_MAX:
+        _INDICATOR_CACHE.popitem(last=False)    # evict oldest (LRU)
+
+    _INDICATOR_CACHE[key] = result
+    return result
 
 
 # ── Signal generators ─────────────────────────────────────────────────────────
@@ -302,13 +345,19 @@ def analyze(
 
     signals: list[TechnicalSignal] = []
 
+    # Pull all base indicators from the shared cache (computed once per dataset)
+    indic = get_cached_indicators(ticker, df)
+    rsi_series              = indic['rsi']
+    macd_line, signal_line, histogram = indic['macd']
+    upper, middle, lower    = indic['bollinger']
+    sma50                   = indic['sma50']
+    sma200                  = indic['sma200']
+
     # ── RSI ───────────────────────────────────────────────────────────────────
-    rsi_series = compute_rsi(df)
     if not rsi_series.dropna().empty:
         signals.append(_rsi_signal(rsi_series))
 
     # ── MACD ──────────────────────────────────────────────────────────────────
-    macd_line, signal_line, histogram = compute_macd(df)
     if len(histogram.dropna()) >= 2:
         signals.append(_macd_signal(
             float(macd_line.iloc[-1]),
@@ -318,8 +367,7 @@ def analyze(
         ))
 
     # ── Bollinger Bands ───────────────────────────────────────────────────────
-    upper, middle, lower = compute_bollinger_bands(df)
-    if not upper.dropna().empty:
+    if upper is not None and not upper.dropna().empty:
         price = df["Close"].iloc[-1]
         price = float(price.iloc[-1]) if hasattr(price, '__iter__') else float(price)
         signals.append(_bollinger_signal(
@@ -330,9 +378,7 @@ def analyze(
         ))
 
     # ── SMA 50/200 cross ──────────────────────────────────────────────────────
-    if enable_sma_cross and len(df) >= 200:
-        sma50 = compute_sma(df, 50)
-        sma200 = compute_sma(df, 200)
+    if enable_sma_cross and sma50 is not None and sma200 is not None:
         if not sma50.dropna().empty and not sma200.dropna().empty and len(sma50.dropna()) >= 2:
             signals.append(_sma_cross_signal(
                 float(sma50.iloc[-1]),  float(sma200.iloc[-1]),

@@ -21,9 +21,9 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QScrollArea, QFrame, QSizePolicy,
-    QSplitter, QToolTip, QProgressBar
+    QSplitter, QToolTip, QProgressBar, QCompleter
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QStringListModel
 from PyQt6.QtGui import QFont
 from data.yahoo_finance import get_historical_data, get_current_price, get_company_info
 from analysis.technical import analyze, get_support_resistance, to_yahoo_level
@@ -182,6 +182,154 @@ def _tt(key: str) -> str:
     return TOOLTIPS.get(key, "")
 
 
+# ── Static ticker database for autocomplete ───────────────────────────────────
+# Format: (SYMBOL, "Company / description")
+_TICKER_DB: list[tuple[str, str]] = [
+    # ── US Tech ────────────────────────────────────────────────────────────────
+    ("AAPL",  "Apple Inc."),
+    ("MSFT",  "Microsoft Corporation"),
+    ("GOOGL", "Alphabet Inc. (Google)"),
+    ("GOOG",  "Alphabet Inc. Class C"),
+    ("AMZN",  "Amazon.com Inc."),
+    ("META",  "Meta Platforms Inc. (Facebook)"),
+    ("TSLA",  "Tesla Inc."),
+    ("NVDA",  "NVIDIA Corporation"),
+    ("AMD",   "Advanced Micro Devices"),
+    ("INTC",  "Intel Corporation"),
+    ("NFLX",  "Netflix Inc."),
+    ("ADBE",  "Adobe Inc."),
+    ("CRM",   "Salesforce Inc."),
+    ("ORCL",  "Oracle Corporation"),
+    ("IBM",   "IBM Corporation"),
+    ("CSCO",  "Cisco Systems Inc."),
+    ("QCOM",  "Qualcomm Inc."),
+    ("TXN",   "Texas Instruments"),
+    ("AVGO",  "Broadcom Inc."),
+    ("AMAT",  "Applied Materials"),
+    ("MU",    "Micron Technology"),
+    ("SNOW",  "Snowflake Inc."),
+    ("UBER",  "Uber Technologies"),
+    ("LYFT",  "Lyft Inc."),
+    ("SPOT",  "Spotify Technology"),
+    ("SQ",    "Block Inc. (Square)"),
+    ("PYPL",  "PayPal Holdings"),
+    ("COIN",  "Coinbase Global"),
+    ("PLTR",  "Palantir Technologies"),
+    # ── US Finance ─────────────────────────────────────────────────────────────
+    ("JPM",   "JPMorgan Chase & Co."),
+    ("BAC",   "Bank of America Corp."),
+    ("WFC",   "Wells Fargo & Co."),
+    ("GS",    "Goldman Sachs Group"),
+    ("MS",    "Morgan Stanley"),
+    ("V",     "Visa Inc."),
+    ("MA",    "Mastercard Inc."),
+    ("AXP",   "American Express Co."),
+    ("BRK-B", "Berkshire Hathaway Inc."),
+    ("C",     "Citigroup Inc."),
+    ("BLK",   "BlackRock Inc."),
+    ("SCHW",  "Charles Schwab Corp."),
+    # ── US Healthcare ──────────────────────────────────────────────────────────
+    ("JNJ",   "Johnson & Johnson"),
+    ("UNH",   "UnitedHealth Group"),
+    ("PFE",   "Pfizer Inc."),
+    ("ABBV",  "AbbVie Inc."),
+    ("MRK",   "Merck & Co."),
+    ("LLY",   "Eli Lilly and Co."),
+    ("AMGN",  "Amgen Inc."),
+    ("GILD",  "Gilead Sciences"),
+    # ── US Consumer ────────────────────────────────────────────────────────────
+    ("WMT",   "Walmart Inc."),
+    ("COST",  "Costco Wholesale"),
+    ("HD",    "Home Depot Inc."),
+    ("NKE",   "Nike Inc."),
+    ("MCD",   "McDonald's Corp."),
+    ("SBUX",  "Starbucks Corp."),
+    ("KO",    "Coca-Cola Co."),
+    ("PEP",   "PepsiCo Inc."),
+    ("PG",    "Procter & Gamble"),
+    ("DIS",   "Walt Disney Co."),
+    # ── US Energy ──────────────────────────────────────────────────────────────
+    ("XOM",   "Exxon Mobil Corp."),
+    ("CVX",   "Chevron Corp."),
+    ("COP",   "ConocoPhillips"),
+    ("SLB",   "SLB (Schlumberger)"),
+    # ── US Industrial / Other ──────────────────────────────────────────────────
+    ("BA",    "Boeing Co."),
+    ("CAT",   "Caterpillar Inc."),
+    ("GE",    "GE Aerospace"),
+    ("HON",   "Honeywell International"),
+    ("UPS",   "United Parcel Service"),
+    ("FDX",   "FedEx Corp."),
+    ("LMT",   "Lockheed Martin"),
+    ("RTX",   "RTX Corporation (Raytheon)"),
+    ("T",     "AT&T Inc."),
+    ("VZ",    "Verizon Communications"),
+    ("TMUS",  "T-Mobile US Inc."),
+    ("CMCSA", "Comcast Corp."),
+    # ── ETFs ───────────────────────────────────────────────────────────────────
+    ("SPY",   "SPDR S&P 500 ETF"),
+    ("QQQ",   "Invesco QQQ Trust — Nasdaq 100"),
+    ("IWM",   "iShares Russell 2000 ETF"),
+    ("VTI",   "Vanguard Total Stock Market ETF"),
+    ("VOO",   "Vanguard S&P 500 ETF"),
+    ("GLD",   "SPDR Gold Shares ETF"),
+    ("SLV",   "iShares Silver Trust ETF"),
+    ("TLT",   "iShares 20+ Year Treasury Bond ETF"),
+    ("HYG",   "iShares High Yield Corporate Bond ETF"),
+    ("EEM",   "iShares MSCI Emerging Markets ETF"),
+    ("XLK",   "Technology Select Sector SPDR ETF"),
+    ("XLF",   "Financial Select Sector SPDR ETF"),
+    ("XLE",   "Energy Select Sector SPDR ETF"),
+    ("XLV",   "Health Care Select Sector SPDR ETF"),
+    ("ARKK",  "ARK Innovation ETF"),
+    ("BND",   "Vanguard Total Bond Market ETF"),
+    # ── Argentina — Merval ─────────────────────────────────────────────────────
+    ("GGAL.BA",  "Grupo Financiero Galicia"),
+    ("YPF",      "YPF S.A."),
+    ("BMA.BA",   "Banco Macro S.A."),
+    ("SUPV.BA",  "Supervielle S.A."),
+    ("PAMP.BA",  "Pampa Energía S.A."),
+    ("TGNO4.BA", "Transportadora Gas del Norte"),
+    ("TGSU2.BA", "Transportadora Gas del Sur"),
+    ("TXAR.BA",  "Ternium Argentina S.A."),
+    ("ALUA.BA",  "Aluar Aluminio Argentino"),
+    ("CRES.BA",  "Cresud S.A."),
+    ("EDN.BA",   "Edenor S.A."),
+    ("LOMA.BA",  "Loma Negra C.I.A.S.A."),
+    ("CEPU.BA",  "Central Puerto S.A."),
+    ("BYMA.BA",  "Bolsas y Mercados Argentinos"),
+    ("COME.BA",  "Sociedad Comercial del Plata"),
+    ("MOLI.BA",  "Molinos Río de la Plata"),
+    ("MIRG.BA",  "Mirgor S.A."),
+    # ── Argentina — ADRs en NYSE ───────────────────────────────────────────────
+    ("GGAL", "Grupo Financiero Galicia ADR"),
+    ("BMA",  "Banco Macro ADR"),
+    ("SUPV", "Supervielle ADR"),
+    ("LOMA", "Loma Negra ADR"),
+    ("CEPU", "Central Puerto ADR"),
+    ("PAM",  "Pampa Energía ADR"),
+    ("TGS",  "Transportadora Gas del Sur ADR"),
+    # ── Cripto ─────────────────────────────────────────────────────────────────
+    ("BTC-USD", "Bitcoin USD"),
+    ("ETH-USD", "Ethereum USD"),
+    ("SOL-USD", "Solana USD"),
+    ("BNB-USD", "Binance Coin USD"),
+    ("XRP-USD", "XRP USD"),
+    # ── Índices ────────────────────────────────────────────────────────────────
+    ("^GSPC", "S&P 500 Index"),
+    ("^IXIC", "NASDAQ Composite"),
+    ("^DJI",  "Dow Jones Industrial Average"),
+    ("^RUT",  "Russell 2000 Index"),
+    ("^VIX",  "CBOE Volatility Index (VIX)"),
+    ("^MERV", "MERVAL Index — Argentina"),
+    ("^FTSE", "FTSE 100 Index — UK"),
+    ("^N225", "Nikkei 225 — Japan"),
+]
+
+# Prebuilt completion strings: "AAPL — Apple Inc."
+_COMPLETION_LIST: list[str] = [f"{sym} — {name}" for sym, name in _TICKER_DB]
+
+
 PERIODS = {
     "1 mes":   "1mo",
     "3 meses": "3mo",
@@ -275,6 +423,7 @@ class AnalysisTab(QWidget):
             "Presioná Enter o el botón <i>Analizar</i> para comenzar."
         )
         self.ticker_edit.returnPressed.connect(self._run_analysis)
+        self._setup_completer()
         search_row.addWidget(self.ticker_edit)
 
         self.period_combo = QComboBox()
@@ -681,10 +830,78 @@ class AnalysisTab(QWidget):
         self.period_combo.setCurrentIndex(idx)
         self._run_analysis()
 
+    # ── Autocomplete ───────────────────────────────────────────────────────────
+
+    def _setup_completer(self):
+        # Manual filtering via textChanged is more reliable than QCompleter.setFilterMode
+        # in PyQt6 — MatchContains doesn't always work with QStringListModel.
+        self._completer_model = QStringListModel()
+        completer = QCompleter(self._completer_model, self.ticker_edit)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        completer.setMaxVisibleItems(9)
+        self.ticker_edit.setCompleter(completer)
+        completer.activated.connect(self._on_completion_selected)
+        self.ticker_edit.textChanged.connect(self._update_completions)
+
+        completer.popup().setStyleSheet("""
+            QListView {
+                background-color: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                color: #e6edf3;
+                font-size: 13px;
+                outline: none;
+                padding: 4px 0px;
+            }
+            QListView::item {
+                padding: 7px 14px;
+                border-radius: 4px;
+                min-height: 26px;
+            }
+            QListView::item:selected, QListView::item:hover {
+                background-color: #1f6feb;
+                color: #ffffff;
+            }
+            QScrollBar:vertical {
+                background: #161b22;
+                width: 6px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #30363d;
+                border-radius: 3px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
+    def _update_completions(self, text: str):
+        """Filter _COMPLETION_LIST by substring match and push results into the model."""
+        # Don't filter when the text looks like a completed selection (already a clean ticker)
+        if " — " in text or len(text) < 1:
+            self._completer_model.setStringList([])
+            return
+        needle = text.lower()
+        matches = [s for s in _COMPLETION_LIST if needle in s.lower()][:12]
+        self._completer_model.setStringList(matches)
+
+    def _on_completion_selected(self, text: str):
+        """Extract just the ticker symbol from 'AAPL — Apple Inc.' and run analysis."""
+        ticker = text.split(" — ")[0].strip()
+        # Block textChanged so setting the clean ticker doesn't re-trigger filtering
+        self.ticker_edit.blockSignals(True)
+        self.ticker_edit.setText(ticker)
+        self.ticker_edit.blockSignals(False)
+        self._run_analysis()
+
     # ── Internal ───────────────────────────────────────────────────────────────
 
     def _run_analysis(self):
-        ticker = self.ticker_edit.text().strip().upper()
+        raw = self.ticker_edit.text().strip()
+        ticker = raw.split(" — ")[0].strip().upper()   # handles both "AAPL" and "AAPL — Apple Inc."
         if not ticker:
             return
         period = PERIODS[self.period_combo.currentText()]

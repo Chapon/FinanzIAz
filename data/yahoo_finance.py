@@ -4,12 +4,15 @@ Handles fetching current prices, historical data, and company info.
 """
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 from typing import Optional
-from database.models import get_session, PriceCache, DividendCache
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from database.models import get_session, PriceCache, DividendCache, HistoricalDataCache
 
-
-CACHE_TTL_MINUTES = 5  # Refresh price cache every 5 minutes
+BULK_FETCH_WORKERS = 5        # Max parallel threads for bulk price fetches
+CACHE_TTL_MINUTES = 5         # Price cache TTL
+HISTORICAL_CACHE_TTL_HOURS = 1  # OHLCV cache TTL
 
 def _cache_enabled() -> bool:
     try:
@@ -28,7 +31,7 @@ def get_current_price(ticker: str) -> Optional[dict]:
     session = get_session()
     try:
         # Check cache first (skip if cache setting is disabled)
-        cutoff = datetime.utcnow() - timedelta(minutes=CACHE_TTL_MINUTES)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_TTL_MINUTES)
         cached = None
         if _cache_enabled():
             cached = (
@@ -132,22 +135,71 @@ def get_historical_data(
     interval: str = "1d"
 ) -> Optional[pd.DataFrame]:
     """
-    Download OHLCV historical data.
+    Download OHLCV historical data with SQLite cache (TTL=1h).
+    Cache key: (ticker, period, interval). At most one entry per combination.
     period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
     interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
     """
+    ticker_upper = ticker.upper()
+
+    # 1. Cache read
+    if _cache_enabled():
+        session = get_session()
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
+            cached = (
+                session.query(HistoricalDataCache)
+                .filter(HistoricalDataCache.ticker == ticker_upper)
+                .filter(HistoricalDataCache.period == period)
+                .filter(HistoricalDataCache.interval == interval)
+                .filter(HistoricalDataCache.fetched_at >= cutoff)
+                .order_by(HistoricalDataCache.fetched_at.desc())
+                .first()
+            )
+            if cached:
+                df = pd.read_json(StringIO(cached.data_json), orient="split")
+                df.index = pd.to_datetime(df.index)
+                return df
+        except Exception as e:
+            print(f"[YF] Historical cache read failed for {ticker}: {e}")
+        finally:
+            session.close()
+
+    # 2. Live download
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
         if df.empty:
             return None
-        # Flatten multi-level columns if present
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df.index = pd.to_datetime(df.index)
-        return df
     except Exception as e:
         print(f"[YF] Historical data failed for {ticker}: {e}")
         return None
+
+    # 3. Cache write — replace any existing entry for this (ticker, period, interval)
+    if _cache_enabled():
+        session = get_session()
+        try:
+            session.query(HistoricalDataCache).filter(
+                HistoricalDataCache.ticker == ticker_upper,
+                HistoricalDataCache.period == period,
+                HistoricalDataCache.interval == interval,
+            ).delete()
+            session.add(HistoricalDataCache(
+                ticker=ticker_upper,
+                period=period,
+                interval=interval,
+                data_json=df.to_json(orient="split", date_format="iso"),
+            ))
+            session.commit()
+        except Exception as e:
+            print(f"[YF] Historical cache write failed for {ticker}: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+    return df
 
 
 DIVIDEND_CACHE_HOURS = 6  # Re-fetch dividends every 6 hours
@@ -161,7 +213,7 @@ def get_dividends_since(ticker: str, since_date: datetime) -> float:
     """
     session = get_session()
     try:
-        cutoff = datetime.utcnow() - timedelta(hours=DIVIDEND_CACHE_HOURS)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=DIVIDEND_CACHE_HOURS)
         cached = (
             session.query(DividendCache)
             .filter(DividendCache.ticker == ticker.upper())
@@ -212,13 +264,27 @@ def _fetch_dividends_since(ticker: str, since_date: datetime) -> float:
 
 def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
     """
-    Fetch dividends for multiple tickers efficiently.
+    Fetch dividends for multiple tickers in parallel.
     tickers_since: {ticker: purchase_date}
     Returns: {ticker: total_dividends_per_share}
     """
-    results = {}
-    for ticker, since in tickers_since.items():
-        results[ticker] = get_dividends_since(ticker, since)
+    if not tickers_since:
+        return {}
+
+    results: dict[str, float] = {}
+    max_workers = min(BULK_FETCH_WORKERS, len(tickers_since))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {
+            executor.submit(get_dividends_since, ticker, since): ticker
+            for ticker, since in tickers_since.items()
+        }
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                results[ticker] = future.result()
+            except Exception as e:
+                print(f"[YF] Bulk dividend fetch failed for {ticker}: {e}")
+                results[ticker] = 0.0
     return results
 
 
@@ -270,10 +336,103 @@ def validate_ticker(ticker: str) -> bool:
 
 
 def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
-    """Fetch current prices for multiple tickers efficiently."""
-    results = {}
-    for ticker in tickers:
-        results[ticker] = get_current_price(ticker)
+    """
+    Fetch current prices for multiple tickers efficiently.
+    Strategy: 1 batch DB read → parallel live fetches for misses → 1 batch DB write.
+    """
+    if not tickers:
+        return {}
+
+    tickers_upper = [t.upper() for t in tickers]
+    results: dict[str, Optional[dict]] = {}
+    cache_misses: list[str] = []
+
+    # 1. Single batch cache read (one query for all tickers)
+    if _cache_enabled():
+        session = get_session()
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_TTL_MINUTES)
+            cached_rows = (
+                session.query(PriceCache)
+                .filter(PriceCache.ticker.in_(tickers_upper))
+                .filter(PriceCache.fetched_at >= cutoff)
+                .all()
+            )
+            # Keep only the latest entry per ticker
+            cached_map: dict[str, PriceCache] = {}
+            for row in cached_rows:
+                if row.ticker not in cached_map or row.fetched_at > cached_map[row.ticker].fetched_at:
+                    cached_map[row.ticker] = row
+
+            for ticker in tickers_upper:
+                if ticker in cached_map:
+                    row = cached_map[ticker]
+                    results[ticker] = {
+                        "ticker": row.ticker,
+                        "price": row.price,
+                        "change_pct": row.change_pct,
+                        "volume": row.volume,
+                        "market_cap": row.market_cap,
+                        "from_cache": True,
+                    }
+                else:
+                    cache_misses.append(ticker)
+        except Exception as e:
+            print(f"[YF] Bulk cache read failed: {e}")
+            cache_misses = list(tickers_upper)
+        finally:
+            session.close()
+    else:
+        cache_misses = list(tickers_upper)
+
+    if not cache_misses:
+        return results
+
+    # 2. Parallel live fetches — pure network I/O, no DB locks
+    live_results: dict[str, Optional[dict]] = {}
+    max_workers = min(BULK_FETCH_WORKERS, len(cache_misses))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {
+            executor.submit(_fetch_ticker_info, ticker): ticker
+            for ticker in cache_misses
+        }
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                live_results[ticker] = future.result()
+            except Exception as e:
+                print(f"[YF] Parallel fetch failed for {ticker}: {e}")
+                live_results[ticker] = None
+
+    # 3. Single batch cache write for all successful fetches
+    new_entries = [
+        PriceCache(
+            ticker=ticker,
+            price=info["price"],
+            change_pct=info.get("change_pct"),
+            volume=info.get("volume"),
+            market_cap=info.get("market_cap"),
+        )
+        for ticker, info in live_results.items()
+        if info is not None
+    ]
+    if new_entries:
+        session = get_session()
+        try:
+            session.add_all(new_entries)
+            session.commit()
+        except Exception as e:
+            print(f"[YF] Bulk cache write failed: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+    # Merge live results into output
+    for ticker, info in live_results.items():
+        if info is not None:
+            info["from_cache"] = False
+        results[ticker] = info
+
     return results
 
 

@@ -133,12 +133,34 @@ class RenamePortfolioDialog(QDialog):
 
 
 class AddPositionDialog(QDialog):
-    def __init__(self, portfolio_id: int, parent=None):
+    def __init__(
+        self,
+        portfolio_id: int,
+        parent=None,
+        *,
+        prefill_ticker: str = "",
+        prefill_qty: float | None = None,
+        prefill_price: float | None = None,
+        prefill_notes: str = "",
+    ):
         super().__init__(parent)
         self.portfolio_id = portfolio_id
         self.setWindowTitle("Agregar Acción")
         self.setMinimumWidth(460)
         self._build_ui()
+
+        # Aplicar pre-fill después de construir el form. Sirve para los flows
+        # tipo "Aprobar y registrar en Portafolio" desde Paper Trading, donde
+        # ya conocemos ticker/cantidad/precio sugerido y solo queremos que el
+        # usuario ajuste el precio real y las fees del broker.
+        if prefill_ticker:
+            self.ticker_edit.setText(prefill_ticker.upper())
+        if prefill_qty is not None and prefill_qty > 0:
+            self.qty_spin.setValue(float(prefill_qty))
+        if prefill_price is not None and prefill_price > 0:
+            self.price_spin.setValue(float(prefill_price))
+        if prefill_notes:
+            self.notes_edit.setText(prefill_notes)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -352,12 +374,27 @@ class AddAlertDialog(QDialog):
 
 
 class SellPositionDialog(QDialog):
-    def __init__(self, position, parent=None):
+    def __init__(
+        self,
+        position,
+        parent=None,
+        *,
+        prefill_qty: float | None = None,
+        prefill_price: float | None = None,
+    ):
         super().__init__(parent)
         self.position = position
         self.setWindowTitle(f"Vender {position.ticker}")
         self.setMinimumWidth(380)
         self._build_ui()
+
+        # Pre-fill desde Paper Trading: sugerencia de cantidad a vender y/o
+        # precio aproximado. Cap por seguridad a position.quantity (no podés
+        # vender más de lo que tenés en el portafolio real).
+        if prefill_qty is not None and prefill_qty > 0:
+            self.qty_spin.setValue(min(float(prefill_qty), float(position.quantity)))
+        if prefill_price is not None and prefill_price > 0:
+            self.price_spin.setValue(float(prefill_price))
 
     def _build_ui(self):
         layout = QVBoxLayout(self)

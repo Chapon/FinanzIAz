@@ -205,6 +205,40 @@ def get_positions(account_id: int) -> list[PaperPosition]:
         session.close()
 
 
+def get_position_entry_prices(account_id: int) -> dict[str, float]:
+    """
+    For each currently open position, return the fill_price of the earliest
+    filled BUY order that happened on/after the position's ``opened_at``.
+
+    This represents the original entry price (incl. slippage) of the position
+    at the moment it was first opened — distinct from ``avg_cost`` which is
+    the running VWAP that gets updated as the position is averaged into.
+
+    Returns ``{ticker: entry_price}``. Tickers without a recoverable order
+    (e.g. legacy positions from before the orders table existed) are omitted.
+    """
+    session = get_session()
+    try:
+        positions = (session.query(PaperPosition)
+                     .filter(PaperPosition.account_id == account_id)
+                     .filter(PaperPosition.shares > 0).all())
+        out: dict[str, float] = {}
+        for p in positions:
+            q = (session.query(PaperOrder)
+                 .filter(PaperOrder.account_id == account_id)
+                 .filter(PaperOrder.ticker     == p.ticker)
+                 .filter(PaperOrder.side       == "BUY")
+                 .filter(PaperOrder.status     == "filled"))
+            if p.opened_at is not None:
+                q = q.filter(PaperOrder.filled_at >= p.opened_at)
+            order = q.order_by(PaperOrder.filled_at.asc()).first()
+            if order is not None and order.fill_price is not None:
+                out[p.ticker] = float(order.fill_price)
+        return out
+    finally:
+        session.close()
+
+
 def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
     """
     Mark-to-market equity given a {ticker: price} dict.
@@ -303,3 +337,4 @@ def get_orders(
 
 def get_pending_orders(account_id: int) -> list[PaperOrder]:
     return get_orders(account_id, status="pending")
+

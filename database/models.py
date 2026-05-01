@@ -140,6 +140,24 @@ class DividendCache(Base):
         return f"<DividendCache({self.ticker} ${self.total_per_share}/share since {self.since_date.date()})>"
 
 
+class HistoricalDataCache(Base):
+    """
+    Cache for OHLCV historical data to avoid repeated yfinance downloads.
+    Keyed by (ticker, period, interval). At most one entry per combination.
+    """
+    __tablename__ = "historical_data_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False)
+    period = Column(String(10), nullable=False)    # e.g. "1y", "6mo"
+    interval = Column(String(10), nullable=False)  # e.g. "1d", "1h"
+    data_json = Column(Text, nullable=False)        # DataFrame serialized via to_json(orient="split")
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<HistoricalDataCache({self.ticker} {self.period}/{self.interval} @ {self.fetched_at})>"
+
+
 def init_db():
     """Create all tables, run lightweight migrations, and seed default portfolio."""
     # Register paper-trading models so their tables are included in create_all.

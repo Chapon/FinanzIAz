@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox,
     QCheckBox, QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QFrame, QSplitter,
-    QScrollArea, QSizePolicy, QSpacerItem,
+    QScrollArea, QSizePolicy, QSpacerItem, QMenu, QInputDialog,
 )
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
@@ -39,17 +39,25 @@ import matplotlib.dates as mdates
 
 from ui.styles import PALETTE, CHART_STYLE
 from ui.widgets import MetricCard, SectionHeader, HSeparator, StatusDot
+from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 
 from paper_trading.account import (
     create_account, list_accounts, get_account,
     delete_account, update_account_config,
     add_watchlist_tickers, remove_watchlist_ticker, get_watchlist,
-    get_positions, compute_equity, get_equity_curve,
+    get_positions, get_position_entry_prices,
+    compute_equity, get_equity_curve,
     get_orders, get_pending_orders,
 )
 from paper_trading.engine import approve_order, reject_order
 from paper_trading.models import STRATEGIES, MODES, ALLOC_MODES
+from paper_trading.presets import WATCHLIST_PRESETS
 from data.yahoo_finance import get_bulk_prices
+
+# Real-portfolio integration: tras aprobar una orden de paper, ofrecemos
+# registrar la operación correspondiente en el Portafolio real del usuario.
+from database.models import Portfolio, Position, get_session
+from ui.dialogs import AddPositionDialog, SellPositionDialog
 
 
 # ── Background worker: fetch current prices without blocking UI ───────────────
@@ -339,6 +347,11 @@ class _EquityCurveChart(QWidget):
         self.ax = self.figure.add_subplot(111)
         self._style_axes()
         self._render_empty()
+        # Incremental-update state
+        self._line        = None   # Line2D artist (kept between refreshes)
+        self._fill        = None   # PolyCollection from fill_between
+        self._plotted_count = 0    # number of snapshots in last render
+        self._first_xs    = None   # first snapshot timestamp (series identity key)
 
     def _style_axes(self):
         self.ax.set_facecolor(CHART_STYLE["axes.facecolor"])
@@ -362,17 +375,40 @@ class _EquityCurveChart(QWidget):
         self.canvas.draw()
 
     def set_data(self, snapshots: list):
-        self.ax.clear()
-        self._style_axes()
         if not snapshots:
-            self._render_empty()
+            if self._plotted_count > 0:
+                self._line = None
+                self._fill = None
+                self._plotted_count = 0
+                self._first_xs = None
+                self._render_empty()
             return
+
         xs = [s.snapshot_at for s in snapshots]
         ys = [float(s.total_equity) for s in snapshots]
-        self.ax.plot(xs, ys, color=PALETTE["accent"], linewidth=1.8)
-        self.ax.fill_between(xs, ys, min(ys),
-                             color=PALETTE["accent"], alpha=0.12)
-        # Baseline = initial capital (first point)
+
+        # Incremental update when appending to the same series; full redraw otherwise.
+        same_series = (
+            self._line is not None
+            and self._plotted_count > 0
+            and len(snapshots) >= self._plotted_count
+            and self._first_xs == xs[0]
+        )
+
+        if same_series:
+            self._incremental_update(xs, ys)
+        else:
+            self._full_redraw(xs, ys)
+
+        self._plotted_count = len(snapshots)
+        self._first_xs = xs[0]
+
+    def _full_redraw(self, xs: list, ys: list):
+        self.ax.clear()
+        self._style_axes()
+        self._line, = self.ax.plot(xs, ys, color=PALETTE["accent"], linewidth=1.8)
+        self._fill = self.ax.fill_between(xs, ys, min(ys),
+                                          color=PALETTE["accent"], alpha=0.12)
         if len(ys) > 1:
             self.ax.axhline(ys[0], color=PALETTE["text3"],
                             linestyle="--", linewidth=0.6, alpha=0.7)
@@ -380,6 +416,16 @@ class _EquityCurveChart(QWidget):
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
         self.figure.autofmt_xdate(rotation=15)
         self.canvas.draw()
+
+    def _incremental_update(self, xs: list, ys: list):
+        self._line.set_data(xs, ys)
+        if self._fill is not None:
+            self._fill.remove()
+        self._fill = self.ax.fill_between(xs, ys, min(ys),
+                                          color=PALETTE["accent"], alpha=0.12)
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw_idle()
 
 
 # ── Main paper-trading tab ────────────────────────────────────────────────────
@@ -397,6 +443,7 @@ class PaperTradingTab(QWidget):
         self._pending_orders: list = []
         self._orders_history: list = []
         self._positions: list = []
+        self._entry_prices: dict[str, float] = {}
         self._watchlist: list[str] = []
         self._price_worker: Optional[_PricesWorker] = None
 
@@ -552,6 +599,16 @@ class PaperTradingTab(QWidget):
         add_row.addWidget(self.add_ticker_btn)
         left_layout.addLayout(add_row)
 
+        # Bulk-add via curated sector presets (paper_trading/presets.py).
+        self.preset_btn = QPushButton("+ Preset por sector  ▾")
+        self.preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.preset_btn.setToolTip(
+            "Cargar una lista de tickers curada por sector "
+            "(tecnología, energía, salud, etc.)"
+        )
+        self.preset_btn.clicked.connect(self._show_preset_menu)
+        left_layout.addWidget(self.preset_btn)
+
         self.watchlist_table = QTableWidget(0, 3)
         self.watchlist_table.setHorizontalHeaderLabels(["Ticker", "Precio", ""])
         self.watchlist_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -566,6 +623,8 @@ class PaperTradingTab(QWidget):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self.watchlist_table.setColumnWidth(2, 44)
+        # Tooltip on hover over Ticker column (col 0)
+        install_ticker_tooltips(self.watchlist_table, 0)
         left_layout.addWidget(self.watchlist_table, stretch=1)
 
         splitter.addWidget(left)
@@ -576,19 +635,33 @@ class PaperTradingTab(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(10)
 
-        # Positions
+        # ── Three-column row: Posiciones | Pendientes | Historial ────────────
+        # Side-by-side layout so all three tables are visible at once without
+        # the user having to scroll past one to reach the next.
+        tables_row = QHBoxLayout()
+        tables_row.setSpacing(10)
+
+        # Each table gets a generous minimum height so several rows fit
+        # before any internal scroll kicks in.
+        _TABLE_MIN_H = 280
+
+        # Positions (col 1)
         pos_card = QFrame(); pos_card.setObjectName("card")
         pos_l = QVBoxLayout(pos_card); pos_l.setContentsMargins(14, 12, 14, 12); pos_l.setSpacing(8)
         pos_l.addWidget(self._header_with_count("Posiciones abiertas", attr="_positions_header"))
-        self.positions_table = QTableWidget(0, 6)
+        self.positions_table = QTableWidget(0, 7)
         self.positions_table.setHorizontalHeaderLabels(
-            ["Ticker", "Shares", "Avg Cost", "Precio", "Market Value", "P&L %"]
+            ["Ticker", "Shares", "Precio compra", "Avg Cost",
+             "Precio", "Market Value", "P&L %"]
         )
         self._apply_table_style(self.positions_table)
+        # Tooltip on hover over Ticker column (col 0)
+        install_ticker_tooltips(self.positions_table, 0)
+        self.positions_table.setMinimumHeight(_TABLE_MIN_H)
         pos_l.addWidget(self.positions_table)
-        right_layout.addWidget(pos_card)
+        tables_row.addWidget(pos_card, 1)
 
-        # Pending orders
+        # Pending orders (col 2)
         pen_card = QFrame(); pen_card.setObjectName("card")
         pen_l = QVBoxLayout(pen_card); pen_l.setContentsMargins(14, 12, 14, 12); pen_l.setSpacing(8)
         pen_l.addWidget(self._header_with_count("Órdenes pendientes", attr="_pending_header"))
@@ -601,10 +674,13 @@ class PaperTradingTab(QWidget):
         # so the "Acciones" column never clips the buttons.
         self.pending_table.setColumnWidth(6, 240)
         self.pending_table.horizontalHeader().setMinimumSectionSize(120)
+        # Tooltip on hover over Ticker column (col 2)
+        install_ticker_tooltips(self.pending_table, 2)
+        self.pending_table.setMinimumHeight(_TABLE_MIN_H)
         pen_l.addWidget(self.pending_table)
-        right_layout.addWidget(pen_card)
+        tables_row.addWidget(pen_card, 1)
 
-        # Filled / history
+        # Filled / history (col 3)
         hist_card = QFrame(); hist_card.setObjectName("card")
         hist_l = QVBoxLayout(hist_card); hist_l.setContentsMargins(14, 12, 14, 12); hist_l.setSpacing(8)
         hist_l.addWidget(self._header_with_count("Historial reciente", attr="_history_header"))
@@ -613,8 +689,13 @@ class PaperTradingTab(QWidget):
             ["Fecha", "Side", "Ticker", "Shares", "Precio", "Total", "Estado"]
         )
         self._apply_table_style(self.history_table)
+        # Tooltip on hover over Ticker column (col 2)
+        install_ticker_tooltips(self.history_table, 2)
+        self.history_table.setMinimumHeight(_TABLE_MIN_H)
         hist_l.addWidget(self.history_table)
-        right_layout.addWidget(hist_card)
+        tables_row.addWidget(hist_card, 1)
+
+        right_layout.addLayout(tables_row)
 
         # Equity curve
         chart_card = QFrame(); chart_card.setObjectName("card")
@@ -776,12 +857,69 @@ class PaperTradingTab(QWidget):
         if remove_watchlist_ticker(self._current_account_id, ticker):
             self._refresh_watchlist()
 
+    # ── Preset (sector) menu ──────────────────────────────────────────────────
+
+    def _show_preset_menu(self):
+        """Pop a menu listing every sector preset; clicking adds in bulk."""
+        if self._current_account_id is None:
+            QMessageBox.information(self, "Sin cuenta", "Creá una cuenta primero.")
+            return
+        if not WATCHLIST_PRESETS:
+            return
+
+        menu = QMenu(self)
+        # Match the dark IQON look so the menu doesn't render as system-default.
+        menu.setStyleSheet(
+            f"QMenu {{"
+            f"  background-color: {PALETTE['elevated']};"
+            f"  color: {PALETTE['text1']};"
+            f"  border: 1px solid {PALETTE['border_lt']};"
+            f"  padding: 4px;"
+            f"}}"
+            f"QMenu::item {{"
+            f"  padding: 6px 18px; border-radius: 4px;"
+            f"}}"
+            f"QMenu::item:selected {{"
+            f"  background-color: {PALETTE['accent']}; color: #000;"
+            f"}}"
+        )
+
+        for name, tickers in WATCHLIST_PRESETS.items():
+            label = f"{name}   ({len(tickers)} tickers)"
+            act = menu.addAction(label)
+            # Bind the loop variables explicitly with default args.
+            act.triggered.connect(
+                lambda _checked=False, n=name, t=list(tickers): self._add_preset(n, t)
+            )
+
+        # Show under the button.
+        anchor = self.preset_btn.mapToGlobal(self.preset_btn.rect().bottomLeft())
+        menu.exec(anchor)
+
+    def _add_preset(self, name: str, tickers: list[str]):
+        if self._current_account_id is None:
+            return
+        try:
+            added = add_watchlist_tickers(self._current_account_id, tickers)
+        except Exception as e:
+            QMessageBox.critical(self, "Preset", f"No se pudo agregar el preset:\n{e}")
+            return
+        skipped = len(tickers) - added
+        msg_parts = [f"Preset «{name}» aplicado.",
+                     f"Tickers nuevos agregados: {added}."]
+        if skipped > 0:
+            msg_parts.append(f"Ya estaban en la watchlist: {skipped}.")
+        QMessageBox.information(self, "Preset agregado", "\n".join(msg_parts))
+        self._refresh_watchlist()
+        # New tickers need prices fetched for the watchlist column to fill.
+        self._fetch_prices()
+
     # ── Refresh ───────────────────────────────────────────────────────────────
 
     def _refresh_all(self):
         has_account = self._current_account_id is not None
         for btn in (self.edit_btn, self.delete_btn, self.scan_btn,
-                    self.refresh_btn, self.add_ticker_btn):
+                    self.refresh_btn, self.add_ticker_btn, self.preset_btn):
             btn.setEnabled(has_account)
         self.ticker_input.setEnabled(has_account)
 
@@ -806,6 +944,7 @@ class PaperTradingTab(QWidget):
         self.pending_table.setRowCount(0)
         self.history_table.setRowCount(0)
         self.equity_chart.set_data([])
+        self._entry_prices = {}
         if hasattr(self, "_positions_header"): self._positions_header.setText("")
         if hasattr(self, "_pending_header"):   self._pending_header.setText("")
         if hasattr(self, "_history_header"):   self._history_header.setText("")
@@ -836,7 +975,9 @@ class PaperTradingTab(QWidget):
         for t in self._watchlist:
             row = self.watchlist_table.rowCount()
             self.watchlist_table.insertRow(row)
-            self.watchlist_table.setItem(row, 0, QTableWidgetItem(t))
+            wl_ticker_item = QTableWidgetItem(t)
+            apply_ticker_tooltip(wl_ticker_item, t)
+            self.watchlist_table.setItem(row, 0, wl_ticker_item)
             px = self._prices.get(t)
             self.watchlist_table.setItem(
                 row, 1,
@@ -900,8 +1041,10 @@ class PaperTradingTab(QWidget):
             PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]
         ))
         table.setItem(row, 1, side_item)
-        table.setItem(row, 2, QTableWidgetItem(o.ticker))
-        shares_txt = f"{o.target_shares:.4f}" if o.target_shares is not None else "—"
+        order_ticker_item = QTableWidgetItem(o.ticker)
+        apply_ticker_tooltip(order_ticker_item, o.ticker)
+        table.setItem(row, 2, order_ticker_item)
+        shares_txt = self._format_shares(o.target_shares)
         table.setItem(row, 3, QTableWidgetItem(shares_txt))
         dollars_txt = f"${o.target_dollars:,.2f}" if o.target_dollars is not None else "—"
         table.setItem(row, 4, QTableWidgetItem(dollars_txt))
@@ -910,49 +1053,91 @@ class PaperTradingTab(QWidget):
         if pending:
             actions = QWidget()
             alay = QHBoxLayout(actions)
-            alay.setContentsMargins(8, 8, 8, 8)
-            alay.setSpacing(6)
-            approve = QPushButton("✓ Aprobar")
+            alay.setContentsMargins(6, 8, 6, 8)
+            alay.setSpacing(4)
+
+            approve = QPushButton("✓ Sim")
             approve.setCursor(Qt.CursorShape.PointingHandCursor)
             approve.setFixedHeight(32)
-            approve.setMinimumWidth(96)
+            approve.setMinimumWidth(60)
+            approve.setToolTip(
+                "Aprobar la orden solo en la simulación de Paper Trading."
+            )
             approve.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: {PALETTE['accent']};"
                 f"  color: #000000;"
                 f"  border: none;"
                 f"  border-radius: 6px;"
-                f"  padding: 0 10px;"
+                f"  padding: 0 8px;"
                 f"  font-size: 12px; font-weight: 700;"
                 f"}}"
                 f"QPushButton:hover {{ background-color: #6ee7a0; }}"
             )
             approve.clicked.connect(lambda _=False, oid=int(o.id): self._approve_order(oid))
 
-            reject = QPushButton("✕ Rechazar")
+            approve_real = QPushButton("✓ + Portafolio")
+            approve_real.setCursor(Qt.CursorShape.PointingHandCursor)
+            approve_real.setFixedHeight(32)
+            approve_real.setMinimumWidth(112)
+            approve_real.setToolTip(
+                "Aprobar la orden en la simulación Y abrir el diálogo para "
+                "registrar la operación correspondiente en tu Portafolio real."
+            )
+            approve_real.setStyleSheet(
+                f"QPushButton {{"
+                f"  background-color: {PALETTE['blue']};"
+                f"  color: #000000;"
+                f"  border: none;"
+                f"  border-radius: 6px;"
+                f"  padding: 0 8px;"
+                f"  font-size: 12px; font-weight: 700;"
+                f"}}"
+                f"QPushButton:hover {{ background-color: #66c2ff; }}"
+            )
+            approve_real.clicked.connect(
+                lambda _=False, oid=int(o.id): self._approve_and_register(oid)
+            )
+
+            reject = QPushButton("✕")
             reject.setCursor(Qt.CursorShape.PointingHandCursor)
             reject.setFixedHeight(32)
-            reject.setMinimumWidth(96)
+            reject.setFixedWidth(36)
+            reject.setToolTip("Rechazar la sugerencia")
             reject.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: #3d1515;"
                 f"  color: {PALETTE['red']};"
                 f"  border: 1px solid #5a2020;"
                 f"  border-radius: 6px;"
-                f"  padding: 0 10px;"
-                f"  font-size: 12px; font-weight: 700;"
+                f"  padding: 0;"
+                f"  font-size: 13px; font-weight: 700;"
                 f"}}"
                 f"QPushButton:hover {{ background-color: {PALETTE['red']}; color: #000; }}"
             )
             reject.clicked.connect(lambda _=False, oid=int(o.id): self._reject_order(oid))
 
             alay.addWidget(approve)
+            alay.addWidget(approve_real)
             alay.addWidget(reject)
             alay.addStretch()
             table.setCellWidget(row, 6, actions)
             # Force the row height after placing the cell widget so
             # Qt allocates enough vertical space for the buttons.
             table.setRowHeight(row, 52)
+
+    @staticmethod
+    def _format_shares(value) -> str:
+        """Render share counts compactly: '12' if integer, '12.3456' otherwise."""
+        if value is None:
+            return "—"
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return "—"
+        if abs(f - round(f)) < 1e-6:
+            return f"{int(round(f))}"
+        return f"{f:.4f}"
 
     def _set_history_row(self, table: QTableWidget, row: int, o):
         ts = (o.filled_at or o.decided_at or o.created_at)
@@ -963,8 +1148,10 @@ class PaperTradingTab(QWidget):
             PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]
         ))
         table.setItem(row, 1, side_item)
-        table.setItem(row, 2, QTableWidgetItem(o.ticker))
-        shares_txt = f"{o.fill_shares:.4f}" if o.fill_shares is not None else "—"
+        hist_ticker_item = QTableWidgetItem(o.ticker)
+        apply_ticker_tooltip(hist_ticker_item, o.ticker)
+        table.setItem(row, 2, hist_ticker_item)
+        shares_txt = self._format_shares(o.fill_shares)
         table.setItem(row, 3, QTableWidgetItem(shares_txt))
         price_txt = f"${o.fill_price:,.2f}" if o.fill_price is not None else "—"
         table.setItem(row, 4, QTableWidgetItem(price_txt))
@@ -1006,6 +1193,153 @@ class PaperTradingTab(QWidget):
             QMessageBox.warning(self, "Rechazar", "La orden ya no está pendiente.")
         self._refresh_orders()
 
+    # ── Approve + register in real Portfolio ───────────────────────────────────
+
+    def _approve_and_register(self, order_id: int):
+        """
+        Aprobar la orden de paper trading Y abrir el diálogo del Portafolio
+        real para que el usuario registre la operación con su precio efectivo
+        de broker.
+
+        Flujo:
+          1. ``approve_order`` ejecuta el fill en la simulación.
+          2. Si fue BUY → AddPositionDialog (eligiendo portafolio si hay >1).
+          3. Si fue SELL → busca la Position real correspondiente al ticker;
+             si existe, abre SellPositionDialog; si no, avisa al usuario.
+        """
+        # 1. Aprobar en paper trading.
+        try:
+            filled = approve_order(order_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo aprobar la orden:\n{e}")
+            return
+        if filled is None:
+            QMessageBox.warning(self, "Aprobar", "La orden ya no está pendiente.")
+            return
+
+        side       = filled.side
+        ticker     = filled.ticker
+        fill_qty   = float(filled.fill_shares or 0.0)
+        fill_price = float(filled.fill_price or 0.0)
+
+        # Refrescar paper view ahora — pase lo que pase en el diálogo, el sim
+        # ya está actualizado.
+        self._refresh_orders()
+        self._fetch_prices()
+
+        if fill_qty <= 0 or fill_price <= 0:
+            QMessageBox.information(
+                self, "Aprobada",
+                "Orden aprobada en simulación, pero no se pudo calcular shares/precio "
+                "para pre-llenar el Portafolio. Cargá la operación manualmente."
+            )
+            return
+
+        # 2. BUY → AddPositionDialog
+        if side == "BUY":
+            portfolio_id = self._pick_real_portfolio()
+            if portfolio_id is None:
+                return
+            dlg = AddPositionDialog(
+                portfolio_id, parent=self,
+                prefill_ticker=ticker,
+                prefill_qty=fill_qty,
+                prefill_price=fill_price,
+                prefill_notes=f"Sugerencia paper: {filled.reason or ''}".strip(),
+            )
+            dlg.exec()
+            return
+
+        # 3. SELL → SellPositionDialog
+        if side == "SELL":
+            pos = self._find_real_position(ticker)
+            if pos is None:
+                QMessageBox.information(
+                    self, "Sin posición real",
+                    f"No tenés <b>{ticker}</b> en ningún portafolio real, así que la "
+                    "venta solo se aprobó en la simulación. Si la operás en tu broker, "
+                    "registrala manualmente desde la pestaña Portafolio."
+                )
+                return
+            dlg = SellPositionDialog(
+                pos, parent=self,
+                prefill_qty=fill_qty,
+                prefill_price=fill_price,
+            )
+            dlg.exec()
+            return
+
+    # ── Real-portfolio helpers ────────────────────────────────────────────────
+
+    def _pick_real_portfolio(self) -> Optional[int]:
+        """Devuelve el id de un portafolio real, o None si el usuario canceló /
+        no hay portafolios. Si hay >1, abre un selector."""
+        session = get_session()
+        try:
+            portfolios = (session.query(Portfolio)
+                          .order_by(Portfolio.name.asc()).all())
+            if not portfolios:
+                QMessageBox.information(
+                    self, "Sin portafolios",
+                    "No tenés portafolios reales todavía. Creá uno desde la "
+                    "pestaña Portafolio antes de registrar operaciones."
+                )
+                return None
+            if len(portfolios) == 1:
+                return int(portfolios[0].id)
+            names = [p.name for p in portfolios]
+            choice, ok = QInputDialog.getItem(
+                self, "Elegir portafolio",
+                "¿En qué portafolio real querés registrar la compra?",
+                names, 0, False,
+            )
+            if not ok:
+                return None
+            try:
+                idx = names.index(choice)
+            except ValueError:
+                return None
+            return int(portfolios[idx].id)
+        finally:
+            session.close()
+
+    def _find_real_position(self, ticker: str) -> Optional[Position]:
+        """Busca la Position real más relevante para este ticker. Si hay más
+        de un portafolio con ese ticker, deja al usuario elegir."""
+        session = get_session()
+        try:
+            rows = (session.query(Position, Portfolio)
+                    .join(Portfolio, Position.portfolio_id == Portfolio.id)
+                    .filter(Position.ticker == ticker.upper())
+                    .filter(Position.quantity > 0)
+                    .all())
+            if not rows:
+                return None
+            if len(rows) == 1:
+                pos, _pf = rows[0]
+                session.expunge(pos)
+                return pos
+            labels = [
+                f"{pf.name}  ·  {pos.quantity:g} shares @ ${pos.avg_buy_price:,.2f}"
+                for pos, pf in rows
+            ]
+            choice, ok = QInputDialog.getItem(
+                self, "Elegir portafolio",
+                f"Hay {len(rows)} portafolios con {ticker}. ¿Cuál usás?",
+                labels, 0, False,
+            )
+            if not ok:
+                return None
+            try:
+                idx = labels.index(choice)
+            except ValueError:
+                return None
+            pos, _pf = rows[idx]
+            session.expunge(pos)
+            return pos
+        finally:
+            session.close()
+
     # ── Equity curve ──────────────────────────────────────────────────────────
 
     def _refresh_equity_curve(self):
@@ -1030,6 +1364,13 @@ class PaperTradingTab(QWidget):
         except Exception as e:
             print(f"[PaperTab positions] {e}")
             self._positions = []
+        # Cheap DB hit; refreshed alongside positions so the table shows the
+        # original entry price next to the running VWAP.
+        try:
+            self._entry_prices = get_position_entry_prices(self._current_account_id)
+        except Exception as e:
+            print(f"[PaperTab entry_prices] {e}")
+            self._entry_prices = {}
         tickers = set(self._watchlist) | {p.ticker for p in self._positions}
         if not tickers:
             self._on_prices_ready({})
@@ -1061,20 +1402,28 @@ class PaperTradingTab(QWidget):
         for p in self._positions:
             row = self.positions_table.rowCount()
             self.positions_table.insertRow(row)
-            self.positions_table.setItem(row, 0, QTableWidgetItem(p.ticker))
-            self.positions_table.setItem(row, 1, QTableWidgetItem(f"{p.shares:.4f}"))
-            self.positions_table.setItem(row, 2, QTableWidgetItem(f"${p.avg_cost:,.4f}"))
+            pos_ticker_item = QTableWidgetItem(p.ticker)
+            apply_ticker_tooltip(pos_ticker_item, p.ticker)
+            self.positions_table.setItem(row, 0, pos_ticker_item)
+            self.positions_table.setItem(row, 1, QTableWidgetItem(self._format_shares(p.shares)))
+            # Original entry price (fill_price of the first BUY that opened
+            # this position). Falls back to "—" if we can't recover it.
+            entry_px = self._entry_prices.get(p.ticker)
+            entry_txt = f"${entry_px:,.4f}" if entry_px is not None else "—"
+            self.positions_table.setItem(row, 2, QTableWidgetItem(entry_txt))
+            # Running VWAP (avg_cost) — same as entry for single-fill positions.
+            self.positions_table.setItem(row, 3, QTableWidgetItem(f"${p.avg_cost:,.4f}"))
             px = self._prices.get(p.ticker)
             price_txt = f"${px:,.2f}" if px is not None else "—"
-            self.positions_table.setItem(row, 3, QTableWidgetItem(price_txt))
+            self.positions_table.setItem(row, 4, QTableWidgetItem(price_txt))
             mv = (px * p.shares) if px is not None else p.shares * p.avg_cost
-            self.positions_table.setItem(row, 4, QTableWidgetItem(f"${mv:,.2f}"))
+            self.positions_table.setItem(row, 5, QTableWidgetItem(f"${mv:,.2f}"))
             cost = p.shares * p.avg_cost
             pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
             pnl_item = QTableWidgetItem(f"{pnl_pct:+.2f}%")
             color = PALETTE["accent"] if pnl_pct >= 0 else PALETTE["red"]
             pnl_item.setForeground(QColor(color))
-            self.positions_table.setItem(row, 5, pnl_item)
+            self.positions_table.setItem(row, 6, pnl_item)
         self._positions_header.setText(f"· {len(self._positions)}")
 
     def _refresh_kpis(self):
@@ -1119,3 +1468,5 @@ class PaperTradingTab(QWidget):
     def on_scan_failed(self, account_id: int, error: str):
         if int(account_id) == int(self._current_account_id or -1):
             self._reset_scan_button()
+
+

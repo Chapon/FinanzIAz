@@ -11,6 +11,7 @@ from database.models import get_session, Alert
 from alerts.alert_manager import AlertManager
 from ui.dialogs import AddAlertDialog
 from ui.widgets import SectionHeader, HSeparator
+from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 
 
 class AlertsTab(QWidget):
@@ -47,6 +48,8 @@ class AlertsTab(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        # Tooltip on hover over the Ticker column (col 0)
+        install_ticker_tooltips(self.table, 0)
         root.addWidget(self.table)
 
         bottom = QHBoxLayout()
@@ -89,7 +92,9 @@ class AlertsTab(QWidget):
                 item.setTextAlignment(align)
                 return item
 
-            self.table.setItem(row, 0, cell(alert.ticker))
+            ticker_item = cell(alert.ticker)
+            apply_ticker_tooltip(ticker_item, alert.ticker)
+            self.table.setItem(row, 0, ticker_item)
 
             type_text = "⬆ Por encima" if alert.alert_type == "ABOVE" else "⬇ Por debajo"
             self.table.setItem(row, 1, cell(type_text))
