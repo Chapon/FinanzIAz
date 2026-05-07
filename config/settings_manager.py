@@ -1,79 +1,194 @@
 """
 Persistent app settings backed by ~/.finanzias/settings.json.
 Import anywhere with: from config.settings_manager import settings
+
+Schema validation
+-----------------
+Every key has a ``SettingSpec`` describing its expected type, optional value
+range / allowed list, and short doc. ``load()`` validates each key against
+its spec and silently falls back to the default when a value fails (typo'd
+JSON, hand-edits, schema migrations…). ``set()`` validates writes too —
+invalid values are rejected with a logged warning and the previous value is
+kept, so the app never crashes on bad config.
 """
+from __future__ import annotations
+
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, Optional
 
 # Use plain ``logging`` instead of get_logger() to avoid an import cycle:
 # logging_config imports from this module to read user log-level overrides.
 _log = logging.getLogger(__name__)
 
-# ── Defaults ─────────────────────────────────────────────────────────────────
-DEFAULTS: dict = {
+
+# ── Schema spec ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class SettingSpec:
+    """
+    Schema entry for a single settings key.
+
+    type         — expected Python type (or tuple of types).
+    default      — value used when missing / invalid.
+    choices      — optional iterable of allowed values; if set, value must be in it.
+    min          — optional inclusive lower bound for numeric values.
+    max          — optional inclusive upper bound for numeric values.
+    validator    — optional callable returning True iff the value is acceptable.
+    doc          — short human description.
+    """
+    type: Any
+    default: Any
+    choices: Optional[tuple] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    validator: Optional[Callable[[Any], bool]] = None
+    doc: str = ""
+
+
+def _is_hhmm(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
+        return False
+    try:
+        h = int(value[:2]); m = int(value[3:])
+    except ValueError:
+        return False
+    return 0 <= h <= 23 and 0 <= m <= 59
+
+
+# ── Schema (single source of truth — defaults derived from this) ─────────────
+
+SCHEMA: dict[str, SettingSpec] = {
     # General
-    "notif":        True,   # show notifications when alerts fire
-    "auto_refresh": True,   # refresh portfolio prices every 60 s
-    "default_home": True,   # open Home tab on startup (False → Portfolio)
-    "confirm_sell": True,   # show extra confirmation before selling
+    "notif":        SettingSpec(bool, True,  doc="Show notifications when alerts fire"),
+    "auto_refresh": SettingSpec(bool, True,  doc="Refresh portfolio prices every 60 s"),
+    "default_home": SettingSpec(bool, True,  doc="Open Home tab on startup (False → Portfolio)"),
+    "confirm_sell": SettingSpec(bool, True,  doc="Show extra confirmation before selling"),
 
     # Market data
-    "cache":        True,   # use 5-min price cache (disable for real-time)
-    "pre_market":   False,  # show pre/post-market label in status bar
-    "perf_log":     True,   # save P&L history (future feature)
+    "cache":        SettingSpec(bool, True,  doc="Use 5-min price cache (disable for real-time)"),
+    "pre_market":   SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
+    "perf_log":     SettingSpec(bool, True,  doc="Save P&L history"),
 
     # Technical analysis
-    "bb":           True,   # show Bollinger Bands on chart
-    "sma_cross":    True,   # include Golden/Death Cross signal in analysis
-    "rsi_alerts":   False,  # scan portfolio for extreme RSI on toggle-on
+    "bb":           SettingSpec(bool, True,  doc="Show Bollinger Bands on chart"),
+    "sma_cross":    SettingSpec(bool, True,  doc="Include Golden/Death Cross signal in analysis"),
+    "rsi_alerts":   SettingSpec(bool, False, doc="Scan portfolio for extreme RSI on toggle-on"),
 
     # Reports
-    "tx_history":   True,   # include transaction history in reports
-    "pdf_dark":     True,   # use dark theme in PDF reports
+    "tx_history":   SettingSpec(bool, True,  doc="Include transaction history in reports"),
+    "pdf_dark":     SettingSpec(bool, True,  doc="Use dark theme in PDF reports"),
 
     # Paper trading scheduler
-    "paper_scheduler_enabled":     True,   # master switch for the scheduler
-    "paper_scan_interval_minutes": 15,     # background QTimer interval
-    "paper_daily_scan_enabled":    True,   # cron-style end-of-day scan
-    "paper_daily_scan_time_et":    "16:05",# HH:MM in US/Eastern (~5 min after NYSE close)
-    "paper_scan_on_startup":       True,   # scan all active accounts at app launch
-    "paper_market_hours_only":     True,   # interval ticks skip outside RTH
+    "paper_scheduler_enabled":     SettingSpec(bool, True,  doc="Master switch for the scheduler"),
+    "paper_scan_interval_minutes": SettingSpec(int, 15, min=1, max=1440,
+                                               doc="Background QTimer interval (minutes)"),
+    "paper_daily_scan_enabled":    SettingSpec(bool, True,  doc="Cron-style end-of-day scan"),
+    "paper_daily_scan_time_et":    SettingSpec(str, "16:05", validator=_is_hhmm,
+                                               doc="HH:MM in US/Eastern"),
+    "paper_scan_on_startup":       SettingSpec(bool, True,  doc="Scan all active accounts at app launch"),
+    "paper_market_hours_only":     SettingSpec(bool, True,  doc="Interval ticks skip outside RTH"),
 
     # Paper trading guardrails (lite-pro execution gates)
-    "paper_enforce_market_hours":  True,   # engine refuses to fill when market is closed
-    "paper_min_holding_minutes":   60,     # cannot SELL a position opened within last N min
-    "paper_anti_flap_minutes":     30,     # cannot BUY a ticker we filled-SELL on within last N min
-    "paper_min_trade_dollars":     50.0,   # skip BUYs whose target_dollars is below this notional
+    "paper_enforce_market_hours":  SettingSpec(bool, True,
+                                               doc="Engine refuses to fill when market is closed"),
+    "paper_min_holding_minutes":   SettingSpec(int, 60, min=0, max=10_080,
+                                               doc="Cannot SELL a position opened within last N min"),
+    "paper_anti_flap_minutes":     SettingSpec(int, 30, min=0, max=10_080,
+                                               doc="Cannot BUY a ticker we filled-SELL on within last N min"),
+    "paper_min_trade_dollars":     SettingSpec((int, float), 50.0, min=0.0,
+                                               doc="Skip BUYs whose target_dollars is below this"),
 
     # Paper trading analysis tuning
-    "paper_history_period":        "2y",   # ventana histórica que el scanner pasa a analyze() / XGBoost
-                                           # valores aceptados: "1y", "2y", "5y", "10y"
+    "paper_history_period":        SettingSpec(str, "2y",
+                                               choices=("6mo", "1y", "2y", "5y", "10y"),
+                                               doc="Window the scanner passes to analyze()/XGBoost"),
+
+    # Logging overrides (free-form: dict[str, str])
+    "logging_levels":              SettingSpec(dict, {},
+                                               doc="Per-module logging overrides {name: LEVEL}"),
 }
 
+# DEFAULTS dict mirrors SCHEMA — kept for backward compatibility with code
+# that imported it directly (e.g. ``from config.settings_manager import DEFAULTS``).
+DEFAULTS: dict[str, Any] = {key: spec.default for key, spec in SCHEMA.items()}
+
 _CONFIG_PATH = Path.home() / ".finanzias" / "settings.json"
+
+
+def _validate_value(key: str, value: Any) -> tuple[bool, str]:
+    """
+    Validate ``value`` against ``SCHEMA[key]``. Returns (is_valid, reason).
+    Unknown keys are accepted (forward-compat for hand-added settings).
+    """
+    spec = SCHEMA.get(key)
+    if spec is None:
+        return True, ""
+
+    # bool is a subclass of int — guard against True being accepted where int expected
+    if spec.type is int and isinstance(value, bool):
+        return False, "expected int, got bool"
+    if spec.type is bool and not isinstance(value, bool):
+        return False, "expected bool"
+
+    if not isinstance(value, spec.type):
+        return False, f"expected {spec.type}, got {type(value).__name__}"
+
+    if spec.choices is not None and value not in spec.choices:
+        return False, f"value {value!r} not in choices {spec.choices}"
+
+    if spec.min is not None and value < spec.min:
+        return False, f"value {value} below min {spec.min}"
+    if spec.max is not None and value > spec.max:
+        return False, f"value {value} above max {spec.max}"
+
+    if spec.validator is not None and not spec.validator(value):
+        return False, "custom validator rejected the value"
+
+    return True, ""
 
 
 class _SettingsManager:
     """Singleton-like settings manager. Access via module-level `settings`."""
 
-    def __init__(self):
-        self._data: dict = {}
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
         self.load()
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def load(self) -> dict:
+        """
+        Read and validate ``settings.json`` against ``SCHEMA``. Invalid values
+        and unparseable files fall back to defaults; the app never crashes on
+        bad config. Triggers a re-save when invalid values were found, so the
+        bad data gets pruned from disk on startup.
+        """
+        validated: dict[str, Any] = dict(DEFAULTS)
+        had_invalid = False
         try:
             if _CONFIG_PATH.exists():
                 with open(_CONFIG_PATH, encoding="utf-8") as f:
                     stored = json.load(f)
-                self._data = {**DEFAULTS, **stored}
-            else:
-                self._data = dict(DEFAULTS)
+                if not isinstance(stored, dict):
+                    raise ValueError(f"settings.json root is {type(stored).__name__}, expected dict")
+
+                for key, value in stored.items():
+                    ok, reason = _validate_value(key, value)
+                    if ok:
+                        validated[key] = value
+                    else:
+                        had_invalid = True
+                        _log.warning("settings: discarding %r=%r — %s", key, value, reason)
         except Exception:
             _log.exception("Settings load failed; falling back to defaults")
-            self._data = dict(DEFAULTS)
+            had_invalid = True
+
+        self._data = validated
+        if had_invalid:
+            self.save()
         return dict(self._data)
 
     def save(self) -> None:
@@ -86,12 +201,21 @@ class _SettingsManager:
 
     # ── Access ────────────────────────────────────────────────────────────────
 
-    def get(self, key: str, fallback=None):
+    def get(self, key: str, fallback: Any = None) -> Any:
         return self._data.get(key, DEFAULTS.get(key, fallback))
 
-    def set(self, key: str, value) -> None:
+    def set(self, key: str, value: Any) -> bool:
+        """
+        Set a setting with validation. Returns True on success, False on
+        invalid value (in which case the existing value is preserved).
+        """
+        ok, reason = _validate_value(key, value)
+        if not ok:
+            _log.warning("settings.set(%r, %r) rejected: %s", key, value, reason)
+            return False
         self._data[key] = value
         self.save()
+        return True
 
     def reset(self) -> dict:
         self._data = dict(DEFAULTS)
@@ -102,10 +226,13 @@ class _SettingsManager:
         return dict(self._data)
 
     # Allow dict-style access
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         return self.get(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any) -> None:
+        # Dict-style write keeps backward compatibility — invalid values are
+        # silently dropped (with a log warning) rather than raising, so legacy
+        # call-sites never break.
         self.set(key, value)
 
 

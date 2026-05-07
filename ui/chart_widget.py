@@ -6,6 +6,21 @@ Hover support:
   - Emits hover_data(dict) with per-day indicator values while mouse is over any subplot.
   - Emits hover_data(None) when mouse leaves the figure.
   - Draws a vertical crosshair across all 3 subplots on hover.
+
+Memory management
+-----------------
+- Uses a private ``Figure`` instance (NOT ``plt.figure(...)``) so pyplot's
+  global figure registry never grows when the widget is recreated. This is
+  the supported pattern for matplotlib-in-Qt; calling ``plt.figure``/
+  ``plt.subplots`` instead would slowly leak figures every time a tab
+  rebuilds itself.
+- ``plot_*`` methods always call ``figure.clear()`` *before* re-plotting and
+  reset every reference list (``_vlines``, ``_axes``, ``_hover_data``,
+  ``_date_nums``) so previously drawn artists become unreachable and can
+  be garbage-collected.
+- ``cleanup()`` disconnects the mpl mouse handlers and detaches the canvas
+  from the layout — call this from the parent widget's ``closeEvent`` /
+  destructor when you're sure the chart will not be redrawn.
 """
 import math
 import matplotlib
@@ -62,17 +77,24 @@ class ChartWidget(QWidget):
         self._date_nums: np.ndarray | None = None  # matplotlib float dates for lookup
         self._axes: list = []           # [ax_price, ax_rsi, ax_macd]
 
-        # Connect matplotlib mouse events once (persists across replots)
-        self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
-        self.canvas.mpl_connect('figure_leave_event', self._on_figure_leave)
+        # Connect matplotlib mouse events once (persists across replots).
+        # Track the connection IDs so we can disconnect them in ``cleanup()``.
+        self._cid_motion = self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
+        self._cid_leave  = self.canvas.mpl_connect('figure_leave_event',  self._on_figure_leave)
 
     # ── Main plot ──────────────────────────────────────────────────────────────
 
     def plot_price_with_indicators(self, ticker: str, df: pd.DataFrame, show_bb: bool = True):
         """Plot price line + Bollinger Bands + SMA overlays + RSI + MACD panels."""
+        # Drop references to the *previous* plot before drawing the new one,
+        # so the old axes/Series can be garbage-collected (prevents the slow
+        # memory growth observed when switching tickers repeatedly).
         self.figure.clear()
         self._vlines = []
         self._has_crosshair = False
+        self._hover_data = None
+        self._date_nums = None
+        self._axes = []
 
         # Layout: price chart (3 parts) + RSI (1 part) + MACD (1 part)
         gs = self.figure.add_gridspec(3, 1, height_ratios=[3, 1, 1], hspace=0.08)
@@ -177,6 +199,9 @@ class ChartWidget(QWidget):
         """Plot a simple portfolio value over time (no hover crosshair)."""
         self.figure.clear()
         self._hover_data = None
+        self._date_nums = None
+        self._vlines = []
+        self._has_crosshair = False
         self._axes = []
         ax = self.figure.add_subplot(111)
         _apply_style(ax)
@@ -190,10 +215,37 @@ class ChartWidget(QWidget):
         self.canvas.draw()
 
     def clear(self):
+        """Clear the figure and drop indicator-Series references (releases memory)."""
         self.figure.clear()
         self._hover_data = None
+        self._date_nums = None
+        self._vlines = []
         self._axes = []
-        self.canvas.draw()
+        self._has_crosshair = False
+        self.canvas.draw_idle()
+
+    def cleanup(self) -> None:
+        """
+        Detach mpl event handlers and clear all data references.
+
+        Call this from the parent widget's ``closeEvent`` (or when removing
+        the chart from the layout) so the canvas + figure can be garbage-
+        collected promptly. Idempotent.
+        """
+        try:
+            if self._cid_motion is not None:
+                self.canvas.mpl_disconnect(self._cid_motion)
+                self._cid_motion = None
+            if self._cid_leave is not None:
+                self.canvas.mpl_disconnect(self._cid_leave)
+                self._cid_leave = None
+        except Exception:
+            pass
+        self.clear()
+
+    def closeEvent(self, event):  # noqa: N802 — Qt naming convention
+        self.cleanup()
+        super().closeEvent(event)
 
     # ── Hover / crosshair ──────────────────────────────────────────────────────
 

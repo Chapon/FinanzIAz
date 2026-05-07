@@ -137,6 +137,11 @@ class PaperScheduler(QObject):
         self._last_daily_run: Optional[date] = None
         self._started: bool = False
 
+        # Heartbeat: per-account timestamps of the most recent scan so the
+        # UI / status bar can flag accounts that haven't been scanned in a
+        # suspiciously long time (scheduler stalled or worker thread died).
+        self._last_scan_at: dict[int, datetime] = {}
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> None:
@@ -236,17 +241,51 @@ class PaperScheduler(QObject):
         if existing is not None and existing.isRunning():
             return   # previous scan for this account still in flight
         worker = PaperScanWorker(account_id, parent=self)
-        worker.scan_completed.connect(self.scan_completed.emit)
+        worker.scan_completed.connect(self._on_scan_completed)
         worker.scan_failed.connect(self.scan_failed.emit)
         worker.finished.connect(lambda aid=account_id: self._reap_worker(aid))
         self._workers[account_id] = worker
         self.scan_started.emit(account_id)
         worker.start()
 
+    def _on_scan_completed(self, result) -> None:
+        """Stamp heartbeat then forward the result to listeners."""
+        try:
+            aid = int(getattr(result, "account_id", 0)) or 0
+            if aid:
+                self._last_scan_at[aid] = datetime.utcnow()
+        except Exception:
+            pass
+        self.scan_completed.emit(result)
+
     def _reap_worker(self, account_id: int) -> None:
         w = self._workers.pop(account_id, None)
         if w is not None:
             w.deleteLater()
+
+    # ── Status / health ───────────────────────────────────────────────────────
+
+    def status(self) -> dict:
+        """
+        Return a snapshot suitable for the UI status bar / debugging:
+        active workers, last-scan timestamps, and stale accounts (no scan
+        in over 2× the configured interval).
+        """
+        now = datetime.utcnow()
+        interval_min = max(1, int(settings.get("paper_scan_interval_minutes", 15)))
+        stale_threshold = 2 * interval_min * 60   # seconds
+
+        stale = []
+        for aid, ts in self._last_scan_at.items():
+            if (now - ts).total_seconds() > stale_threshold:
+                stale.append(aid)
+        return {
+            "started":        self._started,
+            "active_workers": list(self._workers.keys()),
+            "last_scans":     {a: ts.isoformat() for a, ts in self._last_scan_at.items()},
+            "stale_accounts": stale,
+            "interval_min":   interval_min,
+        }
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

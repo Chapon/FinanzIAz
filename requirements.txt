@@ -1,13 +1,33 @@
-PyQt6>=6.6.0
-yfinance>=0.2.36
-SQLAlchemy>=2.0.0
-pandas>=2.1.0
+# Runtime dependencies for FinanzIAs.
+# Use pinned versions in requirements.lock for reproducible installs.
+# Run scripts/audit_dependencies.py periodically to check for CVEs.
+
+# UI
+PyQt6>=6.6.0,<7.0
+
+# Market data
+yfinance>=0.2.40           # frequent releases — Yahoo Finance API drifts
+requests>=2.32.0           # was 2.31.0; bumped for CVE-2024-35195 (cert verify)
+
+# Database
+SQLAlchemy>=2.0.0,<3.0
+
+# Data wrangling
+# IMPORTANT: pandas-ta 0.3.14b is the last release (2021) and is NOT
+# compatible with numpy 2.x. Pin numpy<2 until pandas-ta has a maintained
+# successor or we replace it (TA-Lib / vectorbt / native impl).
+pandas>=2.1.0,<3.0
 pandas-ta>=0.3.14b
-matplotlib>=3.8.0
+numpy>=1.26.0,<2.0
+
+# Charts
+matplotlib>=3.8.0,<4.0
 mplfinance>=0.12.10b0
+
+# Reports
 reportlab>=4.0.0
 openpyxl>=3.1.0
-numpy>=1.26.0
-requests>=2.31.0
+
+# Quant / ML
 hmmlearn>=0.3.0
 arch>=6.0

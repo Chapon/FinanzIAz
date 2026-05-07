@@ -48,6 +48,14 @@ reports_output/
 exports/
 *.tmp
 
+# Pytest / coverage / type checking
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
 # OS
 Thumbs.db
 desktop.ini
@@ -57,3 +65,8 @@ desktop.ini
 
 # Data temp files
 data/.refresh
+
+# Internal docs generated during analysis sessions (kept locally only)
+ANALISIS_FINANZIAS.md
+HALLAZGOS_POR_ARCHIVO.md
+EJEMPLOS_REFACTOR.md

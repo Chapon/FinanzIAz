@@ -15,7 +15,11 @@ from ui.dialogs import AddPositionDialog, SellPositionDialog, AddPortfolioDialog
 from ui.import_dialog import ImportDialog
 from ui.styles import PALETTE, SIGNAL_COLORS
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.workers import BaseWorker
+from config.logging_config import get_logger
 from config.settings_manager import settings
+
+log = get_logger(__name__)
 
 # Spanish labels for Yahoo Finance 5-level system (mirrors SignalBadge._LABELS)
 _SIGNAL_LABELS = {
@@ -27,18 +31,21 @@ _SIGNAL_LABELS = {
 }
 
 
-class PriceWorker(QThread):
+class PriceWorker(BaseWorker):
     prices_ready = pyqtSignal(dict)
 
     def __init__(self, tickers: list):
         super().__init__()
         self.tickers = tickers
 
-    def run(self):
-        self.prices_ready.emit(get_bulk_prices(self.tickers))
+    def do_work(self) -> dict:
+        return get_bulk_prices(self.tickers)
+
+    def on_success(self, result: dict) -> None:
+        self.prices_ready.emit(result)
 
 
-class DividendWorker(QThread):
+class DividendWorker(BaseWorker):
     """Background thread to fetch cumulative dividends per position."""
     dividends_ready = pyqtSignal(dict)   # {ticker: total_div_per_share}
 
@@ -46,11 +53,14 @@ class DividendWorker(QThread):
         super().__init__()
         self.tickers_since = tickers_since  # {ticker: purchase_date}
 
-    def run(self):
-        self.dividends_ready.emit(get_bulk_dividends(self.tickers_since))
+    def do_work(self) -> dict:
+        return get_bulk_dividends(self.tickers_since)
+
+    def on_success(self, result: dict) -> None:
+        self.dividends_ready.emit(result)
 
 
-class SignalWorker(QThread):
+class SignalWorker(BaseWorker):
     """
     Background worker: fetches 1 year of historical data for each ticker
     and returns the Yahoo Finance 5-level signal for every one.
@@ -62,7 +72,7 @@ class SignalWorker(QThread):
         super().__init__()
         self.tickers = tickers
 
-    def run(self):
+    def do_work(self) -> dict:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from data.yahoo_finance import get_historical_data
         from analysis.technical import analyze
@@ -74,8 +84,8 @@ class SignalWorker(QThread):
             try:
                 df = get_historical_data(ticker, period="1y")
                 if df is None or len(df) < 50:
-                    print(f"[SignalWorker] {ticker}: datos insuficientes "
-                          f"({len(df) if df is not None else 0} filas)")
+                    log.debug("%s: insufficient data (%s rows)",
+                              ticker, len(df) if df is not None else 0)
                     return ticker, "Hold"
                 result = analyze(
                     ticker, df,
@@ -83,24 +93,31 @@ class SignalWorker(QThread):
                     enable_xgboost=False,   # skip ML in batch scan to stay fast
                 )
                 if result:
-                    print(f"[SignalWorker] {ticker}: {result.yahoo_level} "
-                          f"(buy={result.overall_signal}, strength={result.overall_strength}, "
-                          f"conf={result.confidence_score}%)")
+                    log.debug(
+                        "%s: %s (buy=%s strength=%s conf=%s%%)",
+                        ticker, result.yahoo_level,
+                        result.overall_signal, result.overall_strength,
+                        result.confidence_score,
+                    )
                     return ticker, result.yahoo_level
                 return ticker, "Hold"
-            except Exception as e:
-                print(f"[SignalWorker] {ticker}: error — {e}")
+            except Exception:
+                log.exception("Signal calc failed for %s", ticker)
                 return ticker, "Hold"
 
-        results = {}
+        results: dict = {}
+        if not self.tickers:
+            return results
         max_workers = min(4, len(self.tickers))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(_analyze_one, t): t for t in self.tickers}
             for future in as_completed(futures):
                 ticker, signal = future.result()
                 results[ticker] = signal
+        return results
 
-        self.signals_ready.emit(results)
+    def on_success(self, result: dict) -> None:
+        self.signals_ready.emit(result)
 
 
 class PortfolioTab(QWidget):

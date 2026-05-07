@@ -29,6 +29,15 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from config.logging_config import get_logger
+from config.constants import (
+    GARCH_MIN_ROWS,
+    GARCH_FORECAST_HORIZON as GARCH_FORECAST_H,
+    GARCH_VOL_EXPAND_RATIO   as VOL_EXPAND_RATIO,
+    GARCH_VOL_CONTRACT_RATIO as VOL_CONTRACT_RATIO,
+    GARCH_LOW_VOL_ANNUAL_PCT  as LOW_VOL_ANNUAL_PCT,
+    GARCH_HIGH_VOL_ANNUAL_PCT as HIGH_VOL_ANNUAL_PCT,
+    TRADING_DAYS_PER_YEAR,
+)
 
 log = get_logger(__name__)
 
@@ -38,16 +47,6 @@ try:
     _ARCH_OK = True
 except ImportError:
     _ARCH_OK = False
-
-
-# ── Config ───────────────────────────────────────────────────────────────────
-
-GARCH_MIN_ROWS      = 120    # rows of clean returns required to fit GARCH
-GARCH_FORECAST_H    = 5      # default forecast horizon (trading days)
-VOL_EXPAND_RATIO    = 1.15   # forecast / current >= this → EXPANSION
-VOL_CONTRACT_RATIO  = 0.85   # forecast / current <= this → CONTRACTION
-LOW_VOL_ANNUAL_PCT  = 18.0   # below this is considered a true squeeze setup
-HIGH_VOL_ANNUAL_PCT = 40.0   # above this is considered elevated risk
 
 
 # ── GarchForecast dataclass ──────────────────────────────────────────────────
@@ -109,7 +108,7 @@ def _ewma_annual_vol(df: pd.DataFrame) -> float:
     returns = close.pct_change().dropna()
     if len(returns) < 5:
         return 0.0
-    ewma = float(returns.ewm(span=20).std().iloc[-1]) * np.sqrt(252) * 100
+    ewma = float(returns.ewm(span=20).std().iloc[-1]) * np.sqrt(TRADING_DAYS_PER_YEAR) * 100
     return round(ewma if not np.isnan(ewma) else 0.0, 1)
 
 
@@ -150,13 +149,34 @@ def fit_garch_forecast(
         )
         res = model.fit(disp="off", show_warning=False)
 
+        # ── Convergence guard ───────────────────────────────────────────────
+        # ``arch`` exposes ``convergence_flag``: 0 means the optimiser
+        # converged successfully. Anything else (1=max-iters, 2=line-search
+        # failure, etc.) means the parameter estimates are unreliable and we
+        # must NOT propagate them to consumers — return None instead.
+        conv_flag = getattr(res, "convergence_flag", None)
+        if conv_flag is not None and conv_flag != 0:
+            log.info(
+                "GARCH did not converge (flag=%s, n=%d) — falling back to EWMA.",
+                conv_flag, len(returns),
+            )
+            return None
+
         # Conditional σ series is in %-per-day (matches the input scale)
         cond_vol_daily = float(res.conditional_volatility.iloc[-1])
+        if not np.isfinite(cond_vol_daily) or cond_vol_daily <= 0:
+            log.info("GARCH conditional vol non-finite/non-positive (%s)", cond_vol_daily)
+            return None
 
         # h-step-ahead variance forecast; take the mean across the horizon
         fc = res.forecast(horizon=horizon, reindex=False)
         var_path = np.asarray(fc.variance.iloc[-1].values, dtype=float)
+        if var_path.size == 0 or not np.all(np.isfinite(var_path)) or np.any(var_path <= 0):
+            log.info("GARCH forecast variance invalid: %s", var_path.tolist())
+            return None
         forecast_vol_daily = float(np.sqrt(np.mean(var_path)))
+        if not np.isfinite(forecast_vol_daily) or forecast_vol_daily <= 0:
+            return None
 
         # Parameter extraction (keys can vary slightly across arch versions)
         params = res.params
@@ -165,14 +185,29 @@ def fit_garch_forecast(
         beta  = float(params.get("beta[1]",  params.get("beta",  0.0)))
         persistence = alpha + beta
 
+        # Sanity-check parameters: a usable GARCH(1,1) needs ω>0, α≥0, β≥0,
+        # and α+β<1 for stationarity. Anything else means the optimiser
+        # parked on a corner of the parameter space and the forecast is junk.
+        if not (
+            np.isfinite(omega) and omega > 0
+            and np.isfinite(alpha) and alpha >= 0
+            and np.isfinite(beta)  and beta  >= 0
+            and persistence < 1.0
+        ):
+            log.info(
+                "GARCH parameters out of valid region (ω=%.4g α=%.4g β=%.4g α+β=%.4g)",
+                omega, alpha, beta, persistence,
+            )
+            return None
+
         # Unconditional σ (daily) if the model is stationary (α+β<1)
         if persistence < 0.999 and omega > 0:
             long_run_daily = float(np.sqrt(omega / (1.0 - persistence)))
         else:
             long_run_daily = cond_vol_daily
 
-        # Annualise (daily %-σ → annual %) by √252
-        annualise = lambda v: round(float(v) * np.sqrt(252), 1)
+        # Annualise (daily %-σ → annual %) by √(trading days/year)
+        annualise = lambda v: round(float(v) * np.sqrt(TRADING_DAYS_PER_YEAR), 1)
         current_annual  = annualise(cond_vol_daily)
         forecast_annual = annualise(forecast_vol_daily)
         long_run_annual = annualise(long_run_daily)

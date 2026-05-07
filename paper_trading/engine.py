@@ -574,6 +574,12 @@ def _stamp_order_filled(
         session.add(order)
         session.flush()
     else:
+        # Idempotency guard: don't double-fill an already-filled order.
+        # Without this, a retry of approve_order on a stale view of the DB
+        # could double-spend cash. The caller already filters by
+        # status == 'pending', but we belt-and-braces here too.
+        if reuse_order.status == "filled":
+            return reuse_order
         reuse_order.status          = "filled"
         reuse_order.filled_at       = now
         reuse_order.fill_price      = float(fill_price)
@@ -582,3 +588,45 @@ def _stamp_order_filled(
         reuse_order.slippage_cost   = float(slippage_cost)
         order = reuse_order
     return order
+
+
+# ── Recovery helpers ──────────────────────────────────────────────────────────
+
+def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) -> int:
+    """
+    Sweep stale pending orders for an account.
+
+    Pending orders that were generated before the most recent app crash
+    can pile up indefinitely if the user never visits the Paper Trading
+    tab again. This helper marks anything older than
+    ``expire_pending_after_hours`` as ``expired`` so the engine starts
+    each session with a clean slate.
+
+    Returns the number of orders expired.
+    """
+    from database.models import session_scope
+
+    cutoff = datetime.utcnow() - timedelta(hours=max(0, int(expire_pending_after_hours)))
+    expired = 0
+    try:
+        with session_scope() as session:
+            stale = (session.query(PaperOrder)
+                     .filter(PaperOrder.account_id == account_id)
+                     .filter(PaperOrder.status     == "pending")
+                     .filter(PaperOrder.created_at <= cutoff)
+                     .all())
+            for o in stale:
+                o.status     = "expired"
+                o.decided_at = datetime.utcnow()
+                o.notes      = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()
+                expired += 1
+        if expired:
+            from config.logging_config import get_logger
+            get_logger(__name__).info(
+                "reconcile_account(%d): expired %d stale pending orders.",
+                account_id, expired,
+            )
+    except Exception:
+        from config.logging_config import get_logger
+        get_logger(__name__).exception("reconcile_account(%d) failed", account_id)
+    return expired

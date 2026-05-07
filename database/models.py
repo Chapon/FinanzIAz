@@ -21,16 +21,34 @@ from sqlalchemy import (
     create_engine, Column, Integer, Float, String,
     DateTime, Boolean, ForeignKey, Text, Index
 )
-from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker, Session as SASession
+from sqlalchemy.orm import (
+    DeclarativeBase, relationship, sessionmaker, scoped_session,
+    Session as SASession,
+)
 import os
 from typing import Iterator
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db")
-ENGINE = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+# ``check_same_thread=False`` permits a single connection to be reused across
+# threads — safe for SQLite as long as we serialise writes (which SQLAlchemy's
+# default transactional flow does). Required by the paper-trading scheduler
+# that runs scans on QThreads.
+ENGINE = create_engine(
+    f"sqlite:///{DB_PATH}",
+    echo=False,
+    connect_args={"check_same_thread": False},
+)
 
 # Single sessionmaker bound to the engine. Re-using one factory is more
 # efficient than re-building it on every ``get_session()`` call.
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, expire_on_commit=False)
+
+# Thread-local session registry. Useful in long-running background jobs
+# (paper-trading scheduler, alert checker) that want a single session per
+# thread instead of opening one per call. Always remember to call
+# ``ScopedSession.remove()`` when the thread exits or after a logical unit
+# of work, otherwise the connection stays bound.
+ScopedSession = scoped_session(SessionLocal)
 
 
 class Base(DeclarativeBase):

@@ -20,6 +20,12 @@ import pandas as pd
 from typing import Optional
 
 from config.logging_config import get_logger
+from config.constants import (
+    RSI_OVERSOLD_EXTREME, RSI_OVERSOLD, RSI_LOW,
+    RSI_HIGH, RSI_OVERBOUGHT, RSI_OVERBOUGHT_EXTREME,
+    RSI_TREND_LOOKBACK_BARS, RSI_TREND_DELTA_THRESHOLD,
+    VOLUME_HIGH_RATIO, VOLUME_LOW_RATIO,
+)
 
 log = get_logger(__name__)
 from dataclasses import dataclass, field
@@ -171,31 +177,39 @@ def _rsi_signal(rsi_series: pd.Series) -> TechnicalSignal:
     Includes 5-day trend in the description.
     """
     rsi_val  = float(rsi_series.iloc[-1])
-    rsi_prev = float(rsi_series.iloc[-6]) if len(rsi_series) >= 6 else rsi_val
+    lookback_idx = -(RSI_TREND_LOOKBACK_BARS + 1)
+    rsi_prev = (
+        float(rsi_series.iloc[lookback_idx])
+        if len(rsi_series) > RSI_TREND_LOOKBACK_BARS
+        else rsi_val
+    )
     trend    = rsi_val - rsi_prev
-    trend_txt = f", {'↑ subiendo' if trend > 3 else '↓ bajando' if trend < -3 else 'estable'}"
+    if   trend >  RSI_TREND_DELTA_THRESHOLD: trend_label = "↑ subiendo"
+    elif trend < -RSI_TREND_DELTA_THRESHOLD: trend_label = "↓ bajando"
+    else:                                    trend_label = "estable"
+    trend_txt = f", {trend_label}"
 
-    if rsi_val < 25:
+    if rsi_val < RSI_OVERSOLD_EXTREME:
         return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "STRONG",
             f"RSI {rsi_val:.1f} — sobreventa extrema{trend_txt}. Rebote técnico probable.")
-    elif rsi_val < 30:
+    elif rsi_val < RSI_OVERSOLD:
         return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "MODERATE",
             f"RSI {rsi_val:.1f} — sobreventa{trend_txt}. Posible rebote.")
-    elif rsi_val < 40:
+    elif rsi_val < RSI_LOW:
         return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "WEAK",
             f"RSI {rsi_val:.1f} — zona baja{trend_txt}. Acercándose a sobreventa.")
-    elif rsi_val > 75:
+    elif rsi_val > RSI_OVERBOUGHT_EXTREME:
         return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "STRONG",
             f"RSI {rsi_val:.1f} — sobrecompra extrema{trend_txt}. Corrección probable.")
-    elif rsi_val > 70:
+    elif rsi_val > RSI_OVERBOUGHT:
         return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "MODERATE",
             f"RSI {rsi_val:.1f} — sobrecompra{trend_txt}. Posible corrección.")
-    elif rsi_val > 60:
+    elif rsi_val > RSI_HIGH:
         return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "WEAK",
             f"RSI {rsi_val:.1f} — zona alta{trend_txt}. Acercándose a sobrecompra.")
     else:
         return TechnicalSignal("RSI", round(rsi_val, 2), "HOLD", "WEAK",
-            f"RSI {rsi_val:.1f} — zona neutral (40-60).")
+            f"RSI {rsi_val:.1f} — zona neutral ({int(RSI_LOW)}-{int(RSI_HIGH)}).")
 
 
 def _macd_signal(

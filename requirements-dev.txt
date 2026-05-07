@@ -1,0 +1,30 @@
+# Development tooling — NOT required to run the app, only for contributors.
+#
+# Install with:
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# Versions are minimums; pip will resolve the latest compatible builds.
+
+# Linting & formatting (ruff replaces flake8/isort/black for our purposes)
+ruff>=0.6.0
+
+# Static type checking
+mypy>=1.10
+types-requests
+types-openpyxl
+
+# Testing
+pytest>=7.4
+pytest-qt>=4.4         # Qt event-loop fixtures
+pytest-mock>=3.12
+pytest-cov>=4.1        # coverage reports
+freezegun>=1.4         # frozen clocks for scheduler tests
+
+# Pre-commit hooks
+pre-commit>=3.7
+
+# Database migrations
+alembic>=1.13
+
+# Security audit (optional but recommended)
+pip-audit>=2.7

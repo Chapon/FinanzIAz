@@ -26,6 +26,8 @@ Provides the following:
 """
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pandas as pd
 
@@ -41,6 +43,32 @@ try:
     _XGB_OK = True
 except ImportError:
     _XGB_OK = False
+
+
+# ── XGBoost training-result cache (in-memory only) ───────────────────────────
+# Keyed by a hash of (close-tail, feature-cols, sample-count). Bounded so
+# long-running sessions don't accumulate models indefinitely. Values are
+# tuples of (model, val_acc, train_acc).
+_XGB_CACHE: dict[str, tuple] = {}
+_XGB_CACHE_MAX = 64
+
+
+def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) -> str:
+    """Stable fingerprint for the training set + feature spec."""
+    if "Close" not in df.columns:
+        return ""
+    tail = df["Close"].tail(20).round(4).tolist()
+    payload = f"{tail}|{sorted(feature_cols)}|{n_samples}|{df.index[-1] if len(df) else ''}"
+    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    # LRU-ish eviction: clear when over capacity.
+    if len(_XGB_CACHE) > _XGB_CACHE_MAX:
+        _XGB_CACHE.clear()
+    return h
+
+
+def clear_ml_cache() -> None:
+    """Public helper to flush the cached XGBoost models (useful in tests)."""
+    _XGB_CACHE.clear()
 
 # ── Optional hmmlearn ─────────────────────────────────────────────────────────
 try:
@@ -237,7 +265,7 @@ def _hmm_observation_matrix(df: pd.DataFrame) -> Optional[np.ndarray]:
     return X.values.astype(np.float64)
 
 
-def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES):
+def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> Optional[object]:
     """
     Fit a Gaussian HMM and return (model, state_order), where state_order
     lists state indices sorted ascending by mean log-return.
@@ -409,7 +437,7 @@ def _build_labels(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.Ser
     return result
 
 
-def train_xgboost_signal(df: pd.DataFrame):
+def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
     """
     Train an XGBoost binary classifier on the ticker's historical data
     and return a TechnicalSignal with the predicted probability of a
@@ -461,25 +489,58 @@ def train_xgboost_signal(df: pd.DataFrame):
         X_tr, y_tr  = X_all[:split], y_all[:split]
         X_val, y_val = X_all[split:], y_all[split:]
 
-        model = xgb.XGBClassifier(
-            n_estimators=120,
-            max_depth=3,
-            learning_rate=0.05,
-            subsample=0.80,
-            colsample_bytree=0.75,
-            reg_alpha=0.10,
-            reg_lambda=1.00,
-            random_state=42,
-            eval_metric="logloss",
-            verbosity=0,
-        )
-        model.fit(X_tr, y_tr)
+        # Reuse a previously trained model if the input fingerprint matches.
+        # We hash the (close-tail, feature-shape, latest-date) tuple so that
+        # repeated UI refreshes during the same trading session don't retrain
+        # the model from scratch on identical data.
+        cache_key = _xgb_cache_key(df, valid_cols, len(combined))
+        cached = _XGB_CACHE.get(cache_key)
+        if cached is not None:
+            model, val_acc, train_acc = cached
+        else:
+            model = xgb.XGBClassifier(
+                n_estimators=120,
+                max_depth=3,
+                learning_rate=0.05,
+                subsample=0.80,
+                colsample_bytree=0.75,
+                reg_alpha=0.10,
+                reg_lambda=1.00,
+                random_state=42,
+                eval_metric="logloss",
+                verbosity=0,
+            )
+            model.fit(X_tr, y_tr)
 
-        # Validation accuracy on held-out recent data
-        val_acc = (
-            float((model.predict(X_val) == y_val).mean())
-            if len(X_val) > 0 else 0.50
-        )
+            # Train + validation accuracy. The gap between them is our most
+            # honest overfitting signal; we log it so users / tests can react.
+            train_acc = (
+                float((model.predict(X_tr) == y_tr).mean())
+                if len(X_tr) > 0 else 0.50
+            )
+            val_acc = (
+                float((model.predict(X_val) == y_val).mean())
+                if len(X_val) > 0 else 0.50
+            )
+            overfit_gap = train_acc - val_acc
+            if overfit_gap > 0.20:
+                log.info(
+                    "XGBoost: large train-val gap (%.0f%% vs %.0f%%); model may be overfitting.",
+                    train_acc * 100, val_acc * 100,
+                )
+
+            # Top-3 feature importance is useful to log when debugging weird
+            # signals (e.g. all weight on one volume feature).
+            try:
+                importances = sorted(
+                    zip(valid_cols, model.feature_importances_),
+                    key=lambda kv: kv[1], reverse=True,
+                )[:3]
+                log.debug("XGBoost top features: %s", importances)
+            except Exception:
+                pass
+
+            _XGB_CACHE[cache_key] = (model, val_acc, train_acc)
 
         # Predict probability of price going UP in the next 5 days
         prob_up = float(model.predict_proba(X_pred)[0][1])
@@ -524,7 +585,7 @@ def train_xgboost_signal(df: pd.DataFrame):
 
 # ── 2b. HMM signal ────────────────────────────────────────────────────────────
 
-def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON):
+def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> "Optional['TechnicalSignal']":
     """
     Fit a 3-state Gaussian HMM on price dynamics and return a TechnicalSignal
     based on the forecast `horizon`-day-ahead probability of being in the

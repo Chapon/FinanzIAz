@@ -12,6 +12,7 @@ from database.models import get_session, Portfolio, Position, Transaction
 from data.yahoo_finance import validate_ticker, get_company_info
 from alerts.alert_manager import AlertManager
 from config.settings_manager import settings
+from ui.validators import TickerValidator, is_valid_ticker
 from datetime import datetime
 
 
@@ -171,7 +172,13 @@ class AddPositionDialog(QDialog):
 
         self.ticker_edit = QLineEdit()
         self.ticker_edit.setPlaceholderText("Ej: AAPL, MSFT, GGAL.BA")
+        self.ticker_edit.setValidator(TickerValidator(self))   # restrict alphabet at input time
+        self.ticker_edit.setMaxLength(20)
         self.ticker_edit.textChanged.connect(self._on_ticker_changed)
+        # Auto-uppercase on commit so AAPL stays AAPL after user types "aapl".
+        self.ticker_edit.editingFinished.connect(
+            lambda: self.ticker_edit.setText(self.ticker_edit.text().strip().upper())
+        )
         form.addRow("Símbolo (ticker) *", self.ticker_edit)
 
         self.name_label = QLabel("—")
@@ -235,6 +242,18 @@ class AddPositionDialog(QDialog):
         ticker = self.ticker_edit.text().strip().upper()
         if not ticker:
             QMessageBox.warning(self, "Error", "Ingresá un ticker.")
+            return
+        if not is_valid_ticker(ticker):
+            QMessageBox.warning(
+                self, "Ticker inválido",
+                "El ticker solo puede contener letras, números, '.', '-' y '^' (1-20 caracteres).",
+            )
+            return
+        if self.qty_spin.value() <= 0:
+            QMessageBox.warning(self, "Error", "La cantidad debe ser mayor a 0.")
+            return
+        if self.price_spin.value() <= 0:
+            QMessageBox.warning(self, "Error", "El precio debe ser mayor a 0.")
             return
 
         self.status_label.setText("Validando ticker en Yahoo Finance...")

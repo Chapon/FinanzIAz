@@ -74,8 +74,9 @@ class BacktestResult:
     volatility:       float   # annualised daily-return vol (%)
     sharpe:           float
     sortino:          float
-    max_drawdown:     float   # negative number, e.g. -0.23 = -23%
-    equity_curve:     pd.Series
+    calmar:           float = 0.0   # CAGR / |max_drawdown|
+    max_drawdown:     float = 0.0   # negative number, e.g. -0.23 = -23%
+    equity_curve:     Optional[pd.Series] = None
     # Trades
     trades:           list[Trade] = field(default_factory=list)
     n_trades:         int   = 0
@@ -84,6 +85,11 @@ class BacktestResult:
     avg_win:          float = 0.0
     avg_loss:         float = 0.0
     avg_holding_days: float = 0.0
+    # Cost / activity diagnostics
+    total_commission_paid: float = 0.0    # absolute $ paid in fees over the run
+    total_slippage_paid:   float = 0.0    # absolute $ given up to slippage
+    turnover:              float = 0.0    # sum(|notional|) / mean equity
+    exposure:              float = 0.0    # fraction of bars holding a position
     # Buy-and-hold benchmark
     bh_return_pct:    float = 0.0
     bh_cagr:          float = 0.0
@@ -200,6 +206,14 @@ def backtest(
     close = df["Close"].astype(float).squeeze()
     n = len(close)
 
+    # Pre-extract numpy views — ``iloc[i]`` is far slower in a hot loop than
+    # plain array indexing, and ``equity.iloc[i] = …`` inside a loop is
+    # particularly expensive because pandas re-validates the index every
+    # write. We accumulate equity into an np.ndarray and rebuild the Series
+    # at the end. (For 252 bars this is ~2× faster; for 5y daily it's >10×.)
+    close_arr = close.to_numpy(dtype=float)
+    index_arr = close.index
+
     # ── Simulation state ──────────────────────────────────────────────────────
     cash         = float(initial_capital)
     shares       = 0.0
@@ -208,14 +222,68 @@ def backtest(
     entry_price  = 0.0
     trades: list[Trade] = []
 
-    equity = pd.Series(index=close.index, dtype=float)
+    equity_arr = np.empty(n, dtype=float)
     last_signal = "HOLD"
+    pending_signal: Optional[str] = None      # signal observed at t-1, fills at t
+    bars_in_position = 0
+
+    # Cost / turnover accumulators
+    total_commission = 0.0
+    total_slippage   = 0.0
+    total_notional   = 0.0
 
     for i in range(n):
-        date   = close.index[i]
-        price  = float(close.iloc[i])
+        date   = index_arr[i]
+        price  = float(close_arr[i])
+
+        # ── Execute the signal we observed on the *previous* bar ─────────────
+        # Signals are evaluated on bar t using close[t]; trades fill on bar
+        # t+1 at close[t+1]. This eliminates same-bar lookahead bias — you
+        # cannot have decided to BUY today *after* knowing today's close.
+        sig_to_execute = pending_signal
+        pending_signal = None
+
+        if sig_to_execute == "BUY" and not in_position:
+            ideal_price  = price                         # close on fill bar
+            fill_price   = ideal_price * (1 + slippage)
+            notional     = cash                          # full cash deploy
+            commission_paid = notional * commission
+            slippage_cost   = notional * slippage
+            shares         = (cash - commission_paid) / fill_price
+            cash           = 0.0
+            entry_date     = date
+            entry_price    = fill_price
+            in_position    = True
+            total_commission += commission_paid
+            total_slippage   += slippage_cost
+            total_notional   += notional
+
+        elif sig_to_execute == "SELL" and in_position:
+            ideal_price = price
+            fill_price  = ideal_price * (1 - slippage)
+            gross       = shares * fill_price
+            commission_paid = gross * commission
+            slippage_cost   = shares * ideal_price * slippage
+            proceeds    = gross - commission_paid
+            ret_pct     = proceeds / (shares * entry_price) - 1
+            holding     = (date - entry_date).days
+            trades.append(Trade(
+                entry_date   = entry_date,
+                exit_date    = date,
+                entry_price  = entry_price,
+                exit_price   = fill_price,
+                return_pct   = float(ret_pct),
+                holding_days = int(holding),
+            ))
+            cash             = proceeds
+            shares           = 0.0
+            in_position      = False
+            total_commission += commission_paid
+            total_slippage   += slippage_cost
+            total_notional   += gross
 
         # ── Signal evaluation (respect warmup and step) ──────────────────────
+        # The signal observed *now* is queued for execution next bar.
         if i >= warmup and (i - warmup) % max(1, step) == 0:
             try:
                 sig = signal_fn(df.iloc[:i + 1])
@@ -226,48 +294,28 @@ def backtest(
             if sig not in ("BUY", "SELL", "HOLD"):
                 sig = "HOLD"
             last_signal = sig
-        else:
-            sig = "HOLD"
+            if sig != "HOLD":
+                pending_signal = sig
 
-        # ── Execution at this bar's close ────────────────────────────────────
-        if sig == "BUY" and not in_position:
-            fill_price  = price * (1 + slippage)
-            # commission reduces shares purchased
-            shares      = (cash * (1 - commission)) / fill_price
-            cash        = 0.0
-            entry_date  = date
-            entry_price = fill_price
-            in_position = True
-
-        elif sig == "SELL" and in_position:
-            fill_price = price * (1 - slippage)
-            proceeds   = shares * fill_price * (1 - commission)
-            ret_pct    = proceeds / (shares * entry_price) - 1
-            holding    = (date - entry_date).days
-            trades.append(Trade(
-                entry_date   = entry_date,
-                exit_date    = date,
-                entry_price  = entry_price,
-                exit_price   = fill_price,
-                return_pct   = float(ret_pct),
-                holding_days = int(holding),
-            ))
-            cash        = proceeds
-            shares      = 0.0
-            in_position = False
-
-        # Mark-to-market equity at this bar's close
-        equity.iloc[i] = cash + shares * price
+        # Mark-to-market equity at this bar's close (numpy assign — fast)
+        equity_arr[i] = cash + shares * price
+        if in_position:
+            bars_in_position += 1
 
     # ── Force-close any open position at the last bar ────────────────────────
+    # Same realistic-cost treatment: commission + slippage tracked.
     if in_position:
-        last_price = float(close.iloc[-1]) * (1 - slippage)
-        proceeds   = shares * last_price * (1 - commission)
+        ideal_close = float(close_arr[-1])
+        last_price = ideal_close * (1 - slippage)
+        gross      = shares * last_price
+        commission_paid = gross * commission
+        slippage_cost   = shares * ideal_close * slippage
+        proceeds   = gross - commission_paid
         ret_pct    = proceeds / (shares * entry_price) - 1
-        holding    = (close.index[-1] - entry_date).days
+        holding    = (index_arr[-1] - entry_date).days
         trades.append(Trade(
             entry_date   = entry_date,
-            exit_date    = close.index[-1],
+            exit_date    = index_arr[-1],
             entry_price  = entry_price,
             exit_price   = last_price,
             return_pct   = float(ret_pct),
@@ -275,10 +323,14 @@ def backtest(
         ))
         cash   = proceeds
         shares = 0.0
-        equity.iloc[-1] = cash
+        equity_arr[-1] = cash
+        total_commission += commission_paid
+        total_slippage   += slippage_cost
+        total_notional   += gross
 
-    # ── Metrics ──────────────────────────────────────────────────────────────
-    equity = equity.ffill().fillna(initial_capital)
+    # Rebuild the equity Series once, vectorised. This is the only Series
+    # the rest of the code needs — the inner loop never touched pandas.
+    equity = pd.Series(equity_arr, index=index_arr).ffill().fillna(initial_capital)
     daily_ret = equity.pct_change().dropna()
 
     total_ret = equity.iloc[-1] / initial_capital - 1
@@ -314,6 +366,12 @@ def backtest(
     bh_sharpe    = _sharpe(bh_daily_ret)
     bh_max_dd    = _max_drawdown(bh_equity)
 
+    # Cost / activity diagnostics
+    mean_equity = float(equity.mean()) if len(equity) else float(initial_capital)
+    turnover = float(total_notional / mean_equity) if mean_equity > 0 else 0.0
+    exposure = float(bars_in_position / n) if n > 0 else 0.0
+    calmar   = float(cagr / abs(max_dd)) if max_dd < 0 else 0.0
+
     return BacktestResult(
         ticker          = ticker,
         strategy_name   = strategy_name,
@@ -326,6 +384,7 @@ def backtest(
         volatility       = float(vol_pct),
         sharpe           = float(sharpe),
         sortino          = float(sortino),
+        calmar           = calmar,
         max_drawdown     = float(max_dd),
         equity_curve     = equity,
         trades           = trades,
@@ -335,6 +394,10 @@ def backtest(
         avg_win          = float(avg_win),
         avg_loss         = float(avg_loss),
         avg_holding_days = float(avg_hold),
+        total_commission_paid = float(total_commission),
+        total_slippage_paid   = float(total_slippage),
+        turnover              = turnover,
+        exposure              = exposure,
         bh_return_pct    = float(bh_total_ret),
         bh_cagr          = float(bh_cagr),
         bh_sharpe        = float(bh_sharpe),

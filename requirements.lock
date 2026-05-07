@@ -1,0 +1,18 @@
+# Reproducible-build pin file for FinanzIAs.
+#
+# This file is intentionally checked in. Regenerate after every dependency
+# bump with:
+#
+#     python -m pip install -r requirements.txt --upgrade
+#     python -m pip freeze > requirements.lock
+#
+# Or use the helper script:
+#
+#     python scripts/lock_requirements.py
+#
+# Until you regenerate this on your machine, requirements.txt remains the
+# authoritative input for `pip install`. Once regenerated, prefer:
+#
+#     pip install -r requirements.lock
+#
+# for deterministic environments (CI, fresh clones).

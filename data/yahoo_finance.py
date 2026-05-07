@@ -22,19 +22,23 @@ from io import StringIO
 from typing import Optional, Callable, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from config.logging_config import get_logger
+from config.constants import (
+    BULK_FETCH_WORKERS,
+    PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
+    HISTORICAL_CACHE_TTL_HOURS,
+    NETWORK_TIMEOUT_SECONDS,
+    NETWORK_HARD_TIMEOUT_SECONDS as HARD_TIMEOUT_SECONDS,
+    NETWORK_RETRY_TOTAL as RETRY_TOTAL,
+    NETWORK_RETRY_BACKOFF as RETRY_BACKOFF,
+    DIVIDEND_CACHE_HOURS,
+    MARKET_OPEN_HOUR_ET, MARKET_OPEN_MINUTE,
+    MARKET_CLOSE_HOUR_ET, MARKET_CLOSE_MINUTE,
+    PRE_MARKET_OPEN_HOUR_ET, POST_MARKET_CLOSE_HOUR_ET,
+)
+from data.quality import clean_ohlcv
 from database.models import session_scope, PriceCache, DividendCache, HistoricalDataCache
 
 log = get_logger(__name__)
-
-BULK_FETCH_WORKERS = 5            # Max parallel threads for bulk price fetches
-CACHE_TTL_MINUTES = 5             # Price cache TTL
-HISTORICAL_CACHE_TTL_HOURS = 1    # OHLCV cache TTL
-
-# ── Network timeouts / retries ────────────────────────────────────────────────
-NETWORK_TIMEOUT_SECONDS = 10      # per-request socket timeout
-HARD_TIMEOUT_SECONDS = 15         # absolute wall-clock cap (safety net)
-RETRY_TOTAL = 2                   # retries on transient HTTP errors (429/5xx)
-RETRY_BACKOFF = 1.0               # exponential backoff base seconds
 
 T = TypeVar("T")
 
@@ -283,6 +287,16 @@ def get_historical_data(
     if df is None:
         return None
 
+    # 2.5 Quality check + light cleaning. Issues get logged; unusable frames
+    # (all-NaN Close) are rejected so callers don't have to defend against
+    # silent garbage.
+    df, report = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
+    if df is None or not report.is_usable:
+        log.warning("Historical data for %s rejected after QA: %s", ticker, report.summary())
+        return None
+    if report.has_issues():
+        log.info("Historical data for %s: %s", ticker, report.summary())
+
     # 3. Cache write — replace any existing entry for this (ticker, period, interval)
     if _cache_enabled():
         try:
@@ -302,9 +316,6 @@ def get_historical_data(
             log.exception("Historical cache write failed for %s", ticker)
 
     return df
-
-
-DIVIDEND_CACHE_HOURS = 6  # Re-fetch dividends every 6 hours
 
 
 def get_dividends_since(ticker: str, since_date: datetime) -> float:
@@ -415,10 +426,10 @@ def is_market_open() -> tuple[bool, str]:
         if weekday >= 5:
             return False, "Cerrado (fin de semana)"
 
-        open_t  = now_et.replace(hour=9,  minute=30, second=0, microsecond=0)
-        close_t = now_et.replace(hour=16, minute=0,  second=0, microsecond=0)
-        pre_t   = now_et.replace(hour=4,  minute=0,  second=0, microsecond=0)
-        post_t  = now_et.replace(hour=20, minute=0,  second=0, microsecond=0)
+        open_t  = now_et.replace(hour=MARKET_OPEN_HOUR_ET,  minute=MARKET_OPEN_MINUTE,  second=0, microsecond=0)
+        close_t = now_et.replace(hour=MARKET_CLOSE_HOUR_ET, minute=MARKET_CLOSE_MINUTE, second=0, microsecond=0)
+        pre_t   = now_et.replace(hour=PRE_MARKET_OPEN_HOUR_ET,  minute=0, second=0, microsecond=0)
+        post_t  = now_et.replace(hour=POST_MARKET_CLOSE_HOUR_ET, minute=0, second=0, microsecond=0)
 
         if open_t <= now_et < close_t:
             return True, "Abierto (NYSE/NASDAQ)"

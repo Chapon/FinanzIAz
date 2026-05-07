@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# FinanzIAs — project metadata + tool configuration
+#
+# This file is purely declarative. It does NOT replace requirements.txt as the
+# install spec — pip continues to use requirements.txt / requirements.lock.
+# Its purpose here is to centralize linter / formatter / type-checker config.
+#
+# Recommended workflow
+# --------------------
+#     pip install -r requirements-dev.txt
+#     ruff check .            # lint
+#     ruff format .           # format
+#     mypy .                  # type check (best-effort, gradual)
+#     pre-commit run --all    # all of the above + extras
+# ─────────────────────────────────────────────────────────────────────────────
+
+[project]
+name = "finanzias"
+version = "1.0.0"
+description = "Aplicación de seguimiento de cartera, paper trading y análisis cuantitativo."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+
+
+# ── Ruff ─────────────────────────────────────────────────────────────────────
+# https://docs.astral.sh/ruff
+# Ruff replaces flake8 + isort + (mostly) pylint and has a built-in formatter
+# that's a drop-in replacement for black.
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+extend-exclude = [
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "__pycache__",
+    "*.egg-info",
+    "ANALISIS_FINANZIAS.md",
+    "HALLAZGOS_POR_ARCHIVO.md",
+    "EJEMPLOS_REFACTOR.md",
+]
+
+[tool.ruff.lint]
+# Ruleset rationale:
+#   E,W   pycodestyle base
+#   F     pyflakes (undefined names, unused imports, …)
+#   I     isort (import ordering)
+#   B     flake8-bugbear (likely-bug patterns)
+#   UP    pyupgrade (modern Python syntax)
+#   SIM   flake8-simplify (idiomatic refactors)
+#   RUF   ruff-native rules
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+# Pragmatic ignores for this codebase (mostly UI-heavy PyQt + analytics code):
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E731",   # lambda assignment — used a lot in analysis modules
+    "E741",   # ambiguous variable name (e.g. `l` in pandas idioms)
+    "B008",   # function call in default arg (Qt idioms occasionally need this)
+    "SIM108", # ternary "simplification" sometimes hurts readability
+    "RUF012", # mutable class attribute on dataclass — too noisy for our PyQt widgets
+]
+
+# Tests can use longer lines, magic-value comparisons, etc.
+per-file-ignores = { "tests/**" = ["E501", "S101", "PLR2004"] }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+
+
+# ── mypy (gradual typing) ────────────────────────────────────────────────────
+# https://mypy.readthedocs.io
+# We run mypy in "best-effort" mode — strict on our own modules, lenient on
+# third-party libraries that ship without stubs (yfinance, mplfinance, …).
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true     # third-party stubs are inconsistent
+exclude = ["build/", "dist/", "venv/", ".venv/"]
+
+# Per-module overrides — start permissive, tighten later.
+[[tool.mypy.overrides]]
+module = ["ui.*"]
+disable_error_code = ["misc", "no-untyped-def"]   # PyQt subclassing noise
+
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "network: tests that hit the real Yahoo Finance API (skip in CI)",
+]

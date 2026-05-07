@@ -1,0 +1,28 @@
+# Pre-commit hooks — run `pre-commit install` once to enable on every commit.
+# Manual run: `pre-commit run --all-files`
+
+repos:
+  # Standard hygiene checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: debug-statements          # blocks accidental pdb/breakpoint() commits
+
+  # Ruff: lint + auto-fix + format. One tool, two hooks.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # mypy is intentionally NOT in pre-commit by default — it's slow and
+  # currently best-effort. Run manually with `mypy .` or via CI.
