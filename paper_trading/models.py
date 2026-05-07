@@ -24,7 +24,7 @@ Table summary
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, Float, String, DateTime, Boolean, ForeignKey, Text,
-    UniqueConstraint,
+    UniqueConstraint, Index,
 )
 from sqlalchemy.orm import relationship
 
@@ -91,6 +91,7 @@ class PaperWatchlistItem(Base):
     __tablename__ = "paper_watchlist"
     __table_args__ = (
         UniqueConstraint("account_id", "ticker", name="uq_paper_watchlist_acct_ticker"),
+        Index("ix_paper_watchlist_account", "account_id"),
     )
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
@@ -109,6 +110,8 @@ class PaperPosition(Base):
     __tablename__ = "paper_positions"
     __table_args__ = (
         UniqueConstraint("account_id", "ticker", name="uq_paper_position_acct_ticker"),
+        # Hot path: get_positions filters account_id + shares > 0.
+        Index("ix_paper_positions_account", "account_id"),
     )
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -141,6 +144,12 @@ class PaperOrder(Base):
     ``approve_order`` / ``reject_order``.
     """
     __tablename__ = "paper_orders"
+    __table_args__ = (
+        # Engine queries: account_id + status (pending / filled within window).
+        Index("ix_paper_orders_account_status", "account_id", "status"),
+        Index("ix_paper_orders_account_filled", "account_id", "filled_at"),
+        Index("ix_paper_orders_ticker_filled",  "ticker",     "filled_at"),
+    )
 
     id              = Column(Integer, primary_key=True, autoincrement=True)
     account_id      = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
@@ -183,6 +192,9 @@ class PaperOrder(Base):
 class PaperEquitySnapshot(Base):
     """One equity-curve point per scan (or manual snapshot)."""
     __tablename__ = "paper_equity_snapshots"
+    __table_args__ = (
+        Index("ix_paper_equity_account_at", "account_id", "snapshot_at"),
+    )
 
     id              = Column(Integer, primary_key=True, autoincrement=True)
     account_id      = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)

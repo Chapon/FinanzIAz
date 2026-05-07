@@ -3,7 +3,7 @@ Alert manager: checks price alerts and fires callbacks when triggered.
 """
 from datetime import datetime
 from typing import Callable, Optional
-from database.models import get_session, Alert
+from database.models import session_scope, Alert
 from data.yahoo_finance import get_current_price
 
 
@@ -19,17 +19,16 @@ class AlertManager:
         Check all active alerts (optionally filtered by portfolio).
         Returns list of triggered alerts.
         """
-        session = get_session()
-        triggered = []
-        try:
+        triggered: list[Alert] = []
+        with session_scope() as session:
             query = session.query(Alert).filter(Alert.is_active == True)
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
             alerts = query.all()
 
             # Group by ticker to minimize API calls
-            tickers = list(set(a.ticker for a in alerts))
-            prices = {}
+            tickers = list({a.ticker for a in alerts})
+            prices: dict[str, float] = {}
             for ticker in tickers:
                 data = get_current_price(ticker)
                 if data:
@@ -45,10 +44,7 @@ class AlertManager:
                     triggered.append(alert)
                     if self.on_triggered:
                         self.on_triggered(alert, price)
-
-            session.commit()
-        finally:
-            session.close()
+            # commit happens automatically on context exit
 
         return triggered
 
@@ -69,8 +65,7 @@ class AlertManager:
         message: str = "",
     ) -> Alert:
         """Create and persist a new price alert."""
-        session = get_session()
-        try:
+        with session_scope() as session:
             alert = Alert(
                 portfolio_id=portfolio_id,
                 ticker=ticker.upper(),
@@ -80,27 +75,21 @@ class AlertManager:
                 is_active=True,
             )
             session.add(alert)
-            session.commit()
+            session.flush()       # populate alert.id before commit/expunge
             session.refresh(alert)
+            session.expunge(alert)  # detach so caller can use after close
             return alert
-        finally:
-            session.close()
 
     @staticmethod
-    def delete_alert(alert_id: int):
-        session = get_session()
-        try:
+    def delete_alert(alert_id: int) -> None:
+        with session_scope() as session:
             alert = session.query(Alert).filter(Alert.id == alert_id).first()
             if alert:
                 session.delete(alert)
-                session.commit()
-        finally:
-            session.close()
 
     @staticmethod
     def get_alerts(portfolio_id: Optional[int] = None, active_only: bool = False) -> list[Alert]:
-        session = get_session()
-        try:
+        with session_scope() as session:
             query = session.query(Alert)
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
@@ -110,5 +99,3 @@ class AlertManager:
             # Detach from session so they can be used after close
             session.expunge_all()
             return alerts
-        finally:
-            session.close()

@@ -1,18 +1,110 @@
 """
 Yahoo Finance data layer using yfinance.
 Handles fetching current prices, historical data, and company info.
+
+Network safety
+--------------
+All yfinance calls share a single ``requests.Session`` configured with:
+- default socket timeout (``NETWORK_TIMEOUT_SECONDS``) injected on every request
+- automatic retries with exponential backoff on 429/5xx responses
+
+Long-running blocking calls (``Ticker.info``, ``yf.download``) are additionally
+guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
+the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 import yfinance as yf
 import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from datetime import datetime, timedelta, timezone
 from io import StringIO
-from typing import Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from database.models import get_session, PriceCache, DividendCache, HistoricalDataCache
+from typing import Optional, Callable, TypeVar
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from config.logging_config import get_logger
+from database.models import session_scope, PriceCache, DividendCache, HistoricalDataCache
 
-BULK_FETCH_WORKERS = 5        # Max parallel threads for bulk price fetches
-CACHE_TTL_MINUTES = 5         # Price cache TTL
-HISTORICAL_CACHE_TTL_HOURS = 1  # OHLCV cache TTL
+log = get_logger(__name__)
+
+BULK_FETCH_WORKERS = 5            # Max parallel threads for bulk price fetches
+CACHE_TTL_MINUTES = 5             # Price cache TTL
+HISTORICAL_CACHE_TTL_HOURS = 1    # OHLCV cache TTL
+
+# ── Network timeouts / retries ────────────────────────────────────────────────
+NETWORK_TIMEOUT_SECONDS = 10      # per-request socket timeout
+HARD_TIMEOUT_SECONDS = 15         # absolute wall-clock cap (safety net)
+RETRY_TOTAL = 2                   # retries on transient HTTP errors (429/5xx)
+RETRY_BACKOFF = 1.0               # exponential backoff base seconds
+
+T = TypeVar("T")
+
+
+class _TimeoutHTTPAdapter(HTTPAdapter):
+    """HTTPAdapter that injects a default timeout on every request."""
+
+    def __init__(self, *args, timeout: float = NETWORK_TIMEOUT_SECONDS, **kwargs):
+        self._default_timeout = timeout
+        super().__init__(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = self._default_timeout
+        return super().send(request, **kwargs)
+
+
+def _build_yf_session() -> requests.Session:
+    """Return a requests.Session with default timeout + retry policy."""
+    session = requests.Session()
+    retries = Retry(
+        total=RETRY_TOTAL,
+        backoff_factor=RETRY_BACKOFF,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET", "HEAD"]),
+        raise_on_status=False,
+    )
+    adapter = _TimeoutHTTPAdapter(max_retries=retries, timeout=NETWORK_TIMEOUT_SECONDS)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+# Module-level shared session — thread-safe for reuse across worker threads.
+_YF_SESSION = _build_yf_session()
+
+# Dedicated thread pool used as a safety-net wall-clock timeout. Daemon threads
+# so they don't block app shutdown if a network call hangs indefinitely.
+_TIMEOUT_POOL = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="yf-timeout",
+)
+
+
+def _ticker(symbol: str) -> yf.Ticker:
+    """Build a yfinance Ticker bound to the shared session."""
+    return yf.Ticker(symbol, session=_YF_SESSION)
+
+
+def _run_with_timeout(
+    fn: Callable[..., T],
+    *args,
+    timeout: float = HARD_TIMEOUT_SECONDS,
+    default: Optional[T] = None,
+    **kwargs,
+) -> Optional[T]:
+    """
+    Run ``fn(*args, **kwargs)`` and abort if it takes longer than ``timeout``.
+    On timeout / exception returns ``default`` (None by default).
+    """
+    future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        future.cancel()
+        log.warning("Hard timeout (%ss) running %s", timeout, getattr(fn, "__name__", fn))
+        return default
+    except Exception:
+        log.exception("yfinance call %s raised", getattr(fn, "__name__", fn))
+        return default
 
 def _cache_enabled() -> bool:
     try:
@@ -28,58 +120,55 @@ def get_current_price(ticker: str) -> Optional[dict]:
     Returns a dict with price, change_pct, volume, market_cap, etc.
     Uses an in-DB cache to avoid hammering the API.
     """
-    session = get_session()
     try:
-        # Check cache first (skip if cache setting is disabled)
+        # 1. Cache read (own session — released before the network call)
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_TTL_MINUTES)
-        cached = None
         if _cache_enabled():
-            cached = (
-                session.query(PriceCache)
-                .filter(PriceCache.ticker == ticker.upper())
-                .filter(PriceCache.fetched_at >= cutoff)
-                .order_by(PriceCache.fetched_at.desc())
-                .first()
-            )
-        if cached:
-            return {
-                "ticker": cached.ticker,
-                "price": cached.price,
-                "change_pct": cached.change_pct,
-                "volume": cached.volume,
-                "market_cap": cached.market_cap,
-                "from_cache": True,
-            }
+            with session_scope() as session:
+                cached = (
+                    session.query(PriceCache)
+                    .filter(PriceCache.ticker == ticker.upper())
+                    .filter(PriceCache.fetched_at >= cutoff)
+                    .order_by(PriceCache.fetched_at.desc())
+                    .first()
+                )
+                if cached:
+                    return {
+                        "ticker": cached.ticker,
+                        "price": cached.price,
+                        "change_pct": cached.change_pct,
+                        "volume": cached.volume,
+                        "market_cap": cached.market_cap,
+                        "from_cache": True,
+                    }
 
-        # Fetch live
+        # 2. Fetch live
         info = _fetch_ticker_info(ticker)
         if info is None:
             return None
 
-        # Store in cache
-        entry = PriceCache(
-            ticker=ticker.upper(),
-            price=info["price"],
-            change_pct=info.get("change_pct"),
-            volume=info.get("volume"),
-            market_cap=info.get("market_cap"),
-        )
-        session.add(entry)
-        session.commit()
+        # 3. Cache write
+        with session_scope() as session:
+            session.add(PriceCache(
+                ticker=ticker.upper(),
+                price=info["price"],
+                change_pct=info.get("change_pct"),
+                volume=info.get("volume"),
+                market_cap=info.get("market_cap"),
+            ))
         info["from_cache"] = False
         return info
 
-    except Exception as e:
-        print(f"[YF] Error fetching {ticker}: {e}")
+    except Exception:
+        log.exception("Error fetching price for %s", ticker)
         return None
-    finally:
-        session.close()
 
 
 def _fetch_ticker_info(ticker: str) -> Optional[dict]:
-    """Raw yfinance fetch — returns a clean dict."""
-    try:
-        t = yf.Ticker(ticker)
+    """Raw yfinance fetch — returns a clean dict. Hard-timeout protected."""
+
+    def _do_fetch() -> Optional[dict]:
+        t = _ticker(ticker)
         info = t.fast_info
 
         price = getattr(info, "last_price", None)
@@ -102,16 +191,16 @@ def _fetch_ticker_info(ticker: str) -> Optional[dict]:
             "fifty_two_week_low": getattr(info, "year_low", None),
             "currency": getattr(info, "currency", "USD"),
         }
-    except Exception as e:
-        print(f"[YF] Raw fetch failed for {ticker}: {e}")
-        return None
+
+    return _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
 
 
 def get_company_info(ticker: str) -> dict:
-    """Fetch company name, sector, description from yfinance."""
-    try:
-        t = yf.Ticker(ticker)
-        info = t.info
+    """Fetch company name, sector, description from yfinance. Hard-timeout protected."""
+
+    def _do_fetch() -> dict:
+        t = _ticker(ticker)
+        info = t.info  # this is the slow scrape — timeout-guarded above
         return {
             "name": info.get("longName") or info.get("shortName") or ticker,
             "sector": info.get("sector", "N/A"),
@@ -124,9 +213,10 @@ def get_company_info(ticker: str) -> dict:
             "dividend_yield": info.get("dividendYield"),
             "beta": info.get("beta"),
         }
-    except Exception as e:
-        print(f"[YF] Company info failed for {ticker}: {e}")
-        return {"name": ticker, "sector": "N/A"}
+
+    fallback = {"name": ticker, "sector": "N/A"}
+    result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
+    return result if result is not None else fallback
 
 
 def get_historical_data(
@@ -144,60 +234,72 @@ def get_historical_data(
 
     # 1. Cache read
     if _cache_enabled():
-        session = get_session()
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
-            cached = (
-                session.query(HistoricalDataCache)
-                .filter(HistoricalDataCache.ticker == ticker_upper)
-                .filter(HistoricalDataCache.period == period)
-                .filter(HistoricalDataCache.interval == interval)
-                .filter(HistoricalDataCache.fetched_at >= cutoff)
-                .order_by(HistoricalDataCache.fetched_at.desc())
-                .first()
-            )
-            if cached:
-                df = pd.read_json(StringIO(cached.data_json), orient="split")
-                df.index = pd.to_datetime(df.index)
-                return df
-        except Exception as e:
-            print(f"[YF] Historical cache read failed for {ticker}: {e}")
-        finally:
-            session.close()
+            with session_scope() as session:
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
+                cached = (
+                    session.query(HistoricalDataCache)
+                    .filter(HistoricalDataCache.ticker == ticker_upper)
+                    .filter(HistoricalDataCache.period == period)
+                    .filter(HistoricalDataCache.interval == interval)
+                    .filter(HistoricalDataCache.fetched_at >= cutoff)
+                    .order_by(HistoricalDataCache.fetched_at.desc())
+                    .first()
+                )
+                if cached:
+                    df = pd.read_json(StringIO(cached.data_json), orient="split")
+                    df.index = pd.to_datetime(df.index)
+                    return df
+        except Exception:
+            log.exception("Historical cache read failed for %s", ticker)
 
-    # 2. Live download
-    try:
-        df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
-        if df.empty:
+    # 2. Live download — guarded by hard timeout
+    def _do_download() -> Optional[pd.DataFrame]:
+        try:
+            df = yf.download(
+                ticker,
+                period=period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+                session=_YF_SESSION,
+                timeout=NETWORK_TIMEOUT_SECONDS,
+            )
+            if df.empty:
+                return None
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df.index = pd.to_datetime(df.index)
+            return df
+        except Exception:
+            log.exception("Historical data download failed for %s", ticker)
             return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df.index = pd.to_datetime(df.index)
-    except Exception as e:
-        print(f"[YF] Historical data failed for {ticker}: {e}")
+
+    df = _run_with_timeout(
+        _do_download,
+        timeout=HARD_TIMEOUT_SECONDS * 2,  # downloads can be larger
+        default=None,
+    )
+    if df is None:
         return None
 
     # 3. Cache write — replace any existing entry for this (ticker, period, interval)
     if _cache_enabled():
-        session = get_session()
         try:
-            session.query(HistoricalDataCache).filter(
-                HistoricalDataCache.ticker == ticker_upper,
-                HistoricalDataCache.period == period,
-                HistoricalDataCache.interval == interval,
-            ).delete()
-            session.add(HistoricalDataCache(
-                ticker=ticker_upper,
-                period=period,
-                interval=interval,
-                data_json=df.to_json(orient="split", date_format="iso"),
-            ))
-            session.commit()
-        except Exception as e:
-            print(f"[YF] Historical cache write failed for {ticker}: {e}")
-            session.rollback()
-        finally:
-            session.close()
+            with session_scope() as session:
+                session.query(HistoricalDataCache).filter(
+                    HistoricalDataCache.ticker == ticker_upper,
+                    HistoricalDataCache.period == period,
+                    HistoricalDataCache.interval == interval,
+                ).delete()
+                session.add(HistoricalDataCache(
+                    ticker=ticker_upper,
+                    period=period,
+                    interval=interval,
+                    data_json=df.to_json(orient="split", date_format="iso"),
+                ))
+        except Exception:
+            log.exception("Historical cache write failed for %s", ticker)
 
     return df
 
@@ -211,55 +313,60 @@ def get_dividends_since(ticker: str, since_date: datetime) -> float:
     Uses DividendCache to avoid repeated API calls.
     Returns 0.0 if the ticker pays no dividends or data is unavailable.
     """
-    session = get_session()
-    try:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=DIVIDEND_CACHE_HOURS)
-        cached = (
-            session.query(DividendCache)
-            .filter(DividendCache.ticker == ticker.upper())
-            .filter(DividendCache.since_date == since_date.replace(hour=0, minute=0, second=0, microsecond=0))
-            .filter(DividendCache.fetched_at >= cutoff)
-            .order_by(DividendCache.fetched_at.desc())
-            .first()
-        )
-        if cached:
-            return cached.total_per_share
+    normalized_since = since_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=DIVIDEND_CACHE_HOURS)
 
-        # Fetch from Yahoo Finance
+    try:
+        # 1. Cache read
+        with session_scope() as session:
+            cached = (
+                session.query(DividendCache)
+                .filter(DividendCache.ticker == ticker.upper())
+                .filter(DividendCache.since_date == normalized_since)
+                .filter(DividendCache.fetched_at >= cutoff)
+                .order_by(DividendCache.fetched_at.desc())
+                .first()
+            )
+            if cached:
+                return cached.total_per_share
+
+        # 2. Network fetch (no DB session held)
         total = _fetch_dividends_since(ticker, since_date)
 
-        # Store in cache
-        entry = DividendCache(
-            ticker=ticker.upper(),
-            since_date=since_date.replace(hour=0, minute=0, second=0, microsecond=0),
-            total_per_share=total,
-        )
-        session.add(entry)
-        session.commit()
+        # 3. Cache write
+        with session_scope() as session:
+            session.add(DividendCache(
+                ticker=ticker.upper(),
+                since_date=normalized_since,
+                total_per_share=total,
+            ))
         return total
 
-    except Exception as e:
-        print(f"[YF] Dividend fetch failed for {ticker}: {e}")
+    except Exception:
+        log.exception("Dividend fetch failed for %s", ticker)
         return 0.0
-    finally:
-        session.close()
 
 
 def _fetch_dividends_since(ticker: str, since_date: datetime) -> float:
     """Raw yfinance dividend fetch — returns cumulative $/share since since_date."""
-    try:
-        t = yf.Ticker(ticker)
-        divs = t.dividends  # pandas Series indexed by date
-        if divs is None or divs.empty:
+
+    def _do_fetch() -> float:
+        try:
+            t = _ticker(ticker)
+            divs = t.dividends  # pandas Series indexed by date
+            if divs is None or divs.empty:
+                return 0.0
+            # Normalize timezone
+            divs.index = divs.index.tz_localize(None) if divs.index.tzinfo is not None else divs.index
+            since = pd.Timestamp(since_date)
+            filtered = divs[divs.index >= since]
+            return float(filtered.sum()) if not filtered.empty else 0.0
+        except Exception:
+            log.exception("Raw dividend fetch failed for %s", ticker)
             return 0.0
-        # Normalize timezone
-        divs.index = divs.index.tz_localize(None) if divs.index.tzinfo is not None else divs.index
-        since = pd.Timestamp(since_date)
-        filtered = divs[divs.index >= since]
-        return float(filtered.sum()) if not filtered.empty else 0.0
-    except Exception as e:
-        print(f"[YF] Raw dividend fetch failed for {ticker}: {e}")
-        return 0.0
+
+    result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=0.0)
+    return result if result is not None else 0.0
 
 
 def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
@@ -282,8 +389,8 @@ def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
             ticker = future_to_ticker[future]
             try:
                 results[ticker] = future.result()
-            except Exception as e:
-                print(f"[YF] Bulk dividend fetch failed for {ticker}: {e}")
+            except Exception:
+                log.exception("Bulk dividend fetch failed for %s", ticker)
                 results[ticker] = 0.0
     return results
 
@@ -326,13 +433,17 @@ def is_market_open() -> tuple[bool, str]:
 
 
 def validate_ticker(ticker: str) -> bool:
-    """Check whether a ticker symbol is valid on Yahoo Finance."""
-    try:
-        t = yf.Ticker(ticker)
-        price = getattr(t.fast_info, "last_price", None)
-        return price is not None
-    except Exception:
-        return False
+    """Check whether a ticker symbol is valid on Yahoo Finance. Hard-timeout protected."""
+
+    def _do_check() -> bool:
+        try:
+            t = _ticker(ticker)
+            price = getattr(t.fast_info, "last_price", None)
+            return price is not None
+        except Exception:
+            return False
+
+    return bool(_run_with_timeout(_do_check, timeout=HARD_TIMEOUT_SECONDS, default=False))
 
 
 def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
@@ -349,39 +460,37 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
 
     # 1. Single batch cache read (one query for all tickers)
     if _cache_enabled():
-        session = get_session()
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_TTL_MINUTES)
-            cached_rows = (
-                session.query(PriceCache)
-                .filter(PriceCache.ticker.in_(tickers_upper))
-                .filter(PriceCache.fetched_at >= cutoff)
-                .all()
-            )
-            # Keep only the latest entry per ticker
-            cached_map: dict[str, PriceCache] = {}
-            for row in cached_rows:
-                if row.ticker not in cached_map or row.fetched_at > cached_map[row.ticker].fetched_at:
-                    cached_map[row.ticker] = row
+            with session_scope() as session:
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=CACHE_TTL_MINUTES)
+                cached_rows = (
+                    session.query(PriceCache)
+                    .filter(PriceCache.ticker.in_(tickers_upper))
+                    .filter(PriceCache.fetched_at >= cutoff)
+                    .all()
+                )
+                # Keep only the latest entry per ticker
+                cached_map: dict[str, PriceCache] = {}
+                for row in cached_rows:
+                    if row.ticker not in cached_map or row.fetched_at > cached_map[row.ticker].fetched_at:
+                        cached_map[row.ticker] = row
 
-            for ticker in tickers_upper:
-                if ticker in cached_map:
-                    row = cached_map[ticker]
-                    results[ticker] = {
-                        "ticker": row.ticker,
-                        "price": row.price,
-                        "change_pct": row.change_pct,
-                        "volume": row.volume,
-                        "market_cap": row.market_cap,
-                        "from_cache": True,
-                    }
-                else:
-                    cache_misses.append(ticker)
-        except Exception as e:
-            print(f"[YF] Bulk cache read failed: {e}")
+                for ticker in tickers_upper:
+                    if ticker in cached_map:
+                        row = cached_map[ticker]
+                        results[ticker] = {
+                            "ticker": row.ticker,
+                            "price": row.price,
+                            "change_pct": row.change_pct,
+                            "volume": row.volume,
+                            "market_cap": row.market_cap,
+                            "from_cache": True,
+                        }
+                    else:
+                        cache_misses.append(ticker)
+        except Exception:
+            log.exception("Bulk cache read failed")
             cache_misses = list(tickers_upper)
-        finally:
-            session.close()
     else:
         cache_misses = list(tickers_upper)
 
@@ -400,8 +509,8 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
             ticker = future_to_ticker[future]
             try:
                 live_results[ticker] = future.result()
-            except Exception as e:
-                print(f"[YF] Parallel fetch failed for {ticker}: {e}")
+            except Exception:
+                log.exception("Parallel fetch failed for %s", ticker)
                 live_results[ticker] = None
 
     # 3. Single batch cache write for all successful fetches
@@ -417,15 +526,11 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
         if info is not None
     ]
     if new_entries:
-        session = get_session()
         try:
-            session.add_all(new_entries)
-            session.commit()
-        except Exception as e:
-            print(f"[YF] Bulk cache write failed: {e}")
-            session.rollback()
-        finally:
-            session.close()
+            with session_scope() as session:
+                session.add_all(new_entries)
+        except Exception:
+            log.exception("Bulk cache write failed")
 
     # Merge live results into output
     for ticker, info in live_results.items():
@@ -439,21 +544,29 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
 def search_ticker(query: str) -> list[dict]:
     """
     Simple ticker search — tries direct lookup and common suffixes.
-    Returns a list of candidate dicts with ticker and name.
+    Returns a list of candidate dicts with ticker and name. Hard-timeout protected.
     """
-    candidates = []
-    for symbol in [query.upper(), f"{query.upper()}.BA", f"{query.upper()}.L", f"{query.upper()}.AX"]:
+
+    def _probe(symbol: str) -> Optional[dict]:
         try:
-            t = yf.Ticker(symbol)
+            t = _ticker(symbol)
             price = getattr(t.fast_info, "last_price", None)
-            if price is not None:
-                info = t.info
-                candidates.append({
-                    "ticker": symbol,
-                    "name": info.get("longName") or info.get("shortName") or symbol,
-                    "exchange": info.get("exchange", ""),
-                    "currency": info.get("currency", "USD"),
-                })
+            if price is None:
+                return None
+            info = t.info
+            return {
+                "ticker": symbol,
+                "name": info.get("longName") or info.get("shortName") or symbol,
+                "exchange": info.get("exchange", ""),
+                "currency": info.get("currency", "USD"),
+            }
         except Exception:
-            continue
+            return None
+
+    candidates: list[dict] = []
+    suffixes = [query.upper(), f"{query.upper()}.BA", f"{query.upper()}.L", f"{query.upper()}.AX"]
+    for symbol in suffixes:
+        result = _run_with_timeout(_probe, symbol, timeout=HARD_TIMEOUT_SECONDS, default=None)
+        if result is not None:
+            candidates.append(result)
     return candidates

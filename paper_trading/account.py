@@ -3,17 +3,15 @@ Account-layer helpers for paper trading.
 
 Provides CRUD operations over ``PaperAccount`` and friends, plus a few
 derived metrics (equity, unrealized P&L, positions snapshot). All functions
-open their own session and return detached objects so callers don't have to
-worry about SQLAlchemy session lifecycle.
+open their own session via ``session_scope`` and return detached objects so
+callers don't have to worry about SQLAlchemy session lifecycle.
 """
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy.orm import Session
-
-from database.models import get_session
+from database.models import session_scope
 from paper_trading.models import (
     PaperAccount, PaperWatchlistItem, PaperPosition,
     PaperOrder, PaperEquitySnapshot,
@@ -43,8 +41,7 @@ def create_account(
     if mode            not in MODES:         raise ValueError(f"mode inválido: {mode}")
     if allocation_mode not in ALLOC_MODES:   raise ValueError(f"allocation_mode inválido: {allocation_mode}")
 
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct = PaperAccount(
             name              = name,
             description       = description,
@@ -56,54 +53,42 @@ def create_account(
             initial_capital   = float(initial_capital),
             cash              = float(initial_capital),
             commission        = float(commission),
-            slippage          = float(slippage),
+            slippage           = float(slippage),
             drift_threshold   = float(drift_threshold),
             monthly_rebalance = bool(monthly_rebalance),
         )
         session.add(acct)
-        session.commit()
+        session.flush()
         session.refresh(acct)
         session.expunge(acct)
         return acct
-    finally:
-        session.close()
 
 
 def list_accounts(active_only: bool = False) -> list[PaperAccount]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         q = session.query(PaperAccount)
         if active_only:
             q = q.filter(PaperAccount.is_active == True)
         out = q.order_by(PaperAccount.created_at.desc()).all()
         session.expunge_all()
         return out
-    finally:
-        session.close()
 
 
 def get_account(account_id: int) -> Optional[PaperAccount]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is not None:
             session.expunge(acct)
         return acct
-    finally:
-        session.close()
 
 
 def delete_account(account_id: int) -> bool:
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None:
             return False
         session.delete(acct)
-        session.commit()
         return True
-    finally:
-        session.close()
 
 
 def update_account_config(account_id: int, **fields) -> Optional[PaperAccount]:
@@ -121,29 +106,25 @@ def update_account_config(account_id: int, **fields) -> Optional[PaperAccount]:
     if "allocation_mode" in fields and fields["allocation_mode"] not in ALLOC_MODES:
         raise ValueError(f"allocation_mode inválido: {fields['allocation_mode']}")
 
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None:
             return None
         for k, v in fields.items():
             if k in allowed:
                 setattr(acct, k, v)
-        session.commit()
+        session.flush()
         session.refresh(acct)
         session.expunge(acct)
         return acct
-    finally:
-        session.close()
 
 
 # ── Watchlist CRUD ────────────────────────────────────────────────────────────
 
 def add_watchlist_tickers(account_id: int, tickers: list[str]) -> int:
     """Insert new tickers; duplicates (account_id, ticker) are silently skipped."""
-    session = get_session()
     added = 0
-    try:
+    with session_scope() as session:
         existing = {
             r.ticker for r in session.query(PaperWatchlistItem)
             .filter(PaperWatchlistItem.account_id == account_id).all()
@@ -155,15 +136,11 @@ def add_watchlist_tickers(account_id: int, tickers: list[str]) -> int:
             session.add(PaperWatchlistItem(account_id=account_id, ticker=tu))
             existing.add(tu)
             added += 1
-        session.commit()
-    finally:
-        session.close()
     return added
 
 
 def remove_watchlist_ticker(account_id: int, ticker: str) -> bool:
-    session = get_session()
-    try:
+    with session_scope() as session:
         item = (session.query(PaperWatchlistItem)
                 .filter(PaperWatchlistItem.account_id == account_id)
                 .filter(PaperWatchlistItem.ticker     == ticker.upper())
@@ -171,29 +148,22 @@ def remove_watchlist_ticker(account_id: int, ticker: str) -> bool:
         if item is None:
             return False
         session.delete(item)
-        session.commit()
         return True
-    finally:
-        session.close()
 
 
 def get_watchlist(account_id: int) -> list[str]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         rows = (session.query(PaperWatchlistItem)
                 .filter(PaperWatchlistItem.account_id == account_id)
                 .order_by(PaperWatchlistItem.added_at.asc())
                 .all())
         return [r.ticker for r in rows]
-    finally:
-        session.close()
 
 
 # ── Positions & P&L ───────────────────────────────────────────────────────────
 
 def get_positions(account_id: int) -> list[PaperPosition]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         rows = (session.query(PaperPosition)
                 .filter(PaperPosition.account_id == account_id)
                 .filter(PaperPosition.shares > 0)
@@ -201,8 +171,6 @@ def get_positions(account_id: int) -> list[PaperPosition]:
                 .all())
         session.expunge_all()
         return rows
-    finally:
-        session.close()
 
 
 def get_position_entry_prices(account_id: int) -> dict[str, float]:
@@ -217,8 +185,7 @@ def get_position_entry_prices(account_id: int) -> dict[str, float]:
     Returns ``{ticker: entry_price}``. Tickers without a recoverable order
     (e.g. legacy positions from before the orders table existed) are omitted.
     """
-    session = get_session()
-    try:
+    with session_scope() as session:
         positions = (session.query(PaperPosition)
                      .filter(PaperPosition.account_id == account_id)
                      .filter(PaperPosition.shares > 0).all())
@@ -235,8 +202,6 @@ def get_position_entry_prices(account_id: int) -> dict[str, float]:
             if order is not None and order.fill_price is not None:
                 out[p.ticker] = float(order.fill_price)
         return out
-    finally:
-        session.close()
 
 
 def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
@@ -244,8 +209,7 @@ def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
     Mark-to-market equity given a {ticker: price} dict.
     Returns {'cash', 'positions_value', 'total_equity', 'per_position'}.
     """
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None:
             return {"cash": 0.0, "positions_value": 0.0, "total_equity": 0.0,
@@ -276,15 +240,12 @@ def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
             "total_equity":    float(acct.cash + pos_val),
             "per_position":    per_pos,
         }
-    finally:
-        session.close()
 
 
 def record_equity_snapshot(account_id: int, prices: dict[str, float]) -> PaperEquitySnapshot:
     """Persist a point on the equity curve using current prices."""
     eq = compute_equity(account_id, prices)
-    session = get_session()
-    try:
+    with session_scope() as session:
         snap = PaperEquitySnapshot(
             account_id      = account_id,
             snapshot_at     = datetime.utcnow(),
@@ -293,17 +254,14 @@ def record_equity_snapshot(account_id: int, prices: dict[str, float]) -> PaperEq
             total_equity    = eq["total_equity"],
         )
         session.add(snap)
-        session.commit()
+        session.flush()
         session.refresh(snap)
         session.expunge(snap)
         return snap
-    finally:
-        session.close()
 
 
 def get_equity_curve(account_id: int, limit: int = 5_000) -> list[PaperEquitySnapshot]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         rows = (session.query(PaperEquitySnapshot)
                 .filter(PaperEquitySnapshot.account_id == account_id)
                 .order_by(PaperEquitySnapshot.snapshot_at.asc())
@@ -311,8 +269,6 @@ def get_equity_curve(account_id: int, limit: int = 5_000) -> list[PaperEquitySna
                 .all())
         session.expunge_all()
         return rows
-    finally:
-        session.close()
 
 
 # ── Order queries (history / pending) ─────────────────────────────────────────
@@ -322,8 +278,7 @@ def get_orders(
     status: Optional[str] = None,
     limit: int = 200,
 ) -> list[PaperOrder]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         q = (session.query(PaperOrder)
              .filter(PaperOrder.account_id == account_id))
         if status:
@@ -331,10 +286,7 @@ def get_orders(
         rows = q.order_by(PaperOrder.created_at.desc()).limit(limit).all()
         session.expunge_all()
         return rows
-    finally:
-        session.close()
 
 
 def get_pending_orders(account_id: int) -> list[PaperOrder]:
     return get_orders(account_id, status="pending")
-

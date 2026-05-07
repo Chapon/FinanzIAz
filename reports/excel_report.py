@@ -10,6 +10,10 @@ from openpyxl.chart import LineChart, Reference
 from openpyxl.chart.series import SeriesLabel
 from datetime import datetime
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 
 # Color constants
 C_BG = "FF0D1117"
@@ -191,9 +195,8 @@ def generate_portfolio_excel(
         cell.border = _border()
 
     tx_row = 2
-    from database.models import get_session, Transaction, Position as PosModel
-    session = get_session()
-    try:
+    from database.models import session_scope, Transaction
+    with session_scope() as session:
         pos_ids = [p.id for p in positions]
         txs = session.query(Transaction).filter(Transaction.position_id.in_(pos_ids)).order_by(Transaction.date.desc()).all()
         pos_map = {p.id: p.ticker for p in positions}
@@ -223,8 +226,6 @@ def generate_portfolio_excel(
                 size=10, name="Calibri"
             )
             tx_row += 1
-    finally:
-        session.close()
 
     tx_widths = [10, 10, 12, 14, 12, 14, 14, 30]
     for i, w in enumerate(tx_widths, 1):
@@ -233,19 +234,18 @@ def generate_portfolio_excel(
     # ── Sheet 2: Transaction history (optional) ───────────────────────────────
     if include_tx:
         try:
-            from database.models import get_session, Transaction
-            session = get_session()
-            pos_ids = [p.id for p in positions if hasattr(p, "id")]
-            txs = (
-                session.query(Transaction)
-                .filter(Transaction.position_id.in_(pos_ids))
-                .order_by(Transaction.date.desc())
-                .limit(500)
-                .all()
-            )
-            pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
-            session.expunge_all()
-            session.close()
+            from database.models import session_scope, Transaction
+            with session_scope() as session:
+                pos_ids = [p.id for p in positions if hasattr(p, "id")]
+                txs = (
+                    session.query(Transaction)
+                    .filter(Transaction.position_id.in_(pos_ids))
+                    .order_by(Transaction.date.desc())
+                    .limit(500)
+                    .all()
+                )
+                pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
+                session.expunge_all()
 
             if txs:
                 wt = wb.create_sheet("Transacciones")
@@ -289,8 +289,8 @@ def generate_portfolio_excel(
                 col_ws = [12, 8, 10, 12, 12, 12, 14]
                 for ci, w in enumerate(col_ws, 1):
                     wt.column_dimensions[get_column_letter(ci)].width = w
-        except Exception as e:
-            print(f"[Excel] Transaction sheet error: {e}")
+        except Exception:
+            log.exception("Excel transaction sheet generation failed")
 
     wb.save(output_path)
     return output_path

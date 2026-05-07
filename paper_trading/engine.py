@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 from config.settings_manager import settings
-from database.models import get_session
+from database.models import session_scope
 from paper_trading.models import (
     PaperAccount, PaperPosition, PaperOrder, PaperWatchlistItem,
 )
@@ -116,8 +116,7 @@ def run_scan(
     prices_provider  = prices_provider  or _default_prices_provider
     history_provider = history_provider or _default_history_provider
 
-    session = get_session()
-    try:
+    with session_scope() as session:
         acct: PaperAccount = (session.query(PaperAccount)
                               .filter(PaperAccount.id == account_id).first())
         if acct is None or not acct.is_active:
@@ -285,10 +284,7 @@ def run_scan(
             p.shares * prices.get(p.ticker, p.avg_cost) for p in positions_after
         )
         result.equity_after = float(equity_after)
-
-        session.commit()
-    finally:
-        session.close()
+        # session_scope commits automatically on successful exit
 
     # Snapshot outside the transaction — opens its own session
     record_equity_snapshot(account_id, prices)
@@ -305,8 +301,7 @@ def approve_order(
     """Fill a pending order at the current market price."""
     prices_provider = prices_provider or _default_prices_provider
 
-    session = get_session()
-    try:
+    with session_scope() as session:
         order: Optional[PaperOrder] = session.query(PaperOrder).filter(
             PaperOrder.id == order_id
         ).first()
@@ -325,7 +320,7 @@ def approve_order(
             order.status = "expired"
             order.notes  = (order.notes or "") + "\n[approve] sin precio, expirada."
             order.decided_at = datetime.utcnow()
-            session.commit()
+            session.flush()
             session.refresh(order); session.expunge(order)
             return order
 
@@ -343,20 +338,28 @@ def approve_order(
         order.decided_at = datetime.utcnow()
 
         filled = _fill_trade(session, acct, trade, price=px, reuse_order=order)
-        session.commit()
+
+        # Si _fill_trade no pudo ejecutar (cash/shares insuficientes), no dejar
+        # la orden colgada en "approved" para siempre — marcarla como expirada
+        # con motivo. _fill_trade exitoso reescribe order.status a "filled" via
+        # _stamp_order_filled(reuse_order=order); si sigue "approved" es que falló.
+        if filled is None and order.status == "approved":
+            order.status = "expired"
+            order.notes  = ((order.notes or "") +
+                            "\n[approve] fill rechazado: cash o shares insuficientes.").strip()
+
+        session.flush()
 
         if filled is not None:
             session.refresh(filled)
             session.expunge(filled)
             return filled
+        session.refresh(order); session.expunge(order)
         return order
-    finally:
-        session.close()
 
 
 def reject_order(order_id: int, note: str = "") -> Optional[PaperOrder]:
-    session = get_session()
-    try:
+    with session_scope() as session:
         order = session.query(PaperOrder).filter(PaperOrder.id == order_id).first()
         if order is None or order.status != "pending":
             return None
@@ -364,11 +367,9 @@ def reject_order(order_id: int, note: str = "") -> Optional[PaperOrder]:
         order.decided_at = datetime.utcnow()
         if note:
             order.notes = (order.notes or "") + f"\n[reject] {note}"
-        session.commit()
+        session.flush()
         session.refresh(order); session.expunge(order)
         return order
-    finally:
-        session.close()
 
 
 # ── Internal: create pending / fill trade ─────────────────────────────────────

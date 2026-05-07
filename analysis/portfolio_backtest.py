@@ -42,6 +42,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Optional
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 from analysis.backtest import (
     SignalFn,
     TRADING_DAYS,
@@ -478,7 +482,7 @@ def portfolio_backtest(
                 sig = signal_fn(df_slice)
             except Exception as exc:
                 if verbose:
-                    print(f"[pf-bt] {t}@{date}: signal_fn error: {exc}")
+                    log.warning("portfolio_backtest %s@%s: signal_fn error: %s", t, date, exc)
                 sig = "HOLD"
             if sig not in ("BUY", "SELL", "HOLD"):
                 sig = "HOLD"

@@ -43,7 +43,10 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 
+from config.logging_config import get_logger
 from config.settings_manager import settings
+
+log = get_logger(__name__)
 
 
 # ── Time-zone helpers (reuse the same logic as yahoo_finance.is_market_open) ─
@@ -223,7 +226,7 @@ class PaperScheduler(QObject):
             accts = list_accounts(active_only=True)
         except Exception as e:
             # DB not ready, or sqlalchemy error — stay quiet.
-            print(f"[paper-scheduler] list_accounts failed: {e}")
+            log.exception("list_accounts failed")
             return
         for a in accts:
             self._launch_scan(int(a.id))

@@ -28,6 +28,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
 from dataclasses import dataclass
 from typing import Optional
 
@@ -291,7 +295,7 @@ def detect_market_regime_hmm(df: pd.DataFrame) -> Optional[MarketContext]:
         elif top == 0: regime, confidence = "BEAR",    p_bear
         else:          regime, confidence = "LATERAL", p_lat
     except Exception as exc:
-        print(f"[HMM] regime detection error: {exc}")
+        log.warning("HMM regime detection error: %s", exc)
         return None
 
     # ── Volatility (GARCH forecast if available, EWMA fallback) ──────────────
@@ -481,7 +485,7 @@ def train_xgboost_signal(df: pd.DataFrame):
         prob_up = float(model.predict_proba(X_pred)[0][1])
 
     except Exception as exc:
-        print(f"[XGBoost] training error: {exc}")
+        log.warning("XGBoost training error: %s", exc)
         return None
 
     # ── Map probability → signal ──────────────────────────────────────────────
@@ -570,7 +574,7 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON):
         # Bullish score in [0, 1]: 0 = bear regime, 0.5 = lateral, 1 = bull
         bullish_score = float(np.clip(p_bull + 0.5 * p_lat, 0.0, 1.0))
     except Exception as exc:
-        print(f"[HMM] signal training error: {exc}")
+        log.warning("HMM signal training error: %s", exc)
         return None
 
     # ── Map state distribution → signal ───────────────────────────────────────

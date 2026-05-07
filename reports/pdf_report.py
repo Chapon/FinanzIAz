@@ -13,6 +13,10 @@ from reportlab.lib import colors
 from datetime import datetime
 from typing import Optional
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 # ── Dark palette ─────────────────────────────────────────────────────────────
 C_BG_DARK    = HexColor("#0d1117")
 C_CARD_DARK  = HexColor("#161b22")
@@ -191,20 +195,19 @@ def generate_portfolio_pdf(
     # ── Transaction history (optional) ───────────────────────────────────────
     if include_tx:
         try:
-            from database.models import get_session, Transaction, Position as Pos
-            session = get_session()
-            pos_ids = [p.id for p in positions if hasattr(p, "id")]
-            txs = (
-                session.query(Transaction)
-                .filter(Transaction.position_id.in_(pos_ids))
-                .order_by(Transaction.date.desc())
-                .limit(100)
-                .all()
-            )
-            # Build ticker lookup
-            pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
-            session.expunge_all()
-            session.close()
+            from database.models import session_scope, Transaction
+            with session_scope() as session:
+                pos_ids = [p.id for p in positions if hasattr(p, "id")]
+                txs = (
+                    session.query(Transaction)
+                    .filter(Transaction.position_id.in_(pos_ids))
+                    .order_by(Transaction.date.desc())
+                    .limit(100)
+                    .all()
+                )
+                # Build ticker lookup
+                pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
+                session.expunge_all()
 
             if txs:
                 story.append(Paragraph("Historial de Transacciones (últimas 100)", section_style))
@@ -239,8 +242,8 @@ def generate_portfolio_pdf(
                     tx_style.append(("TEXTCOLOR", (2, i), (2, i), color))
                 tx_table.setStyle(TableStyle(tx_style))
                 story.append(tx_table)
-        except Exception as e:
-            print(f"[PDF] Transaction history error: {e}")
+        except Exception:
+            log.exception("PDF transaction history section failed")
 
     # ── Footer ───────────────────────────────────────────────────────────────
     story.append(Spacer(1, 24))

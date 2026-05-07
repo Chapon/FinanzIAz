@@ -18,6 +18,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from typing import Optional
+
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
 from dataclasses import dataclass, field
 from collections import OrderedDict
 
@@ -424,7 +428,7 @@ def analyze(
             if xgb_sig:
                 signals.append(xgb_sig)
         except Exception as exc:
-            print(f"[analyze] ML error for {ticker}: {exc}")
+            log.warning("ML signal error for %s: %s", ticker, exc)
 
     if not signals:
         return None

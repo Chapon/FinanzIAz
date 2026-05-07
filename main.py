@@ -16,9 +16,16 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from config.logging_config import setup_logging, get_logger
 from database.models import init_db
 
 def main():
+    # Set up centralized logging (rotating file + stderr) BEFORE any other
+    # subsystem imports, so module-level loggers all attach correctly.
+    setup_logging()
+    log = get_logger(__name__)
+    log.info("Iniciando FinanzIAs")
+
     # Initialize DB (creates tables + default portfolio if needed)
     init_db()
 

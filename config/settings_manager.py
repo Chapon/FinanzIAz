@@ -3,7 +3,12 @@ Persistent app settings backed by ~/.finanzias/settings.json.
 Import anywhere with: from config.settings_manager import settings
 """
 import json
+import logging
 from pathlib import Path
+
+# Use plain ``logging`` instead of get_logger() to avoid an import cycle:
+# logging_config imports from this module to read user log-level overrides.
+_log = logging.getLogger(__name__)
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEFAULTS: dict = {
@@ -66,8 +71,8 @@ class _SettingsManager:
                 self._data = {**DEFAULTS, **stored}
             else:
                 self._data = dict(DEFAULTS)
-        except Exception as e:
-            print(f"[Settings] Load error: {e}")
+        except Exception:
+            _log.exception("Settings load failed; falling back to defaults")
             self._data = dict(DEFAULTS)
         return dict(self._data)
 
@@ -76,8 +81,8 @@ class _SettingsManager:
             _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"[Settings] Save error: {e}")
+        except Exception:
+            _log.exception("Settings save failed")
 
     # ── Access ────────────────────────────────────────────────────────────────
 

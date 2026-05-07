@@ -51,3 +51,9 @@ exports/
 # OS
 Thumbs.db
 desktop.ini
+
+# Claude Code (local/personal config; settings.json is shared)
+.claude/settings.local.json
+
+# Data temp files
+data/.refresh

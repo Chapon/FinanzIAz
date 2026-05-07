@@ -28,6 +28,10 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 # ── Optional arch dependency ─────────────────────────────────────────────────
 try:
     from arch import arch_model
@@ -176,7 +180,7 @@ def fit_garch_forecast(
         vol_regime = _classify_vol_regime(current_annual, forecast_annual)
 
     except Exception as exc:
-        print(f"[GARCH] fit error: {exc}")
+        log.warning("GARCH fit error: %s", exc)
         return None
 
     return GarchForecast(

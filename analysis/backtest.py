@@ -36,6 +36,10 @@ import pandas as pd
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -217,7 +221,7 @@ def backtest(
                 sig = signal_fn(df.iloc[:i + 1])
             except Exception as exc:
                 if verbose:
-                    print(f"[backtest] signal_fn error at {date}: {exc}")
+                    log.warning("backtest signal_fn error at %s: %s", date, exc)
                 sig = "HOLD"
             if sig not in ("BUY", "SELL", "HOLD"):
                 sig = "HOLD"

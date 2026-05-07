@@ -1,17 +1,36 @@
 """
 Database models for FinanzIAs investment tracker.
 Uses SQLAlchemy ORM with SQLite backend.
+
+Session usage
+-------------
+Prefer the ``session_scope()`` context manager for new code:
+
+    from database.models import session_scope
+    with session_scope() as session:
+        ...
+        # commit happens automatically on success;
+        # rollback + re-raise on exception; close always.
+
+The legacy ``get_session()`` helper still exists for incremental migration —
+remember to wrap its usage in try/finally and call ``session.close()``.
 """
+from contextlib import contextmanager
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, Integer, Float, String,
-    DateTime, Boolean, ForeignKey, Text
+    DateTime, Boolean, ForeignKey, Text, Index
 )
-from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker, Session as SASession
 import os
+from typing import Iterator
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db")
 ENGINE = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+
+# Single sessionmaker bound to the engine. Re-using one factory is more
+# efficient than re-building it on every ``get_session()`` call.
+SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -38,10 +57,13 @@ class Portfolio(Base):
 class Position(Base):
     """Represents a stock holding within a portfolio."""
     __tablename__ = "positions"
+    __table_args__ = (
+        Index("ix_positions_portfolio_ticker", "portfolio_id", "ticker"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
-    ticker = Column(String(20), nullable=False)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
     company_name = Column(String(200), nullable=True)
     quantity = Column(Float, nullable=False)
     avg_buy_price = Column(Float, nullable=False)
@@ -67,14 +89,17 @@ class Position(Base):
 class Transaction(Base):
     """Records of individual buy/sell transactions."""
     __tablename__ = "transactions"
+    __table_args__ = (
+        Index("ix_transactions_position_date", "position_id", "date"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    position_id = Column(Integer, ForeignKey("positions.id"), nullable=False)
+    position_id = Column(Integer, ForeignKey("positions.id"), nullable=False, index=True)
     transaction_type = Column(String(10), nullable=False)  # "BUY" or "SELL"
     quantity = Column(Float, nullable=False)
     price = Column(Float, nullable=False)
     fees = Column(Float, default=0.0)
-    date = Column(DateTime, default=datetime.utcnow)
+    date = Column(DateTime, default=datetime.utcnow, index=True)
     notes = Column(Text, nullable=True)
 
     position = relationship("Position", back_populates="transactions")
@@ -90,13 +115,18 @@ class Transaction(Base):
 class Alert(Base):
     """Price alert for a specific ticker."""
     __tablename__ = "alerts"
+    __table_args__ = (
+        # Hot path: AlertManager.check_alerts filters on is_active + portfolio_id.
+        Index("ix_alerts_active_portfolio", "is_active", "portfolio_id"),
+        Index("ix_alerts_ticker_active", "ticker", "is_active"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
-    ticker = Column(String(20), nullable=False)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
     alert_type = Column(String(20), nullable=False)  # "ABOVE", "BELOW", "CHANGE_PCT"
     target_value = Column(Float, nullable=False)
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, index=True)
     triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     message = Column(Text, nullable=True)
@@ -110,14 +140,18 @@ class Alert(Base):
 class PriceCache(Base):
     """Cache for recently fetched prices to reduce API calls."""
     __tablename__ = "price_cache"
+    __table_args__ = (
+        # Hot path: lookup latest entry per ticker within TTL window.
+        Index("ix_price_cache_ticker_fetched", "ticker", "fetched_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False)
+    ticker = Column(String(20), nullable=False, index=True)
     price = Column(Float, nullable=False)
     change_pct = Column(Float, nullable=True)
     volume = Column(Float, nullable=True)
     market_cap = Column(Float, nullable=True)
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     def __repr__(self):
         return f"<PriceCache({self.ticker} @ {self.price})>"
@@ -129,9 +163,12 @@ class DividendCache(Base):
     Refreshed on demand — not on every price update.
     """
     __tablename__ = "dividend_cache"
+    __table_args__ = (
+        Index("ix_dividend_cache_ticker_since", "ticker", "since_date"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False)
+    ticker = Column(String(20), nullable=False, index=True)
     since_date = Column(DateTime, nullable=False)   # purchase date of position
     total_per_share = Column(Float, nullable=False, default=0.0)  # cumulative $/share
     fetched_at = Column(DateTime, default=datetime.utcnow)
@@ -146,6 +183,9 @@ class HistoricalDataCache(Base):
     Keyed by (ticker, period, interval). At most one entry per combination.
     """
     __tablename__ = "historical_data_cache"
+    __table_args__ = (
+        Index("ix_hist_cache_key", "ticker", "period", "interval"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False)
@@ -164,13 +204,12 @@ def init_db():
     # Import here (not at module top) to avoid a circular import.
     try:
         import paper_trading.models  # noqa: F401
-    except Exception as e:
-        print(f"[init_db] paper_trading.models import failed: {e}")
+    except Exception:
+        from config.logging_config import get_logger
+        get_logger(__name__).exception("paper_trading.models import failed")
     Base.metadata.create_all(ENGINE)
     _migrate()
-    Session = sessionmaker(bind=ENGINE)
-    session = Session()
-    try:
+    with session_scope() as session:
         if session.query(Portfolio).count() == 0:
             default = Portfolio(
                 name="Mi Portafolio",
@@ -178,9 +217,6 @@ def init_db():
                 currency="USD"
             )
             session.add(default)
-            session.commit()
-    finally:
-        session.close()
 
 
 def _migrate():
@@ -197,7 +233,38 @@ def _migrate():
     conn.close()
 
 
-def get_session():
-    """Return a new SQLAlchemy session."""
-    Session = sessionmaker(bind=ENGINE)
-    return Session()
+def get_session() -> SASession:
+    """
+    Return a new SQLAlchemy session. **Legacy** API — prefer ``session_scope()``.
+    Caller is responsible for ``session.close()`` (use try/finally).
+    """
+    return SessionLocal()
+
+
+@contextmanager
+def session_scope() -> "Iterator[SASession]":
+    """
+    Context manager around a SQLAlchemy session.
+
+    Behaviour
+    ---------
+    - Yields a fresh ``Session`` bound to the global engine.
+    - Commits at the end of the block on normal exit.
+    - Rolls back and re-raises on exception.
+    - Always closes the session.
+
+    Usage
+    -----
+        with session_scope() as session:
+            session.add(obj)
+            # implicit commit on exit
+    """
+    session: SASession = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
