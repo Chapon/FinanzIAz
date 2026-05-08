@@ -32,366 +32,39 @@ from ui.widgets import SignalBadge, MetricCard, HSeparator
 from ui.styles import SIGNAL_COLORS, PALETTE
 from config.settings_manager import settings
 
-
-# ── Yahoo-level display helpers ────────────────────────────────────────────────
-_YAHOO_COLORS = {
-    "Strong Buy":   "#22c55e",
-    "Buy":          "#4ade80",
-    "Hold":         "#fbbf24",
-    "Underperform": "#fb923c",
-    "Sell":         "#f87171",
-}
-_YAHOO_LABELS_ES = {
-    "Strong Buy":   "Compra Fuerte",
-    "Buy":          "Comprar",
-    "Hold":         "Mantener",
-    "Underperform": "Vender",
-    "Sell":         "Venta Fuerte",
-}
+# Sub-components extracted from this file in the refactor pass. Importing
+# them here keeps every external ``from ui.analysis_tab import …`` call-site
+# working unchanged (they re-export below).
+from ui.analysis.labels import (
+    TOOLTIPS, YAHOO_COLORS as _YAHOO_COLORS,
+    YAHOO_LABELS_ES as _YAHOO_LABELS_ES,
+    get_tooltip as _tt,
+)
+from ui.analysis.catalog import (
+    TICKER_DB as _TICKER_DB,
+    COMPLETION_LIST as _COMPLETION_LIST,
+    PERIODS,
+)
+from ui.analysis.signal_card import SignalCard
+from ui.analysis.worker import AnalysisWorker
 
 
 # ── Tooltip content ────────────────────────────────────────────────────────────
-TOOLTIPS = {
-    "RSI": (
-        "<b>RSI — Índice de Fuerza Relativa</b><br><br>"
-        "Mide la velocidad y magnitud de los movimientos de precio en una escala de 0 a 100.<br><br>"
-        "<b>Cómo interpretarlo:</b><br>"
-        "• <span style='color:#f87171'>RSI &gt; 70</span> → Sobrecompra: el precio subió demasiado rápido, "
-        "posible corrección a la baja.<br>"
-        "• <span style='color:#4ade80'>RSI &lt; 30</span> → Sobreventa: el precio cayó demasiado rápido, "
-        "posible rebote al alza.<br>"
-        "• RSI entre 30 y 70 → Zona neutral, sin señal clara.<br><br>"
-        "<b>Período estándar:</b> 14 días."
-    ),
-    "MACD": (
-        "<b>MACD — Convergencia/Divergencia de Medias Móviles</b><br><br>"
-        "Compara dos medias móviles exponenciales (EMA 12 y EMA 26) para detectar cambios de tendencia.<br><br>"
-        "<b>Componentes:</b><br>"
-        "• <b>Línea MACD</b>: diferencia entre EMA12 y EMA26.<br>"
-        "• <b>Línea de señal</b>: EMA9 del MACD.<br>"
-        "• <b>Histograma</b>: diferencia entre MACD y señal.<br><br>"
-        "<b>Cómo usarlo:</b><br>"
-        "• MACD cruza <i>por encima</i> de la señal → señal de <span style='color:#4ade80'>COMPRA</span>.<br>"
-        "• MACD cruza <i>por debajo</i> de la señal → señal de <span style='color:#f87171'>VENTA</span>.<br>"
-        "• Histograma en verde creciente → momentum alcista."
-    ),
-    "Bollinger Bands": (
-        "<b>Bandas de Bollinger</b><br><br>"
-        "Envuelven el precio con una banda superior e inferior basadas en la desviación estándar "
-        "respecto a una media móvil de 20 períodos.<br><br>"
-        "<b>Cómo interpretarlas:</b><br>"
-        "• Precio toca la <b>banda inferior</b> → posible <span style='color:#4ade80'>rebote alcista</span>: "
-        "el precio está estadísticamente barato.<br>"
-        "• Precio toca la <b>banda superior</b> → posible <span style='color:#f87171'>retroceso bajista</span>: "
-        "el precio está estadísticamente caro.<br>"
-        "• Bandas muy juntas (<i>squeeze</i>) → se viene un movimiento fuerte, pero la dirección es incierta.<br><br>"
-        "<b>La línea del medio</b> es la SMA20 y actúa como imán de precio."
-    ),
-    "Golden/Death Cross": (
-        "<b>Golden Cross / Death Cross</b><br><br>"
-        "Compara la media móvil simple de 50 días (SMA50) con la de 200 días (SMA200) "
-        "para detectar cambios de tendencia de largo plazo.<br><br>"
-        "<b>Señales:</b><br>"
-        "• <span style='color:#4ade80'><b>Golden Cross</b></span>: SMA50 cruza <i>por encima</i> de SMA200 "
-        "→ inicio de tendencia alcista de largo plazo. Señal muy confiable.<br>"
-        "• <span style='color:#f87171'><b>Death Cross</b></span>: SMA50 cruza <i>por debajo</i> de SMA200 "
-        "→ inicio de tendencia bajista de largo plazo. Señal de precaución.<br><br>"
-        "<b>Limitación:</b> es un indicador rezagado — confirma tendencias ya en curso, "
-        "no las predice con anticipación."
-    ),
-    "señal_general": (
-        "<b>Señal General</b><br><br>"
-        "Resumen ponderado de todos los indicadores técnicos, usando el sistema de "
-        "5 niveles de Yahoo Finance.<br><br>"
-        "• <span style='color:#22c55e'><b>● Compra Fuerte</b></span>: consenso alcista fuerte.<br>"
-        "• <span style='color:#4ade80'><b>● Comprar</b></span>: mayoría alcista moderada.<br>"
-        "• <span style='color:#fbbf24'><b>● Mantener</b></span>: señales mixtas o neutrales.<br>"
-        "• <span style='color:#fb923c'><b>● Vender</b></span>: mayoría bajista moderada.<br>"
-        "• <span style='color:#f87171'><b>● Venta Fuerte</b></span>: consenso bajista fuerte.<br><br>"
-        "<i>No es asesoramiento financiero. Siempre considerá el contexto del mercado.</i>"
-    ),
-    "soporte": (
-        "<b>Soporte</b><br><br>"
-        "Nivel de precio donde históricamente el activo encontró demanda suficiente para "
-        "detener su caída y rebotar.<br><br>"
-        "Calculado como el mínimo de las últimas 60 velas."
-    ),
-    "resistencia": (
-        "<b>Resistencia</b><br><br>"
-        "Nivel de precio donde históricamente el activo encontró oferta suficiente para "
-        "frenar su subida y retroceder.<br><br>"
-        "Calculado como el máximo de las últimas 60 velas."
-    ),
-    "precio_actual": (
-        "<b>Precio Actual</b><br><br>"
-        "Último precio operado en el mercado para este ticker.<br>"
-        "Se actualiza con caché de 5 minutos desde Yahoo Finance."
-    ),
-    "cambio_hoy": (
-        "<b>Variación del Día</b><br><br>"
-        "Cambio porcentual del precio respecto al cierre del día anterior.<br><br>"
-        "• <span style='color:#4ade80'>Verde</span>: el precio subió hoy.<br>"
-        "• <span style='color:#f87171'>Rojo</span>: el precio bajó hoy."
-    ),
-    "XGBoost ML": (
-        "<b>XGBoost — Modelo de Machine Learning</b><br><br>"
-        "Clasificador entrenado en cada análisis con los datos históricos del propio ticker.<br><br>"
-        "<b>Features:</b> retornos (1/3/5/10/20 días), RSI y su tendencia de 5 días, "
-        "histograma MACD y su aceleración, posición en Bandas de Bollinger, "
-        "ancho del squeeze, ratio de volumen, volatilidad realizada, y ratios precio/SMA.<br><br>"
-        "<b>Target:</b> ¿sube el precio en los próximos 5 días?<br><br>"
-        "<b>Interpretación:</b><br>"
-        "• &gt;75%: <span style='color:#22c55e'>Compra Fuerte</span> — patrones alcistas sólidos.<br>"
-        "• 65-75%: <span style='color:#4ade80'>Comprar</span><br>"
-        "• 35-65%: <span style='color:#fbbf24'>Neutral</span><br>"
-        "• 25-35%: <span style='color:#fb923c'>Vender</span><br>"
-        "• &lt;25%: <span style='color:#f87171'>Venta Fuerte</span> — patrones bajistas sólidos.<br><br>"
-        "<b>Split de entrenamiento:</b> 80% histórico (entrenamiento) / 20% más reciente (validación).<br>"
-        "<i>Requiere <code>pip install xgboost</code>.</i>"
-    ),
-    "Volumen": (
-        "<b>Volumen — Acumulación / Distribución</b><br><br>"
-        "Compara el volumen promedio en días alcistas vs bajistas "
-        "en las últimas 10 sesiones.<br><br>"
-        "<b>Señales:</b><br>"
-        "• Vol. en días alcistas &gt; 1.5× días bajistas → "
-        "<span style='color:#4ade80'>acumulación</span> (compradores institucionales).<br>"
-        "• Vol. en días bajistas &gt; 1.5× días alcistas → "
-        "<span style='color:#f87171'>distribución</span> (presión vendedora).<br>"
-        "• Diferencia &lt; 1.5× → neutral.<br><br>"
-        "<i>El volumen confirma (o contradice) los movimientos de precio.</i>"
-    ),
-    "regimen": (
-        "<b>Régimen de Mercado</b><br><br>"
-        "Clasifica el contexto actual del activo basándose en momentum de precio "
-        "y posición respecto a medias móviles de largo plazo.<br><br>"
-        "<b>Algoritmo:</b> scoring ponderado sobre retornos de 5, 20 y 60 días, "
-        "más la posición del precio respecto a SMA50 y SMA200.<br><br>"
-        "• <span style='color:#22c55e'><b>Alcista</b></span>: tendencia de fondo positiva — "
-        "señales de compra son más confiables.<br>"
-        "• <span style='color:#f87171'><b>Bajista</b></span>: tendencia de fondo negativa — "
-        "señales de compra van contra la corriente; mayor riesgo.<br>"
-        "• <span style='color:#fbbf24'><b>Lateral</b></span>: sin tendencia clara — "
-        "señales técnicas son menos confiables.<br><br>"
-        "El régimen <b>ajusta la probabilidad</b> del panel inferior."
-    ),
-}
+# ``TOOLTIPS`` and the ``_tt(key)`` helper were moved to
+# ``ui/analysis/labels.py`` and re-exported via the imports at the top of
+# this file.
 
 
-def _tt(key: str) -> str:
-    return TOOLTIPS.get(key, "")
+# ── Static ticker database / period mapping ──────────────────────────────────
+# ``_TICKER_DB``, ``_COMPLETION_LIST`` and ``PERIODS`` were moved to
+# ``ui/analysis/catalog.py`` and re-exported via the imports at the top of
+# this file.
 
 
-# ── Static ticker database for autocomplete ───────────────────────────────────
-# Format: (SYMBOL, "Company / description")
-_TICKER_DB: list[tuple[str, str]] = [
-    # ── US Tech ────────────────────────────────────────────────────────────────
-    ("AAPL",  "Apple Inc."),
-    ("MSFT",  "Microsoft Corporation"),
-    ("GOOGL", "Alphabet Inc. (Google)"),
-    ("GOOG",  "Alphabet Inc. Class C"),
-    ("AMZN",  "Amazon.com Inc."),
-    ("META",  "Meta Platforms Inc. (Facebook)"),
-    ("TSLA",  "Tesla Inc."),
-    ("NVDA",  "NVIDIA Corporation"),
-    ("AMD",   "Advanced Micro Devices"),
-    ("INTC",  "Intel Corporation"),
-    ("NFLX",  "Netflix Inc."),
-    ("ADBE",  "Adobe Inc."),
-    ("CRM",   "Salesforce Inc."),
-    ("ORCL",  "Oracle Corporation"),
-    ("IBM",   "IBM Corporation"),
-    ("CSCO",  "Cisco Systems Inc."),
-    ("QCOM",  "Qualcomm Inc."),
-    ("TXN",   "Texas Instruments"),
-    ("AVGO",  "Broadcom Inc."),
-    ("AMAT",  "Applied Materials"),
-    ("MU",    "Micron Technology"),
-    ("SNOW",  "Snowflake Inc."),
-    ("UBER",  "Uber Technologies"),
-    ("LYFT",  "Lyft Inc."),
-    ("SPOT",  "Spotify Technology"),
-    ("SQ",    "Block Inc. (Square)"),
-    ("PYPL",  "PayPal Holdings"),
-    ("COIN",  "Coinbase Global"),
-    ("PLTR",  "Palantir Technologies"),
-    # ── US Finance ─────────────────────────────────────────────────────────────
-    ("JPM",   "JPMorgan Chase & Co."),
-    ("BAC",   "Bank of America Corp."),
-    ("WFC",   "Wells Fargo & Co."),
-    ("GS",    "Goldman Sachs Group"),
-    ("MS",    "Morgan Stanley"),
-    ("V",     "Visa Inc."),
-    ("MA",    "Mastercard Inc."),
-    ("AXP",   "American Express Co."),
-    ("BRK-B", "Berkshire Hathaway Inc."),
-    ("C",     "Citigroup Inc."),
-    ("BLK",   "BlackRock Inc."),
-    ("SCHW",  "Charles Schwab Corp."),
-    # ── US Healthcare ──────────────────────────────────────────────────────────
-    ("JNJ",   "Johnson & Johnson"),
-    ("UNH",   "UnitedHealth Group"),
-    ("PFE",   "Pfizer Inc."),
-    ("ABBV",  "AbbVie Inc."),
-    ("MRK",   "Merck & Co."),
-    ("LLY",   "Eli Lilly and Co."),
-    ("AMGN",  "Amgen Inc."),
-    ("GILD",  "Gilead Sciences"),
-    # ── US Consumer ────────────────────────────────────────────────────────────
-    ("WMT",   "Walmart Inc."),
-    ("COST",  "Costco Wholesale"),
-    ("HD",    "Home Depot Inc."),
-    ("NKE",   "Nike Inc."),
-    ("MCD",   "McDonald's Corp."),
-    ("SBUX",  "Starbucks Corp."),
-    ("KO",    "Coca-Cola Co."),
-    ("PEP",   "PepsiCo Inc."),
-    ("PG",    "Procter & Gamble"),
-    ("DIS",   "Walt Disney Co."),
-    # ── US Energy ──────────────────────────────────────────────────────────────
-    ("XOM",   "Exxon Mobil Corp."),
-    ("CVX",   "Chevron Corp."),
-    ("COP",   "ConocoPhillips"),
-    ("SLB",   "SLB (Schlumberger)"),
-    # ── US Industrial / Other ──────────────────────────────────────────────────
-    ("BA",    "Boeing Co."),
-    ("CAT",   "Caterpillar Inc."),
-    ("GE",    "GE Aerospace"),
-    ("HON",   "Honeywell International"),
-    ("UPS",   "United Parcel Service"),
-    ("FDX",   "FedEx Corp."),
-    ("LMT",   "Lockheed Martin"),
-    ("RTX",   "RTX Corporation (Raytheon)"),
-    ("T",     "AT&T Inc."),
-    ("VZ",    "Verizon Communications"),
-    ("TMUS",  "T-Mobile US Inc."),
-    ("CMCSA", "Comcast Corp."),
-    # ── ETFs ───────────────────────────────────────────────────────────────────
-    ("SPY",   "SPDR S&P 500 ETF"),
-    ("QQQ",   "Invesco QQQ Trust — Nasdaq 100"),
-    ("IWM",   "iShares Russell 2000 ETF"),
-    ("VTI",   "Vanguard Total Stock Market ETF"),
-    ("VOO",   "Vanguard S&P 500 ETF"),
-    ("GLD",   "SPDR Gold Shares ETF"),
-    ("SLV",   "iShares Silver Trust ETF"),
-    ("TLT",   "iShares 20+ Year Treasury Bond ETF"),
-    ("HYG",   "iShares High Yield Corporate Bond ETF"),
-    ("EEM",   "iShares MSCI Emerging Markets ETF"),
-    ("XLK",   "Technology Select Sector SPDR ETF"),
-    ("XLF",   "Financial Select Sector SPDR ETF"),
-    ("XLE",   "Energy Select Sector SPDR ETF"),
-    ("XLV",   "Health Care Select Sector SPDR ETF"),
-    ("ARKK",  "ARK Innovation ETF"),
-    ("BND",   "Vanguard Total Bond Market ETF"),
-    # ── Argentina — Merval ─────────────────────────────────────────────────────
-    ("GGAL.BA",  "Grupo Financiero Galicia"),
-    ("YPF",      "YPF S.A."),
-    ("BMA.BA",   "Banco Macro S.A."),
-    ("SUPV.BA",  "Supervielle S.A."),
-    ("PAMP.BA",  "Pampa Energía S.A."),
-    ("TGNO4.BA", "Transportadora Gas del Norte"),
-    ("TGSU2.BA", "Transportadora Gas del Sur"),
-    ("TXAR.BA",  "Ternium Argentina S.A."),
-    ("ALUA.BA",  "Aluar Aluminio Argentino"),
-    ("CRES.BA",  "Cresud S.A."),
-    ("EDN.BA",   "Edenor S.A."),
-    ("LOMA.BA",  "Loma Negra C.I.A.S.A."),
-    ("CEPU.BA",  "Central Puerto S.A."),
-    ("BYMA.BA",  "Bolsas y Mercados Argentinos"),
-    ("COME.BA",  "Sociedad Comercial del Plata"),
-    ("MOLI.BA",  "Molinos Río de la Plata"),
-    ("MIRG.BA",  "Mirgor S.A."),
-    # ── Argentina — ADRs en NYSE ───────────────────────────────────────────────
-    ("GGAL", "Grupo Financiero Galicia ADR"),
-    ("BMA",  "Banco Macro ADR"),
-    ("SUPV", "Supervielle ADR"),
-    ("LOMA", "Loma Negra ADR"),
-    ("CEPU", "Central Puerto ADR"),
-    ("PAM",  "Pampa Energía ADR"),
-    ("TGS",  "Transportadora Gas del Sur ADR"),
-    # ── Cripto ─────────────────────────────────────────────────────────────────
-    ("BTC-USD", "Bitcoin USD"),
-    ("ETH-USD", "Ethereum USD"),
-    ("SOL-USD", "Solana USD"),
-    ("BNB-USD", "Binance Coin USD"),
-    ("XRP-USD", "XRP USD"),
-    # ── Índices ────────────────────────────────────────────────────────────────
-    ("^GSPC", "S&P 500 Index"),
-    ("^IXIC", "NASDAQ Composite"),
-    ("^DJI",  "Dow Jones Industrial Average"),
-    ("^RUT",  "Russell 2000 Index"),
-    ("^VIX",  "CBOE Volatility Index (VIX)"),
-    ("^MERV", "MERVAL Index — Argentina"),
-    ("^FTSE", "FTSE 100 Index — UK"),
-    ("^N225", "Nikkei 225 — Japan"),
-]
-
-# Prebuilt completion strings: "AAPL — Apple Inc."
-_COMPLETION_LIST: list[str] = [f"{sym} — {name}" for sym, name in _TICKER_DB]
-
-
-PERIODS = {
-    "1 mes":   "1mo",
-    "3 meses": "3mo",
-    "6 meses": "6mo",
-    "1 año":   "1y",
-    "2 años":  "2y",
-    "5 años":  "5y",
-}
-
-
-# ── Background worker ──────────────────────────────────────────────────────────
-
-class AnalysisWorker(QThread):
-    done = pyqtSignal(object, object, object, object)  # df, result, price_data, company_info
-
-    def __init__(self, ticker: str, period: str):
-        super().__init__()
-        self.ticker = ticker
-        self.period = period
-
-    def run(self):
-        df = get_historical_data(self.ticker, period=self.period)
-        result = (
-            analyze(self.ticker, df,
-                    enable_sma_cross=settings.get("sma_cross"),
-                    enable_xgboost=True)
-            if df is not None else None
-        )
-        price_data = get_current_price(self.ticker)
-        company = get_company_info(self.ticker)
-        self.done.emit(df, result, price_data, company)
-
-
-# ── Signal card ────────────────────────────────────────────────────────────────
-
-class SignalCard(QFrame):
-    """Displays a single TechnicalSignal using Yahoo Finance's 5-level system."""
-    def __init__(self, signal, parent=None):
-        super().__init__(parent)
-        self.setObjectName("card")
-        tt = _tt(signal.indicator)
-        if tt:
-            self.setToolTip(tt)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(6)
-
-        top = QHBoxLayout()
-        ind_label = QLabel(signal.indicator)
-        ind_label.setStyleSheet("font-weight: 600; font-size: 13px;")
-        top.addWidget(ind_label)
-        top.addStretch()
-        yahoo_level = to_yahoo_level(signal.signal, signal.strength)
-        badge = SignalBadge(yahoo_level)
-        top.addWidget(badge)
-        layout.addLayout(top)
-
-        desc = QLabel(signal.description)
-        desc.setObjectName("muted")
-        desc.setWordWrap(True)
-        desc.setStyleSheet("font-size: 12px;")
-        layout.addWidget(desc)
+# ── Background worker / signal card ──────────────────────────────────────────
+# Both ``AnalysisWorker`` and ``SignalCard`` were extracted to
+# ``ui/analysis/{worker,signal_card}.py`` and are re-exported via the imports
+# at the top of this file.
 
 
 # ── Main tab ───────────────────────────────────────────────────────────────────
