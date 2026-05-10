@@ -36,9 +36,12 @@ def test_per_share_commission_ibkr_style():
     assert c.cost(side="BUY", shares=1, price=50) == 1.0
     # Mid trade: 200 shares * $0.005 = $1.00, but min_fee=$1 too → still $1
     assert c.cost(side="BUY", shares=200, price=50) == 1.0
-    # Large trade: capped at 1% of notional
+    # Normal large trade: raw ($50) is well below the 1%-of-notional cap ($5,000)
     cost = c.cost(side="BUY", shares=10_000, price=50)
-    assert cost == pytest.approx(50_000 * 0.01)  # = 500
+    assert cost == pytest.approx(10_000 * 0.005)  # = 50.0
+    # Penny-stock: raw=$1,000 exceeds 1% cap on $50,000 notional → capped at $500
+    cost_capped = c.cost(side="BUY", shares=200_000, price=0.25)
+    assert cost_capped == pytest.approx(200_000 * 0.25 * 0.01)  # = 500
 
 
 def test_tiered_commission_bands():

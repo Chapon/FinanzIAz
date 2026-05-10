@@ -81,7 +81,11 @@ def compute_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
     avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
     avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+    rsi = 100 - (100 / (1 + rs))
+    # avg_loss=0 & avg_gain>0 → all-gain bars → RSI should be 100, not NaN
+    all_gain = (avg_loss == 0) & (avg_gain > 0)
+    rsi = rsi.where(~all_gain, other=100.0)
+    return rsi
 
 
 def compute_macd(

@@ -41,6 +41,8 @@ finanzias.db
 finanzias.db-journal
 finanzias.db-wal
 finanzias.db-shm
+finanzias.db.before-restore
+backups/
 *.log
 
 # Generated reports / temp

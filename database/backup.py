@@ -75,9 +75,17 @@ def backup_database(reason: str = "manual") -> Optional[Path]:
         dst = BACKUP_DIR / f"{DB_STEM}_{_timestamp()}_{safe_reason}.db"
 
         # Try the online backup API first — consistent across in-flight writes.
+        # Use explicit close(): the sqlite3 context manager only commits/rolls
+        # back, it does NOT close the connection. On Windows, open handles
+        # prevent the file from being deleted by rotate_backups.
         try:
-            with sqlite3.connect(str(src)) as src_conn, sqlite3.connect(str(dst)) as dst_conn:
+            src_conn = sqlite3.connect(str(src))
+            dst_conn = sqlite3.connect(str(dst))
+            try:
                 src_conn.backup(dst_conn)
+            finally:
+                dst_conn.close()
+                src_conn.close()
         except Exception:
             log.warning("Online backup failed, falling back to file copy", exc_info=True)
             shutil.copy2(src, dst)
