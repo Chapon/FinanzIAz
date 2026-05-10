@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QSpinBox, QDateEdit
 )
 from PyQt6.QtCore import Qt, QDate
-from database.models import get_session, Portfolio, Position, Transaction
+from database.models import session_scope, Portfolio, Position, Transaction
 from data.yahoo_finance import validate_ticker, get_company_info
 from alerts.alert_manager import AlertManager
 from config.settings_manager import settings
@@ -58,8 +58,7 @@ class AddPortfolioDialog(QDialog):
             QMessageBox.warning(self, "Error", "El nombre es requerido.")
             return
 
-        session = get_session()
-        try:
+        with session_scope() as session:
             existing = session.query(Portfolio).filter(Portfolio.name == name).first()
             if existing:
                 QMessageBox.warning(self, "Error", f"Ya existe un portafolio llamado '{name}'.")
@@ -70,10 +69,7 @@ class AddPortfolioDialog(QDialog):
                 currency=self.currency_combo.currentText(),
             )
             session.add(p)
-            session.commit()
-            self.accept()
-        finally:
-            session.close()
+        self.accept()
 
 
 class RenamePortfolioDialog(QDialog):
@@ -113,8 +109,7 @@ class RenamePortfolioDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "Error", "El nombre no puede estar vacío.")
             return
-        session = get_session()
-        try:
+        with session_scope() as session:
             conflict = (
                 session.query(Portfolio)
                 .filter(Portfolio.name == name, Portfolio.id != self._portfolio_id)
@@ -127,10 +122,7 @@ class RenamePortfolioDialog(QDialog):
             p = session.query(Portfolio).filter(Portfolio.id == self._portfolio_id).first()
             if p:
                 p.name = name
-                session.commit()
-            self.accept()
-        finally:
-            session.close()
+        self.accept()
 
 
 class AddPositionDialog(QDialog):
@@ -275,8 +267,7 @@ class AddPositionDialog(QDialog):
 
         company_info = get_company_info(ticker)
 
-        session = get_session()
-        try:
+        with session_scope() as session:
             # Check if position already exists and merge
             existing = (
                 session.query(Position)
@@ -319,10 +310,7 @@ class AddPositionDialog(QDialog):
                 fees=self.fees_spin.value(),
             )
             session.add(tx)
-            session.commit()
-            self.accept()
-        finally:
-            session.close()
+        self.accept()
 
 
 class AddAlertDialog(QDialog):
@@ -481,8 +469,7 @@ class SellPositionDialog(QDialog):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        session = get_session()
-        try:
+        with session_scope() as session:
             pos = session.query(Position).filter(Position.id == self.position.id).first()
             if pos is None:
                 return
@@ -501,8 +488,4 @@ class SellPositionDialog(QDialog):
             else:
                 pos.quantity -= qty
                 pos.updated_at = datetime.utcnow()
-
-            session.commit()
-            self.accept()
-        finally:
-            session.close()
+        self.accept()

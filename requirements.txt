@@ -13,12 +13,19 @@ requests>=2.32.0           # was 2.31.0; bumped for CVE-2024-35195 (cert verify)
 SQLAlchemy>=2.0.0,<3.0
 
 # Data wrangling
-# IMPORTANT: pandas-ta 0.3.14b is the last release (2021) and is NOT
-# compatible with numpy 2.x. Pin numpy<2 until pandas-ta has a maintained
-# successor or we replace it (TA-Lib / vectorbt / native impl).
-pandas>=2.1.0,<3.0
-pandas-ta>=0.3.14b
-numpy>=1.26.0,<2.0
+# IMPORTANT — Python 3.12+ compatibility:
+#   * pandas 2.1.0 only has wheels for 3.9-3.12 (the 3.12 wheel landed in
+#     2.1.1). Pin ≥2.2.0 so pip never tries to build from source on Win.
+#   * numpy 1.26.4 is the first 1.26.x with a Python 3.12 stable wheel
+#     across all platforms. Keep <2 because pandas 2.2.x (Python ≥3.12)
+#     itself constrains numpy<2.
+#   * pandas-ta is INTENTIONALLY NOT in this list. The codebase computes
+#     RSI/MACD/Bollinger/SMA/EMA with pure pandas (``close.ewm(...)``,
+#     ``close.rolling(...)``) in ``analysis/technical.py``. Adding
+#     pandas-ta would only re-introduce the numpy 2.x conflict its newer
+#     0.4.x betas trigger.
+pandas>=2.2.0,<3.0
+numpy>=1.26.4,<2.0
 
 # Charts
 matplotlib>=3.8.0,<4.0

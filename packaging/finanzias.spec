@@ -29,7 +29,6 @@ hiddenimports = [
     "PyQt6.sip",
     "sqlalchemy.dialects.sqlite",
     "yfinance",
-    "pandas_ta",
     "hmmlearn._hmmc",
     "arch.univariate",
     "matplotlib.backends.backend_qtagg",
@@ -40,7 +39,6 @@ hiddenimports = [
 datas = []
 datas += collect_data_files("matplotlib")
 datas += collect_data_files("mplfinance")
-datas += collect_data_files("pandas_ta")
 
 a = Analysis(
     [str(ROOT / "main.py")],

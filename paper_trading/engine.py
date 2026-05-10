@@ -434,29 +434,45 @@ def _fill_trade(
     Execute a trade against the live account state. Returns the filled
     PaperOrder (new or reused) or None if the trade couldn't happen
     (zero shares, zero cash, etc.).
+
+    Cost models
+    -----------
+    Slippage: applied via ``PercentSlippage(acct.slippage)`` so that any
+    future per-account override (e.g. ``TickSlippage``) plugs in here
+    without changing this function.
+    Commission: applied via ``PercentCommission(acct.commission)`` for
+    backward-compat with the existing legacy float field. To upgrade an
+    account to ``PerShareCommission``/``TieredCommission``, set the model
+    factory at the call site and pass it in.
     """
-    side         = trade.side
-    commission   = acct.commission
-    slippage     = acct.slippage
+    from paper_trading.costs import (
+        commission_from_legacy, slippage_from_legacy,
+    )
+
+    side          = trade.side
+    commission_m  = commission_from_legacy(acct.commission)
+    slippage_m    = slippage_from_legacy(acct.slippage)
+    # Quick-access scalars for the legacy paths that still divide directly.
+    commission_pct = float(acct.commission)
 
     if side == "BUY":
         budget = trade.target_dollars if trade.target_dollars is not None else 0.0
         budget = min(float(budget), acct.cash)
         if budget <= 1e-6:
             return None
-        fill_price  = price * (1 + slippage)
+        fill_price  = slippage_m.adjust_price(side="BUY", price=price)
 
         # Shares ahora son ENTEROS — el usuario va a ejecutar manualmente en
         # un broker que no permite fracciones. Floor del cómputo crudo y
         # recalculamos el cash gastado a partir de las shares finales.
-        raw_shares = (budget * (1 - commission)) / fill_price
+        raw_shares = (budget * (1 - commission_pct)) / fill_price
         shares_got = float(int(raw_shares))   # floor a entero
         if shares_got < 1.0:
             return None
 
         # Real notional + commission a partir de las shares enteras.
         actual_notional = shares_got * fill_price
-        commission_paid = actual_notional * commission
+        commission_paid = commission_m.cost(side="BUY", shares=shares_got, price=fill_price)
         actual_cost     = actual_notional + commission_paid
         # Edge case: si el actual_cost supera el budget por redondeo, recortar.
         if actual_cost > acct.cash + 1e-6:
@@ -520,8 +536,10 @@ def _fill_trade(
         if sell_shares <= 1e-9:
             return None
 
-        fill_price = price * (1 - slippage)
-        proceeds   = sell_shares * fill_price * (1 - commission)
+        fill_price = slippage_m.adjust_price(side="SELL", price=price)
+        gross      = sell_shares * fill_price
+        commission_paid = commission_m.cost(side="SELL", shares=sell_shares, price=fill_price)
+        proceeds   = gross - commission_paid
         pos.shares -= sell_shares
         pos.updated_at = datetime.utcnow()
         acct.cash += proceeds
@@ -530,7 +548,6 @@ def _fill_trade(
         if pos.shares <= 1e-9:
             session.delete(pos)
 
-        commission_paid = sell_shares * fill_price * commission
         slippage_cost   = sell_shares * (price - fill_price)
         return _stamp_order_filled(
             session, acct, trade, reuse_order,

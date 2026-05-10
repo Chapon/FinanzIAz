@@ -10,7 +10,10 @@ from PyQt6.QtGui import QFont
 from ui.sidebar import Sidebar
 from ui.styles import DARK_THEME, PALETTE
 from data.yahoo_finance import is_market_open
+from config.logging_config import get_logger
 from config.settings_manager import settings
+
+log = get_logger(__name__)
 from ui.home_tab import HomeTab
 from ui.portfolio_tab import PortfolioTab
 from ui.analysis_tab import AnalysisTab
@@ -220,7 +223,7 @@ class MainWindow(QMainWindow):
             try:
                 self.paper_tab._refresh_all()
             except Exception as e:
-                print(f"[MainWindow] paper refresh failed: {e}")
+                log.warning("paper refresh failed: %s", e)
 
     def _on_position_selected(self, position):
         self._navigate("analysis")
@@ -265,7 +268,7 @@ class MainWindow(QMainWindow):
         try:
             self.paper_tab.on_scan_completed(result)
         except Exception as e:
-            print(f"[MainWindow] paper_tab.on_scan_completed: {e}")
+            log.exception("paper_tab.on_scan_completed: %s", e)
 
     def _on_paper_scan_failed(self, account_id: int, error: str):
         self.status_bar.showMessage(
@@ -274,7 +277,7 @@ class MainWindow(QMainWindow):
         try:
             self.paper_tab.on_scan_failed(account_id, error)
         except Exception as e:
-            print(f"[MainWindow] paper_tab.on_scan_failed: {e}")
+            log.exception("paper_tab.on_scan_failed: %s", e)
 
     def _on_paper_tab_scan_request(self, account_id: int):
         """Manual "Escanear ahora" button in PaperTradingTab."""
@@ -291,5 +294,5 @@ class MainWindow(QMainWindow):
             if hasattr(self, "paper_scheduler") and self.paper_scheduler is not None:
                 self.paper_scheduler.stop()
         except Exception as e:
-            print(f"[MainWindow.closeEvent] scheduler stop failed: {e}")
+            log.warning("scheduler stop failed: %s", e)
         super().closeEvent(event)

@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QFont
-from database.models import get_session, Portfolio, Position
+from database.models import session_scope, Portfolio, Position
 from data.yahoo_finance import get_bulk_prices, get_bulk_dividends
 from ui.widgets import MetricCard, MiniProgressBar, SectionHeader, HSeparator, StatusDot
 from ui.dialogs import AddPositionDialog, SellPositionDialog, AddPortfolioDialog, RenamePortfolioDialog
@@ -309,12 +309,9 @@ class PortfolioTab(QWidget):
     # ── Data ───────────────────────────────────────────────────────────────
 
     def _load_portfolios(self):
-        session = get_session()
-        try:
+        with session_scope() as session:
             self._portfolios = session.query(Portfolio).order_by(Portfolio.name).all()
             session.expunge_all()
-        finally:
-            session.close()
 
         self.portfolio_combo.blockSignals(True)
         self.portfolio_combo.clear()
@@ -333,8 +330,7 @@ class PortfolioTab(QWidget):
     def _refresh_positions(self):
         if self._current_portfolio_id is None:
             return
-        session = get_session()
-        try:
+        with session_scope() as session:
             self._positions = (
                 session.query(Position)
                 .filter(Position.portfolio_id == self._current_portfolio_id)
@@ -342,8 +338,6 @@ class PortfolioTab(QWidget):
                 .all()
             )
             session.expunge_all()
-        finally:
-            session.close()
 
         self._signals = {}
         self._render_table()
@@ -616,9 +610,8 @@ class PortfolioTab(QWidget):
         name = name.strip()
 
         # Create the portfolio
-        session = get_session()
-        try:
-            from database.models import Portfolio as PortfolioModel
+        from database.models import Portfolio as PortfolioModel
+        with session_scope() as session:
             conflict = session.query(PortfolioModel).filter(PortfolioModel.name == name).first()
             if conflict:
                 QMessageBox.warning(self, "Nombre en uso",
@@ -627,10 +620,8 @@ class PortfolioTab(QWidget):
                 return
             p = PortfolioModel(name=name, description="Watchlist de seguimiento", currency="USD")
             session.add(p)
-            session.commit()
-            new_id = p.id
-        finally:
-            session.close()
+            session.flush()
+            new_id = int(p.id)
 
         # Reload combo and select the new portfolio
         self._load_portfolios()
@@ -644,15 +635,10 @@ class PortfolioTab(QWidget):
             self._refresh_positions()
         else:
             # If import was cancelled, remove the empty portfolio
-            session = get_session()
-            try:
-                from database.models import Portfolio as PortfolioModel
+            with session_scope() as session:
                 p = session.query(PortfolioModel).filter(PortfolioModel.id == new_id).first()
                 if p:
                     session.delete(p)
-                    session.commit()
-            finally:
-                session.close()
             self._load_portfolios()
 
     def _sell_position(self):
@@ -718,25 +704,43 @@ class PortfolioTab(QWidget):
         if row < 0 or row >= len(self._positions):
             return
         pos = self._positions[row]
-        reply = QMessageBox.question(
-            self,
-            "Eliminar posición",
-            f"¿Eliminar <b>{pos.ticker}</b> ({pos.company_name or pos.ticker}) "
-            f"y todo su historial de transacciones?<br><br>"
-            f"<span style='color:#f87171'>Esta acción no se puede deshacer.</span>",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+
+        # Count transactions to surface what cascades on delete.
+        from database.models import Transaction as TxModel
+        with session_scope() as session:
+            n_tx = (session.query(TxModel)
+                    .filter(TxModel.position_id == pos.id).count())
+
+        body = (
+            f"¿Eliminar <b>{pos.ticker}</b> ({pos.company_name or pos.ticker})?<br><br>"
+            f"Se borrarán también <b>{n_tx}</b> transacción/es asociadas.<br><br>"
+            f"<span style='color:#f87171'>Esta acción no se puede deshacer.</span><br>"
+            f"<i style='color:#8b949e'>Tip: la app hace un backup diario en "
+            f"<code>~/.finanzias/backups/</code>.</i>"
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Eliminar posición")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(body)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if box.exec() != QMessageBox.StandardButton.Yes:
             return
 
-        session = get_session()
+        # Pre-destructive snapshot — best-effort; daily backup is the floor.
         try:
+            from database.backup import backup_database
+            backup_database(reason="pre-delete-position")
+        except Exception:
+            pass
+
+        with session_scope() as session:
             db_pos = session.query(Position).filter(Position.id == pos.id).first()
             if db_pos:
                 session.delete(db_pos)   # cascades to transactions via relationship
-                session.commit()
-        finally:
-            session.close()
 
         self._refresh_positions()
 

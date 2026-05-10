@@ -20,6 +20,10 @@ from typing import Optional
 from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
+
 
 # ── Background fetch ──────────────────────────────────────────────────────────
 
@@ -47,7 +51,7 @@ class _FetchRunnable(QRunnable):
             from data.yahoo_finance import get_company_info
             info = get_company_info(self.ticker) or {}
         except Exception as e:
-            print(f"[ticker_tooltip] fetch failed for {self.ticker}: {e}")
+            log.warning("fetch failed for %s: %s", self.ticker, e)
             info = {}
         info.setdefault("name", self.ticker)
         info["source"] = "yfinance"
@@ -91,9 +95,8 @@ class _TickerInfoCache(QObject):
             return
         self._db_loaded = True
         try:
-            from database.models import get_session, Position
-            session = get_session()
-            try:
+            from database.models import session_scope, Position
+            with session_scope() as session:
                 rows = session.query(
                     Position.ticker, Position.company_name, Position.sector
                 ).all()
@@ -109,10 +112,8 @@ class _TickerInfoCache(QObject):
                         "sector": sector or None,
                         "source": "db",
                     }
-            finally:
-                session.close()
         except Exception as e:
-            print(f"[ticker_tooltip] DB pre-load failed: {e}")
+            log.warning("DB pre-load failed: %s", e)
 
     # ── Public API ───────────────────────────────────────────────────────────
 

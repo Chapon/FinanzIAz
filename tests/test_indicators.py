@@ -1,11 +1,13 @@
 """
 Tests for the technical-indicator computations.
 
-We rely on pandas-ta / pure pandas to compute RSI, MACD, Bollinger and SMA,
-so the goal here is *correctness on known inputs* — not re-implementing the
-formulas. We construct synthetic series whose expected behaviour is
-self-evident (constant series → RSI=50 / NaN, monotonic up → RSI > 70, etc.)
-and assert against those properties rather than against magic float numbers.
+The indicators (RSI, MACD, Bollinger, SMA, EMA) are computed with pure
+pandas in ``analysis/technical.py`` — no ``pandas-ta`` dependency. The
+goal here is *correctness on known inputs* rather than re-implementing
+the formulas. We construct synthetic series whose expected behaviour is
+self-evident (constant series → RSI=50 / NaN, monotonic up → RSI > 70,
+etc.) and assert against those properties rather than against magic
+float numbers.
 """
 from __future__ import annotations
 

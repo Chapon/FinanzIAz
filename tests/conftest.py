@@ -117,8 +117,16 @@ def _disable_settings_persistence(tmp_path, monkeypatch):
     Redirect ``settings.json`` to a per-test tmp directory so test runs don't
     pollute the user's real ``~/.finanzias/`` and so each test starts with
     pristine defaults.
+
+    Also reload the module-level ``settings`` singleton against the patched
+    path. Without the reload, the singleton has already loaded the user's
+    real config at import time, leaking host state into tests that read
+    ``settings.get(…)`` indirectly (e.g. ``analyze()`` reads ``sma_cross``).
     """
     monkeypatch.setattr(
         "config.settings_manager._CONFIG_PATH",
         tmp_path / "settings.json",
     )
+    # Force the live singleton to re-read against the patched path.
+    from config.settings_manager import settings as _live_settings
+    _live_settings.load()

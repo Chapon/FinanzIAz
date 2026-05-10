@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from config.errors import ValidationError
 from database.models import session_scope
 from paper_trading.models import (
     PaperAccount, PaperWatchlistItem, PaperPosition,
@@ -37,9 +38,9 @@ def create_account(
     description:       str   = "",
 ) -> PaperAccount:
     """Create and persist a paper-trading account."""
-    if strategy        not in STRATEGIES:    raise ValueError(f"strategy inválida: {strategy}")
-    if mode            not in MODES:         raise ValueError(f"mode inválido: {mode}")
-    if allocation_mode not in ALLOC_MODES:   raise ValueError(f"allocation_mode inválido: {allocation_mode}")
+    if strategy        not in STRATEGIES:    raise ValidationError(f"strategy inválida: {strategy}")
+    if mode            not in MODES:         raise ValidationError(f"mode inválido: {mode}")
+    if allocation_mode not in ALLOC_MODES:   raise ValidationError(f"allocation_mode inválido: {allocation_mode}")
 
     with session_scope() as session:
         acct = PaperAccount(
@@ -100,11 +101,11 @@ def update_account_config(account_id: int, **fields) -> Optional[PaperAccount]:
         "description", "is_active",
     }
     if "strategy"        in fields and fields["strategy"]        not in STRATEGIES:
-        raise ValueError(f"strategy inválida: {fields['strategy']}")
+        raise ValidationError(f"strategy inválida: {fields['strategy']}")
     if "mode"            in fields and fields["mode"]            not in MODES:
-        raise ValueError(f"mode inválido: {fields['mode']}")
+        raise ValidationError(f"mode inválido: {fields['mode']}")
     if "allocation_mode" in fields and fields["allocation_mode"] not in ALLOC_MODES:
-        raise ValueError(f"allocation_mode inválido: {fields['allocation_mode']}")
+        raise ValidationError(f"allocation_mode inválido: {fields['allocation_mode']}")
 
     with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
@@ -277,15 +278,35 @@ def get_orders(
     account_id: int,
     status: Optional[str] = None,
     limit: int = 200,
+    *,
+    offset: int = 0,
 ) -> list[PaperOrder]:
+    """
+    Return at most ``limit`` orders for the account, ordered most-recent
+    first. Use ``offset`` for paginated views (e.g. table page N: pass
+    ``offset=N*limit``).
+    """
     with session_scope() as session:
         q = (session.query(PaperOrder)
              .filter(PaperOrder.account_id == account_id))
         if status:
             q = q.filter(PaperOrder.status == status)
-        rows = q.order_by(PaperOrder.created_at.desc()).limit(limit).all()
+        rows = (q.order_by(PaperOrder.created_at.desc())
+                .offset(max(0, int(offset)))
+                .limit(max(1, int(limit)))
+                .all())
         session.expunge_all()
         return rows
+
+
+def count_orders(account_id: int, status: Optional[str] = None) -> int:
+    """Total order count for the account (for paginator UI)."""
+    with session_scope() as session:
+        q = (session.query(PaperOrder)
+             .filter(PaperOrder.account_id == account_id))
+        if status:
+            q = q.filter(PaperOrder.status == status)
+        return int(q.count())
 
 
 def get_pending_orders(account_id: int) -> list[PaperOrder]:

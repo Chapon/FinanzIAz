@@ -924,3 +924,12 @@ class AnalysisTab(QWidget):
             f"<i style='color:#4b5563'>No es asesoramiento financiero.</i>"
         )
         return html
+
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+    def closeEvent(self, event):  # noqa: N802 — Qt naming
+        """Release matplotlib resources held by the chart on tab destruction."""
+        try:
+            self.chart.cleanup()
+        except Exception:
+            pass
+        super().closeEvent(event)

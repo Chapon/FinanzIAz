@@ -34,6 +34,9 @@ from PyQt6.QtGui import QColor, QFont
 from ui.styles import PALETTE, CHART_STYLE
 from ui.widgets import MetricCard, SectionHeader, HSeparator, StatusDot
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from config.logging_config import get_logger
+
+log = get_logger(__name__)
 
 # Sub-components extracted from this file in the refactor pass. Importing
 # them here keeps every external ``from ui.paper_tab import …`` call-site
@@ -48,7 +51,7 @@ from paper_trading.account import (
     add_watchlist_tickers, remove_watchlist_ticker, get_watchlist,
     get_positions, get_position_entry_prices,
     compute_equity, get_equity_curve,
-    get_orders, get_pending_orders,
+    get_orders, get_pending_orders, count_orders,
 )
 from paper_trading.engine import approve_order, reject_order
 from paper_trading.models import STRATEGIES, MODES, ALLOC_MODES
@@ -56,7 +59,7 @@ from paper_trading.presets import WATCHLIST_PRESETS
 
 # Real-portfolio integration: tras aprobar una orden de paper, ofrecemos
 # registrar la operación correspondiente en el Portafolio real del usuario.
-from database.models import Portfolio, Position, get_session
+from database.models import Portfolio, Position, session_scope
 from ui.dialogs import AddPositionDialog, SellPositionDialog
 
 # Backwards-compatible aliases for the previous private names. External code
@@ -444,14 +447,40 @@ class PaperTradingTab(QWidget):
         acct = get_account(self._current_account_id)
         if acct is None:
             return
-        reply = QMessageBox.question(
-            self, "Eliminar cuenta",
-            f"¿Eliminar la cuenta '{acct.name}' y todo su historial?\n"
-            "Esta acción no se puede deshacer.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+
+        # Show how much will cascade so the user knows what they're losing.
+        n_pos = len(get_positions(self._current_account_id))
+        n_ord = count_orders(self._current_account_id)
+        body = (
+            f"¿Eliminar la cuenta <b>'{acct.name}'</b>?<br><br>"
+            f"Se borrarán también:<ul>"
+            f"<li>{n_pos} posición/es abiertas</li>"
+            f"<li>{n_ord} orden/es históricas</li>"
+            f"<li>la curva de equity completa</li>"
+            f"</ul>"
+            f"<span style='color:#f87171'>Esta acción no se puede deshacer.</span><br>"
+            f"<i style='color:#8b949e'>Tip: la app hace un backup diario en "
+            f"<code>~/.finanzias/backups/</code>.</i>"
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Eliminar cuenta")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(body)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)   # safer default
+        if box.exec() != QMessageBox.StandardButton.Yes:
             return
+
+        # Take a "pre-destructive-op" snapshot for paranoid recovery.
+        try:
+            from database.backup import backup_database
+            backup_database(reason="pre-delete-account")
+        except Exception:
+            pass    # backup is best-effort; the daily snapshot is still there.
+
         if delete_account(self._current_account_id):
             self._current_account_id = None
             self._load_accounts()
@@ -912,8 +941,7 @@ class PaperTradingTab(QWidget):
     def _pick_real_portfolio(self) -> Optional[int]:
         """Devuelve el id de un portafolio real, o None si el usuario canceló /
         no hay portafolios. Si hay >1, abre un selector."""
-        session = get_session()
-        try:
+        with session_scope() as session:
             portfolios = (session.query(Portfolio)
                           .order_by(Portfolio.name.asc()).all())
             if not portfolios:
@@ -926,26 +954,25 @@ class PaperTradingTab(QWidget):
             if len(portfolios) == 1:
                 return int(portfolios[0].id)
             names = [p.name for p in portfolios]
-            choice, ok = QInputDialog.getItem(
-                self, "Elegir portafolio",
-                "¿En qué portafolio real querés registrar la compra?",
-                names, 0, False,
-            )
-            if not ok:
-                return None
-            try:
-                idx = names.index(choice)
-            except ValueError:
-                return None
-            return int(portfolios[idx].id)
-        finally:
-            session.close()
+            ids   = [int(p.id) for p in portfolios]
+        # Open the dialog AFTER the session is closed — Qt event loop should
+        # not run while a DB session is held open.
+        choice, ok = QInputDialog.getItem(
+            self, "Elegir portafolio",
+            "¿En qué portafolio real querés registrar la compra?",
+            names, 0, False,
+        )
+        if not ok:
+            return None
+        try:
+            return ids[names.index(choice)]
+        except ValueError:
+            return None
 
     def _find_real_position(self, ticker: str) -> Optional[Position]:
         """Busca la Position real más relevante para este ticker. Si hay más
         de un portafolio con ese ticker, deja al usuario elegir."""
-        session = get_session()
-        try:
+        with session_scope() as session:
             rows = (session.query(Position, Portfolio)
                     .join(Portfolio, Position.portfolio_id == Portfolio.id)
                     .filter(Position.ticker == ticker.upper())
@@ -961,22 +988,20 @@ class PaperTradingTab(QWidget):
                 f"{pf.name}  ·  {pos.quantity:g} shares @ ${pos.avg_buy_price:,.2f}"
                 for pos, pf in rows
             ]
-            choice, ok = QInputDialog.getItem(
-                self, "Elegir portafolio",
-                f"Hay {len(rows)} portafolios con {ticker}. ¿Cuál usás?",
-                labels, 0, False,
-            )
-            if not ok:
-                return None
-            try:
-                idx = labels.index(choice)
-            except ValueError:
-                return None
-            pos, _pf = rows[idx]
-            session.expunge(pos)
-            return pos
-        finally:
-            session.close()
+            position_objs = [pos for pos, _pf in rows]
+            session.expunge_all()
+        # Dialog runs outside the DB session.
+        choice, ok = QInputDialog.getItem(
+            self, "Elegir portafolio",
+            f"Hay {len(rows)} portafolios con {ticker}. ¿Cuál usás?",
+            labels, 0, False,
+        )
+        if not ok:
+            return None
+        try:
+            return position_objs[labels.index(choice)]
+        except ValueError:
+            return None
 
     # ── Equity curve ──────────────────────────────────────────────────────────
 
@@ -987,7 +1012,7 @@ class PaperTradingTab(QWidget):
         try:
             snaps = get_equity_curve(self._current_account_id, limit=500)
         except Exception as e:
-            print(f"[PaperTab equity] {e}")
+            log.warning("equity refresh failed: %s", e)
             snaps = []
         self.equity_chart.set_data(snaps)
 
@@ -1000,14 +1025,14 @@ class PaperTradingTab(QWidget):
         try:
             self._positions = get_positions(self._current_account_id)
         except Exception as e:
-            print(f"[PaperTab positions] {e}")
+            log.warning("positions refresh failed: %s", e)
             self._positions = []
         # Cheap DB hit; refreshed alongside positions so the table shows the
         # original entry price next to the running VWAP.
         try:
             self._entry_prices = get_position_entry_prices(self._current_account_id)
         except Exception as e:
-            print(f"[PaperTab entry_prices] {e}")
+            log.warning("entry_prices fetch failed: %s", e)
             self._entry_prices = {}
         tickers = set(self._watchlist) | {p.ticker for p in self._positions}
         if not tickers:
@@ -1070,7 +1095,7 @@ class PaperTradingTab(QWidget):
         try:
             eq = compute_equity(self._current_account_id, self._prices)
         except Exception as e:
-            print(f"[PaperTab kpis] {e}")
+            log.warning("KPI computation failed: %s", e)
             return
         acct = get_account(self._current_account_id)
         initial = float(acct.initial_capital) if acct else 0.0
@@ -1103,8 +1128,36 @@ class PaperTradingTab(QWidget):
         self._refresh_equity_curve()
         self._fetch_prices()
 
+        # Surface a non-modal toast so the user sees the scan completed
+        # without needing to read the status bar.
+        try:
+            from ui.feedback import Toast
+            n_filled  = getattr(result, "filled", 0)
+            n_queued  = getattr(result, "queued", 0)
+            if n_filled or n_queued:
+                kind, msg = "success", f"Scan OK — {n_filled} fills, {n_queued} en cola"
+            else:
+                kind, msg = "info", "Scan OK — sin nuevas órdenes"
+            Toast.show(self, msg, kind=kind, timeout_ms=2500)
+        except Exception:
+            pass
+
     def on_scan_failed(self, account_id: int, error: str):
         if int(account_id) == int(self._current_account_id or -1):
             self._reset_scan_button()
+            try:
+                from ui.feedback import Toast
+                Toast.show(self, f"Scan falló: {error}", kind="error", timeout_ms=4000)
+            except Exception:
+                pass
+
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+    def closeEvent(self, event):  # noqa: N802 — Qt naming
+        """Release matplotlib resources held by the equity chart."""
+        try:
+            self.equity_chart.cleanup()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
 

@@ -5,7 +5,7 @@ Aplicación de escritorio para seguimiento de cartera de inversión, paper tradi
 ## Características
 
 - **Portafolio**: gestión de posiciones, transacciones y cálculo de P&L con datos de Yahoo Finance.
-- **Análisis técnico**: indicadores (RSI, MACD, Bollinger, etc.) con `pandas-ta`, modelos GARCH y señales basadas en ML.
+- **Análisis técnico**: indicadores (RSI, MACD, Bollinger, etc.) calculados con pandas puro, modelos GARCH y señales basadas en ML.
 - **Paper trading**: motor de simulación con scheduler en background, watchlist, órdenes pendientes y curva de equity.
 - **Alertas**: alertas de precio configurables.
 - **Reportes**: exportación a Excel (`openpyxl`) y PDF (`reportlab`).
@@ -14,7 +14,7 @@ Aplicación de escritorio para seguimiento de cartera de inversión, paper tradi
 ## Stack
 
 - Python 3.10+ / 3.13
-- PyQt6, SQLAlchemy (SQLite), pandas, pandas-ta, matplotlib, mplfinance
+- PyQt6, SQLAlchemy (SQLite), pandas, matplotlib, mplfinance
 - yfinance, hmmlearn, arch, reportlab, openpyxl
 
 ## Instalación

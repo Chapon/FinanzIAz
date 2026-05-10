@@ -84,8 +84,20 @@ _TIMEOUT_POOL = ThreadPoolExecutor(
 
 
 def _ticker(symbol: str) -> yf.Ticker:
-    """Build a yfinance Ticker bound to the shared session."""
-    return yf.Ticker(symbol, session=_YF_SESSION)
+    """Build a yfinance Ticker. yfinance 1.x manages its own curl_cffi session."""
+    return yf.Ticker(symbol)
+
+
+# Process-wide rate limiter (shared with MarketDataService). Acquired before
+# every outbound network call below so the global QPS stays under Yahoo's
+# threshold even when multiple workers fan out in parallel.
+def _acquire_rate_token(n: int = 1) -> None:
+    try:
+        from data.market_data_service import MarketDataService
+        MarketDataService.instance()._wait_token(n)
+    except Exception:
+        # Don't fail the request if telemetry/limiter has a hiccup.
+        pass
 
 
 def _run_with_timeout(
@@ -98,7 +110,9 @@ def _run_with_timeout(
     """
     Run ``fn(*args, **kwargs)`` and abort if it takes longer than ``timeout``.
     On timeout / exception returns ``default`` (None by default).
+    Acquires one global rate-limiter token before submitting.
     """
+    _acquire_rate_token()
     future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
     try:
         return future.result(timeout=timeout)
@@ -266,7 +280,6 @@ def get_historical_data(
                 interval=interval,
                 progress=False,
                 auto_adjust=True,
-                session=_YF_SESSION,
                 timeout=NETWORK_TIMEOUT_SECONDS,
             )
             if df.empty:

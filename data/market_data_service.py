@@ -160,9 +160,13 @@ class MarketDataService:
         return cls._instance
 
     # ── public fetches ───────────────────────────────────────────────────────
+    # NOTE: rate limiting is enforced inside ``data.yahoo_finance`` (every
+    # ``_run_with_timeout`` call acquires one token via ``_wait_token``).
+    # We deliberately DO NOT acquire here too — that would double-count the
+    # token for callers that go through this façade.
+
     def get_price(self, ticker: str) -> Optional[dict]:
         from data import yahoo_finance as yf
-        self._wait_token()
         try:
             result = yf.get_current_price(ticker)
             self._record(price_hit=result is not None and result.get("from_cache"),
@@ -174,10 +178,6 @@ class MarketDataService:
 
     def get_bulk_prices(self, tickers: list[str]) -> dict[str, Optional[dict]]:
         from data import yahoo_finance as yf
-        # The bulk fetch already parallelises internally with BULK_FETCH_WORKERS,
-        # so we only need one rate token per *batch* (otherwise a 100-ticker
-        # scan would stall for 20 s on a 5/s limiter).
-        self._wait_token(n=1)
         try:
             return yf.get_bulk_prices(tickers)
         except Exception as exc:
@@ -186,7 +186,6 @@ class MarketDataService:
 
     def get_history(self, ticker: str, *, period: str = "1y", interval: str = "1d") -> Optional[pd.DataFrame]:
         from data import yahoo_finance as yf
-        self._wait_token()
         try:
             df = yf.get_historical_data(ticker, period=period, interval=interval)
             with self._stats_lock:
@@ -201,7 +200,6 @@ class MarketDataService:
 
     def get_dividends(self, ticker: str, *, since: datetime) -> float:
         from data import yahoo_finance as yf
-        self._wait_token()
         try:
             return yf.get_dividends_since(ticker, since)
         except Exception as exc:

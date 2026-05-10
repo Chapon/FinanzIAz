@@ -9,17 +9,27 @@ from PyQt6.QtWidgets import (
     QHeaderView, QAbstractItemView, QFrame, QScrollArea,
     QWidget, QProgressBar, QDoubleSpinBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QDragEnterEvent, QDropEvent
 from data.csv_importer import parse_csv_file, ImportRow, ImportResult
 from data.yahoo_finance import get_company_info
-from database.models import get_session, Position, Transaction
+from database.models import session_scope, Position, Transaction
 from datetime import datetime
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
+from ui.workers import BaseWorker
 
 
-class ValidateWorker(QThread):
-    """Background: fetch company names for imported tickers."""
+class ValidateWorker(BaseWorker):
+    """
+    Background fetcher for company name + sector of every imported ticker.
+    Streams a ``progress(row_idx, name, sector)`` per row, then ``done``
+    once the iteration finishes.
+    """
+
+    # Note: BaseWorker already defines ``progress(int, str)`` for generic
+    # 0-100% updates. We override here with a richer shape used by this
+    # dialog. PyQt resolves the most-derived signal at connect time so this
+    # does not collide with BaseWorker's progress consumers (none in our code).
     progress = pyqtSignal(int, str, str)   # row_idx, company_name, sector
     done = pyqtSignal()
 
@@ -27,12 +37,16 @@ class ValidateWorker(QThread):
         super().__init__()
         self.rows = rows
 
-    def run(self):
+    def do_work(self) -> None:
         for i, row in enumerate(self.rows):
+            if self.is_cancelled():
+                return
             info = get_company_info(row.ticker)
             name = info.get("name", row.ticker) if info else row.ticker
             sector = info.get("sector", "N/A") if info else "N/A"
             self.progress.emit(i, name, sector)
+
+    def on_success(self, _result) -> None:
         self.done.emit()
 
 
@@ -361,57 +375,9 @@ class ImportDialog(QDialog):
                 return
 
         # Save to DB
-        session = get_session()
         try:
-            imported = 0
-            merged = 0
-            for item in rows_to_import:
-                existing = (
-                    session.query(Position)
-                    .filter(Position.portfolio_id == self.portfolio_id)
-                    .filter(Position.ticker == item["ticker"])
-                    .first()
-                )
-                if existing:
-                    # Merge: recalculate avg price
-                    total_qty = existing.quantity + item["quantity"]
-                    avg = (
-                        (existing.avg_buy_price * existing.quantity) +
-                        (item["price"] * item["quantity"])
-                    ) / total_qty
-                    existing.quantity = total_qty
-                    existing.avg_buy_price = avg
-                    existing.updated_at = datetime.utcnow()
-                    pos = existing
-                    merged += 1
-                else:
-                    note = "Watchlist — precio referencia" if item.get("is_watchlist") else "Importado desde CSV"
-                    pos = Position(
-                        portfolio_id=self.portfolio_id,
-                        ticker=item["ticker"],
-                        company_name=item["company_name"],
-                        quantity=item["quantity"],
-                        avg_buy_price=item["price"],
-                        sector=item["sector"],
-                        notes=note,
-                        purchase_date=datetime.utcnow(),
-                    )
-                    session.add(pos)
-                    imported += 1
-
-                session.flush()
-
-                tx = Transaction(
-                    position_id=pos.id,
-                    transaction_type="BUY",
-                    quantity=item["quantity"],
-                    price=item["price"],
-                    fees=item["fee"],
-                    notes="Importado desde CSV",
-                )
-                session.add(tx)
-
-            session.commit()
+            with session_scope() as session:
+                imported, merged = self._persist_rows(session, rows_to_import)
 
             parts = []
             if imported:
@@ -425,10 +391,63 @@ class ImportDialog(QDialog):
             )
             self.accept()
         except Exception as e:
-            session.rollback()
             QMessageBox.critical(self, "Error", f"Error al guardar: {e}")
-        finally:
-            session.close()
+            return
+
+    def _persist_rows(self, session, rows_to_import):
+        """Build positions / transactions from the parsed import rows.
+
+        Returns ``(n_imported, n_merged)``. Runs inside the caller's
+        ``session_scope`` so commit/rollback are handled automatically.
+        """
+        imported = 0
+        merged = 0
+        for item in rows_to_import:
+            existing = (
+                session.query(Position)
+                .filter(Position.portfolio_id == self.portfolio_id)
+                .filter(Position.ticker == item["ticker"])
+                .first()
+            )
+            if existing:
+                # Merge: recalculate avg price
+                total_qty = existing.quantity + item["quantity"]
+                avg = (
+                    (existing.avg_buy_price * existing.quantity) +
+                    (item["price"] * item["quantity"])
+                ) / total_qty
+                existing.quantity = total_qty
+                existing.avg_buy_price = avg
+                existing.updated_at = datetime.utcnow()
+                pos = existing
+                merged += 1
+            else:
+                note = "Watchlist — precio referencia" if item.get("is_watchlist") else "Importado desde CSV"
+                pos = Position(
+                    portfolio_id=self.portfolio_id,
+                    ticker=item["ticker"],
+                    company_name=item["company_name"],
+                    quantity=item["quantity"],
+                    avg_buy_price=item["price"],
+                    sector=item["sector"],
+                    notes=note,
+                    purchase_date=datetime.utcnow(),
+                )
+                session.add(pos)
+                imported += 1
+
+            session.flush()
+
+            tx = Transaction(
+                position_id=pos.id,
+                transaction_type="BUY",
+                quantity=item["quantity"],
+                price=item["price"],
+                fees=item["fee"],
+                notes="Importado desde CSV",
+            )
+            session.add(tx)
+        return imported, merged
 
 
 # ── Drag & Drop Zone ────────────────────────────────────────────────────────

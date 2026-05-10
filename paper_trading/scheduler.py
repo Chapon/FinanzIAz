@@ -150,6 +150,11 @@ class PaperScheduler(QObject):
             return
         self._started = True
 
+        # Reconciliation: expire any pending orders that survived a previous
+        # crash / unclean shutdown. Fast (a single SQL update per account)
+        # so it's safe to do synchronously before starting the timers.
+        self._reconcile_all_active()
+
         # Startup scan — delayed so the UI has time to paint.
         if settings.get("paper_scan_on_startup", True):
             QTimer.singleShot(self._STARTUP_DELAY_MS, self._scan_all_active)
@@ -235,6 +240,25 @@ class PaperScheduler(QObject):
             return
         for a in accts:
             self._launch_scan(int(a.id))
+
+    def _reconcile_all_active(self) -> None:
+        """
+        Expire orphaned ``pending`` orders for every active account at
+        startup. Without this, a crash between order generation and the
+        next scan leaves pending orders dangling forever.
+        """
+        try:
+            from paper_trading.account import list_accounts
+            from paper_trading.engine import reconcile_account
+            for a in list_accounts(active_only=True):
+                try:
+                    n = reconcile_account(int(a.id))
+                    if n:
+                        log.info("reconciled %d stale pending orders for account %s", n, a.id)
+                except Exception:
+                    log.exception("reconcile failed for account %s", a.id)
+        except Exception:
+            log.exception("reconcile_all_active failed")
 
     def _launch_scan(self, account_id: int) -> None:
         existing = self._workers.get(account_id)

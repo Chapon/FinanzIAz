@@ -7,17 +7,26 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar,
     QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
-from database.models import get_session, Position
+from database.models import session_scope, Position
 from data.yahoo_finance import get_historical_data
 from analysis.technical import compute_rsi
 from alerts.alert_manager import AlertManager
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.workers import BaseWorker
 
 
-class RsiScanWorker(QThread):
-    """Fetches 30 days of data and computes latest RSI for each position."""
+class RsiScanWorker(BaseWorker):
+    """
+    Fetches 30 days of data and computes latest RSI for each position.
+
+    Streams per-ticker results via ``row_done`` / ``error_row`` while running,
+    then emits ``all_done`` when the loop finishes. Catastrophic failures
+    (rare — the per-ticker try/except catches normal cases) propagate via the
+    inherited ``BaseWorker.error`` signal.
+    """
+
     row_done  = pyqtSignal(str, float)    # ticker, rsi_value
     all_done  = pyqtSignal()
     error_row = pyqtSignal(str, str)      # ticker, error_msg
@@ -26,8 +35,10 @@ class RsiScanWorker(QThread):
         super().__init__()
         self.tickers = tickers
 
-    def run(self):
+    def do_work(self) -> None:
         for ticker in self.tickers:
+            if self.is_cancelled():
+                return
             try:
                 df = get_historical_data(ticker, period="3mo")
                 if df is None or len(df) < 15:
@@ -38,6 +49,8 @@ class RsiScanWorker(QThread):
                 self.row_done.emit(ticker, round(rsi_val, 1))
             except Exception as e:
                 self.error_row.emit(ticker, str(e))
+
+    def on_success(self, _result) -> None:
         self.all_done.emit()
 
 
@@ -112,14 +125,11 @@ class RsiScanDialog(QDialog):
         root.addLayout(btn_row)
 
     def _start_scan(self):
-        session = get_session()
-        try:
+        with session_scope() as session:
             positions = session.query(Position).filter(
                 Position.portfolio_id == self.portfolio_id
             ).all()
             self._tickers = [p.ticker for p in positions]
-        finally:
-            session.close()
 
         if not self._tickers:
             self.status_lbl.setText("Sin posiciones en el portafolio.")

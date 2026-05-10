@@ -44,7 +44,7 @@ def test_position_cascade_delete(test_db):
         pid = p.id
 
     with session_scope() as s:
-        p = s.query(Portfolio).get(pid)
+        p = s.get(Portfolio, pid)   # SA 2.x form, replaces legacy Query.get
         s.delete(p)
 
     with session_scope() as s:
@@ -66,7 +66,7 @@ def test_transactions_belong_to_position(test_db):
         pos_id = pos.id
 
     with session_scope() as s:
-        s.delete(s.query(Portfolio).get(pid))
+        s.delete(s.get(Portfolio, pid))
 
     with session_scope() as s:
         assert s.query(Transaction).filter_by(position_id=pos_id).count() == 0

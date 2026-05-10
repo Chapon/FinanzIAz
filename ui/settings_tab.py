@@ -93,6 +93,9 @@ class SettingsTab(QWidget):
 
         root.addStretch()
 
+        # ── Backup / restore card ────────────────────────────────────────
+        root.addWidget(self._backup_card())
+
         # Reset button
         reset_row = QHBoxLayout()
         reset_row.addStretch()
@@ -101,6 +104,129 @@ class SettingsTab(QWidget):
         reset_btn.clicked.connect(self._on_reset)
         reset_row.addWidget(reset_btn)
         root.addLayout(reset_row)
+
+    # ── Backup card ──────────────────────────────────────────────────────────
+
+    def _backup_card(self) -> QFrame:
+        """Card with manual backup, list of snapshots, and restore button."""
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        title = QLabel("BASE DE DATOS")
+        title.setStyleSheet(
+            f"color: {PALETTE['text2']}; font-size: 11px; "
+            f"font-weight: 700; letter-spacing: 0.6px;"
+        )
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "La app guarda un backup automático cada día en "
+            "<code>~/.finanzias/backups/</code> (últimos 7). "
+            "También podés crear/restaurar manualmente."
+        )
+        desc.setObjectName("muted")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        self._backup_list_label = QLabel("")
+        self._backup_list_label.setObjectName("muted")
+        self._backup_list_label.setStyleSheet("font-family: monospace; font-size: 11px;")
+        self._backup_list_label.setWordWrap(True)
+        layout.addWidget(self._backup_list_label)
+        self._refresh_backup_list()
+
+        btn_row = QHBoxLayout()
+        backup_btn = QPushButton("📦 Crear backup ahora")
+        backup_btn.clicked.connect(self._on_backup_now)
+        restore_btn = QPushButton("↶ Restaurar...")
+        restore_btn.setObjectName("danger")
+        restore_btn.clicked.connect(self._on_restore)
+        btn_row.addWidget(backup_btn)
+        btn_row.addWidget(restore_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        return card
+
+    def _refresh_backup_list(self) -> None:
+        try:
+            from database.backup import list_backups
+            paths = list_backups()
+        except Exception:
+            paths = []
+        if not paths:
+            self._backup_list_label.setText("(sin backups todavía)")
+            return
+        # Show the 5 most recent.
+        recent = paths[-5:][::-1]
+        lines = []
+        for p in recent:
+            try:
+                size_kb = p.stat().st_size // 1024
+                lines.append(f"• {p.name}    {size_kb} KB")
+            except Exception:
+                lines.append(f"• {p.name}")
+        suffix = f"\n(+{len(paths) - len(recent)} más)" if len(paths) > len(recent) else ""
+        self._backup_list_label.setText("\n".join(lines) + suffix)
+
+    def _on_backup_now(self) -> None:
+        from database.backup import backup_database
+        path = backup_database(reason="manual")
+        if path is None:
+            QMessageBox.warning(self, "Error", "No se pudo crear el backup. Revisá el log.")
+            return
+        QMessageBox.information(
+            self, "Backup creado",
+            f"Backup guardado en:\n{path}",
+        )
+        self._refresh_backup_list()
+
+    def _on_restore(self) -> None:
+        from database.backup import list_backups, restore_database
+        paths = list_backups()
+        if not paths:
+            QMessageBox.information(self, "Sin backups", "No hay backups disponibles.")
+            return
+        # Pick by name, newest first.
+        from PyQt6.QtWidgets import QInputDialog
+        names = [p.name for p in paths[::-1]]
+        choice, ok = QInputDialog.getItem(
+            self, "Restaurar backup",
+            "Elegí qué backup restaurar (la base actual se guardará como "
+            "<name>.before-restore):",
+            names, 0, False,
+        )
+        if not ok:
+            return
+        # Resolve back to Path
+        idx = names.index(choice)
+        target = paths[::-1][idx]
+
+        confirm = QMessageBox.question(
+            self, "Confirmar restore",
+            f"¿Reemplazar la base de datos actual con:\n\n{target.name}?\n\n"
+            "Cerrá manualmente el portafolio antes de continuar.\n"
+            "Esta acción no se puede deshacer (la copia previa se guarda).",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        ok = restore_database(target)
+        if ok:
+            QMessageBox.information(
+                self, "Restore exitoso",
+                "Base restaurada. Reiniciá la app para que los cambios surtan efecto.",
+            )
+        else:
+            QMessageBox.critical(
+                self, "Error",
+                "No se pudo restaurar el backup. Revisá el log para detalles.",
+            )
+        self._refresh_backup_list()
 
     def _section(self, title: str, settings_list: list) -> QFrame:
         card = QFrame()

@@ -100,8 +100,10 @@ def _detect_calendar_gaps(
     if business_days_only:
         # Number of business days between each consecutive pair.
         # ``np.busday_count`` is fast and respects Mon-Fri (no holidays).
-        prev = idx[:-1].astype("datetime64[D]")
-        nxt  = idx[1:].astype("datetime64[D]")
+        # pandas 2.x tz-aware DatetimeIndex can't be cast directly to
+        # datetime64[D]; use .date to strip tz before converting.
+        prev = np.array([d.date() for d in idx[:-1]], dtype="datetime64[D]")
+        nxt  = np.array([d.date() for d in idx[1:]],  dtype="datetime64[D]")
         deltas = np.busday_count(prev, nxt)
     else:
         deltas = np.diff(idx).astype("timedelta64[D]").astype(int)

@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
-from database.models import get_session, Alert
+from database.models import Alert
 from alerts.alert_manager import AlertManager
 from ui.dialogs import AddAlertDialog
 from ui.widgets import SectionHeader, HSeparator

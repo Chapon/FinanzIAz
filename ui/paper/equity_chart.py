@@ -132,3 +132,19 @@ class EquityCurveChart(QWidget):
         self.ax.relim()
         self.ax.autoscale_view()
         self.canvas.draw_idle()
+
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+    def cleanup(self) -> None:
+        """Drop references to matplotlib artists so the figure can be GC'd."""
+        try:
+            self.figure.clear()
+        except Exception:
+            pass
+        self._line = None
+        self._fill = None
+        self._plotted_count = 0
+        self._first_xs = None
+
+    def closeEvent(self, event):  # noqa: N802 — Qt naming
+        self.cleanup()
+        super().closeEvent(event)

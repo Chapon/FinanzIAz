@@ -69,13 +69,33 @@ def show_error(
     The dialog body uses the exception's str() (concise), and the traceback
     goes into the "Show Details…" panel so casual users aren't overwhelmed
     while developers can still see the stack.
+
+    Domain-specific errors from ``config.errors`` get tailored titles:
+    - ``ValidationError``: "Datos no válidos" + Information icon
+    - ``NetworkError``: "Sin conexión" + Warning icon
+    - everything else: the caller-provided ``title`` + Warning icon
     """
     msg = str(exc) or exc.__class__.__name__
     log.exception("UI error '%s': %s", title, msg, exc_info=exc)
 
+    # Pick icon + title based on the exception class — without forcing the
+    # caller to know the domain hierarchy.
+    icon = QMessageBox.Icon.Warning
+    effective_title = title
+    try:
+        from config.errors import NetworkError, ValidationError
+        if isinstance(exc, ValidationError):
+            icon = QMessageBox.Icon.Information
+            effective_title = "Datos no válidos"
+        elif isinstance(exc, NetworkError):
+            icon = QMessageBox.Icon.Warning
+            effective_title = "Sin conexión"
+    except Exception:
+        pass
+
     box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Warning)
-    box.setWindowTitle(title)
+    box.setIcon(icon)
+    box.setWindowTitle(effective_title)
     box.setText(msg)
     if detail:
         box.setInformativeText(detail)
