@@ -4,11 +4,21 @@ Create / edit dialog for paper-trading accounts.
 Self-contained QDialog — no dependency on the rest of ``paper_tab.py``.
 Hosted under ``ui/paper/`` so the orchestrator file stays readable.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFormLayout, QLabel, QLineEdit, QMessageBox, QSpinBox, QVBoxLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QSpinBox,
+    QVBoxLayout,
 )
 
 from paper_trading.account import create_account, update_account_config
@@ -25,18 +35,18 @@ class PaperAccountDialog(QDialog):
     """
 
     _STRATEGY_LABELS = {
-        "analyze_single":   "Análisis ticker a ticker",
+        "analyze_single": "Análisis ticker a ticker",
         "portfolio_engine": "Motor de portafolio (rebalance)",
     }
     _MODE_LABELS = {
-        "auto":   "Automático (ejecuta directo)",
+        "auto": "Automático (ejecuta directo)",
         "manual": "Manual (requiere aprobación)",
     }
     _ALLOC_LABELS = {
-        "equal_weight":    "Equal Weight",
+        "equal_weight": "Equal Weight",
         "signal_weighted": "Ponderado por señal",
-        "inverse_vol":     "Inverse Volatility",
-        "fixed_amount":    "Monto fijo por posición",
+        "inverse_vol": "Inverse Volatility",
+        "fixed_amount": "Monto fijo por posición",
     }
 
     def __init__(self, account=None, parent=None):
@@ -140,9 +150,7 @@ class PaperAccountDialog(QDialog):
 
         root.addLayout(form)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         root.addWidget(btns)
@@ -186,12 +194,12 @@ class PaperAccountDialog(QDialog):
                     return
 
         _set_combo(self.strategy_combo, acct.strategy)
-        _set_combo(self.mode_combo,     acct.mode)
-        _set_combo(self.alloc_combo,    acct.allocation_mode)
+        _set_combo(self.mode_combo, acct.mode)
+        _set_combo(self.alloc_combo, acct.allocation_mode)
         self.max_pos_spin.setValue(int(acct.max_positions))
         self.fixed_amt_spin.setValue(float(acct.fixed_amount))
         self.initial_cap_spin.setValue(float(acct.initial_capital))
-        self.initial_cap_spin.setEnabled(False)   # initial capital is immutable
+        self.initial_cap_spin.setEnabled(False)  # initial capital is immutable
         self.commission_spin.setValue(float(acct.commission))
         self.slippage_spin.setValue(float(acct.slippage))
         self.drift_spin.setValue(float(acct.drift_threshold))
@@ -207,39 +215,39 @@ class PaperAccountDialog(QDialog):
             return
 
         strategy = self.strategy_combo.currentData() or "analyze_single"
-        mode     = self.mode_combo.currentData()     or "auto"
-        alloc    = self.alloc_combo.currentData()    or "equal_weight"
+        mode = self.mode_combo.currentData() or "auto"
+        alloc = self.alloc_combo.currentData() or "equal_weight"
 
         try:
             if self.account is None:
                 create_account(
-                    name              = name,
-                    description       = self.desc_edit.text().strip(),
-                    strategy          = strategy,
-                    mode              = mode,
-                    allocation_mode   = alloc,
-                    max_positions     = self.max_pos_spin.value(),
-                    fixed_amount      = self.fixed_amt_spin.value(),
-                    initial_capital   = self.initial_cap_spin.value(),
-                    commission        = self.commission_spin.value(),
-                    slippage          = self.slippage_spin.value(),
-                    drift_threshold   = self.drift_spin.value(),
-                    monthly_rebalance = self.monthly_check.isChecked(),
+                    name=name,
+                    description=self.desc_edit.text().strip(),
+                    strategy=strategy,
+                    mode=mode,
+                    allocation_mode=alloc,
+                    max_positions=self.max_pos_spin.value(),
+                    fixed_amount=self.fixed_amt_spin.value(),
+                    initial_capital=self.initial_cap_spin.value(),
+                    commission=self.commission_spin.value(),
+                    slippage=self.slippage_spin.value(),
+                    drift_threshold=self.drift_spin.value(),
+                    monthly_rebalance=self.monthly_check.isChecked(),
                 )
             else:
                 update_account_config(
                     self.account.id,
-                    description       = self.desc_edit.text().strip(),
-                    strategy          = strategy,
-                    mode              = mode,
-                    allocation_mode   = alloc,
-                    max_positions     = self.max_pos_spin.value(),
-                    fixed_amount      = self.fixed_amt_spin.value(),
-                    commission        = self.commission_spin.value(),
-                    slippage          = self.slippage_spin.value(),
-                    drift_threshold   = self.drift_spin.value(),
-                    monthly_rebalance = self.monthly_check.isChecked(),
-                    is_active         = self.active_check.isChecked(),
+                    description=self.desc_edit.text().strip(),
+                    strategy=strategy,
+                    mode=mode,
+                    allocation_mode=alloc,
+                    max_positions=self.max_pos_spin.value(),
+                    fixed_amount=self.fixed_amt_spin.value(),
+                    commission=self.commission_spin.value(),
+                    slippage=self.slippage_spin.value(),
+                    drift_threshold=self.drift_spin.value(),
+                    monthly_rebalance=self.monthly_check.isChecked(),
+                    is_active=self.active_check.isChecked(),
                 )
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))

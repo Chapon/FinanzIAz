@@ -6,23 +6,25 @@ This file is invoked by ``alembic <command>``. We import the project's
 the same Base.metadata) and point the migration runner at the live SQLite
 file via ``DB_PATH``.
 """
+
 from __future__ import annotations
-
-from logging.config import fileConfig
-
-from alembic import context
-from sqlalchemy import engine_from_config, pool
 
 # Make ``database`` / ``paper_trading`` importable when alembic runs from
 # the project root.
 import os
 import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from database.models import Base, DB_PATH  # noqa: E402
-import paper_trading.models  # noqa: E402, F401  — registers paper-trading tables
+import paper_trading.models  # noqa: F401  — registers paper-trading tables
+from database.models import DB_PATH, Base
 
 config = context.config
 
@@ -44,7 +46,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         # SQLite-specific niceties:
-        render_as_batch=True,         # required for SQLite ALTER support
+        render_as_batch=True,  # required for SQLite ALTER support
         compare_type=True,
         compare_server_default=True,
     )

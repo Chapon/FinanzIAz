@@ -12,31 +12,47 @@ Long-running blocking calls (``Ticker.info``, ``yf.download``) are additionally
 guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
 the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
-import yfinance as yf
-import pandas as pd
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
 from io import StringIO
-from typing import Optional, Callable, TypeVar
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
-from config.logging_config import get_logger
+from typing import TypeVar
+
+import pandas as pd
+import requests
+import yfinance as yf
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from config.constants import (
     BULK_FETCH_WORKERS,
-    PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
-    HISTORICAL_CACHE_TTL_HOURS,
-    NETWORK_TIMEOUT_SECONDS,
-    NETWORK_HARD_TIMEOUT_SECONDS as HARD_TIMEOUT_SECONDS,
-    NETWORK_RETRY_TOTAL as RETRY_TOTAL,
-    NETWORK_RETRY_BACKOFF as RETRY_BACKOFF,
     DIVIDEND_CACHE_HOURS,
-    MARKET_OPEN_HOUR_ET, MARKET_OPEN_MINUTE,
-    MARKET_CLOSE_HOUR_ET, MARKET_CLOSE_MINUTE,
-    PRE_MARKET_OPEN_HOUR_ET, POST_MARKET_CLOSE_HOUR_ET,
+    HISTORICAL_CACHE_TTL_HOURS,
+    MARKET_CLOSE_HOUR_ET,
+    MARKET_CLOSE_MINUTE,
+    MARKET_OPEN_HOUR_ET,
+    MARKET_OPEN_MINUTE,
+    NETWORK_TIMEOUT_SECONDS,
+    POST_MARKET_CLOSE_HOUR_ET,
+    PRE_MARKET_OPEN_HOUR_ET,
 )
+from config.constants import (
+    NETWORK_HARD_TIMEOUT_SECONDS as HARD_TIMEOUT_SECONDS,
+)
+from config.constants import (
+    NETWORK_RETRY_BACKOFF as RETRY_BACKOFF,
+)
+from config.constants import (
+    NETWORK_RETRY_TOTAL as RETRY_TOTAL,
+)
+from config.constants import (
+    PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
+)
+from config.logging_config import get_logger
 from data.quality import clean_ohlcv
-from database.models import session_scope, PriceCache, DividendCache, HistoricalDataCache
+from database.models import DividendCache, HistoricalDataCache, PriceCache, session_scope
 
 log = get_logger(__name__)
 
@@ -94,6 +110,7 @@ def _ticker(symbol: str) -> yf.Ticker:
 def _acquire_rate_token(n: int = 1) -> None:
     try:
         from data.market_data_service import MarketDataService
+
         MarketDataService.instance()._wait_token(n)
     except Exception:
         # Don't fail the request if telemetry/limiter has a hiccup.
@@ -104,9 +121,9 @@ def _run_with_timeout(
     fn: Callable[..., T],
     *args,
     timeout: float = HARD_TIMEOUT_SECONDS,
-    default: Optional[T] = None,
+    default: T | None = None,
     **kwargs,
-) -> Optional[T]:
+) -> T | None:
     """
     Run ``fn(*args, **kwargs)`` and abort if it takes longer than ``timeout``.
     On timeout / exception returns ``default`` (None by default).
@@ -124,15 +141,17 @@ def _run_with_timeout(
         log.exception("yfinance call %s raised", getattr(fn, "__name__", fn))
         return default
 
+
 def _cache_enabled() -> bool:
     try:
         from config.settings_manager import settings
+
         return settings.get("cache", True)
     except Exception:
         return True
 
 
-def get_current_price(ticker: str) -> Optional[dict]:
+def get_current_price(ticker: str) -> dict | None:
     """
     Fetch current price and key metrics for a ticker.
     Returns a dict with price, change_pct, volume, market_cap, etc.
@@ -167,13 +186,15 @@ def get_current_price(ticker: str) -> Optional[dict]:
 
         # 3. Cache write
         with session_scope() as session:
-            session.add(PriceCache(
-                ticker=ticker.upper(),
-                price=info["price"],
-                change_pct=info.get("change_pct"),
-                volume=info.get("volume"),
-                market_cap=info.get("market_cap"),
-            ))
+            session.add(
+                PriceCache(
+                    ticker=ticker.upper(),
+                    price=info["price"],
+                    change_pct=info.get("change_pct"),
+                    volume=info.get("volume"),
+                    market_cap=info.get("market_cap"),
+                )
+            )
         info["from_cache"] = False
         return info
 
@@ -182,10 +203,10 @@ def get_current_price(ticker: str) -> Optional[dict]:
         return None
 
 
-def _fetch_ticker_info(ticker: str) -> Optional[dict]:
+def _fetch_ticker_info(ticker: str) -> dict | None:
     """Raw yfinance fetch — returns a clean dict. Hard-timeout protected."""
 
-    def _do_fetch() -> Optional[dict]:
+    def _do_fetch() -> dict | None:
         t = _ticker(ticker)
         info = t.fast_info
 
@@ -237,11 +258,7 @@ def get_company_info(ticker: str) -> dict:
     return result if result is not None else fallback
 
 
-def get_historical_data(
-    ticker: str,
-    period: str = "1y",
-    interval: str = "1d"
-) -> Optional[pd.DataFrame]:
+def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame | None:
     """
     Download OHLCV historical data with SQLite cache (TTL=1h).
     Cache key: (ticker, period, interval). At most one entry per combination.
@@ -272,7 +289,7 @@ def get_historical_data(
             log.exception("Historical cache read failed for %s", ticker)
 
     # 2. Live download — guarded by hard timeout
-    def _do_download() -> Optional[pd.DataFrame]:
+    def _do_download() -> pd.DataFrame | None:
         try:
             df = yf.download(
                 ticker,
@@ -319,12 +336,14 @@ def get_historical_data(
                     HistoricalDataCache.period == period,
                     HistoricalDataCache.interval == interval,
                 ).delete()
-                session.add(HistoricalDataCache(
-                    ticker=ticker_upper,
-                    period=period,
-                    interval=interval,
-                    data_json=df.to_json(orient="split", date_format="iso"),
-                ))
+                session.add(
+                    HistoricalDataCache(
+                        ticker=ticker_upper,
+                        period=period,
+                        interval=interval,
+                        data_json=df.to_json(orient="split", date_format="iso"),
+                    )
+                )
         except Exception:
             log.exception("Historical cache write failed for %s", ticker)
 
@@ -359,11 +378,13 @@ def get_dividends_since(ticker: str, since_date: datetime) -> float:
 
         # 3. Cache write
         with session_scope() as session:
-            session.add(DividendCache(
-                ticker=ticker.upper(),
-                since_date=normalized_since,
-                total_per_share=total,
-            ))
+            session.add(
+                DividendCache(
+                    ticker=ticker.upper(),
+                    since_date=normalized_since,
+                    total_per_share=total,
+                )
+            )
         return total
 
     except Exception:
@@ -428,21 +449,25 @@ def is_market_open() -> tuple[bool, str]:
     try:
         try:
             from zoneinfo import ZoneInfo
+
             tz = ZoneInfo("America/New_York")
         except ImportError:
             import pytz
+
             tz = pytz.timezone("America/New_York")
 
         now_et = datetime.now(tz)
-        weekday = now_et.weekday()          # 0=Mon … 6=Sun
+        weekday = now_et.weekday()  # 0=Mon … 6=Sun
 
         if weekday >= 5:
             return False, "Cerrado (fin de semana)"
 
-        open_t  = now_et.replace(hour=MARKET_OPEN_HOUR_ET,  minute=MARKET_OPEN_MINUTE,  second=0, microsecond=0)
-        close_t = now_et.replace(hour=MARKET_CLOSE_HOUR_ET, minute=MARKET_CLOSE_MINUTE, second=0, microsecond=0)
-        pre_t   = now_et.replace(hour=PRE_MARKET_OPEN_HOUR_ET,  minute=0, second=0, microsecond=0)
-        post_t  = now_et.replace(hour=POST_MARKET_CLOSE_HOUR_ET, minute=0, second=0, microsecond=0)
+        open_t = now_et.replace(hour=MARKET_OPEN_HOUR_ET, minute=MARKET_OPEN_MINUTE, second=0, microsecond=0)
+        close_t = now_et.replace(
+            hour=MARKET_CLOSE_HOUR_ET, minute=MARKET_CLOSE_MINUTE, second=0, microsecond=0
+        )
+        pre_t = now_et.replace(hour=PRE_MARKET_OPEN_HOUR_ET, minute=0, second=0, microsecond=0)
+        post_t = now_et.replace(hour=POST_MARKET_CLOSE_HOUR_ET, minute=0, second=0, microsecond=0)
 
         if open_t <= now_et < close_t:
             return True, "Abierto (NYSE/NASDAQ)"
@@ -470,7 +495,7 @@ def validate_ticker(ticker: str) -> bool:
     return bool(_run_with_timeout(_do_check, timeout=HARD_TIMEOUT_SECONDS, default=False))
 
 
-def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
+def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     """
     Fetch current prices for multiple tickers efficiently.
     Strategy: 1 batch DB read → parallel live fetches for misses → 1 batch DB write.
@@ -479,7 +504,7 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
         return {}
 
     tickers_upper = [t.upper() for t in tickers]
-    results: dict[str, Optional[dict]] = {}
+    results: dict[str, dict | None] = {}
     cache_misses: list[str] = []
 
     # 1. Single batch cache read (one query for all tickers)
@@ -522,13 +547,10 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, Optional[dict]]:
         return results
 
     # 2. Parallel live fetches — pure network I/O, no DB locks
-    live_results: dict[str, Optional[dict]] = {}
+    live_results: dict[str, dict | None] = {}
     max_workers = min(BULK_FETCH_WORKERS, len(cache_misses))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_ticker = {
-            executor.submit(_fetch_ticker_info, ticker): ticker
-            for ticker in cache_misses
-        }
+        future_to_ticker = {executor.submit(_fetch_ticker_info, ticker): ticker for ticker in cache_misses}
         for future in as_completed(future_to_ticker):
             ticker = future_to_ticker[future]
             try:
@@ -571,7 +593,7 @@ def search_ticker(query: str) -> list[dict]:
     Returns a list of candidate dicts with ticker and name. Hard-timeout protected.
     """
 
-    def _probe(symbol: str) -> Optional[dict]:
+    def _probe(symbol: str) -> dict | None:
         try:
             t = _ticker(symbol)
             price = getattr(t.fast_info, "last_price", None)

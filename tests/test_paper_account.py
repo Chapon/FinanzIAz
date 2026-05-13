@@ -2,16 +2,25 @@
 Tests for ``paper_trading.account`` — CRUD on ``PaperAccount`` and
 derived metrics (``compute_equity``, watchlist mutations).
 """
+
 from __future__ import annotations
 
 import pytest
 
 from config.errors import ValidationError
 from paper_trading.account import (
-    add_watchlist_tickers, compute_equity, count_orders,
-    create_account, delete_account, get_account, get_orders,
-    get_pending_orders, get_positions, get_watchlist,
-    list_accounts, remove_watchlist_ticker, update_account_config,
+    add_watchlist_tickers,
+    compute_equity,
+    count_orders,
+    create_account,
+    delete_account,
+    get_account,
+    get_orders,
+    get_pending_orders,
+    get_watchlist,
+    list_accounts,
+    remove_watchlist_ticker,
+    update_account_config,
 )
 
 
@@ -47,7 +56,7 @@ def test_create_account_rejects_invalid_mode(test_db):
 
 
 def test_list_accounts_filters_active_only(test_db):
-    a1 = _make_account(name="A")
+    _make_account(name="A")
     a2 = _make_account(name="B")
     update_account_config(a2.id, is_active=False)
 
@@ -114,6 +123,7 @@ def test_compute_equity_for_unknown_account(test_db):
 def test_get_orders_pagination(test_db):
     """Verify the new ``offset`` parameter works."""
     from datetime import datetime
+
     from database.models import session_scope
     from paper_trading.models import PaperOrder
 
@@ -121,17 +131,19 @@ def test_get_orders_pagination(test_db):
     # Insert 5 orders directly
     with session_scope() as session:
         for i in range(5):
-            session.add(PaperOrder(
-                account_id=a.id,
-                ticker="AAPL",
-                side="BUY",
-                target_dollars=100.0 * (i + 1),
-                status="filled",
-                created_at=datetime(2026, 1, 1 + i),
-                filled_at=datetime(2026, 1, 1 + i),
-                fill_price=150.0,
-                fill_shares=1.0,
-            ))
+            session.add(
+                PaperOrder(
+                    account_id=a.id,
+                    ticker="AAPL",
+                    side="BUY",
+                    target_dollars=100.0 * (i + 1),
+                    status="filled",
+                    created_at=datetime(2026, 1, 1 + i),
+                    filled_at=datetime(2026, 1, 1 + i),
+                    fill_price=150.0,
+                    fill_shares=1.0,
+                )
+            )
 
     assert count_orders(a.id) == 5
     assert count_orders(a.id, status="pending") == 0
@@ -154,11 +166,20 @@ def test_get_pending_orders_filters_correctly(test_db):
 
     a = _make_account()
     with session_scope() as session:
-        session.add(PaperOrder(account_id=a.id, ticker="AAPL", side="BUY",
-                               target_dollars=100, status="pending"))
-        session.add(PaperOrder(account_id=a.id, ticker="MSFT", side="BUY",
-                               target_dollars=100, status="filled",
-                               fill_price=200, fill_shares=1))
+        session.add(
+            PaperOrder(account_id=a.id, ticker="AAPL", side="BUY", target_dollars=100, status="pending")
+        )
+        session.add(
+            PaperOrder(
+                account_id=a.id,
+                ticker="MSFT",
+                side="BUY",
+                target_dollars=100,
+                status="filled",
+                fill_price=200,
+                fill_shares=1,
+            )
+        )
     pending = get_pending_orders(a.id)
     assert len(pending) == 1
     assert pending[0].ticker == "AAPL"

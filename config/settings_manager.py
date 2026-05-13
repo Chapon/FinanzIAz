@@ -11,13 +11,15 @@ JSON, hand-edits, schema migrations…). ``set()`` validates writes too —
 invalid values are rejected with a logged warning and the previous value is
 kept, so the app never crashes on bad config.
 """
+
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 # Use plain ``logging`` instead of get_logger() to avoid an import cycle:
 # logging_config imports from this module to read user log-level overrides.
@@ -25,6 +27,7 @@ _log = logging.getLogger(__name__)
 
 
 # ── Schema spec ──────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class SettingSpec:
@@ -39,12 +42,13 @@ class SettingSpec:
     validator    — optional callable returning True iff the value is acceptable.
     doc          — short human description.
     """
+
     type: Any
     default: Any
-    choices: Optional[tuple] = None
-    min: Optional[float] = None
-    max: Optional[float] = None
-    validator: Optional[Callable[[Any], bool]] = None
+    choices: tuple | None = None
+    min: float | None = None
+    max: float | None = None
+    validator: Callable[[Any], bool] | None = None
     doc: str = ""
 
 
@@ -52,7 +56,8 @@ def _is_hhmm(value: Any) -> bool:
     if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
         return False
     try:
-        h = int(value[:2]); m = int(value[3:])
+        h = int(value[:2])
+        m = int(value[3:])
     except ValueError:
         return False
     return 0 <= h <= 23 and 0 <= m <= 59
@@ -62,53 +67,50 @@ def _is_hhmm(value: Any) -> bool:
 
 SCHEMA: dict[str, SettingSpec] = {
     # General
-    "notif":        SettingSpec(bool, True,  doc="Show notifications when alerts fire"),
-    "auto_refresh": SettingSpec(bool, True,  doc="Refresh portfolio prices every 60 s"),
-    "default_home": SettingSpec(bool, True,  doc="Open Home tab on startup (False → Portfolio)"),
-    "confirm_sell": SettingSpec(bool, True,  doc="Show extra confirmation before selling"),
-
+    "notif": SettingSpec(bool, True, doc="Show notifications when alerts fire"),
+    "auto_refresh": SettingSpec(bool, True, doc="Refresh portfolio prices every 60 s"),
+    "default_home": SettingSpec(bool, True, doc="Open Home tab on startup (False → Portfolio)"),
+    "confirm_sell": SettingSpec(bool, True, doc="Show extra confirmation before selling"),
     # Market data
-    "cache":        SettingSpec(bool, True,  doc="Use 5-min price cache (disable for real-time)"),
-    "pre_market":   SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
-    "perf_log":     SettingSpec(bool, True,  doc="Save P&L history"),
-
+    "cache": SettingSpec(bool, True, doc="Use 5-min price cache (disable for real-time)"),
+    "pre_market": SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
+    "perf_log": SettingSpec(bool, True, doc="Save P&L history"),
     # Technical analysis
-    "bb":           SettingSpec(bool, True,  doc="Show Bollinger Bands on chart"),
-    "sma_cross":    SettingSpec(bool, True,  doc="Include Golden/Death Cross signal in analysis"),
-    "rsi_alerts":   SettingSpec(bool, False, doc="Scan portfolio for extreme RSI on toggle-on"),
-
+    "bb": SettingSpec(bool, True, doc="Show Bollinger Bands on chart"),
+    "sma_cross": SettingSpec(bool, True, doc="Include Golden/Death Cross signal in analysis"),
+    "rsi_alerts": SettingSpec(bool, False, doc="Scan portfolio for extreme RSI on toggle-on"),
     # Reports
-    "tx_history":   SettingSpec(bool, True,  doc="Include transaction history in reports"),
-    "pdf_dark":     SettingSpec(bool, True,  doc="Use dark theme in PDF reports"),
-
+    "tx_history": SettingSpec(bool, True, doc="Include transaction history in reports"),
+    "pdf_dark": SettingSpec(bool, True, doc="Use dark theme in PDF reports"),
     # Paper trading scheduler
-    "paper_scheduler_enabled":     SettingSpec(bool, True,  doc="Master switch for the scheduler"),
-    "paper_scan_interval_minutes": SettingSpec(int, 15, min=1, max=1440,
-                                               doc="Background QTimer interval (minutes)"),
-    "paper_daily_scan_enabled":    SettingSpec(bool, True,  doc="Cron-style end-of-day scan"),
-    "paper_daily_scan_time_et":    SettingSpec(str, "16:05", validator=_is_hhmm,
-                                               doc="HH:MM in US/Eastern"),
-    "paper_scan_on_startup":       SettingSpec(bool, True,  doc="Scan all active accounts at app launch"),
-    "paper_market_hours_only":     SettingSpec(bool, True,  doc="Interval ticks skip outside RTH"),
-
+    "paper_scheduler_enabled": SettingSpec(bool, True, doc="Master switch for the scheduler"),
+    "paper_scan_interval_minutes": SettingSpec(
+        int, 15, min=1, max=1440, doc="Background QTimer interval (minutes)"
+    ),
+    "paper_daily_scan_enabled": SettingSpec(bool, True, doc="Cron-style end-of-day scan"),
+    "paper_daily_scan_time_et": SettingSpec(str, "16:05", validator=_is_hhmm, doc="HH:MM in US/Eastern"),
+    "paper_scan_on_startup": SettingSpec(bool, True, doc="Scan all active accounts at app launch"),
+    "paper_market_hours_only": SettingSpec(bool, True, doc="Interval ticks skip outside RTH"),
     # Paper trading guardrails (lite-pro execution gates)
-    "paper_enforce_market_hours":  SettingSpec(bool, True,
-                                               doc="Engine refuses to fill when market is closed"),
-    "paper_min_holding_minutes":   SettingSpec(int, 60, min=0, max=10_080,
-                                               doc="Cannot SELL a position opened within last N min"),
-    "paper_anti_flap_minutes":     SettingSpec(int, 30, min=0, max=10_080,
-                                               doc="Cannot BUY a ticker we filled-SELL on within last N min"),
-    "paper_min_trade_dollars":     SettingSpec((int, float), 50.0, min=0.0,
-                                               doc="Skip BUYs whose target_dollars is below this"),
-
+    "paper_enforce_market_hours": SettingSpec(bool, True, doc="Engine refuses to fill when market is closed"),
+    "paper_min_holding_minutes": SettingSpec(
+        int, 60, min=0, max=10_080, doc="Cannot SELL a position opened within last N min"
+    ),
+    "paper_anti_flap_minutes": SettingSpec(
+        int, 30, min=0, max=10_080, doc="Cannot BUY a ticker we filled-SELL on within last N min"
+    ),
+    "paper_min_trade_dollars": SettingSpec(
+        (int, float), 50.0, min=0.0, doc="Skip BUYs whose target_dollars is below this"
+    ),
     # Paper trading analysis tuning
-    "paper_history_period":        SettingSpec(str, "2y",
-                                               choices=("6mo", "1y", "2y", "5y", "10y"),
-                                               doc="Window the scanner passes to analyze()/XGBoost"),
-
+    "paper_history_period": SettingSpec(
+        str,
+        "2y",
+        choices=("6mo", "1y", "2y", "5y", "10y"),
+        doc="Window the scanner passes to analyze()/XGBoost",
+    ),
     # Logging overrides (free-form: dict[str, str])
-    "logging_levels":              SettingSpec(dict, {},
-                                               doc="Per-module logging overrides {name: LEVEL}"),
+    "logging_levels": SettingSpec(dict, {}, doc="Per-module logging overrides {name: LEVEL}"),
 }
 
 # DEFAULTS dict mirrors SCHEMA — kept for backward compatibility with code

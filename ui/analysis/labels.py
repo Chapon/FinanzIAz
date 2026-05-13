@@ -6,24 +6,24 @@ These were originally inlined as ``TOOLTIPS``, ``_YAHOO_COLORS``,
 ``analysis_tab.py``. Centralising them here keeps the orchestrator file
 focused on layout/wiring instead of presentation strings.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 # ── Yahoo-level display palette ──────────────────────────────────────────────
 YAHOO_COLORS: dict[str, str] = {
-    "Strong Buy":   "#22c55e",
-    "Buy":          "#4ade80",
-    "Hold":         "#fbbf24",
+    "Strong Buy": "#22c55e",
+    "Buy": "#4ade80",
+    "Hold": "#fbbf24",
     "Underperform": "#fb923c",
-    "Sell":         "#f87171",
+    "Sell": "#f87171",
 }
 
 YAHOO_LABELS_ES: dict[str, str] = {
-    "Strong Buy":   "Compra Fuerte",
-    "Buy":          "Comprar",
-    "Hold":         "Mantener",
+    "Strong Buy": "Compra Fuerte",
+    "Buy": "Comprar",
+    "Hold": "Mantener",
     "Underperform": "Vender",
-    "Sell":         "Venta Fuerte",
+    "Sell": "Venta Fuerte",
 }
 
 

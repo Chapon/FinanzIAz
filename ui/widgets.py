@@ -1,34 +1,40 @@
 """
 Reusable UI widgets for FinanzIAs — IQON design system.
 """
-import math
+
+
+from PyQt6.QtCore import QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
-    QPushButton, QSizePolicy, QGraphicsDropShadowEffect,
-    QSpinBox, QDoubleSpinBox, QComboBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QRect, QRectF, QSize, pyqtSignal, QPropertyAnimation, QEasingCurve, pyqtProperty
-from PyQt6.QtGui import (
-    QFont, QPainter, QColor, QPen, QBrush, QConicalGradient,
-    QPainterPath, QLinearGradient, QRadialGradient
-)
+
 from ui.styles import PALETTE, SIGNAL_COLORS
 
-
 # ── Circular Gauge ─────────────────────────────────────────────────────────
+
 
 class CircularGauge(QWidget):
     """
     Circular arc progress gauge, like the CPU/GPU temp rings in IQON.
     Shows a value (e.g. temperature) in the center with a colored arc.
     """
+
     def __init__(
         self,
         value: float = 0,
         max_value: float = 100,
         unit: str = "°",
         label: str = "",
-        color: str = None,
+        color: str | None = None,
         size: int = 90,
         parent=None,
     ):
@@ -65,7 +71,7 @@ class CircularGauge(QWidget):
         # Progress arc
         pct = min(self._value / self._max_value, 1.0) if self._max_value else 0
         span_angle = int(pct * 270 * 16)  # 270° sweep
-        start_angle = int(225 * 16)       # start at 225° (bottom-left)
+        start_angle = 225 * 16  # start at 225° (bottom-left)
 
         arc_pen = QPen(self._color, 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         painter.setPen(arc_pen)
@@ -98,16 +104,18 @@ class CircularGauge(QWidget):
 
 # ── Mini Progress Bar ──────────────────────────────────────────────────────
 
+
 class MiniProgressBar(QWidget):
     """Thin horizontal progress bar like the utilization bars in IQON."""
-    def __init__(self, value: float = 0, color: str = None, parent=None):
+
+    def __init__(self, value: float = 0, color: str | None = None, parent=None):
         super().__init__(parent)
         self._value = value  # 0–100
         self._color = QColor(color or PALETTE["accent"])
         self.setFixedHeight(5)
         self.setMinimumWidth(60)
 
-    def set_value(self, value: float, color: str = None):
+    def set_value(self, value: float, color: str | None = None):
         self._value = min(max(value, 0), 100)
         if color:
             self._color = QColor(color)
@@ -134,8 +142,10 @@ class MiniProgressBar(QWidget):
 
 # ── Toggle Switch ──────────────────────────────────────────────────────────
 
+
 class ToggleSwitch(QWidget):
     """iOS-style toggle switch."""
+
     toggled = pyqtSignal(bool)
 
     def __init__(self, checked: bool = False, parent=None):
@@ -176,9 +186,11 @@ class ToggleSwitch(QWidget):
 
 # ── Status Dot ────────────────────────────────────────────────────────────
 
+
 class StatusDot(QWidget):
     """Small colored dot for status indicators."""
-    def __init__(self, color: str = None, size: int = 8, parent=None):
+
+    def __init__(self, color: str | None = None, size: int = 8, parent=None):
         super().__init__(parent)
         self._color = QColor(color or PALETTE["accent"])
         self._size = size
@@ -201,14 +213,15 @@ class StatusDot(QWidget):
 
 # ── Metric Card (IQON style) ───────────────────────────────────────────────
 
+
 class MetricCard(QFrame):
     """Card with title + large value, optional change indicator.
 
     compact=True uses smaller fonts/padding — for panels where vertical
     space is limited (e.g. the analysis right panel).
     """
-    def __init__(self, title: str, value: str = "—", color: str = None,
-                 compact: bool = False, parent=None):
+
+    def __init__(self, title: str, value: str = "—", color: str | None = None, compact: bool = False, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
         self.setMinimumWidth(110 if compact else 150)
@@ -235,16 +248,18 @@ class MetricCard(QFrame):
         c = color or PALETTE["text1"]
         self.value_label.setStyleSheet(f"color: {c}; background: transparent;")
 
-    def set_value(self, value: str, color: str = None):
+    def set_value(self, value: str, color: str | None = None):
         self.value_label.setText(value)
         self._set_color(color)
 
 
 # ── Status Row (IQON left-card style) ─────────────────────────────────────
 
+
 class StatusRow(QWidget):
     """A labeled row with a colored dot and status text — like the left card in IQON Home."""
-    def __init__(self, icon: str, label: str, status: str, status_color: str = None, parent=None):
+
+    def __init__(self, icon: str, label: str, status: str, status_color: str | None = None, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 4)
@@ -256,13 +271,9 @@ class StatusRow(QWidget):
         info = QVBoxLayout()
         info.setSpacing(0)
         name_lbl = QLabel(f"{icon}  {label}")
-        name_lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 12px; font-weight: 600;"
-        )
+        name_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 12px; font-weight: 600;")
         stat_lbl = QLabel(status)
-        stat_lbl.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 11px;"
-        )
+        stat_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         info.addWidget(name_lbl)
         info.addWidget(stat_lbl)
         layout.addLayout(info)
@@ -279,12 +290,18 @@ class StatusRow(QWidget):
 
 # ── Gauge Card (IQON metric with circular gauge) ───────────────────────────
 
+
 class GaugeCard(QFrame):
     """Card with title, subtitle, circular gauge, and utilization bar — like CPU/GPU cards."""
+
     def __init__(
-        self, title: str, subtitle: str = "",
-        value: float = 0, max_value: float = 100,
-        unit: str = "°", gauge_color: str = None,
+        self,
+        title: str,
+        subtitle: str = "",
+        value: float = 0,
+        max_value: float = 100,
+        unit: str = "°",
+        gauge_color: str | None = None,
         util_value: float = 0,
         parent=None,
     ):
@@ -299,15 +316,15 @@ class GaugeCard(QFrame):
         # Title row
         title_row = QHBoxLayout()
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 14px; font-weight: 700;"
-        )
+        title_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 14px; font-weight: 700;")
         title_row.addWidget(title_lbl)
         title_row.addStretch()
 
         self.gauge = CircularGauge(
-            value=value, max_value=max_value,
-            unit=unit, color=gauge_color or PALETTE["blue"],
+            value=value,
+            max_value=max_value,
+            unit=unit,
+            color=gauge_color or PALETTE["blue"],
             size=72,
         )
         title_row.addWidget(self.gauge)
@@ -315,18 +332,14 @@ class GaugeCard(QFrame):
 
         # Subtitle
         self.sub_label = QLabel(subtitle)
-        self.sub_label.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 11px;"
-        )
+        self.sub_label.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         root.addWidget(self.sub_label)
 
         # Status dot + label
         status_row = QHBoxLayout()
         self.dot = StatusDot(PALETTE["accent"], size=8)
         self.status_lbl = QLabel("Óptimo")
-        self.status_lbl.setStyleSheet(
-            f"color: {PALETTE['accent']}; font-size: 12px; font-weight: 600;"
-        )
+        self.status_lbl.setStyleSheet(f"color: {PALETTE['accent']}; font-size: 12px; font-weight: 600;")
         status_row.addWidget(self.dot)
         status_row.addWidget(self.status_lbl)
         status_row.addStretch()
@@ -335,13 +348,9 @@ class GaugeCard(QFrame):
         # Utilization bar
         util_lbl_row = QHBoxLayout()
         util_txt = QLabel("Utilización")
-        util_txt.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 11px;"
-        )
+        util_txt.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         self.util_pct_lbl = QLabel(f"{util_value:.0f}%")
-        self.util_pct_lbl.setStyleSheet(
-            f"color: {PALETTE['text2']}; font-size: 11px; font-weight: 600;"
-        )
+        self.util_pct_lbl.setStyleSheet(f"color: {PALETTE['text2']}; font-size: 11px; font-weight: 600;")
         util_lbl_row.addWidget(util_txt)
         util_lbl_row.addStretch()
         util_lbl_row.addWidget(self.util_pct_lbl)
@@ -362,16 +371,21 @@ class GaugeCard(QFrame):
 
 # ── Feature Card ──────────────────────────────────────────────────────────
 
+
 class FeatureCard(QFrame):
     """
     Clickable feature card — like Performance Analyzer, Optimization, etc.
     Has title, subtitle, status dot, and an action button.
     """
+
     clicked = pyqtSignal()
 
     def __init__(
-        self, title: str, subtitle: str = "",
-        status: str = "", status_ok: bool = True,
+        self,
+        title: str,
+        subtitle: str = "",
+        status: str = "",
+        status_ok: bool = True,
         action_text: str = "Abrir →",
         parent=None,
     ):
@@ -385,9 +399,7 @@ class FeatureCard(QFrame):
         layout.setSpacing(6)
 
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 14px; font-weight: 700;"
-        )
+        title_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 14px; font-weight: 700;")
         layout.addWidget(title_lbl)
 
         if subtitle:
@@ -430,12 +442,13 @@ class FeatureCard(QFrame):
 
 # ── Settings Row ──────────────────────────────────────────────────────────
 
+
 class SettingsRow(QWidget):
     """A label + toggle switch row for the Settings panel."""
+
     toggled = pyqtSignal(str, bool)
 
-    def __init__(self, key: str, label: str, checked: bool = False,
-                 tooltip: str = "", parent=None):
+    def __init__(self, key: str, label: str, checked: bool = False, tooltip: str = "", parent=None):
         super().__init__(parent)
         self._key = key
         layout = QVBoxLayout(self)
@@ -455,14 +468,13 @@ class SettingsRow(QWidget):
 
         if tooltip:
             tip_lbl = QLabel(tooltip)
-            tip_lbl.setStyleSheet(
-                f"color: {PALETTE['text3']}; font-size: 11px;"
-            )
+            tip_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
             tip_lbl.setWordWrap(True)
             layout.addWidget(tip_lbl)
 
 
 # ── Numeric Settings Row ──────────────────────────────────────────────────
+
 
 class NumericSettingsRow(QWidget):
     """A label + numeric spin box row for the Settings panel.
@@ -472,15 +484,27 @@ class NumericSettingsRow(QWidget):
     ``value_changed(key, value)`` emits a float; callers should cast to int
     when persisting if the setting is logically an integer.
     """
+
     value_changed = pyqtSignal(str, float)
 
-    def __init__(self, key: str, label: str, value,
-                 *, value_type: str = "int", suffix: str = "",
-                 minimum=0, maximum=100_000, step=1, decimals: int = 2,
-                 tooltip: str = "", parent=None):
+    def __init__(
+        self,
+        key: str,
+        label: str,
+        value,
+        *,
+        value_type: str = "int",
+        suffix: str = "",
+        minimum=0,
+        maximum=100_000,
+        step=1,
+        decimals: int = 2,
+        tooltip: str = "",
+        parent=None,
+    ):
         super().__init__(parent)
         self._key = key
-        self._is_int = (value_type == "int")
+        self._is_int = value_type == "int"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 6, 0, 6)
@@ -512,17 +536,13 @@ class NumericSettingsRow(QWidget):
             f"border: 1px solid {PALETTE['border_lt']}; "
             f"border-radius: 6px; padding: 2px 6px; font-size: 12px;"
         )
-        self.spin.valueChanged.connect(
-            lambda v: self.value_changed.emit(self._key, float(v))
-        )
+        self.spin.valueChanged.connect(lambda v: self.value_changed.emit(self._key, float(v)))
         top_row.addWidget(self.spin)
         layout.addLayout(top_row)
 
         if tooltip:
             tip_lbl = QLabel(tooltip)
-            tip_lbl.setStyleSheet(
-                f"color: {PALETTE['text3']}; font-size: 11px;"
-            )
+            tip_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
             tip_lbl.setWordWrap(True)
             layout.addWidget(tip_lbl)
 
@@ -541,16 +561,17 @@ class NumericSettingsRow(QWidget):
 
 # ── Choice Settings Row ───────────────────────────────────────────────────
 
+
 class ChoiceSettingsRow(QWidget):
     """A label + dropdown row for the Settings panel.
 
     ``choices`` is a list of ``(value, display_label)`` tuples. The signal
     ``value_changed(key, value)`` emits the underlying value (string).
     """
+
     value_changed = pyqtSignal(str, str)
 
-    def __init__(self, key: str, label: str, value,
-                 *, choices: list, tooltip: str = "", parent=None):
+    def __init__(self, key: str, label: str, value, *, choices: list, tooltip: str = "", parent=None):
         super().__init__(parent)
         self._key = key
         self._choices = list(choices)
@@ -619,6 +640,7 @@ class ChoiceSettingsRow(QWidget):
 
 # ── Signal Badge ──────────────────────────────────────────────────────────
 
+
 class SignalBadge(QLabel):
     """
     Colored badge using Yahoo Finance's 5-level signal system.
@@ -628,15 +650,15 @@ class SignalBadge(QLabel):
 
     # Spanish display labels for each level
     _LABELS = {
-        "Strong Buy":   "Compra Fuerte",
-        "Buy":          "Comprar",
-        "Hold":         "Mantener",
+        "Strong Buy": "Compra Fuerte",
+        "Buy": "Comprar",
+        "Hold": "Mantener",
         "Underperform": "Vender",
-        "Sell":         "Venta Fuerte",
+        "Sell": "Venta Fuerte",
         # Legacy fallbacks
-        "BUY":     "Comprar",
-        "SELL":    "Vender",
-        "HOLD":    "Mantener",
+        "BUY": "Comprar",
+        "SELL": "Vender",
+        "HOLD": "Mantener",
         "NEUTRAL": "Neutral",
     }
 
@@ -664,15 +686,14 @@ class SignalBadge(QLabel):
 
 # ── Section Header ────────────────────────────────────────────────────────
 
+
 class SectionHeader(QWidget):
-    def __init__(self, title: str, action_text: str = None, parent=None):
+    def __init__(self, title: str, action_text: str | None = None, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         lbl = QLabel(title)
-        lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 15px; font-weight: 700;"
-        )
+        lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 15px; font-weight: 700;")
         layout.addWidget(lbl)
         layout.addStretch()
         self.action_btn = None
@@ -689,4 +710,3 @@ class HSeparator(QFrame):
         self.setObjectName("separator")
         self.setFrameShape(QFrame.Shape.HLine)
         self.setFixedHeight(1)
-

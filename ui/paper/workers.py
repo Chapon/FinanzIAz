@@ -4,6 +4,7 @@ Background worker(s) used by the paper-trading tab.
 Migrated to the shared ``BaseWorker`` so error handling, cancellation, and
 logging are consistent with the rest of the UI.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
@@ -15,7 +16,7 @@ from ui.workers import BaseWorker
 class PricesWorker(BaseWorker):
     """Fetch current prices for a list of tickers without blocking the UI."""
 
-    prices_ready = pyqtSignal(dict)   # {ticker: price}
+    prices_ready = pyqtSignal(dict)  # {ticker: price}
 
     def __init__(self, tickers: list[str]):
         super().__init__()

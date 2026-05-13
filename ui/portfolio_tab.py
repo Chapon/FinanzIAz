@@ -1,33 +1,46 @@
 """
 Portfolio tab — IQON-style card layout with live P&L metrics.
 """
+
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QComboBox, QHeaderView, QAbstractItemView,
-    QFrame, QMessageBox, QSizePolicy, QScrollArea
+    QAbstractItemView,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QColor, QFont
-from database.models import session_scope, Portfolio, Position
-from data.yahoo_finance import get_bulk_prices, get_bulk_dividends
-from ui.widgets import MetricCard, MiniProgressBar, SectionHeader, HSeparator, StatusDot
-from ui.dialogs import AddPositionDialog, SellPositionDialog, AddPortfolioDialog, RenamePortfolioDialog
+
+from config.logging_config import get_logger
+from config.settings_manager import settings
+from data.yahoo_finance import get_bulk_dividends, get_bulk_prices
+from database.models import Portfolio, Position, session_scope
+from ui.dialogs import AddPortfolioDialog, AddPositionDialog, RenamePortfolioDialog, SellPositionDialog
 from ui.import_dialog import ImportDialog
 from ui.styles import PALETTE, SIGNAL_COLORS
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.widgets import MetricCard, SectionHeader
 from ui.workers import BaseWorker
-from config.logging_config import get_logger
-from config.settings_manager import settings
 
 log = get_logger(__name__)
 
 # Spanish labels for Yahoo Finance 5-level system (mirrors SignalBadge._LABELS)
 _SIGNAL_LABELS = {
-    "Strong Buy":   "Compra Fuerte",
-    "Buy":          "Comprar",
-    "Hold":         "Mantener",
+    "Strong Buy": "Compra Fuerte",
+    "Buy": "Comprar",
+    "Hold": "Mantener",
     "Underperform": "Vender",
-    "Sell":         "Venta Fuerte",
+    "Sell": "Venta Fuerte",
 }
 
 
@@ -47,7 +60,8 @@ class PriceWorker(BaseWorker):
 
 class DividendWorker(BaseWorker):
     """Background thread to fetch cumulative dividends per position."""
-    dividends_ready = pyqtSignal(dict)   # {ticker: total_div_per_share}
+
+    dividends_ready = pyqtSignal(dict)  # {ticker: total_div_per_share}
 
     def __init__(self, tickers_since: dict):
         super().__init__()
@@ -66,7 +80,8 @@ class SignalWorker(BaseWorker):
     and returns the Yahoo Finance 5-level signal for every one.
     Tickers are analyzed in parallel (up to 4 threads).
     """
-    signals_ready = pyqtSignal(dict)   # {ticker: yahoo_level_str}
+
+    signals_ready = pyqtSignal(dict)  # {ticker: yahoo_level_str}
 
     def __init__(self, tickers: list):
         super().__init__()
@@ -74,9 +89,10 @@ class SignalWorker(BaseWorker):
 
     def do_work(self) -> dict:
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from data.yahoo_finance import get_historical_data
+
         from analysis.technical import analyze
         from config.settings_manager import settings as _settings
+        from data.yahoo_finance import get_historical_data
 
         sma_cross = _settings.get("sma_cross")
 
@@ -84,19 +100,21 @@ class SignalWorker(BaseWorker):
             try:
                 df = get_historical_data(ticker, period="1y")
                 if df is None or len(df) < 50:
-                    log.debug("%s: insufficient data (%s rows)",
-                              ticker, len(df) if df is not None else 0)
+                    log.debug("%s: insufficient data (%s rows)", ticker, len(df) if df is not None else 0)
                     return ticker, "Hold"
                 result = analyze(
-                    ticker, df,
+                    ticker,
+                    df,
                     enable_sma_cross=sma_cross,
-                    enable_xgboost=False,   # skip ML in batch scan to stay fast
+                    enable_xgboost=False,  # skip ML in batch scan to stay fast
                 )
                 if result:
                     log.debug(
                         "%s: %s (buy=%s strength=%s conf=%s%%)",
-                        ticker, result.yahoo_level,
-                        result.overall_signal, result.overall_strength,
+                        ticker,
+                        result.yahoo_level,
+                        result.overall_signal,
+                        result.overall_strength,
                         result.confidence_score,
                     )
                     return ticker, result.yahoo_level
@@ -129,9 +147,9 @@ class PortfolioTab(QWidget):
         self._current_portfolio_id = None
         self._positions = []
         self._prices = {}
-        self._dividends = {}          # {ticker: total_div_per_share}
-        self._signals = {}            # {ticker: yahoo_level_str}
-        self._show_dividends = True   # toggle
+        self._dividends = {}  # {ticker: total_div_per_share}
+        self._signals = {}  # {ticker: yahoo_level_str}
+        self._show_dividends = True  # toggle
         self._price_worker = None
         self._div_worker = None
         self._signal_worker = None
@@ -207,9 +225,9 @@ class PortfolioTab(QWidget):
             "Creá un nuevo portafolio de seguimiento importando un CSV de Yahoo Finance watchlist"
         )
         self.watchlist_btn.setStyleSheet(
-            f"background-color: #1e3a5f; color: #60a5fa; "
-            f"border: 1px solid #1d4ed8; border-radius: 8px; "
-            f"padding: 0 14px; font-weight: 600; font-size: 12px;"
+            "background-color: #1e3a5f; color: #60a5fa; "
+            "border: 1px solid #1d4ed8; border-radius: 8px; "
+            "padding: 0 14px; font-weight: 600; font-size: 12px;"
         )
         self.watchlist_btn.clicked.connect(self._import_watchlist)
         top.addWidget(self.watchlist_btn)
@@ -233,9 +251,7 @@ class PortfolioTab(QWidget):
         top.addWidget(self.div_btn)
 
         self.last_update_label = QLabel("—")
-        self.last_update_label.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 11px;"
-        )
+        self.last_update_label.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         top.addWidget(self.last_update_label)
 
         root.addLayout(top)
@@ -244,16 +260,23 @@ class PortfolioTab(QWidget):
         cards_row = QHBoxLayout()
         cards_row.setSpacing(14)
 
-        self.card_total     = MetricCard("Valor Total")
-        self.card_invested  = MetricCard("Invertido")
-        self.card_pl        = MetricCard("Ganancia de Precio")
-        self.card_divs      = MetricCard("Dividendos Cobrados")
-        self.card_pl_total  = MetricCard("Ganancia Total")
-        self.card_pl_pct    = MetricCard("Rendimiento Total")
+        self.card_total = MetricCard("Valor Total")
+        self.card_invested = MetricCard("Invertido")
+        self.card_pl = MetricCard("Ganancia de Precio")
+        self.card_divs = MetricCard("Dividendos Cobrados")
+        self.card_pl_total = MetricCard("Ganancia Total")
+        self.card_pl_pct = MetricCard("Rendimiento Total")
         self.card_positions = MetricCard("Posiciones")
 
-        for card in [self.card_total, self.card_invested, self.card_pl,
-                     self.card_divs, self.card_pl_total, self.card_pl_pct, self.card_positions]:
+        for card in [
+            self.card_total,
+            self.card_invested,
+            self.card_pl,
+            self.card_divs,
+            self.card_pl_total,
+            self.card_pl_pct,
+            self.card_positions,
+        ]:
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             card.setFixedHeight(100)
             cards_row.addWidget(card)
@@ -269,11 +292,24 @@ class PortfolioTab(QWidget):
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(14)
-        self.table.setHorizontalHeaderLabels([
-            "Ticker", "Empresa", "Cant.", "P. Compra", "P. Actual",
-            "Var. Hoy", "Invertido", "Valor", "Ganancia Precio", "Dividendos",
-            "Ganancia Total", "G/P %", "Rend. Total", "Señal Técnica",
-        ])
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Ticker",
+                "Empresa",
+                "Cant.",
+                "P. Compra",
+                "P. Actual",
+                "Var. Hoy",
+                "Invertido",
+                "Valor",
+                "Ganancia Precio",
+                "Dividendos",
+                "Ganancia Total",
+                "G/P %",
+                "Rend. Total",
+                "Señal Técnica",
+            ]
+        )
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -364,9 +400,7 @@ class PortfolioTab(QWidget):
             return
         if self._div_worker and self._div_worker.isRunning():
             return
-        tickers_since = {
-            p.ticker: (p.purchase_date or p.created_at) for p in self._positions
-        }
+        tickers_since = {p.ticker: (p.purchase_date or p.created_at) for p in self._positions}
         self._div_worker = DividendWorker(tickers_since)
         self._div_worker.dividends_ready.connect(self._on_dividends_ready)
         self._div_worker.start()
@@ -396,6 +430,7 @@ class PortfolioTab(QWidget):
         self._render_table()
         self._update_cards()
         from datetime import datetime
+
         self.last_update_label.setText(f"Actualizado: {datetime.now().strftime('%H:%M:%S')}")
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("↻  Actualizar")
@@ -407,22 +442,26 @@ class PortfolioTab(QWidget):
         self.table.setRowCount(len(self._positions))
 
         for row, pos in enumerate(self._positions):
-            d             = self._prices.get(pos.ticker)
+            d = self._prices.get(pos.ticker)
             current_price = d["price"] if d else None
-            change_pct    = d.get("change_pct") if d else None
+            change_pct = d.get("change_pct") if d else None
 
-            invested      = pos.quantity * pos.avg_buy_price
-            current_val   = (pos.quantity * current_price) if current_price else None
-            pl_price      = (current_val - invested) if current_val is not None else None
+            invested = pos.quantity * pos.avg_buy_price
+            current_val = (pos.quantity * current_price) if current_price else None
+            pl_price = (current_val - invested) if current_val is not None else None
 
             # Dividends
-            div_per_share   = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
-            div_total       = div_per_share * pos.quantity if div_per_share else 0.0
+            div_per_share = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
+            div_total = div_per_share * pos.quantity if div_per_share else 0.0
 
             # Total P&L = price gain + dividends
-            pl_total  = ((pl_price or 0.0) + div_total) if pl_price is not None else None
-            pl_pct    = ((pl_price / invested) * 100) if (pl_price is not None and invested > 0) else None
-            pl_pct_div = (((pl_price or 0) + div_total) / invested * 100) if invested > 0 and pl_price is not None else None
+            pl_total = ((pl_price or 0.0) + div_total) if pl_price is not None else None
+            pl_pct = ((pl_price / invested) * 100) if (pl_price is not None and invested > 0) else None
+            pl_pct_div = (
+                (((pl_price or 0) + div_total) / invested * 100)
+                if invested > 0 and pl_price is not None
+                else None
+            )
 
             def cell(text, right=False, bold=False):
                 item = QTableWidgetItem(str(text))
@@ -476,7 +515,9 @@ class PortfolioTab(QWidget):
             self.table.setItem(row, 11, pct_item)
 
             # Rendimiento total c/dividendos
-            pct_div_item = cell(f"{pl_pct_div:+.2f}%" if pl_pct_div is not None else "—", right=True, bold=True)
+            pct_div_item = cell(
+                f"{pl_pct_div:+.2f}%" if pl_pct_div is not None else "—", right=True, bold=True
+            )
             if pl_pct_div is not None:
                 pct_div_item.setForeground(QColor(PALETTE["accent"] if pl_pct_div >= 0 else PALETTE["red"]))
             self.table.setItem(row, 12, pct_div_item)
@@ -501,9 +542,7 @@ class PortfolioTab(QWidget):
                 )
             else:
                 sig_widget.setText("Calculando…")
-                sig_widget.setStyleSheet(
-                    f"color: {PALETTE['text3']}; font-size: 11px;"
-                )
+                sig_widget.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
             self.table.setCellWidget(row, 13, sig_widget)
 
             self.table.setRowHeight(row, 48)
@@ -514,38 +553,37 @@ class PortfolioTab(QWidget):
     def _update_cards(self):
         total_invested = sum(p.quantity * p.avg_buy_price for p in self._positions)
         total_value = sum(
-            p.quantity * (self._prices[p.ticker]["price"] if p.ticker in self._prices and self._prices[p.ticker] else p.avg_buy_price)
+            p.quantity * (self._prices[p.ticker]["price"] if self._prices.get(p.ticker) else p.avg_buy_price)
             for p in self._positions
         )
         pl_price = total_value - total_invested
 
         # Dividends
-        total_divs = sum(
-            (self._dividends.get(p.ticker, 0.0) * p.quantity)
-            for p in self._positions
-        ) if self._show_dividends else 0.0
+        total_divs = (
+            sum((self._dividends.get(p.ticker, 0.0) * p.quantity) for p in self._positions)
+            if self._show_dividends
+            else 0.0
+        )
 
-        pl_total  = pl_price + total_divs
-        pl_pct    = (pl_price  / total_invested * 100) if total_invested > 0 else 0
+        pl_total = pl_price + total_divs
         pl_pct_div = (pl_total / total_invested * 100) if total_invested > 0 else 0
 
         self.card_total.set_value(f"${total_value:,.2f}")
         self.card_invested.set_value(f"${total_invested:,.2f}")
         self.card_pl.set_value(
-            f"{'+'if pl_price>=0 else ''}${pl_price:,.2f}",
-            color=PALETTE["accent"] if pl_price >= 0 else PALETTE["red"]
+            f"{'+' if pl_price >= 0 else ''}${pl_price:,.2f}",
+            color=PALETTE["accent"] if pl_price >= 0 else PALETTE["red"],
         )
         self.card_divs.set_value(
             f"+${total_divs:,.2f}" if total_divs > 0 else "—",
-            color=PALETTE["blue"] if total_divs > 0 else PALETTE["text3"]
+            color=PALETTE["blue"] if total_divs > 0 else PALETTE["text3"],
         )
         self.card_pl_total.set_value(
-            f"{'+'if pl_total>=0 else ''}${pl_total:,.2f}",
-            color=PALETTE["accent"] if pl_total >= 0 else PALETTE["red"]
+            f"{'+' if pl_total >= 0 else ''}${pl_total:,.2f}",
+            color=PALETTE["accent"] if pl_total >= 0 else PALETTE["red"],
         )
         self.card_pl_pct.set_value(
-            f"{pl_pct_div:+.2f}%",
-            color=PALETTE["accent"] if pl_pct_div >= 0 else PALETTE["red"]
+            f"{pl_pct_div:+.2f}%", color=PALETTE["accent"] if pl_pct_div >= 0 else PALETTE["red"]
         )
         self.card_positions.set_value(str(len(self._positions)))
 
@@ -600,10 +638,9 @@ class PortfolioTab(QWidget):
     def _import_watchlist(self):
         """Create a new portfolio and open the import dialog in one step."""
         from PyQt6.QtWidgets import QInputDialog
+
         name, ok = QInputDialog.getText(
-            self, "Nueva Watchlist",
-            "Nombre del portafolio watchlist:",
-            text="Watchlist"
+            self, "Nueva Watchlist", "Nombre del portafolio watchlist:", text="Watchlist"
         )
         if not ok or not name.strip():
             return
@@ -611,12 +648,16 @@ class PortfolioTab(QWidget):
 
         # Create the portfolio
         from database.models import Portfolio as PortfolioModel
+
         with session_scope() as session:
             conflict = session.query(PortfolioModel).filter(PortfolioModel.name == name).first()
             if conflict:
-                QMessageBox.warning(self, "Nombre en uso",
-                                    f"Ya existe un portafolio llamado '{name}'.\n"
-                                    f"Elegí otro nombre o importá directamente desde '📥 Importar CSV'.")
+                QMessageBox.warning(
+                    self,
+                    "Nombre en uso",
+                    f"Ya existe un portafolio llamado '{name}'.\n"
+                    f"Elegí otro nombre o importá directamente desde '📥 Importar CSV'.",
+                )
                 return
             p = PortfolioModel(name=name, description="Watchlist de seguimiento", currency="USD")
             session.add(p)
@@ -643,9 +684,11 @@ class PortfolioTab(QWidget):
 
     def _sell_position(self):
         row = self.table.currentRow()
-        if 0 <= row < len(self._positions):
-            if SellPositionDialog(self._positions[row], self).exec():
-                self._refresh_positions()
+        if (
+            0 <= row < len(self._positions)
+            and SellPositionDialog(self._positions[row], self).exec()
+        ):
+            self._refresh_positions()
 
     def _analyze_selected(self):
         row = self.table.currentRow()
@@ -664,7 +707,8 @@ class PortfolioTab(QWidget):
             self.position_selected.emit(self._positions[row])
 
     def _show_context_menu(self, pos):
-        from PyQt6.QtWidgets import QMenu, QWidgetAction
+        from PyQt6.QtWidgets import QMenu
+
         row = self.table.rowAt(pos.y())
         if row < 0 or row >= len(self._positions):
             return
@@ -679,8 +723,8 @@ class PortfolioTab(QWidget):
             f"QMenu::separator {{ height: 1px; background: {PALETTE['border']}; margin: 3px 8px; }}"
         )
 
-        menu.addAction("📈  Analizar",  lambda: self.position_selected.emit(position))
-        menu.addAction("💰  Vender",    lambda: self._sell_pos_at_row(row))
+        menu.addAction("📈  Analizar", lambda: self.position_selected.emit(position))
+        menu.addAction("💰  Vender", lambda: self._sell_pos_at_row(row))
         menu.addSeparator()
 
         delete_action = menu.addAction(f"🗑  Eliminar {position.ticker}")
@@ -690,8 +734,7 @@ class PortfolioTab(QWidget):
 
         # Override color for delete item via stylesheet hack
         menu.setStyleSheet(
-            menu.styleSheet() +
-            f"QMenu::item[text*='Eliminar'] {{ color: {PALETTE['red']}; }}"
+            menu.styleSheet() + f"QMenu::item[text*='Eliminar'] {{ color: {PALETTE['red']}; }}"
         )
 
         menu.exec(self.table.mapToGlobal(pos))
@@ -707,9 +750,9 @@ class PortfolioTab(QWidget):
 
         # Count transactions to surface what cascades on delete.
         from database.models import Transaction as TxModel
+
         with session_scope() as session:
-            n_tx = (session.query(TxModel)
-                    .filter(TxModel.position_id == pos.id).count())
+            n_tx = session.query(TxModel).filter(TxModel.position_id == pos.id).count()
 
         body = (
             f"¿Eliminar <b>{pos.ticker}</b> ({pos.company_name or pos.ticker})?<br><br>"
@@ -723,9 +766,7 @@ class PortfolioTab(QWidget):
         box.setWindowTitle("Eliminar posición")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(body)
-        box.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
-        )
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if box.exec() != QMessageBox.StandardButton.Yes:
             return
@@ -733,6 +774,7 @@ class PortfolioTab(QWidget):
         # Pre-destructive snapshot — best-effort; daily backup is the floor.
         try:
             from database.backup import backup_database
+
             backup_database(reason="pre-delete-position")
         except Exception:
             pass
@@ -740,7 +782,7 @@ class PortfolioTab(QWidget):
         with session_scope() as session:
             db_pos = session.query(Position).filter(Position.id == pos.id).first()
             if db_pos:
-                session.delete(db_pos)   # cascades to transactions via relationship
+                session.delete(db_pos)  # cascades to transactions via relationship
 
         self._refresh_positions()
 

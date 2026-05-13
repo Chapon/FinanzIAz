@@ -7,13 +7,12 @@ Covers:
 - Per-key validation rejects out-of-range / wrong-type values.
 - Choices and the HHMM custom validator both fire.
 """
+
 from __future__ import annotations
 
 import json
 
-import pytest
-
-from config.settings_manager import _SettingsManager, DEFAULTS
+from config.settings_manager import DEFAULTS, _SettingsManager
 
 
 def _new_manager(tmp_path, monkeypatch):
@@ -59,17 +58,19 @@ def test_validation_choices_for_history_period(tmp_path, monkeypatch):
 def test_validation_hhmm_format(tmp_path, monkeypatch):
     s = _new_manager(tmp_path, monkeypatch)
     assert s.set("paper_daily_scan_time_et", "25:00") is False
-    assert s.set("paper_daily_scan_time_et", "9:30") is False    # missing leading zero
+    assert s.set("paper_daily_scan_time_et", "9:30") is False  # missing leading zero
     assert s.set("paper_daily_scan_time_et", "09:30") is True
 
 
 def test_load_discards_invalid_keys_and_rewrites_file(tmp_path, monkeypatch):
     cfg = tmp_path / "settings.json"
     cfg.write_text(
-        json.dumps({
-            "notif": True,
-            "paper_scan_interval_minutes": "garbage",  # invalid → dropped
-        }),
+        json.dumps(
+            {
+                "notif": True,
+                "paper_scan_interval_minutes": "garbage",  # invalid → dropped
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("config.settings_manager._CONFIG_PATH", cfg)

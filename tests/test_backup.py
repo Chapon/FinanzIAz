@@ -6,12 +6,10 @@ Verifies the backup→list→rotate→restore lifecycle. Uses the in-memory
 ``tmp_path`` and monkey-patch ``DB_PATH`` so the backup utility writes its
 snapshots next to the test DB instead of the user's ``~/.finanzias``.
 """
+
 from __future__ import annotations
 
-import shutil
 import sqlite3
-from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -34,6 +32,7 @@ def real_db(tmp_path, monkeypatch):
 
     # Re-point the backup module's constants to the temp dir.
     import database.backup as bk
+
     monkeypatch.setattr(bk, "DB_PATH", str(db_path))
     monkeypatch.setattr(bk, "DB_DIR", db_path.parent)
     monkeypatch.setattr(bk, "BACKUP_DIR", db_path.parent / "backups")
@@ -43,6 +42,7 @@ def real_db(tmp_path, monkeypatch):
 
 def test_backup_database_creates_file(real_db):
     from database.backup import backup_database, list_backups
+
     out = backup_database(reason="manual")
     assert out is not None
     assert out.exists()
@@ -54,6 +54,7 @@ def test_backup_database_creates_file(real_db):
 def test_backup_skips_when_source_missing(tmp_path, monkeypatch):
     """When the live DB doesn't exist, backup logs and returns None — no crash."""
     import database.backup as bk
+
     monkeypatch.setattr(bk, "DB_PATH", str(tmp_path / "missing.db"))
     monkeypatch.setattr(bk, "DB_DIR", tmp_path)
     monkeypatch.setattr(bk, "BACKUP_DIR", tmp_path / "backups")
@@ -62,7 +63,8 @@ def test_backup_skips_when_source_missing(tmp_path, monkeypatch):
 
 
 def test_rotate_backups_keeps_last_n(real_db):
-    from database.backup import backup_database, rotate_backups, list_backups
+    from database.backup import backup_database, list_backups, rotate_backups
+
     # Create 5 backups with slightly different filenames (artificially staggered)
     for i in range(5):
         # Sleep is unnecessary because backup_database() embeds a fresh
@@ -79,6 +81,7 @@ def test_rotate_backups_keeps_last_n(real_db):
 
 def test_rotate_backups_no_op_when_under_limit(real_db):
     from database.backup import backup_database, rotate_backups
+
     backup_database(reason="only-one")
     deleted = rotate_backups(keep=10)
     assert deleted == 0
@@ -120,4 +123,5 @@ def test_restore_database_preserves_rollback(real_db):
 
 def test_restore_missing_file_returns_false(tmp_path, real_db):
     from database.backup import restore_database
+
     assert restore_database(tmp_path / "nope.db") is False

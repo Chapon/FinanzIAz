@@ -9,10 +9,11 @@ Yahoo Finance CSV columns (typical):
 Generic fallback (minimum required columns):
   ticker/symbol, quantity/shares, price/buy_price/purchase_price
 """
+
+import contextlib
 import csv
 import io
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -22,27 +23,36 @@ class ImportRow:
     buy_price: float
     commission: float = 0.0
     notes: str = ""
-    is_watchlist: bool = False   # True when imported from a watchlist (qty was 0)
+    is_watchlist: bool = False  # True when imported from a watchlist (qty was 0)
     raw: dict = field(default_factory=dict)
 
 
 @dataclass
 class ImportResult:
     rows: list[ImportRow]
-    skipped: list[dict]       # rows that couldn't be parsed
+    skipped: list[dict]  # rows that couldn't be parsed
     warnings: list[str]
-    source_format: str        # "yahoo_finance" | "generic"
+    source_format: str  # "yahoo_finance" | "generic"
 
 
 # Column name aliases (lowercased)
-_TICKER_ALIASES         = {"symbol", "ticker", "stock", "código", "codigo"}
-_QTY_ALIASES            = {"quantity", "shares", "cantidad", "qty", "number of shares"}
-_PRICE_ALIASES          = {"purchase price", "buy price", "buy_price", "precio compra",
-                            "precio de compra", "average cost", "avg cost", "cost basis",
-                            "price", "precio"}
-_CURRENT_PRICE_ALIASES  = {"current price", "precio actual", "last price", "last"}
-_FEE_ALIASES            = {"commission", "comisión", "comision", "fee", "fees"}
-_NOTES_ALIASES          = {"comment", "notes", "nota", "notas", "description"}
+_TICKER_ALIASES = {"symbol", "ticker", "stock", "código", "codigo"}
+_QTY_ALIASES = {"quantity", "shares", "cantidad", "qty", "number of shares"}
+_PRICE_ALIASES = {
+    "purchase price",
+    "buy price",
+    "buy_price",
+    "precio compra",
+    "precio de compra",
+    "average cost",
+    "avg cost",
+    "cost basis",
+    "price",
+    "precio",
+}
+_CURRENT_PRICE_ALIASES = {"current price", "precio actual", "last price", "last"}
+_FEE_ALIASES = {"commission", "comisión", "comision", "fee", "fees"}
+_NOTES_ALIASES = {"comment", "notes", "nota", "notas", "description"}
 
 # Prefixes that identify indices or non-tradeable symbols to skip
 _INDEX_PREFIXES = ("^",)
@@ -52,7 +62,7 @@ def _normalize(col: str) -> str:
     return col.strip().lower().replace("_", " ").replace("-", " ")
 
 
-def _find_col(headers: list[str], aliases: set) -> Optional[str]:
+def _find_col(headers: list[str], aliases: set) -> str | None:
     """Return the first header that matches any alias."""
     for h in headers:
         if _normalize(h) in aliases:
@@ -88,12 +98,12 @@ def parse_csv(content: str) -> ImportResult:
     source_format = "yahoo_finance" if is_yahoo else "generic"
 
     # Map columns
-    col_ticker  = _find_col(headers, _TICKER_ALIASES)
-    col_qty     = _find_col(headers, _QTY_ALIASES)
-    col_price   = _find_col(headers, _PRICE_ALIASES)
+    col_ticker = _find_col(headers, _TICKER_ALIASES)
+    col_qty = _find_col(headers, _QTY_ALIASES)
+    col_price = _find_col(headers, _PRICE_ALIASES)
     col_current = _find_col(headers, _CURRENT_PRICE_ALIASES)
-    col_fee     = _find_col(headers, _FEE_ALIASES)
-    col_notes   = _find_col(headers, _NOTES_ALIASES)
+    col_fee = _find_col(headers, _FEE_ALIASES)
+    col_notes = _find_col(headers, _NOTES_ALIASES)
 
     if not col_ticker:
         return ImportResult([], [], ["No se encontró columna de ticker/símbolo en el CSV."], source_format)
@@ -140,16 +150,18 @@ def parse_csv(content: str) -> ImportResult:
             current_price_val = 0.0
             if col_current:
                 cp_str = raw.get(col_current, "").replace(",", "").replace("$", "").strip()
-                try:
+                with contextlib.suppress(ValueError):
                     current_price_val = float(cp_str) if cp_str else 0.0
-                except ValueError:
-                    pass
             if current_price_val > 0:
                 qty = 1.0
                 price = current_price_val
                 is_watchlist = True
             else:
-                reason = "Cantidad y precio = 0 (watchlist sin precio actual)" if qty <= 0 else f"Cantidad <= 0: {qty}"
+                reason = (
+                    "Cantidad y precio = 0 (watchlist sin precio actual)"
+                    if qty <= 0
+                    else f"Cantidad <= 0: {qty}"
+                )
                 skipped.append({"line": line_num, "reason": reason, "raw": raw})
                 continue
         # ─────────────────────────────────────────────────────────────────────
@@ -158,22 +170,22 @@ def parse_csv(content: str) -> ImportResult:
         fee = 0.0
         if col_fee:
             fee_str = raw.get(col_fee, "0").replace(",", "").replace("$", "").strip()
-            try:
+            with contextlib.suppress(ValueError):
                 fee = float(fee_str) if fee_str else 0.0
-            except ValueError:
-                pass
 
         notes = raw.get(col_notes, "") if col_notes else ""
 
-        rows.append(ImportRow(
-            ticker=ticker,
-            quantity=qty,
-            buy_price=price,
-            commission=fee,
-            notes=notes,
-            is_watchlist=is_watchlist,
-            raw=raw,
-        ))
+        rows.append(
+            ImportRow(
+                ticker=ticker,
+                quantity=qty,
+                buy_price=price,
+                commission=fee,
+                notes=notes,
+                is_watchlist=is_watchlist,
+                raw=raw,
+            )
+        )
 
     if not rows and not skipped:
         warnings.append("El CSV no contiene filas de datos válidas.")
@@ -196,4 +208,4 @@ def parse_csv_file(path: str) -> ImportResult:
             return parse_csv(content)
         except UnicodeDecodeError:
             continue
-    return ImportResult([], [], [f"No se pudo leer el archivo con las codificaciones soportadas."], "unknown")
+    return ImportResult([], [], ["No se pudo leer el archivo con las codificaciones soportadas."], "unknown")

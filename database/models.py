@@ -15,18 +15,33 @@ Prefer the ``session_scope()`` context manager for new code:
 The legacy ``get_session()`` helper still exists for incremental migration —
 remember to wrap its usage in try/finally and call ``session.close()``.
 """
+
+import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
+
 from sqlalchemy import (
-    create_engine, Column, Integer, Float, String,
-    DateTime, Boolean, ForeignKey, Text, Index
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    create_engine,
 )
 from sqlalchemy.orm import (
-    DeclarativeBase, relationship, sessionmaker, scoped_session,
+    DeclarativeBase,
+    relationship,
+    scoped_session,
+    sessionmaker,
+)
+from sqlalchemy.orm import (
     Session as SASession,
 )
-import os
-from typing import Iterator
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db")
 # ``check_same_thread=False`` permits a single connection to be reused across
@@ -57,6 +72,7 @@ class Base(DeclarativeBase):
 
 class Portfolio(Base):
     """Represents a named investment portfolio."""
+
     __tablename__ = "portfolios"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -74,10 +90,9 @@ class Portfolio(Base):
 
 class Position(Base):
     """Represents a stock holding within a portfolio."""
+
     __tablename__ = "positions"
-    __table_args__ = (
-        Index("ix_positions_portfolio_ticker", "portfolio_id", "ticker"),
-    )
+    __table_args__ = (Index("ix_positions_portfolio_ticker", "portfolio_id", "ticker"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
@@ -91,7 +106,7 @@ class Position(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    purchase_date = Column(DateTime, nullable=True)   # actual date the shares were bought
+    purchase_date = Column(DateTime, nullable=True)  # actual date the shares were bought
 
     portfolio = relationship("Portfolio", back_populates="positions")
     transactions = relationship("Transaction", back_populates="position", cascade="all, delete-orphan")
@@ -106,10 +121,9 @@ class Position(Base):
 
 class Transaction(Base):
     """Records of individual buy/sell transactions."""
+
     __tablename__ = "transactions"
-    __table_args__ = (
-        Index("ix_transactions_position_date", "position_id", "date"),
-    )
+    __table_args__ = (Index("ix_transactions_position_date", "position_id", "date"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     position_id = Column(Integer, ForeignKey("positions.id"), nullable=False, index=True)
@@ -132,6 +146,7 @@ class Transaction(Base):
 
 class Alert(Base):
     """Price alert for a specific ticker."""
+
     __tablename__ = "alerts"
     __table_args__ = (
         # Hot path: AlertManager.check_alerts filters on is_active + portfolio_id.
@@ -157,6 +172,7 @@ class Alert(Base):
 
 class PriceCache(Base):
     """Cache for recently fetched prices to reduce API calls."""
+
     __tablename__ = "price_cache"
     __table_args__ = (
         # Hot path: lookup latest entry per ticker within TTL window.
@@ -180,14 +196,13 @@ class DividendCache(Base):
     Stores total dividend income per ticker since a given purchase date.
     Refreshed on demand — not on every price update.
     """
+
     __tablename__ = "dividend_cache"
-    __table_args__ = (
-        Index("ix_dividend_cache_ticker_since", "ticker", "since_date"),
-    )
+    __table_args__ = (Index("ix_dividend_cache_ticker_since", "ticker", "since_date"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False, index=True)
-    since_date = Column(DateTime, nullable=False)   # purchase date of position
+    since_date = Column(DateTime, nullable=False)  # purchase date of position
     total_per_share = Column(Float, nullable=False, default=0.0)  # cumulative $/share
     fetched_at = Column(DateTime, default=datetime.utcnow)
 
@@ -200,16 +215,15 @@ class HistoricalDataCache(Base):
     Cache for OHLCV historical data to avoid repeated yfinance downloads.
     Keyed by (ticker, period, interval). At most one entry per combination.
     """
+
     __tablename__ = "historical_data_cache"
-    __table_args__ = (
-        Index("ix_hist_cache_key", "ticker", "period", "interval"),
-    )
+    __table_args__ = (Index("ix_hist_cache_key", "ticker", "period", "interval"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False)
-    period = Column(String(10), nullable=False)    # e.g. "1y", "6mo"
+    period = Column(String(10), nullable=False)  # e.g. "1y", "6mo"
     interval = Column(String(10), nullable=False)  # e.g. "1d", "1h"
-    data_json = Column(Text, nullable=False)        # DataFrame serialized via to_json(orient="split")
+    data_json = Column(Text, nullable=False)  # DataFrame serialized via to_json(orient="split")
     fetched_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -224,22 +238,20 @@ def init_db():
         import paper_trading.models  # noqa: F401
     except Exception:
         from config.logging_config import get_logger
+
         get_logger(__name__).exception("paper_trading.models import failed")
     Base.metadata.create_all(ENGINE)
     _migrate()
     with session_scope() as session:
         if session.query(Portfolio).count() == 0:
-            default = Portfolio(
-                name="Mi Portafolio",
-                description="Portafolio principal",
-                currency="USD"
-            )
+            default = Portfolio(name="Mi Portafolio", description="Portafolio principal", currency="USD")
             session.add(default)
 
 
 def _migrate():
     """Add new columns to existing tables without losing data."""
     import sqlite3
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     # positions.purchase_date

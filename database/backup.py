@@ -29,13 +29,13 @@ Implementation
 - All operations are best-effort: any exception is logged, never propagated
   to the UI thread.
 """
+
 from __future__ import annotations
 
 import shutil
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
 
 from config.logging_config import get_logger
 from database.models import DB_PATH
@@ -44,7 +44,7 @@ log = get_logger(__name__)
 
 DB_DIR = Path(DB_PATH).parent
 BACKUP_DIR = DB_DIR / "backups"
-DB_STEM = Path(DB_PATH).stem        # "finanzias"
+DB_STEM = Path(DB_PATH).stem  # "finanzias"
 
 
 def _timestamp() -> str:
@@ -56,7 +56,7 @@ def _ensure_backup_dir() -> Path:
     return BACKUP_DIR
 
 
-def backup_database(reason: str = "manual") -> Optional[Path]:
+def backup_database(reason: str = "manual") -> Path | None:
     """
     Snapshot the live SQLite database to ``<DB_DIR>/backups/``.
 
@@ -114,7 +114,7 @@ def rotate_backups(keep: int = 7) -> int:
     backups = list_backups()
     if len(backups) <= keep:
         return 0
-    to_delete = backups[:len(backups) - keep]
+    to_delete = backups[: len(backups) - keep]
     deleted = 0
     for p in to_delete:
         try:
@@ -132,7 +132,7 @@ def _today_already_backed_up() -> bool:
     return any(today in p.name for p in list_backups() if "_daily" in p.name)
 
 
-def maybe_rotate_daily(*, keep: int = 7) -> Optional[Path]:
+def maybe_rotate_daily(*, keep: int = 7) -> Path | None:
     """
     Make today's daily snapshot if it hasn't been made yet, then rotate.
 

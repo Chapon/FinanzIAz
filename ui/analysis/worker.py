@@ -4,6 +4,7 @@ Background worker for the Analysis tab.
 Migrated to ``BaseWorker`` so error/cancellation handling is consistent with
 the rest of the UI.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
@@ -11,7 +12,9 @@ from PyQt6.QtCore import pyqtSignal
 from analysis.technical import analyze
 from config.settings_manager import settings
 from data.yahoo_finance import (
-    get_company_info, get_current_price, get_historical_data,
+    get_company_info,
+    get_current_price,
+    get_historical_data,
 )
 from ui.workers import BaseWorker
 
@@ -34,7 +37,8 @@ class AnalysisWorker(BaseWorker):
         df = get_historical_data(self.ticker, period=self.period)
         result = (
             analyze(
-                self.ticker, df,
+                self.ticker,
+                df,
                 enable_sma_cross=settings.get("sma_cross"),
                 enable_xgboost=True,
             )

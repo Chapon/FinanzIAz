@@ -1,18 +1,25 @@
 """
 Tests for the configurable commission + slippage models.
 """
+
 from __future__ import annotations
 
 import pytest
 
 from paper_trading.costs import (
-    FlatCommission, PercentCommission, PerShareCommission, TieredCommission,
-    ZeroSlippage, PercentSlippage, TickSlippage,
-    commission_from_config, slippage_from_config,
+    FlatCommission,
+    PercentCommission,
+    PercentSlippage,
+    PerShareCommission,
+    TickSlippage,
+    TieredCommission,
+    ZeroSlippage,
+    commission_from_config,
+    slippage_from_config,
 )
 
-
 # ── Commission models ────────────────────────────────────────────────────────
+
 
 def test_flat_commission():
     c = FlatCommission(fee=5.0)
@@ -23,7 +30,7 @@ def test_flat_commission():
 def test_percent_commission_with_min_max():
     c = PercentCommission(rate=0.001, min_fee=1.0, max_fee=20.0)
     # Below min — clamped up
-    assert c.cost(side="BUY", shares=10, price=50) == 1.0   # raw=0.50, min=1
+    assert c.cost(side="BUY", shares=10, price=50) == 1.0  # raw=0.50, min=1
     # Above min, below max
     assert c.cost(side="BUY", shares=100, price=50) == pytest.approx(5.0)
     # Above max — clamped down
@@ -46,12 +53,13 @@ def test_per_share_commission_ibkr_style():
 
 def test_tiered_commission_bands():
     c = TieredCommission(bands=[(1_000, 1.0), (10_000, 5.0), (float("inf"), 10.0)])
-    assert c.cost(side="BUY", shares=10, price=50) == 1.0       # $500 notional → band 1
-    assert c.cost(side="BUY", shares=100, price=50) == 5.0      # $5,000 → band 2
-    assert c.cost(side="BUY", shares=1_000, price=50) == 10.0   # $50,000 → band 3
+    assert c.cost(side="BUY", shares=10, price=50) == 1.0  # $500 notional → band 1
+    assert c.cost(side="BUY", shares=100, price=50) == 5.0  # $5,000 → band 2
+    assert c.cost(side="BUY", shares=1_000, price=50) == 10.0  # $50,000 → band 3
 
 
 # ── Slippage models ──────────────────────────────────────────────────────────
+
 
 def test_zero_slippage():
     s = ZeroSlippage()
@@ -74,6 +82,7 @@ def test_tick_slippage():
 
 
 # ── Config round-trip ────────────────────────────────────────────────────────
+
 
 def test_commission_from_config_falls_back_on_unknown_type():
     c = commission_from_config({"type": "BogusModel", "rate": 0.5})

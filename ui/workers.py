@@ -42,6 +42,7 @@ Behaviour
 - ``started`` / ``finished`` are emitted around every run so callers can
   show / hide spinners centrally.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -65,8 +66,8 @@ class BaseWorker(QThread):
     progress     — generic (int, str) for "65%" style updates if subclass uses it.
     """
 
-    error    = pyqtSignal(object)         # Exception
-    progress = pyqtSignal(int, str)       # 0-100, message
+    error = pyqtSignal(object)  # Exception
+    progress = pyqtSignal(int, str)  # 0-100, message
 
     def __init__(self, parent=None):
         super().__init__(parent)

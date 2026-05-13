@@ -1,14 +1,12 @@
 """
 Excel report generator for FinanzIAs.
 """
-import openpyxl
-from openpyxl.styles import (
-    Font, PatternFill, Alignment, Border, Side, numbers
-)
-from openpyxl.utils import get_column_letter
-from openpyxl.chart import LineChart, Reference
-from openpyxl.chart.series import SeriesLabel
+
 from datetime import datetime
+
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from config.logging_config import get_logger
 
@@ -84,7 +82,7 @@ def generate_portfolio_excel(
     metrics = [
         ("Valor Total", f"{currency} {total_value:,.2f}", C_BLUE),
         ("Invertido", f"{currency} {total_invested:,.2f}", C_MUTED),
-        ("P&L", f"{'+'if pl>=0 else ''}{currency} {pl:,.2f}", C_GREEN if pl >= 0 else C_RED),
+        ("P&L", f"{'+' if pl >= 0 else ''}{currency} {pl:,.2f}", C_GREEN if pl >= 0 else C_RED),
         ("Rendimiento", f"{pl_pct:+.2f}%", C_GREEN if pl_pct >= 0 else C_RED),
     ]
 
@@ -106,9 +104,17 @@ def generate_portfolio_excel(
 
     # ── Positions table ──────────────────────────────────────────────────────
     headers = [
-        "Ticker", "Empresa", "Sector", "Cantidad",
-        "P. Compra", "P. Actual", "Var. Hoy %",
-        "Invertido", "Valor Actual", "P&L", "P&L %"
+        "Ticker",
+        "Empresa",
+        "Sector",
+        "Cantidad",
+        "P. Compra",
+        "P. Actual",
+        "Var. Hoy %",
+        "Invertido",
+        "Valor Actual",
+        "P&L",
+        "P&L %",
     ]
     header_row = 8
     ws.row_dimensions[header_row].height = 22
@@ -149,23 +155,18 @@ def generate_portfolio_excel(
             cell = ws.cell(row=data_row, column=col_idx, value=val)
             cell.fill = _fill(bg)
             cell.border = _border()
-            cell.alignment = Alignment(
-                horizontal="right" if col_idx >= 4 else "left",
-                vertical="center"
-            )
+            cell.alignment = Alignment(horizontal="right" if col_idx >= 4 else "left", vertical="center")
 
             if col_idx in (5, 6, 8, 9, 10) and val is not None:
                 cell.number_format = f'"{currency}" #,##0.00'
             elif col_idx in (7, 11) and val is not None:
-                cell.number_format = '+0.00%;-0.00%'
+                cell.number_format = "+0.00%;-0.00%"
                 cell.value = val / 100 if val is not None else None
 
             # Color P&L cells
             if col_idx in (10, 11) and val is not None:
                 cell.font = Font(
-                    bold=True,
-                    color=C_GREEN if float(val) >= 0 else C_RED,
-                    size=10, name="Calibri"
+                    bold=True, color=C_GREEN if float(val) >= 0 else C_RED, size=10, name="Calibri"
                 )
             else:
                 cell.font = _font(size=10)
@@ -195,19 +196,29 @@ def generate_portfolio_excel(
         cell.border = _border()
 
     tx_row = 2
-    from database.models import session_scope, Transaction
+    from database.models import Transaction, session_scope
+
     with session_scope() as session:
         pos_ids = [p.id for p in positions]
-        txs = session.query(Transaction).filter(Transaction.position_id.in_(pos_ids)).order_by(Transaction.date.desc()).all()
+        txs = (
+            session.query(Transaction)
+            .filter(Transaction.position_id.in_(pos_ids))
+            .order_by(Transaction.date.desc())
+            .all()
+        )
         pos_map = {p.id: p.ticker for p in positions}
         for tx in txs:
             ticker = pos_map.get(tx.position_id, "?")
             bg = C_BG if tx_row % 2 == 0 else C_CARD
             row_data = [
-                ticker, tx.transaction_type, tx.quantity,
-                tx.price, tx.fees, tx.total_value,
+                ticker,
+                tx.transaction_type,
+                tx.quantity,
+                tx.price,
+                tx.fees,
+                tx.total_value,
                 tx.date.strftime("%d/%m/%Y") if tx.date else "",
-                tx.notes or ""
+                tx.notes or "",
             ]
             for col_idx, val in enumerate(row_data, 1):
                 cell = ws_tx.cell(row=tx_row, column=col_idx, value=val)
@@ -215,15 +226,12 @@ def generate_portfolio_excel(
                 cell.font = _font(size=10)
                 cell.border = _border()
                 cell.alignment = Alignment(
-                    horizontal="right" if col_idx in (3, 4, 5, 6) else "left",
-                    vertical="center"
+                    horizontal="right" if col_idx in (3, 4, 5, 6) else "left", vertical="center"
                 )
             # Color buy/sell
             type_cell = ws_tx.cell(row=tx_row, column=2)
             type_cell.font = Font(
-                bold=True,
-                color=C_GREEN if tx.transaction_type == "BUY" else C_RED,
-                size=10, name="Calibri"
+                bold=True, color=C_GREEN if tx.transaction_type == "BUY" else C_RED, size=10, name="Calibri"
             )
             tx_row += 1
 
@@ -234,7 +242,8 @@ def generate_portfolio_excel(
     # ── Sheet 2: Transaction history (optional) ───────────────────────────────
     if include_tx:
         try:
-            from database.models import session_scope, Transaction
+            from database.models import Transaction, session_scope
+
             with session_scope() as session:
                 pos_ids = [p.id for p in positions if hasattr(p, "id")]
                 txs = (
@@ -282,8 +291,7 @@ def generate_portfolio_excel(
                         cell.fill = _fill(bg)
                         cell.border = _border()
                         cell.alignment = Alignment(
-                            horizontal="right" if ci > 3 else "left",
-                            vertical="center"
+                            horizontal="right" if ci > 3 else "left", vertical="center"
                         )
 
                 col_ws = [12, 8, 10, 12, 12, 12, 14]

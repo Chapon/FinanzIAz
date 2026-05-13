@@ -24,10 +24,10 @@ Wherever you previously wrote ``"Agregar Acción"``, write
 (so context is preserved) and identity-translation means nothing breaks.
 When a real ``en`` catalog is added, those calls will pick it up.
 """
+
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 # Default language is Spanish — that's what the app currently ships in.
 _DEFAULT_LANG = "es"
@@ -35,8 +35,8 @@ _DEFAULT_LANG = "es"
 _lock = threading.Lock()
 _lang = _DEFAULT_LANG
 _catalogs: dict[str, dict[str, str]] = {
-    "es": {},   # identity (no translation needed; original strings are Spanish)
-    "en": {},   # to be populated when an English catalog is built
+    "es": {},  # identity (no translation needed; original strings are Spanish)
+    "en": {},  # to be populated when an English catalog is built
 }
 
 

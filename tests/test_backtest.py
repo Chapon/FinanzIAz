@@ -5,11 +5,11 @@ Focus on the high-impact correctness properties — leakage of future info,
 realistic-cost accounting, and basic invariants — rather than fragile
 numeric checks.
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from analysis.backtest import backtest
 

@@ -62,6 +62,22 @@ ignore = [
     "B008",   # function call in default arg (Qt idioms occasionally need this)
     "SIM108", # ternary "simplification" sometimes hurts readability
     "RUF012", # mutable class attribute on dataclass — too noisy for our PyQt widgets
+
+    # Unicode in code/docstrings/comments is intentional in this project:
+    # • σ, α, β — math symbols in GARCH / quant docs
+    # • × — used in unit ratios ("1.5×")
+    # • – / — — em / en dashes in user-facing strings
+    # • • / → — bullets / arrows in UI labels and tooltips
+    # The "ambiguous unicode" warnings would force ASCII rewrites that
+    # hurt readability for legitimate domain notation. Ignore globally.
+    "RUF001", # ambiguous unicode in string literals
+    "RUF002", # ambiguous unicode in docstrings
+    "RUF003", # ambiguous unicode in comments
+
+    # E402 — module-level import not at top of file. Triggers because we
+    # initialize the logger (``log = get_logger(__name__)``) before some
+    # local-import blocks. That's an intentional pattern, not a smell.
+    "E402",
 ]
 
 # Tests can use longer lines, magic-value comparisons, etc.

@@ -24,22 +24,30 @@ Provides the following:
   5. compute_signal_probability  — combines the raw indicator consensus with
      regime alignment and volatility risk into a single 0-1 probability score.
 """
+
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
 from config.logging_config import get_logger
 
+if TYPE_CHECKING:
+    # Only used as a return-type annotation. The actual ``TechnicalSignal``
+    # is imported lazily inside the functions that build one, to avoid a
+    # circular import between analysis.technical and analysis.ml_signals.
+    from analysis.technical import TechnicalSignal
+
 log = get_logger(__name__)
 from dataclasses import dataclass
-from typing import Optional
 
 # ── Optional XGBoost ──────────────────────────────────────────────────────────
 try:
     import xgboost as xgb
+
     _XGB_OK = True
 except ImportError:
     _XGB_OK = False
@@ -70,9 +78,11 @@ def clear_ml_cache() -> None:
     """Public helper to flush the cached XGBoost models (useful in tests)."""
     _XGB_CACHE.clear()
 
+
 # ── Optional hmmlearn ─────────────────────────────────────────────────────────
 try:
     from hmmlearn import hmm as _hmm
+
     _HMM_OK = True
 except ImportError:
     _HMM_OK = False
@@ -80,31 +90,29 @@ except ImportError:
 
 # ── 1. Market Context ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class MarketContext:
     """Encapsulates the current market regime and risk assessment."""
-    regime: str               # "BULL" | "BEAR" | "LATERAL"
+
+    regime: str  # "BULL" | "BEAR" | "LATERAL"
     regime_confidence: float  # 0–1 (50% = barely classifiable)
-    volatility_level: str     # "LOW" | "MEDIUM" | "HIGH"
+    volatility_level: str  # "LOW" | "MEDIUM" | "HIGH"
     annual_volatility: float  # current conditional σ (annualised %)
-    risk_score: float         # 0–1  (0 = low risk, 1 = high risk)
+    risk_score: float  # 0–1  (0 = low risk, 1 = high risk)
     # ── Forward-looking volatility (populated by GARCH when available) ────
-    forecast_volatility: Optional[float] = None  # h-day-ahead σ (annualised %)
-    volatility_source: str = "EWMA"              # "GARCH" | "EWMA"
+    forecast_volatility: float | None = None  # h-day-ahead σ (annualised %)
+    volatility_source: str = "EWMA"  # "GARCH" | "EWMA"
 
     # ── display helpers ───────────────────────────────────────────────────────
 
     @property
     def regime_es(self) -> str:
-        return {"BULL": "Alcista", "BEAR": "Bajista", "LATERAL": "Lateral"}.get(
-            self.regime, self.regime
-        )
+        return {"BULL": "Alcista", "BEAR": "Bajista", "LATERAL": "Lateral"}.get(self.regime, self.regime)
 
     @property
     def regime_color(self) -> str:
-        return {"BULL": "#22c55e", "BEAR": "#f87171", "LATERAL": "#fbbf24"}.get(
-            self.regime, "#fbbf24"
-        )
+        return {"BULL": "#22c55e", "BEAR": "#f87171", "LATERAL": "#fbbf24"}.get(self.regime, "#fbbf24")
 
     @property
     def regime_icon(self) -> str:
@@ -112,9 +120,7 @@ class MarketContext:
 
     @property
     def volatility_es(self) -> str:
-        return {"LOW": "Baja", "MEDIUM": "Media", "HIGH": "Alta"}.get(
-            self.volatility_level, "—"
-        )
+        return {"LOW": "Baja", "MEDIUM": "Media", "HIGH": "Alta"}.get(self.volatility_level, "—")
 
     @property
     def risk_color(self) -> str:
@@ -156,7 +162,7 @@ def detect_market_regime(df: pd.DataFrame) -> MarketContext:
     current = float(close.iloc[-1])
 
     # Rolling returns (safe fallback when history is short)
-    ret_5d  = float(close.pct_change(5).iloc[-1])  if n >= 6  else 0.0
+    ret_5d = float(close.pct_change(5).iloc[-1]) if n >= 6 else 0.0
     ret_20d = float(close.pct_change(20).iloc[-1]) if n >= 21 else ret_5d
     ret_60d = float(close.pct_change(60).iloc[-1]) if n >= 61 else ret_20d
 
@@ -167,9 +173,9 @@ def detect_market_regime(df: pd.DataFrame) -> MarketContext:
         v = float(close.rolling(period).mean().iloc[-1])
         return None if np.isnan(v) else v
 
-    sma50_val  = _safe_sma(50)
+    sma50_val = _safe_sma(50)
     sma200_val = _safe_sma(200)
-    above_sma50  = (current > sma50_val)  if sma50_val  is not None else None
+    above_sma50 = (current > sma50_val) if sma50_val is not None else None
     above_sma200 = (current > sma200_val) if sma200_val is not None else None
 
     # ── Weighted scoring ──────────────────────────────────────────────────────
@@ -177,53 +183,79 @@ def detect_market_regime(df: pd.DataFrame) -> MarketContext:
     bear = 0.0
 
     # 5-day momentum (weight 1)
-    if   ret_5d >  0.020:  bull += 1.0
-    elif ret_5d < -0.020:  bear += 1.0
-    elif ret_5d >  0.005:  bull += 0.4
-    elif ret_5d < -0.005:  bear += 0.4
+    if ret_5d > 0.020:
+        bull += 1.0
+    elif ret_5d < -0.020:
+        bear += 1.0
+    elif ret_5d > 0.005:
+        bull += 0.4
+    elif ret_5d < -0.005:
+        bear += 0.4
 
     # 20-day momentum (weight 2)
-    if   ret_20d >  0.050:  bull += 2.0
-    elif ret_20d < -0.050:  bear += 2.0
-    elif ret_20d >  0.010:  bull += 0.8
-    elif ret_20d < -0.010:  bear += 0.8
+    if ret_20d > 0.050:
+        bull += 2.0
+    elif ret_20d < -0.050:
+        bear += 2.0
+    elif ret_20d > 0.010:
+        bull += 0.8
+    elif ret_20d < -0.010:
+        bear += 0.8
 
     # 60-day momentum (weight 2)
-    if   ret_60d >  0.120:  bull += 2.0
-    elif ret_60d < -0.120:  bear += 2.0
-    elif ret_60d >  0.030:  bull += 1.0
-    elif ret_60d < -0.030:  bear += 1.0
+    if ret_60d > 0.120:
+        bull += 2.0
+    elif ret_60d < -0.120:
+        bear += 2.0
+    elif ret_60d > 0.030:
+        bull += 1.0
+    elif ret_60d < -0.030:
+        bear += 1.0
 
     # SMA positions (weight 1.5 each)
-    if   above_sma50 is True:  bull += 1.5
-    elif above_sma50 is False: bear += 1.5
+    if above_sma50 is True:
+        bull += 1.5
+    elif above_sma50 is False:
+        bear += 1.5
 
-    if   above_sma200 is True:  bull += 1.5
-    elif above_sma200 is False: bear += 1.5
+    if above_sma200 is True:
+        bull += 1.5
+    elif above_sma200 is False:
+        bear += 1.5
 
     total_evidence = bull + bear
     if total_evidence == 0:
         regime, confidence = "LATERAL", 0.50
     else:
         balance = (bull - bear) / total_evidence  # –1 .. +1
-        if   balance >= 0.25:  regime = "BULL";    confidence = 0.50 + balance * 0.45
-        elif balance <= -0.25: regime = "BEAR";    confidence = 0.50 + abs(balance) * 0.45
-        else:                  regime = "LATERAL"; confidence = 0.50 + (0.25 - abs(balance)) * 0.5
+        if balance >= 0.25:
+            regime = "BULL"
+            confidence = 0.50 + balance * 0.45
+        elif balance <= -0.25:
+            regime = "BEAR"
+            confidence = 0.50 + abs(balance) * 0.45
+        else:
+            regime = "LATERAL"
+            confidence = 0.50 + (0.25 - abs(balance)) * 0.5
 
     # ── Volatility (GARCH forecast if available, EWMA fallback) ──────────────
     from analysis.garch_signals import compute_annual_volatility
-    current_vol, forecast_vol, vol_source = compute_annual_volatility(df)
-    annual_vol    = current_vol
-    vol_for_risk  = forecast_vol  # forward-looking
 
-    if   vol_for_risk < 15: vol_level = "LOW"
-    elif vol_for_risk < 30: vol_level = "MEDIUM"
-    else:                   vol_level = "HIGH"
+    current_vol, forecast_vol, vol_source = compute_annual_volatility(df)
+    annual_vol = current_vol
+    vol_for_risk = forecast_vol  # forward-looking
+
+    if vol_for_risk < 15:
+        vol_level = "LOW"
+    elif vol_for_risk < 30:
+        vol_level = "MEDIUM"
+    else:
+        vol_level = "HIGH"
 
     # ── Risk score ────────────────────────────────────────────────────────────
-    vol_risk    = min(vol_for_risk / 60.0, 1.0)
+    vol_risk = min(vol_for_risk / 60.0, 1.0)
     regime_risk = {"BEAR": 0.70, "LATERAL": 0.45, "BULL": 0.25}[regime]
-    risk_score  = float(np.clip(0.55 * vol_risk + 0.45 * regime_risk, 0.0, 1.0))
+    risk_score = float(np.clip(0.55 * vol_risk + 0.45 * regime_risk, 0.0, 1.0))
 
     return MarketContext(
         regime=regime,
@@ -238,11 +270,11 @@ def detect_market_regime(df: pd.DataFrame) -> MarketContext:
 
 # ── 1b. HMM regime detection ──────────────────────────────────────────────────
 
-HMM_MIN_ROWS   = 80    # minimum clean rows required to fit the HMM
-HMM_N_STATES   = 3     # Bull / Lateral / Bear
+HMM_MIN_ROWS = 80  # minimum clean rows required to fit the HMM
+HMM_N_STATES = 3  # Bull / Lateral / Bear
 
 
-def _hmm_observation_matrix(df: pd.DataFrame) -> Optional[np.ndarray]:
+def _hmm_observation_matrix(df: pd.DataFrame) -> np.ndarray | None:
     """
     Build the observation matrix for the HMM.
 
@@ -257,15 +289,15 @@ def _hmm_observation_matrix(df: pd.DataFrame) -> Optional[np.ndarray]:
     np.ndarray of shape (n_obs, 2) or None if there is too little clean data.
     """
     close = df["Close"].squeeze()
-    ret   = np.log(close / close.shift(1))
-    vol   = ret.rolling(5).std()
-    X     = pd.concat([ret.rename("ret"), vol.rename("vol")], axis=1).dropna()
+    ret = np.log(close / close.shift(1))
+    vol = ret.rolling(5).std()
+    X = pd.concat([ret.rename("ret"), vol.rename("vol")], axis=1).dropna()
     if len(X) < HMM_MIN_ROWS:
         return None
     return X.values.astype(np.float64)
 
 
-def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> Optional[object]:
+def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> object | None:
     """
     Fit a Gaussian HMM and return (model, state_order), where state_order
     lists state indices sorted ascending by mean log-return.
@@ -285,7 +317,7 @@ def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> Optional[o
     return model, state_order
 
 
-def detect_market_regime_hmm(df: pd.DataFrame) -> Optional[MarketContext]:
+def detect_market_regime_hmm(df: pd.DataFrame) -> MarketContext | None:
     """
     Classify the current market regime using a 3-state Gaussian Hidden Markov
     Model fit on 1-day log-returns and 5-day rolling volatility.
@@ -308,38 +340,45 @@ def detect_market_regime_hmm(df: pd.DataFrame) -> Optional[MarketContext]:
     try:
         model, order = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
         bear_idx = order[0]
-        lat_idx  = order[1]
+        lat_idx = order[1]
         bull_idx = order[-1]
 
         # Posterior state distribution at the most recent observation
         post = model.predict_proba(X)[-1]
 
         p_bear = float(post[bear_idx])
-        p_lat  = float(post[lat_idx])
+        p_lat = float(post[lat_idx])
         p_bull = float(post[bull_idx])
 
         top = int(np.argmax([p_bear, p_lat, p_bull]))
-        if   top == 2: regime, confidence = "BULL",    p_bull
-        elif top == 0: regime, confidence = "BEAR",    p_bear
-        else:          regime, confidence = "LATERAL", p_lat
+        if top == 2:
+            regime, confidence = "BULL", p_bull
+        elif top == 0:
+            regime, confidence = "BEAR", p_bear
+        else:
+            regime, confidence = "LATERAL", p_lat
     except Exception as exc:
         log.warning("HMM regime detection error: %s", exc)
         return None
 
     # ── Volatility (GARCH forecast if available, EWMA fallback) ──────────────
     from analysis.garch_signals import compute_annual_volatility
-    current_vol, forecast_vol, vol_source = compute_annual_volatility(df)
-    annual_vol    = current_vol
-    vol_for_risk  = forecast_vol  # forward-looking
 
-    if   vol_for_risk < 15: vol_level = "LOW"
-    elif vol_for_risk < 30: vol_level = "MEDIUM"
-    else:                   vol_level = "HIGH"
+    current_vol, forecast_vol, vol_source = compute_annual_volatility(df)
+    annual_vol = current_vol
+    vol_for_risk = forecast_vol  # forward-looking
+
+    if vol_for_risk < 15:
+        vol_level = "LOW"
+    elif vol_for_risk < 30:
+        vol_level = "MEDIUM"
+    else:
+        vol_level = "HIGH"
 
     # ── Risk score ────────────────────────────────────────────────────────────
-    vol_risk    = min(vol_for_risk / 60.0, 1.0)
+    vol_risk = min(vol_for_risk / 60.0, 1.0)
     regime_risk = {"BEAR": 0.70, "LATERAL": 0.45, "BULL": 0.25}[regime]
-    risk_score  = float(np.clip(0.55 * vol_risk + 0.45 * regime_risk, 0.0, 1.0))
+    risk_score = float(np.clip(0.55 * vol_risk + 0.45 * regime_risk, 0.0, 1.0))
 
     return MarketContext(
         regime=regime,
@@ -354,8 +393,8 @@ def detect_market_regime_hmm(df: pd.DataFrame) -> Optional[MarketContext]:
 
 # ── 2. XGBoost signal ─────────────────────────────────────────────────────────
 
-PREDICTION_HORIZON = 5    # days ahead to predict
-MIN_TRAINING_ROWS  = 100  # minimum clean rows required to train
+PREDICTION_HORIZON = 5  # days ahead to predict
+MIN_TRAINING_ROWS = 100  # minimum clean rows required to train
 
 
 def _build_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -378,7 +417,10 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     # Lazy import avoids circular dependency (ml_signals ← technical ← ml_signals)
     from analysis.technical import (
-        compute_rsi, compute_macd, compute_bollinger_bands, compute_sma,
+        compute_bollinger_bands,
+        compute_macd,
+        compute_rsi,
+        compute_sma,
     )
 
     close = df["Close"].squeeze()
@@ -391,12 +433,12 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # RSI
     rsi = compute_rsi(df)
-    feat["rsi"]        = rsi
+    feat["rsi"] = rsi
     feat["rsi_delta5"] = rsi.diff(5)
 
     # MACD histogram + acceleration
     _, _, hist = compute_macd(df)
-    feat["macd_hist"]     = hist
+    feat["macd_hist"] = hist
     feat["macd_hist_chg"] = hist.diff()
 
     # Bollinger position and width
@@ -404,7 +446,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
         upper, middle, lower = compute_bollinger_bands(df)
         band_range = (upper - lower).replace(0, np.nan)
         feat["bb_position"] = (close - lower) / band_range
-        feat["bb_width"]    = band_range / middle.replace(0, np.nan)
+        feat["bb_width"] = band_range / middle.replace(0, np.nan)
 
     # Volume ratio
     if "Volume" in df.columns:
@@ -437,7 +479,7 @@ def _build_labels(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.Ser
     return result
 
 
-def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
+def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     """
     Train an XGBoost binary classifier on the ticker's historical data
     and return a TechnicalSignal with the predicted probability of a
@@ -463,7 +505,7 @@ def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
 
     try:
         features = _build_features(df)
-        labels   = _build_labels(df)
+        labels = _build_labels(df)
 
         # Merge, drop NaN (this excludes the last HORIZON unlabelled rows)
         combined = pd.concat([features, labels.rename("label")], axis=1).dropna()
@@ -473,20 +515,20 @@ def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
 
         # Determine which feature columns are available for the latest row
         latest_row = features.iloc[-1]
-        valid_cols = [c for c in features.columns
-                      if c in combined.columns
-                      and not pd.isna(latest_row.get(c, np.nan))]
+        valid_cols = [
+            c for c in features.columns if c in combined.columns and not pd.isna(latest_row.get(c, np.nan))
+        ]
 
         if not valid_cols:
             return None
 
-        X_all   = combined[valid_cols].values.astype(np.float32)
-        y_all   = combined["label"].values.astype(int)
-        X_pred  = latest_row[valid_cols].values.reshape(1, -1).astype(np.float32)
+        X_all = combined[valid_cols].values.astype(np.float32)
+        y_all = combined["label"].values.astype(int)
+        X_pred = latest_row[valid_cols].values.reshape(1, -1).astype(np.float32)
 
         # Time-series split: first 80% → train, last 20% → validation
-        split       = max(30, int(len(X_all) * 0.80))
-        X_tr, y_tr  = X_all[:split], y_all[:split]
+        split = max(30, int(len(X_all) * 0.80))
+        X_tr, y_tr = X_all[:split], y_all[:split]
         X_val, y_val = X_all[split:], y_all[split:]
 
         # Reuse a previously trained model if the input fingerprint matches.
@@ -514,27 +556,26 @@ def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
 
             # Train + validation accuracy. The gap between them is our most
             # honest overfitting signal; we log it so users / tests can react.
-            train_acc = (
-                float((model.predict(X_tr) == y_tr).mean())
-                if len(X_tr) > 0 else 0.50
-            )
-            val_acc = (
-                float((model.predict(X_val) == y_val).mean())
-                if len(X_val) > 0 else 0.50
-            )
+            train_acc = float((model.predict(X_tr) == y_tr).mean()) if len(X_tr) > 0 else 0.50
+            val_acc = float((model.predict(X_val) == y_val).mean()) if len(X_val) > 0 else 0.50
             overfit_gap = train_acc - val_acc
             if overfit_gap > 0.20:
                 log.info(
                     "XGBoost: large train-val gap (%.0f%% vs %.0f%%); model may be overfitting.",
-                    train_acc * 100, val_acc * 100,
+                    train_acc * 100,
+                    val_acc * 100,
                 )
 
             # Top-3 feature importance is useful to log when debugging weird
             # signals (e.g. all weight on one volume feature).
             try:
                 importances = sorted(
-                    zip(valid_cols, model.feature_importances_),
-                    key=lambda kv: kv[1], reverse=True,
+                    # strict=False: feature_importances_ length always matches
+                    # valid_cols by xgboost contract, but explicit is better
+                    # than implicit and silences B905.
+                    zip(valid_cols, model.feature_importances_, strict=False),
+                    key=lambda kv: kv[1],
+                    reverse=True,
                 )[:3]
                 log.debug("XGBoost top features: %s", importances)
             except Exception:
@@ -553,26 +594,23 @@ def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
     acc_str = f"precisión histórica {val_acc:.0%}"
 
     if prob_up >= 0.65:
-        sig      = "BUY"
+        sig = "BUY"
         strength = "STRONG" if prob_up >= 0.75 else "MODERATE"
-        desc     = (
+        desc = (
             f"Probabilidad de subida a 5 días: {prob_up:.0%}. "
             f"({acc_str}, {len(X_all)} muestras de entrenamiento)"
         )
     elif prob_up <= 0.35:
-        sig      = "SELL"
+        sig = "SELL"
         strength = "STRONG" if prob_up <= 0.25 else "MODERATE"
-        desc     = (
+        desc = (
             f"Probabilidad de subida a 5 días: {prob_up:.0%} — señal bajista. "
             f"({acc_str}, {len(X_all)} muestras)"
         )
     else:
-        sig      = "HOLD"
+        sig = "HOLD"
         strength = "WEAK"
-        desc     = (
-            f"Señal ML neutral — probabilidad de subida {prob_up:.0%}. "
-            f"({acc_str})"
-        )
+        desc = f"Señal ML neutral — probabilidad de subida {prob_up:.0%}. ({acc_str})"
 
     return TechnicalSignal(
         indicator="XGBoost ML",
@@ -585,7 +623,8 @@ def train_xgboost_signal(df: pd.DataFrame) -> "Optional['TechnicalSignal']":
 
 # ── 2b. HMM signal ────────────────────────────────────────────────────────────
 
-def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> "Optional['TechnicalSignal']":
+
+def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> TechnicalSignal | None:
     """
     Fit a 3-state Gaussian HMM on price dynamics and return a TechnicalSignal
     based on the forecast `horizon`-day-ahead probability of being in the
@@ -617,19 +656,19 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> "Op
     try:
         model, order = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
         bear_idx = order[0]
-        lat_idx  = order[1]
+        lat_idx = order[1]
         bull_idx = order[-1]
 
         # Posterior at the latest observation
         post = model.predict_proba(X)[-1]
 
         # k-step-ahead state distribution
-        T      = model.transmat_
-        T_k    = np.linalg.matrix_power(T, max(1, horizon))
+        T = model.transmat_
+        T_k = np.linalg.matrix_power(T, max(1, horizon))
         future = post @ T_k
 
         p_bear = float(future[bear_idx])
-        p_lat  = float(future[lat_idx])
+        p_lat = float(future[lat_idx])
         p_bull = float(future[bull_idx])
 
         # Bullish score in [0, 1]: 0 = bear regime, 0.5 = lateral, 1 = bull
@@ -640,23 +679,23 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> "Op
 
     # ── Map state distribution → signal ───────────────────────────────────────
     if p_bull >= 0.55 and p_bull > p_bear:
-        sig      = "BUY"
+        sig = "BUY"
         strength = "STRONG" if p_bull >= 0.70 else "MODERATE"
-        desc     = (
+        desc = (
             f"HMM: probabilidad de régimen alcista a {horizon} días: {p_bull:.0%} "
             f"(bajista {p_bear:.0%}, lateral {p_lat:.0%})."
         )
     elif p_bear >= 0.55 and p_bear > p_bull:
-        sig      = "SELL"
+        sig = "SELL"
         strength = "STRONG" if p_bear >= 0.70 else "MODERATE"
-        desc     = (
+        desc = (
             f"HMM: probabilidad de régimen bajista a {horizon} días: {p_bear:.0%} "
             f"(alcista {p_bull:.0%}, lateral {p_lat:.0%})."
         )
     else:
-        sig      = "HOLD"
+        sig = "HOLD"
         strength = "WEAK"
-        desc     = (
+        desc = (
             f"HMM: régimen mixto a {horizon} días — alcista {p_bull:.0%}, "
             f"bajista {p_bear:.0%}, lateral {p_lat:.0%}."
         )
@@ -671,6 +710,7 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> "Op
 
 
 # ── 3. Overall probability score ──────────────────────────────────────────────
+
 
 def compute_signal_probability(signals, market_context: MarketContext) -> float:
     """
@@ -691,10 +731,10 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
 
     WEIGHTS = {"STRONG": 3.0, "MODERATE": 2.0, "WEAK": 1.0}
 
-    buy_w  = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "BUY")
+    buy_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "BUY")
     sell_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "SELL")
     hold_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "HOLD")
-    total  = buy_w + sell_w + hold_w
+    total = buy_w + sell_w + hold_w
 
     if total == 0:
         return 0.50

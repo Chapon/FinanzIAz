@@ -28,14 +28,15 @@ Each has a ``cost(side, shares, price)`` (commission) or
 
 Use ``from_config(dict)`` to instantiate from a serialised settings blob.
 """
+
 from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
 from typing import Any
 
-
 # ── Commission models ────────────────────────────────────────────────────────
+
 
 class CommissionModel(abc.ABC):
     """Abstract commission model. Returns dollar cost per fill."""
@@ -51,20 +52,22 @@ class CommissionModel(abc.ABC):
 @dataclass
 class FlatCommission(CommissionModel):
     """Fixed dollar fee per ticket (e.g. $5 flat)."""
+
     fee: float = 0.0
 
-    def cost(self, *, side: str, shares: float, price: float) -> float:  # noqa: ARG002
+    def cost(self, *, side: str, shares: float, price: float) -> float:
         return float(max(0.0, self.fee))
 
 
 @dataclass
 class PercentCommission(CommissionModel):
     """% of notional with optional minimum and maximum dollar amounts."""
-    rate: float = 0.001      # 0.10 %
+
+    rate: float = 0.001  # 0.10 %
     min_fee: float = 0.0
     max_fee: float | None = None
 
-    def cost(self, *, side: str, shares: float, price: float) -> float:  # noqa: ARG002
+    def cost(self, *, side: str, shares: float, price: float) -> float:
         notional = abs(shares * price)
         fee = notional * max(0.0, self.rate)
         fee = max(fee, self.min_fee)
@@ -76,11 +79,12 @@ class PercentCommission(CommissionModel):
 @dataclass
 class PerShareCommission(CommissionModel):
     """IBKR-style: $/share with min, max-as-%-of-notional cap."""
+
     per_share: float = 0.005
     min_fee: float = 1.0
-    max_fee_pct: float = 0.01   # cap at 1% of notional
+    max_fee_pct: float = 0.01  # cap at 1% of notional
 
-    def cost(self, *, side: str, shares: float, price: float) -> float:  # noqa: ARG002
+    def cost(self, *, side: str, shares: float, price: float) -> float:
         notional = abs(shares * price)
         raw = abs(shares) * max(0.0, self.per_share)
         capped = min(raw, notional * self.max_fee_pct) if self.max_fee_pct > 0 else raw
@@ -96,9 +100,10 @@ class TieredCommission(CommissionModel):
     ``bands`` is a list of ``(up_to_notional, fee)`` tuples. The last band's
     threshold is taken as +∞.
     """
+
     bands: list[tuple[float, float]] = None  # type: ignore[assignment]
 
-    def cost(self, *, side: str, shares: float, price: float) -> float:  # noqa: ARG002
+    def cost(self, *, side: str, shares: float, price: float) -> float:
         notional = abs(shares * price)
         bands = self.bands or [(float("inf"), 0.0)]
         for up_to, fee in bands:
@@ -108,6 +113,7 @@ class TieredCommission(CommissionModel):
 
 
 # ── Slippage models ──────────────────────────────────────────────────────────
+
 
 class SlippageModel(abc.ABC):
     """Abstract slippage model. Returns the realised fill price."""
@@ -124,13 +130,14 @@ class SlippageModel(abc.ABC):
 class ZeroSlippage(SlippageModel):
     """Fills at the quoted price. Useful for sanity checks."""
 
-    def adjust_price(self, *, side: str, price: float) -> float:  # noqa: ARG002
+    def adjust_price(self, *, side: str, price: float) -> float:
         return float(price)
 
 
 @dataclass
 class PercentSlippage(SlippageModel):
     """% adverse to the trade direction (BUY pays up, SELL pays down)."""
+
     rate: float = 0.0005
 
     def adjust_price(self, *, side: str, price: float) -> float:
@@ -145,6 +152,7 @@ class PercentSlippage(SlippageModel):
 @dataclass
 class TickSlippage(SlippageModel):
     """Fixed N-tick slippage (where 1 tick = ``tick_size`` dollars)."""
+
     ticks: int = 1
     tick_size: float = 0.01
 
@@ -161,16 +169,16 @@ class TickSlippage(SlippageModel):
 # ── Factory / config interop ─────────────────────────────────────────────────
 
 _COMMISSION_REGISTRY: dict[str, type[CommissionModel]] = {
-    "FlatCommission":     FlatCommission,
-    "PercentCommission":  PercentCommission,
+    "FlatCommission": FlatCommission,
+    "PercentCommission": PercentCommission,
     "PerShareCommission": PerShareCommission,
-    "TieredCommission":   TieredCommission,
+    "TieredCommission": TieredCommission,
 }
 
 _SLIPPAGE_REGISTRY: dict[str, type[SlippageModel]] = {
-    "ZeroSlippage":    ZeroSlippage,
+    "ZeroSlippage": ZeroSlippage,
     "PercentSlippage": PercentSlippage,
-    "TickSlippage":    TickSlippage,
+    "TickSlippage": TickSlippage,
 }
 
 

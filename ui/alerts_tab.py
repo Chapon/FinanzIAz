@@ -1,17 +1,27 @@
 """
 Alerts tab: manage price alerts and view history.
 """
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QAbstractItemView, QHeaderView, QMessageBox
-)
+
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
-from database.models import Alert
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from alerts.alert_manager import AlertManager
+from database.models import Alert
 from ui.dialogs import AddAlertDialog
-from ui.widgets import SectionHeader, HSeparator
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.widgets import HSeparator, SectionHeader
 
 
 class AlertsTab(QWidget):
@@ -40,9 +50,9 @@ class AlertsTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels([
-            "Ticker", "Tipo", "Precio Objetivo", "Estado", "Creada", "Disparada", "Mensaje"
-        ])
+        self.table.setHorizontalHeaderLabels(
+            ["Ticker", "Tipo", "Precio Objetivo", "Estado", "Creada", "Disparada", "Mensaje"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -98,8 +108,13 @@ class AlertsTab(QWidget):
 
             type_text = "⬆ Por encima" if alert.alert_type == "ABOVE" else "⬇ Por debajo"
             self.table.setItem(row, 1, cell(type_text))
-            self.table.setItem(row, 2, cell(f"${alert.target_value:,.4f}",
-                                            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+            self.table.setItem(
+                row,
+                2,
+                cell(
+                    f"${alert.target_value:,.4f}", Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                ),
+            )
 
             status = "Activa" if alert.is_active else "Disparada"
             status_item = cell(status)
@@ -131,8 +146,10 @@ class AlertsTab(QWidget):
             return
         alert = self._alerts[row]
         reply = QMessageBox.question(
-            self, "Confirmar", f"¿Eliminar alerta para {alert.ticker}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            self,
+            "Confirmar",
+            f"¿Eliminar alerta para {alert.ticker}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             AlertManager.delete_alert(alert.id)

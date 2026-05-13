@@ -13,9 +13,10 @@ When new info arrives in the background, the global signal
 `install_ticker_tooltips(table, col)` will refresh the tooltip for that
 ticker without rebuilding the whole table.
 """
+
 from __future__ import annotations
 
-from typing import Optional
+import contextlib
 
 from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
@@ -30,7 +31,8 @@ log = get_logger(__name__)
 
 class _FetchSignals(QObject):
     """Bridge from a QRunnable (worker thread) to Qt signals on the main thread."""
-    fetched = pyqtSignal(str, dict)   # ticker, info_dict
+
+    fetched = pyqtSignal(str, dict)  # ticker, info_dict
 
 
 class _FetchRunnable(QRunnable):
@@ -49,6 +51,7 @@ class _FetchRunnable(QRunnable):
             # Imported inside run() so that import-time errors in yfinance
             # never break the UI on startup.
             from data.yahoo_finance import get_company_info
+
             info = get_company_info(self.ticker) or {}
         except Exception as e:
             log.warning("fetch failed for %s: %s", self.ticker, e)
@@ -66,7 +69,8 @@ class _TickerInfoCache(QObject):
     Global, lazy-loaded cache of company info per ticker.
     Singleton — use the module-level `ticker_cache` instance.
     """
-    info_updated = pyqtSignal(str)   # emitted on the main thread when new info arrives
+
+    info_updated = pyqtSignal(str)  # emitted on the main thread when new info arrives
 
     def __init__(self):
         super().__init__()
@@ -78,10 +82,8 @@ class _TickerInfoCache(QObject):
         self._pool = QThreadPool.globalInstance()
         # No more than 2 concurrent ticker info fetches — yfinance can be slow
         # and we don't want to compete with price/historical fetches.
-        try:
+        with contextlib.suppress(Exception):
             self._pool.setMaxThreadCount(max(self._pool.maxThreadCount(), 4))
-        except Exception:
-            pass
 
         # Persistent signal bridge — keeps refs alive.
         self._signals = _FetchSignals()
@@ -95,11 +97,10 @@ class _TickerInfoCache(QObject):
             return
         self._db_loaded = True
         try:
-            from database.models import session_scope, Position
+            from database.models import Position, session_scope
+
             with session_scope() as session:
-                rows = session.query(
-                    Position.ticker, Position.company_name, Position.sector
-                ).all()
+                rows = session.query(Position.ticker, Position.company_name, Position.sector).all()
                 for ticker, name, sector in rows:
                     if not ticker:
                         continue
@@ -167,7 +168,7 @@ ticker_cache = _TickerInfoCache()
 # ── Tooltip formatting ────────────────────────────────────────────────────────
 
 
-def _fmt_pct(value, decimals: int = 2) -> Optional[str]:
+def _fmt_pct(value, decimals: int = 2) -> str | None:
     if value is None:
         return None
     try:
@@ -181,7 +182,7 @@ def _fmt_pct(value, decimals: int = 2) -> Optional[str]:
     return f"{v:.{decimals}f}%"
 
 
-def _fmt_number(value, decimals: int = 2) -> Optional[str]:
+def _fmt_number(value, decimals: int = 2) -> str | None:
     if value is None:
         return None
     try:
@@ -210,15 +211,13 @@ def format_tooltip(ticker: str) -> str:
 
     # Header
     parts: list[str] = []
-    parts.append(
-        f"<div style='font-size:13px;'><b>{key}</b>"
-    )
+    parts.append(f"<div style='font-size:13px;'><b>{key}</b>")
     if name and name.upper() != key:
         parts.append(f" &nbsp;<span style='color:#9ca3af;'>{name}</span>")
     parts.append("</div>")
 
     # Body fields
-    fields: list[tuple[str, Optional[str]]] = [
+    fields: list[tuple[str, str | None]] = [
         ("Sector", sector if sector and sector != "N/A" else None),
         ("Industria", industry if industry and industry != "N/A" else None),
         ("Mercado", exchange if exchange and exchange != "N/A" else None),
@@ -232,20 +231,18 @@ def format_tooltip(ticker: str) -> str:
     rows = [
         f"<tr><td style='color:#9ca3af;padding-right:10px;'>{label}</td>"
         f"<td style='color:#e6edf3;'><b>{value}</b></td></tr>"
-        for label, value in fields if value
+        for label, value in fields
+        if value
     ]
 
     if rows:
         parts.append(
             "<table cellspacing='0' cellpadding='1' "
-            "style='font-size:11px;margin-top:4px;'>"
-            + "".join(rows)
-            + "</table>"
+            "style='font-size:11px;margin-top:4px;'>" + "".join(rows) + "</table>"
         )
     else:
         parts.append(
-            "<div style='color:#9ca3af;font-size:11px;margin-top:4px;'>"
-            "<i>Cargando información…</i></div>"
+            "<div style='color:#9ca3af;font-size:11px;margin-top:4px;'><i>Cargando información…</i></div>"
         )
 
     return "".join(parts)
@@ -254,7 +251,7 @@ def format_tooltip(ticker: str) -> str:
 # ── Helpers to wire tables ────────────────────────────────────────────────────
 
 
-def apply_ticker_tooltip(item: Optional[QTableWidgetItem], ticker: str) -> None:
+def apply_ticker_tooltip(item: QTableWidgetItem | None, ticker: str) -> None:
     """Set a rich tooltip on `item` for the given ticker. Safe with None."""
     if item is None or not ticker:
         return

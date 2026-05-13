@@ -40,12 +40,14 @@ Usage examples
             w.result_ready.connect(self._render)
             w.start()
 """
+
 from __future__ import annotations
 
 import functools
 import sys
 import traceback
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
@@ -57,11 +59,11 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def show_error(
-    parent: Optional[QWidget],
+    parent: QWidget | None,
     title: str,
     exc: BaseException,
     *,
-    detail: Optional[str] = None,
+    detail: str | None = None,
 ) -> None:
     """
     Display a user-facing error dialog and log the traceback.
@@ -84,6 +86,7 @@ def show_error(
     effective_title = title
     try:
         from config.errors import NetworkError, ValidationError
+
         if isinstance(exc, ValidationError):
             icon = QMessageBox.Icon.Information
             effective_title = "Datos no válidos"
@@ -107,10 +110,10 @@ def show_error(
 
 def handle_errors(
     *,
-    parent: Optional[QWidget] = None,
+    parent: QWidget | None = None,
     title: str = "Error",
     reraise: bool = False,
-    detail: Optional[str] = None,
+    detail: str | None = None,
 ) -> Callable[[F], F]:
     """
     Decorator: catch any exception in the wrapped slot, log it, show a
@@ -137,6 +140,7 @@ def handle_errors(
                 if reraise:
                     raise
                 return None
+
         return wrapper  # type: ignore[return-value]
 
     return decorator
@@ -145,8 +149,8 @@ def handle_errors(
 def connect_worker(
     worker,
     *,
-    parent: Optional[QWidget] = None,
-    title: Optional[str] = None,
+    parent: QWidget | None = None,
+    title: str | None = None,
 ) -> None:
     """
     Hook a ``BaseWorker.error`` signal to a standard QMessageBox.

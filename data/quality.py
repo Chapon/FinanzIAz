@@ -20,10 +20,10 @@ Design
   are missing, ``clean_ohlcv`` leaves them as NaN and reports the gap so the
   caller can decide what to do.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -41,14 +41,15 @@ PRICE_COLS: tuple[str, ...] = OHLC_COLS  # alias
 @dataclass
 class DataQualityReport:
     """Summary of issues found in an OHLCV DataFrame."""
-    rows:                 int = 0
-    nan_counts:           dict[str, int] = field(default_factory=dict)
-    duplicate_index:      int = 0
-    zero_or_negative:     dict[str, int] = field(default_factory=dict)
-    calendar_gaps:        list[tuple[pd.Timestamp, pd.Timestamp, int]] = field(default_factory=list)
-    suspicious_jumps:     int = 0      # |ret| > 0.5 in a single bar
-    is_usable:            bool = True   # False if no rows or all-NaN Close
-    notes:                list[str] = field(default_factory=list)
+
+    rows: int = 0
+    nan_counts: dict[str, int] = field(default_factory=dict)
+    duplicate_index: int = 0
+    zero_or_negative: dict[str, int] = field(default_factory=dict)
+    calendar_gaps: list[tuple[pd.Timestamp, pd.Timestamp, int]] = field(default_factory=list)
+    suspicious_jumps: int = 0  # |ret| > 0.5 in a single bar
+    is_usable: bool = True  # False if no rows or all-NaN Close
+    notes: list[str] = field(default_factory=list)
 
     def has_issues(self) -> bool:
         return (
@@ -103,7 +104,7 @@ def _detect_calendar_gaps(
         # pandas 2.x tz-aware DatetimeIndex can't be cast directly to
         # datetime64[D]; use .date to strip tz before converting.
         prev = np.array([d.date() for d in idx[:-1]], dtype="datetime64[D]")
-        nxt  = np.array([d.date() for d in idx[1:]],  dtype="datetime64[D]")
+        nxt = np.array([d.date() for d in idx[1:]], dtype="datetime64[D]")
         deltas = np.busday_count(prev, nxt)
     else:
         deltas = np.diff(idx).astype("timedelta64[D]").astype(int)
@@ -115,7 +116,7 @@ def _detect_calendar_gaps(
 
 
 def check_ohlcv(
-    df: Optional[pd.DataFrame],
+    df: pd.DataFrame | None,
     *,
     business_days_only: bool = True,
     gap_threshold_days: int = 3,
@@ -182,12 +183,12 @@ def check_ohlcv(
 
 
 def clean_ohlcv(
-    df: Optional[pd.DataFrame],
+    df: pd.DataFrame | None,
     *,
-    fill_method: str = "ffill",   # "ffill" | "drop" | "none"
-    max_fill_gap: int = 2,        # don't ffill more than N consecutive bars
+    fill_method: str = "ffill",  # "ffill" | "drop" | "none"
+    max_fill_gap: int = 2,  # don't ffill more than N consecutive bars
     drop_zero_prices: bool = True,
-) -> tuple[Optional[pd.DataFrame], DataQualityReport]:
+) -> tuple[pd.DataFrame | None, DataQualityReport]:
     """
     Apply opinionated cleaning to an OHLCV frame and return the cleaned copy
     plus a report describing what was found / changed.

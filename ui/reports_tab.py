@@ -4,20 +4,28 @@ Reports tab: generate PDF and Excel portfolio reports.
 The actual generation runs on a background ``BaseWorker`` so the UI stays
 responsive — large portfolios with full transaction history can take 5-10 s.
 """
+
 import os
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFileDialog, QMessageBox, QGroupBox, QRadioButton,
-    QButtonGroup, QSizePolicy
-)
-from PyQt6.QtCore import pyqtSignal
-from database.models import session_scope, Portfolio, Position
-from ui.widgets import SectionHeader, HSeparator, MetricCard
-from ui.styles import DARK_THEME
-from ui.workers import BaseWorker
 from datetime import datetime
+
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 from config.logging_config import get_logger
 from config.settings_manager import settings
+from database.models import Portfolio, Position, session_scope
+from ui.widgets import HSeparator, SectionHeader
+from ui.workers import BaseWorker
 
 log = get_logger(__name__)
 
@@ -69,18 +77,17 @@ class ReportWorker(BaseWorker):
         # Snapshot the portfolio under a clean session, then drop the session
         # before running report generation (which is purely CPU/IO bound).
         with session_scope() as session:
-            portfolio = (session.query(Portfolio)
-                         .filter(Portfolio.id == self.portfolio_id).first())
+            portfolio = session.query(Portfolio).filter(Portfolio.id == self.portfolio_id).first()
             if portfolio is None:
                 raise ValueError(f"Portafolio {self.portfolio_id} no encontrado")
-            positions = (session.query(Position)
-                         .filter(Position.portfolio_id == self.portfolio_id).all())
+            positions = session.query(Position).filter(Position.portfolio_id == self.portfolio_id).all()
             session.expunge_all()
-            portfolio_name     = portfolio.name
+            portfolio_name = portfolio.name
             portfolio_currency = portfolio.currency
 
         if self.report_type == "pdf":
             from reports.pdf_report import generate_portfolio_pdf
+
             generate_portfolio_pdf(
                 self.output_path,
                 portfolio_name,
@@ -92,6 +99,7 @@ class ReportWorker(BaseWorker):
             )
         else:
             from reports.excel_report import generate_portfolio_excel
+
             generate_portfolio_excel(
                 self.output_path,
                 portfolio_name,
@@ -204,12 +212,15 @@ class ReportsTab(QWidget):
         self.generate_btn.setText("Generar y Guardar Reporte")
         self.status_label.setText(f"✅ Reporte guardado en: {path}")
         reply = QMessageBox.question(
-            self, "Reporte generado",
+            self,
+            "Reporte generado",
             f"Reporte guardado en:\n{path}\n\n¿Abrirlo ahora?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            import subprocess, sys
+            import subprocess
+            import sys
+
             if sys.platform == "win32":
                 os.startfile(path)
             elif sys.platform == "darwin":

@@ -27,6 +27,7 @@ The UI's ``show_error`` displays ``str(exc)``; for technical detail (``__cause__
 traceback) it falls back to the "Show Details…" pane. So friendly messages
 go in the constructor — context goes in ``raise … from exc``.
 """
+
 from __future__ import annotations
 
 
@@ -35,6 +36,7 @@ class FinanzIAsError(Exception):
 
 
 # ── Data layer ───────────────────────────────────────────────────────────────
+
 
 class DataError(FinanzIAsError):
     """Anything wrong with market data — fetch, cache, parse, validate."""
@@ -50,11 +52,13 @@ class DataQualityError(DataError):
 
 # ── Strategy / engine ────────────────────────────────────────────────────────
 
+
 class StrategyError(FinanzIAsError):
     """Engine, backtest, or scheduler invariant violation."""
 
 
 # ── User-facing input ────────────────────────────────────────────────────────
+
 
 class ConfigError(FinanzIAsError):
     """settings.json is corrupt, missing required keys, or out of range."""
@@ -66,6 +70,7 @@ class ValidationError(FinanzIAsError):
 
 # ── Database ─────────────────────────────────────────────────────────────────
 
+
 class DatabaseError(FinanzIAsError):
     """A SQLAlchemy / SQLite operation failed in a way we can describe.
 
@@ -75,12 +80,12 @@ class DatabaseError(FinanzIAsError):
 
 
 __all__ = [
-    "FinanzIAsError",
-    "DataError",
-    "NetworkError",
-    "DataQualityError",
-    "StrategyError",
     "ConfigError",
-    "ValidationError",
+    "DataError",
+    "DataQualityError",
     "DatabaseError",
+    "FinanzIAsError",
+    "NetworkError",
+    "StrategyError",
+    "ValidationError",
 ]

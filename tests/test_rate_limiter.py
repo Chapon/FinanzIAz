@@ -1,6 +1,7 @@
 """
 Tests for the token-bucket rate limiter inside ``data.market_data_service``.
 """
+
 from __future__ import annotations
 
 import time
@@ -22,9 +23,9 @@ def test_initial_burst_is_immediate():
 
 def test_subsequent_calls_are_throttled():
     rl = RateLimiter(rate_per_sec=10.0, burst=2)
-    rl.acquire(2)   # exhaust the burst
+    rl.acquire(2)  # exhaust the burst
     start = time.monotonic()
-    rl.acquire(2)   # should wait ~0.2 s for refill
+    rl.acquire(2)  # should wait ~0.2 s for refill
     elapsed = time.monotonic() - start
     assert elapsed >= 0.15  # allow some slack on slow CI runners
 

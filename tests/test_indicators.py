@@ -9,6 +9,7 @@ self-evident (constant series → RSI=50 / NaN, monotonic up → RSI > 70,
 etc.) and assert against those properties rather than against magic
 float numbers.
 """
+
 from __future__ import annotations
 
 import numpy as np

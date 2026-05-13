@@ -1,11 +1,11 @@
 """
 Tests for ``data.quality`` — OHLCV validation + cleaning.
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from data.quality import check_ohlcv, clean_ohlcv
 
@@ -15,9 +15,9 @@ def _df(rows: int = 30) -> pd.DataFrame:
     close = pd.Series(np.linspace(100, 110, rows), index=idx)
     return pd.DataFrame(
         {
-            "Open":  close - 0.5,
-            "High":  close + 1.0,
-            "Low":   close - 1.0,
+            "Open": close - 0.5,
+            "High": close + 1.0,
+            "Low": close - 1.0,
             "Close": close,
             "Volume": 1_000_000.0,
         },
@@ -58,8 +58,8 @@ def test_check_ohlcv_rejects_all_nan_close():
 
 def test_clean_ohlcv_replaces_zeros_and_ffills():
     df = _df()
-    df.loc[df.index[5], "Close"] = 0     # zero → NaN → ffilled
-    cleaned, rep = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
+    df.loc[df.index[5], "Close"] = 0  # zero → NaN → ffilled
+    cleaned, _rep = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
     assert cleaned is not None
     # No more zeros after cleaning
     assert (cleaned["Close"] > 0).all()
@@ -81,5 +81,5 @@ def test_clean_ohlcv_returns_none_for_unusable_input():
     assert cleaned is None
     assert not rep.is_usable
 
-    cleaned2, rep2 = clean_ohlcv(pd.DataFrame())
+    _cleaned2, rep2 = clean_ohlcv(pd.DataFrame())
     assert not rep2.is_usable

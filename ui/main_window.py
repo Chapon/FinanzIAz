@@ -1,37 +1,44 @@
 """
 Main application window — IQON-style layout with sidebar + content stack.
 """
+
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QStackedWidget, QLabel, QStatusBar, QFrame, QSizePolicy
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QStackedWidget,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
-from ui.sidebar import Sidebar
-from ui.styles import DARK_THEME, PALETTE
-from data.yahoo_finance import is_market_open
+
 from config.logging_config import get_logger
 from config.settings_manager import settings
+from data.yahoo_finance import is_market_open
+from ui.sidebar import Sidebar
+from ui.styles import DARK_THEME, PALETTE
 
 log = get_logger(__name__)
-from ui.home_tab import HomeTab
-from ui.portfolio_tab import PortfolioTab
-from ui.analysis_tab import AnalysisTab
+from paper_trading.scheduler import PaperScheduler
 from ui.alerts_tab import AlertsTab
+from ui.analysis_tab import AnalysisTab
+from ui.home_tab import HomeTab
+from ui.paper_tab import PaperTradingTab
+from ui.portfolio_tab import PortfolioTab
 from ui.reports_tab import ReportsTab
 from ui.settings_tab import SettingsTab
-from ui.paper_tab import PaperTradingTab
-from paper_trading.scheduler import PaperScheduler
 
 
 class TopBar(QWidget):
     """Header bar: page title on the left, status info on the right."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(60)
         self.setStyleSheet(
-            f"background-color: {PALETTE['bg']}; "
-            f"border-bottom: 1px solid {PALETTE['border']};"
+            f"background-color: {PALETTE['bg']}; border-bottom: 1px solid {PALETTE['border']};"
         )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(24, 0, 24, 0)
@@ -45,9 +52,7 @@ class TopBar(QWidget):
             f"text-transform: uppercase; letter-spacing: 0.8px;"
         )
         self.title_label = QLabel("Home")
-        self.title_label.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 22px; font-weight: 800;"
-        )
+        self.title_label.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 22px; font-weight: 800;")
         left.addWidget(self.page_label)
         left.addWidget(self.title_label)
 
@@ -102,20 +107,18 @@ class TopBar(QWidget):
         open_, label = is_market_open()
         dot_color = PALETTE["accent"] if open_ else PALETTE["red"]
         self.market_label.setText(f"●  {label}")
-        self.market_label.setStyleSheet(
-            f"color: {dot_color}; font-size: 12px; font-weight: 600;"
-        )
+        self.market_label.setStyleSheet(f"color: {dot_color}; font-size: 12px; font-weight: 600;")
 
 
 class MainWindow(QMainWindow):
     PAGE_TITLES = {
-        "home":      ("Home",           "FinanzIAs"),
-        "portfolio": ("Portafolio",     "Mis Inversiones"),
-        "analysis":  ("Análisis",       "Técnico"),
-        "alerts":    ("Alertas",        "Precios"),
-        "paper":     ("Paper Trading",  "Simulación en vivo"),
-        "reports":   ("Reportes",       "Exportar"),
-        "settings":  ("Ajustes",        "Configuración"),
+        "home": ("Home", "FinanzIAs"),
+        "portfolio": ("Portafolio", "Mis Inversiones"),
+        "analysis": ("Análisis", "Técnico"),
+        "alerts": ("Alertas", "Precios"),
+        "paper": ("Paper Trading", "Simulación en vivo"),
+        "reports": ("Reportes", "Exportar"),
+        "settings": ("Ajustes", "Configuración"),
     }
 
     def __init__(self):
@@ -160,21 +163,21 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setStyleSheet(f"background-color: {PALETTE['bg']};")
 
-        self.home_tab      = HomeTab()
+        self.home_tab = HomeTab()
         self.portfolio_tab = PortfolioTab()
-        self.analysis_tab  = AnalysisTab()
-        self.alerts_tab    = AlertsTab()
-        self.paper_tab     = PaperTradingTab()
-        self.reports_tab   = ReportsTab()
-        self.settings_tab  = SettingsTab()
+        self.analysis_tab = AnalysisTab()
+        self.alerts_tab = AlertsTab()
+        self.paper_tab = PaperTradingTab()
+        self.reports_tab = ReportsTab()
+        self.settings_tab = SettingsTab()
 
-        self.stack.addWidget(self.home_tab)       # 0
+        self.stack.addWidget(self.home_tab)  # 0
         self.stack.addWidget(self.portfolio_tab)  # 1
-        self.stack.addWidget(self.analysis_tab)   # 2
-        self.stack.addWidget(self.alerts_tab)     # 3
-        self.stack.addWidget(self.paper_tab)      # 4
-        self.stack.addWidget(self.reports_tab)    # 5
-        self.stack.addWidget(self.settings_tab)   # 6
+        self.stack.addWidget(self.analysis_tab)  # 2
+        self.stack.addWidget(self.alerts_tab)  # 3
+        self.stack.addWidget(self.paper_tab)  # 4
+        self.stack.addWidget(self.reports_tab)  # 5
+        self.stack.addWidget(self.settings_tab)  # 6
 
         right_layout.addWidget(self.stack, stretch=1)
         root_layout.addWidget(right, stretch=1)
@@ -185,8 +188,13 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
 
     _PAGE_IDX = {
-        "home": 0, "portfolio": 1, "analysis": 2,
-        "alerts": 3, "paper": 4, "reports": 5, "settings": 6,
+        "home": 0,
+        "portfolio": 1,
+        "analysis": 2,
+        "alerts": 3,
+        "paper": 4,
+        "reports": 5,
+        "settings": 6,
     }
 
     def _connect_signals(self):
@@ -239,12 +247,13 @@ class MainWindow(QMainWindow):
         pid = self.portfolio_tab.get_current_portfolio_id()
         if pid is None:
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.information(
-                self, "RSI Scan",
-                "Seleccioná un portafolio primero para escanear el RSI."
+                self, "RSI Scan", "Seleccioná un portafolio primero para escanear el RSI."
             )
             return
         from ui.rsi_scanner import RsiScanDialog
+
         dlg = RsiScanDialog(pid, parent=self)
         dlg.exec()
 
@@ -271,9 +280,7 @@ class MainWindow(QMainWindow):
             log.exception("paper_tab.on_scan_completed: %s", e)
 
     def _on_paper_scan_failed(self, account_id: int, error: str):
-        self.status_bar.showMessage(
-            f"Paper scan falló (#{account_id}): {error}", 10_000
-        )
+        self.status_bar.showMessage(f"Paper scan falló (#{account_id}): {error}", 10_000)
         try:
             self.paper_tab.on_scan_failed(account_id, error)
         except Exception as e:

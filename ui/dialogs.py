@@ -1,19 +1,29 @@
 """
 Modal dialogs for FinanzIAs: add position, add portfolio, add alert.
 """
+
+from datetime import datetime
+
+from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLineEdit, QDoubleSpinBox, QComboBox, QTextEdit,
-    QPushButton, QLabel, QMessageBox, QDialogButtonBox,
-    QSpinBox, QDateEdit
+    QComboBox,
+    QDateEdit,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QTextEdit,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, QDate
-from database.models import session_scope, Portfolio, Position, Transaction
-from data.yahoo_finance import validate_ticker, get_company_info
+
 from alerts.alert_manager import AlertManager
 from config.settings_manager import settings
+from data.yahoo_finance import get_company_info, validate_ticker
+from database.models import Portfolio, Position, Transaction, session_scope
 from ui.validators import TickerValidator, is_valid_ticker
-from datetime import datetime
 
 
 class AddPortfolioDialog(QDialog):
@@ -45,9 +55,7 @@ class AddPortfolioDialog(QDialog):
 
         layout.addLayout(form)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
@@ -97,9 +105,7 @@ class RenamePortfolioDialog(QDialog):
         self.name_edit.returnPressed.connect(self._accept)
         layout.addWidget(self.name_edit)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
@@ -116,8 +122,7 @@ class RenamePortfolioDialog(QDialog):
                 .first()
             )
             if conflict:
-                QMessageBox.warning(self, "Nombre en uso",
-                                    f"Ya existe un portafolio llamado '{name}'.")
+                QMessageBox.warning(self, "Nombre en uso", f"Ya existe un portafolio llamado '{name}'.")
                 return
             p = session.query(Portfolio).filter(Portfolio.id == self._portfolio_id).first()
             if p:
@@ -164,7 +169,7 @@ class AddPositionDialog(QDialog):
 
         self.ticker_edit = QLineEdit()
         self.ticker_edit.setPlaceholderText("Ej: AAPL, MSFT, GGAL.BA")
-        self.ticker_edit.setValidator(TickerValidator(self))   # restrict alphabet at input time
+        self.ticker_edit.setValidator(TickerValidator(self))  # restrict alphabet at input time
         self.ticker_edit.setMaxLength(20)
         self.ticker_edit.textChanged.connect(self._on_ticker_changed)
         # Auto-uppercase on commit so AAPL stays AAPL after user types "aapl".
@@ -213,9 +218,7 @@ class AddPositionDialog(QDialog):
         self.status_label.setObjectName("muted")
         layout.addWidget(self.status_label)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
         self.ok_btn.setText("Agregar")
         self.ok_btn.setObjectName("primary")
@@ -237,7 +240,8 @@ class AddPositionDialog(QDialog):
             return
         if not is_valid_ticker(ticker):
             QMessageBox.warning(
-                self, "Ticker inválido",
+                self,
+                "Ticker inválido",
                 "El ticker solo puede contener letras, números, '.', '-' y '^' (1-20 caracteres).",
             )
             return
@@ -348,9 +352,7 @@ class AddAlertDialog(QDialog):
 
         layout.addLayout(form)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.button(QDialogButtonBox.StandardButton.Ok).setText("Crear Alerta")
         btns.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
         btns.accepted.connect(self._accept)
@@ -437,9 +439,7 @@ class SellPositionDialog(QDialog):
 
         layout.addLayout(form)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.button(QDialogButtonBox.StandardButton.Ok).setText("Confirmar Venta")
         btns.button(QDialogButtonBox.StandardButton.Ok).setObjectName("danger")
         btns.accepted.connect(self._accept)

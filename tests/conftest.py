@@ -13,12 +13,12 @@ Key concerns
 3. Synthetic OHLCV data: ``ohlcv_factory`` creates a deterministic random-
    walk DataFrame so tests are reproducible.
 """
+
 from __future__ import annotations
 
-import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -47,9 +47,9 @@ def test_db(monkeypatch) -> Iterator:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from database import models as db_models
     # Importing this module registers the paper-trading tables on Base.metadata
     import paper_trading.models  # noqa: F401
+    from database import models as db_models
 
     test_engine = create_engine("sqlite:///:memory:", echo=False)
     test_sessionmaker = sessionmaker(bind=test_engine, autoflush=False, expire_on_commit=False)
@@ -98,8 +98,8 @@ def ohlcv_factory():
         rets = rng.normal(drift, vol, rows)
         close = start_price * np.exp(np.cumsum(rets))
         # Synthesise plausible OHLC around close
-        high  = close * (1 + np.abs(rng.normal(0, vol / 3, rows)))
-        low   = close * (1 - np.abs(rng.normal(0, vol / 3, rows)))
+        high = close * (1 + np.abs(rng.normal(0, vol / 3, rows)))
+        low = close * (1 - np.abs(rng.normal(0, vol / 3, rows)))
         open_ = np.r_[close[0], close[:-1]]
         volume = rng.integers(1_000_000, 10_000_000, rows).astype(float)
         idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=rows, freq="B")
@@ -129,4 +129,5 @@ def _disable_settings_persistence(tmp_path, monkeypatch):
     )
     # Force the live singleton to re-read against the patched path.
     from config.settings_manager import settings as _live_settings
+
     _live_settings.load()

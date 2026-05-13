@@ -12,78 +12,188 @@ shares are written as ``BRK-B`` (not ``BRK.B``) for that reason.
 Adding or editing a preset only requires touching this dict — the UI in
 ``ui.paper_tab`` reads from it at runtime, no other wiring needed.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 WATCHLIST_PRESETS: dict[str, list[str]] = {
     # Mega-cap concentrated bet — the usual suspects.
     "Magníficos 7": [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "NVDA",
+        "TSLA",
     ],
-
     # Broad tech: software, hardware, services. Overlaps with Semis but
     # leans toward "Magnificent 7 + classic tech".
     "Tecnología": [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "AVGO", "ORCL",
-        "ADBE", "CRM", "ACN", "IBM", "CSCO", "NOW", "INTU",
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "META",
+        "NVDA",
+        "AVGO",
+        "ORCL",
+        "ADBE",
+        "CRM",
+        "ACN",
+        "IBM",
+        "CSCO",
+        "NOW",
+        "INTU",
     ],
-
     # Semiconductores — fabricación + diseño + equipos.
     "Semiconductores": [
-        "NVDA", "AMD", "AVGO", "TSM", "ASML", "QCOM", "INTC", "MU",
-        "AMAT", "KLAC", "LRCX", "MRVL", "TXN", "ON",
+        "NVDA",
+        "AMD",
+        "AVGO",
+        "TSM",
+        "ASML",
+        "QCOM",
+        "INTC",
+        "MU",
+        "AMAT",
+        "KLAC",
+        "LRCX",
+        "MRVL",
+        "TXN",
+        "ON",
     ],
-
     # Petróleo/gas + servicios + midstream.
     "Energía": [
-        "XOM", "CVX", "COP", "SLB", "EOG", "OXY", "PSX", "MPC", "VLO",
-        "KMI", "WMB", "OKE", "HAL", "BKR",
+        "XOM",
+        "CVX",
+        "COP",
+        "SLB",
+        "EOG",
+        "OXY",
+        "PSX",
+        "MPC",
+        "VLO",
+        "KMI",
+        "WMB",
+        "OKE",
+        "HAL",
+        "BKR",
     ],
-
     # Retail discrecional, autos, viajes, restaurantes.
     "Consumo discrecional": [
-        "AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "LOW", "BKNG",
-        "TJX", "ROST", "TGT", "F", "GM",
+        "AMZN",
+        "TSLA",
+        "HD",
+        "MCD",
+        "NKE",
+        "SBUX",
+        "LOW",
+        "BKNG",
+        "TJX",
+        "ROST",
+        "TGT",
+        "F",
+        "GM",
     ],
-
     # Staples: alimentos, bebidas, hogar — defensivo clásico.
     "Consumo defensivo": [
-        "PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "MDLZ", "CL",
-        "KMB", "GIS", "K",
+        "PG",
+        "KO",
+        "PEP",
+        "COST",
+        "WMT",
+        "PM",
+        "MO",
+        "MDLZ",
+        "CL",
+        "KMB",
+        "GIS",
+        "K",
     ],
-
     # Pharma + dispositivos + seguros de salud.
     "Salud": [
-        "JNJ", "UNH", "LLY", "PFE", "MRK", "ABBV", "TMO", "ABT", "DHR",
-        "BMY", "AMGN", "CVS", "GILD", "ELV",
+        "JNJ",
+        "UNH",
+        "LLY",
+        "PFE",
+        "MRK",
+        "ABBV",
+        "TMO",
+        "ABT",
+        "DHR",
+        "BMY",
+        "AMGN",
+        "CVS",
+        "GILD",
+        "ELV",
     ],
-
     # Bancos, brokers, payments, asset managers.
     "Financieros": [
-        "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP",
-        "V", "MA", "BRK-B", "PYPL",
+        "JPM",
+        "BAC",
+        "WFC",
+        "C",
+        "GS",
+        "MS",
+        "BLK",
+        "SCHW",
+        "AXP",
+        "V",
+        "MA",
+        "BRK-B",
+        "PYPL",
     ],
-
     # Aeroespacial, defensa, transporte, maquinaria pesada.
     "Industriales": [
-        "BA", "CAT", "GE", "HON", "RTX", "UPS", "LMT", "DE", "MMM",
-        "UNP", "FDX", "NOC",
+        "BA",
+        "CAT",
+        "GE",
+        "HON",
+        "RTX",
+        "UPS",
+        "LMT",
+        "DE",
+        "MMM",
+        "UNP",
+        "FDX",
+        "NOC",
     ],
-
     # Telecom, streaming, redes sociales — services + media.
     "Comunicaciones": [
-        "GOOGL", "META", "NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS",
-        "CHTR", "WBD",
+        "GOOGL",
+        "META",
+        "NFLX",
+        "DIS",
+        "CMCSA",
+        "T",
+        "VZ",
+        "TMUS",
+        "CHTR",
+        "WBD",
     ],
-
     # Utilities reguladas — alta yield, baja beta.
     "Utilities": [
-        "NEE", "DUK", "SO", "AEP", "EXC", "XEL", "SRE", "D", "PCG",
+        "NEE",
+        "DUK",
+        "SO",
+        "AEP",
+        "EXC",
+        "XEL",
+        "SRE",
+        "D",
+        "PCG",
     ],
-
     # REITs — exposición a real estate vía equity.
     "REITs": [
-        "PLD", "AMT", "EQIX", "CCI", "SPG", "O", "PSA", "AVB", "WELL",
+        "PLD",
+        "AMT",
+        "EQIX",
+        "CCI",
+        "SPG",
+        "O",
+        "PSA",
+        "AVB",
+        "WELL",
     ],
 }
 

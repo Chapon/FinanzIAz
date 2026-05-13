@@ -22,19 +22,23 @@ Memory management
   from the layout — call this from the parent widget's ``closeEvent`` /
   destructor when you're sure the chart will not be redrawn.
 """
+
+import contextlib
 import math
+
 import matplotlib
+
 matplotlib.use("QtAgg")
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import pandas as pd
-import numpy as np
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QVBoxLayout, QWidget
+
 from analysis.technical import (
-    compute_rsi, compute_macd, compute_bollinger_bands, compute_sma, compute_ema,
     get_cached_indicators,
 )
 from ui.styles import CHART_STYLE
@@ -42,10 +46,8 @@ from ui.styles import CHART_STYLE
 
 def _apply_style(ax):
     for k, v in CHART_STYLE.items():
-        try:
+        with contextlib.suppress(Exception):
             plt.rcParams[k] = v
-        except Exception:
-            pass
     ax.set_facecolor(CHART_STYLE["axes.facecolor"])
     ax.tick_params(colors=CHART_STYLE["xtick.color"])
     ax.spines["bottom"].set_color(CHART_STYLE["axes.edgecolor"])
@@ -71,16 +73,16 @@ class ChartWidget(QWidget):
         layout.addWidget(self.canvas)
 
         # Hover / crosshair state
-        self._vlines: list = []         # active Line2D crosshair objects
+        self._vlines: list = []  # active Line2D crosshair objects
         self._has_crosshair: bool = False
-        self._hover_data: dict | None = None    # indicator Series dict after last plot
+        self._hover_data: dict | None = None  # indicator Series dict after last plot
         self._date_nums: np.ndarray | None = None  # matplotlib float dates for lookup
-        self._axes: list = []           # [ax_price, ax_rsi, ax_macd]
+        self._axes: list = []  # [ax_price, ax_rsi, ax_macd]
 
         # Connect matplotlib mouse events once (persists across replots).
         # Track the connection IDs so we can disconnect them in ``cleanup()``.
-        self._cid_motion = self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
-        self._cid_leave  = self.canvas.mpl_connect('figure_leave_event',  self._on_figure_leave)
+        self._cid_motion = self.canvas.mpl_connect("motion_notify_event", self._on_mouse_move)
+        self._cid_leave = self.canvas.mpl_connect("figure_leave_event", self._on_figure_leave)
 
     # ── Main plot ──────────────────────────────────────────────────────────────
 
@@ -99,8 +101,8 @@ class ChartWidget(QWidget):
         # Layout: price chart (3 parts) + RSI (1 part) + MACD (1 part)
         gs = self.figure.add_gridspec(3, 1, height_ratios=[3, 1, 1], hspace=0.08)
         ax_price = self.figure.add_subplot(gs[0])
-        ax_rsi   = self.figure.add_subplot(gs[1], sharex=ax_price)
-        ax_macd  = self.figure.add_subplot(gs[2], sharex=ax_price)
+        ax_rsi = self.figure.add_subplot(gs[1], sharex=ax_price)
+        ax_macd = self.figure.add_subplot(gs[2], sharex=ax_price)
         self._axes = [ax_price, ax_rsi, ax_macd]
 
         close = df["Close"].squeeze()
@@ -109,11 +111,11 @@ class ChartWidget(QWidget):
         # Retrieve (or compute) all indicators from the shared LRU cache.
         # If analyze() was already called for this ticker+dataset, this is free.
         indic = get_cached_indicators(ticker, df)
-        sma20                            = indic['sma20']
-        sma50                            = indic['sma50']
-        upper, middle, lower             = indic['bollinger']
-        rsi                              = indic['rsi']
-        macd_line, signal_line, histogram = indic['macd']
+        sma20 = indic["sma20"]
+        sma50 = indic["sma50"]
+        upper, middle, lower = indic["bollinger"]
+        rsi = indic["rsi"]
+        macd_line, signal_line, histogram = indic["macd"]
 
         # ── Price ──────────────────────────────────────────────────────────────
         _apply_style(ax_price)
@@ -131,12 +133,9 @@ class ChartWidget(QWidget):
             ax_price.plot(dates, lower, color="#58a6ff", linewidth=0.6, alpha=0.4, linestyle="--")
 
         ax_price.set_ylabel("Precio", color=CHART_STYLE["axes.labelcolor"], fontsize=11)
-        ax_price.set_title(
-            f"  {ticker}", color="#e6edf3", fontsize=13, fontweight="bold", loc="left", pad=8
-        )
+        ax_price.set_title(f"  {ticker}", color="#e6edf3", fontsize=13, fontweight="bold", loc="left", pad=8)
         ax_price.legend(
-            loc="upper left", fontsize=9,
-            facecolor="#161b22", edgecolor="#21262d", labelcolor="#e6edf3"
+            loc="upper left", fontsize=9, facecolor="#161b22", edgecolor="#21262d", labelcolor="#e6edf3"
         )
         plt.setp(ax_price.get_xticklabels(), visible=False)
 
@@ -161,8 +160,7 @@ class ChartWidget(QWidget):
         ax_macd.axhline(0, color="#30363d", linewidth=0.8)
         ax_macd.set_ylabel("MACD", color=CHART_STYLE["axes.labelcolor"], fontsize=10)
         ax_macd.legend(
-            loc="upper left", fontsize=8,
-            facecolor="#161b22", edgecolor="#21262d", labelcolor="#e6edf3"
+            loc="upper left", fontsize=8, facecolor="#161b22", edgecolor="#21262d", labelcolor="#e6edf3"
         )
 
         # Format x-axis on bottom panel
@@ -172,23 +170,21 @@ class ChartWidget(QWidget):
 
         # ── Store indicator series for hover ───────────────────────────────────
         self._hover_data = {
-            'dates':       dates,
-            'close':       close,
-            'rsi':         rsi,
-            'macd_line':   macd_line,
-            'signal_line': signal_line,
-            'histogram':   histogram,
-            'upper':       upper,
-            'lower':       lower,
-            'middle':      middle,
-            'sma20':       sma20,
-            'sma50':       sma50,
+            "dates": dates,
+            "close": close,
+            "rsi": rsi,
+            "macd_line": macd_line,
+            "signal_line": signal_line,
+            "histogram": histogram,
+            "upper": upper,
+            "lower": lower,
+            "middle": middle,
+            "sma20": sma20,
+            "sma50": sma50,
         }
         # Pre-compute float date array for fast argmin lookup
         self._date_nums = np.array(
-            mdates.date2num(
-                [d.to_pydatetime() if hasattr(d, 'to_pydatetime') else d for d in dates]
-            )
+            mdates.date2num([d.to_pydatetime() if hasattr(d, "to_pydatetime") else d for d in dates])
         )
 
         self.canvas.draw()
@@ -243,7 +239,7 @@ class ChartWidget(QWidget):
             pass
         self.clear()
 
-    def closeEvent(self, event):  # noqa: N802 — Qt naming convention
+    def closeEvent(self, event):
         self.cleanup()
         super().closeEvent(event)
 
@@ -264,10 +260,8 @@ class ChartWidget(QWidget):
 
         # Remove previous crosshair
         for vl in self._vlines:
-            try:
+            with contextlib.suppress(Exception):
                 vl.remove()
-            except Exception:
-                pass
         self._vlines = []
 
         # Nearest date index
@@ -276,10 +270,7 @@ class ChartWidget(QWidget):
 
         # Draw crosshair on all 3 subplots
         for ax in self._axes:
-            vl = ax.axvline(
-                x=x_val, color='#c9d1d9', linewidth=0.8,
-                alpha=0.55, linestyle='-', zorder=10
-            )
+            vl = ax.axvline(x=x_val, color="#c9d1d9", linewidth=0.8, alpha=0.55, linestyle="-", zorder=10)
             self._vlines.append(vl)
         self._has_crosshair = True
         self.canvas.draw_idle()
@@ -296,28 +287,28 @@ class ChartWidget(QWidget):
             except Exception:
                 return None
 
-        self.hover_data.emit({
-            'idx':         idx,
-            'date':        d['dates'][idx],
-            'close':       _safe(d['close'], idx),
-            'rsi':         _safe(d['rsi'], idx),
-            'macd_line':   _safe(d['macd_line'], idx),
-            'signal_line': _safe(d['signal_line'], idx),
-            'histogram':   _safe(d['histogram'], idx),
-            'upper':       _safe(d['upper'], idx),
-            'lower':       _safe(d['lower'], idx),
-            'middle':      _safe(d['middle'], idx),
-            'sma20':       _safe(d['sma20'], idx),
-            'sma50':       _safe(d['sma50'], idx),
-        })
+        self.hover_data.emit(
+            {
+                "idx": idx,
+                "date": d["dates"][idx],
+                "close": _safe(d["close"], idx),
+                "rsi": _safe(d["rsi"], idx),
+                "macd_line": _safe(d["macd_line"], idx),
+                "signal_line": _safe(d["signal_line"], idx),
+                "histogram": _safe(d["histogram"], idx),
+                "upper": _safe(d["upper"], idx),
+                "lower": _safe(d["lower"], idx),
+                "middle": _safe(d["middle"], idx),
+                "sma20": _safe(d["sma20"], idx),
+                "sma50": _safe(d["sma50"], idx),
+            }
+        )
 
     def _on_figure_leave(self, event):
         """Clear crosshair and emit None when mouse leaves the figure entirely."""
         for vl in self._vlines:
-            try:
+            with contextlib.suppress(Exception):
                 vl.remove()
-            except Exception:
-                pass
         self._vlines = []
         if self._has_crosshair:
             self._has_crosshair = False

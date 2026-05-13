@@ -2,22 +2,33 @@
 Settings tab — all toggles are now wired to config/settings_manager.py
 and persist across sessions.
 """
+
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QScrollArea, QPushButton, QMessageBox
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from ui.widgets import (
-    SettingsRow, NumericSettingsRow, ChoiceSettingsRow,
-    HSeparator, SectionHeader,
-)
-from ui.styles import PALETTE
+
 from config.settings_manager import settings
+from ui.styles import PALETTE
+from ui.widgets import (
+    ChoiceSettingsRow,
+    HSeparator,
+    NumericSettingsRow,
+    SectionHeader,
+    SettingsRow,
+)
 
 
 class SettingsTab(QWidget):
     # Emitted when a setting changes; MainWindow listens for side-effects
-    setting_changed = pyqtSignal(str, bool)   # key, new_value
+    setting_changed = pyqtSignal(str, bool)  # key, new_value
 
     # Emitted when rsi_alerts is turned ON so MainWindow can run the scan
     rsi_scan_requested = pyqtSignal()
@@ -51,42 +62,98 @@ class SettingsTab(QWidget):
         root.addWidget(SectionHeader("Ajustes de la Aplicación"))
         root.addWidget(HSeparator())
 
-        root.addWidget(self._section("GENERAL", [
-            ("notif",        "Notificaciones al disparar alertas",
-             "Muestra una notificación cuando una alerta de precio se activa."),
-            ("auto_refresh", "Actualizar precios automáticamente",
-             "Refresca los precios del portafolio cada 60 segundos."),
-            ("default_home", "Abrir en Home al iniciar",
-             "Si está apagado, la app abre directamente en Portafolio."),
-            ("confirm_sell", "Pedir confirmación al vender",
-             "Muestra un diálogo extra de confirmación antes de ejecutar una venta."),
-        ]))
+        root.addWidget(
+            self._section(
+                "GENERAL",
+                [
+                    (
+                        "notif",
+                        "Notificaciones al disparar alertas",
+                        "Muestra una notificación cuando una alerta de precio se activa.",
+                    ),
+                    (
+                        "auto_refresh",
+                        "Actualizar precios automáticamente",
+                        "Refresca los precios del portafolio cada 60 segundos.",
+                    ),
+                    (
+                        "default_home",
+                        "Abrir en Home al iniciar",
+                        "Si está apagado, la app abre directamente en Portafolio.",
+                    ),
+                    (
+                        "confirm_sell",
+                        "Pedir confirmación al vender",
+                        "Muestra un diálogo extra de confirmación antes de ejecutar una venta.",
+                    ),
+                ],
+            )
+        )
 
-        root.addWidget(self._section("DATOS DE MERCADO", [
-            ("cache",       "Caché de precios (5 min)",
-             "Reutiliza el precio guardado si fue actualizado hace menos de 5 min. "
-             "Desactivar para obtener precios en tiempo real (más llamadas a la API)."),
-            ("pre_market",  "Mostrar precios pre/post mercado",
-             "Muestra etiquetas 'Pre-market' y 'After-hours' en la barra de estado."),
-            ("perf_log",    "Guardar historial de rendimiento",
-             "Guarda snapshots diarios del valor del portafolio (función futura)."),
-        ]))
+        root.addWidget(
+            self._section(
+                "DATOS DE MERCADO",
+                [
+                    (
+                        "cache",
+                        "Caché de precios (5 min)",
+                        "Reutiliza el precio guardado si fue actualizado hace menos de 5 min. "
+                        "Desactivar para obtener precios en tiempo real (más llamadas a la API).",
+                    ),
+                    (
+                        "pre_market",
+                        "Mostrar precios pre/post mercado",
+                        "Muestra etiquetas 'Pre-market' y 'After-hours' en la barra de estado.",
+                    ),
+                    (
+                        "perf_log",
+                        "Guardar historial de rendimiento",
+                        "Guarda snapshots diarios del valor del portafolio (función futura).",
+                    ),
+                ],
+            )
+        )
 
-        root.addWidget(self._section("ANÁLISIS TÉCNICO", [
-            ("bb",          "Bollinger Bands en gráficos",
-             "Muestra las bandas de Bollinger (±2σ) superpuestas en el gráfico de precio."),
-            ("sma_cross",   "Señales SMA50/200 (Golden/Death Cross)",
-             "Incluye la señal de cruce de medias móviles en el análisis ponderado."),
-            ("rsi_alerts",  "Alertar RSI extremo (< 30 / > 70)",
-             "Al activar: escanea el portafolio actual y notifica posiciones con RSI extremo."),
-        ]))
+        root.addWidget(
+            self._section(
+                "ANÁLISIS TÉCNICO",
+                [
+                    (
+                        "bb",
+                        "Bollinger Bands en gráficos",
+                        "Muestra las bandas de Bollinger (±2σ) superpuestas en el gráfico de precio.",
+                    ),
+                    (
+                        "sma_cross",
+                        "Señales SMA50/200 (Golden/Death Cross)",
+                        "Incluye la señal de cruce de medias móviles en el análisis ponderado.",
+                    ),
+                    (
+                        "rsi_alerts",
+                        "Alertar RSI extremo (< 30 / > 70)",
+                        "Al activar: escanea el portafolio actual y notifica posiciones con RSI extremo.",
+                    ),
+                ],
+            )
+        )
 
-        root.addWidget(self._section("REPORTES", [
-            ("tx_history",  "Incluir historial de transacciones",
-             "Agrega una sección con el detalle de compras/ventas en PDF y Excel."),
-            ("pdf_dark",    "Tema oscuro en PDF",
-             "Genera el PDF con fondo oscuro. Desactivar para tema claro (más apto para imprimir)."),
-        ]))
+        root.addWidget(
+            self._section(
+                "REPORTES",
+                [
+                    (
+                        "tx_history",
+                        "Incluir historial de transacciones",
+                        "Agrega una sección con el detalle de compras/ventas en PDF y Excel.",
+                    ),
+                    (
+                        "pdf_dark",
+                        "Tema oscuro en PDF",
+                        "Genera el PDF con fondo oscuro. Desactivar para tema claro (más apto para imprimir).",
+                    ),
+                ],
+            )
+        )
 
         root.addWidget(self._guardrails_section())
         root.addWidget(self._analysis_section())
@@ -117,8 +184,7 @@ class SettingsTab(QWidget):
 
         title = QLabel("BASE DE DATOS")
         title.setStyleSheet(
-            f"color: {PALETTE['text2']}; font-size: 11px; "
-            f"font-weight: 700; letter-spacing: 0.6px;"
+            f"color: {PALETTE['text2']}; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;"
         )
         layout.addWidget(title)
 
@@ -154,6 +220,7 @@ class SettingsTab(QWidget):
     def _refresh_backup_list(self) -> None:
         try:
             from database.backup import list_backups
+
             paths = list_backups()
         except Exception:
             paths = []
@@ -174,30 +241,36 @@ class SettingsTab(QWidget):
 
     def _on_backup_now(self) -> None:
         from database.backup import backup_database
+
         path = backup_database(reason="manual")
         if path is None:
             QMessageBox.warning(self, "Error", "No se pudo crear el backup. Revisá el log.")
             return
         QMessageBox.information(
-            self, "Backup creado",
+            self,
+            "Backup creado",
             f"Backup guardado en:\n{path}",
         )
         self._refresh_backup_list()
 
     def _on_restore(self) -> None:
         from database.backup import list_backups, restore_database
+
         paths = list_backups()
         if not paths:
             QMessageBox.information(self, "Sin backups", "No hay backups disponibles.")
             return
         # Pick by name, newest first.
         from PyQt6.QtWidgets import QInputDialog
+
         names = [p.name for p in paths[::-1]]
         choice, ok = QInputDialog.getItem(
-            self, "Restaurar backup",
-            "Elegí qué backup restaurar (la base actual se guardará como "
-            "<name>.before-restore):",
-            names, 0, False,
+            self,
+            "Restaurar backup",
+            "Elegí qué backup restaurar (la base actual se guardará como <name>.before-restore):",
+            names,
+            0,
+            False,
         )
         if not ok:
             return
@@ -206,7 +279,8 @@ class SettingsTab(QWidget):
         target = paths[::-1][idx]
 
         confirm = QMessageBox.question(
-            self, "Confirmar restore",
+            self,
+            "Confirmar restore",
             f"¿Reemplazar la base de datos actual con:\n\n{target.name}?\n\n"
             "Cerrá manualmente el portafolio antes de continuar.\n"
             "Esta acción no se puede deshacer (la copia previa se guarda).",
@@ -218,12 +292,14 @@ class SettingsTab(QWidget):
         ok = restore_database(target)
         if ok:
             QMessageBox.information(
-                self, "Restore exitoso",
+                self,
+                "Restore exitoso",
                 "Base restaurada. Reiniciá la app para que los cambios surtan efecto.",
             )
         else:
             QMessageBox.critical(
-                self, "Error",
+                self,
+                "Error",
                 "No se pudo restaurar el backup. Revisá el log para detalles.",
             )
         self._refresh_backup_list()
@@ -277,7 +353,7 @@ class SettingsTab(QWidget):
             "Solo ejecutar con mercado abierto",
             settings.get("paper_enforce_market_hours"),
             tooltip="El motor rechaza fills si NYSE está cerrada, "
-                    "incluso si el escaneo se disparó manualmente o desde el cron diario.",
+            "incluso si el escaneo se disparó manualmente o desde el cron diario.",
         )
         bool_row.toggled.connect(self._on_toggle)
         self._rows["paper_enforce_market_hours"] = bool_row
@@ -289,11 +365,14 @@ class SettingsTab(QWidget):
             "paper_min_holding_minutes",
             "Período mínimo de holding",
             settings.get("paper_min_holding_minutes"),
-            value_type="int", suffix="min",
-            minimum=0, maximum=43_200, step=15,
+            value_type="int",
+            suffix="min",
+            minimum=0,
+            maximum=43_200,
+            step=15,
             tooltip="No vender una posición abierta hace menos de N minutos. "
-                    "Evita el flapping comprar→vender en pocos minutos. "
-                    "0 = desactivado.",
+            "Evita el flapping comprar→vender en pocos minutos. "
+            "0 = desactivado.",
         )
         holding_row.value_changed.connect(self._on_numeric_change)
         self._numeric_rows["paper_min_holding_minutes"] = holding_row
@@ -305,10 +384,12 @@ class SettingsTab(QWidget):
             "paper_anti_flap_minutes",
             "Cooldown anti-flap tras vender",
             settings.get("paper_anti_flap_minutes"),
-            value_type="int", suffix="min",
-            minimum=0, maximum=43_200, step=15,
-            tooltip="No re-comprar un ticker vendido en los últimos N minutos. "
-                    "0 = desactivado.",
+            value_type="int",
+            suffix="min",
+            minimum=0,
+            maximum=43_200,
+            step=15,
+            tooltip="No re-comprar un ticker vendido en los últimos N minutos. 0 = desactivado.",
         )
         flap_row.value_changed.connect(self._on_numeric_change)
         self._numeric_rows["paper_anti_flap_minutes"] = flap_row
@@ -320,11 +401,15 @@ class SettingsTab(QWidget):
             "paper_min_trade_dollars",
             "Tamaño mínimo de orden",
             settings.get("paper_min_trade_dollars"),
-            value_type="float", suffix="USD",
-            minimum=0.0, maximum=100_000.0, step=10.0, decimals=2,
+            value_type="float",
+            suffix="USD",
+            minimum=0.0,
+            maximum=100_000.0,
+            step=10.0,
+            decimals=2,
             tooltip="Bloquea BUYs por debajo de este notional para evitar "
-                    "que el round-trip cost se coma el edge esperado. "
-                    "0 = desactivado.",
+            "que el round-trip cost se coma el edge esperado. "
+            "0 = desactivado.",
         )
         minsize_row.value_changed.connect(self._on_numeric_change)
         self._numeric_rows["paper_min_trade_dollars"] = minsize_row
@@ -356,15 +441,15 @@ class SettingsTab(QWidget):
             "Histórico para analyze() / XGBoost",
             settings.get("paper_history_period"),
             choices=[
-                ("1y",  "1 año"),
-                ("2y",  "2 años"),
-                ("5y",  "5 años"),
+                ("1y", "1 año"),
+                ("2y", "2 años"),
+                ("5y", "5 años"),
                 ("10y", "10 años"),
             ],
             tooltip="Cantidad de historial que el scanner usa para entrenar "
-                    "XGBoost y calcular indicadores técnicos en cada escaneo. "
-                    "2 años es el sweet spot — 1 año tiene validación demasiado "
-                    "chica, 5+ años arrastra regímenes viejos.",
+            "XGBoost y calcular indicadores técnicos en cada escaneo. "
+            "2 años es el sweet spot — 1 año tiene validación demasiado "
+            "chica, 5+ años arrastra regímenes viejos.",
         )
         period_row.value_changed.connect(self._on_choice_change)
         self._choice_rows["paper_history_period"] = period_row
@@ -395,7 +480,8 @@ class SettingsTab(QWidget):
 
     def _on_reset(self):
         reply = QMessageBox.question(
-            self, "Restablecer ajustes",
+            self,
+            "Restablecer ajustes",
             "¿Restablecer todos los ajustes a sus valores por defecto?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )

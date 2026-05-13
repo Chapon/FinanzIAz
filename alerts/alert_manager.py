@@ -1,27 +1,29 @@
 """
 Alert manager: checks price alerts and fires callbacks when triggered.
 """
+
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
-from database.models import session_scope, Alert
+
 from data.yahoo_finance import get_current_price
+from database.models import Alert, session_scope
 
 
 class AlertManager:
-    def __init__(self, on_triggered: Optional[Callable] = None):
+    def __init__(self, on_triggered: Callable | None = None):
         """
         on_triggered: callback(alert: Alert, current_price: float) called when alert fires.
         """
         self.on_triggered = on_triggered
 
-    def check_alerts(self, portfolio_id: Optional[int] = None) -> list[Alert]:
+    def check_alerts(self, portfolio_id: int | None = None) -> list[Alert]:
         """
         Check all active alerts (optionally filtered by portfolio).
         Returns list of triggered alerts.
         """
         triggered: list[Alert] = []
         with session_scope() as session:
-            query = session.query(Alert).filter(Alert.is_active == True)
+            query = session.query(Alert).filter(Alert.is_active.is_(True))
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
             alerts = query.all()
@@ -75,7 +77,7 @@ class AlertManager:
                 is_active=True,
             )
             session.add(alert)
-            session.flush()       # populate alert.id before commit/expunge
+            session.flush()  # populate alert.id before commit/expunge
             session.refresh(alert)
             session.expunge(alert)  # detach so caller can use after close
             return alert
@@ -88,13 +90,13 @@ class AlertManager:
                 session.delete(alert)
 
     @staticmethod
-    def get_alerts(portfolio_id: Optional[int] = None, active_only: bool = False) -> list[Alert]:
+    def get_alerts(portfolio_id: int | None = None, active_only: bool = False) -> list[Alert]:
         with session_scope() as session:
             query = session.query(Alert)
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
             if active_only:
-                query = query.filter(Alert.is_active == True)
+                query = query.filter(Alert.is_active.is_(True))
             alerts = query.order_by(Alert.created_at.desc()).all()
             # Detach from session so they can be used after close
             session.expunge_all()

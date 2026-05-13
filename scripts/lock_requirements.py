@@ -15,6 +15,7 @@ Behaviour
 The script is intentionally minimal — no third-party deps. It only uses the
 stdlib so it works in any environment where requirements.txt was installed.
 """
+
 from __future__ import annotations
 
 import datetime as _dt

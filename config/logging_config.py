@@ -20,14 +20,13 @@ Design
 - Noisy third-party libraries (urllib3, yfinance, matplotlib) are pinned to
   WARNING by default.
 """
+
 from __future__ import annotations
 
 import logging
 import logging.handlers
 import sys
 from pathlib import Path
-from typing import Optional
-
 
 # ── File location ────────────────────────────────────────────────────────────
 LOG_DIR = Path.home() / ".finanzias"
@@ -53,7 +52,7 @@ NOISY_LIBS = (
 _INITIALIZED = False
 
 
-def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Optional[Path] = None) -> None:
+def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -> None:
     """
     Initialize the root logger. Idempotent — safe to call multiple times.
     Should be invoked exactly once from ``main.py`` before any logger is used.
@@ -108,6 +107,7 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Optional[Path] = None
     # Apply user-configured per-module overrides if available.
     try:
         from config.settings_manager import settings  # local import — avoid cycles
+
         overrides = settings.get("logging_levels") or {}
         if isinstance(overrides, dict):
             for name, lvl in overrides.items():

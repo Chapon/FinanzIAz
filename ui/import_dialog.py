@@ -2,19 +2,30 @@
 CSV import dialog for FinanzIAs.
 Shows a preview table of parsed rows and lets the user confirm before saving.
 """
-import os
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox,
-    QHeaderView, QAbstractItemView, QFrame, QScrollArea,
-    QWidget, QProgressBar, QDoubleSpinBox
-)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QDragEnterEvent, QDropEvent
-from data.csv_importer import parse_csv_file, ImportRow, ImportResult
-from data.yahoo_finance import get_company_info
-from database.models import session_scope, Position, Transaction
+
 from datetime import datetime
+
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+
+from data.csv_importer import ImportResult, ImportRow, parse_csv_file
+from data.yahoo_finance import get_company_info
+from database.models import Position, Transaction, session_scope
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
 from ui.workers import BaseWorker
 
@@ -30,7 +41,7 @@ class ValidateWorker(BaseWorker):
     # 0-100% updates. We override here with a richer shape used by this
     # dialog. PyQt resolves the most-derived signal at connect time so this
     # does not collide with BaseWorker's progress consumers (none in our code).
-    progress = pyqtSignal(int, str, str)   # row_idx, company_name, sector
+    progress = pyqtSignal(int, str, str)  # row_idx, company_name, sector
     done = pyqtSignal()
 
     def __init__(self, rows: list[ImportRow]):
@@ -144,16 +155,15 @@ class ImportDialog(QDialog):
 
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels([
-            "Ticker", "Empresa", "Sector", "Cantidad", "Precio Compra", "Comisión"
-        ])
+        self.table.setHorizontalHeaderLabels(
+            ["Ticker", "Empresa", "Sector", "Cantidad", "Precio Compra", "Comisión"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(
-            QAbstractItemView.EditTrigger.DoubleClicked |
-            QAbstractItemView.EditTrigger.SelectedClicked
+            QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked
         )
         self.table.setVisible(False)
         # Tooltip on hover over the Ticker column (col 0)
@@ -188,10 +198,7 @@ class ImportDialog(QDialog):
     # ── File loading ───────────────────────────────────────────────────────
 
     def _browse_file(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar CSV", "",
-            "CSV Files (*.csv);;All Files (*)"
-        )
+        path, _ = QFileDialog.getOpenFileName(self, "Seleccionar CSV", "", "CSV Files (*.csv);;All Files (*)")
         if path:
             self._load_file(path)
 
@@ -218,9 +225,7 @@ class ImportDialog(QDialog):
         # Skipped rows
         n_skip = len(result.skipped)
         if n_skip:
-            self.skipped_label.setText(
-                f"⚠️  {n_skip} fila(s) omitida(s) por datos inválidos."
-            )
+            self.skipped_label.setText(f"⚠️  {n_skip} fila(s) omitida(s) por datos inválidos.")
 
         # Show watchlist banner if any row is a watchlist entry
         has_watchlist = any(r.is_watchlist for r in result.rows)
@@ -349,15 +354,17 @@ class ImportDialog(QDialog):
                 price_zero.append(ticker)
 
             orig = self._result.rows[r] if self._result and r < len(self._result.rows) else None
-            rows_to_import.append({
-                "ticker": ticker,
-                "quantity": qty,
-                "price": price,
-                "fee": fee,
-                "company_name": self._company_names.get(r, ticker),
-                "sector": self._company_sectors.get(r, ""),
-                "is_watchlist": getattr(orig, "is_watchlist", False),
-            })
+            rows_to_import.append(
+                {
+                    "ticker": ticker,
+                    "quantity": qty,
+                    "price": price,
+                    "fee": fee,
+                    "company_name": self._company_names.get(r, ticker),
+                    "sector": self._company_sectors.get(r, ""),
+                    "is_watchlist": getattr(orig, "is_watchlist", False),
+                }
+            )
 
         if not rows_to_import:
             QMessageBox.warning(self, "Sin datos", "No hay filas válidas para importar.")
@@ -365,11 +372,12 @@ class ImportDialog(QDialog):
 
         if price_zero:
             reply = QMessageBox.question(
-                self, "Precios en cero",
+                self,
+                "Precios en cero",
                 f"Los siguientes tickers tienen precio de compra = 0:\n"
                 f"{', '.join(price_zero)}\n\n"
                 f"¿Importar de todas formas? Podés editarlos después.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -386,8 +394,7 @@ class ImportDialog(QDialog):
                 parts.append(f"{merged} posición/es actualizadas (ya existían)")
 
             QMessageBox.information(
-                self, "Importación exitosa",
-                f"✅ Importación completada:\n" + "\n".join(parts)
+                self, "Importación exitosa", "✅ Importación completada:\n" + "\n".join(parts)
             )
             self.accept()
         except Exception as e:
@@ -413,8 +420,7 @@ class ImportDialog(QDialog):
                 # Merge: recalculate avg price
                 total_qty = existing.quantity + item["quantity"]
                 avg = (
-                    (existing.avg_buy_price * existing.quantity) +
-                    (item["price"] * item["quantity"])
+                    (existing.avg_buy_price * existing.quantity) + (item["price"] * item["quantity"])
                 ) / total_qty
                 existing.quantity = total_qty
                 existing.avg_buy_price = avg
@@ -452,8 +458,10 @@ class ImportDialog(QDialog):
 
 # ── Drag & Drop Zone ────────────────────────────────────────────────────────
 
+
 class DropZone(QFrame):
     """A drag-and-drop target that accepts CSV files."""
+
     file_dropped = pyqtSignal(str)
 
     def __init__(self, parent=None):

@@ -21,44 +21,48 @@ Two strategies are provided:
    drift threshold and monthly rebalance flag. Fully coherent with the
    historical back-tester.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 
-from paper_trading.models import PaperAccount, PaperPosition
 from analysis.portfolio_backtest import (
-    AllocationMode, _compute_target_weights, _realized_vol,
+    AllocationMode,
+    _compute_target_weights,
+    _realized_vol,
 )
-
+from paper_trading.models import PaperAccount, PaperPosition
 
 # ── Value type ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TargetTrade:
-    ticker:         str
-    side:           str          # "BUY" | "SELL"
-    target_shares:  Optional[float]   # for SELL: total shares to close; for BUY: None if using target_dollars
-    target_dollars: Optional[float]   # for BUY: dollar amount; for SELL: None or estimated proceeds
-    reason:         str
-    source:         str          # strategy name ("analyze_single" | "portfolio_engine")
+    ticker: str
+    side: str  # "BUY" | "SELL"
+    target_shares: float | None  # for SELL: total shares to close; for BUY: None if using target_dollars
+    target_dollars: float | None  # for BUY: dollar amount; for SELL: None or estimated proceeds
+    reason: str
+    source: str  # strategy name ("analyze_single" | "portfolio_engine")
 
     def __repr__(self) -> str:
         dollars = f"${self.target_dollars:,.2f}" if self.target_dollars is not None else "—"
-        shares  = f"{self.target_shares:.4f}"    if self.target_shares  is not None else "—"
+        shares = f"{self.target_shares:.4f}" if self.target_shares is not None else "—"
         return f"<TargetTrade({self.side} {self.ticker} {shares}sh / {dollars} · {self.reason})>"
 
 
-HistoryProvider = Callable[[str], Optional[pd.DataFrame]]
+HistoryProvider = Callable[[str], pd.DataFrame | None]
 
 
 # ── Strategy 1: analyze_single ────────────────────────────────────────────────
 
-def _default_strength(signal: str, ml_probability: Optional[float]) -> float:
+
+def _default_strength(signal: str, ml_probability: float | None) -> float:
     """Conviction score in [0,1] for ranking BUY candidates."""
     if ml_probability is not None and np.isfinite(ml_probability):
         return float(max(0.0, min(1.0, ml_probability)))
@@ -66,10 +70,10 @@ def _default_strength(signal: str, ml_probability: Optional[float]) -> float:
 
 
 def generate_trades_analyze_single(
-    account:          PaperAccount,
-    watchlist:        list[str],
-    positions:        list[PaperPosition],
-    prices:           dict[str, float],
+    account: PaperAccount,
+    watchlist: list[str],
+    positions: list[PaperPosition],
+    prices: dict[str, float],
     history_provider: HistoryProvider,
 ) -> list[TargetTrade]:
     """
@@ -98,14 +102,16 @@ def generate_trades_analyze_single(
         if res is None:
             continue
         if res.overall_signal == "SELL":
-            trades.append(TargetTrade(
-                ticker         = pos.ticker,
-                side           = "SELL",
-                target_shares  = float(pos.shares),
-                target_dollars = None,
-                reason         = f"analyze SELL ({res.ml_probability or 0:.2f})",
-                source         = source,
-            ))
+            trades.append(
+                TargetTrade(
+                    ticker=pos.ticker,
+                    side="SELL",
+                    target_shares=float(pos.shares),
+                    target_dollars=None,
+                    reason=f"analyze SELL ({res.ml_probability or 0:.2f})",
+                    source=source,
+                )
+            )
             forced_exits.add(pos.ticker)
 
     # Candidates for BUY — ranked by conviction
@@ -126,9 +132,9 @@ def generate_trades_analyze_single(
     ranked.sort(reverse=True)
 
     # Slots available after processing forced exits
-    held_after  = (held_tickers - forced_exits)
-    free_slots  = max(0, account.max_positions - len(held_after))
-    picks       = [t for _, t in ranked[:free_slots]]
+    held_after = held_tickers - forced_exits
+    free_slots = max(0, account.max_positions - len(held_after))
+    picks = [t for _, t in ranked[:free_slots]]
 
     if not picks:
         return trades
@@ -145,30 +151,34 @@ def generate_trades_analyze_single(
 
     if account.allocation_mode == "fixed_amount":
         target_per = float(account.fixed_amount)
-        total      = target_per * len(picks)
+        total = target_per * len(picks)
         if total > available:
-            target_per = available / len(picks)   # scale down
+            target_per = available / len(picks)  # scale down
     else:
         target_per = available / len(picks)
 
     for t in picks:
-        trades.append(TargetTrade(
-            ticker         = t,
-            side           = "BUY",
-            target_shares  = None,
-            target_dollars = float(target_per),
-            reason         = "analyze BUY",
-            source         = source,
-        ))
+        trades.append(
+            TargetTrade(
+                ticker=t,
+                side="BUY",
+                target_shares=None,
+                target_dollars=float(target_per),
+                reason="analyze BUY",
+                source=source,
+            )
+        )
 
     return trades
 
 
 # ── Strategy 2: portfolio_engine ──────────────────────────────────────────────
 
+
 def _signal_for(ticker: str, df: pd.DataFrame) -> tuple[str, float]:
     """Call analyze() and return (signal, strength)."""
     from analysis.technical import analyze
+
     res = analyze(ticker, df)
     if res is None:
         return "HOLD", 0.5
@@ -176,10 +186,10 @@ def _signal_for(ticker: str, df: pd.DataFrame) -> tuple[str, float]:
 
 
 def generate_trades_portfolio_engine(
-    account:          PaperAccount,
-    watchlist:        list[str],
-    positions:        list[PaperPosition],
-    prices:           dict[str, float],
+    account: PaperAccount,
+    watchlist: list[str],
+    positions: list[PaperPosition],
+    prices: dict[str, float],
     history_provider: HistoryProvider,
 ) -> list[TargetTrade]:
     """
@@ -199,23 +209,23 @@ def generate_trades_portfolio_engine(
 
     # ── Compute signals, strengths & vols for every ticker we care about ─────
     universe = sorted(set(watchlist) | {p.ticker for p in positions})
-    signals:   dict[str, str]   = {}
+    signals: dict[str, str] = {}
     strengths: dict[str, float] = {}
-    vols:      dict[str, float] = {}
-    dfs:       dict[str, pd.DataFrame] = {}
+    vols: dict[str, float] = {}
+    dfs: dict[str, pd.DataFrame] = {}
 
     for t in universe:
         df = history_provider(t)
         if df is None or df.empty or "Close" not in df.columns:
-            signals[t]   = "HOLD"
+            signals[t] = "HOLD"
             strengths[t] = 0.0
-            vols[t]      = 0.0
+            vols[t] = 0.0
             continue
         dfs[t] = df
         sig, sv = _signal_for(t, df)
-        signals[t]   = sig
+        signals[t] = sig
         strengths[t] = sv
-        vols[t]      = _realized_vol(df["Close"].astype(float))
+        vols[t] = _realized_vol(df["Close"].astype(float))
 
     # ── Forced exits (positions with SELL) ────────────────────────────────────
     held_tickers = {p.ticker: p for p in positions}
@@ -225,10 +235,7 @@ def generate_trades_portfolio_engine(
     still_held = [t for t in held_tickers if t not in forced_exits]
     free_slots = max(0, account.max_positions - len(still_held))
     candidates = sorted(
-        [t for t in watchlist
-         if signals.get(t) == "BUY"
-         and t not in still_held
-         and t not in forced_exits],
+        [t for t in watchlist if signals.get(t) == "BUY" and t not in still_held and t not in forced_exits],
         key=lambda t: strengths.get(t, 0.0),
         reverse=True,
     )
@@ -260,8 +267,8 @@ def generate_trades_portfolio_engine(
     # Tickers to liquidate entirely
     for t in list(held_tickers):
         if t not in active:
-            target_dollars[t]  = 0.0
-            target_weights[t]  = 0.0
+            target_dollars[t] = 0.0
+            target_weights[t] = 0.0
 
     # ── Triggers ──────────────────────────────────────────────────────────────
     # Signal-based: any forced exit or new entry counts.
@@ -270,7 +277,7 @@ def generate_trades_portfolio_engine(
     # Drift: any active position deviates from target by > drift_threshold.
     drift_trigger = False
     for t, w_target in target_weights.items():
-        p  = held_tickers.get(t)
+        p = held_tickers.get(t)
         px = prices.get(t)
         if p is None or px is None:
             continue
@@ -294,12 +301,15 @@ def generate_trades_portfolio_engine(
             month_trigger = True
 
     if not (signal_trigger or drift_trigger or month_trigger):
-        return trades   # no action this scan
+        return trades  # no action this scan
 
     reason_parts = []
-    if signal_trigger: reason_parts.append("signal")
-    if drift_trigger:  reason_parts.append("drift")
-    if month_trigger:  reason_parts.append("monthly")
+    if signal_trigger:
+        reason_parts.append("signal")
+    if drift_trigger:
+        reason_parts.append("drift")
+    if month_trigger:
+        reason_parts.append("monthly")
     reason = "+".join(reason_parts)
 
     # ── Emit rebalance trades ────────────────────────────────────────────────
@@ -312,32 +322,36 @@ def generate_trades_portfolio_engine(
         p = held_tickers.get(t)
         if p is not None:
             current = p.shares * px
-        target  = float(target_dollars.get(t, 0.0))
-        diff    = target - current
-        if abs(diff) < 1e-2:        # under 1¢ — ignore
+        target = float(target_dollars.get(t, 0.0))
+        diff = target - current
+        if abs(diff) < 1e-2:  # under 1¢ — ignore
             continue
         if diff > 0:
-            trades.append(TargetTrade(
-                ticker         = t,
-                side           = "BUY",
-                target_shares  = None,
-                target_dollars = float(diff),
-                reason         = reason,
-                source         = source,
-            ))
+            trades.append(
+                TargetTrade(
+                    ticker=t,
+                    side="BUY",
+                    target_shares=None,
+                    target_dollars=float(diff),
+                    reason=reason,
+                    source=source,
+                )
+            )
         else:
             # SELL — convert dollar deficit to shares for clarity
             sell_shares = min(p.shares if p else 0.0, (-diff) / px)
             if sell_shares <= 1e-9:
                 continue
-            trades.append(TargetTrade(
-                ticker         = t,
-                side           = "SELL",
-                target_shares  = float(sell_shares),
-                target_dollars = float(-diff),
-                reason         = reason,
-                source         = source,
-            ))
+            trades.append(
+                TargetTrade(
+                    ticker=t,
+                    side="SELL",
+                    target_shares=float(sell_shares),
+                    target_dollars=float(-diff),
+                    reason=reason,
+                    source=source,
+                )
+            )
 
     return trades
 
@@ -345,7 +359,7 @@ def generate_trades_portfolio_engine(
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 STRATEGY_FNS: dict[str, Callable] = {
-    "analyze_single":   generate_trades_analyze_single,
+    "analyze_single": generate_trades_analyze_single,
     "portfolio_engine": generate_trades_portfolio_engine,
 }
 

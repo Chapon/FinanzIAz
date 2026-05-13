@@ -22,16 +22,15 @@ Widgets
     Non-modal banner that appears in the top-right corner of ``parent`` and
     auto-dismisses. ``kind`` ∈ {"info", "success", "warn", "error"}.
 """
+
 from __future__ import annotations
 
-from typing import Optional
-
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, pyqtProperty
+from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
-
 # ── Spinner ──────────────────────────────────────────────────────────────────
+
 
 class Spinner(QWidget):
     """
@@ -40,12 +39,12 @@ class Spinner(QWidget):
     16-frame rotation timer.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None, *, size: int = 20) -> None:
+    def __init__(self, parent: QWidget | None = None, *, size: int = 20) -> None:
         super().__init__(parent)
         self._size = size
         self._angle = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(80)        # ~12.5 fps — smooth enough, cheap
+        self._timer.setInterval(80)  # ~12.5 fps — smooth enough, cheap
         self._timer.timeout.connect(self._advance)
         self.setFixedSize(size, size)
         self.setVisible(False)
@@ -63,7 +62,7 @@ class Spinner(QWidget):
         self._angle = (self._angle + 30) % 360
         self.update()
 
-    def paintEvent(self, _event) -> None:  # noqa: N802 — Qt naming
+    def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         pen = QPen(QColor("#58a6ff"))
@@ -77,6 +76,7 @@ class Spinner(QWidget):
 
 # ── Empty state ──────────────────────────────────────────────────────────────
 
+
 class EmptyState(QFrame):
     """
     Centered placeholder card with an icon glyph and a short message.
@@ -88,8 +88,8 @@ class EmptyState(QFrame):
         message: str,
         *,
         icon: str = "📭",
-        hint: Optional[str] = None,
-        parent: Optional[QWidget] = None,
+        hint: str | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("emptyState")
@@ -121,10 +121,10 @@ class EmptyState(QFrame):
 # ── Toast ────────────────────────────────────────────────────────────────────
 
 _TOAST_PALETTE = {
-    "info":    ("#1f6feb", "#ffffff"),
+    "info": ("#1f6feb", "#ffffff"),
     "success": ("#238636", "#ffffff"),
-    "warn":    ("#9e6a03", "#ffffff"),
-    "error":   ("#da3633", "#ffffff"),
+    "warn": ("#9e6a03", "#ffffff"),
+    "error": ("#da3633", "#ffffff"),
 }
 
 
@@ -140,8 +140,7 @@ class Toast(QFrame):
         bg, fg = _TOAST_PALETTE.get(kind, _TOAST_PALETTE["info"])
         self.setObjectName("toast")
         self.setStyleSheet(
-            f"#toast {{ background-color: {bg}; color: {fg};"
-            f" border-radius: 8px; padding: 8px 14px; }}"
+            f"#toast {{ background-color: {bg}; color: {fg}; border-radius: 8px; padding: 8px 14px; }}"
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -157,14 +156,14 @@ class Toast(QFrame):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
     @classmethod
-    def show(  # noqa: A003 — parallel to QWidget.show
+    def show(
         cls,
         parent: QWidget,
         message: str,
         *,
         kind: str = "info",
         timeout_ms: int = 2500,
-    ) -> "Toast":
+    ) -> Toast:
         toast = cls(parent, message, kind=kind)
         toast.adjustSize()
         # Top-right corner of parent

@@ -37,23 +37,23 @@ This module deliberately re-uses ``data.yahoo_finance`` for the actual
 network calls so the timeout/retry/QA pipeline already implemented there
 is preserved.
 """
+
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
 
-from config.constants import BULK_FETCH_WORKERS
 from config.logging_config import get_logger
 
 log = get_logger(__name__)
 
 
 # ── Token-bucket rate limiter ────────────────────────────────────────────────
+
 
 class RateLimiter:
     """
@@ -105,29 +105,31 @@ class RateLimiter:
 
 # ── Service-level telemetry ──────────────────────────────────────────────────
 
+
 @dataclass
 class _Stats:
-    price_hits:   int = 0
+    price_hits: int = 0
     price_misses: int = 0
     history_hits: int = 0
     history_misses: int = 0
-    errors:       int = 0
-    rate_waits:   int = 0
-    last_error:   str = ""
+    errors: int = 0
+    rate_waits: int = 0
+    last_error: str = ""
 
     def as_dict(self) -> dict:
         return {
-            "price_hits":   self.price_hits,
+            "price_hits": self.price_hits,
             "price_misses": self.price_misses,
             "history_hits": self.history_hits,
             "history_misses": self.history_misses,
-            "errors":       self.errors,
-            "rate_waits":   self.rate_waits,
-            "last_error":   self.last_error,
+            "errors": self.errors,
+            "rate_waits": self.rate_waits,
+            "last_error": self.last_error,
         }
 
 
 # ── MarketDataService singleton ──────────────────────────────────────────────
+
 
 class MarketDataService:
     """
@@ -142,7 +144,7 @@ class MarketDataService:
     so the rate limiter and stats counters are shared process-wide.
     """
 
-    _instance: Optional["MarketDataService"] = None
+    _instance: MarketDataService | None = None
     _instance_lock = threading.Lock()
 
     def __init__(self, *, rate_per_sec: float = 5.0, burst: int = 10) -> None:
@@ -152,7 +154,7 @@ class MarketDataService:
 
     # ── singleton ────────────────────────────────────────────────────────────
     @classmethod
-    def instance(cls) -> "MarketDataService":
+    def instance(cls) -> MarketDataService:
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -165,32 +167,37 @@ class MarketDataService:
     # We deliberately DO NOT acquire here too — that would double-count the
     # token for callers that go through this façade.
 
-    def get_price(self, ticker: str) -> Optional[dict]:
+    def get_price(self, ticker: str) -> dict | None:
         from data import yahoo_finance as yf
+
         try:
             result = yf.get_current_price(ticker)
-            self._record(price_hit=result is not None and result.get("from_cache"),
-                         price_miss=result is not None and not result.get("from_cache"))
+            self._record(
+                price_hit=result is not None and result.get("from_cache"),
+                price_miss=result is not None and not result.get("from_cache"),
+            )
             return result
         except Exception as exc:
             self._record(error=str(exc))
             return None
 
-    def get_bulk_prices(self, tickers: list[str]) -> dict[str, Optional[dict]]:
+    def get_bulk_prices(self, tickers: list[str]) -> dict[str, dict | None]:
         from data import yahoo_finance as yf
+
         try:
             return yf.get_bulk_prices(tickers)
         except Exception as exc:
             self._record(error=str(exc))
             return {t: None for t in tickers}
 
-    def get_history(self, ticker: str, *, period: str = "1y", interval: str = "1d") -> Optional[pd.DataFrame]:
+    def get_history(self, ticker: str, *, period: str = "1y", interval: str = "1d") -> pd.DataFrame | None:
         from data import yahoo_finance as yf
+
         try:
             df = yf.get_historical_data(ticker, period=period, interval=interval)
             with self._stats_lock:
                 if df is not None:
-                    self._stats.history_hits += 1   # cache or live, both count
+                    self._stats.history_hits += 1  # cache or live, both count
                 else:
                     self._stats.history_misses += 1
             return df
@@ -200,6 +207,7 @@ class MarketDataService:
 
     def get_dividends(self, ticker: str, *, since: datetime) -> float:
         from data import yahoo_finance as yf
+
         try:
             return yf.get_dividends_since(ticker, since)
         except Exception as exc:
@@ -210,8 +218,12 @@ class MarketDataService:
     def invalidate(self, ticker: str) -> None:
         """Drop cached price + history rows for a single ticker."""
         from database.models import (
-            session_scope, PriceCache, HistoricalDataCache, DividendCache,
+            DividendCache,
+            HistoricalDataCache,
+            PriceCache,
+            session_scope,
         )
+
         sym = ticker.upper()
         try:
             with session_scope() as session:
@@ -242,7 +254,7 @@ class MarketDataService:
         *,
         price_hit: bool = False,
         price_miss: bool = False,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         with self._stats_lock:
             if price_hit:

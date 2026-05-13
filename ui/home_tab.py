@@ -2,23 +2,34 @@
 Home dashboard tab — IQON-inspired layout.
 Shows portfolio summary, metric cards, feature shortcuts.
 """
+
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QScrollArea, QGridLayout, QSizePolicy, QPushButton
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
-from ui.widgets import (
-    MetricCard, GaugeCard, FeatureCard, StatusRow,
-    MiniProgressBar, SettingsRow, HSeparator, ToggleSwitch
-)
-from ui.styles import PALETTE
+
 from data.yahoo_finance import is_market_open
-import datetime
+from ui.styles import PALETTE
+from ui.widgets import (
+    FeatureCard,
+    HSeparator,
+    MetricCard,
+    SettingsRow,
+    StatusRow,
+)
 
 
 class WelcomeCard(QFrame):
     """Left welcome card with portfolio health status rows."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
@@ -30,15 +41,11 @@ class WelcomeCard(QFrame):
         layout.setSpacing(4)
 
         greeting = QLabel("Bienvenido de vuelta,")
-        greeting.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 12px;"
-        )
+        greeting.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
         layout.addWidget(greeting)
 
         self.name_label = QLabel("Chapa")
-        self.name_label.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 26px; font-weight: 800;"
-        )
+        self.name_label.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 26px; font-weight: 800;")
         layout.addWidget(self.name_label)
         layout.addSpacing(16)
 
@@ -46,10 +53,10 @@ class WelcomeCard(QFrame):
         self.status_rows: list[StatusRow] = []
         _market_open, _market_label = is_market_open()
         rows_data = [
-            ("📊", "Portafolio",  "Cargando..."),
+            ("📊", "Portafolio", "Cargando..."),
             ("📈", "Rendimiento", "Cargando..."),
-            ("🔔", "Alertas",     "Sin disparar"),
-            ("🌐", "Mercado",     _market_label),
+            ("🔔", "Alertas", "Sin disparar"),
+            ("🌐", "Mercado", _market_label),
         ]
         for icon, label, status in rows_data:
             row = StatusRow(icon, label, status)
@@ -72,13 +79,12 @@ class WelcomeCard(QFrame):
 
     def update_status(self, n_positions: int, pl_pct: float, n_alerts: int):
         if self.status_rows:
-            self.status_rows[0].findChild(QLabel).setText(
-                f"📊  Portafolio"
-            )
+            self.status_rows[0].findChild(QLabel).setText("📊  Portafolio")
 
 
 class PlatformSettingsCard(QFrame):
     """Right panel mirroring IQON's Platform Settings card."""
+
     settings_changed = pyqtSignal(str, bool)
 
     def __init__(self, parent=None):
@@ -91,9 +97,7 @@ class PlatformSettingsCard(QFrame):
         layout.setSpacing(0)
 
         title = QLabel("Configuración Rápida")
-        title.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 15px; font-weight: 700;"
-        )
+        title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 15px; font-weight: 700;")
         layout.addWidget(title)
         layout.addSpacing(14)
 
@@ -107,9 +111,9 @@ class PlatformSettingsCard(QFrame):
 
         self._rows: dict[str, SettingsRow] = {}
         general_settings = [
-            ("notif",        "Notificaciones de alertas", True),
-            ("auto_refresh", "Actualización automática",  True),
-            ("default_home", "Abrir en Home al iniciar",  True),
+            ("notif", "Notificaciones de alertas", True),
+            ("auto_refresh", "Actualización automática", True),
+            ("default_home", "Abrir en Home al iniciar", True),
         ]
         for key, label, default in general_settings:
             row = SettingsRow(key, label, default)
@@ -128,8 +132,8 @@ class PlatformSettingsCard(QFrame):
         layout.addSpacing(8)
 
         system_settings = [
-            ("realtime",  "Precios en tiempo real",  False),
-            ("perf_log",  "Guardar historial P&L",   True),
+            ("realtime", "Precios en tiempo real", False),
+            ("perf_log", "Guardar historial P&L", True),
         ]
         for key, label, default in system_settings:
             row = SettingsRow(key, label, default)
@@ -185,10 +189,10 @@ class HomeTab(QWidget):
         metrics_layout.setSpacing(14)
         metrics_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.card_total    = MetricCard("Valor Total")
-        self.card_pl       = MetricCard("Ganancia Total")
+        self.card_total = MetricCard("Valor Total")
+        self.card_pl = MetricCard("Ganancia Total")
         self.card_invested = MetricCard("Invertido")
-        self.card_pl_pct   = MetricCard("Rendimiento Total")
+        self.card_pl_pct = MetricCard("Rendimiento Total")
 
         for i, card in enumerate([self.card_total, self.card_pl, self.card_invested, self.card_pl_pct]):
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -214,14 +218,10 @@ class HomeTab(QWidget):
         row2.setSpacing(14)
 
         features = [
-            ("📈  Análisis Técnico",   "Motor RSI, MACD, Bollinger",
-             "Listo",   True,  "Analizar  →",  "analysis"),
-            ("🔔  Alertas de Precio",  "Monitoreo en tiempo real",
-             "Activo",  True,  "Ver alertas →","alerts"),
-            ("📄  Reportes",           "PDF y Excel",
-             "Disponible", True, "Exportar  →", "reports"),
-            ("📥  Importar CSV",       "Yahoo Finance / genérico",
-             "Disponible", True, "Importar  →", "portfolio"),
+            ("📈  Análisis Técnico", "Motor RSI, MACD, Bollinger", "Listo", True, "Analizar  →", "analysis"),
+            ("🔔  Alertas de Precio", "Monitoreo en tiempo real", "Activo", True, "Ver alertas →", "alerts"),
+            ("📄  Reportes", "PDF y Excel", "Disponible", True, "Exportar  →", "reports"),
+            ("📥  Importar CSV", "Yahoo Finance / genérico", "Disponible", True, "Importar  →", "portfolio"),
         ]
 
         for title, sub, status, ok, action, page in features:
@@ -237,23 +237,21 @@ class HomeTab(QWidget):
         if portfolio_tab is None:
             return
         positions = getattr(portfolio_tab, "_positions", [])
-        prices    = getattr(portfolio_tab, "_prices", {})
+        prices = getattr(portfolio_tab, "_prices", {})
 
         total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
         total_value = sum(
-            p.quantity * (prices[p.ticker]["price"] if p.ticker in prices and prices[p.ticker] else p.avg_buy_price)
+            p.quantity * (prices[p.ticker]["price"] if prices.get(p.ticker) else p.avg_buy_price)
             for p in positions
         )
-        pl     = total_value - total_invested
+        pl = total_value - total_invested
         pl_pct = (pl / total_invested * 100) if total_invested > 0 else 0.0
 
         self.card_total.set_value(f"${total_value:,.2f}")
         self.card_invested.set_value(f"${total_invested:,.2f}")
         self.card_pl.set_value(
-            f"{'+'if pl>=0 else ''}${pl:,.2f}",
-            color=PALETTE["accent"] if pl >= 0 else PALETTE["red"]
+            f"{'+' if pl >= 0 else ''}${pl:,.2f}", color=PALETTE["accent"] if pl >= 0 else PALETTE["red"]
         )
         self.card_pl_pct.set_value(
-            f"{pl_pct:+.2f}%",
-            color=PALETTE["accent"] if pl_pct >= 0 else PALETTE["red"]
+            f"{pl_pct:+.2f}%", color=PALETTE["accent"] if pl_pct >= 0 else PALETTE["red"]
         )

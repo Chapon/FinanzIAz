@@ -29,12 +29,14 @@ and a buy-and-hold benchmark with the same metrics for comparison.
 No look-ahead: the engine never peeks beyond `df.iloc[:t+1]` when calling
 signal_fn, and all executions happen at the close of bar t with slippage.
 """
+
 from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 from config.logging_config import get_logger
 
@@ -48,11 +50,11 @@ SignalFn = Callable[[pd.DataFrame], str]
 
 @dataclass
 class Trade:
-    entry_date:   pd.Timestamp
-    exit_date:    pd.Timestamp
-    entry_price:  float   # execution price including slippage
-    exit_price:   float   # execution price including slippage
-    return_pct:   float   # net of commission on both legs
+    entry_date: pd.Timestamp
+    exit_date: pd.Timestamp
+    entry_price: float  # execution price including slippage
+    exit_price: float  # execution price including slippage
+    return_pct: float  # net of commission on both legs
     holding_days: int
 
     @property
@@ -62,45 +64,45 @@ class Trade:
 
 @dataclass
 class BacktestResult:
-    ticker:           str
-    strategy_name:    str
-    start_date:       pd.Timestamp
-    end_date:         pd.Timestamp
-    initial_capital:  float
-    final_equity:     float
+    ticker: str
+    strategy_name: str
+    start_date: pd.Timestamp
+    end_date: pd.Timestamp
+    initial_capital: float
+    final_equity: float
     # Strategy performance
     total_return_pct: float
-    cagr:             float
-    volatility:       float   # annualised daily-return vol (%)
-    sharpe:           float
-    sortino:          float
-    calmar:           float = 0.0   # CAGR / |max_drawdown|
-    max_drawdown:     float = 0.0   # negative number, e.g. -0.23 = -23%
-    equity_curve:     Optional[pd.Series] = None
+    cagr: float
+    volatility: float  # annualised daily-return vol (%)
+    sharpe: float
+    sortino: float
+    calmar: float = 0.0  # CAGR / |max_drawdown|
+    max_drawdown: float = 0.0  # negative number, e.g. -0.23 = -23%
+    equity_curve: pd.Series | None = None
     # Trades
-    trades:           list[Trade] = field(default_factory=list)
-    n_trades:         int   = 0
-    win_rate:         float = 0.0
-    profit_factor:    float = 0.0
-    avg_win:          float = 0.0
-    avg_loss:         float = 0.0
+    trades: list[Trade] = field(default_factory=list)
+    n_trades: int = 0
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
     avg_holding_days: float = 0.0
     # Cost / activity diagnostics
-    total_commission_paid: float = 0.0    # absolute $ paid in fees over the run
-    total_slippage_paid:   float = 0.0    # absolute $ given up to slippage
-    turnover:              float = 0.0    # sum(|notional|) / mean equity
-    exposure:              float = 0.0    # fraction of bars holding a position
+    total_commission_paid: float = 0.0  # absolute $ paid in fees over the run
+    total_slippage_paid: float = 0.0  # absolute $ given up to slippage
+    turnover: float = 0.0  # sum(|notional|) / mean equity
+    exposure: float = 0.0  # fraction of bars holding a position
     # Buy-and-hold benchmark
-    bh_return_pct:    float = 0.0
-    bh_cagr:          float = 0.0
-    bh_sharpe:        float = 0.0
-    bh_max_drawdown:  float = 0.0
-    bh_equity_curve:  Optional[pd.Series] = None
-    alpha_pct:        float = 0.0  # total_return_pct - bh_return_pct
+    bh_return_pct: float = 0.0
+    bh_cagr: float = 0.0
+    bh_sharpe: float = 0.0
+    bh_max_drawdown: float = 0.0
+    bh_equity_curve: pd.Series | None = None
+    alpha_pct: float = 0.0  # total_return_pct - bh_return_pct
     # Config snapshot
-    commission:       float = 0.0
-    slippage:         float = 0.0
-    step:             int   = 1
+    commission: float = 0.0
+    slippage: float = 0.0
+    step: int = 1
 
 
 # ── Metric helpers ────────────────────────────────────────────────────────────
@@ -113,11 +115,11 @@ def _cagr(equity: pd.Series) -> float:
     if len(equity) < 2:
         return 0.0
     total_ret = equity.iloc[-1] / equity.iloc[0] - 1
-    n_days    = (equity.index[-1] - equity.index[0]).days
+    n_days = (equity.index[-1] - equity.index[0]).days
     if n_days <= 0:
         return 0.0
     years = n_days / 365.25
-    base  = 1.0 + total_ret
+    base = 1.0 + total_ret
     if base <= 0:
         return -1.0  # wiped out
     return float(base ** (1.0 / years) - 1.0)
@@ -128,14 +130,14 @@ def _max_drawdown(equity: pd.Series) -> float:
     if len(equity) < 2:
         return 0.0
     running_max = equity.cummax()
-    drawdown    = (equity - running_max) / running_max
+    drawdown = (equity - running_max) / running_max
     return float(drawdown.min())
 
 
 def _sharpe(daily_returns: pd.Series, rf: float = 0.0) -> float:
     if len(daily_returns) < 2:
         return 0.0
-    mu    = daily_returns.mean() - rf / TRADING_DAYS
+    mu = daily_returns.mean() - rf / TRADING_DAYS
     sigma = daily_returns.std()
     if sigma == 0 or np.isnan(sigma):
         return 0.0
@@ -145,7 +147,7 @@ def _sharpe(daily_returns: pd.Series, rf: float = 0.0) -> float:
 def _sortino(daily_returns: pd.Series, rf: float = 0.0) -> float:
     if len(daily_returns) < 2:
         return 0.0
-    mu       = daily_returns.mean() - rf / TRADING_DAYS
+    mu = daily_returns.mean() - rf / TRADING_DAYS
     downside = daily_returns[daily_returns < 0]
     if len(downside) < 2:
         return 0.0
@@ -164,19 +166,20 @@ def _annual_vol(daily_returns: pd.Series) -> float:
 
 # ── Core backtest loop ────────────────────────────────────────────────────────
 
+
 def backtest(
     df: pd.DataFrame,
     signal_fn: SignalFn,
     *,
-    ticker: str             = "TICKER",
-    strategy_name: str      = "Custom",
-    initial_capital: float  = 10_000.0,
-    commission: float       = 0.001,   # 0.10 % per fill
-    slippage: float         = 0.0005,  # 0.05 % adverse to the direction
-    warmup: int             = 200,     # bars required before first decision
-    step: int               = 1,       # re-evaluate signal every N bars
-    verbose: bool           = False,
-) -> Optional[BacktestResult]:
+    ticker: str = "TICKER",
+    strategy_name: str = "Custom",
+    initial_capital: float = 10_000.0,
+    commission: float = 0.001,  # 0.10 % per fill
+    slippage: float = 0.0005,  # 0.05 % adverse to the direction
+    warmup: int = 200,  # bars required before first decision
+    step: int = 1,  # re-evaluate signal every N bars
+    verbose: bool = False,
+) -> BacktestResult | None:
     """
     Run a long-only single-ticker backtest.
 
@@ -215,26 +218,25 @@ def backtest(
     index_arr = close.index
 
     # ── Simulation state ──────────────────────────────────────────────────────
-    cash         = float(initial_capital)
-    shares       = 0.0
-    in_position  = False
-    entry_date   = None
-    entry_price  = 0.0
+    cash = float(initial_capital)
+    shares = 0.0
+    in_position = False
+    entry_date = None
+    entry_price = 0.0
     trades: list[Trade] = []
 
     equity_arr = np.empty(n, dtype=float)
-    last_signal = "HOLD"
-    pending_signal: Optional[str] = None      # signal observed at t-1, fills at t
+    pending_signal: str | None = None  # signal observed at t-1, fills at t
     bars_in_position = 0
 
     # Cost / turnover accumulators
     total_commission = 0.0
-    total_slippage   = 0.0
-    total_notional   = 0.0
+    total_slippage = 0.0
+    total_notional = 0.0
 
     for i in range(n):
-        date   = index_arr[i]
-        price  = float(close_arr[i])
+        date = index_arr[i]
+        price = float(close_arr[i])
 
         # ── Execute the signal we observed on the *previous* bar ─────────────
         # Signals are evaluated on bar t using close[t]; trades fill on bar
@@ -244,56 +246,57 @@ def backtest(
         pending_signal = None
 
         if sig_to_execute == "BUY" and not in_position:
-            ideal_price  = price                         # close on fill bar
-            fill_price   = ideal_price * (1 + slippage)
-            notional     = cash                          # full cash deploy
+            ideal_price = price  # close on fill bar
+            fill_price = ideal_price * (1 + slippage)
+            notional = cash  # full cash deploy
             commission_paid = notional * commission
-            slippage_cost   = notional * slippage
-            shares         = (cash - commission_paid) / fill_price
-            cash           = 0.0
-            entry_date     = date
-            entry_price    = fill_price
-            in_position    = True
+            slippage_cost = notional * slippage
+            shares = (cash - commission_paid) / fill_price
+            cash = 0.0
+            entry_date = date
+            entry_price = fill_price
+            in_position = True
             total_commission += commission_paid
-            total_slippage   += slippage_cost
-            total_notional   += notional
+            total_slippage += slippage_cost
+            total_notional += notional
 
         elif sig_to_execute == "SELL" and in_position:
             ideal_price = price
-            fill_price  = ideal_price * (1 - slippage)
-            gross       = shares * fill_price
+            fill_price = ideal_price * (1 - slippage)
+            gross = shares * fill_price
             commission_paid = gross * commission
-            slippage_cost   = shares * ideal_price * slippage
-            proceeds    = gross - commission_paid
-            ret_pct     = proceeds / (shares * entry_price) - 1
-            holding     = (date - entry_date).days
-            trades.append(Trade(
-                entry_date   = entry_date,
-                exit_date    = date,
-                entry_price  = entry_price,
-                exit_price   = fill_price,
-                return_pct   = float(ret_pct),
-                holding_days = int(holding),
-            ))
-            cash             = proceeds
-            shares           = 0.0
-            in_position      = False
+            slippage_cost = shares * ideal_price * slippage
+            proceeds = gross - commission_paid
+            ret_pct = proceeds / (shares * entry_price) - 1
+            holding = (date - entry_date).days
+            trades.append(
+                Trade(
+                    entry_date=entry_date,
+                    exit_date=date,
+                    entry_price=entry_price,
+                    exit_price=fill_price,
+                    return_pct=float(ret_pct),
+                    holding_days=int(holding),
+                )
+            )
+            cash = proceeds
+            shares = 0.0
+            in_position = False
             total_commission += commission_paid
-            total_slippage   += slippage_cost
-            total_notional   += gross
+            total_slippage += slippage_cost
+            total_notional += gross
 
         # ── Signal evaluation (respect warmup and step) ──────────────────────
         # The signal observed *now* is queued for execution next bar.
         if i >= warmup and (i - warmup) % max(1, step) == 0:
             try:
-                sig = signal_fn(df.iloc[:i + 1])
+                sig = signal_fn(df.iloc[: i + 1])
             except Exception as exc:
                 if verbose:
                     log.warning("backtest signal_fn error at %s: %s", date, exc)
                 sig = "HOLD"
             if sig not in ("BUY", "SELL", "HOLD"):
                 sig = "HOLD"
-            last_signal = sig
             if sig != "HOLD":
                 pending_signal = sig
 
@@ -307,26 +310,28 @@ def backtest(
     if in_position:
         ideal_close = float(close_arr[-1])
         last_price = ideal_close * (1 - slippage)
-        gross      = shares * last_price
+        gross = shares * last_price
         commission_paid = gross * commission
-        slippage_cost   = shares * ideal_close * slippage
-        proceeds   = gross - commission_paid
-        ret_pct    = proceeds / (shares * entry_price) - 1
-        holding    = (index_arr[-1] - entry_date).days
-        trades.append(Trade(
-            entry_date   = entry_date,
-            exit_date    = index_arr[-1],
-            entry_price  = entry_price,
-            exit_price   = last_price,
-            return_pct   = float(ret_pct),
-            holding_days = int(holding),
-        ))
-        cash   = proceeds
+        slippage_cost = shares * ideal_close * slippage
+        proceeds = gross - commission_paid
+        ret_pct = proceeds / (shares * entry_price) - 1
+        holding = (index_arr[-1] - entry_date).days
+        trades.append(
+            Trade(
+                entry_date=entry_date,
+                exit_date=index_arr[-1],
+                entry_price=entry_price,
+                exit_price=last_price,
+                return_pct=float(ret_pct),
+                holding_days=int(holding),
+            )
+        )
+        cash = proceeds
         shares = 0.0
         equity_arr[-1] = cash
         total_commission += commission_paid
-        total_slippage   += slippage_cost
-        total_notional   += gross
+        total_slippage += slippage_cost
+        total_notional += gross
 
     # Rebuild the equity Series once, vectorised. This is the only Series
     # the rest of the code needs — the inner loop never touched pandas.
@@ -334,24 +339,24 @@ def backtest(
     daily_ret = equity.pct_change().dropna()
 
     total_ret = equity.iloc[-1] / initial_capital - 1
-    cagr      = _cagr(equity)
-    vol_pct   = _annual_vol(daily_ret)
-    sharpe    = _sharpe(daily_ret)
-    sortino   = _sortino(daily_ret)
-    max_dd    = _max_drawdown(equity)
+    cagr = _cagr(equity)
+    vol_pct = _annual_vol(daily_ret)
+    sharpe = _sharpe(daily_ret)
+    sortino = _sortino(daily_ret)
+    max_dd = _max_drawdown(equity)
 
     # Trade stats
     n_tr = len(trades)
     if n_tr > 0:
-        wins   = [t for t in trades if t.is_win]
+        wins = [t for t in trades if t.is_win]
         losses = [t for t in trades if not t.is_win]
-        win_rate   = len(wins) / n_tr
-        sum_wins   = sum(t.return_pct for t in wins)
+        win_rate = len(wins) / n_tr
+        sum_wins = sum(t.return_pct for t in wins)
         sum_losses = abs(sum(t.return_pct for t in losses))
         profit_factor = (sum_wins / sum_losses) if sum_losses > 0 else float("inf")
-        avg_win    = float(np.mean([t.return_pct for t in wins]))   if wins   else 0.0
-        avg_loss   = float(np.mean([t.return_pct for t in losses])) if losses else 0.0
-        avg_hold   = float(np.mean([t.holding_days for t in trades]))
+        avg_win = float(np.mean([t.return_pct for t in wins])) if wins else 0.0
+        avg_loss = float(np.mean([t.return_pct for t in losses])) if losses else 0.0
+        avg_hold = float(np.mean([t.holding_days for t in trades]))
     else:
         win_rate = profit_factor = avg_win = avg_loss = avg_hold = 0.0
 
@@ -362,60 +367,61 @@ def backtest(
     bh_daily_ret = bh_equity.pct_change().dropna()
 
     bh_total_ret = bh_equity.iloc[-1] / initial_capital - 1
-    bh_cagr      = _cagr(bh_equity)
-    bh_sharpe    = _sharpe(bh_daily_ret)
-    bh_max_dd    = _max_drawdown(bh_equity)
+    bh_cagr = _cagr(bh_equity)
+    bh_sharpe = _sharpe(bh_daily_ret)
+    bh_max_dd = _max_drawdown(bh_equity)
 
     # Cost / activity diagnostics
     mean_equity = float(equity.mean()) if len(equity) else float(initial_capital)
     turnover = float(total_notional / mean_equity) if mean_equity > 0 else 0.0
     exposure = float(bars_in_position / n) if n > 0 else 0.0
-    calmar   = float(cagr / abs(max_dd)) if max_dd < 0 else 0.0
+    calmar = float(cagr / abs(max_dd)) if max_dd < 0 else 0.0
 
     return BacktestResult(
-        ticker          = ticker,
-        strategy_name   = strategy_name,
-        start_date      = close.index[0],
-        end_date        = close.index[-1],
-        initial_capital = float(initial_capital),
-        final_equity    = float(equity.iloc[-1]),
-        total_return_pct = float(total_ret),
-        cagr             = float(cagr),
-        volatility       = float(vol_pct),
-        sharpe           = float(sharpe),
-        sortino          = float(sortino),
-        calmar           = calmar,
-        max_drawdown     = float(max_dd),
-        equity_curve     = equity,
-        trades           = trades,
-        n_trades         = n_tr,
-        win_rate         = float(win_rate),
-        profit_factor    = float(profit_factor) if np.isfinite(profit_factor) else 9999.0,
-        avg_win          = float(avg_win),
-        avg_loss         = float(avg_loss),
-        avg_holding_days = float(avg_hold),
-        total_commission_paid = float(total_commission),
-        total_slippage_paid   = float(total_slippage),
-        turnover              = turnover,
-        exposure              = exposure,
-        bh_return_pct    = float(bh_total_ret),
-        bh_cagr          = float(bh_cagr),
-        bh_sharpe        = float(bh_sharpe),
-        bh_max_drawdown  = float(bh_max_dd),
-        bh_equity_curve  = bh_equity,
-        alpha_pct        = float(total_ret - bh_total_ret),
-        commission       = float(commission),
-        slippage         = float(slippage),
-        step             = int(step),
+        ticker=ticker,
+        strategy_name=strategy_name,
+        start_date=close.index[0],
+        end_date=close.index[-1],
+        initial_capital=float(initial_capital),
+        final_equity=float(equity.iloc[-1]),
+        total_return_pct=float(total_ret),
+        cagr=float(cagr),
+        volatility=float(vol_pct),
+        sharpe=float(sharpe),
+        sortino=float(sortino),
+        calmar=calmar,
+        max_drawdown=float(max_dd),
+        equity_curve=equity,
+        trades=trades,
+        n_trades=n_tr,
+        win_rate=float(win_rate),
+        profit_factor=float(profit_factor) if np.isfinite(profit_factor) else 9999.0,
+        avg_win=float(avg_win),
+        avg_loss=float(avg_loss),
+        avg_holding_days=float(avg_hold),
+        total_commission_paid=float(total_commission),
+        total_slippage_paid=float(total_slippage),
+        turnover=turnover,
+        exposure=exposure,
+        bh_return_pct=float(bh_total_ret),
+        bh_cagr=float(bh_cagr),
+        bh_sharpe=float(bh_sharpe),
+        bh_max_drawdown=float(bh_max_dd),
+        bh_equity_curve=bh_equity,
+        alpha_pct=float(total_ret - bh_total_ret),
+        commission=float(commission),
+        slippage=float(slippage),
+        step=int(step),
     )
 
 
 # ── Signal function factories ─────────────────────────────────────────────────
 
+
 def signal_from_analyze(
     enable_sma_cross: bool = True,
-    enable_volume:    bool = True,
-    enable_xgboost:   bool = True,
+    enable_volume: bool = True,
+    enable_xgboost: bool = True,
 ) -> SignalFn:
     """
     Wrap analyze() as a signal function: returns the overall_signal.
@@ -428,10 +434,11 @@ def signal_from_analyze(
 
     def _fn(df_slice: pd.DataFrame) -> str:
         res = analyze(
-            "BT", df_slice,
-            enable_sma_cross = enable_sma_cross,
-            enable_volume    = enable_volume,
-            enable_xgboost   = enable_xgboost,
+            "BT",
+            df_slice,
+            enable_sma_cross=enable_sma_cross,
+            enable_volume=enable_volume,
+            enable_xgboost=enable_xgboost,
         )
         return res.overall_signal if res else "HOLD"
 
@@ -439,7 +446,7 @@ def signal_from_analyze(
 
 
 def signal_from_ml_probability(
-    buy_threshold:  float = 0.60,
+    buy_threshold: float = 0.60,
     sell_threshold: float = 0.45,
 ) -> SignalFn:
     """
@@ -453,8 +460,10 @@ def signal_from_ml_probability(
         if res is None or res.ml_probability is None:
             return "HOLD"
         p = res.ml_probability
-        if p >= buy_threshold:  return "BUY"
-        if p <= sell_threshold: return "SELL"
+        if p >= buy_threshold:
+            return "BUY"
+        if p <= sell_threshold:
+            return "SELL"
         return "HOLD"
 
     return _fn
@@ -490,17 +499,23 @@ def signal_from_indicator(indicator_name: str) -> SignalFn:
 
 # ── Plain-text report ─────────────────────────────────────────────────────────
 
+
 def format_backtest_report(r: BacktestResult) -> str:
     """Return a human-readable multi-line report comparing strategy vs B&H."""
-    def pct(x: float) -> str: return f"{x*100:+.2f}%"
-    def num(x: float) -> str: return f"{x:+.2f}"
+
+    def pct(x: float) -> str:
+        return f"{x * 100:+.2f}%"
+
+    def num(x: float) -> str:
+        return f"{x:+.2f}"
 
     lines = []
     lines.append(f"Backtest: {r.strategy_name} on {r.ticker}")
-    lines.append(f"Período: {r.start_date.date()} → {r.end_date.date()}  "
-                 f"(comisión {r.commission*100:.2f}%, slippage {r.slippage*100:.2f}%, step={r.step})")
-    lines.append(f"Capital inicial: ${r.initial_capital:,.0f}  "
-                 f"→  final: ${r.final_equity:,.0f}")
+    lines.append(
+        f"Período: {r.start_date.date()} → {r.end_date.date()}  "
+        f"(comisión {r.commission * 100:.2f}%, slippage {r.slippage * 100:.2f}%, step={r.step})"
+    )
+    lines.append(f"Capital inicial: ${r.initial_capital:,.0f}  →  final: ${r.final_equity:,.0f}")
     lines.append("")
     lines.append(f"{'Métrica':<22} {'Estrategia':>14}    {'Buy & Hold':>14}")
     lines.append("─" * 58)
@@ -519,10 +534,10 @@ def format_backtest_report(r: BacktestResult) -> str:
     else:
         pf = f"{r.profit_factor:.2f}" if r.profit_factor < 9999 else "∞"
         lines.append(f"  Nº de trades:         {r.n_trades}")
-        lines.append(f"  Win rate:             {r.win_rate*100:.1f}%")
+        lines.append(f"  Win rate:             {r.win_rate * 100:.1f}%")
         lines.append(f"  Profit factor:        {pf}")
-        lines.append(f"  Ganancia media:       {r.avg_win*100:+.2f}%")
-        lines.append(f"  Pérdida media:        {r.avg_loss*100:+.2f}%")
+        lines.append(f"  Ganancia media:       {r.avg_win * 100:+.2f}%")
+        lines.append(f"  Pérdida media:        {r.avg_loss * 100:+.2f}%")
         lines.append(f"  Duración media:       {r.avg_holding_days:.0f} días")
 
     return "\n".join(lines)

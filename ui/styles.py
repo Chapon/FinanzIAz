@@ -4,29 +4,29 @@ Deep black background, green accents, card-based layout.
 """
 
 # ── Palette ────────────────────────────────────────────────────────────────
-BG_BASE      = "#0a0b0d"   # main background
-BG_SIDEBAR   = "#0f1012"   # sidebar
-BG_CARD      = "#111318"   # cards
-BG_CARD_HVR  = "#161a20"   # card hover
-BG_ELEVATED  = "#1a1d23"   # inputs, elevated
-BORDER       = "#1e2128"   # subtle border
-BORDER_LT    = "#2a2f3a"   # lighter border
+BG_BASE = "#0a0b0d"  # main background
+BG_SIDEBAR = "#0f1012"  # sidebar
+BG_CARD = "#111318"  # cards
+BG_CARD_HVR = "#161a20"  # card hover
+BG_ELEVATED = "#1a1d23"  # inputs, elevated
+BORDER = "#1e2128"  # subtle border
+BORDER_LT = "#2a2f3a"  # lighter border
 
-ACCENT       = "#4ade80"   # green accent (active, positive)
-ACCENT_DIM   = "#22c55e"   # slightly dimmer green
-ACCENT_BG    = "#0d2818"   # green tinted bg
-BLUE         = "#60a5fa"   # gauge / chart blue
-PURPLE       = "#a78bfa"   # network chart
-YELLOW       = "#fbbf24"   # warning
-RED          = "#f87171"   # negative / danger
+ACCENT = "#4ade80"  # green accent (active, positive)
+ACCENT_DIM = "#22c55e"  # slightly dimmer green
+ACCENT_BG = "#0d2818"  # green tinted bg
+BLUE = "#60a5fa"  # gauge / chart blue
+PURPLE = "#a78bfa"  # network chart
+YELLOW = "#fbbf24"  # warning
+RED = "#f87171"  # negative / danger
 
-TEXT_1       = "#f1f5f9"   # primary text
-TEXT_2       = "#94a3b8"   # secondary / labels
-TEXT_3       = "#4b5563"   # muted / disabled
+TEXT_1 = "#f1f5f9"  # primary text
+TEXT_2 = "#94a3b8"  # secondary / labels
+TEXT_3 = "#4b5563"  # muted / disabled
 
-NAV_ACTIVE_BG   = "#0f2a1a"
+NAV_ACTIVE_BG = "#0f2a1a"
 NAV_ACTIVE_TEXT = "#4ade80"
-NAV_HOVER_BG    = "#13161c"
+NAV_HOVER_BG = "#13161c"
 
 # ── Main Stylesheet ────────────────────────────────────────────────────────
 DARK_THEME = f"""
@@ -415,48 +415,48 @@ QFrame#vline     {{ background-color: {BORDER}; max-width: 1px; }}
 
 # ── Chart style (passed to matplotlib rcParams) ────────────────────────────
 CHART_STYLE = {
-    "figure.facecolor":  BG_CARD,
-    "axes.facecolor":    BG_CARD,
-    "axes.edgecolor":    BORDER,
-    "axes.labelcolor":   TEXT_2,
-    "xtick.color":       TEXT_3,
-    "ytick.color":       TEXT_3,
-    "grid.color":        BORDER,
-    "grid.alpha":        0.6,
-    "text.color":        TEXT_1,
-    "lines.color":       BLUE,
+    "figure.facecolor": BG_CARD,
+    "axes.facecolor": BG_CARD,
+    "axes.edgecolor": BORDER,
+    "axes.labelcolor": TEXT_2,
+    "xtick.color": TEXT_3,
+    "ytick.color": TEXT_3,
+    "grid.color": BORDER,
+    "grid.alpha": 0.6,
+    "text.color": TEXT_1,
+    "lines.color": BLUE,
 }
 
 SIGNAL_COLORS = {
     # Yahoo Finance 5-level system
-    "Strong Buy":   "#22c55e",   # bright green
-    "Buy":          "#4ade80",   # light green
-    "Hold":         "#fbbf24",   # gold / yellow
-    "Underperform": "#fb923c",   # orange
-    "Sell":         "#f87171",   # red
+    "Strong Buy": "#22c55e",  # bright green
+    "Buy": "#4ade80",  # light green
+    "Hold": "#fbbf24",  # gold / yellow
+    "Underperform": "#fb923c",  # orange
+    "Sell": "#f87171",  # red
     # Legacy keys kept for backward compatibility
-    "BUY":     ACCENT,
-    "SELL":    RED,
-    "HOLD":    YELLOW,
+    "BUY": ACCENT,
+    "SELL": RED,
+    "HOLD": YELLOW,
     "NEUTRAL": TEXT_3,
 }
 
 # Export palette for use in widgets
 PALETTE = {
-    "bg":         BG_BASE,
-    "sidebar":    BG_SIDEBAR,
-    "card":       BG_CARD,
-    "elevated":   BG_ELEVATED,
-    "border":     BORDER,
-    "border_lt":  BORDER_LT,
-    "accent":     ACCENT,
-    "accent_bg":  ACCENT_BG,
-    "blue":       BLUE,
-    "purple":     PURPLE,
-    "yellow":     YELLOW,
-    "red":        RED,
-    "text1":      TEXT_1,
-    "text2":      TEXT_2,
-    "text3":      TEXT_3,
+    "bg": BG_BASE,
+    "sidebar": BG_SIDEBAR,
+    "card": BG_CARD,
+    "elevated": BG_ELEVATED,
+    "border": BORDER,
+    "border_lt": BORDER_LT,
+    "accent": ACCENT,
+    "accent_bg": ACCENT_BG,
+    "blue": BLUE,
+    "purple": PURPLE,
+    "yellow": YELLOW,
+    "red": RED,
+    "text1": TEXT_1,
+    "text2": TEXT_2,
+    "text3": TEXT_3,
     "nav_active": NAV_ACTIVE_BG,
 }

@@ -16,38 +16,51 @@ Hover behaviour
   The right panel switches to show per-day computed signals for the hovered date.
   When mouse leaves the chart the right panel restores to the current analysis.
 """
-import math
+
+import contextlib
+
 import pandas as pd
+from PyQt6.QtCore import QStringListModel, Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QComboBox, QScrollArea, QFrame, QSizePolicy,
-    QSplitter, QToolTip, QProgressBar, QCompleter
+    QComboBox,
+    QCompleter,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QStringListModel
-from PyQt6.QtGui import QFont
-from data.yahoo_finance import get_historical_data, get_current_price, get_company_info
-from analysis.technical import analyze, get_support_resistance, to_yahoo_level
-from ui.chart_widget import ChartWidget
-from ui.widgets import SignalBadge, MetricCard, HSeparator
-from ui.styles import SIGNAL_COLORS, PALETTE
+
+from analysis.technical import get_support_resistance, to_yahoo_level
 from config.settings_manager import settings
+from ui.analysis.catalog import (
+    COMPLETION_LIST as _COMPLETION_LIST,
+)
+from ui.analysis.catalog import (
+    PERIODS,
+)
 
 # Sub-components extracted from this file in the refactor pass. Importing
 # them here keeps every external ``from ui.analysis_tab import …`` call-site
 # working unchanged (they re-export below).
 from ui.analysis.labels import (
-    TOOLTIPS, YAHOO_COLORS as _YAHOO_COLORS,
-    YAHOO_LABELS_ES as _YAHOO_LABELS_ES,
-    get_tooltip as _tt,
+    YAHOO_COLORS as _YAHOO_COLORS,
 )
-from ui.analysis.catalog import (
-    TICKER_DB as _TICKER_DB,
-    COMPLETION_LIST as _COMPLETION_LIST,
-    PERIODS,
+from ui.analysis.labels import (
+    YAHOO_LABELS_ES as _YAHOO_LABELS_ES,
+)
+from ui.analysis.labels import (
+    get_tooltip as _tt,
 )
 from ui.analysis.signal_card import SignalCard
 from ui.analysis.worker import AnalysisWorker
-
+from ui.chart_widget import ChartWidget
+from ui.widgets import HSeparator, MetricCard, SignalBadge
 
 # ── Tooltip content ────────────────────────────────────────────────────────────
 # ``TOOLTIPS`` and the ``_tt(key)`` helper were moved to
@@ -69,12 +82,13 @@ from ui.analysis.worker import AnalysisWorker
 
 # ── Main tab ───────────────────────────────────────────────────────────────────
 
+
 class AnalysisTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
-        self._current_result = None   # last AnalysisResult, used to restore on hover-leave
-        self._current_tooltip = ""    # tooltip HTML for overall badge
+        self._current_result = None  # last AnalysisResult, used to restore on hover-leave
+        self._current_tooltip = ""  # tooltip HTML for overall badge
         self._build_ui()
 
     def _build_ui(self):
@@ -194,7 +208,7 @@ class AnalysisTab(QWidget):
         # ── ML Context frame (regime + risk + probability bar) ────────────────
         self.context_frame = QFrame()
         self.context_frame.setObjectName("card")
-        self.context_frame.setVisible(False)   # shown after first analysis
+        self.context_frame.setVisible(False)  # shown after first analysis
         ctx_layout = QVBoxLayout(self.context_frame)
         ctx_layout.setContentsMargins(10, 8, 10, 8)
         ctx_layout.setSpacing(6)
@@ -208,9 +222,7 @@ class AnalysisTab(QWidget):
         regime_row.addWidget(regime_title)
 
         self.regime_lbl = QLabel("—")
-        self.regime_lbl.setStyleSheet(
-            "font-size: 12px; font-weight: 700; color: #fbbf24;"
-        )
+        self.regime_lbl.setStyleSheet("font-size: 12px; font-weight: 700; color: #fbbf24;")
         self.regime_lbl.setToolTip(_tt("regimen"))
         regime_row.addWidget(self.regime_lbl)
 
@@ -246,7 +258,7 @@ class AnalysisTab(QWidget):
             "• 35-65%: neutral / mantener<br>"
             "• &lt;35%: zona de venta probable"
         )
-        self._update_prob_bar(0.50)   # neutral default
+        self._update_prob_bar(0.50)  # neutral default
         ctx_layout.addWidget(self.prob_bar)
 
         right_layout.addWidget(self.context_frame)
@@ -310,9 +322,7 @@ class AnalysisTab(QWidget):
         hp_layout.setSpacing(6)
 
         self.hover_date_lbl = QLabel("—")
-        self.hover_date_lbl.setStyleSheet(
-            "font-weight: 700; font-size: 12px; color: #8b949e;"
-        )
+        self.hover_date_lbl.setStyleSheet("font-weight: 700; font-size: 12px; color: #8b949e;")
         hp_layout.addWidget(self.hover_date_lbl)
 
         hp_layout.addWidget(HSeparator())
@@ -320,19 +330,17 @@ class AnalysisTab(QWidget):
         # Per-indicator rows
         self._hover_ind_widgets: dict[str, tuple[QLabel, QLabel]] = {}
         _IND_DISPLAY = [
-            ("RSI",               "● RSI",       "#a371f7"),
-            ("MACD",              "● MACD",      "#58a6ff"),
-            ("Bollinger Bands",   "● Bollinger", "#58a6ff"),
-            ("Golden/Death Cross","● SMA Cross", "#d29922"),
+            ("RSI", "● RSI", "#a371f7"),
+            ("MACD", "● MACD", "#58a6ff"),
+            ("Bollinger Bands", "● Bollinger", "#58a6ff"),
+            ("Golden/Death Cross", "● SMA Cross", "#d29922"),
         ]
         for ind_key, display_name, color in _IND_DISPLAY:
             row = QHBoxLayout()
             row.setSpacing(6)
 
             name_lbl = QLabel(display_name)
-            name_lbl.setStyleSheet(
-                f"color: {color}; font-size: 11px; font-weight: 600; min-width: 80px;"
-            )
+            name_lbl.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 600; min-width: 80px;")
             row.addWidget(name_lbl)
 
             val_lbl = QLabel("—")
@@ -356,9 +364,7 @@ class AnalysisTab(QWidget):
         hover_day_lbl.setStyleSheet("font-size: 12px; font-weight: 600;")
         hover_overall_row.addWidget(hover_day_lbl)
         self.hover_overall_sig_lbl = QLabel("● Mantener")
-        self.hover_overall_sig_lbl.setStyleSheet(
-            "font-size: 13px; font-weight: 700; color: #fbbf24;"
-        )
+        self.hover_overall_sig_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #fbbf24;")
         hover_overall_row.addWidget(self.hover_overall_sig_lbl)
         hover_overall_row.addStretch()
         hp_layout.addLayout(hover_overall_row)
@@ -397,24 +403,24 @@ class AnalysisTab(QWidget):
           0.55-0.65 → light green
           >0.65 → green (compra)
         """
-        val = int(round(prob * 100))
+        val = round(prob * 100)
         self.prob_bar.setValue(val)
 
         if prob >= 0.65:
-            color  = "#22c55e"
-            label  = f"▲ Compra  {val}%"
+            color = "#22c55e"
+            label = f"▲ Compra  {val}%"
         elif prob >= 0.55:
-            color  = "#4ade80"
-            label  = f"▲ Compra  {val}%"
+            color = "#4ade80"
+            label = f"▲ Compra  {val}%"
         elif prob >= 0.45:
-            color  = "#fbbf24"
-            label  = f"⟶ Neutral  {val}%"
+            color = "#fbbf24"
+            label = f"⟶ Neutral  {val}%"
         elif prob >= 0.35:
-            color  = "#fb923c"
-            label  = f"▼ Venta  {100 - val}%"
+            color = "#fb923c"
+            label = f"▼ Venta  {100 - val}%"
         else:
-            color  = "#f87171"
-            label  = f"▼ Venta  {100 - val}%"
+            color = "#f87171"
+            label = f"▼ Venta  {100 - val}%"
 
         self.prob_bar.setFormat(label)
         self.prob_bar.setStyleSheet(f"""
@@ -574,7 +580,7 @@ class AnalysisTab(QWidget):
 
     def _run_analysis(self):
         raw = self.ticker_edit.text().strip()
-        ticker = raw.split(" — ")[0].strip().upper()   # handles both "AAPL" and "AAPL — Apple Inc."
+        ticker = raw.split(" — ")[0].strip().upper()  # handles both "AAPL" and "AAPL — Apple Inc."
         if not ticker:
             return
         period = PERIODS[self.period_combo.currentText()]
@@ -610,10 +616,7 @@ class AnalysisTab(QWidget):
             self.card_price.set_value(f"${price_data['price']:,.4f}")
             chg = price_data.get("change_pct")
             if chg is not None:
-                self.card_change.set_value(
-                    f"{chg:+.2f}%",
-                    color="#3fb950" if chg >= 0 else "#f85149"
-                )
+                self.card_change.set_value(f"{chg:+.2f}%", color="#3fb950" if chg >= 0 else "#f85149")
 
         # Support / resistance
         sr = get_support_resistance(df)
@@ -644,14 +647,10 @@ class AnalysisTab(QWidget):
         if result and result.market_context:
             ctx = result.market_context
             self.regime_lbl.setText(f"{ctx.regime_icon} {ctx.regime_es}")
-            self.regime_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 700; color: {ctx.regime_color};"
-            )
+            self.regime_lbl.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {ctx.regime_color};")
             self.vol_lbl.setText(f"Vol. {ctx.annual_volatility:.1f}%")
             self.risk_lbl.setText(ctx.risk_es)
-            self.risk_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 600; color: {ctx.risk_color};"
-            )
+            self.risk_lbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {ctx.risk_color};")
             if result.ml_probability is not None:
                 self._update_prob_bar(result.ml_probability)
             self.context_frame.setVisible(True)
@@ -664,8 +663,7 @@ class AnalysisTab(QWidget):
         self.hover_panel.setVisible(False)
 
         self.status_label.setText(
-            "Análisis completado · "
-            "pasá el mouse sobre el gráfico para el análisis histórico diario"
+            "Análisis completado · pasá el mouse sobre el gráfico para el análisis histórico diario"
         )
 
     def _clear_signals(self):
@@ -699,10 +697,10 @@ class AnalysisTab(QWidget):
         self.hover_panel.setVisible(True)
 
         # Date header
-        date = data.get('date')
+        date = data.get("date")
         if date is not None:
             try:
-                date_str = pd.Timestamp(date).strftime('%d %b %Y')
+                date_str = pd.Timestamp(date).strftime("%d %b %Y")
             except Exception:
                 date_str = str(date)
             self.signals_title.setText(f"Análisis del {date_str}")
@@ -720,21 +718,17 @@ class AnalysisTab(QWidget):
                 color = _YAHOO_COLORS.get(yahoo, "#fbbf24")
                 label = _YAHOO_LABELS_ES.get(yahoo, yahoo)
                 sig_lbl.setText(f"● {label}")
-                sig_lbl.setStyleSheet(
-                    f"font-size: 11px; font-weight: 700; color: {color}; min-width: 100px;"
-                )
+                sig_lbl.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {color}; min-width: 100px;")
                 val_lbl.setText(desc[:38] + "…" if len(desc) > 38 else desc)
             else:
                 sig_lbl.setText("● —")
-                sig_lbl.setStyleSheet(
-                    "font-size: 11px; font-weight: 700; color: #4b5563; min-width: 100px;"
-                )
+                sig_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #4b5563; min-width: 100px;")
                 val_lbl.setText("Sin datos")
 
         # Compute overall signal for this day
         if day_sigs:
             WEIGHTS = {"STRONG": 3, "MODERATE": 2, "WEAK": 1}
-            buy_score  = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "BUY")
+            buy_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "BUY")
             sell_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "SELL")
             hold_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "HOLD")
             total = buy_score + sell_score + hold_score
@@ -765,72 +759,66 @@ class AnalysisTab(QWidget):
         Returns list of (indicator_name, signal, strength, description) tuples.
         """
         signals = []
-        close = data.get('close')
+        close = data.get("close")
 
         # ── RSI ──────────────────────────────────────────────────────────────
-        rsi = data.get('rsi')
+        rsi = data.get("rsi")
         if rsi is not None:
             if rsi < 30:
-                signals.append(("RSI", "BUY",  "STRONG", f"RSI {rsi:.1f} — Sobreventa"))
+                signals.append(("RSI", "BUY", "STRONG", f"RSI {rsi:.1f} — Sobreventa"))
             elif rsi < 40:
-                signals.append(("RSI", "BUY",  "WEAK",   f"RSI {rsi:.1f} — Cerca de sobreventa"))
+                signals.append(("RSI", "BUY", "WEAK", f"RSI {rsi:.1f} — Cerca de sobreventa"))
             elif rsi > 70:
                 signals.append(("RSI", "SELL", "STRONG", f"RSI {rsi:.1f} — Sobrecompra"))
             elif rsi > 60:
-                signals.append(("RSI", "SELL", "WEAK",   f"RSI {rsi:.1f} — Cerca de sobrecompra"))
+                signals.append(("RSI", "SELL", "WEAK", f"RSI {rsi:.1f} — Cerca de sobrecompra"))
             else:
-                signals.append(("RSI", "HOLD", "WEAK",   f"RSI {rsi:.1f} — Neutral (30-70)"))
+                signals.append(("RSI", "HOLD", "WEAK", f"RSI {rsi:.1f} — Neutral (30-70)"))
 
         # ── MACD ─────────────────────────────────────────────────────────────
-        macd     = data.get('macd_line')
-        sig_line = data.get('signal_line')
-        hist     = data.get('histogram')
+        macd = data.get("macd_line")
+        sig_line = data.get("signal_line")
+        hist = data.get("histogram")
         if macd is not None and sig_line is not None:
             if macd > sig_line:
                 strength = "STRONG" if (hist is not None and hist > 0) else "MODERATE"
-                signals.append(("MACD", "BUY",  strength,
-                                 f"MACD {macd:.3f} > señal {sig_line:.3f}"))
+                signals.append(("MACD", "BUY", strength, f"MACD {macd:.3f} > señal {sig_line:.3f}"))
             elif macd < sig_line:
                 strength = "STRONG" if (hist is not None and hist < 0) else "MODERATE"
-                signals.append(("MACD", "SELL", strength,
-                                 f"MACD {macd:.3f} < señal {sig_line:.3f}"))
+                signals.append(("MACD", "SELL", strength, f"MACD {macd:.3f} < señal {sig_line:.3f}"))
             else:
-                signals.append(("MACD", "HOLD", "WEAK",
-                                 f"MACD en cruce ({macd:.3f})"))
+                signals.append(("MACD", "HOLD", "WEAK", f"MACD en cruce ({macd:.3f})"))
 
         # ── Bollinger Bands ───────────────────────────────────────────────────
-        upper  = data.get('upper')
-        lower  = data.get('lower')
-        middle = data.get('middle')
+        upper = data.get("upper")
+        lower = data.get("lower")
+        middle = data.get("middle")
         if upper is not None and lower is not None and close is not None:
             if close < lower:
-                signals.append(("Bollinger Bands", "BUY",  "STRONG",
-                                 f"${close:.2f} < BB inf ${lower:.2f}"))
+                signals.append(("Bollinger Bands", "BUY", "STRONG", f"${close:.2f} < BB inf ${lower:.2f}"))
             elif close < middle:
-                signals.append(("Bollinger Bands", "BUY",  "WEAK",
-                                 f"${close:.2f} entre inf-media"))
+                signals.append(("Bollinger Bands", "BUY", "WEAK", f"${close:.2f} entre inf-media"))
             elif close > upper:
-                signals.append(("Bollinger Bands", "SELL", "STRONG",
-                                 f"${close:.2f} > BB sup ${upper:.2f}"))
+                signals.append(("Bollinger Bands", "SELL", "STRONG", f"${close:.2f} > BB sup ${upper:.2f}"))
             elif close > middle:
-                signals.append(("Bollinger Bands", "SELL", "WEAK",
-                                 f"${close:.2f} entre media-sup"))
+                signals.append(("Bollinger Bands", "SELL", "WEAK", f"${close:.2f} entre media-sup"))
             else:
-                signals.append(("Bollinger Bands", "HOLD", "WEAK",
-                                 f"${close:.2f} en banda media"))
+                signals.append(("Bollinger Bands", "HOLD", "WEAK", f"${close:.2f} en banda media"))
 
         # ── SMA Cross ─────────────────────────────────────────────────────────
-        sma20 = data.get('sma20')
-        sma50 = data.get('sma50')
+        sma20 = data.get("sma20")
+        sma50 = data.get("sma50")
         if sma20 is not None and sma50 is not None:
             if sma20 > sma50:
                 strength = "STRONG" if (close is not None and close > sma20) else "MODERATE"
-                signals.append(("Golden/Death Cross", "BUY", strength,
-                                 f"Golden: SMA20 {sma20:.2f} > SMA50 {sma50:.2f}"))
+                signals.append(
+                    ("Golden/Death Cross", "BUY", strength, f"Golden: SMA20 {sma20:.2f} > SMA50 {sma50:.2f}")
+                )
             else:
                 strength = "STRONG" if (close is not None and close < sma20) else "MODERATE"
-                signals.append(("Golden/Death Cross", "SELL", strength,
-                                 f"Death: SMA20 {sma20:.2f} < SMA50 {sma50:.2f}"))
+                signals.append(
+                    ("Golden/Death Cross", "SELL", strength, f"Death: SMA20 {sma20:.2f} < SMA50 {sma50:.2f}")
+                )
 
         return signals
 
@@ -839,18 +827,22 @@ class AnalysisTab(QWidget):
     def _make_signal_tooltip(self, result) -> str:
         """Build an HTML tooltip explaining why the overall rating was assigned."""
         _LABELS = {
-            "Strong Buy": "Compra Fuerte", "Buy": "Comprar",
+            "Strong Buy": "Compra Fuerte",
+            "Buy": "Comprar",
             "Hold": "Mantener",
-            "Underperform": "Vender", "Sell": "Venta Fuerte",
+            "Underperform": "Vender",
+            "Sell": "Venta Fuerte",
         }
         _SIG_COLOR = {
-            "Strong Buy": "#22c55e", "Buy": "#4ade80",
+            "Strong Buy": "#22c55e",
+            "Buy": "#4ade80",
             "Hold": "#fbbf24",
-            "Underperform": "#fb923c", "Sell": "#f87171",
+            "Underperform": "#fb923c",
+            "Sell": "#f87171",
         }
-        _DIR_COLOR  = {"BUY": "#4ade80", "SELL": "#f87171", "HOLD": "#fbbf24"}
-        _DIR_ARROW  = {"BUY": "↑",       "SELL": "↓",       "HOLD": "→"}
-        _DIR_LABEL  = {"BUY": "Alcista",  "SELL": "Bajista", "HOLD": "Neutral"}
+        _DIR_COLOR = {"BUY": "#4ade80", "SELL": "#f87171", "HOLD": "#fbbf24"}
+        _DIR_ARROW = {"BUY": "↑", "SELL": "↓", "HOLD": "→"}
+        _DIR_LABEL = {"BUY": "Alcista", "SELL": "Bajista", "HOLD": "Neutral"}
 
         yahoo = result.yahoo_level
         color = _SIG_COLOR.get(yahoo, "#fbbf24")
@@ -860,19 +852,17 @@ class AnalysisTab(QWidget):
 
         html += "<b>Indicadores:</b><br>"
         for sig in result.signals:
-            dc    = _DIR_COLOR.get(sig.signal, "#fbbf24")
+            dc = _DIR_COLOR.get(sig.signal, "#fbbf24")
             arrow = _DIR_ARROW.get(sig.signal, "→")
-            dlbl  = _DIR_LABEL.get(sig.signal, sig.signal)
-            str_txt = {"STRONG": "fuerte", "MODERATE": "moderada", "WEAK": "débil"}.get(
-                sig.strength, ""
-            )
+            dlbl = _DIR_LABEL.get(sig.signal, sig.signal)
+            str_txt = {"STRONG": "fuerte", "MODERATE": "moderada", "WEAK": "débil"}.get(sig.strength, "")
             html += (
                 f"&nbsp;• <b>{sig.indicator}</b> — "
                 f"<span style='color:{dc}'><b>{arrow} {dlbl}</b> {str_txt}</span><br>"
                 f"&nbsp;&nbsp;&nbsp;<i style='color:#8b949e'>{sig.description}</i><br>"
             )
 
-        buy_sigs  = [s for s in result.signals if s.signal == "BUY"]
+        buy_sigs = [s for s in result.signals if s.signal == "BUY"]
         sell_sigs = [s for s in result.signals if s.signal == "SELL"]
         hold_sigs = [s for s in result.signals if s.signal == "HOLD"]
 
@@ -880,15 +870,15 @@ class AnalysisTab(QWidget):
         if buy_sigs and not sell_sigs:
             html += (
                 f"<span style='color:#4ade80'>"
-                f"{len(buy_sigs)} indicador{'es' if len(buy_sigs)>1 else ''} "
-                f"alcista{'s' if len(buy_sigs)>1 else ''}"
+                f"{len(buy_sigs)} indicador{'es' if len(buy_sigs) > 1 else ''} "
+                f"alcista{'s' if len(buy_sigs) > 1 else ''}"
                 f"</span> sin señales bajistas."
             )
         elif sell_sigs and not buy_sigs:
             html += (
                 f"<span style='color:#f87171'>"
-                f"{len(sell_sigs)} indicador{'es' if len(sell_sigs)>1 else ''} "
-                f"bajista{'s' if len(sell_sigs)>1 else ''}"
+                f"{len(sell_sigs)} indicador{'es' if len(sell_sigs) > 1 else ''} "
+                f"bajista{'s' if len(sell_sigs) > 1 else ''}"
                 f"</span> sin señales alcistas."
             )
         elif buy_sigs and sell_sigs:
@@ -912,7 +902,7 @@ class AnalysisTab(QWidget):
 
         if hold_sigs:
             html += (
-                f" {len(hold_sigs)} neutral{'es' if len(hold_sigs)>1 else ''} "
+                f" {len(hold_sigs)} neutral{'es' if len(hold_sigs) > 1 else ''} "
                 f"({'<i>' + ', '.join(s.indicator for s in hold_sigs) + '</i>'})"
                 f" no suman al score."
             )
@@ -926,10 +916,8 @@ class AnalysisTab(QWidget):
         return html
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
-    def closeEvent(self, event):  # noqa: N802 — Qt naming
+    def closeEvent(self, event):
         """Release matplotlib resources held by the chart on tab destruction."""
-        try:
+        with contextlib.suppress(Exception):
             self.chart.cleanup()
-        except Exception:
-            pass
         super().closeEvent(event)

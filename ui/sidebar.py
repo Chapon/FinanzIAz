@@ -1,17 +1,16 @@
 """
 IQON-style sidebar navigation for FinanzIAs.
 """
-from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QWidget, QSpacerItem, QSizePolicy
-)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor, QBrush, QPen
+
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+
 from ui.styles import PALETTE
 
 
 class LogoWidget(QWidget):
     """App logo + name at top of sidebar."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
@@ -21,28 +20,19 @@ class LogoWidget(QWidget):
         # Logo square
         logo_frame = QFrame()
         logo_frame.setFixedSize(32, 32)
-        logo_frame.setStyleSheet(
-            f"background-color: {PALETTE['accent']}; "
-            f"border-radius: 8px;"
-        )
+        logo_frame.setStyleSheet(f"background-color: {PALETTE['accent']}; border-radius: 8px;")
         logo_lbl = QLabel("Fi", logo_frame)
         logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_lbl.setGeometry(0, 0, 32, 32)
-        logo_lbl.setStyleSheet(
-            "color: #000000; font-weight: 800; font-size: 14px; background: transparent;"
-        )
+        logo_lbl.setStyleSheet("color: #000000; font-weight: 800; font-size: 14px; background: transparent;")
         layout.addWidget(logo_frame)
 
         text_col = QVBoxLayout()
         text_col.setSpacing(0)
         name_lbl = QLabel("FinanzIAs")
-        name_lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-weight: 800; font-size: 14px;"
-        )
+        name_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-weight: 800; font-size: 14px;")
         tag_lbl = QLabel("v1.0")
-        tag_lbl.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 10px;"
-        )
+        tag_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 10px;")
         text_col.addWidget(name_lbl)
         text_col.addWidget(tag_lbl)
         layout.addLayout(text_col)
@@ -60,6 +50,7 @@ class SectionLabel(QLabel):
 
 class NavButton(QPushButton):
     """Single navigation item in the sidebar."""
+
     def __init__(self, icon: str, text: str, active: bool = False, parent=None):
         super().__init__(parent)
         self._icon = icon
@@ -83,6 +74,7 @@ class NavButton(QPushButton):
 
 class SubNavButton(QPushButton):
     """Sub-navigation item (indented)."""
+
     def __init__(self, icon: str, text: str, active: bool = False, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
@@ -107,17 +99,14 @@ class HelpCard(QFrame):
         super().__init__(parent)
         self.setObjectName("card_flat")
         self.setStyleSheet(
-            f"background-color: {PALETTE['accent_bg']}; "
-            f"border: 1px solid #1a4a2a; border-radius: 10px;"
+            f"background-color: {PALETTE['accent_bg']}; border: 1px solid #1a4a2a; border-radius: 10px;"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(6)
 
         title = QLabel("¿Necesitás ayuda?")
-        title.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-weight: 700; font-size: 12px;"
-        )
+        title.setStyleSheet(f"color: {PALETTE['text1']}; font-weight: 700; font-size: 12px;")
         sub = QLabel("Documentación disponible")
         sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
 
@@ -142,16 +131,17 @@ class Sidebar(QFrame):
     Emits navigate(page_key) when a nav item is clicked.
     page_key: "home" | "portfolio" | "analysis" | "alerts" | "reports" | "settings"
     """
+
     navigate = pyqtSignal(str)
 
     PAGES = [
-        ("home",      "🏠", "Home"),
+        ("home", "🏠", "Home"),
         ("portfolio", "📊", "Portafolio"),
-        ("analysis",  "📈", "Análisis"),
-        ("alerts",    "🔔", "Alertas"),
-        ("paper",     "🧪", "Paper Trading"),
-        ("reports",   "📄", "Reportes"),
-        ("settings",  "⚙️", "Ajustes"),
+        ("analysis", "📈", "Análisis"),
+        ("alerts", "🔔", "Alertas"),
+        ("paper", "🧪", "Paper Trading"),
+        ("reports", "📄", "Reportes"),
+        ("settings", "⚙️", "Ajustes"),
     ]
 
     def __init__(self, parent=None):
@@ -210,20 +200,15 @@ class Sidebar(QFrame):
         avatar.setFixedSize(30, 30)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         avatar.setStyleSheet(
-            f"background-color: {PALETTE['accent_bg']}; "
-            f"border-radius: 15px; font-size: 14px;"
+            f"background-color: {PALETTE['accent_bg']}; border-radius: 15px; font-size: 14px;"
         )
 
         info_col = QVBoxLayout()
         info_col.setSpacing(0)
         name_lbl = QLabel("Mi Cuenta")
-        name_lbl.setStyleSheet(
-            f"color: {PALETTE['text1']}; font-size: 11px; font-weight: 600;"
-        )
+        name_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 11px; font-weight: 600;")
         status_lbl = QLabel("● Conectado")
-        status_lbl.setStyleSheet(
-            f"color: {PALETTE['accent']}; font-size: 10px;"
-        )
+        status_lbl.setStyleSheet(f"color: {PALETTE['accent']}; font-size: 10px;")
         info_col.addWidget(name_lbl)
         info_col.addWidget(status_lbl)
 

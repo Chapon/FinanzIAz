@@ -23,14 +23,13 @@ Validators included
 ``HHMMValidator``             — 5-char ``HH:MM`` time-of-day.
 ``parse_decimal_locale``      — accepts both ``1,234.56`` and ``1.234,56``.
 """
+
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 from PyQt6.QtCore import QRegularExpression
 from PyQt6.QtGui import QRegularExpressionValidator, QValidator
-
 
 # ── TickerValidator ──────────────────────────────────────────────────────────
 
@@ -58,6 +57,7 @@ def is_valid_ticker(s: str) -> bool:
 
 # ── Numeric validators ───────────────────────────────────────────────────────
 
+
 class PositiveDecimalValidator(QValidator):
     """
     Accept non-negative decimals with up to ``decimals`` fractional digits.
@@ -68,7 +68,7 @@ class PositiveDecimalValidator(QValidator):
     red mid-edit.
     """
 
-    def __init__(self, decimals: int = 4, *, max_value: Optional[float] = None, parent=None) -> None:
+    def __init__(self, decimals: int = 4, *, max_value: float | None = None, parent=None) -> None:
         super().__init__(parent)
         self.decimals = decimals
         self.max_value = max_value
@@ -88,7 +88,7 @@ class PositiveDecimalValidator(QValidator):
         # Limit decimal precision
         if "," in input_str or "." in input_str:
             sep_idx = max(input_str.find("."), input_str.find(","))
-            tail = input_str[sep_idx + 1:]
+            tail = input_str[sep_idx + 1 :]
             if len(tail) > self.decimals:
                 return QValidator.State.Invalid, input_str, pos
 
@@ -133,6 +133,7 @@ class HHMMValidator(QRegularExpressionValidator):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def parse_decimal_locale(text: str) -> float:
     """

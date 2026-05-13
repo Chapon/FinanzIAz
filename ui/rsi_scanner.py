@@ -2,17 +2,26 @@
 RSI Scanner dialog — triggered when the 'rsi_alerts' setting is turned ON.
 Fetches RSI for every position in the portfolio and shows extremes.
 """
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar,
-    QMessageBox
-)
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
-from database.models import session_scope, Position
-from data.yahoo_finance import get_historical_data
-from analysis.technical import compute_rsi
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+
 from alerts.alert_manager import AlertManager
+from analysis.technical import compute_rsi
+from data.yahoo_finance import get_historical_data
+from database.models import Position, session_scope
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.workers import BaseWorker
 
@@ -27,9 +36,9 @@ class RsiScanWorker(BaseWorker):
     inherited ``BaseWorker.error`` signal.
     """
 
-    row_done  = pyqtSignal(str, float)    # ticker, rsi_value
-    all_done  = pyqtSignal()
-    error_row = pyqtSignal(str, str)      # ticker, error_msg
+    row_done = pyqtSignal(str, float)  # ticker, rsi_value
+    all_done = pyqtSignal()
+    error_row = pyqtSignal(str, str)  # ticker, error_msg
 
     def __init__(self, tickers: list[str]):
         super().__init__()
@@ -126,9 +135,7 @@ class RsiScanDialog(QDialog):
 
     def _start_scan(self):
         with session_scope() as session:
-            positions = session.query(Position).filter(
-                Position.portfolio_id == self.portfolio_id
-            ).all()
+            positions = session.query(Position).filter(Position.portfolio_id == self.portfolio_id).all()
             self._tickers = [p.ticker for p in positions]
 
         if not self._tickers:
@@ -192,9 +199,7 @@ class RsiScanDialog(QDialog):
         self.progress.setVisible(False)
         extremes = [(t, r) for t, r in self._rsi_results.items() if r < 30 or r > 70]
         if extremes:
-            self.status_lbl.setText(
-                f"⚠  {len(extremes)} posición/es con RSI extremo detectadas."
-            )
+            self.status_lbl.setText(f"⚠  {len(extremes)} posición/es con RSI extremo detectadas.")
             self.alert_btn.setEnabled(True)
         else:
             self.status_lbl.setText("✅ Todas las posiciones tienen RSI en zona neutral.")
@@ -206,6 +211,7 @@ class RsiScanDialog(QDialog):
             if rsi < 30:
                 # Alert when price rises 5% (potential exit from oversold)
                 from data.yahoo_finance import get_current_price
+
                 price_data = get_current_price(ticker)
                 if price_data:
                     target = round(price_data["price"] * 1.05, 4)
@@ -220,6 +226,7 @@ class RsiScanDialog(QDialog):
             elif rsi > 70:
                 # Alert when price drops 5% (potential exit from overbought)
                 from data.yahoo_finance import get_current_price
+
                 price_data = get_current_price(ticker)
                 if price_data:
                     target = round(price_data["price"] * 0.95, 4)
@@ -233,9 +240,10 @@ class RsiScanDialog(QDialog):
                     created += 1
 
         QMessageBox.information(
-            self, "Alertas creadas",
+            self,
+            "Alertas creadas",
             f"Se crearon {created} alerta/s automáticas en la pestaña Alertas.\n\n"
             "• Sobreventa (RSI < 30): alerta cuando el precio sube 5%.\n"
-            "• Sobrecompra (RSI > 70): alerta cuando el precio cae 5%."
+            "• Sobrecompra (RSI > 70): alerta cuando el precio cae 5%.",
         )
         self.accept()

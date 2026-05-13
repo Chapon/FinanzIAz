@@ -19,33 +19,40 @@ Public entry points
 The engine is deterministic given the two *_provider callables, which is
 what makes unit tests possible without real yfinance calls.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 
 from config.settings_manager import settings
 from database.models import session_scope
-from paper_trading.models import (
-    PaperAccount, PaperPosition, PaperOrder, PaperWatchlistItem,
-)
 from paper_trading.account import record_equity_snapshot
-from paper_trading.strategies import (
-    TargetTrade, get_strategy_fn, HistoryProvider,
+from paper_trading.models import (
+    PaperAccount,
+    PaperOrder,
+    PaperPosition,
+    PaperWatchlistItem,
 )
-
+from paper_trading.strategies import (
+    HistoryProvider,
+    TargetTrade,
+    get_strategy_fn,
+)
 
 PricesProvider = Callable[[list[str]], dict[str, float]]
 
 
 # ── Default live providers (thin wrappers over yfinance cache) ────────────────
 
+
 def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
     from data.yahoo_finance import get_bulk_prices
+
     out: dict[str, float] = {}
     for ticker, info in get_bulk_prices(tickers).items():
         if info is None:
@@ -59,10 +66,11 @@ def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
 _VALID_YF_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
 
 
-def _default_history_provider(ticker: str) -> Optional[pd.DataFrame]:
+def _default_history_provider(ticker: str) -> pd.DataFrame | None:
     """Fetch OHLCV history. Period is configurable via ``paper_history_period``
     (default ``"2y"``) — see ``config/settings_manager.py``."""
     from data.yahoo_finance import get_historical_data
+
     raw = settings.get("paper_history_period", "2y")
     period = str(raw) if str(raw) in _VALID_YF_PERIODS else "2y"
     return get_historical_data(ticker, period=period)
@@ -72,6 +80,7 @@ def _is_market_open_safe() -> bool:
     """Wrapper around data.yahoo_finance.is_market_open() that never raises."""
     try:
         from data.yahoo_finance import is_market_open
+
         open_, _ = is_market_open()
         return bool(open_)
     except Exception:
@@ -80,76 +89,82 @@ def _is_market_open_safe() -> bool:
 
 # ── Scan result type ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class ScanResult:
-    account_id:      int
-    scan_at:         datetime
-    mode:            str            # "auto" | "manual"
-    strategy:        str
-    prices:          dict[str, float]
-    generated:       int = 0        # total trades proposed by strategy
-    filled:          int = 0        # executed immediately
-    queued:          int = 0        # pending approval
-    skipped:         int = 0        # rejected by engine (no price, insufficient cash, …)
-    equity_before:   float = 0.0
-    equity_after:    float = 0.0
-    warnings:        list[str] = field(default_factory=list)
-    filled_orders:   list[int] = field(default_factory=list)
-    pending_orders:  list[int] = field(default_factory=list)
+    account_id: int
+    scan_at: datetime
+    mode: str  # "auto" | "manual"
+    strategy: str
+    prices: dict[str, float]
+    generated: int = 0  # total trades proposed by strategy
+    filled: int = 0  # executed immediately
+    queued: int = 0  # pending approval
+    skipped: int = 0  # rejected by engine (no price, insufficient cash, …)
+    equity_before: float = 0.0
+    equity_after: float = 0.0
+    warnings: list[str] = field(default_factory=list)
+    filled_orders: list[int] = field(default_factory=list)
+    pending_orders: list[int] = field(default_factory=list)
 
     def summary(self) -> str:
-        return (f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
-                f"· generated={self.generated} filled={self.filled} "
-                f"queued={self.queued} skipped={self.skipped}  "
-                f"· equity ${self.equity_before:,.2f} → ${self.equity_after:,.2f}")
+        return (
+            f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
+            f"· generated={self.generated} filled={self.filled} "
+            f"queued={self.queued} skipped={self.skipped}  "
+            f"· equity ${self.equity_before:,.2f} → ${self.equity_after:,.2f}"
+        )
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+
 def run_scan(
-    account_id:       int,
+    account_id: int,
     *,
-    prices_provider:  Optional[PricesProvider]  = None,
-    history_provider: Optional[HistoryProvider] = None,
-) -> Optional[ScanResult]:
+    prices_provider: PricesProvider | None = None,
+    history_provider: HistoryProvider | None = None,
+) -> ScanResult | None:
     """Scan the market once, execute trades (or queue them), snapshot equity."""
-    prices_provider  = prices_provider  or _default_prices_provider
+    prices_provider = prices_provider or _default_prices_provider
     history_provider = history_provider or _default_history_provider
 
     with session_scope() as session:
-        acct: PaperAccount = (session.query(PaperAccount)
-                              .filter(PaperAccount.id == account_id).first())
+        acct: PaperAccount = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None or not acct.is_active:
             return None
 
-        watchlist = [w.ticker for w in (session.query(PaperWatchlistItem)
-                                        .filter(PaperWatchlistItem.account_id == account_id).all())]
-        positions: list[PaperPosition] = (session.query(PaperPosition)
-                                          .filter(PaperPosition.account_id == account_id)
-                                          .filter(PaperPosition.shares > 0).all())
+        watchlist = [
+            w.ticker
+            for w in (
+                session.query(PaperWatchlistItem).filter(PaperWatchlistItem.account_id == account_id).all()
+            )
+        ]
+        positions: list[PaperPosition] = (
+            session.query(PaperPosition)
+            .filter(PaperPosition.account_id == account_id)
+            .filter(PaperPosition.shares > 0)
+            .all()
+        )
 
         tickers = sorted(set(watchlist) | {p.ticker for p in positions})
-        prices  = prices_provider(tickers) if tickers else {}
+        prices = prices_provider(tickers) if tickers else {}
 
         # Equity before any trades
-        equity_before = acct.cash + sum(
-            p.shares * prices.get(p.ticker, p.avg_cost) for p in positions
-        )
+        equity_before = acct.cash + sum(p.shares * prices.get(p.ticker, p.avg_cost) for p in positions)
 
         # Run the strategy (reads detached attributes, so safe)
         strategy_fn = get_strategy_fn(acct.strategy)
-        trades: list[TargetTrade] = strategy_fn(
-            acct, watchlist, positions, prices, history_provider
-        )
+        trades: list[TargetTrade] = strategy_fn(acct, watchlist, positions, prices, history_provider)
 
         result = ScanResult(
-            account_id    = account_id,
-            scan_at       = datetime.utcnow(),
-            mode          = acct.mode,
-            strategy      = acct.strategy,
-            prices        = prices,
-            generated     = len(trades),
-            equity_before = float(equity_before),
+            account_id=account_id,
+            scan_at=datetime.utcnow(),
+            mode=acct.mode,
+            strategy=acct.strategy,
+            prices=prices,
+            generated=len(trades),
+            equity_before=float(equity_before),
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
@@ -161,18 +176,21 @@ def run_scan(
         if acct.mode == "manual":
             existing_pending = {
                 (o.ticker, o.side)
-                for o in (session.query(PaperOrder)
-                          .filter(PaperOrder.account_id == acct.id)
-                          .filter(PaperOrder.status == "pending").all())
+                for o in (
+                    session.query(PaperOrder)
+                    .filter(PaperOrder.account_id == acct.id)
+                    .filter(PaperOrder.status == "pending")
+                    .all()
+                )
             }
 
         # ── Lite-pro guardrails ──────────────────────────────────────────────
         # Read configurable thresholds (with safe defaults) and pre-compute
         # state used by the per-trade gates inside the loop below.
-        enforce_hours      = bool(settings.get("paper_enforce_market_hours", True))
-        min_holding_min    = max(0, int(settings.get("paper_min_holding_minutes", 60)))
-        anti_flap_min      = max(0, int(settings.get("paper_anti_flap_minutes",   30)))
-        min_trade_usd      = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
+        enforce_hours = bool(settings.get("paper_enforce_market_hours", True))
+        min_holding_min = max(0, int(settings.get("paper_min_holding_minutes", 60)))
+        anti_flap_min = max(0, int(settings.get("paper_anti_flap_minutes", 30)))
+        min_trade_usd = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
 
         market_blocked = enforce_hours and not _is_market_open_safe()
         if market_blocked and trades:
@@ -188,11 +206,14 @@ def run_scan(
         recent_sell_tickers: set[str] = set()
         if anti_flap_min > 0:
             cutoff = result.scan_at - timedelta(minutes=anti_flap_min)
-            rows = (session.query(PaperOrder.ticker)
-                    .filter(PaperOrder.account_id == acct.id)
-                    .filter(PaperOrder.side       == "SELL")
-                    .filter(PaperOrder.status     == "filled")
-                    .filter(PaperOrder.filled_at  >= cutoff).all())
+            rows = (
+                session.query(PaperOrder.ticker)
+                .filter(PaperOrder.account_id == acct.id)
+                .filter(PaperOrder.side == "SELL")
+                .filter(PaperOrder.status == "filled")
+                .filter(PaperOrder.filled_at >= cutoff)
+                .all()
+            )
             recent_sell_tickers = {r[0] for r in rows}
 
         any_monthly = False
@@ -222,8 +243,7 @@ def run_scan(
             if trade.side == "BUY" and trade.ticker in recent_sell_tickers:
                 result.skipped += 1
                 result.warnings.append(
-                    f"{trade.ticker} BUY bloqueado: anti-flap activo "
-                    f"(SELL en últimos {anti_flap_min} min)."
+                    f"{trade.ticker} BUY bloqueado: anti-flap activo (SELL en últimos {anti_flap_min} min)."
                 )
                 continue
 
@@ -234,8 +254,7 @@ def run_scan(
                 if 0 < td < min_trade_usd:
                     result.skipped += 1
                     result.warnings.append(
-                        f"{trade.ticker} BUY bloqueado: tamaño ${td:.2f} < "
-                        f"mínimo ${min_trade_usd:.2f}."
+                        f"{trade.ticker} BUY bloqueado: tamaño ${td:.2f} < mínimo ${min_trade_usd:.2f}."
                     )
                     continue
 
@@ -249,7 +268,9 @@ def run_scan(
                     )
                     continue
                 order = _create_pending_order(
-                    session, acct, trade,
+                    session,
+                    acct,
+                    trade,
                     current_price=prices.get(trade.ticker),
                 )
                 existing_pending.add(key)
@@ -277,12 +298,13 @@ def run_scan(
             acct.last_monthly_rebalance = result.scan_at
 
         # Recompute equity after fills
-        positions_after = (session.query(PaperPosition)
-                           .filter(PaperPosition.account_id == account_id)
-                           .filter(PaperPosition.shares > 0).all())
-        equity_after = acct.cash + sum(
-            p.shares * prices.get(p.ticker, p.avg_cost) for p in positions_after
+        positions_after = (
+            session.query(PaperPosition)
+            .filter(PaperPosition.account_id == account_id)
+            .filter(PaperPosition.shares > 0)
+            .all()
         )
+        equity_after = acct.cash + sum(p.shares * prices.get(p.ticker, p.avg_cost) for p in positions_after)
         result.equity_after = float(equity_after)
         # session_scope commits automatically on successful exit
 
@@ -293,24 +315,21 @@ def run_scan(
 
 # ── Manual-mode approvals ─────────────────────────────────────────────────────
 
+
 def approve_order(
     order_id: int,
     *,
-    prices_provider: Optional[PricesProvider] = None,
-) -> Optional[PaperOrder]:
+    prices_provider: PricesProvider | None = None,
+) -> PaperOrder | None:
     """Fill a pending order at the current market price."""
     prices_provider = prices_provider or _default_prices_provider
 
     with session_scope() as session:
-        order: Optional[PaperOrder] = session.query(PaperOrder).filter(
-            PaperOrder.id == order_id
-        ).first()
+        order: PaperOrder | None = session.query(PaperOrder).filter(PaperOrder.id == order_id).first()
         if order is None or order.status != "pending":
             return None
 
-        acct = session.query(PaperAccount).filter(
-            PaperAccount.id == order.account_id
-        ).first()
+        acct = session.query(PaperAccount).filter(PaperAccount.id == order.account_id).first()
         if acct is None:
             return None
 
@@ -318,23 +337,24 @@ def approve_order(
         px = prices.get(order.ticker)
         if px is None or not np.isfinite(px) or px <= 0:
             order.status = "expired"
-            order.notes  = (order.notes or "") + "\n[approve] sin precio, expirada."
+            order.notes = (order.notes or "") + "\n[approve] sin precio, expirada."
             order.decided_at = datetime.utcnow()
             session.flush()
-            session.refresh(order); session.expunge(order)
+            session.refresh(order)
+            session.expunge(order)
             return order
 
         # Convert the pending order into a TargetTrade and fill.
         trade = TargetTrade(
-            ticker         = order.ticker,
-            side           = order.side,
-            target_shares  = order.target_shares,
-            target_dollars = order.target_dollars,
-            reason         = f"approved: {order.reason or ''}".strip(),
-            source         = order.source or "manual",
+            ticker=order.ticker,
+            side=order.side,
+            target_shares=order.target_shares,
+            target_dollars=order.target_dollars,
+            reason=f"approved: {order.reason or ''}".strip(),
+            source=order.source or "manual",
         )
 
-        order.status     = "approved"
+        order.status = "approved"
         order.decided_at = datetime.utcnow()
 
         filled = _fill_trade(session, acct, trade, price=px, reuse_order=order)
@@ -345,8 +365,9 @@ def approve_order(
         # _stamp_order_filled(reuse_order=order); si sigue "approved" es que falló.
         if filled is None and order.status == "approved":
             order.status = "expired"
-            order.notes  = ((order.notes or "") +
-                            "\n[approve] fill rechazado: cash o shares insuficientes.").strip()
+            order.notes = (
+                (order.notes or "") + "\n[approve] fill rechazado: cash o shares insuficientes."
+            ).strip()
 
         session.flush()
 
@@ -354,32 +375,35 @@ def approve_order(
             session.refresh(filled)
             session.expunge(filled)
             return filled
-        session.refresh(order); session.expunge(order)
+        session.refresh(order)
+        session.expunge(order)
         return order
 
 
-def reject_order(order_id: int, note: str = "") -> Optional[PaperOrder]:
+def reject_order(order_id: int, note: str = "") -> PaperOrder | None:
     with session_scope() as session:
         order = session.query(PaperOrder).filter(PaperOrder.id == order_id).first()
         if order is None or order.status != "pending":
             return None
-        order.status     = "rejected"
+        order.status = "rejected"
         order.decided_at = datetime.utcnow()
         if note:
             order.notes = (order.notes or "") + f"\n[reject] {note}"
         session.flush()
-        session.refresh(order); session.expunge(order)
+        session.refresh(order)
+        session.expunge(order)
         return order
 
 
 # ── Internal: create pending / fill trade ─────────────────────────────────────
+
 
 def _create_pending_order(
     session,
     acct: PaperAccount,
     trade: TargetTrade,
     *,
-    current_price: Optional[float] = None,
+    current_price: float | None = None,
 ) -> PaperOrder:
     """
     Persist a TargetTrade as a pending PaperOrder.
@@ -391,11 +415,15 @@ def _create_pending_order(
     """
     target_shares = trade.target_shares
 
-    if (trade.side == "BUY" and target_shares is None
-            and trade.target_dollars is not None
-            and current_price is not None
-            and np.isfinite(current_price) and current_price > 0):
-        budget     = min(float(trade.target_dollars), acct.cash)
+    if (
+        trade.side == "BUY"
+        and target_shares is None
+        and trade.target_dollars is not None
+        and current_price is not None
+        and np.isfinite(current_price)
+        and current_price > 0
+    ):
+        budget = min(float(trade.target_dollars), acct.cash)
         fill_price = current_price * (1 + acct.slippage)
         raw_shares = (budget * (1 - acct.commission)) / fill_price
         int_shares = int(raw_shares)
@@ -403,19 +431,19 @@ def _create_pending_order(
             target_shares = float(int_shares)
 
     elif trade.side == "SELL" and target_shares is not None and target_shares > 0:
-        target_shares = float(int(float(target_shares)))   # floor a entero
+        target_shares = float(int(float(target_shares)))  # floor a entero
         if target_shares < 1.0:
-            target_shares = trade.target_shares           # dejar lo original
+            target_shares = trade.target_shares  # dejar lo original
 
     order = PaperOrder(
-        account_id     = acct.id,
-        ticker         = trade.ticker,
-        side           = trade.side,
-        target_shares  = target_shares,
-        target_dollars = trade.target_dollars,
-        reason         = trade.reason,
-        source         = trade.source,
-        status         = "pending",
+        account_id=acct.id,
+        ticker=trade.ticker,
+        side=trade.side,
+        target_shares=target_shares,
+        target_dollars=trade.target_dollars,
+        reason=trade.reason,
+        source=trade.source,
+        status="pending",
     )
     session.add(order)
     session.flush()
@@ -424,12 +452,12 @@ def _create_pending_order(
 
 def _fill_trade(
     session,
-    acct:   PaperAccount,
-    trade:  TargetTrade,
+    acct: PaperAccount,
+    trade: TargetTrade,
     *,
-    price:  float,
-    reuse_order: Optional[PaperOrder] = None,
-) -> Optional[PaperOrder]:
+    price: float,
+    reuse_order: PaperOrder | None = None,
+) -> PaperOrder | None:
     """
     Execute a trade against the live account state. Returns the filled
     PaperOrder (new or reused) or None if the trade couldn't happen
@@ -446,12 +474,13 @@ def _fill_trade(
     factory at the call site and pass it in.
     """
     from paper_trading.costs import (
-        commission_from_legacy, slippage_from_legacy,
+        commission_from_legacy,
+        slippage_from_legacy,
     )
 
-    side          = trade.side
-    commission_m  = commission_from_legacy(acct.commission)
-    slippage_m    = slippage_from_legacy(acct.slippage)
+    side = trade.side
+    commission_m = commission_from_legacy(acct.commission)
+    slippage_m = slippage_from_legacy(acct.slippage)
     # Quick-access scalars for the legacy paths that still divide directly.
     commission_pct = float(acct.commission)
 
@@ -460,58 +489,67 @@ def _fill_trade(
         budget = min(float(budget), acct.cash)
         if budget <= 1e-6:
             return None
-        fill_price  = slippage_m.adjust_price(side="BUY", price=price)
+        fill_price = slippage_m.adjust_price(side="BUY", price=price)
 
         # Shares ahora son ENTEROS — el usuario va a ejecutar manualmente en
         # un broker que no permite fracciones. Floor del cómputo crudo y
         # recalculamos el cash gastado a partir de las shares finales.
         raw_shares = (budget * (1 - commission_pct)) / fill_price
-        shares_got = float(int(raw_shares))   # floor a entero
+        shares_got = float(int(raw_shares))  # floor a entero
         if shares_got < 1.0:
             return None
 
         # Real notional + commission a partir de las shares enteras.
         actual_notional = shares_got * fill_price
         commission_paid = commission_m.cost(side="BUY", shares=shares_got, price=fill_price)
-        actual_cost     = actual_notional + commission_paid
+        actual_cost = actual_notional + commission_paid
         # Edge case: si el actual_cost supera el budget por redondeo, recortar.
         if actual_cost > acct.cash + 1e-6:
             return None
 
         # Update / create position
-        pos = (session.query(PaperPosition)
-               .filter(PaperPosition.account_id == acct.id)
-               .filter(PaperPosition.ticker     == trade.ticker)
-               .first())
+        pos = (
+            session.query(PaperPosition)
+            .filter(PaperPosition.account_id == acct.id)
+            .filter(PaperPosition.ticker == trade.ticker)
+            .first()
+        )
         if pos is None:
             pos = PaperPosition(
-                account_id  = acct.id,
-                ticker      = trade.ticker,
-                shares      = shares_got,
-                avg_cost    = fill_price,
-                opened_at   = datetime.utcnow(),
-                entry_reason = trade.reason,
+                account_id=acct.id,
+                ticker=trade.ticker,
+                shares=shares_got,
+                avg_cost=fill_price,
+                opened_at=datetime.utcnow(),
+                entry_reason=trade.reason,
             )
             session.add(pos)
         else:
             new_total_cost = pos.shares * pos.avg_cost + shares_got * fill_price
-            pos.shares    += shares_got
-            pos.avg_cost   = new_total_cost / pos.shares
+            pos.shares += shares_got
+            pos.avg_cost = new_total_cost / pos.shares
             pos.updated_at = datetime.utcnow()
         acct.cash -= actual_cost
 
         slippage_cost = shares_got * (fill_price - price)
         return _stamp_order_filled(
-            session, acct, trade, reuse_order,
-            fill_price=fill_price, fill_shares=shares_got,
-            commission_paid=commission_paid, slippage_cost=slippage_cost,
+            session,
+            acct,
+            trade,
+            reuse_order,
+            fill_price=fill_price,
+            fill_shares=shares_got,
+            commission_paid=commission_paid,
+            slippage_cost=slippage_cost,
         )
 
     elif side == "SELL":
-        pos = (session.query(PaperPosition)
-               .filter(PaperPosition.account_id == acct.id)
-               .filter(PaperPosition.ticker     == trade.ticker)
-               .first())
+        pos = (
+            session.query(PaperPosition)
+            .filter(PaperPosition.account_id == acct.id)
+            .filter(PaperPosition.ticker == trade.ticker)
+            .first()
+        )
         if pos is None or pos.shares <= 1e-9:
             return None
         want_shares = trade.target_shares
@@ -528,18 +566,18 @@ def _fill_trade(
         if int_want < 1:
             return None
         if int_want >= int_held:
-            sell_shares = float(pos.shares)   # cierre total + residual
+            sell_shares = float(pos.shares)  # cierre total + residual
         else:
-            sell_shares = float(int_want)     # trim parcial entero
+            sell_shares = float(int_want)  # trim parcial entero
 
         sell_shares = min(sell_shares, float(pos.shares))
         if sell_shares <= 1e-9:
             return None
 
         fill_price = slippage_m.adjust_price(side="SELL", price=price)
-        gross      = sell_shares * fill_price
+        gross = sell_shares * fill_price
         commission_paid = commission_m.cost(side="SELL", shares=sell_shares, price=fill_price)
-        proceeds   = gross - commission_paid
+        proceeds = gross - commission_paid
         pos.shares -= sell_shares
         pos.updated_at = datetime.utcnow()
         acct.cash += proceeds
@@ -548,11 +586,16 @@ def _fill_trade(
         if pos.shares <= 1e-9:
             session.delete(pos)
 
-        slippage_cost   = sell_shares * (price - fill_price)
+        slippage_cost = sell_shares * (price - fill_price)
         return _stamp_order_filled(
-            session, acct, trade, reuse_order,
-            fill_price=fill_price, fill_shares=sell_shares,
-            commission_paid=commission_paid, slippage_cost=slippage_cost,
+            session,
+            acct,
+            trade,
+            reuse_order,
+            fill_price=fill_price,
+            fill_shares=sell_shares,
+            commission_paid=commission_paid,
+            slippage_cost=slippage_cost,
         )
 
     return None
@@ -562,31 +605,31 @@ def _stamp_order_filled(
     session,
     acct: PaperAccount,
     trade: TargetTrade,
-    reuse_order: Optional[PaperOrder],
+    reuse_order: PaperOrder | None,
     *,
-    fill_price:      float,
-    fill_shares:     float,
+    fill_price: float,
+    fill_shares: float,
     commission_paid: float,
-    slippage_cost:   float,
+    slippage_cost: float,
 ) -> PaperOrder:
     """Create or update a PaperOrder as 'filled' and return it."""
     now = datetime.utcnow()
     if reuse_order is None:
         order = PaperOrder(
-            account_id     = acct.id,
-            ticker         = trade.ticker,
-            side           = trade.side,
-            target_shares  = trade.target_shares,
-            target_dollars = trade.target_dollars,
-            reason         = trade.reason,
-            source         = trade.source,
-            status         = "filled",
-            created_at     = now,
-            filled_at      = now,
-            fill_price     = float(fill_price),
-            fill_shares    = float(fill_shares),
-            commission_paid= float(commission_paid),
-            slippage_cost  = float(slippage_cost),
+            account_id=acct.id,
+            ticker=trade.ticker,
+            side=trade.side,
+            target_shares=trade.target_shares,
+            target_dollars=trade.target_dollars,
+            reason=trade.reason,
+            source=trade.source,
+            status="filled",
+            created_at=now,
+            filled_at=now,
+            fill_price=float(fill_price),
+            fill_shares=float(fill_shares),
+            commission_paid=float(commission_paid),
+            slippage_cost=float(slippage_cost),
         )
         session.add(order)
         session.flush()
@@ -597,17 +640,18 @@ def _stamp_order_filled(
         # status == 'pending', but we belt-and-braces here too.
         if reuse_order.status == "filled":
             return reuse_order
-        reuse_order.status          = "filled"
-        reuse_order.filled_at       = now
-        reuse_order.fill_price      = float(fill_price)
-        reuse_order.fill_shares     = float(fill_shares)
+        reuse_order.status = "filled"
+        reuse_order.filled_at = now
+        reuse_order.fill_price = float(fill_price)
+        reuse_order.fill_shares = float(fill_shares)
         reuse_order.commission_paid = float(commission_paid)
-        reuse_order.slippage_cost   = float(slippage_cost)
+        reuse_order.slippage_cost = float(slippage_cost)
         order = reuse_order
     return order
 
 
 # ── Recovery helpers ──────────────────────────────────────────────────────────
+
 
 def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) -> int:
     """
@@ -627,23 +671,28 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
     expired = 0
     try:
         with session_scope() as session:
-            stale = (session.query(PaperOrder)
-                     .filter(PaperOrder.account_id == account_id)
-                     .filter(PaperOrder.status     == "pending")
-                     .filter(PaperOrder.created_at <= cutoff)
-                     .all())
+            stale = (
+                session.query(PaperOrder)
+                .filter(PaperOrder.account_id == account_id)
+                .filter(PaperOrder.status == "pending")
+                .filter(PaperOrder.created_at <= cutoff)
+                .all()
+            )
             for o in stale:
-                o.status     = "expired"
+                o.status = "expired"
                 o.decided_at = datetime.utcnow()
-                o.notes      = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()
+                o.notes = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()
                 expired += 1
         if expired:
             from config.logging_config import get_logger
+
             get_logger(__name__).info(
                 "reconcile_account(%d): expired %d stale pending orders.",
-                account_id, expired,
+                account_id,
+                expired,
             )
     except Exception:
         from config.logging_config import get_logger
+
         get_logger(__name__).exception("reconcile_account(%d) failed", account_id)
     return expired

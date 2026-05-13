@@ -5,6 +5,7 @@ Displays a TechnicalSignal as a labelled card with a Yahoo-Finance-style
 SignalBadge and the indicator's description text. The card pulls its
 HTML tooltip from ``ui.analysis.labels.get_tooltip``.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout

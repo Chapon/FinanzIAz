@@ -18,6 +18,7 @@ Exit codes
 1   vulnerabilities or audit failure
 2   pip-audit not installed
 """
+
 from __future__ import annotations
 
 import subprocess

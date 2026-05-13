@@ -13,33 +13,37 @@ Optionally integrates:
   • XGBoost ML    — probability of 5-day price increase (train_xgboost_signal)
   • ml_probability — regime-adjusted overall probability (compute_signal_probability)
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Optional
 
-from config.logging_config import get_logger
 from config.constants import (
-    RSI_OVERSOLD_EXTREME, RSI_OVERSOLD, RSI_LOW,
-    RSI_HIGH, RSI_OVERBOUGHT, RSI_OVERBOUGHT_EXTREME,
-    RSI_TREND_LOOKBACK_BARS, RSI_TREND_DELTA_THRESHOLD,
-    VOLUME_HIGH_RATIO, VOLUME_LOW_RATIO,
+    RSI_HIGH,
+    RSI_LOW,
+    RSI_OVERBOUGHT,
+    RSI_OVERBOUGHT_EXTREME,
+    RSI_OVERSOLD,
+    RSI_OVERSOLD_EXTREME,
+    RSI_TREND_DELTA_THRESHOLD,
+    RSI_TREND_LOOKBACK_BARS,
 )
+from config.logging_config import get_logger
 
 log = get_logger(__name__)
-from dataclasses import dataclass, field
 from collections import OrderedDict
-
+from dataclasses import dataclass, field
 
 # ── Data classes ──────────────────────────────────────────────────────────────
+
 
 @dataclass
 class TechnicalSignal:
     indicator: str
     value: float
-    signal: str      # "BUY" | "SELL" | "HOLD"
-    strength: str    # "STRONG" | "MODERATE" | "WEAK"
+    signal: str  # "BUY" | "SELL" | "HOLD"
+    strength: str  # "STRONG" | "MODERATE" | "WEAK"
     description: str
 
 
@@ -55,14 +59,14 @@ def to_yahoo_level(signal: str, strength: str) -> str:
 @dataclass
 class AnalysisResult:
     ticker: str
-    overall_signal: str      # "BUY" | "SELL" | "HOLD"
-    overall_strength: str    # "STRONG" | "MODERATE" | "WEAK"
+    overall_signal: str  # "BUY" | "SELL" | "HOLD"
+    overall_strength: str  # "STRONG" | "MODERATE" | "WEAK"
     confidence_score: float  # 0-100 (raw indicator consensus)
     signals: list[TechnicalSignal] = field(default_factory=list)
     summary: str = ""
     # ── ML extensions (populated when enable_xgboost=True) ───────────────────
-    market_context: Optional[object] = None  # analysis.ml_signals.MarketContext
-    ml_probability: Optional[float]  = None  # 0-1, regime-adjusted buy probability
+    market_context: object | None = None  # analysis.ml_signals.MarketContext
+    ml_probability: float | None = None  # 0-1, regime-adjusted buy probability
 
     @property
     def yahoo_level(self) -> str:
@@ -71,6 +75,7 @@ class AnalysisResult:
 
 
 # ── Indicator computation ─────────────────────────────────────────────────────
+
 
 def compute_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Relative Strength Index (Wilder smoothing)."""
@@ -96,11 +101,11 @@ def compute_macd(
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Returns (macd_line, signal_line, histogram)."""
     close = df["Close"].squeeze()
-    ema_fast   = close.ewm(span=fast,   adjust=False).mean()
-    ema_slow   = close.ewm(span=slow,   adjust=False).mean()
-    macd_line  = ema_fast - ema_slow
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
     signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram  = macd_line - signal_line
+    histogram = macd_line - signal_line
     return macd_line, signal_line, histogram
 
 
@@ -110,9 +115,9 @@ def compute_bollinger_bands(
     std_dev: float = 2.0,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Returns (upper_band, middle_band, lower_band)."""
-    close  = df["Close"].squeeze()
+    close = df["Close"].squeeze()
     middle = close.rolling(window=period).mean()
-    std    = close.rolling(window=period).std()
+    std = close.rolling(window=period).std()
     return middle + std * std_dev, middle, middle - std * std_dev
 
 
@@ -131,7 +136,7 @@ def compute_volume_sma(df: pd.DataFrame, period: int = 20) -> pd.Series:
 # ── Indicator LRU cache ───────────────────────────────────────────────────────
 
 _INDICATOR_CACHE: OrderedDict = OrderedDict()
-_INDICATOR_CACHE_MAX = 50   # max cached (ticker, dataset) combinations
+_INDICATOR_CACHE_MAX = 50  # max cached (ticker, dataset) combinations
 
 
 def _df_fingerprint(df: pd.DataFrame) -> tuple:
@@ -151,26 +156,27 @@ def get_cached_indicators(ticker: str, df: pd.DataFrame) -> dict:
     """
     key = (ticker.upper(), *_df_fingerprint(df))
     if key in _INDICATOR_CACHE:
-        _INDICATOR_CACHE.move_to_end(key)   # mark as recently used
+        _INDICATOR_CACHE.move_to_end(key)  # mark as recently used
         return _INDICATOR_CACHE[key]
 
     result = {
-        'rsi':       compute_rsi(df),
-        'macd':      compute_macd(df),
-        'bollinger': compute_bollinger_bands(df) if len(df) >= 20 else (None, None, None),
-        'sma20':     compute_sma(df, 20)  if len(df) >= 20  else None,
-        'sma50':     compute_sma(df, 50)  if len(df) >= 50  else None,
-        'sma200':    compute_sma(df, 200) if len(df) >= 200 else None,
+        "rsi": compute_rsi(df),
+        "macd": compute_macd(df),
+        "bollinger": compute_bollinger_bands(df) if len(df) >= 20 else (None, None, None),
+        "sma20": compute_sma(df, 20) if len(df) >= 20 else None,
+        "sma50": compute_sma(df, 50) if len(df) >= 50 else None,
+        "sma200": compute_sma(df, 200) if len(df) >= 200 else None,
     }
 
     if len(_INDICATOR_CACHE) >= _INDICATOR_CACHE_MAX:
-        _INDICATOR_CACHE.popitem(last=False)    # evict oldest (LRU)
+        _INDICATOR_CACHE.popitem(last=False)  # evict oldest (LRU)
 
     _INDICATOR_CACHE[key] = result
     return result
 
 
 # ── Signal generators ─────────────────────────────────────────────────────────
+
 
 def _rsi_signal(rsi_series: pd.Series) -> TechnicalSignal:
     """
@@ -180,40 +186,74 @@ def _rsi_signal(rsi_series: pd.Series) -> TechnicalSignal:
       40-60 HOLD
     Includes 5-day trend in the description.
     """
-    rsi_val  = float(rsi_series.iloc[-1])
+    rsi_val = float(rsi_series.iloc[-1])
     lookback_idx = -(RSI_TREND_LOOKBACK_BARS + 1)
-    rsi_prev = (
-        float(rsi_series.iloc[lookback_idx])
-        if len(rsi_series) > RSI_TREND_LOOKBACK_BARS
-        else rsi_val
-    )
-    trend    = rsi_val - rsi_prev
-    if   trend >  RSI_TREND_DELTA_THRESHOLD: trend_label = "↑ subiendo"
-    elif trend < -RSI_TREND_DELTA_THRESHOLD: trend_label = "↓ bajando"
-    else:                                    trend_label = "estable"
+    rsi_prev = float(rsi_series.iloc[lookback_idx]) if len(rsi_series) > RSI_TREND_LOOKBACK_BARS else rsi_val
+    trend = rsi_val - rsi_prev
+    if trend > RSI_TREND_DELTA_THRESHOLD:
+        trend_label = "↑ subiendo"
+    elif trend < -RSI_TREND_DELTA_THRESHOLD:
+        trend_label = "↓ bajando"
+    else:
+        trend_label = "estable"
     trend_txt = f", {trend_label}"
 
     if rsi_val < RSI_OVERSOLD_EXTREME:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "STRONG",
-            f"RSI {rsi_val:.1f} — sobreventa extrema{trend_txt}. Rebote técnico probable.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "BUY",
+            "STRONG",
+            f"RSI {rsi_val:.1f} — sobreventa extrema{trend_txt}. Rebote técnico probable.",
+        )
     elif rsi_val < RSI_OVERSOLD:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "MODERATE",
-            f"RSI {rsi_val:.1f} — sobreventa{trend_txt}. Posible rebote.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "BUY",
+            "MODERATE",
+            f"RSI {rsi_val:.1f} — sobreventa{trend_txt}. Posible rebote.",
+        )
     elif rsi_val < RSI_LOW:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "BUY", "WEAK",
-            f"RSI {rsi_val:.1f} — zona baja{trend_txt}. Acercándose a sobreventa.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "BUY",
+            "WEAK",
+            f"RSI {rsi_val:.1f} — zona baja{trend_txt}. Acercándose a sobreventa.",
+        )
     elif rsi_val > RSI_OVERBOUGHT_EXTREME:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "STRONG",
-            f"RSI {rsi_val:.1f} — sobrecompra extrema{trend_txt}. Corrección probable.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "SELL",
+            "STRONG",
+            f"RSI {rsi_val:.1f} — sobrecompra extrema{trend_txt}. Corrección probable.",
+        )
     elif rsi_val > RSI_OVERBOUGHT:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "MODERATE",
-            f"RSI {rsi_val:.1f} — sobrecompra{trend_txt}. Posible corrección.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "SELL",
+            "MODERATE",
+            f"RSI {rsi_val:.1f} — sobrecompra{trend_txt}. Posible corrección.",
+        )
     elif rsi_val > RSI_HIGH:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "SELL", "WEAK",
-            f"RSI {rsi_val:.1f} — zona alta{trend_txt}. Acercándose a sobrecompra.")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "SELL",
+            "WEAK",
+            f"RSI {rsi_val:.1f} — zona alta{trend_txt}. Acercándose a sobrecompra.",
+        )
     else:
-        return TechnicalSignal("RSI", round(rsi_val, 2), "HOLD", "WEAK",
-            f"RSI {rsi_val:.1f} — zona neutral ({int(RSI_LOW)}-{int(RSI_HIGH)}).")
+        return TechnicalSignal(
+            "RSI",
+            round(rsi_val, 2),
+            "HOLD",
+            "WEAK",
+            f"RSI {rsi_val:.1f} — zona neutral ({int(RSI_LOW)}-{int(RSI_HIGH)}).",
+        )
 
 
 def _macd_signal(
@@ -229,28 +269,58 @@ def _macd_signal(
     """
     crossover = hist_prev < 0 and hist_curr > 0
     crossunder = hist_prev > 0 and hist_curr < 0
-    hist_growing = hist_curr > hist_prev   # histogram accelerating
+    hist_growing = hist_curr > hist_prev  # histogram accelerating
 
     if crossover:
-        return TechnicalSignal("MACD", round(macd_val, 4), "BUY", "STRONG",
-            "MACD cruzó por encima de la señal — nuevo impulso alcista.")
+        return TechnicalSignal(
+            "MACD",
+            round(macd_val, 4),
+            "BUY",
+            "STRONG",
+            "MACD cruzó por encima de la señal — nuevo impulso alcista.",
+        )
     elif crossunder:
-        return TechnicalSignal("MACD", round(macd_val, 4), "SELL", "STRONG",
-            "MACD cruzó por debajo de la señal — nuevo impulso bajista.")
+        return TechnicalSignal(
+            "MACD",
+            round(macd_val, 4),
+            "SELL",
+            "STRONG",
+            "MACD cruzó por debajo de la señal — nuevo impulso bajista.",
+        )
     elif macd_val > signal_val:
         if hist_growing:
-            return TechnicalSignal("MACD", round(macd_val, 4), "BUY", "MODERATE",
-                "MACD sobre señal y momentum creciendo — tendencia alcista acelerando.")
+            return TechnicalSignal(
+                "MACD",
+                round(macd_val, 4),
+                "BUY",
+                "MODERATE",
+                "MACD sobre señal y momentum creciendo — tendencia alcista acelerando.",
+            )
         else:
-            return TechnicalSignal("MACD", round(macd_val, 4), "BUY", "WEAK",
-                "MACD sobre señal pero momentum decreciendo — tendencia alcista perdiendo fuerza.")
+            return TechnicalSignal(
+                "MACD",
+                round(macd_val, 4),
+                "BUY",
+                "WEAK",
+                "MACD sobre señal pero momentum decreciendo — tendencia alcista perdiendo fuerza.",
+            )
     else:
         if not hist_growing:  # histogram getting more negative
-            return TechnicalSignal("MACD", round(macd_val, 4), "SELL", "MODERATE",
-                "MACD bajo señal y momentum bajista acelerando.")
+            return TechnicalSignal(
+                "MACD",
+                round(macd_val, 4),
+                "SELL",
+                "MODERATE",
+                "MACD bajo señal y momentum bajista acelerando.",
+            )
         else:
-            return TechnicalSignal("MACD", round(macd_val, 4), "SELL", "WEAK",
-                "MACD bajo señal pero momentum bajista frenando — posible reversión.")
+            return TechnicalSignal(
+                "MACD",
+                round(macd_val, 4),
+                "SELL",
+                "WEAK",
+                "MACD bajo señal pero momentum bajista frenando — posible reversión.",
+            )
 
 
 def _bollinger_signal(
@@ -261,16 +331,29 @@ def _bollinger_signal(
 ) -> TechnicalSignal:
     bandwidth = (upper - lower) / middle if middle != 0 else 0
     if price <= lower:
-        return TechnicalSignal("Bollinger Bands", round(price, 4), "BUY",
+        return TechnicalSignal(
+            "Bollinger Bands",
+            round(price, 4),
+            "BUY",
             "STRONG" if price < lower * 0.99 else "MODERATE",
-            f"Precio tocó la banda inferior (ancho {bandwidth:.1%}). Rebote hacia ${middle:.2f}.")
+            f"Precio tocó la banda inferior (ancho {bandwidth:.1%}). Rebote hacia ${middle:.2f}.",
+        )
     elif price >= upper:
-        return TechnicalSignal("Bollinger Bands", round(price, 4), "SELL",
+        return TechnicalSignal(
+            "Bollinger Bands",
+            round(price, 4),
+            "SELL",
             "STRONG" if price > upper * 1.01 else "MODERATE",
-            f"Precio tocó la banda superior (ancho {bandwidth:.1%}). Retroceso hacia ${middle:.2f}.")
+            f"Precio tocó la banda superior (ancho {bandwidth:.1%}). Retroceso hacia ${middle:.2f}.",
+        )
     else:
-        return TechnicalSignal("Bollinger Bands", round(price, 4), "HOLD", "WEAK",
-            f"Precio dentro de las bandas (${lower:.2f} — ${upper:.2f}).")
+        return TechnicalSignal(
+            "Bollinger Bands",
+            round(price, 4),
+            "HOLD",
+            "WEAK",
+            f"Precio dentro de las bandas (${lower:.2f} — ${upper:.2f}).",
+        )
 
 
 def _sma_cross_signal(
@@ -280,24 +363,44 @@ def _sma_cross_signal(
     prev_sma200: float,
 ) -> TechnicalSignal:
     golden = prev_sma50 <= prev_sma200 and sma50 > sma200
-    death  = prev_sma50 >= prev_sma200 and sma50 < sma200
-    diff   = round(sma50 - sma200, 4)
+    death = prev_sma50 >= prev_sma200 and sma50 < sma200
+    diff = round(sma50 - sma200, 4)
 
     if golden:
-        return TechnicalSignal("Golden/Death Cross", diff, "BUY", "STRONG",
-            "Golden Cross: SMA50 cruzó sobre SMA200 — señal alcista de largo plazo.")
+        return TechnicalSignal(
+            "Golden/Death Cross",
+            diff,
+            "BUY",
+            "STRONG",
+            "Golden Cross: SMA50 cruzó sobre SMA200 — señal alcista de largo plazo.",
+        )
     elif death:
-        return TechnicalSignal("Golden/Death Cross", diff, "SELL", "STRONG",
-            "Death Cross: SMA50 cruzó bajo SMA200 — señal bajista de largo plazo.")
+        return TechnicalSignal(
+            "Golden/Death Cross",
+            diff,
+            "SELL",
+            "STRONG",
+            "Death Cross: SMA50 cruzó bajo SMA200 — señal bajista de largo plazo.",
+        )
     elif sma50 > sma200:
-        return TechnicalSignal("Golden/Death Cross", diff, "BUY", "WEAK",
-            f"SMA50 ({sma50:.2f}) sobre SMA200 ({sma200:.2f}) — tendencia alcista de fondo.")
+        return TechnicalSignal(
+            "Golden/Death Cross",
+            diff,
+            "BUY",
+            "WEAK",
+            f"SMA50 ({sma50:.2f}) sobre SMA200 ({sma200:.2f}) — tendencia alcista de fondo.",
+        )
     else:
-        return TechnicalSignal("Golden/Death Cross", diff, "SELL", "WEAK",
-            f"SMA50 ({sma50:.2f}) bajo SMA200 ({sma200:.2f}) — tendencia bajista de fondo.")
+        return TechnicalSignal(
+            "Golden/Death Cross",
+            diff,
+            "SELL",
+            "WEAK",
+            f"SMA50 ({sma50:.2f}) bajo SMA200 ({sma200:.2f}) — tendencia bajista de fondo.",
+        )
 
 
-def _volume_signal(df: pd.DataFrame) -> Optional[TechnicalSignal]:
+def _volume_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     """
     Volume trend: compare average volume on up-days vs down-days over last 10 sessions.
     High volume on up-days → accumulation (BUY).
@@ -306,7 +409,7 @@ def _volume_signal(df: pd.DataFrame) -> Optional[TechnicalSignal]:
     if "Volume" not in df.columns or len(df) < 25:
         return None
 
-    close  = df["Close"].squeeze()
+    close = df["Close"].squeeze()
     volume = df["Volume"].squeeze().replace(0, np.nan)
     vol_sma = volume.rolling(20).mean()
 
@@ -319,7 +422,7 @@ def _volume_signal(df: pd.DataFrame) -> Optional[TechnicalSignal]:
     ret10 = close.pct_change().tail(10)
     vol10 = volume.tail(10)
 
-    up_vol   = float(vol10[ret10 > 0].mean())
+    up_vol = float(vol10[ret10 > 0].mean())
     down_vol = float(vol10[ret10 < 0].mean())
 
     if np.isnan(up_vol) or np.isnan(down_vol):
@@ -329,19 +432,35 @@ def _volume_signal(df: pd.DataFrame) -> Optional[TechnicalSignal]:
 
     if ratio >= 1.5:
         strength = "STRONG" if ratio >= 2.0 else "MODERATE"
-        return TechnicalSignal("Volumen", round(ratio, 2), "BUY", strength,
-            f"Vol. en días alcistas {ratio:.1f}× mayor — acumulación institucional.")
+        return TechnicalSignal(
+            "Volumen",
+            round(ratio, 2),
+            "BUY",
+            strength,
+            f"Vol. en días alcistas {ratio:.1f}× mayor — acumulación institucional.",
+        )
     elif ratio <= 0.67:
         inv = 1 / ratio
         strength = "STRONG" if inv >= 2.0 else "MODERATE"
-        return TechnicalSignal("Volumen", round(ratio, 2), "SELL", strength,
-            f"Vol. en días bajistas {inv:.1f}× mayor — distribución / presión vendedora.")
+        return TechnicalSignal(
+            "Volumen",
+            round(ratio, 2),
+            "SELL",
+            strength,
+            f"Vol. en días bajistas {inv:.1f}× mayor — distribución / presión vendedora.",
+        )
     else:
-        return TechnicalSignal("Volumen", round(ratio, 2), "HOLD", "WEAK",
-            "Volumen neutro — sin señal de acumulación ni distribución.")
+        return TechnicalSignal(
+            "Volumen",
+            round(ratio, 2),
+            "HOLD",
+            "WEAK",
+            "Volumen neutro — sin señal de acumulación ni distribución.",
+        )
 
 
 # ── Full analysis ─────────────────────────────────────────────────────────────
+
 
 def analyze(
     ticker: str,
@@ -349,7 +468,7 @@ def analyze(
     enable_sma_cross: bool = True,
     enable_volume: bool = True,
     enable_xgboost: bool = True,
-) -> Optional[AnalysisResult]:
+) -> AnalysisResult | None:
     """
     Run full technical + ML analysis on a DataFrame of OHLCV data.
 
@@ -369,11 +488,11 @@ def analyze(
 
     # Pull all base indicators from the shared cache (computed once per dataset)
     indic = get_cached_indicators(ticker, df)
-    rsi_series              = indic['rsi']
-    macd_line, signal_line, histogram = indic['macd']
-    upper, middle, lower    = indic['bollinger']
-    sma50                   = indic['sma50']
-    sma200                  = indic['sma200']
+    rsi_series = indic["rsi"]
+    macd_line, signal_line, histogram = indic["macd"]
+    upper, middle, lower = indic["bollinger"]
+    sma50 = indic["sma50"]
+    sma200 = indic["sma200"]
 
     # ── RSI ───────────────────────────────────────────────────────────────────
     if not rsi_series.dropna().empty:
@@ -381,31 +500,44 @@ def analyze(
 
     # ── MACD ──────────────────────────────────────────────────────────────────
     if len(histogram.dropna()) >= 2:
-        signals.append(_macd_signal(
-            float(macd_line.iloc[-1]),
-            float(signal_line.iloc[-1]),
-            float(histogram.iloc[-2]),
-            float(histogram.iloc[-1]),
-        ))
+        signals.append(
+            _macd_signal(
+                float(macd_line.iloc[-1]),
+                float(signal_line.iloc[-1]),
+                float(histogram.iloc[-2]),
+                float(histogram.iloc[-1]),
+            )
+        )
 
     # ── Bollinger Bands ───────────────────────────────────────────────────────
     if upper is not None and not upper.dropna().empty:
         price = df["Close"].iloc[-1]
-        price = float(price.iloc[-1]) if hasattr(price, '__iter__') else float(price)
-        signals.append(_bollinger_signal(
-            price,
-            float(upper.iloc[-1]),
-            float(lower.iloc[-1]),
-            float(middle.iloc[-1]),
-        ))
+        price = float(price.iloc[-1]) if hasattr(price, "__iter__") else float(price)
+        signals.append(
+            _bollinger_signal(
+                price,
+                float(upper.iloc[-1]),
+                float(lower.iloc[-1]),
+                float(middle.iloc[-1]),
+            )
+        )
 
     # ── SMA 50/200 cross ──────────────────────────────────────────────────────
-    if enable_sma_cross and sma50 is not None and sma200 is not None:
-        if not sma50.dropna().empty and not sma200.dropna().empty and len(sma50.dropna()) >= 2:
-            signals.append(_sma_cross_signal(
-                float(sma50.iloc[-1]),  float(sma200.iloc[-1]),
-                float(sma50.iloc[-2]),  float(sma200.iloc[-2]),
-            ))
+    if (
+        enable_sma_cross
+        and sma50 is not None and sma200 is not None
+        and not sma50.dropna().empty
+        and not sma200.dropna().empty
+        and len(sma50.dropna()) >= 2
+    ):
+        signals.append(
+            _sma_cross_signal(
+                float(sma50.iloc[-1]),
+                float(sma200.iloc[-1]),
+                float(sma50.iloc[-2]),
+                float(sma200.iloc[-2]),
+            )
+        )
 
     # ── Volume trend ──────────────────────────────────────────────────────────
     if enable_volume:
@@ -419,14 +551,14 @@ def analyze(
 
     if enable_xgboost:
         try:
+            from analysis.garch_signals import train_garch_signal
             from analysis.ml_signals import (
+                compute_signal_probability,
                 detect_market_regime,
                 detect_market_regime_hmm,
-                train_xgboost_signal,
                 train_hmm_signal,
-                compute_signal_probability,
+                train_xgboost_signal,
             )
-            from analysis.garch_signals import train_garch_signal
 
             # Prefer HMM-based regime detection; fall back to rule-based.
             # (Both detectors use GARCH volatility internally when available.)
@@ -453,9 +585,9 @@ def analyze(
 
     # ── Aggregate weighted score ───────────────────────────────────────────────
     WEIGHTS = {"STRONG": 3, "MODERATE": 2, "WEAK": 1}
-    buy_score  = sum(WEIGHTS[s.strength] for s in signals if s.signal == "BUY")
+    buy_score = sum(WEIGHTS[s.strength] for s in signals if s.signal == "BUY")
     sell_score = sum(WEIGHTS[s.strength] for s in signals if s.signal == "SELL")
-    total      = sum(WEIGHTS[s.strength] for s in signals)
+    total = sum(WEIGHTS[s.strength] for s in signals)
 
     if total == 0:
         overall, strength, confidence = "HOLD", "WEAK", 0.0
@@ -463,44 +595,43 @@ def analyze(
         overall, strength = "HOLD", "WEAK"
         confidence = round(max(buy_score, sell_score) / (3 * len(signals)) * 100, 1)
     else:
-        max_possible     = 3 * len(signals)
-        dominant_score   = max(buy_score, sell_score)
+        max_possible = 3 * len(signals)
+        dominant_score = max(buy_score, sell_score)
         dominant_fraction = dominant_score / total
 
-        overall    = "BUY" if buy_score > sell_score else "SELL"
+        overall = "BUY" if buy_score > sell_score else "SELL"
         confidence = round(dominant_score / max_possible * 100, 1)
 
-        if   dominant_fraction >= 0.60: strength = "STRONG"
-        elif dominant_fraction >= 0.40: strength = "MODERATE"
-        else:                           strength = "WEAK"
+        if dominant_fraction >= 0.60:
+            strength = "STRONG"
+        elif dominant_fraction >= 0.40:
+            strength = "MODERATE"
+        else:
+            strength = "WEAK"
 
     # ── Regime-aware probability ───────────────────────────────────────────────
     if market_context is not None:
         try:
             from analysis.ml_signals import compute_signal_probability
+
             ml_probability = compute_signal_probability(signals, market_context)
         except Exception:
             pass
 
     # ── Summary ───────────────────────────────────────────────────────────────
     counts = {
-        "BUY":  sum(1 for s in signals if s.signal == "BUY"),
+        "BUY": sum(1 for s in signals if s.signal == "BUY"),
         "SELL": sum(1 for s in signals if s.signal == "SELL"),
         "HOLD": sum(1 for s in signals if s.signal == "HOLD"),
     }
 
     if ml_probability is not None:
         direction = "compra" if ml_probability >= 0.55 else "venta" if ml_probability <= 0.45 else "neutral"
-        prob_txt  = f"Prob. {direction}: {ml_probability:.0%}."
+        prob_txt = f"Prob. {direction}: {ml_probability:.0%}."
     else:
-        prob_txt  = f"Confianza: {confidence:.0f}%."
+        prob_txt = f"Confianza: {confidence:.0f}%."
 
-    summary = (
-        f"{counts['BUY']} alcistas · "
-        f"{counts['SELL']} bajistas · "
-        f"{counts['HOLD']} neutrales. "
-        f"{prob_txt}"
-    )
+    summary = f"{counts['BUY']} alcistas · {counts['SELL']} bajistas · {counts['HOLD']} neutrales. {prob_txt}"
 
     return AnalysisResult(
         ticker=ticker,
@@ -516,12 +647,13 @@ def analyze(
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
+
 def get_support_resistance(df: pd.DataFrame, window: int = 20) -> dict:
     """Simple swing high/low support and resistance levels."""
     if len(df) < window * 2:
         return {}
-    close   = df["Close"].squeeze()
-    recent  = close.tail(window * 3)
-    support    = float(recent.rolling(window).min().iloc[-1])
+    close = df["Close"].squeeze()
+    recent = close.tail(window * 3)
+    support = float(recent.rolling(window).min().iloc[-1])
     resistance = float(recent.rolling(window).max().iloc[-1])
     return {"support": round(support, 4), "resistance": round(resistance, 4)}

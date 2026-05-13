@@ -21,29 +21,41 @@ Provides three things:
 
 Requires: pip install arch   (graceful fallback to EWMA if unavailable)
 """
+
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
-from typing import Optional, Tuple
 
-from config.logging_config import get_logger
+from config.constants import (
+    GARCH_FORECAST_HORIZON as GARCH_FORECAST_H,
+)
+from config.constants import (
+    GARCH_HIGH_VOL_ANNUAL_PCT as HIGH_VOL_ANNUAL_PCT,
+)
+from config.constants import (
+    GARCH_LOW_VOL_ANNUAL_PCT as LOW_VOL_ANNUAL_PCT,
+)
 from config.constants import (
     GARCH_MIN_ROWS,
-    GARCH_FORECAST_HORIZON as GARCH_FORECAST_H,
-    GARCH_VOL_EXPAND_RATIO   as VOL_EXPAND_RATIO,
-    GARCH_VOL_CONTRACT_RATIO as VOL_CONTRACT_RATIO,
-    GARCH_LOW_VOL_ANNUAL_PCT  as LOW_VOL_ANNUAL_PCT,
-    GARCH_HIGH_VOL_ANNUAL_PCT as HIGH_VOL_ANNUAL_PCT,
     TRADING_DAYS_PER_YEAR,
 )
+from config.constants import (
+    GARCH_VOL_CONTRACT_RATIO as VOL_CONTRACT_RATIO,
+)
+from config.constants import (
+    GARCH_VOL_EXPAND_RATIO as VOL_EXPAND_RATIO,
+)
+from config.logging_config import get_logger
 
 log = get_logger(__name__)
 
 # ── Optional arch dependency ─────────────────────────────────────────────────
 try:
     from arch import arch_model
+
     _ARCH_OK = True
 except ImportError:
     _ARCH_OK = False
@@ -51,36 +63,39 @@ except ImportError:
 
 # ── GarchForecast dataclass ──────────────────────────────────────────────────
 
+
 @dataclass
 class GarchForecast:
     """Output of a GARCH(1,1) fit on daily log-returns."""
-    current_vol: float        # annualised %, conditional σ at t
-    forecast_vol: float       # annualised %, mean σ over the next `horizon` days
-    long_run_vol: float       # annualised %, unconditional σ implied by params
-    horizon: int              # forecast horizon in trading days
-    alpha: float              # short-run shock coefficient
-    beta: float               # persistence coefficient
-    persistence: float        # alpha + beta  (→1 = very persistent)
-    vol_regime: str           # "EXPANSION" | "CONTRACTION" | "STABLE"
+
+    current_vol: float  # annualised %, conditional σ at t
+    forecast_vol: float  # annualised %, mean σ over the next `horizon` days
+    long_run_vol: float  # annualised %, unconditional σ implied by params
+    horizon: int  # forecast horizon in trading days
+    alpha: float  # short-run shock coefficient
+    beta: float  # persistence coefficient
+    persistence: float  # alpha + beta  (→1 = very persistent)
+    vol_regime: str  # "EXPANSION" | "CONTRACTION" | "STABLE"
 
     @property
     def vol_regime_es(self) -> str:
         return {
-            "EXPANSION":   "Expansión",
+            "EXPANSION": "Expansión",
             "CONTRACTION": "Contracción",
-            "STABLE":      "Estable",
+            "STABLE": "Estable",
         }.get(self.vol_regime, "—")
 
     @property
     def vol_regime_color(self) -> str:
         return {
-            "EXPANSION":   "#f87171",
+            "EXPANSION": "#f87171",
             "CONTRACTION": "#22c55e",
-            "STABLE":      "#fbbf24",
+            "STABLE": "#fbbf24",
         }.get(self.vol_regime, "#fbbf24")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _log_returns(df: pd.DataFrame) -> pd.Series:
     """Daily log-returns as a clean pd.Series (no NaNs, no zeros)."""
@@ -114,10 +129,11 @@ def _ewma_annual_vol(df: pd.DataFrame) -> float:
 
 # ── 1. Fit GARCH(1,1) ────────────────────────────────────────────────────────
 
+
 def fit_garch_forecast(
     df: pd.DataFrame,
     horizon: int = GARCH_FORECAST_H,
-) -> Optional[GarchForecast]:
+) -> GarchForecast | None:
     """
     Fit a symmetric GARCH(1,1) model on daily log-returns and return a
     GarchForecast summarising the current and forecasted volatility.
@@ -158,7 +174,8 @@ def fit_garch_forecast(
         if conv_flag is not None and conv_flag != 0:
             log.info(
                 "GARCH did not converge (flag=%s, n=%d) — falling back to EWMA.",
-                conv_flag, len(returns),
+                conv_flag,
+                len(returns),
             )
             return None
 
@@ -182,21 +199,27 @@ def fit_garch_forecast(
         params = res.params
         omega = float(params.get("omega", 0.0))
         alpha = float(params.get("alpha[1]", params.get("alpha", 0.0)))
-        beta  = float(params.get("beta[1]",  params.get("beta",  0.0)))
+        beta = float(params.get("beta[1]", params.get("beta", 0.0)))
         persistence = alpha + beta
 
         # Sanity-check parameters: a usable GARCH(1,1) needs ω>0, α≥0, β≥0,
         # and α+β<1 for stationarity. Anything else means the optimiser
         # parked on a corner of the parameter space and the forecast is junk.
         if not (
-            np.isfinite(omega) and omega > 0
-            and np.isfinite(alpha) and alpha >= 0
-            and np.isfinite(beta)  and beta  >= 0
+            np.isfinite(omega)
+            and omega > 0
+            and np.isfinite(alpha)
+            and alpha >= 0
+            and np.isfinite(beta)
+            and beta >= 0
             and persistence < 1.0
         ):
             log.info(
                 "GARCH parameters out of valid region (ω=%.4g α=%.4g β=%.4g α+β=%.4g)",
-                omega, alpha, beta, persistence,
+                omega,
+                alpha,
+                beta,
+                persistence,
             )
             return None
 
@@ -208,7 +231,7 @@ def fit_garch_forecast(
 
         # Annualise (daily %-σ → annual %) by √(trading days/year)
         annualise = lambda v: round(float(v) * np.sqrt(TRADING_DAYS_PER_YEAR), 1)
-        current_annual  = annualise(cond_vol_daily)
+        current_annual = annualise(cond_vol_daily)
         forecast_annual = annualise(forecast_vol_daily)
         long_run_annual = annualise(long_run_daily)
 
@@ -232,7 +255,8 @@ def fit_garch_forecast(
 
 # ── 2. Best-available annualised volatility ──────────────────────────────────
 
-def compute_annual_volatility(df: pd.DataFrame) -> Tuple[float, float, str]:
+
+def compute_annual_volatility(df: pd.DataFrame) -> tuple[float, float, str]:
     """
     Return the best available annualised volatility estimate.
 
@@ -250,6 +274,7 @@ def compute_annual_volatility(df: pd.DataFrame) -> Tuple[float, float, str]:
 
 
 # ── 3. GARCH-based TechnicalSignal ───────────────────────────────────────────
+
 
 def train_garch_signal(
     df: pd.DataFrame,
