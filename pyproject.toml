@@ -38,9 +38,6 @@ extend-exclude = [
     "dist",
     "__pycache__",
     "*.egg-info",
-    "ANALISIS_FINANZIAS.md",
-    "HALLAZGOS_POR_ARCHIVO.md",
-    "EJEMPLOS_REFACTOR.md",
 ]
 
 [tool.ruff.lint]
