@@ -22,8 +22,6 @@ Table summary
                             on every scan. Powers the equity curve chart.
 """
 
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -38,7 +36,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from database.models import Base
+from database.models import Base, utcnow_naive
 
 # ── Valid enum-like values (validated in the code layer, not via CHECK) ───────
 
@@ -78,7 +76,7 @@ class PaperAccount(Base):
 
     # Lifecycle
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     last_scan_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -106,7 +104,7 @@ class PaperWatchlistItem(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
     ticker = Column(String(20), nullable=False)
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at = Column(DateTime, default=utcnow_naive)
 
     account = relationship("PaperAccount", back_populates="watchlist")
 
@@ -129,8 +127,8 @@ class PaperPosition(Base):
     ticker = Column(String(20), nullable=False)
     shares = Column(Float, nullable=False, default=0.0)
     avg_cost = Column(Float, nullable=False, default=0.0)  # VWAP incl. fees/slippage
-    opened_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    opened_at = Column(DateTime, default=utcnow_naive)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
     entry_reason = Column(String(100), nullable=True)
 
     account = relationship("PaperAccount", back_populates="positions")
@@ -175,7 +173,7 @@ class PaperOrder(Base):
 
     # Status flow
     status = Column(String(20), nullable=False, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     decided_at = Column(DateTime, nullable=True)  # approved / rejected
     filled_at = Column(DateTime, nullable=True)  # actually executed
 
@@ -207,7 +205,7 @@ class PaperEquitySnapshot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
-    snapshot_at = Column(DateTime, default=datetime.utcnow)
+    snapshot_at = Column(DateTime, default=utcnow_naive)
     cash = Column(Float, nullable=False)
     positions_value = Column(Float, nullable=False)
     total_equity = Column(Float, nullable=False)

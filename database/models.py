@@ -19,7 +19,7 @@ remember to wrap its usage in try/finally and call ``session.close()``.
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -70,6 +70,27 @@ class Base(DeclarativeBase):
     pass
 
 
+def utcnow_naive() -> datetime:
+    """
+    Naive UTC timestamp for column defaults.
+
+    All ``DateTime`` columns in this schema are timezone-naive (we never
+    declared ``DateTime(timezone=True)``), so historical rows are stored
+    as naive UTC. ``datetime.utcnow`` was the obvious source but is
+    deprecated as of Python 3.12 with a removal scheduled for the future.
+
+    This helper returns the same value (year/month/day/h/m/s, no tzinfo)
+    by going through ``datetime.now(timezone.utc)`` and stripping the
+    tzinfo, so on-disk values stay binary-compatible with what
+    ``datetime.utcnow`` was producing before.
+
+    Usage::
+
+        created_at = Column(DateTime, default=utcnow_naive)
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class Portfolio(Base):
     """Represents a named investment portfolio."""
 
@@ -79,7 +100,7 @@ class Portfolio(Base):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     currency = Column(String(10), default="USD")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     positions = relationship("Position", back_populates="portfolio", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="portfolio", cascade="all, delete-orphan")
@@ -103,8 +124,8 @@ class Position(Base):
     currency = Column(String(10), default="USD")
     sector = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     purchase_date = Column(DateTime, nullable=True)  # actual date the shares were bought
 
@@ -131,7 +152,7 @@ class Transaction(Base):
     quantity = Column(Float, nullable=False)
     price = Column(Float, nullable=False)
     fees = Column(Float, default=0.0)
-    date = Column(DateTime, default=datetime.utcnow, index=True)
+    date = Column(DateTime, default=utcnow_naive, index=True)
     notes = Column(Text, nullable=True)
 
     position = relationship("Position", back_populates="transactions")
@@ -161,7 +182,7 @@ class Alert(Base):
     target_value = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True, index=True)
     triggered_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     message = Column(Text, nullable=True)
 
     portfolio = relationship("Portfolio", back_populates="alerts")
@@ -185,7 +206,7 @@ class PriceCache(Base):
     change_pct = Column(Float, nullable=True)
     volume = Column(Float, nullable=True)
     market_cap = Column(Float, nullable=True)
-    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
+    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
 
     def __repr__(self):
         return f"<PriceCache({self.ticker} @ {self.price})>"
@@ -204,7 +225,7 @@ class DividendCache(Base):
     ticker = Column(String(20), nullable=False, index=True)
     since_date = Column(DateTime, nullable=False)  # purchase date of position
     total_per_share = Column(Float, nullable=False, default=0.0)  # cumulative $/share
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f"<DividendCache({self.ticker} ${self.total_per_share}/share since {self.since_date.date()})>"
@@ -224,7 +245,7 @@ class HistoricalDataCache(Base):
     period = Column(String(10), nullable=False)  # e.g. "1y", "6mo"
     interval = Column(String(10), nullable=False)  # e.g. "1d", "1h"
     data_json = Column(Text, nullable=False)  # DataFrame serialized via to_json(orient="split")
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f"<HistoricalDataCache({self.ticker} {self.period}/{self.interval} @ {self.fetched_at})>"
