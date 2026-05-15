@@ -30,7 +30,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -57,7 +56,8 @@ log = get_logger(__name__)
 # working unchanged (they re-export below).
 # Real-portfolio integration: tras aprobar una orden de paper, ofrecemos
 # registrar la operación correspondiente en el Portafolio real del usuario.
-from database.models import Portfolio, Position, session_scope
+# NOTE: Portfolio / Position / session_scope used to be imported here for the
+# real-portfolio crossover helpers; those moved to ui.paper.real_portfolio.
 from paper_trading.account import (
     add_watchlist_tickers,
     compute_equity,
@@ -78,6 +78,7 @@ from paper_trading.presets import WATCHLIST_PRESETS
 from ui.dialogs import AddPositionDialog, SellPositionDialog
 from ui.paper.account_dialog import PaperAccountDialog
 from ui.paper.equity_chart import EquityCurveChart
+from ui.paper.real_portfolio import find_real_position, pick_real_portfolio
 from ui.paper.workers import PricesWorker
 
 # Backwards-compatible aliases for the previous private names. External code
@@ -940,7 +941,7 @@ class PaperTradingTab(QWidget):
 
         # 2. BUY → AddPositionDialog
         if side == "BUY":
-            portfolio_id = self._pick_real_portfolio()
+            portfolio_id = pick_real_portfolio(self)
             if portfolio_id is None:
                 return
             dlg = AddPositionDialog(
@@ -956,7 +957,7 @@ class PaperTradingTab(QWidget):
 
         # 3. SELL → SellPositionDialog
         if side == "SELL":
-            pos = self._find_real_position(ticker)
+            pos = find_real_position(self, ticker)
             if pos is None:
                 QMessageBox.information(
                     self,
@@ -975,79 +976,10 @@ class PaperTradingTab(QWidget):
             dlg.exec()
             return
 
-    # ── Real-portfolio helpers ────────────────────────────────────────────────
-
-    def _pick_real_portfolio(self) -> int | None:
-        """Devuelve el id de un portafolio real, o None si el usuario canceló /
-        no hay portafolios. Si hay >1, abre un selector."""
-        with session_scope() as session:
-            portfolios = session.query(Portfolio).order_by(Portfolio.name.asc()).all()
-            if not portfolios:
-                QMessageBox.information(
-                    self,
-                    "Sin portafolios",
-                    "No tenés portafolios reales todavía. Creá uno desde la "
-                    "pestaña Portafolio antes de registrar operaciones.",
-                )
-                return None
-            if len(portfolios) == 1:
-                return int(portfolios[0].id)
-            names = [p.name for p in portfolios]
-            ids = [int(p.id) for p in portfolios]
-        # Open the dialog AFTER the session is closed — Qt event loop should
-        # not run while a DB session is held open.
-        choice, ok = QInputDialog.getItem(
-            self,
-            "Elegir portafolio",
-            "¿En qué portafolio real querés registrar la compra?",
-            names,
-            0,
-            False,
-        )
-        if not ok:
-            return None
-        try:
-            return ids[names.index(choice)]
-        except ValueError:
-            return None
-
-    def _find_real_position(self, ticker: str) -> Position | None:
-        """Busca la Position real más relevante para este ticker. Si hay más
-        de un portafolio con ese ticker, deja al usuario elegir."""
-        with session_scope() as session:
-            rows = (
-                session.query(Position, Portfolio)
-                .join(Portfolio, Position.portfolio_id == Portfolio.id)
-                .filter(Position.ticker == ticker.upper())
-                .filter(Position.quantity > 0)
-                .all()
-            )
-            if not rows:
-                return None
-            if len(rows) == 1:
-                pos, _pf = rows[0]
-                session.expunge(pos)
-                return pos
-            labels = [
-                f"{pf.name}  ·  {pos.quantity:g} shares @ ${pos.avg_buy_price:,.2f}" for pos, pf in rows
-            ]
-            position_objs = [pos for pos, _pf in rows]
-            session.expunge_all()
-        # Dialog runs outside the DB session.
-        choice, ok = QInputDialog.getItem(
-            self,
-            "Elegir portafolio",
-            f"Hay {len(rows)} portafolios con {ticker}. ¿Cuál usás?",
-            labels,
-            0,
-            False,
-        )
-        if not ok:
-            return None
-        try:
-            return position_objs[labels.index(choice)]
-        except ValueError:
-            return None
+    # NOTE: ``_pick_real_portfolio`` and ``_find_real_position`` were
+    # extracted to ``ui.paper.real_portfolio`` — they have no shared state
+    # with this tab. Call sites use ``pick_real_portfolio(self)`` /
+    # ``find_real_position(self, ticker)``.
 
     # ── Equity curve ──────────────────────────────────────────────────────────
 

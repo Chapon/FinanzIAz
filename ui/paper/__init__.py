@@ -10,6 +10,13 @@ read, tested, and refactored independently. The orchestrator class
 
 from ui.paper.account_dialog import PaperAccountDialog
 from ui.paper.equity_chart import EquityCurveChart
+from ui.paper.real_portfolio import find_real_position, pick_real_portfolio
 from ui.paper.workers import PricesWorker
 
-__all__ = ["EquityCurveChart", "PaperAccountDialog", "PricesWorker"]
+__all__ = [
+    "EquityCurveChart",
+    "PaperAccountDialog",
+    "PricesWorker",
+    "find_real_position",
+    "pick_real_portfolio",
+]

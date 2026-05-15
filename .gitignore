@@ -57,6 +57,8 @@ exports/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+ruff_output.txt
+ruff_output_*.txt
 
 # OS
 Thumbs.db
