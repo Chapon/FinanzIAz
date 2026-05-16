@@ -25,7 +25,13 @@ from config.logging_config import get_logger
 from config.settings_manager import settings
 from data.yahoo_finance import get_bulk_dividends, get_bulk_prices
 from database.models import Portfolio, Position, session_scope
-from ui.dialogs import AddPortfolioDialog, AddPositionDialog, RenamePortfolioDialog, SellPositionDialog
+from ui.dialogs import (
+    AddPortfolioDialog,
+    AddPositionDialog,
+    EditTickerDialog,
+    RenamePortfolioDialog,
+    SellPositionDialog,
+)
 from ui.import_dialog import ImportDialog
 from ui.styles import PALETTE, SIGNAL_COLORS
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
@@ -725,6 +731,7 @@ class PortfolioTab(QWidget):
 
         menu.addAction("📈  Analizar", lambda: self.position_selected.emit(position))
         menu.addAction("💰  Vender", lambda: self._sell_pos_at_row(row))
+        menu.addAction("✏️  Editar ticker…", lambda: self._edit_ticker_at_row(row))
         menu.addSeparator()
 
         delete_action = menu.addAction(f"🗑  Eliminar {position.ticker}")
@@ -741,6 +748,13 @@ class PortfolioTab(QWidget):
 
     def _sell_pos_at_row(self, row: int):
         if SellPositionDialog(self._positions[row], self).exec():
+            self._refresh_positions()
+
+    def _edit_ticker_at_row(self, row: int):
+        """Renombra el símbolo de una posición (manteniendo cantidad, precio y transacciones)."""
+        if row < 0 or row >= len(self._positions):
+            return
+        if EditTickerDialog(self._positions[row], self).exec():
             self._refresh_positions()
 
     def _delete_pos_at_row(self, row: int):

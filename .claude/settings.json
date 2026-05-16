@@ -6,7 +6,8 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(python -m pytest tests/ -ra -m \"not network\" --tb=short)"
+      "Bash(python -m pytest tests/ -ra -m \"not network\" --tb=short)",
+      "Bash(git commit *)"
     ]
   }
 }

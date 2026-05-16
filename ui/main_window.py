@@ -24,6 +24,7 @@ log = get_logger(__name__)
 from paper_trading.scheduler import PaperScheduler
 from ui.alerts_tab import AlertsTab
 from ui.analysis_tab import AnalysisTab
+from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
 from ui.paper_tab import PaperTradingTab
 from ui.portfolio_tab import PortfolioTab
@@ -118,6 +119,7 @@ class MainWindow(QMainWindow):
         "alerts": ("Alertas", "Precios"),
         "paper": ("Paper Trading", "Simulación en vivo"),
         "reports": ("Reportes", "Exportar"),
+        "failed": ("Tickers fallidos", "Diagnóstico"),
         "settings": ("Ajustes", "Configuración"),
     }
 
@@ -169,6 +171,7 @@ class MainWindow(QMainWindow):
         self.alerts_tab = AlertsTab()
         self.paper_tab = PaperTradingTab()
         self.reports_tab = ReportsTab()
+        self.failed_tickers_tab = FailedTickersTab()
         self.settings_tab = SettingsTab()
 
         self.stack.addWidget(self.home_tab)  # 0
@@ -177,7 +180,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.alerts_tab)  # 3
         self.stack.addWidget(self.paper_tab)  # 4
         self.stack.addWidget(self.reports_tab)  # 5
-        self.stack.addWidget(self.settings_tab)  # 6
+        self.stack.addWidget(self.failed_tickers_tab)  # 6
+        self.stack.addWidget(self.settings_tab)  # 7
 
         right_layout.addWidget(self.stack, stretch=1)
         root_layout.addWidget(right, stretch=1)
@@ -194,7 +198,8 @@ class MainWindow(QMainWindow):
         "alerts": 3,
         "paper": 4,
         "reports": 5,
-        "settings": 6,
+        "failed": 6,
+        "settings": 7,
     }
 
     def _connect_signals(self):
@@ -232,6 +237,12 @@ class MainWindow(QMainWindow):
                 self.paper_tab._refresh_all()
             except Exception as e:
                 log.warning("paper refresh failed: %s", e)
+        elif key == "failed":
+            # Refresh failed-ticker list each time the tab is shown.
+            try:
+                self.failed_tickers_tab.refresh()
+            except Exception as e:
+                log.warning("failed-tickers refresh failed: %s", e)
 
     def _on_position_selected(self, position):
         self._navigate("analysis")

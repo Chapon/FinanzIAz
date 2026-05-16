@@ -51,6 +51,11 @@ from config.constants import (
     PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
 )
 from config.logging_config import get_logger
+from data.failed_tickers import (
+    get_failing_set,
+    record_failure,
+    record_success,
+)
 from data.quality import clean_ohlcv
 from database.models import DividendCache, HistoricalDataCache, PriceCache, session_scope
 
@@ -204,34 +209,52 @@ def get_current_price(ticker: str) -> dict | None:
 
 
 def _fetch_ticker_info(ticker: str) -> dict | None:
-    """Raw yfinance fetch — returns a clean dict. Hard-timeout protected."""
+    """Raw yfinance fetch — returns a clean dict. Hard-timeout protected.
+
+    On failure (None / exception), registra el ticker en ``failed_tickers``
+    para que la UI lo muestre y los próximos bulk fetch lo salteen.
+    """
+
+    last_exc: list[str] = []
 
     def _do_fetch() -> dict | None:
-        t = _ticker(ticker)
-        info = t.fast_info
+        try:
+            t = _ticker(ticker)
+            info = t.fast_info
 
-        price = getattr(info, "last_price", None)
-        prev_close = getattr(info, "previous_close", None)
-        if price is None:
-            return None
+            price = getattr(info, "last_price", None)
+            prev_close = getattr(info, "previous_close", None)
+            if price is None:
+                last_exc.append("Sin precio (símbolo posiblemente deslistado)")
+                return None
 
-        change_pct = None
-        if prev_close and prev_close != 0:
-            change_pct = ((price - prev_close) / prev_close) * 100
+            change_pct = None
+            if prev_close and prev_close != 0:
+                change_pct = ((price - prev_close) / prev_close) * 100
 
-        return {
-            "ticker": ticker.upper(),
-            "price": round(float(price), 4),
-            "prev_close": round(float(prev_close), 4) if prev_close else None,
-            "change_pct": round(change_pct, 2) if change_pct is not None else None,
-            "volume": getattr(info, "three_month_average_volume", None),
-            "market_cap": getattr(info, "market_cap", None),
-            "fifty_two_week_high": getattr(info, "year_high", None),
-            "fifty_two_week_low": getattr(info, "year_low", None),
-            "currency": getattr(info, "currency", "USD"),
-        }
+            return {
+                "ticker": ticker.upper(),
+                "price": round(float(price), 4),
+                "prev_close": round(float(prev_close), 4) if prev_close else None,
+                "change_pct": round(change_pct, 2) if change_pct is not None else None,
+                "volume": getattr(info, "three_month_average_volume", None),
+                "market_cap": getattr(info, "market_cap", None),
+                "fifty_two_week_high": getattr(info, "year_high", None),
+                "fifty_two_week_low": getattr(info, "year_low", None),
+                "currency": getattr(info, "currency", "USD"),
+            }
+        except Exception as e:
+            last_exc.append(f"{type(e).__name__}: {e}")
+            raise
 
-    return _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
+    result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
+    if result is None:
+        err = last_exc[0] if last_exc else "Sin datos disponibles"
+        record_failure(ticker, err, operation="price")
+    else:
+        # El ticker volvió a funcionar — limpiar registro previo si existía.
+        record_success(ticker)
+    return result
 
 
 def get_company_info(ticker: str) -> dict:
@@ -315,6 +338,11 @@ def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -
         default=None,
     )
     if df is None:
+        record_failure(
+            ticker,
+            f"Sin datos históricos ({period}/{interval}) — símbolo posiblemente deslistado",
+            operation="historical",
+        )
         return None
 
     # 2.5 Quality check + light cleaning. Issues get logged; unusable frames
@@ -323,6 +351,7 @@ def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -
     df, report = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
     if df is None or not report.is_usable:
         log.warning("Historical data for %s rejected after QA: %s", ticker, report.summary())
+        record_failure(ticker, f"Datos rechazados por QA: {report.summary()}", operation="historical")
         return None
     if report.has_issues():
         log.info("Historical data for %s: %s", ticker, report.summary())
@@ -347,6 +376,8 @@ def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -
         except Exception:
             log.exception("Historical cache write failed for %s", ticker)
 
+    # Descarga exitosa — limpiar registro de fallos previos si existía.
+    record_success(ticker)
     return df
 
 
@@ -482,7 +513,11 @@ def is_market_open() -> tuple[bool, str]:
 
 
 def validate_ticker(ticker: str) -> bool:
-    """Check whether a ticker symbol is valid on Yahoo Finance. Hard-timeout protected."""
+    """Check whether a ticker symbol is valid on Yahoo Finance. Hard-timeout protected.
+
+    Registra el resultado en ``failed_tickers`` para que la UI lo pueda mostrar
+    y los próximos bulk fetch lo puedan saltear.
+    """
 
     def _do_check() -> bool:
         try:
@@ -492,19 +527,46 @@ def validate_ticker(ticker: str) -> bool:
         except Exception:
             return False
 
-    return bool(_run_with_timeout(_do_check, timeout=HARD_TIMEOUT_SECONDS, default=False))
+    ok = bool(_run_with_timeout(_do_check, timeout=HARD_TIMEOUT_SECONDS, default=False))
+    if ok:
+        record_success(ticker)
+    else:
+        record_failure(ticker, "Símbolo no encontrado en Yahoo Finance", operation="validate")
+    return ok
 
 
 def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     """
     Fetch current prices for multiple tickers efficiently.
-    Strategy: 1 batch DB read → parallel live fetches for misses → 1 batch DB write.
+    Strategy:
+      0. Filtrar tickers conocidos como fallidos (status=failing/ignored).
+      1. Batch DB cache read.
+      2. Parallel live fetches para los misses.
+      3. Batch DB cache write.
+
+    Los tickers omitidos devuelven None en el dict resultante, igual que si
+    hubieran fallado al consultarse — los consumidores ya saben manejar None.
     """
     if not tickers:
         return {}
 
     tickers_upper = [t.upper() for t in tickers]
     results: dict[str, dict | None] = {}
+
+    # 0. Filtrar tickers conocidos como inválidos para no gastar QPS ni logs.
+    skip_set = get_failing_set()
+    if skip_set:
+        active_tickers: list[str] = []
+        for ticker in tickers_upper:
+            if ticker in skip_set:
+                results[ticker] = None  # omitidos — la UI ya los muestra en su pestaña
+            else:
+                active_tickers.append(ticker)
+        if not active_tickers:
+            log.info("Bulk fetch: todos los tickers están en la lista de fallidos, nada que consultar")
+            return results
+        tickers_upper = active_tickers
+
     cache_misses: list[str] = []
 
     # 1. Single batch cache read (one query for all tickers)

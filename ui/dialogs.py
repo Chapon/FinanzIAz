@@ -489,3 +489,162 @@ class SellPositionDialog(QDialog):
                 pos.quantity -= qty
                 pos.updated_at = datetime.utcnow()
         self.accept()
+
+
+class EditTickerDialog(QDialog):
+    """
+    Cambia el símbolo de un Position manteniendo el resto de los datos
+    (cantidad, precio promedio, transacciones, fecha de compra, notas).
+
+    Útil para casos donde el papel sigue siendo el mismo pero la bolsa
+    renombró el símbolo (ej.: ERJ → EMBJ tras el rebrand de Embraer).
+
+    Flujo:
+    1. Usuario tipea el nuevo ticker.
+    2. Al confirmar, se valida contra Yahoo Finance (con loader).
+    3. Si es válido, se actualiza Position.ticker en la DB.
+    4. Si había una entrada en failed_tickers para el viejo, se borra.
+    """
+
+    def __init__(self, position, parent=None):
+        super().__init__(parent)
+        self.position = position
+        self._validated_ticker: str | None = None
+        self.setWindowTitle(f"Editar ticker — {position.ticker}")
+        self.setMinimumWidth(420)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        intro = QLabel(
+            f"Posición actual: <b>{self.position.ticker}</b>"
+            f"{' (' + self.position.company_name + ')' if self.position.company_name else ''}<br>"
+            "<span style='color:#8b949e; font-size: 11px;'>"
+            "Se mantienen cantidad, precio promedio, transacciones y notas. "
+            "Solo cambia el símbolo del papel.</span>"
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self.ticker_edit = QLineEdit(self.position.ticker)
+        self.ticker_edit.setPlaceholderText("Ej: EMBJ")
+        self.ticker_edit.setValidator(TickerValidator(self.ticker_edit))
+        self.ticker_edit.setMaxLength(20)
+        self.ticker_edit.selectAll()
+        self.ticker_edit.returnPressed.connect(self._accept)
+        form.addRow("Nuevo ticker *", self.ticker_edit)
+
+        layout.addLayout(form)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+        layout.addWidget(self.status_label)
+
+        self.btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.btns.accepted.connect(self._accept)
+        self.btns.rejected.connect(self.reject)
+        layout.addWidget(self.btns)
+
+    def _accept(self):
+        new_ticker = self.ticker_edit.text().strip().upper()
+
+        # Validaciones locales primero
+        if not new_ticker:
+            QMessageBox.warning(self, "Error", "El ticker no puede estar vacío.")
+            return
+        if not is_valid_ticker(new_ticker):
+            QMessageBox.warning(
+                self,
+                "Ticker inválido",
+                "Formato inválido. Usá letras, números, punto o guión (ej: AAPL, BRK-B, GGAL.BA).",
+            )
+            return
+        if new_ticker == self.position.ticker.upper():
+            QMessageBox.information(
+                self, "Sin cambios", "El nuevo ticker es igual al actual."
+            )
+            return
+
+        # Conflicto: ya existe otra posición con ese ticker en el mismo portafolio
+        with session_scope() as session:
+            conflict = (
+                session.query(Position)
+                .filter(
+                    Position.portfolio_id == self.position.portfolio_id,
+                    Position.ticker == new_ticker,
+                    Position.id != self.position.id,
+                )
+                .first()
+            )
+            if conflict:
+                QMessageBox.warning(
+                    self,
+                    "Ticker en uso",
+                    f"Ya existe otra posición con el ticker <b>{new_ticker}</b> en este portafolio. "
+                    "Si querés consolidarlas, eliminá una y editá la otra.",
+                )
+                return
+
+        # Validación contra Yahoo Finance (puede tardar unos segundos)
+        self.btns.setEnabled(False)
+        self.ticker_edit.setEnabled(False)
+        self.status_label.setText(f"Validando <b>{new_ticker}</b> contra Yahoo Finance…")
+        try:
+            # Forzar reintento si el ticker estaba en la lista de fallidos
+            try:
+                from data import failed_tickers as _ft
+
+                _ft.mark_for_retry(new_ticker)
+            except Exception:
+                pass
+
+            valid = validate_ticker(new_ticker)
+        finally:
+            self.btns.setEnabled(True)
+            self.ticker_edit.setEnabled(True)
+
+        if not valid:
+            self.status_label.setText("")
+            QMessageBox.warning(
+                self,
+                "Ticker no encontrado",
+                f"<b>{new_ticker}</b> no devolvió datos en Yahoo Finance.<br><br>"
+                "Verificá que el símbolo esté bien escrito y que sea el ticker actual del papel. "
+                "Si la bolsa cambió el símbolo recientemente, esperá unos minutos a que Yahoo lo indexe.",
+            )
+            return
+
+        # Persistir el cambio
+        old_ticker = self.position.ticker
+        try:
+            with session_scope() as session:
+                pos = session.query(Position).filter(Position.id == self.position.id).first()
+                if pos is None:
+                    QMessageBox.warning(self, "Error", "No se encontró la posición en la base.")
+                    return
+                pos.ticker = new_ticker
+                pos.updated_at = datetime.utcnow()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo actualizar la posición:\n{e}")
+            return
+
+        # Limpiar el registro de fallos del ticker viejo (ya no tiene sentido mantenerlo
+        # asociado a una posición existente — el usuario lo reemplazó conscientemente).
+        try:
+            from data import failed_tickers as _ft
+
+            _ft.delete(old_ticker)
+        except Exception:
+            pass
+
+        self._validated_ticker = new_ticker
+        self.accept()
