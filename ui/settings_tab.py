@@ -414,6 +414,44 @@ class SettingsTab(QWidget):
         minsize_row.value_changed.connect(self._on_numeric_change)
         self._numeric_rows["paper_min_trade_dollars"] = minsize_row
         layout.addWidget(minsize_row)
+        layout.addWidget(HSeparator())
+
+        # 5) Anti-whipsaw: ventana de pérdida (int, días)
+        whip_days_row = NumericSettingsRow(
+            "paper_whipsaw_lookback_days",
+            "Anti-whipsaw: ventana de pérdida",
+            settings.get("paper_whipsaw_lookback_days"),
+            value_type="int",
+            suffix="días",
+            minimum=0,
+            maximum=90,
+            step=1,
+            tooltip="Si el último ciclo cerrado (BUY→SELL) del ticker terminó "
+            "en pérdida hace menos de N días, no permitir re-comprarlo. "
+            "0 = desactivado.",
+        )
+        whip_days_row.value_changed.connect(self._on_numeric_change)
+        self._numeric_rows["paper_whipsaw_lookback_days"] = whip_days_row
+        layout.addWidget(whip_days_row)
+        layout.addWidget(HSeparator())
+
+        # 6) Anti-whipsaw: pérdida mínima a bloquear (float, %)
+        whip_loss_row = NumericSettingsRow(
+            "paper_whipsaw_min_loss_pct",
+            "Anti-whipsaw: pérdida mínima a bloquear",
+            settings.get("paper_whipsaw_min_loss_pct"),
+            value_type="float",
+            suffix="%",
+            minimum=0.0,
+            maximum=100.0,
+            step=0.5,
+            decimals=2,
+            tooltip="Solo bloquear si la pérdida del último ciclo fue peor que -X%. "
+            "0 = bloquear cualquier pérdida dentro de la ventana.",
+        )
+        whip_loss_row.value_changed.connect(self._on_numeric_change)
+        self._numeric_rows["paper_whipsaw_min_loss_pct"] = whip_loss_row
+        layout.addWidget(whip_loss_row)
 
         return card
 

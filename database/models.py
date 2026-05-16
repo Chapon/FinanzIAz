@@ -251,6 +251,42 @@ class HistoricalDataCache(Base):
         return f"<HistoricalDataCache({self.ticker} {self.period}/{self.interval} @ {self.fetched_at})>"
 
 
+class FailedTicker(Base):
+    """
+    Registro de tickers que fallaron al consultar Yahoo Finance.
+
+    Permite:
+    - Saltar tickers conocidos como inválidos antes del bulk fetch (whitelist
+      negativa) para reducir ruido en logs.
+    - Mostrar al usuario qué símbolos están fallando y por qué.
+    - Permitir reintento manual (limpia el registro y vuelve a probar).
+
+    El campo ``status`` se usa así:
+    - "failing"  → ticker que sigue fallando, debe omitirse.
+    - "retry"    → el usuario pidió reintentar, debe volver a probarse.
+    - "ignored"  → el usuario marcó este ticker como permanente para ignorar.
+    """
+
+    __tablename__ = "failed_tickers"
+    # NOTE: the ticker column declares ``unique=True, index=True`` which is
+    # enough — SQLAlchemy auto-generates ``ix_failed_tickers_ticker`` from it.
+    # An explicit ``Index(...)`` here would collide on ``create_all`` ("index
+    # already exists"), which is exactly what broke the in-memory test DB
+    # when both index definitions tried to run.
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, unique=True, index=True)
+    last_error = Column(Text, nullable=True)
+    last_operation = Column(String(50), nullable=True)  # "price", "historical", "info", "validate"
+    fail_count = Column(Integer, default=1, nullable=False)
+    first_failed_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    last_failed_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
+    status = Column(String(20), default="failing", nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<FailedTicker({self.ticker} status={self.status} count={self.fail_count})>"
+
+
 def init_db():
     """Create all tables, run lightweight migrations, and seed default portfolio."""
     # Register paper-trading models so their tables are included in create_all.
@@ -280,6 +316,13 @@ def _migrate():
     cols = [row[1] for row in cur.fetchall()]
     if "purchase_date" not in cols:
         cur.execute("ALTER TABLE positions ADD COLUMN purchase_date DATETIME")
+        conn.commit()
+    # paper_orders.signal_score — new in v2 (migration 0002). Legacy rows keep
+    # NULL so analytics can distinguish "no score recorded" from "score=0".
+    cur.execute("PRAGMA table_info(paper_orders)")
+    paper_cols = [row[1] for row in cur.fetchall()]
+    if paper_cols and "signal_score" not in paper_cols:
+        cur.execute("ALTER TABLE paper_orders ADD COLUMN signal_score REAL")
         conn.commit()
     conn.close()
 

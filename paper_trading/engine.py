@@ -87,6 +87,75 @@ def _is_market_open_safe() -> bool:
         return False
 
 
+def _last_closed_cycle_pnl_pct(
+    session,
+    account_id: int,
+    ticker: str,
+    within_days: int,
+) -> float | None:
+    """Return the realized P/L % of the most recent closed cycle for ``ticker``,
+    or ``None`` if there is no SELL fill for the ticker within ``within_days``.
+
+    A "cycle" is the set of BUY fills between two consecutive SELLs (or, for
+    the first cycle, all BUYs preceding the first SELL). We weight BUY prices
+    by ``fill_shares`` and compare against the last SELL's ``fill_price``.
+
+    Used by Gate 5 (anti-whipsaw) to decide whether a fresh BUY should be
+    blocked because the same ticker was just sold at a loss.
+    """
+    if within_days <= 0:
+        return None
+
+    cutoff = datetime.utcnow() - timedelta(days=within_days)
+
+    last_sell = (
+        session.query(PaperOrder)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.ticker == ticker)
+        .filter(PaperOrder.side == "SELL")
+        .filter(PaperOrder.status == "filled")
+        .filter(PaperOrder.filled_at >= cutoff)
+        .order_by(PaperOrder.filled_at.desc())
+        .first()
+    )
+    if last_sell is None or not last_sell.fill_price:
+        return None
+
+    prev_sell = (
+        session.query(PaperOrder)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.ticker == ticker)
+        .filter(PaperOrder.side == "SELL")
+        .filter(PaperOrder.status == "filled")
+        .filter(PaperOrder.filled_at < last_sell.filled_at)
+        .order_by(PaperOrder.filled_at.desc())
+        .first()
+    )
+
+    buys_q = (
+        session.query(PaperOrder)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.ticker == ticker)
+        .filter(PaperOrder.side == "BUY")
+        .filter(PaperOrder.status == "filled")
+        .filter(PaperOrder.filled_at <= last_sell.filled_at)
+    )
+    if prev_sell is not None:
+        buys_q = buys_q.filter(PaperOrder.filled_at > prev_sell.filled_at)
+    buys = buys_q.all()
+    if not buys:
+        return None
+
+    total_shares = sum(float(b.fill_shares or 0.0) for b in buys)
+    total_cost = sum(float(b.fill_shares or 0.0) * float(b.fill_price or 0.0) for b in buys)
+    if total_shares <= 0 or total_cost <= 0:
+        return None
+    avg_buy = total_cost / total_shares
+    if avg_buy <= 0:
+        return None
+    return (float(last_sell.fill_price) - avg_buy) / avg_buy * 100.0
+
+
 # ── Scan result type ──────────────────────────────────────────────────────────
 
 
@@ -191,6 +260,8 @@ def run_scan(
         min_holding_min = max(0, int(settings.get("paper_min_holding_minutes", 60)))
         anti_flap_min = max(0, int(settings.get("paper_anti_flap_minutes", 30)))
         min_trade_usd = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
+        whipsaw_days = max(0, int(settings.get("paper_whipsaw_lookback_days", 7)))
+        whipsaw_min_loss = max(0.0, float(settings.get("paper_whipsaw_min_loss_pct", 0.0)))
 
         market_blocked = enforce_hours and not _is_market_open_safe()
         if market_blocked and trades:
@@ -255,6 +326,21 @@ def run_scan(
                     result.skipped += 1
                     result.warnings.append(
                         f"{trade.ticker} BUY bloqueado: tamaño ${td:.2f} < mínimo ${min_trade_usd:.2f}."
+                    )
+                    continue
+
+            # Gate 5 — anti-whipsaw (block re-BUY if last closed cycle was a loss
+            # within the lookback window). Tightens Gate 3, which is time-only.
+            if trade.side == "BUY" and whipsaw_days > 0:
+                pnl_pct = _last_closed_cycle_pnl_pct(
+                    session, acct.id, trade.ticker, whipsaw_days
+                )
+                if pnl_pct is not None and pnl_pct < -whipsaw_min_loss:
+                    result.skipped += 1
+                    result.warnings.append(
+                        f"{trade.ticker} BUY bloqueado: anti-whipsaw — último ciclo "
+                        f"cerró con {pnl_pct:+.2f}% (umbral -{whipsaw_min_loss:.2f}%) "
+                        f"dentro de {whipsaw_days}d."
                     )
                     continue
 
@@ -443,6 +529,7 @@ def _create_pending_order(
         target_dollars=trade.target_dollars,
         reason=trade.reason,
         source=trade.source,
+        signal_score=trade.signal_score,
         status="pending",
     )
     session.add(order)
@@ -623,6 +710,7 @@ def _stamp_order_filled(
             target_dollars=trade.target_dollars,
             reason=trade.reason,
             source=trade.source,
+            signal_score=trade.signal_score,
             status="filled",
             created_at=now,
             filled_at=now,

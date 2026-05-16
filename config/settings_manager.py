@@ -102,6 +102,20 @@ SCHEMA: dict[str, SettingSpec] = {
     "paper_min_trade_dollars": SettingSpec(
         (int, float), 50.0, min=0.0, doc="Skip BUYs whose target_dollars is below this"
     ),
+    "paper_whipsaw_lookback_days": SettingSpec(
+        int, 7, min=0, max=90,
+        doc=(
+            "Block re-BUY of a ticker whose last closed cycle ended with a loss "
+            "within the last N days. 0 = disable the gate."
+        ),
+    ),
+    "paper_whipsaw_min_loss_pct": SettingSpec(
+        (int, float), 0.0, min=0.0, max=100.0,
+        doc=(
+            "Only block when the closed-cycle loss is worse than -X percent. "
+            "Default 0.0 = block any loss within the lookback window."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

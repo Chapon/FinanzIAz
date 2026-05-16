@@ -49,11 +49,13 @@ class TargetTrade:
     target_dollars: float | None  # for BUY: dollar amount; for SELL: None or estimated proceeds
     reason: str
     source: str  # strategy name ("analyze_single" | "portfolio_engine")
+    signal_score: float | None = None  # conviction in [0,1]; None for rebalance trades
 
     def __repr__(self) -> str:
         dollars = f"${self.target_dollars:,.2f}" if self.target_dollars is not None else "—"
         shares = f"{self.target_shares:.4f}" if self.target_shares is not None else "—"
-        return f"<TargetTrade({self.side} {self.ticker} {shares}sh / {dollars} · {self.reason})>"
+        score = f" score={self.signal_score:.2f}" if self.signal_score is not None else ""
+        return f"<TargetTrade({self.side} {self.ticker} {shares}sh / {dollars}{score} · {self.reason})>"
 
 
 HistoryProvider = Callable[[str], pd.DataFrame | None]
@@ -102,6 +104,7 @@ def generate_trades_analyze_single(
         if res is None:
             continue
         if res.overall_signal == "SELL":
+            score = _default_strength("SELL", res.ml_probability)
             trades.append(
                 TargetTrade(
                     ticker=pos.ticker,
@@ -110,6 +113,7 @@ def generate_trades_analyze_single(
                     target_dollars=None,
                     reason=f"analyze SELL ({res.ml_probability or 0:.2f})",
                     source=source,
+                    signal_score=score,
                 )
             )
             forced_exits.add(pos.ticker)
@@ -130,6 +134,7 @@ def generate_trades_analyze_single(
             ranked.append((strength, t))
 
     ranked.sort(reverse=True)
+    scores = {t: s for s, t in ranked}
 
     # Slots available after processing forced exits
     held_after = held_tickers - forced_exits
@@ -166,6 +171,7 @@ def generate_trades_analyze_single(
                 target_dollars=float(target_per),
                 reason="analyze BUY",
                 source=source,
+                signal_score=scores.get(t),
             )
         )
 
@@ -326,6 +332,10 @@ def generate_trades_portfolio_engine(
         diff = target - current
         if abs(diff) < 1e-2:  # under 1¢ — ignore
             continue
+        # Rebalance trades may originate from drift/monthly, where there's no
+        # active signal driving the trade — leave signal_score=None in that
+        # case so analytics can distinguish "conviction trade" from "housekeeping".
+        score = strengths.get(t) if signals.get(t) in ("BUY", "SELL") else None
         if diff > 0:
             trades.append(
                 TargetTrade(
@@ -335,6 +345,7 @@ def generate_trades_portfolio_engine(
                     target_dollars=float(diff),
                     reason=reason,
                     source=source,
+                    signal_score=score,
                 )
             )
         else:
@@ -350,6 +361,7 @@ def generate_trades_portfolio_engine(
                     target_dollars=float(-diff),
                     reason=reason,
                     source=source,
+                    signal_score=score,
                 )
             )
 

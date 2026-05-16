@@ -170,6 +170,10 @@ class PaperOrder(Base):
     target_dollars = Column(Float, nullable=True)
     reason = Column(String(200), nullable=True)  # "signal", "drift", "monthly", ...
     source = Column(String(30), nullable=True)  # strategy name that generated it
+    # Conviction score in [0,1] produced by the strategy. Nullable for legacy
+    # rows and for synthetic orders (e.g. drift/monthly rebalances) that don't
+    # have a model probability behind them. Used by analytics + future gates.
+    signal_score = Column(Float, nullable=True)
 
     # Status flow
     status = Column(String(20), nullable=False, default="pending")
