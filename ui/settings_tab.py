@@ -157,6 +157,7 @@ class SettingsTab(QWidget):
 
         root.addWidget(self._guardrails_section())
         root.addWidget(self._analysis_section())
+        root.addWidget(self._commission_section())
 
         root.addStretch()
 
@@ -492,6 +493,50 @@ class SettingsTab(QWidget):
         period_row.value_changed.connect(self._on_choice_change)
         self._choice_rows["paper_history_period"] = period_row
         layout.addWidget(period_row)
+
+        return card
+
+    def _commission_section(self) -> QFrame:
+        """
+        Comisiones de Broker — elige el plan IBKR Pro que el motor aplica a
+        nuevos fills. ``legacy`` mantiene el campo % por cuenta para back-compat.
+        """
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(0)
+
+        lbl = QLabel("COMISIONES BROKER (IBKR PRO)")
+        lbl.setStyleSheet(
+            f"color: {PALETTE['text3']}; font-size: 10px; font-weight: 700; "
+            f"letter-spacing: 1px; margin-bottom: 10px;"
+        )
+        layout.addWidget(lbl)
+
+        plan_row = ChoiceSettingsRow(
+            "ibkr_commission_plan",
+            "Plan IBKR Pro",
+            settings.get("ibkr_commission_plan"),
+            choices=[
+                ("tiered", "Tiered ($0.0035/share + fees)"),
+                ("fixed", "Fixed ($0.005/share, fees bundled)"),
+                ("legacy", "Legacy % por cuenta"),
+            ],
+            tooltip=(
+                "Modelo que usa el motor para calcular la comisión de "
+                "cada fill nuevo.\n"
+                "• Tiered: $0.0035/share, mínimo $0.35, tope 1%, + SEC/"
+                "FINRA en ventas + exchange fee de ruteo.\n"
+                "• Fixed: $0.005/share, mínimo $1, tope 1% — incluye "
+                "exchange/clearing pero NO regulatorios.\n"
+                "• Legacy: usa el campo 'commission' (%) de cada cuenta. "
+                "Útil si tenés cuentas calibradas con el modelo viejo."
+            ),
+        )
+        plan_row.value_changed.connect(self._on_choice_change)
+        self._choice_rows["ibkr_commission_plan"] = plan_row
+        layout.addWidget(plan_row)
 
         return card
 

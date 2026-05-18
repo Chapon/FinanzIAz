@@ -321,9 +321,18 @@ class AnalysisTab(QWidget):
         hp_layout.setContentsMargins(12, 10, 12, 10)
         hp_layout.setSpacing(6)
 
+        hover_header_row = QHBoxLayout()
+        hover_header_row.setSpacing(8)
         self.hover_date_lbl = QLabel("—")
         self.hover_date_lbl.setStyleSheet("font-weight: 700; font-size: 12px; color: #8b949e;")
-        hp_layout.addWidget(self.hover_date_lbl)
+        hover_header_row.addWidget(self.hover_date_lbl)
+        hover_header_row.addStretch()
+        self.hover_price_lbl = QLabel("")
+        self.hover_price_lbl.setStyleSheet("font-weight: 700; font-size: 14px; color: #58a6ff;")
+        self.hover_price_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.hover_price_lbl.setToolTip("Precio de cierre del día sobre el que está el cursor.")
+        hover_header_row.addWidget(self.hover_price_lbl)
+        hp_layout.addLayout(hover_header_row)
 
         hp_layout.addWidget(HSeparator())
 
@@ -705,6 +714,32 @@ class AnalysisTab(QWidget):
                 date_str = str(date)
             self.signals_title.setText(f"Análisis del {date_str}")
             self.hover_date_lbl.setText(f"📅 {date_str}")
+
+        # Precio del día hover (con cambio vs. día anterior si está disponible)
+        close = data.get("close")
+        if close is not None:
+            price_html = f"${close:,.4f}"
+            try:
+                idx = data.get("idx")
+                hd = getattr(self.chart, "_hover_data", None)
+                if idx is not None and hd is not None and idx > 0:
+                    import math as _math
+                    prev = float(hd["close"].iloc[idx - 1])
+                    if not _math.isnan(prev) and prev != 0:
+                        chg_pct = (close - prev) / prev * 100
+                        color = "#3fb950" if chg_pct >= 0 else "#f85149"
+                        sign = "+" if chg_pct >= 0 else ""
+                        price_html = (
+                            f"<span style='color:#58a6ff'>${close:,.4f}</span>"
+                            f"&nbsp;<span style='color:{color}; font-size:11px;'>"
+                            f"({sign}{chg_pct:.2f}%)</span>"
+                        )
+            except Exception:
+                pass
+            self.hover_price_lbl.setTextFormat(Qt.TextFormat.RichText)
+            self.hover_price_lbl.setText(price_html)
+        else:
+            self.hover_price_lbl.setText("")
 
         # Compute per-day signals
         day_sigs = self._compute_day_signals(data)

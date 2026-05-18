@@ -555,21 +555,31 @@ def _fill_trade(
     Slippage: applied via ``PercentSlippage(acct.slippage)`` so that any
     future per-account override (e.g. ``TickSlippage``) plugs in here
     without changing this function.
-    Commission: applied via ``PercentCommission(acct.commission)`` for
-    backward-compat with the existing legacy float field. To upgrade an
-    account to ``PerShareCommission``/``TieredCommission``, set the model
-    factory at the call site and pass it in.
+    Commission: driven by the global ``ibkr_commission_plan`` setting via
+    ``get_active_commission_model()``. ``"tiered"``/``"fixed"`` use the
+    realistic IBKR Pro model (per-share + min + 1% cap + regulatory/exchange
+    pass-through); ``"legacy"`` falls back to the per-account flat % field
+    so older tests and pre-migration accounts keep their previous behaviour.
     """
+    from config.settings_manager import settings as _settings
     from paper_trading.costs import (
         commission_from_legacy,
+        get_active_commission_model,
         slippage_from_legacy,
     )
 
     side = trade.side
-    commission_m = commission_from_legacy(acct.commission)
+    plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
+    if plan == "legacy":
+        commission_m = commission_from_legacy(acct.commission)
+        commission_pct = float(acct.commission)
+    else:
+        commission_m = get_active_commission_model()
+        # Per-share models don't have a meaningful "%" — keep budgeting code
+        # working by approximating with the legacy field. The real cost is
+        # recomputed from commission_m.cost(...) after the fill anyway.
+        commission_pct = float(acct.commission)
     slippage_m = slippage_from_legacy(acct.slippage)
-    # Quick-access scalars for the legacy paths that still divide directly.
-    commission_pct = float(acct.commission)
 
     if side == "BUY":
         budget = trade.target_dollars if trade.target_dollars is not None else 0.0

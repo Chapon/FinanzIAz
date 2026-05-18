@@ -18,7 +18,7 @@ the right one without the engine having to special-case anything.
 Public API
 ----------
 ``CommissionModel`` + concrete ``FlatCommission``, ``PercentCommission``,
-``PerShareCommission``, ``TieredCommission``.
+``PerShareCommission``, ``TieredCommission``, ``IBKRProCommission``.
 
 ``SlippageModel`` + concrete ``ZeroSlippage``, ``PercentSlippage``,
 ``TickSlippage``.
@@ -98,7 +98,7 @@ class TieredCommission(CommissionModel):
     not less than this trade's notional, return its fee.
 
     ``bands`` is a list of ``(up_to_notional, fee)`` tuples. The last band's
-    threshold is taken as +∞.
+    threshold is taken as +infinity.
     """
 
     bands: list[tuple[float, float]] = None  # type: ignore[assignment]
@@ -110,6 +110,156 @@ class TieredCommission(CommissionModel):
             if notional <= up_to:
                 return float(max(0.0, fee))
         return float(max(0.0, bands[-1][1]))
+
+
+# ── IBKR Pro: real-world Tiered / Fixed for US stocks ────────────────────────
+#
+# Why a dedicated model
+# ---------------------
+# The generic ``PerShareCommission`` only covers the IBKR base ticket fee.
+# Real IBKR fills also pass through regulatory + exchange/clearing fees that
+# add up on high-share-count or sell-heavy strategies. This model layers all
+# four buckets so paper-trading P&L matches what the real broker would charge.
+#
+# Schedule references (US stocks, <= 300k shares/month tier, 2024-2025):
+#   - Tiered:  USD 0.0035/share, min USD 0.35, cap 1% of trade value
+#   - Fixed:   USD 0.0050/share, min USD 1.00, cap 1% of trade value
+#   - SEC Section 31 fee: USD 27.80 per USD 1,000,000 sold (sells only)
+#   - FINRA TAF: USD 0.000166/share on sells, capped at USD 8.30/trade
+#   - FINRA CAT fee: ~USD 0.000035/share (both sides)
+#   - Tiered exchange/route fee: ~USD 0.003/share taker (we assume taker --
+#     paper trading can't know venue/route; conservative for backtests).
+#
+# Update the module-level constants if SEC/FINRA publish a new schedule.
+
+SEC_FEE_RATE = 0.0000278        # USD per USD of notional, sells only
+FINRA_TAF_PER_SHARE = 0.000166  # USD per share sold
+FINRA_TAF_MAX = 8.30            # USD cap per trade
+FINRA_CAT_PER_SHARE = 0.000035  # USD per share (both sides)
+
+
+@dataclass
+class IBKRProCommission(CommissionModel):
+    """
+    Realistic IBKR Pro fee model with regulatory + exchange pass-through.
+
+    Components per fill:
+        IBKR     = max(min_fee, min(shares * per_share, notional * max_fee_pct))
+        Exchange = shares * exchange_fee_per_share          (both sides)
+        CAT      = shares * FINRA_CAT_PER_SHARE             (both sides, if include_regulatory)
+        SEC      = notional * SEC_FEE_RATE                  (SELL only, if include_regulatory)
+        FINRA    = min(shares * FINRA_TAF_PER_SHARE, $8.30) (SELL only, if include_regulatory)
+
+    Use the factories ``make_ibkr_pro_tiered()`` / ``make_ibkr_pro_fixed()`` for
+    the canonical IBKR Pro presets -- they wire the right per_share / min_fee /
+    exchange_fee combination for each plan.
+    """
+
+    per_share: float = 0.0035
+    min_fee: float = 0.35
+    max_fee_pct: float = 0.01
+    exchange_fee_per_share: float = 0.003  # 0.0 for Fixed (bundled in per_share)
+    include_regulatory: bool = True
+
+    def cost(self, *, side: str, shares: float, price: float) -> float:
+        n_shares = abs(float(shares))
+        notional = n_shares * abs(float(price))
+
+        # IBKR base ticket: per-share with min + 1% cap.
+        raw = n_shares * max(0.0, self.per_share)
+        capped = min(raw, notional * self.max_fee_pct) if self.max_fee_pct > 0 else raw
+        ibkr = max(self.min_fee, capped)
+
+        # Exchange / route fee (Tiered only -- Fixed bundles this in per_share).
+        exchange = n_shares * max(0.0, self.exchange_fee_per_share)
+
+        # Regulatory pass-through.
+        reg = 0.0
+        if self.include_regulatory:
+            reg += n_shares * FINRA_CAT_PER_SHARE
+            if str(side).upper() == "SELL":
+                reg += notional * SEC_FEE_RATE
+                reg += min(n_shares * FINRA_TAF_PER_SHARE, FINRA_TAF_MAX)
+
+        return float(ibkr + exchange + reg)
+
+    def breakdown(self, *, side: str, shares: float, price: float) -> dict:
+        """
+        Return the cost broken into components. Handy for UI tooltips and
+        reports that want to show "you paid $X in commission, $Y in fees".
+        """
+        n_shares = abs(float(shares))
+        notional = n_shares * abs(float(price))
+
+        raw = n_shares * max(0.0, self.per_share)
+        capped = min(raw, notional * self.max_fee_pct) if self.max_fee_pct > 0 else raw
+        ibkr = max(self.min_fee, capped)
+
+        exchange = n_shares * max(0.0, self.exchange_fee_per_share)
+
+        cat = sec = finra = 0.0
+        if self.include_regulatory:
+            cat = n_shares * FINRA_CAT_PER_SHARE
+            if str(side).upper() == "SELL":
+                sec = notional * SEC_FEE_RATE
+                finra = min(n_shares * FINRA_TAF_PER_SHARE, FINRA_TAF_MAX)
+
+        return {
+            "ibkr": float(ibkr),
+            "exchange": float(exchange),
+            "cat": float(cat),
+            "sec": float(sec),
+            "finra_taf": float(finra),
+            "total": float(ibkr + exchange + cat + sec + finra),
+        }
+
+
+def make_ibkr_pro_tiered() -> IBKRProCommission:
+    """IBKR Pro Tiered for US stocks (<= 300k shares/mo)."""
+    return IBKRProCommission(
+        per_share=0.0035,
+        min_fee=0.35,
+        max_fee_pct=0.01,
+        exchange_fee_per_share=0.003,
+        include_regulatory=True,
+    )
+
+
+def make_ibkr_pro_fixed() -> IBKRProCommission:
+    """IBKR Pro Fixed for US stocks (exchange/clearing bundled)."""
+    return IBKRProCommission(
+        per_share=0.005,
+        min_fee=1.0,
+        max_fee_pct=0.01,
+        exchange_fee_per_share=0.0,
+        include_regulatory=True,
+    )
+
+
+def get_active_commission_model() -> CommissionModel:
+    """
+    Return the commission model the user picked in Settings.
+
+    Reads ``ibkr_commission_plan`` from settings.json:
+        "tiered" -> IBKRProCommission tuned for IBKR Pro Tiered (default)
+        "fixed"  -> IBKRProCommission tuned for IBKR Pro Fixed
+        "legacy" -> callers should fall back to the per-account PercentCommission
+                    (returned here as a PercentCommission sentinel -- the engine
+                    has the real ``acct.commission`` and will rebuild it).
+
+    Imported lazily so config doesn't depend on this module.
+    """
+    try:
+        from config.settings_manager import settings as _settings
+        plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
+    except Exception:
+        plan = "tiered"
+
+    if plan == "fixed":
+        return make_ibkr_pro_fixed()
+    if plan == "legacy":
+        return PercentCommission()  # sentinel; engine prefers acct.commission
+    return make_ibkr_pro_tiered()
 
 
 # ── Slippage models ──────────────────────────────────────────────────────────
@@ -173,6 +323,7 @@ _COMMISSION_REGISTRY: dict[str, type[CommissionModel]] = {
     "PercentCommission": PercentCommission,
     "PerShareCommission": PerShareCommission,
     "TieredCommission": TieredCommission,
+    "IBKRProCommission": IBKRProCommission,
 }
 
 _SLIPPAGE_REGISTRY: dict[str, type[SlippageModel]] = {

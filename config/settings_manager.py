@@ -123,6 +123,20 @@ SCHEMA: dict[str, SettingSpec] = {
         choices=("6mo", "1y", "2y", "5y", "10y"),
         doc="Window the scanner passes to analyze()/XGBoost",
     ),
+    # Broker commission plan (IBKR Pro). "legacy" falls back to per-account
+    # PaperAccount.commission (the historical % rate field), preserving
+    # back-compat for accounts/tests that haven't been migrated yet.
+    "ibkr_commission_plan": SettingSpec(
+        str,
+        "tiered",
+        choices=("tiered", "fixed", "legacy"),
+        doc=(
+            "IBKR Pro commission plan applied to new paper-trading fills. "
+            "tiered = $0.0035/share + exchange + reg fees; "
+            "fixed = $0.0050/share (exchange bundled) + reg fees; "
+            "legacy = use PaperAccount.commission as a flat %."
+        ),
+    ),
     # Logging overrides (free-form: dict[str, str])
     "logging_levels": SettingSpec(dict, {}, doc="Per-module logging overrides {name: LEVEL}"),
 }

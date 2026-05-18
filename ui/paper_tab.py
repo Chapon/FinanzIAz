@@ -74,6 +74,7 @@ from paper_trading.account import (
     list_accounts,
     remove_watchlist_ticker,
 )
+from paper_trading.costs import get_active_commission_model
 from paper_trading.engine import approve_order, reject_order
 from paper_trading.presets import WATCHLIST_PRESETS
 from ui.dialogs import AddPositionDialog, SellPositionDialog
@@ -317,9 +318,12 @@ class PaperTradingTab(QWidget):
         pos_l.setContentsMargins(14, 12, 14, 12)
         pos_l.setSpacing(8)
         pos_l.addWidget(self._header_with_count("Posiciones abiertas", attr="_positions_header"))
-        self.positions_table = QTableWidget(0, 7)
+        self.positions_table = QTableWidget(0, 9)
         self.positions_table.setHorizontalHeaderLabels(
-            ["Ticker", "Shares", "Precio compra", "Avg Cost", "Precio", "Market Value", "P&L %"]
+            [
+                "Ticker", "Shares", "Precio compra", "Avg Cost", "Precio",
+                "Market Value", "P&L $", "P&L %", "Comisión est.",
+            ]
         )
         self._apply_table_style(self.positions_table)
         # Tooltip on hover over Ticker column (col 0)
@@ -335,14 +339,14 @@ class PaperTradingTab(QWidget):
         pen_l.setContentsMargins(14, 12, 14, 12)
         pen_l.setSpacing(8)
         pen_l.addWidget(self._header_with_count("Órdenes pendientes", attr="_pending_header"))
-        self.pending_table = QTableWidget(0, 7)
+        self.pending_table = QTableWidget(0, 8)
         self.pending_table.setHorizontalHeaderLabels(
-            ["Fecha", "Side", "Ticker", "Shares", "Target $", "Motivo", "Acciones"]
+            ["Fecha", "Side", "Ticker", "Shares", "Target $", "Comisión est.", "Motivo", "Acciones"]
         )
         self._apply_table_style(self.pending_table, row_height=52)
         # Reserve enough horizontal room for both action buttons + spacing
         # so the "Acciones" column never clips the buttons.
-        self.pending_table.setColumnWidth(6, 240)
+        self.pending_table.setColumnWidth(7, 240)
         self.pending_table.horizontalHeader().setMinimumSectionSize(120)
         # Tooltip on hover over Ticker column (col 2)
         install_ticker_tooltips(self.pending_table, 2)
@@ -357,9 +361,9 @@ class PaperTradingTab(QWidget):
         hist_l.setContentsMargins(14, 12, 14, 12)
         hist_l.setSpacing(8)
         hist_l.addWidget(self._header_with_count("Historial reciente", attr="_history_header"))
-        self.history_table = QTableWidget(0, 7)
+        self.history_table = QTableWidget(0, 8)
         self.history_table.setHorizontalHeaderLabels(
-            ["Fecha", "Side", "Ticker", "Shares", "Precio", "Total", "Estado"]
+            ["Fecha", "Side", "Ticker", "Shares", "Precio", "Total", "Comisión", "Estado"]
         )
         self._apply_table_style(self.history_table)
         # Tooltip on hover over Ticker column (col 2)
@@ -760,7 +764,12 @@ class PaperTradingTab(QWidget):
         table.setItem(row, 3, QTableWidgetItem(shares_txt))
         dollars_txt = f"${o.target_dollars:,.2f}" if o.target_dollars is not None else "—"
         table.setItem(row, 4, QTableWidgetItem(dollars_txt))
-        table.setItem(row, 5, QTableWidgetItem(o.reason or ""))
+
+        # Comisión estimada (col 5) — usa el precio cacheado del ticker para
+        # estimar shares (en BUYs sin target_shares) y luego corre el modelo
+        # IBKR activo. En "legacy" muestra "—" para no confundir.
+        table.setItem(row, 5, QTableWidgetItem(self._estimate_pending_commission(o)))
+        table.setItem(row, 6, QTableWidgetItem(o.reason or ""))
 
         if pending:
             actions = QWidget()
@@ -829,10 +838,47 @@ class PaperTradingTab(QWidget):
             alay.addWidget(approve_real)
             alay.addWidget(reject)
             alay.addStretch()
-            table.setCellWidget(row, 6, actions)
+            table.setCellWidget(row, 7, actions)
             # Force the row height after placing the cell widget so
             # Qt allocates enough vertical space for the buttons.
             table.setRowHeight(row, 52)
+
+    def _estimate_pending_commission(self, o) -> str:
+        """
+        Render the commission a pending order would incur if it filled at the
+        current cached price. Returns "—" when we can't price it or when the
+        user is on the legacy flat-% model (mixing both in one cell would
+        misrepresent the cost).
+        """
+        try:
+            from config.settings_manager import settings as _settings
+            plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
+        except Exception:
+            plan = "tiered"
+        if plan not in ("tiered", "fixed"):
+            return "—"
+
+        px = self._prices.get(o.ticker) if hasattr(self, "_prices") else None
+        if px is None or px <= 0:
+            return "—"
+
+        # Estimate shares: for SELLs use target_shares; for BUYs derive from
+        # target_dollars (floor to integer since the engine fills whole shares).
+        if o.side == "SELL" and o.target_shares:
+            shares = float(o.target_shares)
+        elif o.side == "BUY" and o.target_dollars and o.target_dollars > 0:
+            shares = float(int(float(o.target_dollars) / float(px)))
+        else:
+            return "—"
+        if shares < 1:
+            return "—"
+
+        try:
+            model = get_active_commission_model()
+            est = model.cost(side=o.side, shares=shares, price=float(px))
+            return f"≈${est:,.2f}"
+        except Exception:
+            return "—"
 
     @staticmethod
     def _format_shares(value) -> str:
@@ -865,6 +911,15 @@ class PaperTradingTab(QWidget):
             f"${o.fill_value:,.2f}" if (o.fill_price is not None and o.fill_shares is not None) else "—"
         )
         table.setItem(row, 5, QTableWidgetItem(total_txt))
+
+        # Comisión real pagada (col 6) — stored on the order at fill time.
+        # Pre-IBKR-model fills will still show the legacy %-of-notional value
+        # they were stamped with; we keep them as-is per the user's
+        # "dejar como están" decision for historical orders.
+        comm = getattr(o, "commission_paid", None)
+        comm_txt = f"${comm:,.2f}" if comm is not None else "—"
+        table.setItem(row, 6, QTableWidgetItem(comm_txt))
+
         status_item = QTableWidgetItem(o.status)
         colors = {
             "filled": PALETTE["accent"],
@@ -874,7 +929,7 @@ class PaperTradingTab(QWidget):
             "approved": PALETTE["blue"],
         }
         status_item.setForeground(QColor(colors.get(o.status, PALETTE["text2"])))
-        table.setItem(row, 6, status_item)
+        table.setItem(row, 7, status_item)
 
     def _approve_order(self, order_id: int):
         try:
@@ -1062,11 +1117,34 @@ class PaperTradingTab(QWidget):
             mv = (px * p.shares) if px is not None else p.shares * p.avg_cost
             self.positions_table.setItem(row, 5, QTableWidgetItem(f"${mv:,.2f}"))
             cost = p.shares * p.avg_cost
+            pnl_usd = mv - cost
             pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
+            color = PALETTE["accent"] if pnl_usd >= 0 else PALETTE["red"]
+            pnl_usd_item = QTableWidgetItem(
+                f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}"
+            )
+            pnl_usd_item.setForeground(QColor(color))
+            self.positions_table.setItem(row, 6, pnl_usd_item)
             pnl_item = QTableWidgetItem(f"{pnl_pct:+.2f}%")
-            color = PALETTE["accent"] if pnl_pct >= 0 else PALETTE["red"]
             pnl_item.setForeground(QColor(color))
-            self.positions_table.setItem(row, 6, pnl_item)
+            self.positions_table.setItem(row, 7, pnl_item)
+
+            # Comisión estimada de cierre — qué pagarías si cerrás ahora a
+            # mercado. Usa el modelo IBKR activo (Tiered/Fixed) configurado
+            # en Settings; si está en "legacy" devolvemos "—" para no
+            # mezclar dos sistemas de costos en la misma celda.
+            try:
+                from config.settings_manager import settings as _settings
+                plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
+            except Exception:
+                plan = "tiered"
+            if plan in ("tiered", "fixed") and px is not None and p.shares > 0:
+                model = get_active_commission_model()
+                est = model.cost(side="SELL", shares=float(p.shares), price=float(px))
+                comm_txt = f"≈${est:,.2f}"
+            else:
+                comm_txt = "—"
+            self.positions_table.setItem(row, 8, QTableWidgetItem(comm_txt))
         self._positions_header.setText(f"· {len(self._positions)}")
 
     def _refresh_kpis(self):
