@@ -47,6 +47,7 @@ from PyQt6.QtWidgets import (
 from config.logging_config import get_logger
 from ui.styles import PALETTE
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.time_utils import fmt_local as _fmt_local
 from ui.widgets import HSeparator, MetricCard
 
 log = get_logger(__name__)
@@ -747,7 +748,7 @@ class PaperTradingTab(QWidget):
         self._history_header.setText(f"· {len(history)}")
 
     def _set_order_row(self, table: QTableWidget, row: int, o, pending: bool):
-        created = o.created_at.strftime("%d/%m %H:%M") if o.created_at else "—"
+        created = _fmt_local(o.created_at)
         table.setItem(row, 0, QTableWidgetItem(created))
         side_item = QTableWidgetItem(o.side)
         side_item.setForeground(QColor(PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]))
@@ -848,7 +849,7 @@ class PaperTradingTab(QWidget):
 
     def _set_history_row(self, table: QTableWidget, row: int, o):
         ts = o.filled_at or o.decided_at or o.created_at
-        ts_txt = ts.strftime("%d/%m %H:%M") if ts else "—"
+        ts_txt = _fmt_local(ts)
         table.setItem(row, 0, QTableWidgetItem(ts_txt))
         side_item = QTableWidgetItem(o.side)
         side_item.setForeground(QColor(PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]))

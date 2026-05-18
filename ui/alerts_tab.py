@@ -21,6 +21,7 @@ from alerts.alert_manager import AlertManager
 from database.models import Alert
 from ui.dialogs import AddAlertDialog
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.time_utils import fmt_local
 from ui.widgets import HSeparator, SectionHeader
 
 
@@ -121,10 +122,10 @@ class AlertsTab(QWidget):
             status_item.setForeground(QColor("#3fb950" if alert.is_active else "#d29922"))
             self.table.setItem(row, 3, status_item)
 
-            created = alert.created_at.strftime("%d/%m/%Y %H:%M") if alert.created_at else "—"
+            created = fmt_local(alert.created_at, "%d/%m/%Y %H:%M")
             self.table.setItem(row, 4, cell(created))
 
-            triggered = alert.triggered_at.strftime("%d/%m/%Y %H:%M") if alert.triggered_at else "—"
+            triggered = fmt_local(alert.triggered_at, "%d/%m/%Y %H:%M")
             self.table.setItem(row, 5, cell(triggered))
 
             self.table.setItem(row, 6, cell(alert.message or "—"))

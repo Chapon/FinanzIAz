@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from data import failed_tickers as registry
+from ui.time_utils import fmt_local
 from ui.styles import PALETTE
 from ui.widgets import HSeparator, SectionHeader
 
@@ -180,11 +181,7 @@ class FailedTickersTab(QWidget):
             self.table.setItem(row, 4, err_item)
 
             # Última falla
-            last = (
-                row_data.last_failed_at.strftime("%d/%m/%Y %H:%M")
-                if row_data.last_failed_at
-                else "—"
-            )
+            last = fmt_local(row_data.last_failed_at, "%d/%m/%Y %H:%M")
             self.table.setItem(row, 5, cell(last))
 
         self.table.resizeColumnsToContents()
