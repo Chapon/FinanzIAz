@@ -53,6 +53,23 @@ except ImportError:
     _XGB_OK = False
 
 
+# ── Optional sklearn isotonic calibration ────────────────────────────────────
+# XGBoost ships sklearn as a transitive dep, so this should never fail in
+# practice — but the wrapper keeps the module importable on a broken env.
+try:
+    from sklearn.calibration import CalibratedClassifierCV
+
+    _CALIBRATION_OK = True
+except ImportError:
+    _CALIBRATION_OK = False
+
+# Minimum size of the validation slice required to run isotonic calibration.
+# Below this, the calibrator overfits the val set and the calibration curve
+# becomes noisy — fallback to the uncalibrated model is safer. This is
+# independent of MIN_TRAINING_ROWS (which gates training at all).
+MIN_CALIBRATION_ROWS = 100
+
+
 # ── XGBoost training-result cache (in-memory only) ───────────────────────────
 # Keyed by a hash of (close-tail, feature-cols, sample-count). Bounded so
 # long-running sessions don't accumulate models indefinitely. Values are
@@ -540,7 +557,7 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         if cached is not None:
             model, val_acc, train_acc = cached
         else:
-            model = xgb.XGBClassifier(
+            raw_model = xgb.XGBClassifier(
                 n_estimators=120,
                 max_depth=3,
                 learning_rate=0.05,
@@ -552,10 +569,90 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
                 eval_metric="logloss",
                 verbosity=0,
             )
-            model.fit(X_tr, y_tr)
+            raw_model.fit(X_tr, y_tr)
 
-            # Train + validation accuracy. The gap between them is our most
-            # honest overfitting signal; we log it so users / tests can react.
+            # ── Isotonic calibration on the val slice (T02 of roadmap) ────
+            # CalibratedClassifierCV(cv='prefit') takes the already-fitted
+            # estimator and only re-fits the isotonic regressor on the
+            # hold-out we pass to .fit(). This keeps the underlying XGB
+            # unchanged and adds a monotone re-scaling of predict_proba so
+            # that "model says 65%" matches the empirical 5d-up rate on the
+            # val set within isotonic regression's resolution.
+            # Fallback: with too few val samples the isotonic curve overfits
+            # and produces flat/noisy probabilities — use the raw model.
+            n_val = len(X_val)
+            n_classes_val = int(len(np.unique(y_val))) if n_val > 0 else 0
+            if (
+                _CALIBRATION_OK
+                and n_val >= MIN_CALIBRATION_ROWS
+                and n_classes_val >= 2
+            ):
+                try:
+                    calibrator = CalibratedClassifierCV(
+                        estimator=raw_model,
+                        cv="prefit",
+                        method="isotonic",
+                    )
+                    calibrator.fit(X_val, y_val)
+                    model = calibrator
+                    log.debug(
+                        "XGBoost: isotonic calibration applied on %d val samples.",
+                        n_val,
+                    )
+                except TypeError:
+                    # sklearn < 1.2 uses ``base_estimator`` instead of
+                    # ``estimator``. Retry with the legacy kwarg so we don't
+                    # silently fall back to uncalibrated on older envs.
+                    try:
+                        calibrator = CalibratedClassifierCV(
+                            base_estimator=raw_model,
+                            cv="prefit",
+                            method="isotonic",
+                        )
+                        calibrator.fit(X_val, y_val)
+                        model = calibrator
+                        log.debug(
+                            "XGBoost: isotonic calibration applied "
+                            "(legacy sklearn API) on %d val samples.",
+                            n_val,
+                        )
+                    except Exception as exc:  # pragma: no cover - sanity guard
+                        log.warning(
+                            "XGBoost calibration failed (%s); using raw model.",
+                            exc,
+                        )
+                        model = raw_model
+                except Exception as exc:
+                    log.warning(
+                        "XGBoost calibration failed (%s); using raw model.",
+                        exc,
+                    )
+                    model = raw_model
+            else:
+                if not _CALIBRATION_OK:
+                    log.info("XGBoost: sklearn unavailable, calibration skipped.")
+                elif n_val < MIN_CALIBRATION_ROWS:
+                    log.info(
+                        "XGBoost: val set too small (%d < %d) for isotonic "
+                        "calibration; using raw model.",
+                        n_val,
+                        MIN_CALIBRATION_ROWS,
+                    )
+                elif n_classes_val < 2:
+                    # Edge case: all val labels are the same class. Isotonic
+                    # needs both classes to fit; fallback prevents a crash on
+                    # pathological (mostly-flat) price series.
+                    log.info(
+                        "XGBoost: val set has only one class; "
+                        "calibration skipped, using raw model."
+                    )
+                model = raw_model
+
+            # Train + validation accuracy. Computed against the final model
+            # (calibrated or raw) so the number reported matches the proba
+            # source actually used downstream. Isotonic preserves ordering,
+            # so accuracy at the default 0.5 threshold is nearly identical
+            # to the raw model in practice.
             train_acc = float((model.predict(X_tr) == y_tr).mean()) if len(X_tr) > 0 else 0.50
             val_acc = float((model.predict(X_val) == y_val).mean()) if len(X_val) > 0 else 0.50
             overfit_gap = train_acc - val_acc
@@ -567,13 +664,15 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
                 )
 
             # Top-3 feature importance is useful to log when debugging weird
-            # signals (e.g. all weight on one volume feature).
+            # signals (e.g. all weight on one volume feature). The calibrator
+            # doesn't expose feature_importances_ directly — pull from the
+            # underlying raw model instead.
             try:
                 importances = sorted(
                     # strict=False: feature_importances_ length always matches
                     # valid_cols by xgboost contract, but explicit is better
                     # than implicit and silences B905.
-                    zip(valid_cols, model.feature_importances_, strict=False),
+                    zip(valid_cols, raw_model.feature_importances_, strict=False),
                     key=lambda kv: kv[1],
                     reverse=True,
                 )[:3]
@@ -583,7 +682,9 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
 
             _XGB_CACHE[cache_key] = (model, val_acc, train_acc)
 
-        # Predict probability of price going UP in the next 5 days
+        # Predict probability of price going UP in the next 5 days. Works
+        # identically against both raw XGBClassifier and CalibratedClassifierCV
+        # — both expose ``predict_proba`` returning [[p_down, p_up]].
         prob_up = float(model.predict_proba(X_pred)[0][1])
 
     except Exception as exc:
