@@ -156,6 +156,157 @@ def _last_closed_cycle_pnl_pct(
     return (float(last_sell.fill_price) - avg_buy) / avg_buy * 100.0
 
 
+# ── ATR-stop gate (T01) ───────────────────────────────────────────────────────
+
+
+# Reasons used by the ATR-stop gate. Anything starting with ``atr_`` is treated
+# as a forced exit by downstream gates (Gate 2 bypass, etc.) — kept in a tuple
+# so the check stays a cheap startswith().
+ATR_EXIT_REASONS: tuple[str, ...] = ("atr_stop", "atr_tp", "atr_trail")
+
+
+def _is_atr_forced_exit(reason: str | None) -> bool:
+    """True iff ``reason`` was produced by ``_compute_atr_forced_exits``.
+
+    Forced exits bypass the min-holding gate so a fresh position that collapses
+    can still be cut. They do NOT bypass market-hours (Gate 1) — closed market
+    means no fills regardless of urgency.
+    """
+    if not reason:
+        return False
+    return any(reason.startswith(prefix) for prefix in ATR_EXIT_REASONS)
+
+
+def _compute_atr_forced_exits(
+    positions: list,
+    prices: dict[str, float],
+    history_provider,
+) -> list:
+    """
+    Evaluate each open position against the ATR stop/TP/trailing levels.
+
+    Returns a list of ``TargetTrade`` SELLs for the tickers whose live price
+    crossed at least one threshold. Order of evaluation: ``atr_stop`` (worst
+    case) → ``atr_trail`` (give-back from peak) → ``atr_tp`` (profit lock).
+    The first trigger that fires wins; the other two are not re-evaluated for
+    that ticker.
+
+    Also returns (via side-effect on the caller) NOTHING — the caller is
+    responsible for updating ``high_water_mark`` separately, after this
+    function has read the *pre-update* high. This keeps the trailing stop
+    semantics correct: if today's price is a new high but is still inside
+    the trailing band off yesterday's high, we don't whipsaw on the same
+    bar that set the new high.
+    """
+    from paper_trading.strategies import TargetTrade
+    from analysis.atr import compute_atr
+
+    if not bool(settings.get("atr_stops_enabled", False)):
+        return []
+
+    period = max(2, int(settings.get("atr_period", 14)))
+    stop_mult = max(0.0, float(settings.get("atr_stop_mult", 2.0)))
+    tp_mult = max(0.0, float(settings.get("atr_tp_mult", 4.0)))
+    trail_enabled = bool(settings.get("atr_trail_enabled", True))
+
+    out: list = []
+    for pos in positions:
+        px = prices.get(pos.ticker)
+        if px is None or not np.isfinite(px) or px <= 0:
+            continue
+        if pos.shares is None or pos.shares <= 1e-9:
+            continue
+        if pos.avg_cost is None or pos.avg_cost <= 0:
+            continue
+
+        df = history_provider(pos.ticker)
+        atr = compute_atr(df, period=period)
+        if atr is None or not np.isfinite(atr) or atr <= 0:
+            continue
+
+        avg_cost = float(pos.avg_cost)
+        # Trailing baseline: pre-update HWM. If never seeded, use avg_cost so
+        # the trailing stop has SOME baseline even before the first scan
+        # tick. This is conservative — equivalent to "from entry" until the
+        # next scan upgrades HWM to a real high.
+        hwm = pos.high_water_mark if pos.high_water_mark is not None else avg_cost
+        hwm = float(hwm)
+
+        stop_level = avg_cost - stop_mult * atr
+        tp_level = avg_cost + tp_mult * atr
+        trail_level = hwm - stop_mult * atr if trail_enabled else None
+
+        reason: str | None = None
+        trigger_level: float | None = None
+        if stop_level > 0 and px <= stop_level:
+            reason = (
+                f"atr_stop @ {px:.2f} ≤ {stop_level:.2f} "
+                f"(entry {avg_cost:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
+            )
+            trigger_level = stop_level
+        elif (
+            trail_enabled
+            and trail_level is not None
+            and trail_level > 0
+            and px <= trail_level
+            # Trail is only meaningful once we've seen a high above entry —
+            # otherwise it duplicates the stop-loss. The check is "HWM
+            # strictly above entry by at least 1 ATR" to avoid noise.
+            and hwm > avg_cost + atr
+        ):
+            reason = (
+                f"atr_trail @ {px:.2f} ≤ {trail_level:.2f} "
+                f"(peak {hwm:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
+            )
+            trigger_level = trail_level
+        elif tp_level > 0 and px >= tp_level:
+            reason = (
+                f"atr_tp @ {px:.2f} ≥ {tp_level:.2f} "
+                f"(entry {avg_cost:.2f} + {tp_mult:.1f}×ATR {atr:.2f})"
+            )
+            trigger_level = tp_level
+
+        if reason is None:
+            continue
+
+        out.append(
+            TargetTrade(
+                ticker=pos.ticker,
+                side="SELL",
+                target_shares=float(pos.shares),  # full close
+                target_dollars=None,
+                reason=reason,
+                source="atr_stop_gate",
+                signal_score=1.0,  # max conviction — see roadmap T01
+            )
+        )
+        # Trigger_level not used downstream but kept for log clarity.
+        _ = trigger_level
+
+    return out
+
+
+def _update_high_water_marks(positions: list, prices: dict[str, float]) -> None:
+    """
+    Seed / advance ``high_water_mark`` for each position based on the live
+    price. NULL HWM is seeded with the current price (or avg_cost, whichever
+    is higher — protects against the seed being below entry on a down tick).
+    Existing HWM is advanced only if the new price is strictly higher.
+
+    Called *after* ``_compute_atr_forced_exits`` so the trailing stop uses
+    the pre-update HWM.
+    """
+    for pos in positions:
+        px = prices.get(pos.ticker)
+        if px is None or not np.isfinite(px) or px <= 0:
+            continue
+        if pos.high_water_mark is None:
+            seed = max(float(px), float(pos.avg_cost or 0.0))
+            pos.high_water_mark = float(seed)
+        elif float(px) > float(pos.high_water_mark):
+            pos.high_water_mark = float(px)
+
+
 # ── Scan result type ──────────────────────────────────────────────────────────
 
 
@@ -222,9 +373,36 @@ def run_scan(
         # Equity before any trades
         equity_before = acct.cash + sum(p.shares * prices.get(p.ticker, p.avg_cost) for p in positions)
 
+        # ── ATR-stop gate (T01) ──────────────────────────────────────────
+        # Runs BEFORE the strategy so a stopped-out position can free up
+        # its slot in the same scan. The returned trades use reason starting
+        # with ``atr_`` so downstream gates can recognize them as forced
+        # exits and bypass min-holding.
+        atr_exits: list[TargetTrade] = _compute_atr_forced_exits(
+            positions, prices, history_provider
+        )
+        atr_exit_tickers = {t.ticker for t in atr_exits}
+
+        # Advance HWM *after* reading it for the trailing check, so the
+        # trailing stop uses the pre-update high. New positions get their
+        # HWM seeded here.
+        _update_high_water_marks(positions, prices)
+
         # Run the strategy (reads detached attributes, so safe)
         strategy_fn = get_strategy_fn(acct.strategy)
-        trades: list[TargetTrade] = strategy_fn(acct, watchlist, positions, prices, history_provider)
+        strategy_trades: list[TargetTrade] = strategy_fn(
+            acct, watchlist, positions, prices, history_provider
+        )
+
+        # Dedup: if ATR forces a SELL for a ticker, drop any strategy-emitted
+        # SELL for the same ticker — the ATR trigger wins (more specific +
+        # has signal_score=1.0 for downstream consumers).
+        strategy_trades = [
+            t
+            for t in strategy_trades
+            if not (t.side == "SELL" and t.ticker in atr_exit_tickers)
+        ]
+        trades: list[TargetTrade] = atr_exits + strategy_trades
 
         result = ScanResult(
             account_id=account_id,
@@ -298,7 +476,14 @@ def run_scan(
                 continue
 
             # Gate 2 — min holding period (block premature SELLs).
-            if trade.side == "SELL" and min_holding_min > 0:
+            # ATR-forced exits (stop-loss, take-profit, trailing) bypass this
+            # gate — a freshly-opened position that collapses should still be
+            # cut. The forced-exit reason starts with ``atr_``.
+            if (
+                trade.side == "SELL"
+                and min_holding_min > 0
+                and not _is_atr_forced_exit(trade.reason)
+            ):
                 p = pos_by_ticker.get(trade.ticker)
                 if p is not None and p.opened_at is not None:
                     age_min = (result.scan_at - p.opened_at).total_seconds() / 60.0
@@ -619,6 +804,7 @@ def _fill_trade(
                 avg_cost=fill_price,
                 opened_at=datetime.utcnow(),
                 entry_reason=trade.reason,
+                high_water_mark=float(fill_price),
             )
             session.add(pos)
         else:
@@ -626,6 +812,10 @@ def _fill_trade(
             pos.shares += shares_got
             pos.avg_cost = new_total_cost / pos.shares
             pos.updated_at = datetime.utcnow()
+            # Advance HWM on add-ons too, so a later trailing-stop check
+            # doesn't ignore a higher post-add fill price.
+            if pos.high_water_mark is None or float(fill_price) > float(pos.high_water_mark):
+                pos.high_water_mark = float(fill_price)
         acct.cash -= actual_cost
 
         slippage_cost = shares_got * (fill_price - price)

@@ -116,6 +116,43 @@ SCHEMA: dict[str, SettingSpec] = {
             "Default 0.0 = block any loss within the lookback window."
         ),
     ),
+    # ATR-based stops (T01 of the engine roadmap)
+    # Disabled by default — turn on explicitly with `atr_stops_enabled=True`.
+    "atr_stops_enabled": SettingSpec(
+        bool, False,
+        doc=(
+            "Master switch for the ATR stop gate. When True, the engine "
+            "evaluates each open position against stop-loss / take-profit / "
+            "trailing-stop levels sized in ATR units BEFORE running the "
+            "strategy, and injects forced SELL trades if any trigger fires."
+        ),
+    ),
+    "atr_period": SettingSpec(
+        int, 14, min=2, max=200,
+        doc="Lookback in bars for the Wilder-smoothed ATR (default 14).",
+    ),
+    "atr_stop_mult": SettingSpec(
+        (int, float), 2.0, min=0.1, max=20.0,
+        doc=(
+            "Stop-loss distance from entry, in ATR units. SELL fires when "
+            "price ≤ avg_cost − atr_stop_mult × ATR."
+        ),
+    ),
+    "atr_tp_mult": SettingSpec(
+        (int, float), 4.0, min=0.1, max=50.0,
+        doc=(
+            "Take-profit distance from entry, in ATR units. SELL fires when "
+            "price ≥ avg_cost + atr_tp_mult × ATR."
+        ),
+    ),
+    "atr_trail_enabled": SettingSpec(
+        bool, True,
+        doc=(
+            "Sub-switch for the trailing variant (only meaningful when "
+            "`atr_stops_enabled=True`). SELL fires when "
+            "price ≤ high_water_mark_since_entry − atr_stop_mult × ATR."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,
@@ -266,5 +303,5 @@ class _SettingsManager:
         self.set(key, value)
 
 
-# Module-level singleton — import this everywhere
+# Module-level singleton — import this everywhere.
 settings = _SettingsManager()

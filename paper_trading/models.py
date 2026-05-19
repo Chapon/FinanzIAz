@@ -130,6 +130,10 @@ class PaperPosition(Base):
     opened_at = Column(DateTime, default=utcnow_naive)
     updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
     entry_reason = Column(String(100), nullable=True)
+    # Highest live price seen since the position was opened (or partially
+    # added to). Powers the ATR trailing-stop gate. NULL on legacy rows and
+    # on freshly-created positions until the first scan updates it.
+    high_water_mark = Column(Float, nullable=True)
 
     account = relationship("PaperAccount", back_populates="positions")
 
