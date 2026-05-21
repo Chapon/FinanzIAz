@@ -54,18 +54,21 @@ def _last_cached_model():
     """
     if not _XGB_CACHE:
         return None
-    # Pick any entry — typically the only one in a single-call test.
-    model, _val_acc, _train_acc = next(iter(_XGB_CACHE.values()))
-    return model
+    # Pick any entry — typically the only one in a single-call test. The cache
+    # value is (model, val_acc, train_acc, val_std); index rather than unpack so
+    # the helper survives future tuple-shape changes.
+    return next(iter(_XGB_CACHE.values()))[0]
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
 def test_calibration_applied_with_enough_val_samples(ohlcv_factory):
-    """With ~600 rows of synthetic OHLCV, the 80/20 split gives ~120 val
-    samples — above MIN_CALIBRATION_ROWS — so the cached model should be a
-    CalibratedClassifierCV instance (not the raw XGBClassifier)."""
+    """With ~600 rows of synthetic OHLCV the walk-forward path (T03) runs and
+    produces a CV-calibrated model, so the cached model should be a
+    CalibratedClassifierCV instance (not the raw XGBClassifier). Calibration
+    is present whether it comes from the single-split (T02) or the
+    walk-forward (T03) route."""
     clear_ml_cache()
     df = ohlcv_factory(rows=600, seed=7)
 
@@ -76,21 +79,22 @@ def test_calibration_applied_with_enough_val_samples(ohlcv_factory):
     cached = _last_cached_model()
     assert cached is not None, "cache should have been populated"
     assert isinstance(cached, sk_cal.CalibratedClassifierCV), (
-        f"Expected CalibratedClassifierCV with {MIN_CALIBRATION_ROWS}+ val samples, "
-        f"got {type(cached).__name__}"
+        f"Expected CalibratedClassifierCV on a healthy series, got {type(cached).__name__}"
     )
 
 
 def test_calibration_falls_back_when_val_too_small(ohlcv_factory, monkeypatch):
-    """When the validation slice is smaller than MIN_CALIBRATION_ROWS, the
-    cached model should be the raw XGBClassifier (graceful fallback, no
-    crash). We bump MIN_CALIBRATION_ROWS instead of shrinking the dataset
-    so we don't fight the feature-lookback NaN dropouts at small row
-    counts (training itself has its own min-rows gate).
+    """When the single-split val slice is smaller than MIN_CALIBRATION_ROWS,
+    the cached model should be the raw XGBClassifier (graceful fallback, no
+    crash). We force the single-split path (bump MIN_WALKFORWARD_ROWS so
+    walk-forward is skipped) and bump MIN_CALIBRATION_ROWS so the split's
+    own calibration gate trips. Bumping thresholds rather than shrinking the
+    dataset avoids fighting feature-lookback NaN dropouts at small row counts.
     """
     clear_ml_cache()
-    # Make the calibration threshold artificially high so any normal-sized
-    # synthetic series triggers the fallback path.
+    # Skip walk-forward so we exercise the single-split calibration gate.
+    monkeypatch.setattr(ml_signals, "MIN_WALKFORWARD_ROWS", 10_000)
+    # Make the single-split calibration threshold unreachable → raw fallback.
     monkeypatch.setattr(ml_signals, "MIN_CALIBRATION_ROWS", 10_000)
     df = ohlcv_factory(rows=500, seed=11)
 

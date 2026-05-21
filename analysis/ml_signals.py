@@ -21,8 +21,9 @@ Provides the following:
      bullish hidden state (via the transition matrix).
      Requires: pip install hmmlearn
 
-  5. compute_signal_probability  — combines the raw indicator consensus with
-     regime alignment and volatility risk into a single 0-1 probability score.
+  5. compute_signal_probability  — combines the regime-weighted indicator
+     consensus with volatility risk into a single 0-1 probability score.
+     (Regime alignment is folded into the per-indicator weights, T04.)
 """
 
 from __future__ import annotations
@@ -33,6 +34,15 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from config.constants import (
+    RSI_HIGH,
+    RSI_LOW,
+    RSI_OVERBOUGHT,
+    RSI_OVERBOUGHT_EXTREME,
+    RSI_OVERSOLD,
+    RSI_OVERSOLD_EXTREME,
+    SIGNAL_STRENGTH_WEIGHTS,
+)
 from config.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -58,10 +68,20 @@ except ImportError:
 # practice — but the wrapper keeps the module importable on a broken env.
 try:
     from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.model_selection import TimeSeriesSplit
 
     _CALIBRATION_OK = True
 except ImportError:
     _CALIBRATION_OK = False
+
+# ── Optional sklearn linear models (T05 stacking meta-learner) ───────────────
+try:
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+
+    _SKLEARN_LINEAR_OK = True
+except ImportError:
+    _SKLEARN_LINEAR_OK = False
 
 # Minimum size of the validation slice required to run isotonic calibration.
 # Below this, the calibrator overfits the val set and the calibration curve
@@ -69,11 +89,29 @@ except ImportError:
 # independent of MIN_TRAINING_ROWS (which gates training at all).
 MIN_CALIBRATION_ROWS = 100
 
+# ── Walk-forward validation (T03) ─────────────────────────────────────────────
+# Number of expanding-window folds used to estimate val accuracy as a
+# distribution (mean ± std) rather than a single 80/20 point estimate.
+N_WALKFORWARD_FOLDS = 5
+# A purge gap of PREDICTION_HORIZON rows is dropped from the end of each train
+# fold before its val fold, so the HORIZON-day-ahead labels of the last train
+# rows can't leak into the validation block (overlapping-label leakage).
+# (PREDICTION_HORIZON is defined further down; the gap is wired at call time.)
+# If the cross-fold std exceeds this, the model is flagged as unstable: the
+# val accuracy depends heavily on which slice of history it was measured on.
+WALKFORWARD_STD_WARN = 0.08
+# Below this many labelled rows the folds become too small to be meaningful
+# (single-class train folds, ~30-row fits), so we fall back to the single
+# 80/20 split + isotonic calibration path from T02.
+MIN_WALKFORWARD_ROWS = 250
+
 
 # ── XGBoost training-result cache (in-memory only) ───────────────────────────
 # Keyed by a hash of (close-tail, feature-cols, sample-count). Bounded so
 # long-running sessions don't accumulate models indefinitely. Values are
-# tuples of (model, val_acc, train_acc).
+# tuples of (model, val_acc, train_acc, val_std). ``val_acc`` is the mean
+# cross-fold validation accuracy and ``val_std`` its dispersion across the
+# walk-forward folds (0.0 when the single-split fallback path was used).
 _XGB_CACHE: dict[str, tuple] = {}
 _XGB_CACHE_MAX = 64
 
@@ -92,8 +130,9 @@ def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) ->
 
 
 def clear_ml_cache() -> None:
-    """Public helper to flush the cached XGBoost models (useful in tests)."""
+    """Public helper to flush the cached XGBoost + stacking models (tests)."""
     _XGB_CACHE.clear()
+    _STACK_CACHE.clear()
 
 
 # ── Optional hmmlearn ─────────────────────────────────────────────────────────
@@ -496,6 +535,220 @@ def _build_labels(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.Ser
     return result
 
 
+# ── Training helpers (shared by the single-split and walk-forward paths) ──────
+
+
+def _make_raw_xgb() -> "xgb.XGBClassifier":
+    """Build the shallow, regularised XGBoost classifier used everywhere.
+
+    Centralised so the single-split path (T02) and the walk-forward path
+    (T03) train identical architectures — the only thing that differs between
+    them is *how* the data is sliced for validation and calibration.
+    """
+    return xgb.XGBClassifier(
+        n_estimators=120,
+        max_depth=3,
+        learning_rate=0.05,
+        subsample=0.80,
+        colsample_bytree=0.75,
+        reg_alpha=0.10,
+        reg_lambda=1.00,
+        random_state=42,
+        eval_metric="logloss",
+        verbosity=0,
+    )
+
+
+def _build_calibrator(estimator, cv):
+    """Construct a CalibratedClassifierCV across sklearn API versions.
+
+    ``cv`` is either the string ``"prefit"`` (T02 — ``estimator`` is already
+    fitted and only the isotonic regressor is learned on the held-out slice)
+    or a ``TimeSeriesSplit`` (T03 — ``estimator`` is an unfitted template that
+    the calibrator clones and refits on each fold's train window).
+
+    sklearn ≥ 1.2 uses ``estimator=``; older versions use ``base_estimator=``.
+    """
+    try:
+        return CalibratedClassifierCV(estimator=estimator, cv=cv, method="isotonic")
+    except TypeError:
+        return CalibratedClassifierCV(base_estimator=estimator, cv=cv, method="isotonic")
+
+
+def _walkforward_val_scores(
+    X: np.ndarray,
+    y: np.ndarray,
+    n_splits: int,
+    gap: int,
+) -> list[float]:
+    """Expanding-window walk-forward validation accuracies, one per fold.
+
+    Each fold fits a fresh XGB on the train window and scores it on the
+    immediately-following val block, with ``gap`` rows purged in between so
+    the HORIZON-day labels of the last train rows don't overlap (and thus
+    leak into) the val block.
+
+    Folds with a degenerate train window (<30 rows, or single-class) are
+    skipped — they'd produce a meaningless accuracy that would distort the
+    mean/std. Returns ``[]`` if CV can't run at all.
+    """
+    if not _CALIBRATION_OK:  # sklearn gates TimeSeriesSplit too
+        return []
+    try:
+        tscv = TimeSeriesSplit(n_splits=n_splits, gap=gap)
+        scores: list[float] = []
+        for tr_idx, val_idx in tscv.split(X):
+            if len(tr_idx) < 30 or len(val_idx) == 0:
+                continue
+            if len(np.unique(y[tr_idx])) < 2:
+                continue
+            m = _make_raw_xgb()
+            m.fit(X[tr_idx], y[tr_idx])
+            scores.append(float((m.predict(X[val_idx]) == y[val_idx]).mean()))
+        return scores
+    except Exception as exc:  # pragma: no cover - sklearn version guard
+        log.warning("Walk-forward CV error: %s", exc)
+        return []
+
+
+def _train_single_split(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[str]):
+    """Legacy single 80/20 split + isotonic calibration (T02 path).
+
+    Used for short histories (< MIN_WALKFORWARD_ROWS) where walk-forward folds
+    would be too small to be meaningful. Returns
+    ``(model, val_acc, train_acc, val_std)`` with ``val_std = 0.0`` (a single
+    split yields no dispersion estimate).
+    """
+    split = max(30, int(len(X_all) * 0.80))
+    X_tr, y_tr = X_all[:split], y_all[:split]
+    X_val, y_val = X_all[split:], y_all[split:]
+
+    raw_model = _make_raw_xgb()
+    raw_model.fit(X_tr, y_tr)
+
+    # Isotonic calibration on the val slice — re-scales predict_proba so that
+    # "model says 65%" matches the empirical 5d-up rate on the val set.
+    n_val = len(X_val)
+    n_classes_val = int(len(np.unique(y_val))) if n_val > 0 else 0
+    if _CALIBRATION_OK and n_val >= MIN_CALIBRATION_ROWS and n_classes_val >= 2:
+        try:
+            calibrator = _build_calibrator(raw_model, cv="prefit")
+            calibrator.fit(X_val, y_val)
+            model = calibrator
+            log.debug("XGBoost: isotonic calibration applied on %d val samples.", n_val)
+        except Exception as exc:
+            log.warning("XGBoost calibration failed (%s); using raw model.", exc)
+            model = raw_model
+    else:
+        if not _CALIBRATION_OK:
+            log.info("XGBoost: sklearn unavailable, calibration skipped.")
+        elif n_val < MIN_CALIBRATION_ROWS:
+            log.info(
+                "XGBoost: val set too small (%d < %d) for isotonic "
+                "calibration; using raw model.",
+                n_val,
+                MIN_CALIBRATION_ROWS,
+            )
+        elif n_classes_val < 2:
+            log.info("XGBoost: val set has only one class; calibration skipped, using raw model.")
+        model = raw_model
+
+    train_acc = float((model.predict(X_tr) == y_tr).mean()) if len(X_tr) > 0 else 0.50
+    val_acc = float((model.predict(X_val) == y_val).mean()) if len(X_val) > 0 else 0.50
+    overfit_gap = train_acc - val_acc
+    if overfit_gap > 0.20:
+        log.info(
+            "XGBoost: large train-val gap (%.0f%% vs %.0f%%); model may be overfitting.",
+            train_acc * 100,
+            val_acc * 100,
+        )
+    _log_top_features(raw_model, valid_cols)
+    return model, val_acc, train_acc, 0.0
+
+
+def _train_walkforward(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[str]):
+    """Walk-forward validation + CV-calibrated final model (T03 path).
+
+    Two distinct uses of the same TimeSeriesSplit:
+
+    1. **Reporting** — fit a fresh XGB per fold and collect val accuracies, so
+       we can report ``val_acc = mean ± std`` instead of a single lucky point.
+       A std above WALKFORWARD_STD_WARN is logged as an instability warning.
+
+    2. **Final model** — a CalibratedClassifierCV with the *same* walk-forward
+       cv refits the XGB on each fold and learns an isotonic regressor on each
+       fold's hold-out, then averages. The base estimator therefore sees the
+       full history across folds (no single 20% block held out forever) while
+       calibration stays leakage-free.
+
+    Returns ``(model, val_acc, train_acc, val_std)``. Falls back to
+    :func:`_train_single_split` if the folds are unusable.
+    """
+    scores = _walkforward_val_scores(X_all, y_all, N_WALKFORWARD_FOLDS, PREDICTION_HORIZON)
+    if not scores:
+        log.info("XGBoost: walk-forward folds unusable; falling back to single split.")
+        return _train_single_split(X_all, y_all, valid_cols)
+
+    val_acc = float(np.mean(scores))
+    val_std = float(np.std(scores))
+    log.info(
+        "XGBoost walk-forward: val_acc=%.0f%% ± %.0f%% over %d folds.",
+        val_acc * 100,
+        val_std * 100,
+        len(scores),
+    )
+    if val_std > WALKFORWARD_STD_WARN:
+        log.warning(
+            "XGBoost: unstable model — val_acc std %.0f%% > %.0f%% across folds; "
+            "accuracy depends heavily on the validation window.",
+            val_std * 100,
+            WALKFORWARD_STD_WARN * 100,
+        )
+
+    # Final model: XGB refit per fold inside the calibrator, isotonic on each
+    # fold's hold-out, averaged. Effectively trained over all history.
+    tscv = TimeSeriesSplit(n_splits=N_WALKFORWARD_FOLDS, gap=PREDICTION_HORIZON)
+    try:
+        model = _build_calibrator(_make_raw_xgb(), cv=tscv)
+        model.fit(X_all, y_all)
+        _log_top_features(model, valid_cols)
+    except Exception as exc:
+        # CV calibration can fail on pathological splits (e.g. a fold with a
+        # single class). Fall back to a raw XGB fit on all data — we still
+        # keep the honest walk-forward val_acc ± std from above.
+        log.warning("XGBoost CV calibration failed (%s); using raw model on all data.", exc)
+        model = _make_raw_xgb()
+        model.fit(X_all, y_all)
+        _log_top_features(model, valid_cols)
+
+    train_acc = float((model.predict(X_all) == y_all).mean())
+    return model, val_acc, train_acc, val_std
+
+
+def _log_top_features(model, valid_cols: list[str]) -> None:
+    """Log the top-3 feature importances, pulled from the raw XGB.
+
+    A CalibratedClassifierCV wrapper doesn't expose ``feature_importances_``
+    directly; dig out an underlying fitted estimator when present.
+    """
+    try:
+        raw = model
+        if hasattr(model, "calibrated_classifiers_") and model.calibrated_classifiers_:
+            inner = getattr(model.calibrated_classifiers_[0], "estimator", None)
+            raw = inner if inner is not None else model
+        importances = getattr(raw, "feature_importances_", None)
+        if importances is None:
+            return
+        top = sorted(
+            zip(valid_cols, importances, strict=False),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )[:3]
+        log.debug("XGBoost top features: %s", top)
+    except Exception:  # pragma: no cover - logging is best-effort
+        pass
+
+
 def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     """
     Train an XGBoost binary classifier on the ticker's historical data
@@ -506,8 +759,12 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     -----------------
     • Features: multi-timeframe momentum, RSI, MACD, Bollinger, volume, volatility, SMA ratios
     • Label:    did close[t+5] > close[t]?  (binary, 0/1)
-    • Split:    80% training (chronological) / 20% time-series validation
-    • Model:    shallow XGBoost (max_depth=3) with L1/L2 regularisation
+    • Validation: walk-forward (expanding-window TimeSeriesSplit, 5 folds,
+                  PREDICTION_HORIZON-day purge gap) → val_acc reported as
+                  mean ± std. Short histories (< MIN_WALKFORWARD_ROWS) fall
+                  back to a single 80/20 split.
+    • Model:    shallow XGBoost (max_depth=3) with L1/L2 regularisation,
+                isotonic-calibrated. Final model is refit across all folds.
     • Prediction: on the last available row (no label yet)
 
     Returns
@@ -543,11 +800,6 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         y_all = combined["label"].values.astype(int)
         X_pred = latest_row[valid_cols].values.reshape(1, -1).astype(np.float32)
 
-        # Time-series split: first 80% → train, last 20% → validation
-        split = max(30, int(len(X_all) * 0.80))
-        X_tr, y_tr = X_all[:split], y_all[:split]
-        X_val, y_val = X_all[split:], y_all[split:]
-
         # Reuse a previously trained model if the input fingerprint matches.
         # We hash the (close-tail, feature-shape, latest-date) tuple so that
         # repeated UI refreshes during the same trading session don't retrain
@@ -555,132 +807,20 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         cache_key = _xgb_cache_key(df, valid_cols, len(combined))
         cached = _XGB_CACHE.get(cache_key)
         if cached is not None:
-            model, val_acc, train_acc = cached
+            model, val_acc, train_acc, val_std = cached
         else:
-            raw_model = xgb.XGBClassifier(
-                n_estimators=120,
-                max_depth=3,
-                learning_rate=0.05,
-                subsample=0.80,
-                colsample_bytree=0.75,
-                reg_alpha=0.10,
-                reg_lambda=1.00,
-                random_state=42,
-                eval_metric="logloss",
-                verbosity=0,
-            )
-            raw_model.fit(X_tr, y_tr)
-
-            # ── Isotonic calibration on the val slice (T02 of roadmap) ────
-            # CalibratedClassifierCV(cv='prefit') takes the already-fitted
-            # estimator and only re-fits the isotonic regressor on the
-            # hold-out we pass to .fit(). This keeps the underlying XGB
-            # unchanged and adds a monotone re-scaling of predict_proba so
-            # that "model says 65%" matches the empirical 5d-up rate on the
-            # val set within isotonic regression's resolution.
-            # Fallback: with too few val samples the isotonic curve overfits
-            # and produces flat/noisy probabilities — use the raw model.
-            n_val = len(X_val)
-            n_classes_val = int(len(np.unique(y_val))) if n_val > 0 else 0
+            # Walk-forward validation (T03) when there's enough history for the
+            # folds to be meaningful; otherwise the single 80/20 split (T02).
             if (
                 _CALIBRATION_OK
-                and n_val >= MIN_CALIBRATION_ROWS
-                and n_classes_val >= 2
+                and len(X_all) >= MIN_WALKFORWARD_ROWS
+                and len(np.unique(y_all)) >= 2
             ):
-                try:
-                    calibrator = CalibratedClassifierCV(
-                        estimator=raw_model,
-                        cv="prefit",
-                        method="isotonic",
-                    )
-                    calibrator.fit(X_val, y_val)
-                    model = calibrator
-                    log.debug(
-                        "XGBoost: isotonic calibration applied on %d val samples.",
-                        n_val,
-                    )
-                except TypeError:
-                    # sklearn < 1.2 uses ``base_estimator`` instead of
-                    # ``estimator``. Retry with the legacy kwarg so we don't
-                    # silently fall back to uncalibrated on older envs.
-                    try:
-                        calibrator = CalibratedClassifierCV(
-                            base_estimator=raw_model,
-                            cv="prefit",
-                            method="isotonic",
-                        )
-                        calibrator.fit(X_val, y_val)
-                        model = calibrator
-                        log.debug(
-                            "XGBoost: isotonic calibration applied "
-                            "(legacy sklearn API) on %d val samples.",
-                            n_val,
-                        )
-                    except Exception as exc:  # pragma: no cover - sanity guard
-                        log.warning(
-                            "XGBoost calibration failed (%s); using raw model.",
-                            exc,
-                        )
-                        model = raw_model
-                except Exception as exc:
-                    log.warning(
-                        "XGBoost calibration failed (%s); using raw model.",
-                        exc,
-                    )
-                    model = raw_model
+                model, val_acc, train_acc, val_std = _train_walkforward(X_all, y_all, valid_cols)
             else:
-                if not _CALIBRATION_OK:
-                    log.info("XGBoost: sklearn unavailable, calibration skipped.")
-                elif n_val < MIN_CALIBRATION_ROWS:
-                    log.info(
-                        "XGBoost: val set too small (%d < %d) for isotonic "
-                        "calibration; using raw model.",
-                        n_val,
-                        MIN_CALIBRATION_ROWS,
-                    )
-                elif n_classes_val < 2:
-                    # Edge case: all val labels are the same class. Isotonic
-                    # needs both classes to fit; fallback prevents a crash on
-                    # pathological (mostly-flat) price series.
-                    log.info(
-                        "XGBoost: val set has only one class; "
-                        "calibration skipped, using raw model."
-                    )
-                model = raw_model
+                model, val_acc, train_acc, val_std = _train_single_split(X_all, y_all, valid_cols)
 
-            # Train + validation accuracy. Computed against the final model
-            # (calibrated or raw) so the number reported matches the proba
-            # source actually used downstream. Isotonic preserves ordering,
-            # so accuracy at the default 0.5 threshold is nearly identical
-            # to the raw model in practice.
-            train_acc = float((model.predict(X_tr) == y_tr).mean()) if len(X_tr) > 0 else 0.50
-            val_acc = float((model.predict(X_val) == y_val).mean()) if len(X_val) > 0 else 0.50
-            overfit_gap = train_acc - val_acc
-            if overfit_gap > 0.20:
-                log.info(
-                    "XGBoost: large train-val gap (%.0f%% vs %.0f%%); model may be overfitting.",
-                    train_acc * 100,
-                    val_acc * 100,
-                )
-
-            # Top-3 feature importance is useful to log when debugging weird
-            # signals (e.g. all weight on one volume feature). The calibrator
-            # doesn't expose feature_importances_ directly — pull from the
-            # underlying raw model instead.
-            try:
-                importances = sorted(
-                    # strict=False: feature_importances_ length always matches
-                    # valid_cols by xgboost contract, but explicit is better
-                    # than implicit and silences B905.
-                    zip(valid_cols, raw_model.feature_importances_, strict=False),
-                    key=lambda kv: kv[1],
-                    reverse=True,
-                )[:3]
-                log.debug("XGBoost top features: %s", importances)
-            except Exception:
-                pass
-
-            _XGB_CACHE[cache_key] = (model, val_acc, train_acc)
+            _XGB_CACHE[cache_key] = (model, val_acc, train_acc, val_std)
 
         # Predict probability of price going UP in the next 5 days. Works
         # identically against both raw XGBClassifier and CalibratedClassifierCV
@@ -692,7 +832,12 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         return None
 
     # ── Map probability → signal ──────────────────────────────────────────────
-    acc_str = f"precisión histórica {val_acc:.0%}"
+    # Walk-forward path reports dispersion (± std); the single-split fallback
+    # has val_std == 0.0 and shows just the point estimate.
+    if val_std > 0:
+        acc_str = f"precisión histórica {val_acc:.0%} ± {val_std:.0%}"
+    else:
+        acc_str = f"precisión histórica {val_acc:.0%}"
 
     if prob_up >= 0.65:
         sig = "BUY"
@@ -820,9 +965,15 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
 
     Components
     ----------
-    raw_prob   : indicator consensus  (buy weight vs sell weight)
-    reg_boost  : regime alignment bonus/penalty
+    raw_prob   : regime-weighted indicator consensus (buy weight vs sell weight)
     vol_penalty: high volatility reduces edge
+
+    The regime tilt now lives *inside* the weights (T04): each signal is
+    weighted by ``regime_adjusted_weight``, so a MACD crossover counts more in
+    a trending market and an oversold RSI counts more in a range. This replaces
+    the old additive ``reg_boost`` term, which double-counted regime once the
+    weights themselves became regime-aware. Only ``vol_penalty`` remains as a
+    standalone adjustment.
 
     Returns 0.5 for a perfectly neutral market with no edge.
     >0.65 → meaningful buy probability  |  <0.35 → meaningful sell probability.
@@ -830,30 +981,486 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
     if not signals:
         return 0.50
 
-    WEIGHTS = {"STRONG": 3.0, "MODERATE": 2.0, "WEAK": 1.0}
+    # Lazy import avoids the circular dependency (technical ← ml_signals).
+    from analysis.technical import regime_adjusted_weight
 
-    buy_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "BUY")
-    sell_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "SELL")
-    hold_w = sum(WEIGHTS.get(s.strength, 1.0) for s in signals if s.signal == "HOLD")
+    regime = market_context.regime if market_context is not None else None
+
+    def _w(s) -> float:
+        return regime_adjusted_weight(s.indicator, s.strength, regime)
+
+    buy_w = sum(_w(s) for s in signals if s.signal == "BUY")
+    sell_w = sum(_w(s) for s in signals if s.signal == "SELL")
+    hold_w = sum(_w(s) for s in signals if s.signal == "HOLD")
     total = buy_w + sell_w + hold_w
 
     if total == 0:
         return 0.50
 
-    # Maps (buy_w - sell_w) ∈ [-total, +total] → [0, 1]
+    # Maps (buy_w - sell_w) ∈ [-total, +total] → [0, 1]. Because the weights are
+    # already regime-tilted, this consensus carries the regime signal directly.
     raw_prob = (buy_w - sell_w + total) / (2.0 * total)
-
-    # Regime alignment
-    conf = market_context.regime_confidence
-    if market_context.regime == "BULL":
-        reg_boost = (+0.06 * conf) if raw_prob > 0.5 else (-0.04 * conf)
-    elif market_context.regime == "BEAR":
-        # Buying against a bear regime gets a larger penalty
-        reg_boost = (-0.06 * conf) if raw_prob < 0.5 else (-0.09 * conf)
-    else:
-        reg_boost = 0.0
 
     # Volatility reduces the edge for any direction
     vol_penalty = market_context.risk_score * 0.08
 
-    return float(np.clip(raw_prob + reg_boost - vol_penalty, 0.05, 0.95))
+    return float(np.clip(raw_prob - vol_penalty, 0.05, 0.95))
+
+
+# ── 4. Stacking meta-learner (T05) ────────────────────────────────────────────
+# A trainable logistic combiner that replaces the hand-weighted heuristic in
+# ``compute_signal_probability``. It learns, from the ticker's own history, how
+# much each indicator's signal should count toward the 5-day-up probability.
+#
+# Feature vector (one column per indicator, exactly the roadmap list):
+#   RSI, MACD, Bollinger, SMA_cross, Volumen  → signed strength score in
+#     {-3,-2,-1,0,+1,+2,+3} (BUY positive, SELL negative, HOLD 0), computed per
+#     row with the *same* thresholds as the scalar signal functions.
+#   GARCH  → signed volatility-expansion score (cheap per-row proxy of the
+#     GARCH expand/contract signal; the real GARCH model is too costly to refit
+#     at every row, so we use a short/long realised-vol ratio that captures the
+#     same expansion/contraction idea).
+#   HMM    → bullish posterior in [0,1] from a single Gaussian-HMM fit.
+#   XGB_prob → walk-forward out-of-fold P(up) in [0,1] (leakage-free, reuses the
+#     T03 TimeSeriesSplit).
+# Regime/volatility are NOT separate columns — the GARCH and HMM columns already
+# carry that information, per the roadmap's feature list.
+
+MIN_STACKING_ROWS = 200  # below this, fall back to the heuristic combiner
+
+# Stable feature-column order for the meta-feature matrix.
+STACKING_FEATURE_COLS = [
+    "RSI",
+    "MACD",
+    "Bollinger",
+    "SMA_cross",
+    "Volumen",
+    "GARCH",
+    "HMM",
+    "XGB_prob",
+]
+
+# Trained-combiner cache (in-memory). Keyed by a dataset fingerprint so repeated
+# analyze_stacked() calls on the same data — and the train+predict round-trip —
+# don't refit the whole XGB-OOF + HMM + logistic stack. Mirrors _XGB_CACHE.
+# A trained ``dict`` *and* a ``None`` outcome (e.g. too few rows) are both cached,
+# so the expensive feature build isn't repeated just to re-learn it's a no-go.
+_STACK_CACHE: dict[str, object] = {}
+_STACK_CACHE_MAX = 64
+_STACK_MISS = object()  # sentinel: distinguishes "not cached" from "cached None"
+
+
+def _stack_cache_key(df: pd.DataFrame) -> str:
+    """Stable fingerprint of the training set for the stacking combiner cache."""
+    if "Close" not in df.columns or len(df) == 0:
+        return ""
+    tail = df["Close"].tail(20).round(4).tolist()
+    payload = f"stack|{tail}|{len(df)}|{df.index[-1]}"
+    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    if len(_STACK_CACHE) > _STACK_CACHE_MAX:
+        _STACK_CACHE.clear()
+    return h
+
+
+def _signal_score(signal: str, strength: str) -> float:
+    """Signed strength score: +w for BUY, -w for SELL, 0 for HOLD.
+
+    ``w`` is the base strength weight (STRONG=3, MODERATE=2, WEAK=1) shared with
+    the regime-weighting of T04. This is the scalar building block; the
+    ``*_score_series`` helpers below produce the same value per row, vectorised.
+    """
+    w = SIGNAL_STRENGTH_WEIGHTS.get(strength, 1.0)
+    if signal == "BUY":
+        return w
+    if signal == "SELL":
+        return -w
+    return 0.0
+
+
+def _rsi_score_series(rsi: pd.Series) -> pd.Series:
+    """Per-row signed RSI score, matching ``_rsi_signal``'s six zones."""
+    conds = [
+        rsi < RSI_OVERSOLD_EXTREME,   # < 25  → BUY STRONG
+        rsi < RSI_OVERSOLD,           # < 30  → BUY MODERATE
+        rsi < RSI_LOW,                # < 40  → BUY WEAK
+        rsi > RSI_OVERBOUGHT_EXTREME,  # > 75 → SELL STRONG
+        rsi > RSI_OVERBOUGHT,         # > 70  → SELL MODERATE
+        rsi > RSI_HIGH,               # > 60  → SELL WEAK
+    ]
+    vals = [3.0, 2.0, 1.0, -3.0, -2.0, -1.0]
+    out = np.select(conds, vals, default=0.0)
+    return pd.Series(out, index=rsi.index).where(rsi.notna())
+
+
+def _macd_score_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row signed MACD score, matching ``_macd_signal``.
+
+    ``hist = macd_line - signal_line``; ``macd_val > signal_val`` ⇔ ``hist > 0``.
+    Crossovers (sign flip of hist) are STRONG; otherwise momentum direction
+    (hist rising/falling) decides MODERATE vs WEAK.
+    """
+    from analysis.technical import compute_macd
+
+    _, _, hist = compute_macd(df)
+    hist_prev = hist.shift(1)
+    growing = hist > hist_prev
+    conds = [
+        (hist_prev < 0) & (hist > 0),    # crossover  → BUY STRONG
+        (hist_prev > 0) & (hist < 0),    # crossunder → SELL STRONG
+        (hist > 0) & growing,            # up + accelerating  → BUY MODERATE
+        (hist > 0) & ~growing,           # up + fading        → BUY WEAK
+        (hist <= 0) & ~growing,          # down + accelerating → SELL MODERATE
+        (hist <= 0) & growing,           # down + braking      → SELL WEAK
+    ]
+    vals = [3.0, -3.0, 2.0, 1.0, -2.0, -1.0]
+    out = np.select(conds, vals, default=0.0)
+    return pd.Series(out, index=hist.index).where(hist.notna() & hist_prev.notna())
+
+
+def _bollinger_score_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row signed Bollinger score, matching ``_bollinger_signal``."""
+    from analysis.technical import compute_bollinger_bands
+
+    upper, _, lower = compute_bollinger_bands(df)
+    close = df["Close"].squeeze()
+    conds = [
+        close < lower * 0.99,   # deep below lower → BUY STRONG
+        close <= lower,         # at/under lower   → BUY MODERATE
+        close > upper * 1.01,   # well above upper → SELL STRONG
+        close >= upper,         # at/over upper    → SELL MODERATE
+    ]
+    vals = [3.0, 2.0, -3.0, -2.0]
+    out = np.select(conds, vals, default=0.0)
+    return pd.Series(out, index=close.index).where(upper.notna() & lower.notna())
+
+
+def _sma_cross_score_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row signed SMA-50/200 cross score, matching ``_sma_cross_signal``."""
+    from analysis.technical import compute_sma
+
+    sma50 = compute_sma(df, 50)
+    sma200 = compute_sma(df, 200)
+    p50, p200 = sma50.shift(1), sma200.shift(1)
+    golden = (p50 <= p200) & (sma50 > sma200)
+    death = (p50 >= p200) & (sma50 < sma200)
+    conds = [golden, death, sma50 > sma200]
+    vals = [3.0, -3.0, 1.0]
+    out = np.select(conds, vals, default=-1.0)  # else → SELL WEAK
+    return pd.Series(out, index=sma50.index).where(sma50.notna() & sma200.notna())
+
+
+def _volume_score_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row signed volume accumulation/distribution score.
+
+    Mirrors ``_volume_signal``: over the trailing 10 sessions, compare mean
+    volume on up-days vs down-days. ratio≥1.5 → accumulation (BUY), ≤0.67 →
+    distribution (SELL); STRONG when the imbalance is ≥2×. Rows without a valid
+    20-day volume baseline or without both up- and down-day volume score 0.
+    """
+    close = df["Close"].squeeze()
+    if "Volume" not in df.columns:
+        return pd.Series(0.0, index=close.index)
+    volume = df["Volume"].squeeze().replace(0, np.nan)
+    vol_sma20 = volume.rolling(20).mean()
+    ret = close.pct_change()
+    pos_vol = volume.where(ret > 0)
+    neg_vol = volume.where(ret < 0)
+    with np.errstate(invalid="ignore"):
+        up = pos_vol.rolling(10, min_periods=1).apply(np.nanmean, raw=True)
+        down = neg_vol.rolling(10, min_periods=1).apply(np.nanmean, raw=True)
+    ratio = up / down
+    valid = vol_sma20.notna() & (vol_sma20 > 0) & up.notna() & down.notna() & (down > 0)
+    conds = [
+        valid & (ratio <= 0.5),                    # SELL STRONG (inv ≥ 2×)
+        valid & (ratio <= 0.67),                   # SELL MODERATE
+        valid & (ratio >= 2.0),                    # BUY STRONG
+        valid & (ratio >= 1.5),                    # BUY MODERATE
+    ]
+    vals = [-3.0, -2.0, 3.0, 2.0]
+    out = np.select(conds, vals, default=0.0)
+    return pd.Series(out, index=close.index)
+
+
+def build_signal_score_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-row signed scores for the five rule-based indicators.
+
+    Columns: RSI, MACD, Bollinger, SMA_cross, Volumen. Each cell is the same
+    value the corresponding scalar signal function would assign to that row,
+    encoded as a signed strength score (see :func:`_signal_score`). The GARCH,
+    HMM and XGB_prob columns are added later in the meta-feature builder.
+    """
+    from analysis.technical import compute_rsi
+
+    rsi = compute_rsi(df)
+    return pd.DataFrame(
+        {
+            "RSI": _rsi_score_series(rsi),
+            "MACD": _macd_score_series(df),
+            "Bollinger": _bollinger_score_series(df),
+            "SMA_cross": _sma_cross_score_series(df),
+            "Volumen": _volume_score_series(df),
+        },
+        index=df.index,
+    )
+
+
+def _garch_vol_ratio_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row realised-volatility expansion ratio — cheap proxy for the GARCH
+    column.
+
+    The real GARCH model can't be refit at every historical row (too costly),
+    so we use ``σ_short / σ_long`` (10-day vs 60-day realised vol of returns).
+    >1 means volatility is expanding, <1 contracting — the same regime info the
+    GARCH expand/contract signal carries, as a plain numeric feature the
+    logistic standardises.
+    """
+    ret = df["Close"].squeeze().pct_change()
+    short = ret.rolling(10).std()
+    long = ret.rolling(60).std()
+    return (short / long.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
+
+
+def _hmm_bullish_series(df: pd.DataFrame) -> pd.Series:
+    """Per-row bullish-state posterior in [0,1] from a single Gaussian-HMM fit.
+
+    ``p_bull + 0.5·p_lateral`` (same convention as :func:`train_hmm_signal`).
+    Returns a neutral 0.5 everywhere if hmmlearn is unavailable or the fit
+    fails, so the column is always present (a constant column just gets a
+    near-zero logistic coefficient).
+    """
+    close = df["Close"].squeeze()
+    if not _HMM_OK:
+        return pd.Series(0.5, index=close.index)
+    ret = np.log(close / close.shift(1))
+    vol = ret.rolling(5).std()
+    X = pd.concat([ret.rename("ret"), vol.rename("vol")], axis=1).dropna()
+    if len(X) < HMM_MIN_ROWS:
+        return pd.Series(0.5, index=close.index)
+    try:
+        model, order = _fit_gaussian_hmm(X.values.astype(np.float64), n_states=HMM_N_STATES)
+        bull_idx, lat_idx = order[-1], order[1]
+        post = model.predict_proba(X.values.astype(np.float64))
+        bullish = post[:, bull_idx] + 0.5 * post[:, lat_idx]
+        return pd.Series(bullish, index=X.index).reindex(close.index)
+    except Exception as exc:  # pragma: no cover - hmm numerical guard
+        log.warning("HMM bullish series error: %s", exc)
+        return pd.Series(0.5, index=close.index)
+
+
+def _xgb_oof_proba_series(df: pd.DataFrame) -> pd.Series:
+    """Walk-forward out-of-fold P(5d-up) per row — the leakage-free XGB column.
+
+    Uses the same TimeSeriesSplit(gap=PREDICTION_HORIZON) as T03: each fold's
+    val block is scored by a model trained only on prior rows, so no row's
+    feature was produced by a model that saw its own label. Rows before the
+    first val block (and the trailing unlabelled rows) stay NaN and are dropped
+    by the meta-feature builder. Returns a neutral 0.5 if xgboost/sklearn are
+    unavailable.
+    """
+    close = df["Close"].squeeze()
+    if not (_XGB_OK and _CALIBRATION_OK):
+        return pd.Series(0.5, index=close.index)
+    feats = _build_features(df)
+    labels = _build_labels(df)
+    combined = pd.concat([feats, labels.rename("label")], axis=1).dropna()
+    if len(combined) < MIN_TRAINING_ROWS:
+        return pd.Series(0.5, index=close.index)
+    cols = [c for c in feats.columns if c in combined.columns]
+    X = combined[cols].values.astype(np.float32)
+    y = combined["label"].values.astype(int)
+    oof = pd.Series(np.nan, index=combined.index, dtype=float)
+    try:
+        tscv = TimeSeriesSplit(n_splits=N_WALKFORWARD_FOLDS, gap=PREDICTION_HORIZON)
+        for tr_idx, val_idx in tscv.split(X):
+            if len(tr_idx) < 30 or len(val_idx) == 0 or len(np.unique(y[tr_idx])) < 2:
+                continue
+            m = _make_raw_xgb()
+            m.fit(X[tr_idx], y[tr_idx])
+            oof.iloc[val_idx] = m.predict_proba(X[val_idx])[:, 1]
+    except Exception as exc:  # pragma: no cover - sklearn/xgb guard
+        log.warning("XGB OOF error: %s", exc)
+        return pd.Series(0.5, index=close.index)
+    return oof.reindex(close.index)
+
+
+def build_stacking_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Assemble the full per-row meta-feature matrix and the 5-day-up label.
+
+    Columns (exactly the roadmap list, in ``STACKING_FEATURE_COLS`` order):
+    the five rule-based signed scores, the GARCH vol-ratio proxy, the HMM
+    bullish posterior, and the walk-forward OOF XGB probability. Regime and
+    volatility are not separate columns — GARCH and HMM already carry them.
+    """
+    feats = build_signal_score_matrix(df)
+    feats["GARCH"] = _garch_vol_ratio_series(df)
+    feats["HMM"] = _hmm_bullish_series(df)
+    feats["XGB_prob"] = _xgb_oof_proba_series(df)
+    feats = feats[STACKING_FEATURE_COLS]
+    label = _build_labels(df).rename("label")
+    return feats, label
+
+
+def _logit_walkforward_scores(X: np.ndarray, y: np.ndarray, penalty: str) -> list[float]:
+    """Walk-forward val accuracies for a logistic with the given penalty.
+
+    Mirrors the XGB walk-forward: a fresh scaler+logistic is fit on each fold's
+    train window and scored on the immediately-following val block, with a
+    PREDICTION_HORIZON purge gap. Used only to pick L1 vs L2 honestly.
+    """
+    scores: list[float] = []
+    try:
+        tscv = TimeSeriesSplit(n_splits=N_WALKFORWARD_FOLDS, gap=PREDICTION_HORIZON)
+        for tr_idx, val_idx in tscv.split(X):
+            if len(tr_idx) < 30 or len(val_idx) == 0 or len(np.unique(y[tr_idx])) < 2:
+                continue
+            sc = StandardScaler().fit(X[tr_idx])
+            m = LogisticRegression(penalty=penalty, solver="liblinear", max_iter=1000)
+            m.fit(sc.transform(X[tr_idx]), y[tr_idx])
+            scores.append(float((m.predict(sc.transform(X[val_idx])) == y[val_idx]).mean()))
+    except Exception as exc:  # pragma: no cover - sklearn guard
+        log.warning("Logit walk-forward error: %s", exc)
+        return []
+    return scores
+
+
+def train_stacking_combiner(df: pd.DataFrame) -> dict | None:
+    """Train the logistic stacking meta-learner on the ticker's own history.
+
+    Replaces the hand-weighted heuristic of :func:`compute_signal_probability`
+    by learning, from data, how much each indicator's signal counts toward the
+    5-day-up probability. Tries both L2 and L1 penalties and keeps whichever has
+    the higher mean walk-forward validation accuracy (L1 also gives sparse,
+    interpretable feature selection — roadmap note). Coefficients are logged.
+
+    Returns
+    -------
+    dict with keys ``model, scaler, cols, coefs, val_acc, val_std, penalty, n``
+    or ``None`` when the combiner can't / shouldn't be used (sklearn missing,
+    < MIN_STACKING_ROWS labelled rows, or a single-class label) — callers then
+    fall back to the T04 heuristic combiner.
+
+    Results are cached per dataset fingerprint (``_STACK_CACHE``) so repeated
+    calls within a session — and the live train+predict round-trip — don't
+    refit the XGB-OOF + HMM + logistic stack from scratch on identical data.
+    """
+    if not (_SKLEARN_LINEAR_OK and _CALIBRATION_OK):
+        return None
+    key = _stack_cache_key(df)
+    if key:
+        cached = _STACK_CACHE.get(key, _STACK_MISS)
+        if cached is not _STACK_MISS:
+            return cached  # type: ignore[return-value]
+    combiner = _train_stacking_combiner_uncached(df)
+    if key:
+        _STACK_CACHE[key] = combiner
+    return combiner
+
+
+def _train_stacking_combiner_uncached(df: pd.DataFrame) -> dict | None:
+    """Actual stacking training (no cache). See :func:`train_stacking_combiner`."""
+    feats, label = build_stacking_features(df)
+    data = pd.concat([feats, label], axis=1).dropna()
+    if len(data) < MIN_STACKING_ROWS:
+        log.info(
+            "Stacking: only %d usable rows (< %d); falling back to heuristic combiner.",
+            len(data),
+            MIN_STACKING_ROWS,
+        )
+        return None
+    X = data[STACKING_FEATURE_COLS].values.astype(np.float64)
+    y = data["label"].values.astype(int)
+    if len(np.unique(y)) < 2:
+        return None
+
+    best: tuple[str, float, float] | None = None
+    for penalty in ("l2", "l1"):
+        scores = _logit_walkforward_scores(X, y, penalty)
+        if not scores:
+            continue
+        acc, std = float(np.mean(scores)), float(np.std(scores))
+        if best is None or acc > best[1]:
+            best = (penalty, acc, std)
+
+    if best is None:  # walk-forward unusable (tiny/degenerate) → default L2, no WF estimate
+        penalty, val_acc, val_std = "l2", float("nan"), 0.0
+    else:
+        penalty, val_acc, val_std = best
+
+    try:
+        scaler = StandardScaler().fit(X)
+        model = LogisticRegression(penalty=penalty, solver="liblinear", max_iter=1000)
+        model.fit(scaler.transform(X), y)
+    except Exception as exc:
+        log.warning("Stacking logistic fit failed (%s); falling back to heuristic.", exc)
+        return None
+
+    coefs = dict(zip(STACKING_FEATURE_COLS, model.coef_[0], strict=False))
+    log.info(
+        "Stacking logistic (%s): val_acc=%.0f%% ± %.0f%% on %d rows; coefs=%s",
+        penalty,
+        (val_acc * 100) if val_acc == val_acc else float("nan"),  # nan-safe
+        val_std * 100,
+        len(data),
+        {k: round(v, 3) for k, v in coefs.items()},
+    )
+    return {
+        "model": model,
+        "scaler": scaler,
+        "cols": STACKING_FEATURE_COLS,
+        "coefs": coefs,
+        "val_acc": val_acc,
+        "val_std": val_std,
+        "penalty": penalty,
+        "n": len(data),
+    }
+
+
+def _live_stacking_features(df: pd.DataFrame) -> np.ndarray | None:
+    """Feature vector for the most recent row, for live prediction.
+
+    The five rule-based scores, the GARCH ratio and the HMM posterior are taken
+    at the last row. ``XGB_prob`` uses the *full-data* model's live P(up) (via
+    :func:`train_xgboost_signal`) rather than an OOF value — there's no label
+    for the latest row, so leakage isn't a concern at prediction time. Returns
+    None if any required value is missing.
+    """
+    feats = build_signal_score_matrix(df)
+    feats["GARCH"] = _garch_vol_ratio_series(df)
+    feats["HMM"] = _hmm_bullish_series(df)
+    last = feats.iloc[-1]
+    # Live XGB probability for the latest row (full-data model).
+    xgb_sig = train_xgboost_signal(df) if _XGB_OK else None
+    xgb_prob = float(xgb_sig.value) if xgb_sig is not None else 0.5
+    row = {
+        "RSI": last.get("RSI"),
+        "MACD": last.get("MACD"),
+        "Bollinger": last.get("Bollinger"),
+        "SMA_cross": last.get("SMA_cross"),
+        "Volumen": last.get("Volumen"),
+        "GARCH": last.get("GARCH"),
+        "HMM": last.get("HMM"),
+        "XGB_prob": xgb_prob,
+    }
+    vec = [row[c] for c in STACKING_FEATURE_COLS]
+    if any(v is None or (isinstance(v, float) and np.isnan(v)) for v in vec):
+        return None
+    return np.array(vec, dtype=np.float64).reshape(1, -1)
+
+
+def compute_stacking_probability(df: pd.DataFrame, combiner: dict) -> float | None:
+    """P(5d-up) for the latest row from a trained stacking ``combiner``.
+
+    Returns None when the live feature vector can't be built (caller should
+    then fall back to the heuristic). Output is a probability in [0,1].
+    """
+    if combiner is None:
+        return None
+    vec = _live_stacking_features(df)
+    if vec is None:
+        return None
+    try:
+        Xs = combiner["scaler"].transform(vec)
+        return float(combiner["model"].predict_proba(Xs)[0][1])
+    except Exception as exc:  # pragma: no cover - inference guard
+        log.warning("Stacking inference error: %s", exc)
+        return None

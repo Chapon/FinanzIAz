@@ -2,7 +2,7 @@
 Technical analysis engine.
 
 Computes RSI, MACD, Bollinger Bands, SMA cross, and Volume Trend signals,
-then aggregates them into a weighted overall signal.
+then aggregates them into a weighted overall signal (regime-weighted, T04).
 
 Optionally integrates:
   • MarketContext  — regime detection (HMM-based if hmmlearn is available,
@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from config.constants import (
+    REGIME_WEIGHT_MULTIPLIERS,
     RSI_HIGH,
     RSI_LOW,
     RSI_OVERBOUGHT,
@@ -28,6 +29,7 @@ from config.constants import (
     RSI_OVERSOLD_EXTREME,
     RSI_TREND_DELTA_THRESHOLD,
     RSI_TREND_LOOKBACK_BARS,
+    SIGNAL_STRENGTH_WEIGHTS,
 )
 from config.logging_config import get_logger
 
@@ -67,6 +69,9 @@ class AnalysisResult:
     # ── ML extensions (populated when enable_xgboost=True) ───────────────────
     market_context: object | None = None  # analysis.ml_signals.MarketContext
     ml_probability: float | None = None  # 0-1, regime-adjusted buy probability
+    # "heuristic" (regime-weighted compute_signal_probability, T04) or
+    # "stacking" (trained logistic meta-learner, T05) when analyze_stacked is used.
+    ml_probability_source: str = "heuristic"
 
     @property
     def yahoo_level(self) -> str:
@@ -459,6 +464,77 @@ def _volume_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         )
 
 
+# ── Regime-aware weighting (T04) ───────────────────────────────────────────────
+
+
+def regime_adjusted_weight(indicator: str, strength: str, regime: str | None) -> float:
+    """Weight of a single signal, tilted by the prevailing market regime.
+
+    The base weight comes from ``SIGNAL_STRENGTH_WEIGHTS`` (STRONG=3, MODERATE=2,
+    WEAK=1). It is then multiplied by a regime-conditioned factor: in a LATERAL
+    market mean-reversion indicators (RSI, Bollinger) are boosted and trend
+    indicators (MACD, SMA cross) are damped; in BULL/BEAR it's the reverse.
+    Indicators with no entry for the regime — and the case ``regime is None``
+    (no MarketContext available) — keep a neutral 1.0 multiplier, so behaviour
+    is unchanged when regime detection is off or fails.
+
+    See ``REGIME_WEIGHT_MULTIPLIERS`` in ``config.constants`` for the table and
+    rationale. This replaces the per-strength-only weighting and absorbs the old
+    ``reg_boost`` term that ``compute_signal_probability`` used to apply.
+    """
+    base = SIGNAL_STRENGTH_WEIGHTS.get(strength, 1.0)
+    if not regime:
+        return base
+    mult = REGIME_WEIGHT_MULTIPLIERS.get(regime, {}).get(indicator, 1.0)
+    return base * mult
+
+
+def aggregate_signals(
+    signals: list[TechnicalSignal],
+    regime: str | None,
+) -> tuple[str, str, float]:
+    """Collapse a list of TechnicalSignals into (overall, strength, confidence).
+
+    Each signal contributes ``regime_adjusted_weight`` to the BUY or SELL tally;
+    the dominant side wins. ``confidence`` (0–100) is the dominant weight as a
+    fraction of the regime-tilted ceiling (every signal at STRONG), so it stays
+    bounded even when boost multipliers are in play. ``strength`` is derived
+    from the dominant *fraction* of the total cast weight (≥0.60 STRONG,
+    ≥0.40 MODERATE, else WEAK).
+
+    ``regime`` of None (no MarketContext) gives neutral 1.0 multipliers, i.e.
+    the pre-T04 behaviour. Extracted from :func:`analyze` so the regime-weighted
+    aggregation can be unit-tested with hand-built signal lists.
+    """
+    if not signals:
+        return "HOLD", "WEAK", 0.0
+
+    buy_score = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "BUY")
+    sell_score = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "SELL")
+    total = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals)
+    max_possible = sum(regime_adjusted_weight(s.indicator, "STRONG", regime) for s in signals)
+
+    if total == 0 or max_possible == 0:
+        return "HOLD", "WEAK", 0.0
+    if buy_score == sell_score:
+        confidence = round(max(buy_score, sell_score) / max_possible * 100, 1)
+        return "HOLD", "WEAK", confidence
+
+    dominant_score = max(buy_score, sell_score)
+    dominant_fraction = dominant_score / total
+    overall = "BUY" if buy_score > sell_score else "SELL"
+    confidence = round(dominant_score / max_possible * 100, 1)
+
+    if dominant_fraction >= 0.60:
+        strength = "STRONG"
+    elif dominant_fraction >= 0.40:
+        strength = "MODERATE"
+    else:
+        strength = "WEAK"
+
+    return overall, strength, confidence
+
+
 # ── Full analysis ─────────────────────────────────────────────────────────────
 
 
@@ -583,31 +659,9 @@ def analyze(
     if not signals:
         return None
 
-    # ── Aggregate weighted score ───────────────────────────────────────────────
-    WEIGHTS = {"STRONG": 3, "MODERATE": 2, "WEAK": 1}
-    buy_score = sum(WEIGHTS[s.strength] for s in signals if s.signal == "BUY")
-    sell_score = sum(WEIGHTS[s.strength] for s in signals if s.signal == "SELL")
-    total = sum(WEIGHTS[s.strength] for s in signals)
-
-    if total == 0:
-        overall, strength, confidence = "HOLD", "WEAK", 0.0
-    elif buy_score == sell_score:
-        overall, strength = "HOLD", "WEAK"
-        confidence = round(max(buy_score, sell_score) / (3 * len(signals)) * 100, 1)
-    else:
-        max_possible = 3 * len(signals)
-        dominant_score = max(buy_score, sell_score)
-        dominant_fraction = dominant_score / total
-
-        overall = "BUY" if buy_score > sell_score else "SELL"
-        confidence = round(dominant_score / max_possible * 100, 1)
-
-        if dominant_fraction >= 0.60:
-            strength = "STRONG"
-        elif dominant_fraction >= 0.40:
-            strength = "MODERATE"
-        else:
-            strength = "WEAK"
+    # ── Aggregate regime-weighted score (T04) ──────────────────────────────────
+    regime = market_context.regime if market_context is not None else None
+    overall, strength, confidence = aggregate_signals(signals, regime)
 
     # ── Regime-aware probability ───────────────────────────────────────────────
     if market_context is not None:
@@ -657,3 +711,67 @@ def get_support_resistance(df: pd.DataFrame, window: int = 20) -> dict:
     support = float(recent.rolling(window).min().iloc[-1])
     resistance = float(recent.rolling(window).max().iloc[-1])
     return {"support": round(support, 4), "resistance": round(resistance, 4)}
+
+
+# ── Stacked analysis (T05) ──────────────────────────────────────────────────────
+
+
+def analyze_stacked(
+    ticker: str,
+    df: pd.DataFrame,
+    enable_sma_cross: bool = True,
+    enable_volume: bool = True,
+    enable_xgboost: bool = True,
+) -> AnalysisResult | None:
+    """Like :func:`analyze`, but ``ml_probability`` comes from a trained logistic
+    stacking meta-learner (T05) instead of the hand-weighted heuristic, when one
+    can be fit on enough of the ticker's history.
+
+    The meta-learner learns from data how much each indicator should count
+    toward the 5-day-up probability, replacing the rule-based weights of
+    :func:`analysis.ml_signals.compute_signal_probability`. If the combiner
+    can't be trained (sklearn missing, < MIN_STACKING_ROWS labelled rows, or
+    inference fails), this transparently keeps the heuristic probability — so it
+    never returns a worse result than plain :func:`analyze`. ``overall_signal``
+    and the indicator consensus are unchanged; only the probability layer and
+    ``ml_probability_source`` differ.
+    """
+    result = analyze(
+        ticker,
+        df,
+        enable_sma_cross=enable_sma_cross,
+        enable_volume=enable_volume,
+        enable_xgboost=enable_xgboost,
+    )
+    if result is None:
+        return None
+
+    try:
+        from analysis.ml_signals import (
+            compute_stacking_probability,
+            train_stacking_combiner,
+        )
+
+        combiner = train_stacking_combiner(df)
+        if combiner is not None:
+            stacked = compute_stacking_probability(df, combiner)
+            if stacked is not None:
+                result.ml_probability = stacked
+                result.ml_probability_source = "stacking"
+                # Refresh the probability sentence in the summary to match.
+                direction = (
+                    "compra" if stacked >= 0.55 else "venta" if stacked <= 0.45 else "neutral"
+                )
+                counts = {
+                    "BUY": sum(1 for s in result.signals if s.signal == "BUY"),
+                    "SELL": sum(1 for s in result.signals if s.signal == "SELL"),
+                    "HOLD": sum(1 for s in result.signals if s.signal == "HOLD"),
+                }
+                result.summary = (
+                    f"{counts['BUY']} alcistas · {counts['SELL']} bajistas · "
+                    f"{counts['HOLD']} neutrales. Prob. {direction} (stacking): {stacked:.0%}."
+                )
+    except Exception as exc:
+        log.warning("Stacked analysis error for %s: %s", ticker, exc)
+
+    return result

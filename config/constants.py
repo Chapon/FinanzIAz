@@ -51,6 +51,55 @@ VOLUME_HIGH_RATIO: float = 1.5  # current / 20-day avg ≥ this → high volume
 VOLUME_LOW_RATIO: float = 0.5  # current / 20-day avg ≤ this → low  volume
 
 
+# ── Regime-aware signal weighting (T04) ──────────────────────────────────────
+# Base weight per signal strength. Shared by analyze()'s aggregation and by
+# compute_signal_probability() so both speak the same language.
+SIGNAL_STRENGTH_WEIGHTS: dict[str, float] = {
+    "STRONG": 3.0,
+    "MODERATE": 2.0,
+    "WEAK": 1.0,
+}
+
+# Per-indicator weight multipliers conditioned on the detected market regime.
+# Rationale:
+#   • LATERAL (range-bound)  → mean-reversion works: RSI / Bollinger reversals
+#     are reliable, while trend-following (MACD / SMA cross) chops you up. So
+#     up-weight the oscillators, down-weight the trend indicators.
+#   • BULL / BEAR (trending) → the opposite: a Golden/Death Cross or MACD
+#     crossover carries real information, while an oversold RSI in a downtrend
+#     is a dead-cat-bounce trap. Up-weight trend, down-weight oscillators.
+#
+# Keyed by ``MarketContext.regime`` → indicator name (must match the
+# ``TechnicalSignal.indicator`` strings exactly) → multiplier. Any indicator
+# not listed for a regime (Volumen, GARCH Volatilidad, HMM Régimen,
+# XGBoost ML) keeps a neutral 1.0 multiplier.
+REGIME_TREND_INDICATORS: tuple[str, ...] = ("MACD", "Golden/Death Cross")
+REGIME_MEANREV_INDICATORS: tuple[str, ...] = ("RSI", "Bollinger Bands")
+REGIME_WEIGHT_BOOST: float = 1.5
+REGIME_WEIGHT_DAMP: float = 0.7
+
+REGIME_WEIGHT_MULTIPLIERS: dict[str, dict[str, float]] = {
+    "LATERAL": {
+        "RSI": REGIME_WEIGHT_BOOST,
+        "Bollinger Bands": REGIME_WEIGHT_BOOST,
+        "MACD": REGIME_WEIGHT_DAMP,
+        "Golden/Death Cross": REGIME_WEIGHT_DAMP,
+    },
+    "BULL": {
+        "MACD": REGIME_WEIGHT_BOOST,
+        "Golden/Death Cross": REGIME_WEIGHT_BOOST,
+        "RSI": REGIME_WEIGHT_DAMP,
+        "Bollinger Bands": REGIME_WEIGHT_DAMP,
+    },
+    "BEAR": {
+        "MACD": REGIME_WEIGHT_BOOST,
+        "Golden/Death Cross": REGIME_WEIGHT_BOOST,
+        "RSI": REGIME_WEIGHT_DAMP,
+        "Bollinger Bands": REGIME_WEIGHT_DAMP,
+    },
+}
+
+
 # ── Networking / yfinance ────────────────────────────────────────────────────
 NETWORK_TIMEOUT_SECONDS: float = 10.0  # per-request socket timeout
 NETWORK_HARD_TIMEOUT_SECONDS: float = 15.0  # absolute wall-clock cap
