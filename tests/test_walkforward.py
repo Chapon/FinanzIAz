@@ -41,12 +41,11 @@ import pytest
 xgb = pytest.importorskip("xgboost")
 sk_cal = pytest.importorskip("sklearn.calibration")
 
-from analysis import ml_signals
 from analysis.ml_signals import (
+    _XGB_CACHE,
     N_WALKFORWARD_FOLDS,
     PREDICTION_HORIZON,
     WALKFORWARD_STD_WARN,
-    _XGB_CACHE,
     clear_ml_cache,
     train_xgboost_signal,
 )
@@ -191,9 +190,7 @@ def test_predictable_series_low_std(caplog):
     _model, val_acc, _train_acc, val_std = cached
     # Learnable signal: accuracy clears coin-flip and stays consistent.
     assert val_acc > 0.55, f"expected a learnable signal, got val_acc={val_acc:.2f}"
-    assert val_std < WALKFORWARD_STD_WARN, (
-        f"predictable series should be stable, got std={val_std:.3f}"
-    )
+    assert val_std < WALKFORWARD_STD_WARN, f"predictable series should be stable, got std={val_std:.3f}"
     assert "unstable model" not in caplog.text.lower()
 
 
