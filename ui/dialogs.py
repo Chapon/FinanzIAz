@@ -569,9 +569,7 @@ class EditTickerDialog(QDialog):
             )
             return
         if new_ticker == self.position.ticker.upper():
-            QMessageBox.information(
-                self, "Sin cambios", "El nuevo ticker es igual al actual."
-            )
+            QMessageBox.information(self, "Sin cambios", "El nuevo ticker es igual al actual.")
             return
 
         # Conflicto: ya existe otra posición con ese ticker en el mismo portafolio

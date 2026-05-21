@@ -30,7 +30,6 @@ from config.constants import (
     SIGNAL_STRENGTH_WEIGHTS,
 )
 
-
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -62,7 +61,9 @@ def _ctx(regime: str, risk_score: float = 0.0, confidence: float = 0.80) -> Mark
 def test_lateral_boosts_meanrev_damps_trend(strength, base):
     # LATERAL: oscillators up, trend indicators down.
     assert regime_adjusted_weight("RSI", strength, "LATERAL") == pytest.approx(base * REGIME_WEIGHT_BOOST)
-    assert regime_adjusted_weight("Bollinger Bands", strength, "LATERAL") == pytest.approx(base * REGIME_WEIGHT_BOOST)
+    assert regime_adjusted_weight("Bollinger Bands", strength, "LATERAL") == pytest.approx(
+        base * REGIME_WEIGHT_BOOST
+    )
     assert regime_adjusted_weight("MACD", strength, "LATERAL") == pytest.approx(base * REGIME_WEIGHT_DAMP)
     assert regime_adjusted_weight("Golden/Death Cross", strength, "LATERAL") == pytest.approx(
         base * REGIME_WEIGHT_DAMP
@@ -78,7 +79,9 @@ def test_trending_boosts_trend_damps_meanrev(regime, strength, base):
         base * REGIME_WEIGHT_BOOST
     )
     assert regime_adjusted_weight("RSI", strength, regime) == pytest.approx(base * REGIME_WEIGHT_DAMP)
-    assert regime_adjusted_weight("Bollinger Bands", strength, regime) == pytest.approx(base * REGIME_WEIGHT_DAMP)
+    assert regime_adjusted_weight("Bollinger Bands", strength, regime) == pytest.approx(
+        base * REGIME_WEIGHT_DAMP
+    )
 
 
 @pytest.mark.parametrize("regime", ["BULL", "BEAR", "LATERAL"])

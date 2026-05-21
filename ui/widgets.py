@@ -2,7 +2,6 @@
 Reusable UI widgets for FinanzIAs — IQON design system.
 """
 
-
 from PyQt6.QtCore import QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
@@ -221,7 +220,9 @@ class MetricCard(QFrame):
     space is limited (e.g. the analysis right panel).
     """
 
-    def __init__(self, title: str, value: str = "—", color: str | None = None, compact: bool = False, parent=None):
+    def __init__(
+        self, title: str, value: str = "—", color: str | None = None, compact: bool = False, parent=None
+    ):
         super().__init__(parent)
         self.setObjectName("card")
         self.setMinimumWidth(110 if compact else 150)

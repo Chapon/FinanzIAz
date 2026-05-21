@@ -77,11 +77,7 @@ def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
         op = (operation or "fetch")[:50]
 
         with session_scope() as session:
-            existing = (
-                session.query(FailedTicker)
-                .filter(FailedTicker.ticker == symbol)
-                .first()
-            )
+            existing = session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
             if existing:
                 existing.last_error = err_msg
                 existing.last_operation = op
@@ -122,11 +118,7 @@ def get_all() -> list[FailedTickerRow]:
     """Devuelve la lista completa ordenada por última falla descendente."""
     try:
         with session_scope() as session:
-            rows = (
-                session.query(FailedTicker)
-                .order_by(FailedTicker.last_failed_at.desc())
-                .all()
-            )
+            rows = session.query(FailedTicker).order_by(FailedTicker.last_failed_at.desc()).all()
             return [_to_row(r) for r in rows]
     except Exception:
         log.exception("No se pudo leer la lista de tickers fallidos")
@@ -158,9 +150,7 @@ def mark_for_retry(ticker: str) -> None:
     try:
         symbol = ticker.upper().strip()
         with session_scope() as session:
-            existing = (
-                session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
-            )
+            existing = session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
             if existing:
                 existing.status = STATUS_RETRY
     except Exception:
@@ -174,9 +164,7 @@ def mark_ignored(ticker: str) -> None:
     try:
         symbol = ticker.upper().strip()
         with session_scope() as session:
-            existing = (
-                session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
-            )
+            existing = session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
             if existing:
                 existing.status = STATUS_IGNORED
     except Exception:

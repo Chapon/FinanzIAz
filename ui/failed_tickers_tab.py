@@ -28,10 +28,9 @@ from PyQt6.QtWidgets import (
 )
 
 from data import failed_tickers as registry
-from ui.time_utils import fmt_local
 from ui.styles import PALETTE
+from ui.time_utils import fmt_local
 from ui.widgets import HSeparator, SectionHeader
-
 
 _STATUS_LABELS = {
     registry.STATUS_FAILING: ("Fallando", PALETTE["red"]),
@@ -154,9 +153,7 @@ class FailedTickersTab(QWidget):
             self.table.setItem(row, 0, ticker_item)
 
             # Estado coloreado
-            label, color = _STATUS_LABELS.get(
-                row_data.status, (row_data.status, PALETTE["text3"])
-            )
+            label, color = _STATUS_LABELS.get(row_data.status, (row_data.status, PALETTE["text3"]))
             status_item = cell(label)
             status_item.setForeground(QColor(color))
             self.table.setItem(row, 1, status_item)

@@ -321,8 +321,15 @@ class PaperTradingTab(QWidget):
         self.positions_table = QTableWidget(0, 9)
         self.positions_table.setHorizontalHeaderLabels(
             [
-                "Ticker", "Shares", "Precio compra", "Avg Cost", "Precio",
-                "Market Value", "P&L $", "P&L %", "Comisión est.",
+                "Ticker",
+                "Shares",
+                "Precio compra",
+                "Avg Cost",
+                "Precio",
+                "Market Value",
+                "P&L $",
+                "P&L %",
+                "Comisión est.",
             ]
         )
         self._apply_table_style(self.positions_table)
@@ -852,6 +859,7 @@ class PaperTradingTab(QWidget):
         """
         try:
             from config.settings_manager import settings as _settings
+
             plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
         except Exception:
             plan = "tiered"
@@ -1120,9 +1128,7 @@ class PaperTradingTab(QWidget):
             pnl_usd = mv - cost
             pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
             color = PALETTE["accent"] if pnl_usd >= 0 else PALETTE["red"]
-            pnl_usd_item = QTableWidgetItem(
-                f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}"
-            )
+            pnl_usd_item = QTableWidgetItem(f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}")
             pnl_usd_item.setForeground(QColor(color))
             self.positions_table.setItem(row, 6, pnl_usd_item)
             pnl_item = QTableWidgetItem(f"{pnl_pct:+.2f}%")
@@ -1135,6 +1141,7 @@ class PaperTradingTab(QWidget):
             # mezclar dos sistemas de costos en la misma celda.
             try:
                 from config.settings_manager import settings as _settings
+
                 plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
             except Exception:
                 plan = "tiered"

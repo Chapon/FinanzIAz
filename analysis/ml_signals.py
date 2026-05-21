@@ -538,7 +538,7 @@ def _build_labels(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.Ser
 # ── Training helpers (shared by the single-split and walk-forward paths) ──────
 
 
-def _make_raw_xgb() -> "xgb.XGBClassifier":
+def _make_raw_xgb() -> xgb.XGBClassifier:
     """Build the shallow, regularised XGBoost classifier used everywhere.
 
     Centralised so the single-split path (T02) and the walk-forward path
@@ -629,7 +629,7 @@ def _train_single_split(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[s
     # Isotonic calibration on the val slice — re-scales predict_proba so that
     # "model says 65%" matches the empirical 5d-up rate on the val set.
     n_val = len(X_val)
-    n_classes_val = int(len(np.unique(y_val))) if n_val > 0 else 0
+    n_classes_val = len(np.unique(y_val)) if n_val > 0 else 0
     if _CALIBRATION_OK and n_val >= MIN_CALIBRATION_ROWS and n_classes_val >= 2:
         try:
             calibrator = _build_calibrator(raw_model, cv="prefit")
@@ -644,8 +644,7 @@ def _train_single_split(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[s
             log.info("XGBoost: sklearn unavailable, calibration skipped.")
         elif n_val < MIN_CALIBRATION_ROWS:
             log.info(
-                "XGBoost: val set too small (%d < %d) for isotonic "
-                "calibration; using raw model.",
+                "XGBoost: val set too small (%d < %d) for isotonic calibration; using raw model.",
                 n_val,
                 MIN_CALIBRATION_ROWS,
             )
@@ -811,11 +810,7 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         else:
             # Walk-forward validation (T03) when there's enough history for the
             # folds to be meaningful; otherwise the single 80/20 split (T02).
-            if (
-                _CALIBRATION_OK
-                and len(X_all) >= MIN_WALKFORWARD_ROWS
-                and len(np.unique(y_all)) >= 2
-            ):
+            if _CALIBRATION_OK and len(X_all) >= MIN_WALKFORWARD_ROWS and len(np.unique(y_all)) >= 2:
                 model, val_acc, train_acc, val_std = _train_walkforward(X_all, y_all, valid_cols)
             else:
                 model, val_acc, train_acc, val_std = _train_single_split(X_all, y_all, valid_cols)
@@ -1080,12 +1075,12 @@ def _signal_score(signal: str, strength: str) -> float:
 def _rsi_score_series(rsi: pd.Series) -> pd.Series:
     """Per-row signed RSI score, matching ``_rsi_signal``'s six zones."""
     conds = [
-        rsi < RSI_OVERSOLD_EXTREME,   # < 25  → BUY STRONG
-        rsi < RSI_OVERSOLD,           # < 30  → BUY MODERATE
-        rsi < RSI_LOW,                # < 40  → BUY WEAK
+        rsi < RSI_OVERSOLD_EXTREME,  # < 25  → BUY STRONG
+        rsi < RSI_OVERSOLD,  # < 30  → BUY MODERATE
+        rsi < RSI_LOW,  # < 40  → BUY WEAK
         rsi > RSI_OVERBOUGHT_EXTREME,  # > 75 → SELL STRONG
-        rsi > RSI_OVERBOUGHT,         # > 70  → SELL MODERATE
-        rsi > RSI_HIGH,               # > 60  → SELL WEAK
+        rsi > RSI_OVERBOUGHT,  # > 70  → SELL MODERATE
+        rsi > RSI_HIGH,  # > 60  → SELL WEAK
     ]
     vals = [3.0, 2.0, 1.0, -3.0, -2.0, -1.0]
     out = np.select(conds, vals, default=0.0)
@@ -1105,12 +1100,12 @@ def _macd_score_series(df: pd.DataFrame) -> pd.Series:
     hist_prev = hist.shift(1)
     growing = hist > hist_prev
     conds = [
-        (hist_prev < 0) & (hist > 0),    # crossover  → BUY STRONG
-        (hist_prev > 0) & (hist < 0),    # crossunder → SELL STRONG
-        (hist > 0) & growing,            # up + accelerating  → BUY MODERATE
-        (hist > 0) & ~growing,           # up + fading        → BUY WEAK
-        (hist <= 0) & ~growing,          # down + accelerating → SELL MODERATE
-        (hist <= 0) & growing,           # down + braking      → SELL WEAK
+        (hist_prev < 0) & (hist > 0),  # crossover  → BUY STRONG
+        (hist_prev > 0) & (hist < 0),  # crossunder → SELL STRONG
+        (hist > 0) & growing,  # up + accelerating  → BUY MODERATE
+        (hist > 0) & ~growing,  # up + fading        → BUY WEAK
+        (hist <= 0) & ~growing,  # down + accelerating → SELL MODERATE
+        (hist <= 0) & growing,  # down + braking      → SELL WEAK
     ]
     vals = [3.0, -3.0, 2.0, 1.0, -2.0, -1.0]
     out = np.select(conds, vals, default=0.0)
@@ -1124,10 +1119,10 @@ def _bollinger_score_series(df: pd.DataFrame) -> pd.Series:
     upper, _, lower = compute_bollinger_bands(df)
     close = df["Close"].squeeze()
     conds = [
-        close < lower * 0.99,   # deep below lower → BUY STRONG
-        close <= lower,         # at/under lower   → BUY MODERATE
-        close > upper * 1.01,   # well above upper → SELL STRONG
-        close >= upper,         # at/over upper    → SELL MODERATE
+        close < lower * 0.99,  # deep below lower → BUY STRONG
+        close <= lower,  # at/under lower   → BUY MODERATE
+        close > upper * 1.01,  # well above upper → SELL STRONG
+        close >= upper,  # at/over upper    → SELL MODERATE
     ]
     vals = [3.0, 2.0, -3.0, -2.0]
     out = np.select(conds, vals, default=0.0)
@@ -1171,10 +1166,10 @@ def _volume_score_series(df: pd.DataFrame) -> pd.Series:
     ratio = up / down
     valid = vol_sma20.notna() & (vol_sma20 > 0) & up.notna() & down.notna() & (down > 0)
     conds = [
-        valid & (ratio <= 0.5),                    # SELL STRONG (inv ≥ 2×)
-        valid & (ratio <= 0.67),                   # SELL MODERATE
-        valid & (ratio >= 2.0),                    # BUY STRONG
-        valid & (ratio >= 1.5),                    # BUY MODERATE
+        valid & (ratio <= 0.5),  # SELL STRONG (inv ≥ 2×)
+        valid & (ratio <= 0.67),  # SELL MODERATE
+        valid & (ratio >= 2.0),  # BUY STRONG
+        valid & (ratio >= 1.5),  # BUY MODERATE
     ]
     vals = [-3.0, -2.0, 3.0, 2.0]
     out = np.select(conds, vals, default=0.0)

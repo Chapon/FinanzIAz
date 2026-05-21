@@ -31,7 +31,6 @@ import pytest
 from database.models import Portfolio, Position, session_scope
 from ui.paper import real_portfolio as rp
 
-
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -140,9 +139,7 @@ def test_pick_real_portfolio_empty_db_shows_message_and_returns_none(
     assert fake_input_dialog.calls == []
 
 
-def test_pick_real_portfolio_single_auto_resolves(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_pick_real_portfolio_single_auto_resolves(test_db, captured_msgbox, fake_input_dialog):
     pid = _seed_portfolio("Solo")
     result = rp.pick_real_portfolio(parent=None)
     assert result == pid
@@ -151,9 +148,7 @@ def test_pick_real_portfolio_single_auto_resolves(
     assert fake_input_dialog.calls == []
 
 
-def test_pick_real_portfolio_multiple_user_picks(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_pick_real_portfolio_multiple_user_picks(test_db, captured_msgbox, fake_input_dialog):
     # Seeded out of alphabetical order to verify the helper sorts by name.
     pid_b = _seed_portfolio("Bravo")
     pid_a = _seed_portfolio("Alpha")
@@ -169,9 +164,7 @@ def test_pick_real_portfolio_multiple_user_picks(
     assert fake_input_dialog.calls[0]["items"] == ["Alpha", "Bravo", "Charlie"]
 
 
-def test_pick_real_portfolio_multiple_user_cancels(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_pick_real_portfolio_multiple_user_cancels(test_db, captured_msgbox, fake_input_dialog):
     _seed_portfolio("Alpha")
     _seed_portfolio("Bravo")
 
@@ -186,9 +179,7 @@ def test_pick_real_portfolio_multiple_user_cancels(
 # ─── find_real_position ──────────────────────────────────────────────────────
 
 
-def test_find_real_position_no_match_returns_none(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_no_match_returns_none(test_db, captured_msgbox, fake_input_dialog):
     pid = _seed_portfolio("PF")
     _seed_position(pid, "MSFT", qty=5, price=300)
 
@@ -200,9 +191,7 @@ def test_find_real_position_no_match_returns_none(
     assert captured_msgbox == []
 
 
-def test_find_real_position_case_insensitive(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_case_insensitive(test_db, captured_msgbox, fake_input_dialog):
     pid = _seed_portfolio("PF")
     _seed_position(pid, "AAPL", qty=10, price=150)
 
@@ -214,9 +203,7 @@ def test_find_real_position_case_insensitive(
     assert fake_input_dialog.calls == []
 
 
-def test_find_real_position_ignores_zero_quantity(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_ignores_zero_quantity(test_db, captured_msgbox, fake_input_dialog):
     """A position that's been fully sold off (qty=0) is not a match."""
     pid = _seed_portfolio("PF")
     _seed_position(pid, "AAPL", qty=0, price=150)
@@ -225,9 +212,7 @@ def test_find_real_position_ignores_zero_quantity(
     assert result is None
 
 
-def test_find_real_position_single_returns_detached_position(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_single_returns_detached_position(test_db, captured_msgbox, fake_input_dialog):
     """
     The returned Position must be usable after the helper returns — i.e.
     no DetachedInstanceError when we read attributes outside any session.
@@ -247,9 +232,7 @@ def test_find_real_position_single_returns_detached_position(
     assert fake_input_dialog.calls == []
 
 
-def test_find_real_position_multiple_user_picks(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_multiple_user_picks(test_db, captured_msgbox, fake_input_dialog):
     pid_a = _seed_portfolio("Alpha")
     pid_b = _seed_portfolio("Bravo")
     _seed_position(pid_a, "AAPL", qty=10, price=150)
@@ -272,9 +255,7 @@ def test_find_real_position_multiple_user_picks(
     assert len(fake_input_dialog.calls[0]["items"]) == 2
 
 
-def test_find_real_position_multiple_user_cancels(
-    test_db, captured_msgbox, fake_input_dialog
-):
+def test_find_real_position_multiple_user_cancels(test_db, captured_msgbox, fake_input_dialog):
     pid_a = _seed_portfolio("Alpha")
     pid_b = _seed_portfolio("Bravo")
     _seed_position(pid_a, "AAPL", qty=10, price=150)

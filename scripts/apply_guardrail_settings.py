@@ -19,9 +19,9 @@ CONFIG_PATH = Path.home() / ".finanzias" / "settings.json"
 
 RECOMMENDED = {
     "paper_enforce_market_hours": True,
-    "paper_min_holding_minutes": 1440,      # 24h: evita flips intradía como SBUX/KO
-    "paper_anti_flap_minutes": 4320,        # 3 días: evita round-trips como WMT
-    "paper_min_trade_dollars": 100.0,       # sube el umbral mínimo
+    "paper_min_holding_minutes": 1440,  # 24h: evita flips intradía como SBUX/KO
+    "paper_anti_flap_minutes": 4320,  # 3 días: evita round-trips como WMT
+    "paper_min_trade_dollars": 100.0,  # sube el umbral mínimo
 }
 
 
@@ -43,7 +43,7 @@ def main() -> None:
     for k, new in RECOMMENDED.items():
         before = current.get(k, "<default>")
         marker = "→" if str(before) != str(new) else " "
-        print(f"{k:<35} {str(before):<12} {marker} {new}")
+        print(f"{k:<35} {before!s:<12} {marker} {new}")
 
     current.update(RECOMMENDED)
     CONFIG_PATH.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -690,10 +690,7 @@ class PortfolioTab(QWidget):
 
     def _sell_position(self):
         row = self.table.currentRow()
-        if (
-            0 <= row < len(self._positions)
-            and SellPositionDialog(self._positions[row], self).exec()
-        ):
+        if 0 <= row < len(self._positions) and SellPositionDialog(self._positions[row], self).exec():
             self._refresh_positions()
 
     def _analyze_selected(self):

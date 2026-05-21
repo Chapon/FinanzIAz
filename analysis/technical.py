@@ -509,8 +509,12 @@ def aggregate_signals(
     if not signals:
         return "HOLD", "WEAK", 0.0
 
-    buy_score = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "BUY")
-    sell_score = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "SELL")
+    buy_score = sum(
+        regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "BUY"
+    )
+    sell_score = sum(
+        regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals if s.signal == "SELL"
+    )
     total = sum(regime_adjusted_weight(s.indicator, s.strength, regime) for s in signals)
     max_possible = sum(regime_adjusted_weight(s.indicator, "STRONG", regime) for s in signals)
 
@@ -601,7 +605,8 @@ def analyze(
     # ── SMA 50/200 cross ──────────────────────────────────────────────────────
     if (
         enable_sma_cross
-        and sma50 is not None and sma200 is not None
+        and sma50 is not None
+        and sma200 is not None
         and not sma50.dropna().empty
         and not sma200.dropna().empty
         and len(sma50.dropna()) >= 2
@@ -759,9 +764,7 @@ def analyze_stacked(
                 result.ml_probability = stacked
                 result.ml_probability_source = "stacking"
                 # Refresh the probability sentence in the summary to match.
-                direction = (
-                    "compra" if stacked >= 0.55 else "venta" if stacked <= 0.45 else "neutral"
-                )
+                direction = "compra" if stacked >= 0.55 else "venta" if stacked <= 0.45 else "neutral"
                 counts = {
                     "BUY": sum(1 for s in result.signals if s.signal == "BUY"),
                     "SELL": sum(1 for s in result.signals if s.signal == "SELL"),

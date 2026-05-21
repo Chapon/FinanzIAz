@@ -36,12 +36,10 @@ sk_cal = pytest.importorskip("sklearn.calibration")
 
 from analysis import ml_signals
 from analysis.ml_signals import (
-    MIN_CALIBRATION_ROWS,
     _XGB_CACHE,
     clear_ml_cache,
     train_xgboost_signal,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,8 +102,7 @@ def test_calibration_falls_back_when_val_too_small(ohlcv_factory, monkeypatch):
     cached = _last_cached_model()
     assert cached is not None
     assert isinstance(cached, xgb.XGBClassifier), (
-        f"Expected raw XGBClassifier with calibration disabled by threshold, "
-        f"got {type(cached).__name__}"
+        f"Expected raw XGBClassifier with calibration disabled by threshold, got {type(cached).__name__}"
     )
 
 
@@ -138,9 +135,9 @@ def test_calibration_does_not_worsen_brier_score(ohlcv_factory, monkeypatch):
     # manually so we can compare. Reusing the public API only exposes one
     # of the two, depending on whether calibration was applied.
     from analysis.ml_signals import (
+        MIN_TRAINING_ROWS,
         _build_features,
         _build_labels,
-        MIN_TRAINING_ROWS,
     )
 
     df = ohlcv_factory(rows=800, seed=17, drift=0.001, vol=0.012)

@@ -48,21 +48,19 @@ from analysis.ml_signals import (
 )
 from analysis.technical import (
     AnalysisResult,
+    _bollinger_signal,
+    _macd_signal,
+    _rsi_signal,
+    _sma_cross_signal,
+    _volume_signal,
     analyze_stacked,
     compute_bollinger_bands,
     compute_macd,
     compute_rsi,
     compute_sma,
 )
-from analysis.technical import (
-    _bollinger_signal,
-    _macd_signal,
-    _rsi_signal,
-    _sma_cross_signal,
-    _volume_signal,
-)
 
-sk = pytest.importorskip  # noqa: N816
+sk = pytest.importorskip
 _HAS_SKLEARN = ms._SKLEARN_LINEAR_OK and ms._CALIBRATION_OK
 
 
@@ -78,7 +76,9 @@ def _scalar_last_scores(df: pd.DataFrame) -> dict:
     close = df["Close"].squeeze()
     rsi_s = _rsi_signal(rsi)
     macd_s = _macd_signal(float(ml.iloc[-1]), float(sl.iloc[-1]), float(hist.iloc[-2]), float(hist.iloc[-1]))
-    bb_s = _bollinger_signal(float(close.iloc[-1]), float(up.iloc[-1]), float(lo.iloc[-1]), float(mid.iloc[-1]))
+    bb_s = _bollinger_signal(
+        float(close.iloc[-1]), float(up.iloc[-1]), float(lo.iloc[-1]), float(mid.iloc[-1])
+    )
     sma_s = _sma_cross_signal(
         float(sma50.iloc[-1]), float(sma200.iloc[-1]), float(sma50.iloc[-2]), float(sma200.iloc[-2])
     )

@@ -23,6 +23,7 @@ Notes
   caller can read attributes after the session closes without a
   ``DetachedInstanceError``.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QInputDialog, QMessageBox, QWidget
@@ -94,10 +95,7 @@ def find_real_position(parent: QWidget, ticker: str) -> Position | None:
             pos, _pf = rows[0]
             session.expunge(pos)
             return pos
-        labels = [
-            f"{pf.name}  ·  {pos.quantity:g} shares @ ${pos.avg_buy_price:,.2f}"
-            for pos, pf in rows
-        ]
+        labels = [f"{pf.name}  ·  {pos.quantity:g} shares @ ${pos.avg_buy_price:,.2f}" for pos, pf in rows]
         position_objs = [pos for pos, _pf in rows]
         session.expunge_all()
 

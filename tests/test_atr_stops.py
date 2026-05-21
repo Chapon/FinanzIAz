@@ -21,7 +21,6 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from config.settings_manager import settings
 from database.models import session_scope
@@ -32,7 +31,6 @@ from paper_trading.engine import (
     _update_high_water_marks,
 )
 from paper_trading.models import PaperPosition, PaperWatchlistItem
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,12 +117,8 @@ def test_gate_disabled_by_default(test_db):
     df = _make_ohlcv([100.0] * 60)
 
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"AAPL": 50.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"AAPL": 50.0}, history_provider=lambda _t: df)
     assert exits == []
 
 
@@ -150,12 +144,8 @@ def test_gate_stop_loss_fires(test_db):
     df = _make_ohlcv([100.0] * 60)  # ATR ≈ 1.0
     # Stop level = 100 - 2*1 = 98. Use 95 → trigger.
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"AAPL": 95.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"AAPL": 95.0}, history_provider=lambda _t: df)
     assert len(exits) == 1
     e = exits[0]
     assert e.side == "SELL"
@@ -187,12 +177,8 @@ def test_gate_take_profit_fires(test_db):
     df = _make_ohlcv([100.0] * 60)
     # TP level = 100 + 2*1 = 102. Use 105.
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"MSFT": 105.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"MSFT": 105.0}, history_provider=lambda _t: df)
     assert len(exits) == 1
     assert exits[0].reason is not None and exits[0].reason.startswith("atr_tp")
     assert exits[0].signal_score == 1.0
@@ -222,12 +208,8 @@ def test_gate_trailing_fires(test_db):
     # Trail level = 120 - 2*1 = 118. Stop level = 100 - 2 = 98.
     # Use price 117 → trail fires, stop doesn't.
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"NVDA": 117.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"NVDA": 117.0}, history_provider=lambda _t: df)
     assert len(exits) == 1
     assert exits[0].reason is not None and exits[0].reason.startswith("atr_trail")
 
@@ -253,12 +235,8 @@ def test_gate_no_trigger_inside_band(test_db):
     df = _make_ohlcv([100.0] * 60)
     # Price right at entry: inside [98, 104] band, HWM not high enough for trail.
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"X": 100.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"X": 100.0}, history_provider=lambda _t: df)
     assert exits == []
 
 
@@ -286,12 +264,8 @@ def test_gate_priority_stop_over_tp(test_db):
     # With mult=0.5 the band is [99.5, 100.5]. Price 95 hits stop, also < TP
     # threshold but stop is checked first.
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
-        exits = _compute_atr_forced_exits(
-            positions, prices={"Y": 95.0}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
+        exits = _compute_atr_forced_exits(positions, prices={"Y": 95.0}, history_provider=lambda _t: df)
     assert len(exits) == 1
     assert exits[0].reason is not None and exits[0].reason.startswith("atr_stop")
 
@@ -312,9 +286,7 @@ def test_hwm_seeds_null(test_db):
             )
         )
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
         _update_high_water_marks(positions, prices={"HW": 105.0})
         assert positions[0].high_water_mark == 105.0
 
@@ -334,9 +306,7 @@ def test_hwm_seeds_to_avg_cost_when_price_lower(test_db):
             )
         )
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
         _update_high_water_marks(positions, prices={"HW": 90.0})
         assert positions[0].high_water_mark == 100.0
 
@@ -354,9 +324,7 @@ def test_hwm_advances_only_upward(test_db):
             )
         )
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == a.id).all()
         # Price below HWM — HWM should stay.
         _update_high_water_marks(positions, prices={"HW": 105.0})
         assert positions[0].high_water_mark == 110.0
@@ -372,7 +340,6 @@ def test_run_scan_fires_stop_and_bypasses_min_holding(test_db, monkeypatch):
     """End-to-end: an ATR stop fires even on a fresh position whose age is
     below min_holding_minutes, and the resulting SELL is filled."""
     from paper_trading import engine
-    from paper_trading.strategies import TargetTrade
 
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
@@ -404,7 +371,7 @@ def test_run_scan_fires_stop_and_bypasses_min_holding(test_db, monkeypatch):
     monkeypatch.setattr(
         engine,
         "get_strategy_fn",
-        lambda _: (lambda *a, **kw: []),
+        lambda _: lambda *a, **kw: [],
     )
 
     result = engine.run_scan(
@@ -430,8 +397,8 @@ def test_run_scan_atr_exit_overrides_strategy_sell(test_db, monkeypatch):
     """If the strategy also emits a SELL for the same ticker, the ATR
     exit replaces it (we only see one SELL, with reason starting atr_)."""
     from paper_trading import engine
-    from paper_trading.strategies import TargetTrade
     from paper_trading.models import PaperOrder
+    from paper_trading.strategies import TargetTrade
 
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
@@ -519,7 +486,7 @@ def test_run_scan_disabled_no_exit(test_db, monkeypatch):
     monkeypatch.setattr(
         engine,
         "get_strategy_fn",
-        lambda _: (lambda *a, **kw: []),
+        lambda _: lambda *a, **kw: [],
     )
 
     result = engine.run_scan(
@@ -562,7 +529,7 @@ def test_run_scan_seeds_hwm_for_legacy_position(test_db, monkeypatch):
     monkeypatch.setattr(
         engine,
         "get_strategy_fn",
-        lambda _: (lambda *a, **kw: []),
+        lambda _: lambda *a, **kw: [],
     )
 
     engine.run_scan(

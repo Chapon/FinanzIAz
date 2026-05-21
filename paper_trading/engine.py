@@ -198,8 +198,8 @@ def _compute_atr_forced_exits(
     the trailing band off yesterday's high, we don't whipsaw on the same
     bar that set the new high.
     """
-    from paper_trading.strategies import TargetTrade
     from analysis.atr import compute_atr
+    from paper_trading.strategies import TargetTrade
 
     if not bool(settings.get("atr_stops_enabled", False)):
         return []
@@ -255,14 +255,12 @@ def _compute_atr_forced_exits(
             and hwm > avg_cost + atr
         ):
             reason = (
-                f"atr_trail @ {px:.2f} ≤ {trail_level:.2f} "
-                f"(peak {hwm:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
+                f"atr_trail @ {px:.2f} ≤ {trail_level:.2f} (peak {hwm:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
             )
             trigger_level = trail_level
         elif tp_level > 0 and px >= tp_level:
             reason = (
-                f"atr_tp @ {px:.2f} ≥ {tp_level:.2f} "
-                f"(entry {avg_cost:.2f} + {tp_mult:.1f}×ATR {atr:.2f})"
+                f"atr_tp @ {px:.2f} ≥ {tp_level:.2f} (entry {avg_cost:.2f} + {tp_mult:.1f}×ATR {atr:.2f})"
             )
             trigger_level = tp_level
 
@@ -378,9 +376,7 @@ def run_scan(
         # its slot in the same scan. The returned trades use reason starting
         # with ``atr_`` so downstream gates can recognize them as forced
         # exits and bypass min-holding.
-        atr_exits: list[TargetTrade] = _compute_atr_forced_exits(
-            positions, prices, history_provider
-        )
+        atr_exits: list[TargetTrade] = _compute_atr_forced_exits(positions, prices, history_provider)
         atr_exit_tickers = {t.ticker for t in atr_exits}
 
         # Advance HWM *after* reading it for the trailing check, so the
@@ -390,17 +386,13 @@ def run_scan(
 
         # Run the strategy (reads detached attributes, so safe)
         strategy_fn = get_strategy_fn(acct.strategy)
-        strategy_trades: list[TargetTrade] = strategy_fn(
-            acct, watchlist, positions, prices, history_provider
-        )
+        strategy_trades: list[TargetTrade] = strategy_fn(acct, watchlist, positions, prices, history_provider)
 
         # Dedup: if ATR forces a SELL for a ticker, drop any strategy-emitted
         # SELL for the same ticker — the ATR trigger wins (more specific +
         # has signal_score=1.0 for downstream consumers).
         strategy_trades = [
-            t
-            for t in strategy_trades
-            if not (t.side == "SELL" and t.ticker in atr_exit_tickers)
+            t for t in strategy_trades if not (t.side == "SELL" and t.ticker in atr_exit_tickers)
         ]
         trades: list[TargetTrade] = atr_exits + strategy_trades
 
@@ -479,11 +471,7 @@ def run_scan(
             # ATR-forced exits (stop-loss, take-profit, trailing) bypass this
             # gate — a freshly-opened position that collapses should still be
             # cut. The forced-exit reason starts with ``atr_``.
-            if (
-                trade.side == "SELL"
-                and min_holding_min > 0
-                and not _is_atr_forced_exit(trade.reason)
-            ):
+            if trade.side == "SELL" and min_holding_min > 0 and not _is_atr_forced_exit(trade.reason):
                 p = pos_by_ticker.get(trade.ticker)
                 if p is not None and p.opened_at is not None:
                     age_min = (result.scan_at - p.opened_at).total_seconds() / 60.0
@@ -517,9 +505,7 @@ def run_scan(
             # Gate 5 — anti-whipsaw (block re-BUY if last closed cycle was a loss
             # within the lookback window). Tightens Gate 3, which is time-only.
             if trade.side == "BUY" and whipsaw_days > 0:
-                pnl_pct = _last_closed_cycle_pnl_pct(
-                    session, acct.id, trade.ticker, whipsaw_days
-                )
+                pnl_pct = _last_closed_cycle_pnl_pct(session, acct.id, trade.ticker, whipsaw_days)
                 if pnl_pct is not None and pnl_pct < -whipsaw_min_loss:
                     result.skipped += 1
                     result.warnings.append(

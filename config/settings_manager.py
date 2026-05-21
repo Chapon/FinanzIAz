@@ -103,14 +103,20 @@ SCHEMA: dict[str, SettingSpec] = {
         (int, float), 50.0, min=0.0, doc="Skip BUYs whose target_dollars is below this"
     ),
     "paper_whipsaw_lookback_days": SettingSpec(
-        int, 7, min=0, max=90,
+        int,
+        7,
+        min=0,
+        max=90,
         doc=(
             "Block re-BUY of a ticker whose last closed cycle ended with a loss "
             "within the last N days. 0 = disable the gate."
         ),
     ),
     "paper_whipsaw_min_loss_pct": SettingSpec(
-        (int, float), 0.0, min=0.0, max=100.0,
+        (int, float),
+        0.0,
+        min=0.0,
+        max=100.0,
         doc=(
             "Only block when the closed-cycle loss is worse than -X percent. "
             "Default 0.0 = block any loss within the lookback window."
@@ -119,7 +125,8 @@ SCHEMA: dict[str, SettingSpec] = {
     # ATR-based stops (T01 of the engine roadmap)
     # Disabled by default — turn on explicitly with `atr_stops_enabled=True`.
     "atr_stops_enabled": SettingSpec(
-        bool, False,
+        bool,
+        False,
         doc=(
             "Master switch for the ATR stop gate. When True, the engine "
             "evaluates each open position against stop-loss / take-profit / "
@@ -128,25 +135,35 @@ SCHEMA: dict[str, SettingSpec] = {
         ),
     ),
     "atr_period": SettingSpec(
-        int, 14, min=2, max=200,
+        int,
+        14,
+        min=2,
+        max=200,
         doc="Lookback in bars for the Wilder-smoothed ATR (default 14).",
     ),
     "atr_stop_mult": SettingSpec(
-        (int, float), 2.0, min=0.1, max=20.0,
+        (int, float),
+        2.0,
+        min=0.1,
+        max=20.0,
         doc=(
             "Stop-loss distance from entry, in ATR units. SELL fires when "
             "price ≤ avg_cost − atr_stop_mult × ATR."
         ),
     ),
     "atr_tp_mult": SettingSpec(
-        (int, float), 4.0, min=0.1, max=50.0,
+        (int, float),
+        4.0,
+        min=0.1,
+        max=50.0,
         doc=(
             "Take-profit distance from entry, in ATR units. SELL fires when "
             "price ≥ avg_cost + atr_tp_mult × ATR."
         ),
     ),
     "atr_trail_enabled": SettingSpec(
-        bool, True,
+        bool,
+        True,
         doc=(
             "Sub-switch for the trailing variant (only meaningful when "
             "`atr_stops_enabled=True`). SELL fires when "

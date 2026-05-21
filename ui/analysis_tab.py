@@ -724,6 +724,7 @@ class AnalysisTab(QWidget):
                 hd = getattr(self.chart, "_hover_data", None)
                 if idx is not None and hd is not None and idx > 0:
                     import math as _math
+
                     prev = float(hd["close"].iloc[idx - 1])
                     if not _math.isnan(prev) and prev != 0:
                         chg_pct = (close - prev) / prev * 100

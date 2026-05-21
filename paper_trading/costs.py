@@ -132,9 +132,9 @@ class TieredCommission(CommissionModel):
 #
 # Update the module-level constants if SEC/FINRA publish a new schedule.
 
-SEC_FEE_RATE = 0.0000278        # USD per USD of notional, sells only
+SEC_FEE_RATE = 0.0000278  # USD per USD of notional, sells only
 FINRA_TAF_PER_SHARE = 0.000166  # USD per share sold
-FINRA_TAF_MAX = 8.30            # USD cap per trade
+FINRA_TAF_MAX = 8.30  # USD cap per trade
 FINRA_CAT_PER_SHARE = 0.000035  # USD per share (both sides)
 
 
@@ -251,6 +251,7 @@ def get_active_commission_model() -> CommissionModel:
     """
     try:
         from config.settings_manager import settings as _settings
+
         plan = str(_settings.get("ibkr_commission_plan", "tiered")).lower()
     except Exception:
         plan = "tiered"
