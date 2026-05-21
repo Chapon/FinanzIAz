@@ -105,6 +105,22 @@ def _matrix_with_only_rsi_predictive(n: int = 400, seed: int = 7):
     return feats, label
 
 
+@pytest.fixture(autouse=True)
+def _isolate_stacking_cache():
+    """Flush the combiner cache around every test.
+
+    Several tests train a combiner on the same trivial ``df`` fingerprint
+    (``pd.DataFrame({"Close": [1.0]})`` + a monkeypatched feature matrix). The
+    ``_STACK_CACHE`` keys on that fingerprint, so without clearing, a cached
+    combiner from an earlier test would leak into the fallback tests (which
+    expect ``None``). Real usage doesn't collide — distinct tickers/histories
+    yield distinct fingerprints.
+    """
+    clear_ml_cache()
+    yield
+    clear_ml_cache()
+
+
 # ── 1. vectorised scorers reproduce the scalar signal functions ──────────────
 
 
