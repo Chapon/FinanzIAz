@@ -305,10 +305,7 @@ def _compute_target_weights(
         n = len(active_tickers)
         known = [vols[t] for t in active_tickers if vols.get(t, 0.0) > 0]
         fallback = float(np.median(known)) if known else _VOL_FALLBACK
-        raw = {
-            t: (vol_target_annual / (vols.get(t, 0.0) or fallback)) / n
-            for t in active_tickers
-        }
+        raw = {t: (vol_target_annual / (vols.get(t, 0.0) or fallback)) / n for t in active_tickers}
         return _cap_and_scale(raw, max_weight)
 
     if mode == AllocationMode.KELLY_FRACTIONAL:

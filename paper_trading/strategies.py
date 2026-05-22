@@ -59,6 +59,7 @@ def _calibrated_prob(ml_probability: float | None) -> float | None:
         return None
     return float(ml_probability)
 
+
 # ── Value type ────────────────────────────────────────────────────────────────
 
 
@@ -157,9 +158,7 @@ def generate_trades_analyze_single(
         if res.overall_signal == "BUY":
             strength = _default_strength("BUY", res.ml_probability)
             ranked.append((strength, t))
-            cand_vol[t] = (
-                _realized_vol(df["Close"].astype(float)) if "Close" in df.columns else 0.0
-            )
+            cand_vol[t] = _realized_vol(df["Close"].astype(float)) if "Close" in df.columns else 0.0
             cand_prob[t] = _calibrated_prob(res.ml_probability)
 
     ranked.sort(reverse=True)
