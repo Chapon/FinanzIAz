@@ -220,6 +220,20 @@ SCHEMA: dict[str, SettingSpec] = {
             "fail-open (no block)."
         ),
     ),
+    # Correlation gate (T09 of the engine roadmap)
+    "max_avg_correlation": SettingSpec(
+        (int, float),
+        0.75,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "When filling a free slot, skip a BUY candidate whose mean 60-day "
+            "daily-return correlation with the already-active book (plus names "
+            "already picked this scan) exceeds this. Stops the engine from "
+            "filling every slot with names that move together. 1.0 = disable "
+            "the gate (correlation can never exceed 1.0)."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

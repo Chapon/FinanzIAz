@@ -36,6 +36,11 @@ from analysis.portfolio_backtest import (
     _compute_target_weights,
     _realized_vol,
 )
+from analysis.portfolio_risk import (
+    daily_returns,
+    mean_correlation,
+)
+from config.logging_config import get_logger
 from config.settings_manager import settings
 from paper_trading.models import PaperAccount, PaperPosition
 
@@ -81,6 +86,80 @@ class TargetTrade:
 
 
 HistoryProvider = Callable[[str], pd.DataFrame | None]
+
+
+# ── Correlation gate (T09) ─────────────────────────────────────────────────────
+
+
+def _corr_threshold() -> float:
+    """Mean-correlation ceiling for the slot-filling gate (1.0 = disabled)."""
+    return float(settings.get("max_avg_correlation"))
+
+
+def _returns_for(
+    ticker: str,
+    history_provider: HistoryProvider,
+    cache: dict[str, pd.Series | None],
+) -> pd.Series | None:
+    """Memoised 60-day daily returns for a ticker (None if no usable history)."""
+    if ticker in cache:
+        return cache[ticker]
+    df = history_provider(ticker)
+    if df is None or df.empty or "Close" not in df.columns:
+        cache[ticker] = None
+        return None
+    r = daily_returns(df["Close"].astype(float))
+    cache[ticker] = r if not r.empty else None
+    return cache[ticker]
+
+
+def _select_uncorrelated(
+    ordered_candidates: list[str],
+    held: list[str],
+    free_slots: int,
+    history_provider: HistoryProvider,
+    threshold: float,
+) -> list[str]:
+    """Pick up to ``free_slots`` candidates in priority order, skipping any whose
+    mean 60-day return correlation with the active book — the already-held names
+    *plus* the candidates already accepted this scan — exceeds ``threshold``.
+
+    Comparing against the names accepted earlier in the same scan (not just the
+    pre-existing positions) is what actually prevents a freshly-built book from
+    being five copies of the same trade; correlating only against current
+    holdings would happily admit two highly-correlated new entries at once.
+
+    A candidate with no usable history, or for which no correlation can be
+    computed, is admitted (the gate never blocks on missing data). Each skip is
+    logged. ``threshold >= 1.0`` short-circuits the gate entirely.
+    """
+    if free_slots <= 0:
+        return []
+    if threshold >= 1.0:
+        return ordered_candidates[:free_slots]
+
+    cache: dict[str, pd.Series | None] = {}
+    log = get_logger(__name__)
+    accepted: list[str] = []
+    for t in ordered_candidates:
+        if len(accepted) >= free_slots:
+            break
+        cand_ret = _returns_for(t, history_provider, cache)
+        compare_to = held + accepted
+        if cand_ret is None or cand_ret.empty or not compare_to:
+            accepted.append(t)
+            continue
+        held_rets = [
+            r
+            for h in compare_to
+            if (r := _returns_for(h, history_provider, cache)) is not None and not r.empty
+        ]
+        avg = mean_correlation(cand_ret, held_rets)
+        if avg is not None and avg > threshold:
+            log.info("%s skipped: avg_corr=%.2f > %.2f", t, avg, threshold)
+            continue
+        accepted.append(t)
+    return accepted
 
 
 # ── Strategy 1: analyze_single ────────────────────────────────────────────────
@@ -167,7 +246,15 @@ def generate_trades_analyze_single(
     # Slots available after processing forced exits
     held_after = held_tickers - forced_exits
     free_slots = max(0, account.max_positions - len(held_after))
-    picks = [t for _, t in ranked[:free_slots]]
+    # Correlation gate (T09): walk the ranked list and skip candidates too
+    # correlated with the active book before they consume a slot.
+    picks = _select_uncorrelated(
+        [t for _, t in ranked],
+        list(held_after),
+        free_slots,
+        history_provider,
+        _corr_threshold(),
+    )
 
     if not picks:
         return trades
@@ -330,7 +417,15 @@ def generate_trades_portfolio_engine(
         key=lambda t: strengths.get(t, 0.0),
         reverse=True,
     )
-    new_entries = candidates[:free_slots]
+    # Correlation gate (T09): skip candidates too correlated with the active
+    # book (still-held positions + names already picked this scan).
+    new_entries = _select_uncorrelated(
+        candidates,
+        still_held,
+        free_slots,
+        history_provider,
+        _corr_threshold(),
+    )
     active = still_held + new_entries
 
     # ── Current portfolio value (mark-to-market) ──────────────────────────────
