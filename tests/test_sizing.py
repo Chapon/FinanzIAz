@@ -25,7 +25,6 @@ import pytest
 from analysis.portfolio_backtest import AllocationMode, _compute_target_weights
 from config.settings_manager import settings
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 

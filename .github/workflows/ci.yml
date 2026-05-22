@@ -106,4 +106,9 @@ jobs:
       - name: pytest
         # Skip tests marked ``network`` — they hit real yfinance and don't
         # belong in CI.
+        # QT_QPA_PLATFORM=offscreen: some test modules import PyQt6 at
+        # collection time; without a virtual framebuffer the xcb platform
+        # plugin aborts the process on headless Ubuntu (pytest exit code 3).
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: pytest -ra -m "not network"

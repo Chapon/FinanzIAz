@@ -28,7 +28,6 @@ from paper_trading.engine import _earnings_blackout_hit
 from paper_trading.models import PaperWatchlistItem
 from paper_trading.strategies import TargetTrade
 
-
 # ── Pure predicate: _earnings_blackout_hit ────────────────────────────────────
 
 
