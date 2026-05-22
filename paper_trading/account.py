@@ -277,8 +277,17 @@ def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
         }
 
 
-def record_equity_snapshot(account_id: int, prices: dict[str, float]) -> PaperEquitySnapshot:
-    """Persist a point on the equity curve using current prices."""
+def record_equity_snapshot(
+    account_id: int,
+    prices: dict[str, float],
+    *,
+    portfolio_sigma: float | None = None,
+) -> PaperEquitySnapshot:
+    """Persist a point on the equity curve using current prices.
+
+    ``portfolio_sigma`` is the estimated annualised book volatility at snapshot
+    time (T10); ``None`` when the overlay is off or there isn't enough history.
+    """
     eq = compute_equity(account_id, prices)
     with session_scope() as session:
         snap = PaperEquitySnapshot(
@@ -287,6 +296,7 @@ def record_equity_snapshot(account_id: int, prices: dict[str, float]) -> PaperEq
             cash=eq["cash"],
             positions_value=eq["positions_value"],
             total_equity=eq["total_equity"],
+            portfolio_sigma=portfolio_sigma,
         )
         session.add(snap)
         session.flush()

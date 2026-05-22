@@ -234,6 +234,21 @@ SCHEMA: dict[str, SettingSpec] = {
             "the gate (correlation can never exceed 1.0)."
         ),
     ),
+    # Portfolio volatility targeting overlay (T10 of the engine roadmap)
+    "vol_target_portfolio_annual": SettingSpec(
+        (int, float),
+        0.12,
+        min=0.0,
+        max=2.0,
+        doc=(
+            "Annualised volatility ceiling for the whole book. After the "
+            "allocation mode produces target weights, a shared overlay scales "
+            "every position down proportionally (toward cash, long-only) if the "
+            "book's estimated σ = sqrt(wᵀΣw)·sqrt(252) exceeds this. Never "
+            "scales up (no leverage). 0 disables the overlay — no separate flag. "
+            "0.12 = 12%."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

@@ -37,8 +37,10 @@ from analysis.portfolio_backtest import (
     _realized_vol,
 )
 from analysis.portfolio_risk import (
+    apply_portfolio_vol_overlay,
     daily_returns,
     mean_correlation,
+    returns_frame,
 )
 from config.logging_config import get_logger
 from config.settings_manager import settings
@@ -162,6 +164,57 @@ def _select_uncorrelated(
     return accepted
 
 
+# ── Portfolio volatility overlay (T10) ──────────────────────────────────────────
+
+
+def _portfolio_vol_target() -> float:
+    """Annualised σ ceiling for the whole book (≤ 0 disables the overlay)."""
+    return float(settings.get("vol_target_portfolio_annual"))
+
+
+def _apply_vol_overlay_to_buys(
+    dollars: dict[str, float],
+    picks: list[str],
+    positions: list[PaperPosition],
+    forced_exits: set[str],
+    prices: dict[str, float],
+    portfolio_value: float,
+    history_provider: HistoryProvider,
+    source: str,
+) -> dict[str, float]:
+    """Scale the new-buy dollar map by the T10 portfolio-vol overlay factor.
+
+    σ is estimated over the post-trade book — currently-held names that are not
+    being force-sold *plus* the new picks — but the factor is applied only to
+    the picks, because ``analyze_single`` does not trim existing holdings within
+    a single scan. When the book is already over target, the new exposure
+    shrinks toward zero (the protective intent); existing positions are left for
+    their own SELL signals / ATR stops to unwind.
+    """
+    vt = _portfolio_vol_target()
+    if vt <= 0 or portfolio_value <= 0 or not dollars:
+        return dollars
+    held_w = {
+        p.ticker: (p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost)) / portfolio_value
+        for p in positions
+        if p.ticker not in forced_exits
+    }
+    pick_w = {t: dollars.get(t, 0.0) / portfolio_value for t in picks}
+    combined = {**held_w, **pick_w}
+    ret_df = returns_frame(list(combined.keys()), history_provider)
+    _, sigma, factor = apply_portfolio_vol_overlay(combined, ret_df, vt)
+    if factor < 1.0:
+        get_logger(__name__).info(
+            "portfolio vol overlay (%s): σ=%.1f%% > target %.1f%%, scaled new buys ×%.2f",
+            source,
+            (sigma or 0.0) * 100,
+            vt * 100,
+            factor,
+        )
+        return {t: v * factor for t, v in dollars.items()}
+    return dollars
+
+
 # ── Strategy 1: analyze_single ────────────────────────────────────────────────
 
 
@@ -269,19 +322,17 @@ def generate_trades_analyze_single(
     if available <= 0:
         return trades
 
-    # ── Vol-target / Kelly sizing (T06) ───────────────────────────────────────
-    # These modes size by per-name volatility (and, for Kelly, calibrated
-    # probability) instead of an equal cash slice. Weights are computed against
-    # total portfolio value, converted to dollars, then capped so the BUYs
-    # never spend more than the available cash this scan.
+    # ── Per-pick target dollars under the active sizing mode ──────────────────
+    # T06 vol-target / Kelly size by per-name vol (and calibrated prob); the
+    # other modes use a fixed amount or an equal cash slice. Either way we end
+    # up with a {ticker: dollars} map, which the T10 portfolio-vol overlay can
+    # then scale down as one book before the trades are emitted.
+    portfolio_value = float(
+        account.cash
+        + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
+    )
     if account.allocation_mode in _VOL_SIZED_MODES:
         mode = AllocationMode(account.allocation_mode)
-        pos_value = 0.0
-        for p in positions:
-            px = prices.get(p.ticker, p.avg_cost)
-            pos_value += p.shares * (px or p.avg_cost)
-        portfolio_value = float(account.cash + pos_value)
-
         weights = _compute_target_weights(
             picks,
             {t: scores.get(t, 0.0) for t in picks},
@@ -295,41 +346,35 @@ def generate_trades_analyze_single(
         if total > available > 0:
             scale = available / total
             dollars = {t: v * scale for t, v in dollars.items()}
-
-        for t in picks:
-            d = dollars.get(t, 0.0)
-            if d <= 0:  # Kelly may skip a pick (no calibrated prob / no edge)
-                continue
-            trades.append(
-                TargetTrade(
-                    ticker=t,
-                    side="BUY",
-                    target_shares=None,
-                    target_dollars=float(d),
-                    reason=f"analyze BUY ({account.allocation_mode})",
-                    source=source,
-                    signal_score=scores.get(t),
-                )
-            )
-        return trades
-
-    # ── Default sizing: fixed amount or equal cash slice ──────────────────────
-    if account.allocation_mode == "fixed_amount":
+        reason = f"analyze BUY ({account.allocation_mode})"
+    elif account.allocation_mode == "fixed_amount":
         target_per = float(account.fixed_amount)
         total = target_per * len(picks)
         if total > available:
             target_per = available / len(picks)  # scale down
+        dollars = {t: target_per for t in picks}
+        reason = "analyze BUY"
     else:
         target_per = available / len(picks)
+        dollars = {t: target_per for t in picks}
+        reason = "analyze BUY"
+
+    # ── Portfolio volatility overlay (T10) — shared layer, applied after sizing ─
+    dollars = _apply_vol_overlay_to_buys(
+        dollars, picks, positions, forced_exits, prices, portfolio_value, history_provider, source
+    )
 
     for t in picks:
+        d = dollars.get(t, 0.0)
+        if d <= 0:  # Kelly may skip a pick; overlay may shrink a tiny slice
+            continue
         trades.append(
             TargetTrade(
                 ticker=t,
                 side="BUY",
                 target_shares=None,
-                target_dollars=float(target_per),
-                reason="analyze BUY",
+                target_dollars=float(d),
+                reason=reason,
                 source=source,
                 signal_score=scores.get(t),
             )
@@ -456,6 +501,27 @@ def generate_trades_portfolio_engine(
             **_sizing_params(),
         )
         target_dollars = {t: target_weights.get(t, 0.0) * portfolio_val for t in universe}
+
+    # ── Portfolio volatility overlay (T10) ────────────────────────────────────
+    # Shared risk layer over whatever the allocation mode produced: if the
+    # active book's annualised σ exceeds ``vol_target_portfolio_annual``, scale
+    # every active weight down proportionally (long-only, residual → cash).
+    vt = _portfolio_vol_target()
+    if vt > 0 and active:
+        active_w = {t: target_weights.get(t, 0.0) for t in active}
+        ret_df = returns_frame(active, history_provider)
+        scaled, sigma_port, factor = apply_portfolio_vol_overlay(active_w, ret_df, vt)
+        if factor < 1.0:
+            get_logger(__name__).info(
+                "portfolio vol overlay (%s): σ=%.1f%% > target %.1f%%, scaled book ×%.2f",
+                source,
+                (sigma_port or 0.0) * 100,
+                vt * 100,
+                factor,
+            )
+            for t in active:
+                target_weights[t] = scaled.get(t, 0.0)
+                target_dollars[t] = target_weights[t] * portfolio_val
 
     # Tickers to liquidate entirely
     for t in list(held_tickers):

@@ -38,6 +38,7 @@ from paper_trading.models import (
     PaperPosition,
     PaperWatchlistItem,
 )
+from analysis.portfolio_risk import annualized_portfolio_vol, returns_frame
 from paper_trading.strategies import (
     HistoryProvider,
     TargetTrade,
@@ -93,6 +94,34 @@ def _is_market_open_safe() -> bool:
         return bool(open_)
     except Exception:
         return False
+
+
+def _estimate_book_sigma(positions, prices, history_provider) -> float | None:
+    """Annualised σ of the current book for the equity snapshot (T10).
+
+    Best-effort: weights are market-value shares, σ = sqrt(wᵀΣw)·sqrt(252) over
+    60-day daily returns. Returns ``None`` when there are no positions or not
+    enough history — never raises, so it can't break a scan.
+    """
+    try:
+        if not positions:
+            return None
+        mv = {}
+        total = 0.0
+        for p in positions:
+            px = prices.get(p.ticker, p.avg_cost) or p.avg_cost
+            val = float(p.shares) * float(px)
+            if val > 0:
+                mv[p.ticker] = val
+                total += val
+        if total <= 0:
+            return None
+        weights = {t: v / total for t, v in mv.items()}
+        ret_df = returns_frame(list(weights.keys()), history_provider)
+        sigma = annualized_portfolio_vol(weights, ret_df)
+        return float(sigma) if sigma > 0 else None
+    except Exception:
+        return None
 
 
 def _last_closed_cycle_pnl_pct(
@@ -635,8 +664,11 @@ def run_scan(
         result.equity_after = float(equity_after)
         # session_scope commits automatically on successful exit
 
-    # Snapshot outside the transaction — opens its own session
-    record_equity_snapshot(account_id, prices)
+    # Snapshot outside the transaction — opens its own session. Estimate the
+    # post-scan book volatility (T10) for the equity curve; best-effort / NULL
+    # when the overlay is off or history is thin.
+    portfolio_sigma = _estimate_book_sigma(positions_after, prices, history_provider)
+    record_equity_snapshot(account_id, prices, portfolio_sigma=portfolio_sigma)
     return result
 
 

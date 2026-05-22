@@ -224,6 +224,10 @@ class PaperEquitySnapshot(Base):
     cash = Column(Float, nullable=False)
     positions_value = Column(Float, nullable=False)
     total_equity = Column(Float, nullable=False)
+    # Estimated annualised book volatility at snapshot time (T10). Nullable:
+    # NULL when the overlay is disabled or there isn't enough history to
+    # estimate σ. Powers monitoring of how close the book runs to its vol target.
+    portfolio_sigma = Column(Float, nullable=True)
 
     account = relationship("PaperAccount", back_populates="snapshots")
 

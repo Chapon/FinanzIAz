@@ -12,8 +12,12 @@ threshold lives in ``config.settings_manager`` (``max_avg_correlation``).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
+
+from config.constants import TRADING_DAYS_PER_YEAR
 
 # Daily-returns lookback for the correlation gate, in trading days.
 CORRELATION_LOOKBACK: int = 60
@@ -100,3 +104,86 @@ def diversification_ratio(
     if port_var <= 0 or weighted_avg_vol <= 0:
         return 1.0
     return weighted_avg_vol / float(np.sqrt(port_var))
+
+
+# ── Portfolio volatility targeting overlay (T09 → T10) ──────────────────────────
+
+
+def returns_frame(
+    tickers: list[str],
+    history_provider: Callable[[str], pd.DataFrame | None],
+    lookback: int = CORRELATION_LOOKBACK,
+) -> pd.DataFrame:
+    """Assemble a date-aligned daily-returns frame (one column per ticker).
+
+    Tickers with no usable ``Close`` history are dropped. Returns an empty
+    frame when nothing usable is found. Columns are aligned on their union of
+    dates (NaN where a ticker has no observation that day), which is what
+    ``DataFrame.cov`` expects — it uses pairwise-complete observations.
+    """
+    cols: dict[str, pd.Series] = {}
+    for t in tickers:
+        df = history_provider(t)
+        if df is None or getattr(df, "empty", True) or "Close" not in getattr(df, "columns", []):
+            continue
+        r = daily_returns(df["Close"].astype(float), lookback)
+        if not r.empty:
+            cols[t] = r
+    if not cols:
+        return pd.DataFrame()
+    return pd.DataFrame(cols)
+
+
+def annualized_portfolio_vol(weights: dict[str, float], returns: pd.DataFrame) -> float:
+    """Annualised portfolio volatility ``σ = sqrt(wᵀ Σ w) · sqrt(252)``.
+
+    ``Σ`` is the daily-return covariance of ``returns``; ``weights`` maps ticker
+    → portfolio weight (need not sum to 1 — the residual is implicit cash, which
+    contributes no variance). Returns 0.0 for degenerate inputs so callers can
+    safely treat "no estimate" as "do not scale".
+    """
+    if returns is None or returns.empty or returns.shape[1] == 0:
+        return 0.0
+    cols = list(returns.columns)
+    w = np.array([float(weights.get(c, 0.0)) for c in cols], dtype="float64")
+    if not np.any(w):
+        return 0.0
+    cov = returns.cov().to_numpy()
+    if cov.shape[0] != len(w):
+        return 0.0
+    var_daily = float(w @ cov @ w)
+    if not np.isfinite(var_daily) or var_daily <= 0:
+        return 0.0
+    return float(np.sqrt(var_daily) * np.sqrt(TRADING_DAYS_PER_YEAR))
+
+
+def apply_portfolio_vol_overlay(
+    weights: dict[str, float],
+    returns: pd.DataFrame,
+    vol_target_annual: float | None,
+) -> tuple[dict[str, float], float | None, float]:
+    """Scale a whole book down so its annualised σ does not exceed the target.
+
+    Shared, allocation-mode-agnostic risk layer (T10): given target weights and
+    a returns frame, estimate the book's annualised σ and, if it exceeds
+    ``vol_target_annual``, multiply *every* weight by ``target / σ`` (< 1). The
+    book is only ever scaled **down** — long-only, no leverage — with the freed
+    weight implicitly going to cash. When σ is already at or below the target
+    the weights are returned unchanged.
+
+    ``vol_target_annual`` of ``None`` or ``<= 0`` disables the overlay entirely
+    (the single knob doubles as the on/off switch — no separate flag).
+
+    Returns ``(scaled_weights, sigma, factor)`` where ``sigma`` is the estimated
+    annualised σ (``None`` when disabled) and ``factor`` is the applied multiplier
+    (``1.0`` when disabled, undeterminable, or already within target).
+    """
+    if vol_target_annual is None or vol_target_annual <= 0:
+        return dict(weights), None, 1.0
+    sigma = annualized_portfolio_vol(weights, returns)
+    if sigma <= 0:
+        return dict(weights), sigma, 1.0
+    factor = min(1.0, float(vol_target_annual) / sigma)
+    if factor >= 1.0:
+        return dict(weights), sigma, 1.0
+    return {t: w * factor for t, w in weights.items()}, sigma, factor

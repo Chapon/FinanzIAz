@@ -348,6 +348,14 @@ def _migrate():
     if paper_cols and "signal_score" not in paper_cols:
         cur.execute("ALTER TABLE paper_orders ADD COLUMN signal_score REAL")
         conn.commit()
+    # paper_equity_snapshots.portfolio_sigma — new in T10. Legacy snapshots keep
+    # NULL (no σ estimate recorded). Guard on existence so we don't fail before
+    # create_all has materialised the table on a fresh DB.
+    cur.execute("PRAGMA table_info(paper_equity_snapshots)")
+    snap_cols = [row[1] for row in cur.fetchall()]
+    if snap_cols and "portfolio_sigma" not in snap_cols:
+        cur.execute("ALTER TABLE paper_equity_snapshots ADD COLUMN portfolio_sigma REAL")
+        conn.commit()
     conn.close()
 
 
