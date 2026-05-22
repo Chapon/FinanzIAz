@@ -29,6 +29,7 @@ from urllib3.util.retry import Retry
 from config.constants import (
     BULK_FETCH_WORKERS,
     DIVIDEND_CACHE_HOURS,
+    EARNINGS_CACHE_HOURS,
     HISTORICAL_CACHE_TTL_HOURS,
     MARKET_CLOSE_HOUR_ET,
     MARKET_CLOSE_MINUTE,
@@ -57,7 +58,13 @@ from data.failed_tickers import (
     record_success,
 )
 from data.quality import clean_ohlcv
-from database.models import DividendCache, HistoricalDataCache, PriceCache, session_scope
+from database.models import (
+    DividendCache,
+    EarningsCache,
+    HistoricalDataCache,
+    PriceCache,
+    session_scope,
+)
 
 log = get_logger(__name__)
 
@@ -443,6 +450,124 @@ def _fetch_dividends_since(ticker: str, since_date: datetime) -> float:
 
     result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=0.0)
     return result if result is not None else 0.0
+
+
+def _coerce_earnings_datetime(value) -> datetime | None:
+    """Best-effort convert a yfinance calendar entry to a naive ``datetime``.
+
+    yfinance hands back ``datetime.date``, ``datetime.datetime``,
+    ``pd.Timestamp`` or ISO strings depending on version. Returns ``None`` for
+    anything unparseable.
+    """
+    import datetime as _dt
+
+    if value is None:
+        return None
+    # pandas Timestamp is a subclass of datetime, handled by the isinstance below
+    if isinstance(value, _dt.datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    if isinstance(value, _dt.date):
+        return _dt.datetime(value.year, value.month, value.day)
+    try:
+        ts = pd.Timestamp(value)
+        if ts is pd.NaT:
+            return None
+        py = ts.to_pydatetime()
+        return py.replace(tzinfo=None) if py.tzinfo is not None else py
+    except Exception:
+        return None
+
+
+def _parse_next_earnings(calendar, *, now: datetime | None = None) -> datetime | None:
+    """Extract the next upcoming earnings ``datetime`` from a yfinance calendar.
+
+    Handles both calendar shapes yfinance has shipped:
+    - **dict** (recent versions): ``{"Earnings Date": [date, ...], ...}``
+    - **DataFrame** (older versions): a frame whose ``Earnings Date`` row /
+      column holds one or more dates.
+
+    Returns the earliest earnings date that is **today or in the future**; if
+    every parsed date is in the past, returns the latest past date (so a
+    just-reported ticker still trips the ±window). Returns ``None`` if no
+    date can be parsed.
+    """
+    if calendar is None:
+        return None
+
+    raw_values: list = []
+    try:
+        if isinstance(calendar, dict):
+            raw_values = calendar.get("Earnings Date") or calendar.get("earningsDate") or []
+            if not isinstance(raw_values, (list, tuple)):
+                raw_values = [raw_values]
+        elif isinstance(calendar, pd.DataFrame):
+            if "Earnings Date" in calendar.index:
+                raw_values = list(calendar.loc["Earnings Date"].values)
+            elif "Earnings Date" in calendar.columns:
+                raw_values = list(calendar["Earnings Date"].values)
+        else:
+            return None
+    except Exception:
+        return None
+
+    parsed = [d for d in (_coerce_earnings_datetime(v) for v in raw_values) if d is not None]
+    if not parsed:
+        return None
+
+    ref = now or datetime.now()
+    future = sorted(d for d in parsed if d >= ref)
+    if future:
+        return future[0]
+    # All in the past — return the most recent one (post-earnings gap window).
+    return max(parsed)
+
+
+def get_next_earnings_date(ticker: str) -> datetime | None:
+    """Return the next scheduled earnings ``datetime`` for ``ticker``.
+
+    Reads ``yfinance.Ticker(t).calendar``, cached for ``EARNINGS_CACHE_HOURS``
+    in the ``earnings_cache`` table. **Fail-open**: any error (unknown ticker,
+    API failure, unparseable calendar) returns ``None`` so the caller's gate
+    can default to not blocking. A cached row with NULL ``earnings_date``
+    encodes "asked recently, nothing upcoming" and is honoured for the TTL so
+    we don't re-hit the API on every scan.
+    """
+    ticker_upper = ticker.upper()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=EARNINGS_CACHE_HOURS)
+
+    # 1. Cache read (own session, released before the network call)
+    if _cache_enabled():
+        try:
+            with session_scope() as session:
+                cached = (
+                    session.query(EarningsCache)
+                    .filter(EarningsCache.ticker == ticker_upper)
+                    .filter(EarningsCache.fetched_at >= cutoff)
+                    .order_by(EarningsCache.fetched_at.desc())
+                    .first()
+                )
+                if cached is not None:
+                    return cached.earnings_date
+        except Exception:
+            log.exception("Earnings cache read failed for %s", ticker)
+
+    # 2. Network fetch — hard-timeout protected, fail-open
+    def _do_fetch() -> datetime | None:
+        t = _ticker(ticker)
+        return _parse_next_earnings(t.calendar)
+
+    earnings_dt = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
+
+    # 3. Cache write (including the negative result — earnings_dt may be None)
+    if _cache_enabled():
+        try:
+            with session_scope() as session:
+                session.query(EarningsCache).filter(EarningsCache.ticker == ticker_upper).delete()
+                session.add(EarningsCache(ticker=ticker_upper, earnings_date=earnings_dt))
+        except Exception:
+            log.exception("Earnings cache write failed for %s", ticker)
+
+    return earnings_dt
 
 
 def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:

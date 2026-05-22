@@ -45,9 +45,17 @@ from paper_trading.strategies import (
 )
 
 PricesProvider = Callable[[list[str]], dict[str, float]]
+EarningsProvider = Callable[[str], "datetime | None"]
 
 
 # ── Default live providers (thin wrappers over yfinance cache) ────────────────
+
+
+def _default_earnings_provider(ticker: str) -> datetime | None:
+    """Next-earnings date for the T08 blackout gate. Fail-open (None on error)."""
+    from data.yahoo_finance import get_next_earnings_date
+
+    return get_next_earnings_date(ticker)
 
 
 def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
@@ -305,6 +313,26 @@ def _update_high_water_marks(positions: list, prices: dict[str, float]) -> None:
             pos.high_water_mark = float(px)
 
 
+# ── Earnings-blackout gate (T08) ───────────────────────────────────────────────
+
+
+def _earnings_blackout_hit(
+    earnings_date: datetime | None,
+    scan_at: datetime,
+    blackout_days: int,
+) -> bool:
+    """True iff ``earnings_date`` falls within ±``blackout_days`` of ``scan_at``.
+
+    Compared at calendar-day granularity so an earnings event scheduled for
+    "tomorrow" trips a ±1 window regardless of the intraday scan time. Returns
+    False when there is no known date or the gate is disabled.
+    """
+    if earnings_date is None or blackout_days <= 0:
+        return False
+    delta_days = (earnings_date.date() - scan_at.date()).days
+    return abs(delta_days) <= blackout_days
+
+
 # ── Scan result type ──────────────────────────────────────────────────────────
 
 
@@ -342,10 +370,12 @@ def run_scan(
     *,
     prices_provider: PricesProvider | None = None,
     history_provider: HistoryProvider | None = None,
+    earnings_provider: EarningsProvider | None = None,
 ) -> ScanResult | None:
     """Scan the market once, execute trades (or queue them), snapshot equity."""
     prices_provider = prices_provider or _default_prices_provider
     history_provider = history_provider or _default_history_provider
+    earnings_provider = earnings_provider or _default_earnings_provider
 
     with session_scope() as session:
         acct: PaperAccount = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
@@ -432,6 +462,30 @@ def run_scan(
         min_trade_usd = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
         whipsaw_days = max(0, int(settings.get("paper_whipsaw_lookback_days", 7)))
         whipsaw_min_loss = max(0.0, float(settings.get("paper_whipsaw_min_loss_pct", 0.0)))
+        earnings_blackout_days = max(0, int(settings.get("earnings_blackout_days", 2)))
+
+        # Memoize earnings lookups within this scan so we hit the provider at
+        # most once per ticker. Fail-open: a provider that raises is treated as
+        # "no known earnings" (None) and logged, so a flaky calendar API never
+        # blocks trading.
+        _earnings_seen: dict[str, datetime | None] = {}
+
+        def _earnings_date_for(ticker: str) -> datetime | None:
+            if ticker in _earnings_seen:
+                return _earnings_seen[ticker]
+            try:
+                edt = earnings_provider(ticker)
+            except Exception:
+                from config.logging_config import get_logger
+
+                get_logger(__name__).warning(
+                    "earnings gate: provider failed for %s — failing open (no block).",
+                    ticker,
+                    exc_info=True,
+                )
+                edt = None
+            _earnings_seen[ticker] = edt
+            return edt
 
         market_blocked = enforce_hours and not _is_market_open_safe()
         if market_blocked and trades:
@@ -512,6 +566,22 @@ def run_scan(
                         f"{trade.ticker} BUY bloqueado: anti-whipsaw — último ciclo "
                         f"cerró con {pnl_pct:+.2f}% (umbral -{whipsaw_min_loss:.2f}%) "
                         f"dentro de {whipsaw_days}d."
+                    )
+                    continue
+
+            # Gate 6 — earnings blackout. Block BUY *and* SELL when the ticker
+            # has scheduled earnings within ±earnings_blackout_days. Post- and
+            # pre-earnings gaps are a large class of whipsaws the other gates
+            # don't see. ATR-forced stop-loss/TP/trail SELLs (T01) bypass this
+            # gate — a real stop must always be able to fire. Fail-open: an
+            # unknown / failed earnings lookup returns None and does not block.
+            if earnings_blackout_days > 0 and not _is_atr_forced_exit(trade.reason):
+                edt = _earnings_date_for(trade.ticker)
+                if edt is not None and _earnings_blackout_hit(edt, result.scan_at, earnings_blackout_days):
+                    result.skipped += 1
+                    result.warnings.append(
+                        f"{trade.ticker} {trade.side} bloqueado: earnings el "
+                        f"{edt:%Y-%m-%d} dentro de ±{earnings_blackout_days}d (blackout)."
                     )
                     continue
 

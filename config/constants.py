@@ -108,6 +108,7 @@ NETWORK_RETRY_BACKOFF: float = 1.0
 PRICE_CACHE_TTL_MINUTES: int = 5
 HISTORICAL_CACHE_TTL_HOURS: int = 1
 DIVIDEND_CACHE_HOURS: int = 6
+EARNINGS_CACHE_HOURS: int = 24  # next-earnings calendar TTL (T08 earnings gate)
 BULK_FETCH_WORKERS: int = 5  # max parallel threads
 
 

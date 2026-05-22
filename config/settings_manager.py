@@ -206,6 +206,20 @@ SCHEMA: dict[str, SettingSpec] = {
             "it is scaled down proportionally (long-only, no leverage)."
         ),
     ),
+    # Earnings blackout gate (T08 of the engine roadmap)
+    "earnings_blackout_days": SettingSpec(
+        int,
+        2,
+        min=0,
+        max=30,
+        doc=(
+            "Gate 6: block BUY and SELL when the ticker has scheduled earnings "
+            "within ±N calendar days of the scan. ATR-forced stop-loss SELLs "
+            "(T01) bypass this. 0 = disable the gate. Earnings dates come from "
+            "yfinance.Ticker.calendar (24h cache); unknown/failed lookups "
+            "fail-open (no block)."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

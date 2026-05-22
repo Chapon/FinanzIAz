@@ -251,6 +251,30 @@ class HistoricalDataCache(Base):
         return f"<HistoricalDataCache({self.ticker} {self.period}/{self.interval} @ {self.fetched_at})>"
 
 
+class EarningsCache(Base):
+    """
+    Cache for the next scheduled earnings date per ticker (T08 earnings gate).
+
+    Populated from ``yfinance.Ticker(t).calendar``. Refreshed on a 24h TTL
+    (enforced at read time via ``fetched_at``). ``earnings_date`` is nullable:
+    a row with NULL means "we asked Yahoo recently and it had no calendar /
+    no upcoming earnings". Caching the negative result too prevents hammering
+    the API for tickers Yahoo doesn't cover.
+    """
+
+    __tablename__ = "earnings_cache"
+    __table_args__ = (Index("ix_earnings_cache_ticker_fetched", "ticker", "fetched_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    earnings_date = Column(DateTime, nullable=True)  # next upcoming earnings; NULL = unknown/none
+    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+
+    def __repr__(self):
+        when = self.earnings_date.date() if self.earnings_date else "none"
+        return f"<EarningsCache({self.ticker} next={when} @ {self.fetched_at})>"
+
+
 class FailedTicker(Base):
     """
     Registro de tickers que fallaron al consultar Yahoo Finance.
