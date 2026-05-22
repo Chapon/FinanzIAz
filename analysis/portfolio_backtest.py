@@ -15,6 +15,17 @@ Allocation modes
                      capital, high-vol names get less.
 ``FIXED_AMOUNT``     Each active slot holds a fixed dollar target. Cash above
                      that target is kept idle; cash below triggers a top-up.
+``VOL_TARGET``       Per-name volatility targeting (T06). Each active slot
+                     gets weight ``(vol_target_annual / σ_ticker) / N`` so that
+                     more volatile names receive less exposure. Capped per
+                     ticker at ``max_position_weight`` and scaled down if the
+                     total would exceed 1.0 (long-only, no leverage).
+``KELLY_FRACTIONAL`` Fractional-Kelly sizing (T06). Weight per ticker is
+                     ``kelly_fraction × edge / variance`` with
+                     ``edge = 2·prob_up − 1`` (calibrated buy probability) and
+                     ``variance = σ_ticker²``. Negative-edge names are dropped
+                     (long-only); tickers without a calibrated probability are
+                     skipped entirely. Same per-ticker cap + scale-down.
 
 Rebalancing triggers (evaluated at every ``step``)
 --------------------------------------------------
@@ -66,6 +77,18 @@ class AllocationMode(str, Enum):
     SIGNAL_WEIGHTED = "signal_weighted"
     INVERSE_VOL = "inverse_vol"
     FIXED_AMOUNT = "fixed_amount"
+    VOL_TARGET = "vol_target"
+    KELLY_FRACTIONAL = "kelly_fractional"
+
+
+# ── T06 sizing defaults (mirrored in config.settings_manager SCHEMA) ──────────
+# These are the fallback values used when a caller does not pass explicit
+# params (e.g. direct unit tests of ``_compute_target_weights``). The live
+# strategies read the user-tunable values from ``settings`` and pass them in.
+DEFAULT_KELLY_FRACTION = 0.25  # quarter-Kelly — conservative
+DEFAULT_VOL_TARGET_ANNUAL = 0.20  # 20 % annualised per-name vol target
+DEFAULT_MAX_POSITION_WEIGHT = 0.25  # hard cap: no ticker > 25 % of portfolio
+_VOL_FALLBACK = 0.20  # used when a ticker's σ is unknown / zero
 
 
 # Optional convenience: a callable that scores BUY conviction in [0, 1].
@@ -237,18 +260,79 @@ def _realized_vol(close: pd.Series, lookback: int = 60) -> float:
     return v if np.isfinite(v) and v > 0 else 0.0
 
 
+def _cap_and_scale(raw: dict[str, float], max_weight: float) -> dict[str, float]:
+    """
+    Apply the T06 per-ticker hard cap, then scale the whole book down if the
+    total still exceeds 1.0.
+
+    Order matters: cap first (so a single dominant name can't eat the book),
+    then scale (which only ever reduces weights, so the cap is never violated
+    by the scaling step). When the post-cap total is ≤ 1.0 it is left as-is —
+    the residual stays in cash (long-only, no leverage).
+    """
+    capped = {t: min(max(0.0, w), max_weight) for t, w in raw.items() if w > 0}
+    total = sum(capped.values())
+    if total > 1.0:
+        capped = {t: w / total for t, w in capped.items()}
+    return capped
+
+
 def _compute_target_weights(
     active_tickers: list[str],
     strengths: dict[str, float],
     vols: dict[str, float],
     mode: AllocationMode,
+    *,
+    probs: dict[str, float | None] | None = None,
+    kelly_fraction: float = DEFAULT_KELLY_FRACTION,
+    vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
+    max_weight: float = DEFAULT_MAX_POSITION_WEIGHT,
 ) -> dict[str, float]:
     """
     Return target weights summing to ≤ 1.0 for the given active tickers.
     For FIXED_AMOUNT the caller converts target dollars, not weights.
+
+    ``probs`` maps ticker → calibrated buy probability in [0,1] (or None when
+    no model probability is available). It is only consulted by
+    ``KELLY_FRACTIONAL``; the heuristic modes ignore it.
     """
     if not active_tickers:
         return {}
+
+    if mode == AllocationMode.VOL_TARGET:
+        # Per-name vol targeting: weight = (vol_target / σ) / N. Unknown/zero
+        # vols fall back to the median (or a fixed prior) so they don't blow up.
+        n = len(active_tickers)
+        known = [vols[t] for t in active_tickers if vols.get(t, 0.0) > 0]
+        fallback = float(np.median(known)) if known else _VOL_FALLBACK
+        raw = {
+            t: (vol_target_annual / (vols.get(t, 0.0) or fallback)) / n
+            for t in active_tickers
+        }
+        return _cap_and_scale(raw, max_weight)
+
+    if mode == AllocationMode.KELLY_FRACTIONAL:
+        # Fractional Kelly: w = f · edge / variance, edge = 2p − 1.
+        # Long-only → drop negative edge. Skip tickers without a calibrated
+        # probability entirely (per user decision: never treat the BUY/HOLD/
+        # SELL fallback strength as a probability here).
+        probs = probs or {}
+        known = [vols[t] for t in active_tickers if vols.get(t, 0.0) > 0]
+        fallback = float(np.median(known)) if known else _VOL_FALLBACK
+        raw: dict[str, float] = {}
+        for t in active_tickers:
+            p = probs.get(t)
+            if p is None or not np.isfinite(p):
+                continue  # no calibrated prob → skip
+            sigma = vols.get(t, 0.0) or fallback
+            variance = sigma * sigma
+            if variance <= 0:
+                continue
+            edge = 2.0 * float(p) - 1.0
+            w = kelly_fraction * (edge / variance)
+            if w > 0:  # drop non-positive edge (long-only)
+                raw[t] = w
+        return _cap_and_scale(raw, max_weight)
 
     if mode == AllocationMode.EQUAL_WEIGHT:
         w = 1.0 / len(active_tickers)
@@ -435,6 +519,9 @@ def portfolio_backtest(
     warmup: int = 200,
     step: int = 5,  # evaluate every 5 bars by default
     strength_fn: StrengthFn | None = None,
+    kelly_fraction: float = DEFAULT_KELLY_FRACTION,
+    vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
+    max_position_weight: float = DEFAULT_MAX_POSITION_WEIGHT,
     verbose: bool = False,
 ) -> PortfolioBacktestResult | None:
     """
@@ -544,7 +631,19 @@ def portfolio_backtest(
                 t: v / portfolio_val if portfolio_val > 0 else 0.0 for t, v in target_dollars.items()
             }
         else:
-            target_weights = _compute_target_weights(active, strengths, vols, allocation_mode)
+            # In the backtest the conviction strength doubles as the Kelly
+            # probability proxy (there is no separate calibrated model here);
+            # the VOL_TARGET / heuristic modes ignore ``probs``.
+            target_weights = _compute_target_weights(
+                active,
+                strengths,
+                vols,
+                allocation_mode,
+                probs=strengths,
+                kelly_fraction=kelly_fraction,
+                vol_target_annual=vol_target_annual,
+                max_weight=max_position_weight,
+            )
             target_dollars = {t: target_weights.get(t, 0.0) * portfolio_val for t in tickers_ok}
 
         # ── Rebalance triggers ────────────────────────────────────────────────

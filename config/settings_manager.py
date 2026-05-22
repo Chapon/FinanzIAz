@@ -170,6 +170,42 @@ SCHEMA: dict[str, SettingSpec] = {
             "price ≤ high_water_mark_since_entry − atr_stop_mult × ATR."
         ),
     ),
+    # Conviction × volatility sizing (T06 of the engine roadmap)
+    # Only consulted by the VOL_TARGET / KELLY_FRACTIONAL allocation modes;
+    # the heuristic modes (equal/signal/inverse_vol/fixed) ignore these.
+    "kelly_fraction": SettingSpec(
+        (int, float),
+        0.25,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "Fraction of full Kelly used by AllocationMode.KELLY_FRACTIONAL. "
+            "0.25 = quarter-Kelly (conservative). target_w = "
+            "kelly_fraction × edge / variance, edge = 2·prob_up − 1."
+        ),
+    ),
+    "vol_target_annual": SettingSpec(
+        (int, float),
+        0.20,
+        min=0.01,
+        max=2.0,
+        doc=(
+            "Per-name annualised volatility target for "
+            "AllocationMode.VOL_TARGET. target_w = (vol_target_annual / σ) / N "
+            "— higher σ ⇒ less exposure. 0.20 = 20%."
+        ),
+    ),
+    "max_position_weight": SettingSpec(
+        (int, float),
+        0.25,
+        min=0.01,
+        max=1.0,
+        doc=(
+            "Hard cap on any single ticker's weight for the VOL_TARGET / "
+            "KELLY_FRACTIONAL modes. After capping, if the book sums to > 1.0 "
+            "it is scaled down proportionally (long-only, no leverage)."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

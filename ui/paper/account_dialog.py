@@ -47,6 +47,8 @@ class PaperAccountDialog(QDialog):
         "signal_weighted": "Ponderado por señal",
         "inverse_vol": "Inverse Volatility",
         "fixed_amount": "Monto fijo por posición",
+        "vol_target": "Volatility Target",
+        "kelly_fractional": "Kelly fraccional",
     }
 
     def __init__(self, account=None, parent=None):
@@ -86,7 +88,14 @@ class PaperAccountDialog(QDialog):
         form.addRow("Modo de ejecución", self.mode_combo)
 
         self.alloc_combo = QComboBox()
-        for k in ("equal_weight", "signal_weighted", "inverse_vol", "fixed_amount"):
+        for k in (
+            "equal_weight",
+            "signal_weighted",
+            "inverse_vol",
+            "fixed_amount",
+            "vol_target",
+            "kelly_fractional",
+        ):
             self.alloc_combo.addItem(self._ALLOC_LABELS[k], userData=k)
         self.alloc_combo.currentIndexChanged.connect(self._sync_alloc_visibility)
         self.alloc_hint = QLabel("")
@@ -164,22 +173,22 @@ class PaperAccountDialog(QDialog):
         self.fixed_amt_spin.setEnabled(is_fixed)
 
     def _sync_strategy_visibility(self) -> None:
-        """``analyze_single`` always splits available cash equally and ignores
-        ``allocation_mode``. Disable the allocation combo + show a hint when
-        that strategy is selected so the user isn't confused."""
+        """``analyze_single`` honours only the volatility-based sizing modes
+        (Volatility Target / Kelly fraccional); for the other modes it falls
+        back to an equal cash split. Keep the combo enabled but show a hint so
+        the user knows which modes actually change its behaviour."""
         is_analyze_single = self.strategy_combo.currentData() == "analyze_single"
-        self.alloc_combo.setEnabled(not is_analyze_single)
+        self.alloc_combo.setEnabled(True)
         if is_analyze_single:
             self.alloc_hint.setText(
-                "analyze_single ignora la asignación: siempre reparte el cash "
-                "disponible en partes iguales entre los BUY candidates."
+                "analyze_single solo aplica Volatility Target y Kelly fraccional; "
+                "con los demás modos reparte el cash disponible en partes iguales "
+                "entre los BUY candidates."
             )
         else:
             self.alloc_hint.setText("")
-        # Re-evaluate fixed_amount enablement (only useful outside analyze_single).
+        # Re-evaluate fixed_amount enablement.
         self._sync_alloc_visibility()
-        if is_analyze_single:
-            self.fixed_amt_spin.setEnabled(False)
 
     # ── Edit-mode population ─────────────────────────────────────────────────
     def _load_from(self, acct) -> None:

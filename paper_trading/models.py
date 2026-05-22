@@ -42,7 +42,14 @@ from database.models import Base, utcnow_naive
 
 STRATEGIES = {"analyze_single", "portfolio_engine"}
 MODES = {"auto", "manual"}
-ALLOC_MODES = {"equal_weight", "signal_weighted", "inverse_vol", "fixed_amount"}
+ALLOC_MODES = {
+    "equal_weight",
+    "signal_weighted",
+    "inverse_vol",
+    "fixed_amount",
+    "vol_target",
+    "kelly_fractional",
+}
 ORDER_SIDES = {"BUY", "SELL"}
 ORDER_STATUS = {"pending", "approved", "rejected", "filled", "expired", "cancelled"}
 

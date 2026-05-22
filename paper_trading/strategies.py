@@ -36,7 +36,28 @@ from analysis.portfolio_backtest import (
     _compute_target_weights,
     _realized_vol,
 )
+from config.settings_manager import settings
 from paper_trading.models import PaperAccount, PaperPosition
+
+# Allocation modes whose sizing depends on per-name volatility (and, for
+# Kelly, a calibrated probability) rather than a flat cash split. T06.
+_VOL_SIZED_MODES = {AllocationMode.VOL_TARGET.value, AllocationMode.KELLY_FRACTIONAL.value}
+
+
+def _sizing_params() -> dict[str, float]:
+    """Read the user-tunable T06 sizing knobs from settings."""
+    return {
+        "kelly_fraction": float(settings.get("kelly_fraction")),
+        "vol_target_annual": float(settings.get("vol_target_annual")),
+        "max_weight": float(settings.get("max_position_weight")),
+    }
+
+
+def _calibrated_prob(ml_probability: float | None) -> float | None:
+    """Return ml_probability only when it is a real, finite calibrated value."""
+    if ml_probability is None or not np.isfinite(ml_probability):
+        return None
+    return float(ml_probability)
 
 # ── Value type ────────────────────────────────────────────────────────────────
 
@@ -118,8 +139,12 @@ def generate_trades_analyze_single(
             )
             forced_exits.add(pos.ticker)
 
-    # Candidates for BUY — ranked by conviction
+    # Candidates for BUY — ranked by conviction. We also stash each candidate's
+    # realised vol and calibrated probability so the vol-target / Kelly sizing
+    # modes (T06) have what they need without re-running analyze().
     ranked: list[tuple[float, str]] = []
+    cand_vol: dict[str, float] = {}
+    cand_prob: dict[str, float | None] = {}
     for t in watchlist:
         if t in held_tickers and t not in forced_exits:
             continue
@@ -132,6 +157,10 @@ def generate_trades_analyze_single(
         if res.overall_signal == "BUY":
             strength = _default_strength("BUY", res.ml_probability)
             ranked.append((strength, t))
+            cand_vol[t] = (
+                _realized_vol(df["Close"].astype(float)) if "Close" in df.columns else 0.0
+            )
+            cand_prob[t] = _calibrated_prob(res.ml_probability)
 
     ranked.sort(reverse=True)
     scores = {t: s for s, t in ranked}
@@ -154,6 +183,51 @@ def generate_trades_analyze_single(
     if available <= 0:
         return trades
 
+    # ── Vol-target / Kelly sizing (T06) ───────────────────────────────────────
+    # These modes size by per-name volatility (and, for Kelly, calibrated
+    # probability) instead of an equal cash slice. Weights are computed against
+    # total portfolio value, converted to dollars, then capped so the BUYs
+    # never spend more than the available cash this scan.
+    if account.allocation_mode in _VOL_SIZED_MODES:
+        mode = AllocationMode(account.allocation_mode)
+        pos_value = 0.0
+        for p in positions:
+            px = prices.get(p.ticker, p.avg_cost)
+            pos_value += p.shares * (px or p.avg_cost)
+        portfolio_value = float(account.cash + pos_value)
+
+        weights = _compute_target_weights(
+            picks,
+            {t: scores.get(t, 0.0) for t in picks},
+            {t: cand_vol.get(t, 0.0) for t in picks},
+            mode,
+            probs={t: cand_prob.get(t) for t in picks},
+            **_sizing_params(),
+        )
+        dollars = {t: weights.get(t, 0.0) * portfolio_value for t in picks}
+        total = sum(dollars.values())
+        if total > available > 0:
+            scale = available / total
+            dollars = {t: v * scale for t, v in dollars.items()}
+
+        for t in picks:
+            d = dollars.get(t, 0.0)
+            if d <= 0:  # Kelly may skip a pick (no calibrated prob / no edge)
+                continue
+            trades.append(
+                TargetTrade(
+                    ticker=t,
+                    side="BUY",
+                    target_shares=None,
+                    target_dollars=float(d),
+                    reason=f"analyze BUY ({account.allocation_mode})",
+                    source=source,
+                    signal_score=scores.get(t),
+                )
+            )
+        return trades
+
+    # ── Default sizing: fixed amount or equal cash slice ──────────────────────
     if account.allocation_mode == "fixed_amount":
         target_per = float(account.fixed_amount)
         total = target_per * len(picks)
@@ -181,14 +255,23 @@ def generate_trades_analyze_single(
 # ── Strategy 2: portfolio_engine ──────────────────────────────────────────────
 
 
-def _signal_for(ticker: str, df: pd.DataFrame) -> tuple[str, float]:
-    """Call analyze() and return (signal, strength)."""
+def _signal_for(ticker: str, df: pd.DataFrame) -> tuple[str, float, float | None]:
+    """Call analyze() and return (signal, strength, calibrated_prob).
+
+    ``calibrated_prob`` is the raw ml_probability when finite, else None — kept
+    separate from ``strength`` (which collapses None to a BUY/HOLD/SELL prior)
+    so Kelly sizing can skip names without a real probability.
+    """
     from analysis.technical import analyze
 
     res = analyze(ticker, df)
     if res is None:
-        return "HOLD", 0.5
-    return res.overall_signal, _default_strength(res.overall_signal, res.ml_probability)
+        return "HOLD", 0.5, None
+    return (
+        res.overall_signal,
+        _default_strength(res.overall_signal, res.ml_probability),
+        _calibrated_prob(res.ml_probability),
+    )
 
 
 def generate_trades_portfolio_engine(
@@ -218,6 +301,7 @@ def generate_trades_portfolio_engine(
     signals: dict[str, str] = {}
     strengths: dict[str, float] = {}
     vols: dict[str, float] = {}
+    probs: dict[str, float | None] = {}
     dfs: dict[str, pd.DataFrame] = {}
 
     for t in universe:
@@ -226,12 +310,14 @@ def generate_trades_portfolio_engine(
             signals[t] = "HOLD"
             strengths[t] = 0.0
             vols[t] = 0.0
+            probs[t] = None
             continue
         dfs[t] = df
-        sig, sv = _signal_for(t, df)
+        sig, sv, mlp = _signal_for(t, df)
         signals[t] = sig
         strengths[t] = sv
         vols[t] = _realized_vol(df["Close"].astype(float))
+        probs[t] = mlp
 
     # ── Forced exits (positions with SELL) ────────────────────────────────────
     held_tickers = {p.ticker: p for p in positions}
@@ -267,7 +353,14 @@ def generate_trades_portfolio_engine(
             target_dollars = {t: v * scale for t, v in target_dollars.items()}
         target_weights = {t: v / portfolio_val for t, v in target_dollars.items()}
     else:
-        target_weights = _compute_target_weights(active, strengths, vols, alloc)
+        target_weights = _compute_target_weights(
+            active,
+            strengths,
+            vols,
+            alloc,
+            probs=probs,
+            **_sizing_params(),
+        )
         target_dollars = {t: target_weights.get(t, 0.0) * portfolio_val for t in universe}
 
     # Tickers to liquidate entirely
