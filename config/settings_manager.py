@@ -249,6 +249,38 @@ SCHEMA: dict[str, SettingSpec] = {
             "0.12 = 12%."
         ),
     ),
+    # Slack notifications on new BUY/SELL orders (T12 of the engine roadmap)
+    # Master switch OFF by default. The bot token is NEVER stored here — the
+    # engine reads it from the SLACK_BOT_TOKEN env var. Only the non-secret
+    # channel id lives in settings (or the SLACK_CHANNEL env var).
+    "slack_notifications_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "Master switch for Slack notifications. When True, run_scan sends a "
+            "per-scan summary of new orders to Slack via chat.postMessage. The "
+            "bot token comes from the SLACK_BOT_TOKEN env var (never settings)."
+        ),
+    ),
+    "slack_notify_on": SettingSpec(
+        str,
+        "both",
+        choices=("pending", "filled", "both"),
+        doc=(
+            "Which new orders trigger a Slack message: 'pending' (queued in "
+            "manual mode), 'filled' (executed in auto mode / approved), or "
+            "'both'. One summary message per scan listing the matching orders."
+        ),
+    ),
+    "slack_channel": SettingSpec(
+        str,
+        "",
+        doc=(
+            "Slack channel id/name the bot posts to (e.g. '#trading' or a "
+            "channel id). Non-secret. Overridable via the SLACK_CHANNEL env "
+            "var. Empty + no env var ⇒ notifications are skipped (fail-open)."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

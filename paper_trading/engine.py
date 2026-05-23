@@ -39,6 +39,13 @@ from paper_trading.models import (
     PaperWatchlistItem,
 )
 from analysis.portfolio_risk import annualized_portfolio_vol, returns_frame
+from integrations.slack import (
+    OrderNotice,
+    SlackNotifier,
+    default_notifier,
+    format_scan_summary,
+    select_notifiable,
+)
 from paper_trading.strategies import (
     HistoryProvider,
     TargetTrade,
@@ -381,6 +388,10 @@ class ScanResult:
     warnings: list[str] = field(default_factory=list)
     filled_orders: list[int] = field(default_factory=list)
     pending_orders: list[int] = field(default_factory=list)
+    # Session-detached snapshots of the orders created this scan, used to build
+    # the T12 Slack summary after the transaction closes. Captured at create/
+    # fill time so the message is safe to compose outside the DB session.
+    new_orders: list[OrderNotice] = field(default_factory=list)
 
     def summary(self) -> str:
         return (
@@ -400,6 +411,7 @@ def run_scan(
     prices_provider: PricesProvider | None = None,
     history_provider: HistoryProvider | None = None,
     earnings_provider: EarningsProvider | None = None,
+    slack_notifier: SlackNotifier | None = None,
 ) -> ScanResult | None:
     """Scan the market once, execute trades (or queue them), snapshot equity."""
     prices_provider = prices_provider or _default_prices_provider
@@ -410,6 +422,7 @@ def run_scan(
         acct: PaperAccount = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None or not acct.is_active:
             return None
+        account_name = acct.name
 
         watchlist = [
             w.ticker
@@ -632,6 +645,20 @@ def run_scan(
                 existing_pending.add(key)
                 result.queued += 1
                 result.pending_orders.append(order.id)
+                # T12: capture a session-detached snapshot for the Slack summary.
+                result.new_orders.append(
+                    OrderNotice(
+                        account_name=account_name,
+                        ticker=order.ticker,
+                        side=order.side,
+                        status="pending",
+                        shares=order.target_shares,
+                        price=prices.get(trade.ticker),
+                        dollars=order.target_dollars,
+                        reason=order.reason,
+                        signal_score=order.signal_score,
+                    )
+                )
                 continue
 
             # AUTO — fill now
@@ -647,6 +674,20 @@ def run_scan(
             else:
                 result.filled += 1
                 result.filled_orders.append(order.id)
+                # T12: capture a session-detached snapshot for the Slack summary.
+                result.new_orders.append(
+                    OrderNotice(
+                        account_name=account_name,
+                        ticker=order.ticker,
+                        side=order.side,
+                        status="filled",
+                        shares=order.fill_shares,
+                        price=order.fill_price,
+                        dollars=order.fill_value,
+                        reason=order.reason,
+                        signal_score=order.signal_score,
+                    )
+                )
 
         # Stamp account + monthly rebalance flag
         acct.last_scan_at = result.scan_at
@@ -669,7 +710,50 @@ def run_scan(
     # when the overlay is off or history is thin.
     portfolio_sigma = _estimate_book_sigma(positions_after, prices, history_provider)
     record_equity_snapshot(account_id, prices, portfolio_sigma=portfolio_sigma)
+
+    # ── Slack notification (T12) ─────────────────────────────────────────────
+    # Send one summary message per scan listing the new orders. Runs OUTSIDE the
+    # critical path and is fully fail-open: a missing token, a disabled switch,
+    # or a notifier that raises must never affect the scan result.
+    _maybe_notify_slack(result, account_name, slack_notifier)
     return result
+
+
+def _maybe_notify_slack(
+    result: ScanResult,
+    account_name: str,
+    slack_notifier: SlackNotifier | None,
+) -> None:
+    """
+    Build and send the per-scan Slack summary, gated by settings. Honors the
+    ``slack_notifications_enabled`` master switch and the ``slack_notify_on``
+    filter (pending / filled / both). Fail-open: any error is logged and
+    swallowed so the scan is never disrupted by a broken Slack integration.
+    """
+    try:
+        if not bool(settings.get("slack_notifications_enabled", False)):
+            return
+        notify_on = str(settings.get("slack_notify_on", "both"))
+        notices = select_notifiable(result.new_orders, notify_on)
+        if not notices:
+            return
+        text = format_scan_summary(
+            account_name,
+            notices,
+            scan_at=result.scan_at,
+            equity_after=result.equity_after,
+        )
+        if not text:
+            return
+        notifier = slack_notifier or default_notifier
+        notifier(text)
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception(
+            "Slack notify: failed for account %r (fail-open, scan unaffected).",
+            account_name,
+        )
 
 
 # ── Manual-mode approvals ─────────────────────────────────────────────────────
