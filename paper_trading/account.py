@@ -40,6 +40,7 @@ def create_account(
     slippage: float = 0.0005,
     drift_threshold: float = 0.25,
     monthly_rebalance: bool = True,
+    slack_notify: bool = True,
     description: str = "",
 ) -> PaperAccount:
     """Create and persist a paper-trading account."""
@@ -65,6 +66,7 @@ def create_account(
             slippage=float(slippage),
             drift_threshold=float(drift_threshold),
             monthly_rebalance=bool(monthly_rebalance),
+            slack_notify=bool(slack_notify),
         )
         session.add(acct)
         session.flush()
@@ -112,6 +114,7 @@ def update_account_config(account_id: int, **fields) -> PaperAccount | None:
         "slippage",
         "drift_threshold",
         "monthly_rebalance",
+        "slack_notify",
         "description",
         "is_active",
     }

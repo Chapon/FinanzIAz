@@ -86,6 +86,12 @@ class PaperAccount(Base):
     created_at = Column(DateTime, default=utcnow_naive)
     last_scan_at = Column(DateTime, nullable=True)
 
+    # Notifications (T12). Per-account opt-out for Slack: when False, run_scan
+    # skips the Slack summary for this account even if the global master switch
+    # (slack_notifications_enabled) is on. Nullable for legacy rows; the engine
+    # treats NULL as True (notify) so existing accounts keep notifying.
+    slack_notify = Column(Boolean, nullable=True, default=True)
+
     # Relationships
     watchlist = relationship("PaperWatchlistItem", back_populates="account", cascade="all, delete-orphan")
     positions = relationship("PaperPosition", back_populates="account", cascade="all, delete-orphan")

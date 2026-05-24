@@ -321,3 +321,70 @@ def test_scan_fail_open_when_notifier_raises(test_db, monkeypatch, caplog):
     assert result.queued == 1  # scan completed normally
     assert len(notifier.calls) == 1  # it was called and blew up
     assert any("Slack notify" in rec.message for rec in caplog.records)
+
+
+# ── Per-account opt-out (slack_notify flag, T12) ────────────────────────────────
+
+
+def test_account_optout_suppresses_notification(test_db, monkeypatch):
+    """Account with slack_notify=False → no message even when the global switch is on."""
+    from paper_trading import engine
+
+    a = create_account(
+        name="Silenciada",
+        initial_capital=10_000.0,
+        mode="manual",
+        slack_notify=False,
+    )
+    _relax_other_gates()
+    settings.set("slack_notifications_enabled", True)
+    settings.set("slack_notify_on", "both")
+
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("AAPL"))
+    notifier = _RecordingNotifier()
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"AAPL": 100.0},
+        history_provider=lambda _t: None,
+        slack_notifier=notifier,
+    )
+
+    assert result is not None
+    assert result.queued == 1  # order still created
+    assert notifier.calls == []  # but no Slack message for this account
+
+
+def test_account_optin_still_notifies(test_db, monkeypatch):
+    """Account with slack_notify=True (default) notifies normally."""
+    from paper_trading import engine
+
+    a = create_account(
+        name="Ruidosa",
+        initial_capital=10_000.0,
+        mode="manual",
+        slack_notify=True,
+    )
+    _relax_other_gates()
+    settings.set("slack_notifications_enabled", True)
+    settings.set("slack_notify_on", "both")
+
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("AAPL"))
+    notifier = _RecordingNotifier()
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"AAPL": 100.0},
+        history_provider=lambda _t: None,
+        slack_notifier=notifier,
+    )
+
+    assert result is not None
+    assert len(notifier.calls) == 1
+    assert "Ruidosa" in notifier.calls[0]

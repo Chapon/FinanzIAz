@@ -157,6 +157,15 @@ class PaperAccountDialog(QDialog):
         self.active_check.setChecked(True)
         form.addRow("", self.active_check)
 
+        self.slack_check = QCheckBox("Notificar órdenes a Slack")
+        self.slack_check.setChecked(True)
+        self.slack_check.setToolTip(
+            "Si está activo, esta cuenta envía un resumen a Slack cuando genera "
+            "órdenes (requiere el interruptor general en Ajustes → Notificaciones "
+            "Slack). Desactivá esto para silenciar solo esta cuenta."
+        )
+        form.addRow("", self.slack_check)
+
         root.addLayout(form)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -214,6 +223,8 @@ class PaperAccountDialog(QDialog):
         self.drift_spin.setValue(float(acct.drift_threshold))
         self.monthly_check.setChecked(bool(acct.monthly_rebalance))
         self.active_check.setChecked(bool(acct.is_active))
+        # NULL (legacy) → notify ON, coherente con el comportamiento previo.
+        self.slack_check.setChecked(acct.slack_notify is None or bool(acct.slack_notify))
         self._sync_alloc_visibility()
 
     # ── Submit ───────────────────────────────────────────────────────────────
@@ -242,6 +253,7 @@ class PaperAccountDialog(QDialog):
                     slippage=self.slippage_spin.value(),
                     drift_threshold=self.drift_spin.value(),
                     monthly_rebalance=self.monthly_check.isChecked(),
+                    slack_notify=self.slack_check.isChecked(),
                 )
             else:
                 update_account_config(
@@ -257,6 +269,7 @@ class PaperAccountDialog(QDialog):
                     drift_threshold=self.drift_spin.value(),
                     monthly_rebalance=self.monthly_check.isChecked(),
                     is_active=self.active_check.isChecked(),
+                    slack_notify=self.slack_check.isChecked(),
                 )
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))

@@ -423,6 +423,8 @@ def run_scan(
         if acct is None or not acct.is_active:
             return None
         account_name = acct.name
+        # Per-account Slack opt-out (T12). NULL (legacy) → True (notify).
+        account_slack_notify = bool(acct.slack_notify) if acct.slack_notify is not None else True
 
         watchlist = [
             w.ticker
@@ -715,23 +717,27 @@ def run_scan(
     # Send one summary message per scan listing the new orders. Runs OUTSIDE the
     # critical path and is fully fail-open: a missing token, a disabled switch,
     # or a notifier that raises must never affect the scan result.
-    _maybe_notify_slack(result, account_name, slack_notifier)
+    _maybe_notify_slack(result, account_name, account_slack_notify, slack_notifier)
     return result
 
 
 def _maybe_notify_slack(
     result: ScanResult,
     account_name: str,
+    account_slack_notify: bool,
     slack_notifier: SlackNotifier | None,
 ) -> None:
     """
     Build and send the per-scan Slack summary, gated by settings. Honors the
-    ``slack_notifications_enabled`` master switch and the ``slack_notify_on``
-    filter (pending / filled / both). Fail-open: any error is logged and
-    swallowed so the scan is never disrupted by a broken Slack integration.
+    ``slack_notifications_enabled`` master switch (global), the per-account
+    ``slack_notify`` opt-out, and the ``slack_notify_on`` filter (pending /
+    filled / both). Fail-open: any error is logged and swallowed so the scan
+    is never disrupted by a broken Slack integration.
     """
     try:
         if not bool(settings.get("slack_notifications_enabled", False)):
+            return
+        if not account_slack_notify:
             return
         notify_on = str(settings.get("slack_notify_on", "both"))
         notices = select_notifiable(result.new_orders, notify_on)

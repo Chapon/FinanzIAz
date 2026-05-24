@@ -356,6 +356,13 @@ def _migrate():
     if snap_cols and "portfolio_sigma" not in snap_cols:
         cur.execute("ALTER TABLE paper_equity_snapshots ADD COLUMN portfolio_sigma REAL")
         conn.commit()
+    # paper_accounts.slack_notify — new in T12 (per-account Slack opt-out).
+    # DEFAULT 1 so existing accounts keep notifying (global default is ON).
+    cur.execute("PRAGMA table_info(paper_accounts)")
+    acct_cols = [row[1] for row in cur.fetchall()]
+    if acct_cols and "slack_notify" not in acct_cols:
+        cur.execute("ALTER TABLE paper_accounts ADD COLUMN slack_notify BOOLEAN DEFAULT 1")
+        conn.commit()
     conn.close()
 
 

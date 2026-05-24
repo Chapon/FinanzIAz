@@ -158,6 +158,7 @@ class SettingsTab(QWidget):
         root.addWidget(self._guardrails_section())
         root.addWidget(self._analysis_section())
         root.addWidget(self._commission_section())
+        root.addWidget(self._notifications_section())
 
         root.addStretch()
 
@@ -537,6 +538,73 @@ class SettingsTab(QWidget):
         plan_row.value_changed.connect(self._on_choice_change)
         self._choice_rows["ibkr_commission_plan"] = plan_row
         layout.addWidget(plan_row)
+
+        return card
+
+    def _notifications_section(self) -> QFrame:
+        """
+        Notificaciones a Slack (T12). Master switch global + selector de qué
+        órdenes notificar. El canal y el bot token se configuran aparte
+        (env var SLACK_BOT_TOKEN + scripts/setup_slack.py) por seguridad —
+        el token NUNCA se guarda acá. El opt-out por cuenta vive en el
+        diálogo de cada cuenta.
+        """
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(0)
+
+        lbl = QLabel("NOTIFICACIONES SLACK")
+        lbl.setStyleSheet(
+            f"color: {PALETTE['text3']}; font-size: 10px; font-weight: 700; "
+            f"letter-spacing: 1px; margin-bottom: 10px;"
+        )
+        layout.addWidget(lbl)
+
+        # 1) Master switch (bool)
+        enabled_row = SettingsRow(
+            "slack_notifications_enabled",
+            "Notificar órdenes a Slack",
+            settings.get("slack_notifications_enabled"),
+            tooltip="Interruptor general. Al activarlo, cada escaneo que genere "
+            "órdenes envía un resumen al canal de Slack configurado. "
+            "Requiere SLACK_BOT_TOKEN en el entorno y un canal "
+            "(corré scripts/setup_slack.py la primera vez).",
+        )
+        enabled_row.toggled.connect(self._on_toggle)
+        self._rows["slack_notifications_enabled"] = enabled_row
+        layout.addWidget(enabled_row)
+        layout.addWidget(HSeparator())
+
+        # 2) Qué órdenes notificar (choice)
+        notify_on_row = ChoiceSettingsRow(
+            "slack_notify_on",
+            "Qué órdenes notificar",
+            settings.get("slack_notify_on"),
+            choices=[
+                ("both", "Pendientes y ejecutadas"),
+                ("pending", "Solo pendientes (para aprobar)"),
+                ("filled", "Solo ejecutadas (filled)"),
+            ],
+            tooltip="Filtra qué órdenes disparan el aviso. En modo manual las "
+            "órdenes quedan 'pendientes' (para aprobar); en modo auto se "
+            "ejecutan ('filled'). 'Ambas' es el default.",
+        )
+        notify_on_row.value_changed.connect(self._on_choice_change)
+        self._choice_rows["slack_notify_on"] = notify_on_row
+        layout.addWidget(notify_on_row)
+
+        hint = QLabel(
+            "El canal y el token se configuran con scripts/setup_slack.py "
+            "(el token se lee de la variable de entorno SLACK_BOT_TOKEN, nunca "
+            "se guarda en disco). Para apagar una cuenta puntual, usá el check "
+            "'Notificar órdenes a Slack' en el diálogo de esa cuenta."
+        )
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px; margin-top: 8px;")
+        layout.addWidget(hint)
 
         return card
 
