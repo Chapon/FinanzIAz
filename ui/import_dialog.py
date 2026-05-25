@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 
 from data.csv_importer import ImportResult, ImportRow, parse_csv_file
 from data.yahoo_finance import get_company_info
-from database.models import Position, Transaction, session_scope
+from database.models import Position, Transaction, session_scope, utcnow_naive
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
 from ui.workers import BaseWorker
 
@@ -424,7 +424,7 @@ class ImportDialog(QDialog):
                 ) / total_qty
                 existing.quantity = total_qty
                 existing.avg_buy_price = avg
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = utcnow_naive()
                 pos = existing
                 merged += 1
             else:
@@ -437,7 +437,7 @@ class ImportDialog(QDialog):
                     avg_buy_price=item["price"],
                     sector=item["sector"],
                     notes=note,
-                    purchase_date=datetime.utcnow(),
+                    purchase_date=utcnow_naive(),
                 )
                 session.add(pos)
                 imported += 1

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from config.errors import ValidationError
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.models import (
     ALLOC_MODES,
     MODES,
@@ -295,7 +295,7 @@ def record_equity_snapshot(
     with session_scope() as session:
         snap = PaperEquitySnapshot(
             account_id=account_id,
-            snapshot_at=datetime.utcnow(),
+            snapshot_at=utcnow_naive(),
             cash=eq["cash"],
             positions_value=eq["positions_value"],
             total_equity=eq["total_equity"],

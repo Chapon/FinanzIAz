@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 from alerts.alert_manager import AlertManager
 from config.settings_manager import settings
 from data.yahoo_finance import get_company_info, validate_ticker
-from database.models import Portfolio, Position, Transaction, session_scope
+from database.models import Portfolio, Position, Transaction, session_scope, utcnow_naive
 from ui.validators import TickerValidator, is_valid_ticker
 
 
@@ -286,7 +286,7 @@ class AddPositionDialog(QDialog):
                 avg = ((existing.avg_buy_price * existing.quantity) + (price * qty)) / total_qty
                 existing.quantity = total_qty
                 existing.avg_buy_price = avg
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = utcnow_naive()
                 # Keep earliest date for dividend calculation
                 if existing.purchase_date is None or purchase_dt < existing.purchase_date:
                     existing.purchase_date = purchase_dt
@@ -487,7 +487,7 @@ class SellPositionDialog(QDialog):
                 session.delete(pos)
             else:
                 pos.quantity -= qty
-                pos.updated_at = datetime.utcnow()
+                pos.updated_at = utcnow_naive()
         self.accept()
 
 
@@ -630,7 +630,7 @@ class EditTickerDialog(QDialog):
                     QMessageBox.warning(self, "Error", "No se encontró la posición en la base.")
                     return
                 pos.ticker = new_ticker
-                pos.updated_at = datetime.utcnow()
+                pos.updated_at = utcnow_naive()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo actualizar la posición:\n{e}")
             return

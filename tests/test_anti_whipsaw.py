@@ -12,14 +12,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from config.settings_manager import settings
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
 from paper_trading.engine import _last_closed_cycle_pnl_pct
 from paper_trading.models import PaperOrder
 
 
 def _add_order(session, account_id, ticker, side, fill_price, fill_shares, hours_ago):
-    when = datetime.utcnow() - timedelta(hours=hours_ago)
+    when = utcnow_naive() - timedelta(hours=hours_ago)
     session.add(
         PaperOrder(
             account_id=account_id,

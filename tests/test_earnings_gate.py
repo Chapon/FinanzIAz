@@ -22,7 +22,7 @@ import pandas as pd
 
 from config.settings_manager import settings
 from data.yahoo_finance import _parse_next_earnings
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
 from paper_trading.engine import _earnings_blackout_hit
 from paper_trading.models import PaperWatchlistItem
@@ -154,7 +154,7 @@ def test_gate_blocks_buy_with_imminent_earnings(test_db, monkeypatch):
         a.id,
         prices_provider=lambda _t: {"AAPL": 100.0},
         history_provider=lambda _t: None,
-        earnings_provider=lambda _t: datetime.utcnow() + timedelta(days=1),
+        earnings_provider=lambda _t: utcnow_naive() + timedelta(days=1),
     )
 
     assert result is not None
@@ -181,7 +181,7 @@ def test_gate_allows_buy_with_distant_earnings(test_db, monkeypatch):
         a.id,
         prices_provider=lambda _t: {"MSFT": 100.0},
         history_provider=lambda _t: None,
-        earnings_provider=lambda _t: datetime.utcnow() + timedelta(days=10),
+        earnings_provider=lambda _t: utcnow_naive() + timedelta(days=10),
     )
 
     assert result is not None
@@ -278,7 +278,7 @@ def test_atr_forced_sell_bypasses_earnings_gate(test_db, monkeypatch):
         a.id,
         prices_provider=lambda _t: {"TSLA": 90.0},
         history_provider=lambda _t: None,
-        earnings_provider=lambda _t: datetime.utcnow() + timedelta(days=1),
+        earnings_provider=lambda _t: utcnow_naive() + timedelta(days=1),
     )
 
     assert result is not None
@@ -316,7 +316,7 @@ def test_gate_blocks_strategy_sell_during_blackout(test_db, monkeypatch):
         a.id,
         prices_provider=lambda _t: {"GOOG": 100.0},
         history_provider=lambda _t: None,
-        earnings_provider=lambda _t: datetime.utcnow() + timedelta(days=1),
+        earnings_provider=lambda _t: utcnow_naive() + timedelta(days=1),
     )
 
     assert result is not None

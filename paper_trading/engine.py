@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from config.settings_manager import settings
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.account import record_equity_snapshot
 from paper_trading.models import (
     PaperAccount,
@@ -150,7 +150,7 @@ def _last_closed_cycle_pnl_pct(
     if within_days <= 0:
         return None
 
-    cutoff = datetime.utcnow() - timedelta(days=within_days)
+    cutoff = utcnow_naive() - timedelta(days=within_days)
 
     last_sell = (
         session.query(PaperOrder)
@@ -472,7 +472,7 @@ def run_scan(
 
         result = ScanResult(
             account_id=account_id,
-            scan_at=datetime.utcnow(),
+            scan_at=utcnow_naive(),
             mode=acct.mode,
             strategy=acct.strategy,
             prices=prices,
@@ -787,7 +787,7 @@ def approve_order(
         if px is None or not np.isfinite(px) or px <= 0:
             order.status = "expired"
             order.notes = (order.notes or "") + "\n[approve] sin precio, expirada."
-            order.decided_at = datetime.utcnow()
+            order.decided_at = utcnow_naive()
             session.flush()
             session.refresh(order)
             session.expunge(order)
@@ -804,7 +804,7 @@ def approve_order(
         )
 
         order.status = "approved"
-        order.decided_at = datetime.utcnow()
+        order.decided_at = utcnow_naive()
 
         filled = _fill_trade(session, acct, trade, price=px, reuse_order=order)
 
@@ -835,7 +835,7 @@ def reject_order(order_id: int, note: str = "") -> PaperOrder | None:
         if order is None or order.status != "pending":
             return None
         order.status = "rejected"
-        order.decided_at = datetime.utcnow()
+        order.decided_at = utcnow_naive()
         if note:
             order.notes = (order.notes or "") + f"\n[reject] {note}"
         session.flush()
@@ -980,7 +980,7 @@ def _fill_trade(
                 ticker=trade.ticker,
                 shares=shares_got,
                 avg_cost=fill_price,
-                opened_at=datetime.utcnow(),
+                opened_at=utcnow_naive(),
                 entry_reason=trade.reason,
                 high_water_mark=float(fill_price),
             )
@@ -989,7 +989,7 @@ def _fill_trade(
             new_total_cost = pos.shares * pos.avg_cost + shares_got * fill_price
             pos.shares += shares_got
             pos.avg_cost = new_total_cost / pos.shares
-            pos.updated_at = datetime.utcnow()
+            pos.updated_at = utcnow_naive()
             # Advance HWM on add-ons too, so a later trailing-stop check
             # doesn't ignore a higher post-add fill price.
             if pos.high_water_mark is None or float(fill_price) > float(pos.high_water_mark):
@@ -1044,7 +1044,7 @@ def _fill_trade(
         commission_paid = commission_m.cost(side="SELL", shares=sell_shares, price=fill_price)
         proceeds = gross - commission_paid
         pos.shares -= sell_shares
-        pos.updated_at = datetime.utcnow()
+        pos.updated_at = utcnow_naive()
         acct.cash += proceeds
 
         # If fully closed, drop the row.
@@ -1078,7 +1078,7 @@ def _stamp_order_filled(
     slippage_cost: float,
 ) -> PaperOrder:
     """Create or update a PaperOrder as 'filled' and return it."""
-    now = datetime.utcnow()
+    now = utcnow_naive()
     if reuse_order is None:
         order = PaperOrder(
             account_id=acct.id,
@@ -1133,7 +1133,7 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
     """
     from database.models import session_scope
 
-    cutoff = datetime.utcnow() - timedelta(hours=max(0, int(expire_pending_after_hours)))
+    cutoff = utcnow_naive() - timedelta(hours=max(0, int(expire_pending_after_hours)))
     expired = 0
     try:
         with session_scope() as session:
@@ -1146,7 +1146,7 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
             )
             for o in stale:
                 o.status = "expired"
-                o.decided_at = datetime.utcnow()
+                o.decided_at = utcnow_naive()
                 o.notes = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()
                 expired += 1
         if expired:

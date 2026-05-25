@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from data.yahoo_finance import get_current_price
-from database.models import Alert, session_scope
+from database.models import Alert, session_scope, utcnow_naive
 
 
 class AlertManager:
@@ -42,7 +42,7 @@ class AlertManager:
                     continue
                 if self._is_triggered(alert, price):
                     alert.is_active = False
-                    alert.triggered_at = datetime.utcnow()
+                    alert.triggered_at = utcnow_naive()
                     triggered.append(alert)
                     if self.on_triggered:
                         self.on_triggered(alert, price)

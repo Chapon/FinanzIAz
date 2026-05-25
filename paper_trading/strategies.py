@@ -44,6 +44,7 @@ from analysis.portfolio_risk import (
 )
 from config.logging_config import get_logger
 from config.settings_manager import settings
+from database.models import utcnow_naive
 from paper_trading.models import PaperAccount, PaperPosition
 
 # Allocation modes whose sizing depends on per-name volatility (and, for
@@ -554,7 +555,7 @@ def generate_trades_portfolio_engine(
     # Monthly: first scan of a new month.
     month_trigger = False
     if account.monthly_rebalance:
-        now = datetime.utcnow()
+        now = utcnow_naive()
         last = account.last_monthly_rebalance
         if last is None or (last.year, last.month) != (now.year, now.month):
             month_trigger = True

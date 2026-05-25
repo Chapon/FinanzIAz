@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from config.settings_manager import settings
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
 from paper_trading.engine import (
     _compute_atr_forced_exits,
@@ -359,7 +359,7 @@ def test_run_scan_fires_stop_and_bypasses_min_holding(test_db, monkeypatch):
                 ticker="AAPL",
                 shares=10.0,
                 avg_cost=100.0,
-                opened_at=datetime.utcnow() - timedelta(minutes=5),
+                opened_at=utcnow_naive() - timedelta(minutes=5),
                 high_water_mark=100.0,
             )
         )
@@ -417,7 +417,7 @@ def test_run_scan_atr_exit_overrides_strategy_sell(test_db, monkeypatch):
                 ticker="AAPL",
                 shares=10.0,
                 avg_cost=100.0,
-                opened_at=datetime.utcnow() - timedelta(days=2),
+                opened_at=utcnow_naive() - timedelta(days=2),
                 high_water_mark=100.0,
             )
         )
@@ -477,7 +477,7 @@ def test_run_scan_disabled_no_exit(test_db, monkeypatch):
                 ticker="AAPL",
                 shares=10.0,
                 avg_cost=100.0,
-                opened_at=datetime.utcnow() - timedelta(days=2),
+                opened_at=utcnow_naive() - timedelta(days=2),
                 high_water_mark=100.0,
             )
         )

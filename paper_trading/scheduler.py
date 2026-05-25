@@ -46,6 +46,7 @@ from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 
 from config.logging_config import get_logger
 from config.settings_manager import settings
+from database.models import utcnow_naive
 
 log = get_logger(__name__)
 
@@ -65,7 +66,7 @@ def _now_et() -> datetime:
             tz = pytz.timezone("America/New_York")
         return datetime.now(tz)
     except Exception:
-        return datetime.utcnow()
+        return utcnow_naive()
 
 
 def _parse_hhmm(raw: str, default: tuple[int, int] = (16, 5)) -> tuple[int, int]:
@@ -287,7 +288,7 @@ class PaperScheduler(QObject):
         try:
             aid = int(getattr(result, "account_id", 0)) or 0
             if aid:
-                self._last_scan_at[aid] = datetime.utcnow()
+                self._last_scan_at[aid] = utcnow_naive()
         except Exception:
             pass
         self.scan_completed.emit(result)
@@ -305,7 +306,7 @@ class PaperScheduler(QObject):
         active workers, last-scan timestamps, and stale accounts (no scan
         in over 2× the configured interval).
         """
-        now = datetime.utcnow()
+        now = utcnow_naive()
         interval_min = max(1, int(settings.get("paper_scan_interval_minutes", 15)))
         stale_threshold = 2 * interval_min * 60  # seconds
 

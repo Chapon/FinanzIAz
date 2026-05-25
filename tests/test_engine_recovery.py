@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from database.models import session_scope
+from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
 from paper_trading.engine import reconcile_account
 from paper_trading.models import PaperOrder
@@ -22,8 +22,8 @@ def _make_account():
 
 def test_reconcile_expires_old_pending_orders(test_db):
     a = _make_account()
-    cutoff_ago = datetime.utcnow() - timedelta(hours=48)
-    fresh_ago = datetime.utcnow() - timedelta(hours=1)
+    cutoff_ago = utcnow_naive() - timedelta(hours=48)
+    fresh_ago = utcnow_naive() - timedelta(hours=1)
 
     with session_scope() as session:
         session.add(
