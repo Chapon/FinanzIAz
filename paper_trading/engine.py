@@ -507,6 +507,9 @@ def run_scan(
         whipsaw_days = max(0, int(settings.get("paper_whipsaw_lookback_days", 7)))
         whipsaw_min_loss = max(0.0, float(settings.get("paper_whipsaw_min_loss_pct", 0.0)))
         earnings_blackout_days = max(0, int(settings.get("earnings_blackout_days", 2)))
+        # T08 (Sprint 0): SELLs señaladas por estrategia pasan por default durante
+        # el blackout — el setting permite restaurar el comportamiento legacy.
+        earnings_block_sells = bool(settings.get("earnings_blackout_block_sells", False))
 
         # Memoize earnings lookups within this scan so we hit the provider at
         # most once per ticker. Fail-open: a provider that raises is treated as
@@ -613,21 +616,28 @@ def run_scan(
                     )
                     continue
 
-            # Gate 6 — earnings blackout. Block BUY *and* SELL when the ticker
-            # has scheduled earnings within ±earnings_blackout_days. Post- and
-            # pre-earnings gaps are a large class of whipsaws the other gates
-            # don't see. ATR-forced stop-loss/TP/trail SELLs (T01) bypass this
-            # gate — a real stop must always be able to fire. Fail-open: an
-            # unknown / failed earnings lookup returns None and does not block.
+            # Gate 6 — earnings blackout. Block BUY (and SELL only when
+            # earnings_blackout_block_sells=True, legacy behavior) when the
+            # ticker has scheduled earnings within ±earnings_blackout_days.
+            # Rationale for the T08 default flip: a strategy-signaled SELL
+            # arriving right before earnings is precisely the case where you
+            # want to exit, not stay trapped — keeping the position open
+            # creates more whipsaws than the gate prevents. BUYs are still
+            # blocked (pre-earnings BUY is the classic mousetrap). ATR-forced
+            # stop-loss/TP/trail SELLs (T01) bypass this gate regardless — a
+            # real stop must always be able to fire. Fail-open: an unknown /
+            # failed earnings lookup returns None and does not block.
             if earnings_blackout_days > 0 and not _is_atr_forced_exit(trade.reason):
-                edt = _earnings_date_for(trade.ticker)
-                if edt is not None and _earnings_blackout_hit(edt, result.scan_at, earnings_blackout_days):
-                    result.skipped += 1
-                    result.warnings.append(
-                        f"{trade.ticker} {trade.side} bloqueado: earnings el "
-                        f"{edt:%Y-%m-%d} dentro de ±{earnings_blackout_days}d (blackout)."
-                    )
-                    continue
+                should_check = trade.side == "BUY" or earnings_block_sells
+                if should_check:
+                    edt = _earnings_date_for(trade.ticker)
+                    if edt is not None and _earnings_blackout_hit(edt, result.scan_at, earnings_blackout_days):
+                        result.skipped += 1
+                        result.warnings.append(
+                            f"{trade.ticker} {trade.side} bloqueado: earnings el "
+                            f"{edt:%Y-%m-%d} dentro de ±{earnings_blackout_days}d (blackout)."
+                        )
+                        continue
 
             if acct.mode == "manual":
                 key = (trade.ticker, trade.side)

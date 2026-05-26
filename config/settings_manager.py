@@ -100,7 +100,15 @@ SCHEMA: dict[str, SettingSpec] = {
         int, 30, min=0, max=10_080, doc="Cannot BUY a ticker we filled-SELL on within last N min"
     ),
     "paper_min_trade_dollars": SettingSpec(
-        (int, float), 50.0, min=0.0, doc="Skip BUYs whose target_dollars is below this"
+        (int, float),
+        250.0,
+        min=0.0,
+        doc=(
+            "Skip BUYs whose target_dollars is below this. Default raised from "
+            "$50 to $250 (Sprint 0 / T11) because IBKR Pro's per-order minimum "
+            "(~$1) plus slippage already pushes round-trip cost to ~1% at $250 "
+            "of notional — below that, fees dominate any plausible edge."
+        ),
     ),
     "paper_whipsaw_lookback_days": SettingSpec(
         int,
@@ -213,11 +221,25 @@ SCHEMA: dict[str, SettingSpec] = {
         min=0,
         max=30,
         doc=(
-            "Gate 6: block BUY and SELL when the ticker has scheduled earnings "
-            "within ±N calendar days of the scan. ATR-forced stop-loss SELLs "
-            "(T01) bypass this. 0 = disable the gate. Earnings dates come from "
-            "yfinance.Ticker.calendar (24h cache); unknown/failed lookups "
-            "fail-open (no block)."
+            "Gate 6: block BUY (and optionally SELL — see "
+            "earnings_blackout_block_sells) when the ticker has scheduled "
+            "earnings within ±N calendar days of the scan. ATR-forced stop-loss "
+            "SELLs (T01) bypass this regardless. 0 = disable the gate. Earnings "
+            "dates come from yfinance.Ticker.calendar (24h cache); "
+            "unknown/failed lookups fail-open (no block)."
+        ),
+    ),
+    "earnings_blackout_block_sells": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "When True, Gate 6 also blocks strategy-signaled SELLs during the "
+            "earnings window (legacy pre-T08-fix behavior). Default False "
+            "(Sprint 0 / T08): a SELL signal arriving right before earnings is "
+            "exactly when you want to exit — keeping the position trapped "
+            "creates more whipsaws than it prevents. BUYs are still blocked, "
+            "and ATR-forced exits always bypass the gate regardless of this "
+            "setting."
         ),
     ),
     # Correlation gate (T09 of the engine roadmap)

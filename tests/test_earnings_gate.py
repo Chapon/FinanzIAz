@@ -287,16 +287,84 @@ def test_atr_forced_sell_bypasses_earnings_gate(test_db, monkeypatch):
     assert not any("blackout" in w for w in result.warnings)
 
 
-def test_gate_blocks_strategy_sell_during_blackout(test_db, monkeypatch):
-    """A *non-ATR* SELL is blocked during the earnings window."""
+def test_gate_blocks_strategy_sell_during_blackout_when_legacy_flag_on(test_db, monkeypatch):
+    """Legacy behavior: with ``earnings_blackout_block_sells=True``, a non-ATR
+    SELL is blocked during the earnings window.
+
+    Pre-Sprint-0 this was the default. After T08 it must be opted into.
+    """
     from paper_trading import engine
 
     a = create_account(name="E", initial_capital=10_000.0, mode="manual")
     _relax_other_gates()
     settings.set("earnings_blackout_days", 2)
+    settings.set("earnings_blackout_block_sells", True)  # legacy mode
+    try:
+        with session_scope() as s:
+            s.add(PaperWatchlistItem(account_id=a.id, ticker="GOOG"))
+
+        def sell_strategy(account, watchlist, positions, prices, history_provider):
+            return [
+                TargetTrade(
+                    ticker="GOOG",
+                    side="SELL",
+                    target_shares=5.0,
+                    target_dollars=None,
+                    reason="analyze SELL (0.40)",
+                    source="analyze_single",
+                )
+            ]
+
+        monkeypatch.setattr(engine, "get_strategy_fn", lambda _: sell_strategy)
+
+        result = engine.run_scan(
+            a.id,
+            prices_provider=lambda _t: {"GOOG": 100.0},
+            history_provider=lambda _t: None,
+            earnings_provider=lambda _t: utcnow_naive() + timedelta(days=1),
+        )
+
+        assert result is not None
+        assert result.queued == 0
+        assert result.skipped >= 1
+        assert any("blackout" in w for w in result.warnings)
+    finally:
+        # Reset to default so the singleton doesn't leak into later tests.
+        settings.set("earnings_blackout_block_sells", False)
+
+
+def test_gate_allows_strategy_sell_during_blackout_by_default(test_db, monkeypatch):
+    """T08 new default: a strategy-signaled SELL passes through the earnings
+    blackout window. Rationale: an analyze() SELL right before earnings is the
+    case where you most want to exit — keeping the position trapped creates
+    more whipsaws than the gate prevents.
+
+    Mirrors the legacy test above but asserts the inverse outcome with the
+    default-False setting.
+    """
+    from paper_trading import engine
+
+    a = create_account(name="E", initial_capital=10_000.0, mode="manual")
+    _relax_other_gates()
+    settings.set("earnings_blackout_days", 2)
+    # New default. Set explicitly so the test is robust to other tests in the
+    # session that may have flipped the singleton.
+    settings.set("earnings_blackout_block_sells", False)
+
+    # Open a position so the SELL has something to close.
+    from paper_trading.models import PaperPosition
 
     with session_scope() as s:
         s.add(PaperWatchlistItem(account_id=a.id, ticker="GOOG"))
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="GOOG",
+                shares=5.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(days=10),
+            )
+        )
 
     def sell_strategy(account, watchlist, positions, prices, history_provider):
         return [
@@ -320,6 +388,34 @@ def test_gate_blocks_strategy_sell_during_blackout(test_db, monkeypatch):
     )
 
     assert result is not None
-    assert result.queued == 0
+    # SELL pasa el gate → queda encolada (modo manual), sin warning de blackout.
+    assert result.queued == 1
+    assert not any("blackout" in w for w in result.warnings)
+
+
+def test_gate_still_blocks_buy_during_blackout_with_new_default(test_db, monkeypatch):
+    """Sanity check: the T08 default flip only affects SELLs. BUYs continue to
+    be blocked by the earnings gate (that's the whole point of the gate)."""
+    from paper_trading import engine
+
+    a = create_account(name="E", initial_capital=10_000.0, mode="manual")
+    _relax_other_gates()
+    settings.set("earnings_blackout_days", 2)
+    settings.set("earnings_blackout_block_sells", False)  # new default
+
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="META"))
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("META"))
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"META": 100.0},
+        history_provider=lambda _t: None,
+        earnings_provider=lambda _t: utcnow_naive() + timedelta(days=1),
+    )
+
+    assert result is not None
+    assert result.queued == 0  # BUY blocked
     assert result.skipped >= 1
     assert any("blackout" in w for w in result.warnings)
