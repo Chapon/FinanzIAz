@@ -490,7 +490,7 @@ class PortfolioTab(QWidget):
             # Daily change
             chg_item = cell(f"{change_pct:+.2f}%" if change_pct is not None else "—", right=True)
             if change_pct is not None:
-                chg_item.setForeground(QColor(PALETTE["accent"] if change_pct >= 0 else PALETTE["red"]))
+                chg_item.setForeground(QColor(PALETTE["positive"] if change_pct >= 0 else PALETTE["red"]))
             self.table.setItem(row, 5, chg_item)
 
             self.table.setItem(row, 6, cell(f"${invested:,.2f}", right=True))
@@ -499,25 +499,25 @@ class PortfolioTab(QWidget):
             # P&L Precio
             pl_p_item = cell(f"${pl_price:,.2f}" if pl_price is not None else "—", right=True, bold=True)
             if pl_price is not None:
-                pl_p_item.setForeground(QColor(PALETTE["accent"] if pl_price >= 0 else PALETTE["red"]))
+                pl_p_item.setForeground(QColor(PALETTE["positive"] if pl_price >= 0 else PALETTE["red"]))
             self.table.setItem(row, 8, pl_p_item)
 
             # Dividendos cobrados
             div_item = cell(f"${div_total:,.2f}" if div_total else "—", right=True)
             if div_total:
-                div_item.setForeground(QColor(PALETTE["blue"]))
+                div_item.setForeground(QColor(PALETTE["positive"]))
             self.table.setItem(row, 9, div_item)
 
             # P&L Total (precio + dividendos)
             pl_t_item = cell(f"${pl_total:,.2f}" if pl_total is not None else "—", right=True, bold=True)
             if pl_total is not None:
-                pl_t_item.setForeground(QColor(PALETTE["accent"] if pl_total >= 0 else PALETTE["red"]))
+                pl_t_item.setForeground(QColor(PALETTE["positive"] if pl_total >= 0 else PALETTE["red"]))
             self.table.setItem(row, 10, pl_t_item)
 
             # P&L % (solo precio)
             pct_item = cell(f"{pl_pct:+.2f}%" if pl_pct is not None else "—", right=True)
             if pl_pct is not None:
-                pct_item.setForeground(QColor(PALETTE["accent"] if pl_pct >= 0 else PALETTE["red"]))
+                pct_item.setForeground(QColor(PALETTE["positive"] if pl_pct >= 0 else PALETTE["red"]))
             self.table.setItem(row, 11, pct_item)
 
             # Rendimiento total c/dividendos
@@ -525,7 +525,7 @@ class PortfolioTab(QWidget):
                 f"{pl_pct_div:+.2f}%" if pl_pct_div is not None else "—", right=True, bold=True
             )
             if pl_pct_div is not None:
-                pct_div_item.setForeground(QColor(PALETTE["accent"] if pl_pct_div >= 0 else PALETTE["red"]))
+                pct_div_item.setForeground(QColor(PALETTE["positive"] if pl_pct_div >= 0 else PALETTE["red"]))
             self.table.setItem(row, 12, pct_div_item)
 
             # Señal técnica — colored badge cell
@@ -578,18 +578,18 @@ class PortfolioTab(QWidget):
         self.card_invested.set_value(f"${total_invested:,.2f}")
         self.card_pl.set_value(
             f"{'+' if pl_price >= 0 else ''}${pl_price:,.2f}",
-            color=PALETTE["accent"] if pl_price >= 0 else PALETTE["red"],
+            color=PALETTE["positive"] if pl_price >= 0 else PALETTE["red"],
         )
         self.card_divs.set_value(
             f"+${total_divs:,.2f}" if total_divs > 0 else "—",
-            color=PALETTE["blue"] if total_divs > 0 else PALETTE["text3"],
+            color=PALETTE["positive"] if total_divs > 0 else PALETTE["text3"],
         )
         self.card_pl_total.set_value(
             f"{'+' if pl_total >= 0 else ''}${pl_total:,.2f}",
-            color=PALETTE["accent"] if pl_total >= 0 else PALETTE["red"],
+            color=PALETTE["positive"] if pl_total >= 0 else PALETTE["red"],
         )
         self.card_pl_pct.set_value(
-            f"{pl_pct_div:+.2f}%", color=PALETTE["accent"] if pl_pct_div >= 0 else PALETTE["red"]
+            f"{pl_pct_div:+.2f}%", color=PALETTE["positive"] if pl_pct_div >= 0 else PALETTE["red"]
         )
         self.card_positions.set_value(str(len(self._positions)))
 

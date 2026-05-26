@@ -106,7 +106,7 @@ class TopBar(QWidget):
 
     def _refresh_market_label(self):
         open_, label = is_market_open()
-        dot_color = PALETTE["accent"] if open_ else PALETTE["red"]
+        dot_color = PALETTE["positive"] if open_ else PALETTE["red"]
         self.market_label.setText(f"●  {label}")
         self.market_label.setStyleSheet(f"color: {dot_color}; font-size: 12px; font-weight: 600;")
 

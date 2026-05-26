@@ -1,12 +1,19 @@
 """
-Home dashboard tab — IQON-inspired layout.
-Shows portfolio summary, metric cards, feature shortcuts.
+Home dashboard tab — Fuse-style analytics layout.
+
+Top hero equity area-chart, a row of KPI tiles, then a bottom row with the
+welcome/health card, a portfolio-allocation donut, and quick settings.
+All metrics come from the active paper-trading account (real data).
 """
+
+from __future__ import annotations
+
+import contextlib
+from collections import Counter
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -17,14 +24,36 @@ from PyQt6.QtWidgets import (
 )
 
 from data.yahoo_finance import is_market_open
+from ui.dashboard_charts import AreaChartHero, DonutChart, KpiCard
 from ui.styles import PALETTE
 from ui.widgets import (
     FeatureCard,
     HSeparator,
-    MetricCard,
     SettingsRow,
     StatusRow,
 )
+
+
+def _abbrev(n: float) -> str:
+    """Compact number formatting: 1234 → 1.2k, 2_500_000 → 2.5M."""
+    n = float(n)
+    for div, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "k")):
+        if abs(n) >= div:
+            return f"{n / div:.1f}{suffix}".replace(".0", "")
+    return f"{int(n)}"
+
+
+def _resolve_account_id() -> int | None:
+    """Active paper account id — prefers id=1 ("Sim Principal"), else first active."""
+    try:
+        from paper_trading.account import get_account, list_accounts
+
+        if get_account(1) is not None:
+            return 1
+        accounts = list_accounts(active_only=True) or list_accounts()
+        return accounts[0].id if accounts else None
+    except Exception:
+        return None
 
 
 class WelcomeCard(QFrame):
@@ -34,7 +63,7 @@ class WelcomeCard(QFrame):
         super().__init__(parent)
         self.setObjectName("card")
         self.setMinimumWidth(220)
-        self.setMaximumWidth(300)
+        self.setMaximumWidth(320)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -50,47 +79,56 @@ class WelcomeCard(QFrame):
         layout.addSpacing(16)
 
         # Status rows
-        self.status_rows: list[StatusRow] = []
+        self.status_rows: dict[str, StatusRow] = {}
         _market_open, _market_label = is_market_open()
         rows_data = [
-            ("📊", "Portafolio", "Cargando..."),
-            ("📈", "Rendimiento", "Cargando..."),
-            ("🔔", "Alertas", "Sin disparar"),
-            ("🌐", "Mercado", _market_label),
+            ("portfolio", "📊", "Portafolio", "Cargando..."),
+            ("perf", "📈", "Rendimiento", "Cargando..."),
+            ("alerts", "🔔", "Alertas", "Sin disparar"),
+            ("market", "🌐", "Mercado", _market_label),
         ]
-        for icon, label, status in rows_data:
+        for key, icon, label, status in rows_data:
             row = StatusRow(icon, label, status)
-            self.status_rows.append(row)
+            self.status_rows[key] = row
             layout.addWidget(row)
-            if icon != "🌐":
+            if key != "market":
                 layout.addWidget(StatusRow.separator())
 
         layout.addStretch()
 
         # Navigate link
-        self.portfolio_btn = QPushButton("Ver portafolio  →")
+        self.portfolio_btn = QPushButton("Ver Paper Trading  →")
         self.portfolio_btn.setStyleSheet(
             f"background-color: {PALETTE['accent_bg']}; "
             f"color: {PALETTE['accent']}; "
-            f"border: 1px solid #1a4a2a; border-radius: 8px; "
+            f"border: 1px solid {PALETTE['border_lt']}; border-radius: 8px; "
             f"padding: 8px 14px; font-weight: 700; font-size: 12px;"
         )
         layout.addWidget(self.portfolio_btn)
 
-    def update_status(self, n_positions: int, pl_pct: float, n_alerts: int):
-        if self.status_rows:
-            self.status_rows[0].findChild(QLabel).setText("📊  Portafolio")
+    def update_status(self, n_positions: int, pl_pct: float, n_alerts: int) -> None:
+        with contextlib.suppress(Exception):
+            self.status_rows["portfolio"].set_status(f"{n_positions} posiciones")
+            sign = "+" if pl_pct >= 0 else ""
+            ok = pl_pct >= 0
+            self.status_rows["perf"].set_status(
+                f"{sign}{pl_pct:.2f}%",
+                color=PALETTE["positive"] if ok else PALETTE["red"],
+            )
+            self.status_rows["alerts"].set_status(
+                "Sin disparar" if n_alerts == 0 else f"{n_alerts} activas"
+            )
 
 
 class PlatformSettingsCard(QFrame):
-    """Right panel mirroring IQON's Platform Settings card."""
+    """Quick-settings card (mirrors the old IQON Platform Settings panel)."""
 
     settings_changed = pyqtSignal(str, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
-        self.setMinimumWidth(260)
+        self.setMinimumWidth(240)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
@@ -101,7 +139,6 @@ class PlatformSettingsCard(QFrame):
         layout.addWidget(title)
         layout.addSpacing(14)
 
-        # General section
         gen_lbl = QLabel("PREFERENCIAS GENERALES")
         gen_lbl.setStyleSheet(
             f"color: {PALETTE['text3']}; font-size: 10px; font-weight: 700; letter-spacing: 1px;"
@@ -156,6 +193,9 @@ class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_ui()
+        # Initial load from the DB; guarded so an empty/fresh DB can't crash the UI.
+        with contextlib.suppress(Exception):
+            self.load_paper_data()
 
     def _build_ui(self):
         scroll = QScrollArea(self)
@@ -175,38 +215,55 @@ class HomeTab(QWidget):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(20)
 
-        # ── Row 1: Welcome card + Metric cards ──────────────────────────────
-        row1 = QHBoxLayout()
-        row1.setSpacing(16)
+        # ── Hero: equity area chart ─────────────────────────────────────────
+        hero_card = QFrame()
+        hero_card.setObjectName("card")
+        hero_layout = QVBoxLayout(hero_card)
+        hero_layout.setContentsMargins(20, 16, 20, 16)
+        hero_layout.setSpacing(6)
+
+        hero_title = QLabel("Curva de Equity")
+        hero_title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 16px; font-weight: 700;")
+        hero_sub = QLabel("Evolución del capital de la cuenta de paper trading")
+        hero_sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
+        hero_layout.addWidget(hero_title)
+        hero_layout.addWidget(hero_sub)
+
+        self.hero_chart = AreaChartHero()
+        self.hero_chart.setMinimumHeight(240)
+        hero_layout.addWidget(self.hero_chart)
+        root.addWidget(hero_card)
+
+        # ── KPI row ─────────────────────────────────────────────────────────
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(16)
+
+        self.kpi_pl = KpiCard("P/L TOTAL", kind="area", color=PALETTE["accent"])
+        self.kpi_trades = KpiCard("OPERACIONES", kind="bar", color=PALETTE["orange"])
+        self.kpi_positions = KpiCard("POSICIONES ABIERTAS", kind="spike", color=PALETTE["purple"])
+
+        for card in (self.kpi_pl, self.kpi_trades, self.kpi_positions):
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            kpi_row.addWidget(card)
+        root.addLayout(kpi_row)
+
+        # ── Bottom row: welcome + donut + quick settings ────────────────────
+        bottom = QHBoxLayout()
+        bottom.setSpacing(16)
 
         self.welcome_card = WelcomeCard()
-        self.welcome_card.portfolio_btn.clicked.connect(lambda: self.navigate.emit("portfolio"))
-        row1.addWidget(self.welcome_card)
+        self.welcome_card.portfolio_btn.clicked.connect(lambda: self.navigate.emit("paper"))
+        bottom.addWidget(self.welcome_card)
 
-        # P&L metric cards (right of welcome)
-        metrics_grid = QWidget()
-        metrics_layout = QGridLayout(metrics_grid)
-        metrics_layout.setSpacing(14)
-        metrics_layout.setContentsMargins(0, 0, 0, 0)
+        self.donut = DonutChart("Distribución de cartera")
+        self.donut.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        bottom.addWidget(self.donut, stretch=1)
 
-        self.card_total = MetricCard("Valor Total")
-        self.card_pl = MetricCard("Ganancia Total")
-        self.card_invested = MetricCard("Invertido")
-        self.card_pl_pct = MetricCard("Rendimiento Total")
-
-        for i, card in enumerate([self.card_total, self.card_pl, self.card_invested, self.card_pl_pct]):
-            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            metrics_layout.addWidget(card, i // 2, i % 2)
-
-        row1.addWidget(metrics_grid, stretch=1)
-
-        # Platform settings (right column)
         self.platform_card = PlatformSettingsCard()
-        row1.addWidget(self.platform_card)
+        bottom.addWidget(self.platform_card)
+        root.addLayout(bottom)
 
-        root.addLayout(row1)
-
-        # ── Row 2: Feature cards ─────────────────────────────────────────────
+        # ── Quick-access feature cards ──────────────────────────────────────
         row2_label = QLabel("Acceso Rápido")
         row2_label.setStyleSheet(
             f"color: {PALETTE['text3']}; font-size: 11px; font-weight: 700; "
@@ -216,42 +273,79 @@ class HomeTab(QWidget):
 
         row2 = QHBoxLayout()
         row2.setSpacing(14)
-
         features = [
             ("📈  Análisis Técnico", "Motor RSI, MACD, Bollinger", "Listo", True, "Analizar  →", "analysis"),
             ("🔔  Alertas de Precio", "Monitoreo en tiempo real", "Activo", True, "Ver alertas →", "alerts"),
             ("📄  Reportes", "PDF y Excel", "Disponible", True, "Exportar  →", "reports"),
             ("📥  Importar CSV", "Yahoo Finance / genérico", "Disponible", True, "Importar  →", "portfolio"),
         ]
-
         for title, sub, status, ok, action, page in features:
             card = FeatureCard(title, sub, status, ok, action)
             card.clicked.connect(lambda p=page: self.navigate.emit(p))
             row2.addWidget(card)
-
         root.addLayout(row2)
         root.addStretch()
 
-    def refresh(self, portfolio_tab=None):
-        """Pull metrics from the portfolio tab and update cards."""
-        if portfolio_tab is None:
+    # ── Data loading ────────────────────────────────────────────────────────
+    def load_paper_data(self) -> None:
+        """Populate hero chart, KPI tiles, and donut from the active paper account."""
+        from paper_trading.account import (
+            count_orders,
+            get_account,
+            get_equity_curve,
+            get_orders,
+            get_positions,
+        )
+
+        acct_id = _resolve_account_id()
+        if acct_id is None:
             return
-        positions = getattr(portfolio_tab, "_positions", [])
-        prices = getattr(portfolio_tab, "_prices", {})
+        acct = get_account(acct_id)
 
-        total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
-        total_value = sum(
-            p.quantity * (prices[p.ticker]["price"] if prices.get(p.ticker) else p.avg_buy_price)
-            for p in positions
-        )
-        pl = total_value - total_invested
-        pl_pct = (pl / total_invested * 100) if total_invested > 0 else 0.0
+        # Equity curve → hero + P/L KPI
+        curve = get_equity_curve(acct_id)
+        self.hero_chart.set_data(curve)
 
-        self.card_total.set_value(f"${total_value:,.2f}")
-        self.card_invested.set_value(f"${total_invested:,.2f}")
-        self.card_pl.set_value(
-            f"{'+' if pl >= 0 else ''}${pl:,.2f}", color=PALETTE["accent"] if pl >= 0 else PALETTE["red"]
-        )
-        self.card_pl_pct.set_value(
-            f"{pl_pct:+.2f}%", color=PALETTE["accent"] if pl_pct >= 0 else PALETTE["red"]
-        )
+        initial = float(getattr(acct, "initial_capital", 0.0) or 0.0)
+        if curve:
+            last_eq = float(curve[-1].total_equity)
+            pl = last_eq - initial if initial else 0.0
+            pl_pct = (pl / initial * 100.0) if initial else 0.0
+            self.kpi_pl.set_value(
+                f"${last_eq:,.0f}",
+                delta=f"{'+' if pl >= 0 else ''}${pl:,.0f}  ({pl_pct:+.2f}%)",
+                delta_positive=(pl >= 0),
+            )
+            self.kpi_pl.set_series([float(s.total_equity) for s in curve[-40:]])
+        else:
+            self.kpi_pl.set_value(f"${initial:,.0f}", delta="Sin movimientos", delta_positive=None)
+            pl_pct = 0.0
+
+        # Orders → trades KPI (filled), with a daily bar sparkline
+        n_filled = count_orders(acct_id, status="filled")
+        self.kpi_trades.set_value(_abbrev(n_filled), delta="órdenes ejecutadas", delta_positive=None)
+        recent = get_orders(acct_id, status="filled", limit=500)
+        by_day: Counter = Counter()
+        for o in recent:
+            ts = getattr(o, "filled_at", None) or getattr(o, "created_at", None)
+            if ts is not None:
+                by_day[ts.date()] += 1
+        if by_day:
+            days = sorted(by_day)[-14:]
+            self.kpi_trades.set_series([by_day[d] for d in days])
+
+        # Positions → positions KPI + donut
+        positions = get_positions(acct_id)
+        self.kpi_positions.set_value(str(len(positions)), delta="en cartera", delta_positive=None)
+        cost_bases = [float(p.shares) * float(p.avg_cost) for p in positions]
+        if cost_bases:
+            self.kpi_positions.set_series(sorted(cost_bases, reverse=True))
+        self.donut.set_data([(p.ticker, float(p.shares) * float(p.avg_cost)) for p in positions])
+
+        # Welcome card health rows
+        self.welcome_card.update_status(len(positions), pl_pct, 0)
+
+    def refresh(self, portfolio_tab=None) -> None:
+        """Called by the main window on data refresh. Reloads paper-account data."""
+        with contextlib.suppress(Exception):
+            self.load_paper_data()

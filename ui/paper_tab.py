@@ -351,10 +351,12 @@ class PaperTradingTab(QWidget):
             ["Fecha", "Side", "Ticker", "Shares", "Target $", "Comisión est.", "Motivo", "Acciones"]
         )
         self._apply_table_style(self.pending_table, row_height=52)
-        # Reserve enough horizontal room for both action buttons + spacing
-        # so the "Acciones" column never clips the buttons.
+        # "Acciones" is the stretch-last column, so it soaks up the leftover
+        # width for both buttons. Keep the global minimum section small so the
+        # other columns can collapse to their (now word-wrapped) headers
+        # instead of all being forced to a wide floor.
+        self.pending_table.horizontalHeader().setMinimumSectionSize(46)
         self.pending_table.setColumnWidth(7, 240)
-        self.pending_table.horizontalHeader().setMinimumSectionSize(120)
         # Tooltip on hover over Ticker column (col 2)
         install_ticker_tooltips(self.pending_table, 2)
         self.pending_table.setMinimumHeight(_TABLE_MIN_H)
@@ -421,6 +423,35 @@ class PaperTradingTab(QWidget):
         header = table.horizontalHeader()
         for i in range(table.columnCount() - 1):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        # Wrap multi-word headers so each column is only as wide as its widest
+        # word — keeps all columns visible without horizontal scroll.
+        self._wrap_header_labels(table)
+
+    def _wrap_header_labels(self, table: QTableWidget) -> None:
+        """Stack each header label one word per line.
+
+        ``"Precio compra"`` → ``"Precio\\ncompra"``. With ResizeToContents the
+        section width then collapses to the longest single word, minimising
+        column width. The header is given enough height to show every line.
+        """
+        header = table.horizontalHeader()
+        max_lines = 1
+        for col in range(table.columnCount()):
+            item = table.horizontalHeaderItem(col)
+            if item is None:
+                continue
+            words = item.text().split()
+            if len(words) > 1:
+                item.setText("\n".join(words))
+                item.setToolTip(" ".join(words))
+            max_lines = max(max_lines, len(words) or 1)
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
+        )
+        line_h = header.fontMetrics().height()
+        # Add the QSS section vertical padding (~10px top + 10px bottom) plus a
+        # small margin so no line gets clipped.
+        header.setFixedHeight(max_lines * line_h + 24)
 
     def _header_with_count(self, title: str, attr: str) -> QWidget:
         w = QWidget()
@@ -762,7 +793,7 @@ class PaperTradingTab(QWidget):
         created = _fmt_local(o.created_at)
         table.setItem(row, 0, QTableWidgetItem(created))
         side_item = QTableWidgetItem(o.side)
-        side_item.setForeground(QColor(PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]))
+        side_item.setForeground(QColor(PALETTE["positive"] if o.side == "BUY" else PALETTE["red"]))
         table.setItem(row, 1, side_item)
         order_ticker_item = QTableWidgetItem(o.ticker)
         apply_ticker_tooltip(order_ticker_item, o.ticker)
@@ -906,7 +937,7 @@ class PaperTradingTab(QWidget):
         ts_txt = _fmt_local(ts)
         table.setItem(row, 0, QTableWidgetItem(ts_txt))
         side_item = QTableWidgetItem(o.side)
-        side_item.setForeground(QColor(PALETTE["accent"] if o.side == "BUY" else PALETTE["red"]))
+        side_item.setForeground(QColor(PALETTE["positive"] if o.side == "BUY" else PALETTE["red"]))
         table.setItem(row, 1, side_item)
         hist_ticker_item = QTableWidgetItem(o.ticker)
         apply_ticker_tooltip(hist_ticker_item, o.ticker)
@@ -930,7 +961,7 @@ class PaperTradingTab(QWidget):
 
         status_item = QTableWidgetItem(o.status)
         colors = {
-            "filled": PALETTE["accent"],
+            "filled": PALETTE["positive"],
             "rejected": PALETTE["red"],
             "cancelled": PALETTE["text3"],
             "expired": PALETTE["yellow"],
@@ -1127,7 +1158,7 @@ class PaperTradingTab(QWidget):
             cost = p.shares * p.avg_cost
             pnl_usd = mv - cost
             pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
-            color = PALETTE["accent"] if pnl_usd >= 0 else PALETTE["red"]
+            color = PALETTE["positive"] if pnl_usd >= 0 else PALETTE["red"]
             pnl_usd_item = QTableWidgetItem(f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}")
             pnl_usd_item.setForeground(QColor(color))
             self.positions_table.setItem(row, 6, pnl_usd_item)
@@ -1169,7 +1200,7 @@ class PaperTradingTab(QWidget):
         pv = float(eq.get("positions_value", 0.0))
         pnl = equity - initial
         pnl_pct = (pnl / initial * 100.0) if initial > 0 else 0.0
-        pnl_color = PALETTE["accent"] if pnl >= 0 else PALETTE["red"]
+        pnl_color = PALETTE["positive"] if pnl >= 0 else PALETTE["red"]
 
         self.kpi_equity.set_value(f"${equity:,.2f}")
         self.kpi_cash.set_value(f"${cash:,.2f}")

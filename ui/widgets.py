@@ -2,6 +2,8 @@
 Reusable UI widgets for FinanzIAs — IQON design system.
 """
 
+import contextlib
+
 from PyQt6.QtCore import QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
@@ -266,19 +268,27 @@ class StatusRow(QWidget):
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(10)
 
-        dot = StatusDot(status_color or PALETTE["accent"], size=8)
-        layout.addWidget(dot)
+        self.dot = StatusDot(status_color or PALETTE["accent"], size=8)
+        layout.addWidget(self.dot)
 
         info = QVBoxLayout()
         info.setSpacing(0)
         name_lbl = QLabel(f"{icon}  {label}")
         name_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 12px; font-weight: 600;")
-        stat_lbl = QLabel(status)
-        stat_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
+        self.stat_lbl = QLabel(status)
+        self.stat_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         info.addWidget(name_lbl)
-        info.addWidget(stat_lbl)
+        info.addWidget(self.stat_lbl)
         layout.addLayout(info)
         layout.addStretch()
+
+    def set_status(self, status: str, color: str | None = None) -> None:
+        self.stat_lbl.setText(status)
+        text_color = color or PALETTE["text3"]
+        self.stat_lbl.setStyleSheet(f"color: {text_color}; font-size: 11px;")
+        if color is not None:
+            with contextlib.suppress(Exception):
+                self.dot.set_color(color)
 
     @staticmethod
     def separator():
@@ -338,9 +348,9 @@ class GaugeCard(QFrame):
 
         # Status dot + label
         status_row = QHBoxLayout()
-        self.dot = StatusDot(PALETTE["accent"], size=8)
+        self.dot = StatusDot(PALETTE["positive"], size=8)
         self.status_lbl = QLabel("Óptimo")
-        self.status_lbl.setStyleSheet(f"color: {PALETTE['accent']}; font-size: 12px; font-weight: 600;")
+        self.status_lbl.setStyleSheet(f"color: {PALETTE['positive']}; font-size: 12px; font-weight: 600;")
         status_row.addWidget(self.dot)
         status_row.addWidget(self.status_lbl)
         status_row.addStretch()
@@ -364,7 +374,7 @@ class GaugeCard(QFrame):
         self.gauge.set_value(value)
         self.util_bar.set_value(util)
         self.util_pct_lbl.setText(f"{util:.0f}%")
-        color = PALETTE["accent"] if ok else PALETTE["red"]
+        color = PALETTE["positive"] if ok else PALETTE["red"]
         self.status_lbl.setText(status)
         self.status_lbl.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
         self.dot.set_color(color)
@@ -413,11 +423,11 @@ class FeatureCard(QFrame):
         dot_row = QHBoxLayout()
         dot_row.setSpacing(6)
         dot = StatusDot(
-            PALETTE["accent"] if status_ok else PALETTE["yellow"],
+            PALETTE["positive"] if status_ok else PALETTE["yellow"],
             size=8,
         )
         status_lbl = QLabel(status)
-        c = PALETTE["accent"] if status_ok else PALETTE["yellow"]
+        c = PALETTE["positive"] if status_ok else PALETTE["yellow"]
         status_lbl.setStyleSheet(f"color: {c}; font-size: 12px; font-weight: 600;")
         dot_row.addWidget(dot)
         dot_row.addWidget(status_lbl)

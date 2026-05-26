@@ -1,32 +1,40 @@
 """
-IQON-inspired dark theme for FinanzIAs.
-Deep black background, green accents, card-based layout.
+Fuse-inspired dark theme for FinanzIAs.
+Charcoal background (#121212), cyan brand accent, card-based layout.
+
+Note on semantics: the brand/navigation accent is cyan, but P/L semantics
+stay green (POSITIVE) / red (RED) so a glance at a number still reads
+"ganancia/pérdida" correctly. Charts use the pastel triad cyan/orange/red.
 """
 
 # ── Palette ────────────────────────────────────────────────────────────────
-BG_BASE = "#0a0b0d"  # main background
-BG_SIDEBAR = "#0f1012"  # sidebar
-BG_CARD = "#111318"  # cards
-BG_CARD_HVR = "#161a20"  # card hover
-BG_ELEVATED = "#1a1d23"  # inputs, elevated
-BORDER = "#1e2128"  # subtle border
-BORDER_LT = "#2a2f3a"  # lighter border
+BG_BASE = "#121212"  # main background (charcoal)
+BG_SIDEBAR = "#1a1a1a"  # sidebar (carbón)
+BG_CARD = "#1e1e1e"  # cards
+BG_CARD_HVR = "#242424"  # card hover
+BG_ELEVATED = "#2a2a2a"  # inputs, elevated
+BORDER = "#2a2a2a"  # subtle border
+BORDER_LT = "#3a3a3a"  # lighter border
 
-ACCENT = "#4ade80"  # green accent (active, positive)
-ACCENT_DIM = "#22c55e"  # slightly dimmer green
-ACCENT_BG = "#0d2818"  # green tinted bg
+ACCENT = "#22d3ee"  # cyan brand accent (active, nav, focus)
+ACCENT_DIM = "#06b6d4"  # slightly dimmer cyan
+ACCENT_BG = "#0c2a30"  # cyan tinted bg
 BLUE = "#60a5fa"  # gauge / chart blue
 PURPLE = "#a78bfa"  # network chart
+ORANGE = "#fb923c"  # pastel orange (secondary chart accent)
 YELLOW = "#fbbf24"  # warning
-RED = "#f87171"  # negative / danger
+RED = "#fb7185"  # negative / danger (soft red)
+
+POSITIVE = "#4ade80"  # green — positive P/L (semantic, NOT brand)
+POSITIVE_BG = "#0d2818"  # green tinted bg for positive states
 
 TEXT_1 = "#f1f5f9"  # primary text
 TEXT_2 = "#94a3b8"  # secondary / labels
-TEXT_3 = "#4b5563"  # muted / disabled
+TEXT_3 = "#6b7280"  # muted / disabled
 
-NAV_ACTIVE_BG = "#0f2a1a"
-NAV_ACTIVE_TEXT = "#4ade80"
-NAV_HOVER_BG = "#13161c"
+NAV_ACTIVE_BG = "#0c2a30"
+NAV_ACTIVE_TEXT = "#22d3ee"
+NAV_HOVER_BG = "#222222"
 
 # ── Main Stylesheet ────────────────────────────────────────────────────────
 DARK_THEME = f"""
@@ -97,7 +105,7 @@ QPushButton#nav_item_active {{
     font-weight: 700;
 }}
 QPushButton#nav_item_active:hover {{
-    background-color: #6ee7a0;
+    background-color: #67e8f9;
     color: #000000;
 }}
 
@@ -154,7 +162,7 @@ QPushButton#primary {{
     letter-spacing: 0.3px;
 }}
 QPushButton#primary:hover {{
-    background-color: #6ee7a0;
+    background-color: #67e8f9;
     color: #000000;
 }}
 QPushButton#primary:pressed {{
@@ -171,8 +179,8 @@ QPushButton#danger:hover {{
 }}
 
 QPushButton#success {{
-    background-color: {ACCENT_BG};
-    color: {ACCENT};
+    background-color: {POSITIVE_BG};
+    color: {POSITIVE};
     border: 1px solid #1a4a2a;
     border-radius: 20px;
     font-weight: 600;
@@ -180,7 +188,7 @@ QPushButton#success {{
 }}
 QPushButton#success:hover {{
     background-color: #0f3320;
-    color: {ACCENT};
+    color: {POSITIVE};
 }}
 
 QPushButton#ghost {{
@@ -288,10 +296,10 @@ QLabel#micro   {{ color: {TEXT_3}; font-size: 11px; }}
 QLabel#title   {{ font-size: 22px; font-weight: 700; color: {TEXT_1}; }}
 QLabel#h2      {{ font-size: 16px; font-weight: 700; color: {TEXT_1}; }}
 QLabel#subtitle {{ font-size: 13px; font-weight: 600; color: {TEXT_2}; }}
-QLabel#positive {{ color: {ACCENT}; font-weight: 700; }}
+QLabel#positive {{ color: {POSITIVE}; font-weight: 700; }}
 QLabel#negative {{ color: {RED};    font-weight: 700; }}
 QLabel#warning  {{ color: {YELLOW}; font-weight: 600; }}
-QLabel#dot_green {{ color: {ACCENT}; font-size: 10px; }}
+QLabel#dot_green {{ color: {POSITIVE}; font-size: 10px; }}
 QLabel#dot_red   {{ color: {RED};    font-size: 10px; }}
 QLabel#dot_gray  {{ color: {TEXT_3}; font-size: 10px; }}
 
@@ -435,7 +443,7 @@ SIGNAL_COLORS = {
     "Underperform": "#fb923c",  # orange
     "Sell": "#f87171",  # red
     # Legacy keys kept for backward compatibility
-    "BUY": ACCENT,
+    "BUY": POSITIVE,
     "SELL": RED,
     "HOLD": YELLOW,
     "NEUTRAL": TEXT_3,
@@ -446,17 +454,23 @@ PALETTE = {
     "bg": BG_BASE,
     "sidebar": BG_SIDEBAR,
     "card": BG_CARD,
+    "card_hover": BG_CARD_HVR,
     "elevated": BG_ELEVATED,
     "border": BORDER,
     "border_lt": BORDER_LT,
     "accent": ACCENT,
+    "accent_dim": ACCENT_DIM,
     "accent_bg": ACCENT_BG,
     "blue": BLUE,
     "purple": PURPLE,
+    "orange": ORANGE,
     "yellow": YELLOW,
     "red": RED,
+    "positive": POSITIVE,
+    "positive_bg": POSITIVE_BG,
     "text1": TEXT_1,
     "text2": TEXT_2,
     "text3": TEXT_3,
     "nav_active": NAV_ACTIVE_BG,
 }
+# Fuse theme migration complete.
