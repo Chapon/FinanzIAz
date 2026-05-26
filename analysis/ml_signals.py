@@ -350,7 +350,18 @@ def _hmm_observation_matrix(df: pd.DataFrame) -> np.ndarray | None:
     X = pd.concat([ret.rename("ret"), vol.rename("vol")], axis=1).dropna()
     if len(X) < HMM_MIN_ROWS:
         return None
-    return X.values.astype(np.float64)
+    Xv = X.values.astype(np.float64)
+    # Standardize each feature to ~O(1). Returns (~1e-3) and 5-day vol (~1e-2)
+    # live at very different, tiny scales; left raw they push the Gaussian
+    # covariances toward singularity — the source of the "covars must be
+    # positive-definite" failures and the negative log-likelihood deltas
+    # ("Model is not converging"). z-scoring is a monotonic per-column
+    # transform, so it does NOT affect the by-mean-return state ordering used
+    # downstream. All callers fit and call predict_proba on this same matrix.
+    mu = Xv.mean(axis=0)
+    sd = Xv.std(axis=0)
+    sd[sd < 1e-12] = 1.0  # guard against a (near-)constant column
+    return (Xv - mu) / sd
 
 
 def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> object | None:
@@ -361,14 +372,29 @@ def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> object | N
     state_order[0] = lowest mean return  → BEAR
     state_order[-1] = highest mean return → BULL
     """
-    model = _hmm.GaussianHMM(
-        n_components=n_states,
-        covariance_type="full",
-        n_iter=200,
-        tol=1e-3,
-        random_state=42,
-    )
-    model.fit(X)
+    # Diagonal covariance is far more numerically robust than "full" for the
+    # two tiny-scale features here: with "full", a state that collapses onto a
+    # few near-identical observations can drive its covariance matrix to be
+    # non-positive-definite (the "covars must be symmetric, positive-definite"
+    # error). min_covar floors the variance so that can't happen. On the
+    # standardized observations these defaults converge cleanly.
+    def _make(cov_type: str, min_covar: float):
+        return _hmm.GaussianHMM(
+            n_components=n_states,
+            covariance_type=cov_type,
+            n_iter=200,
+            tol=1e-3,
+            min_covar=min_covar,
+            random_state=42,
+        )
+
+    model = _make("diag", 1e-3)
+    try:
+        model.fit(X)
+    except (ValueError, np.linalg.LinAlgError):
+        # Last-resort retry with a heavier variance floor before giving up.
+        model = _make("diag", 1e-2)
+        model.fit(X)
     state_order = list(np.argsort(model.means_[:, 0]))  # mean of the return feature
     return model, state_order
 

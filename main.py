@@ -10,6 +10,12 @@ Requirements:
 """
 
 import os
+
+# Silence the benign KMeans/MKL memory-leak warning on Windows. Must be set
+# BEFORE numpy/scikit-learn (and thus MKL) are imported anywhere, so it lives
+# at the very top of the entry point.
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+
 import sys
 
 # Ensure the project root is on the Python path
