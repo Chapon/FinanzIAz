@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-05-26T22:32:20.753484+00:00",
+  "db_path": "backups/finanzias_2026-05-26_00-28-50_daily.db",
+  "accounts": [
+    {
+      "account_id": 1,
+      "name": "Sim Principal",
+      "initial_capital": 50000.0,
+      "notes": [],
+      "overall": {
+        "n_trading_days": 21,
+        "n_daily_returns": 20,
+        "calendar_days": 31,
+        "first_snapshot_at": "2026-04-24T03:18:29.692205",
+        "last_snapshot_at": "2026-05-25T21:42:46.371516",
+        "start_equity": 49925.037481259365,
+        "end_equity": 52260.019641179984,
+        "period_return": 0.04676976278279432,
+        "cagr": 0.712898015706535,
+        "sharpe_annual": 2.157597041237096,
+        "max_drawdown": 0.059485939832604445,
+        "max_dd_date": "2026-05-18",
+        "n_buys": 25,
+        "n_sells": 20,
+        "notional_volume": 445097.4872148404,
+        "avg_equity": 51958.06215050844,
+        "turnover_period": 8.56647589984233,
+        "turnover_annual": 100.8633452723371,
+        "n_round_trips": 20,
+        "win_rate": 0.6,
+        "profit_factor": 1.378698531784035,
+        "expectancy_dollars": 80.27365945295533,
+        "expectancy_pct": 0.012963112925430193,
+        "avg_holding_days": 5.60024373579919,
+        "gross_profit": 5844.922392877723,
+        "gross_loss": -4239.449203818616,
+        "strategy": "analyze_single",
+        "allocation_mode": "signal_weighted",
+        "is_active": true
+      },
+      "monthly": [
+        {
+          "month": "2026-04",
+          "n_trading_days": 3,
+          "period_return": 0.0206158962334686,
+          "sharpe_annual": 16.880842589413565,
+          "max_drawdown": 0.0,
+          "max_dd_date": null,
+          "n_round_trips": 3,
+          "win_rate": 0.6666666666666666,
+          "profit_factor": 26.360069912928044,
+          "expectancy_dollars": 294.2367021473577
+        },
+        {
+          "month": "2026-05",
+          "n_trading_days": 18,
+          "period_return": 0.015855139752323222,
+          "sharpe_annual": 0.9121460889127158,
+          "max_drawdown": 0.059485939832604445,
+          "max_dd_date": "2026-05-18",
+          "n_round_trips": 17,
+          "win_rate": 0.5882352941176471,
+          "profit_factor": 1.1718964568623806,
+          "expectancy_dollars": 42.51547544806078
+        }
+      ],
+      "open_positions": [
+        {
+          "ticker": "ASML",
+          "shares": 4.0,
+          "avg_cost": 1587.0781425,
+          "cost_basis": 6348.31257,
+          "opened_at": "2026-05-21 19:48:29.955429",
+          "entry_reason": "approved: analyze BUY"
+        },
+        {
+          "ticker": "CL",
+          "shares": 48.0,
+          "avg_cost": 90.395175,
+          "cost_basis": 4338.9684,
+          "opened_at": "2026-05-20 21:41:11.254666",
+          "entry_reason": "approved: analyze BUY"
+        },
+        {
+          "ticker": "KO",
+          "shares": 236.0,
+          "avg_cost": 81.18557249999999,
+          "cost_basis": 19159.79511,
+          "opened_at": "2026-05-21 19:48:18.484090",
+          "entry_reason": "approved: analyze BUY"
+        },
+        {
+          "ticker": "MO",
+          "shares": 123.0,
+          "avg_cost": 72.14605499999999,
+          "cost_basis": 8873.964764999999,
+          "opened_at": "2026-05-14 15:13:13.657900",
+          "entry_reason": "approved: analyze BUY"
+        },
+        {
+          "ticker": "ROST",
+          "shares": 55.0,
+          "avg_cost": 234.97743,
+          "cost_basis": 12923.75865,
+          "opened_at": "2026-05-22 20:02:02.362260",
+          "entry_reason": "approved: analyze BUY"
+        }
+      ]
+    }
+  ]
+}
