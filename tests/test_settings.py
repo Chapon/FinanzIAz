@@ -86,3 +86,28 @@ def test_bool_int_distinction(tmp_path, monkeypatch):
     """Don't accept ``True`` where an ``int`` is expected (bool is subclass of int)."""
     s = _new_manager(tmp_path, monkeypatch)
     assert s.set("paper_scan_interval_minutes", True) is False
+
+
+def test_feature_toggles_sprint1_persist(tmp_path, monkeypatch):
+    """Sprint 1: Five feature toggles (hmm, stacking, xgb, correlation, vol_overlay)."""
+    s = _new_manager(tmp_path, monkeypatch)
+    toggles = ["hmm_enabled", "stacking_enabled", "xgb_signal_enabled",
+               "correlation_gate_enabled", "vol_overlay_enabled"]
+
+    # All default to True
+    for toggle in toggles:
+        assert s.get(toggle) is True
+
+    # All can be set to False
+    for toggle in toggles:
+        assert s.set(toggle, False) is True
+        assert s.get(toggle) is False
+
+    # Reload from disk — values persist
+    s2 = _SettingsManager()
+    for toggle in toggles:
+        assert s2.get(toggle) is False
+
+    # Can't set to non-bool
+    assert s.set("hmm_enabled", "yes") is False
+    assert s.get("hmm_enabled") is False  # unchanged

@@ -271,6 +271,50 @@ SCHEMA: dict[str, SettingSpec] = {
             "0.12 = 12%."
         ),
     ),
+    # Feature toggles for research stack validation (Sprint 1 / roadmap)
+    # Each T-feature can be toggled independently. Defaults preserve current behavior.
+    "hmm_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Enable Hidden Markov Model state filtering in analyze_single. "
+            "When disabled, HMM regime assignment is skipped (all states treated as neutral)."
+        ),
+    ),
+    "stacking_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Enable position stacking (T05): allow multiple fills per ticker "
+            "on the same scan. When disabled, max 1 position per name per scan."
+        ),
+    ),
+    "xgb_signal_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Enable XGBoost signal weighting in allocation. When disabled, "
+            "uses equal weighting across signal_score bins."
+        ),
+    ),
+    "correlation_gate_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Enable correlation gate (T09): skip BUY candidates whose mean "
+            "60-day correlation with active book exceeds max_avg_correlation. "
+            "When disabled, correlation is not checked."
+        ),
+    ),
+    "vol_overlay_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Enable portfolio volatility overlay (T10): scale positions down if "
+            "estimated book σ exceeds vol_target_portfolio_annual. When disabled, "
+            "no scaling (full allocation)."
+        ),
+    ),
     # Slack notifications on new BUY/SELL orders (T12 of the engine roadmap)
     # Master switch OFF by default. The bot token is NEVER stored here — the
     # engine reads it from the SLACK_BOT_TOKEN env var. Only the non-secret
