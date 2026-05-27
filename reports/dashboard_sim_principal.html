@@ -1,0 +1,383 @@
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f9f9f7;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px 0; font-weight: 600; }
+  h2 { font-size: 14px; margin: 16px 0 8px 0; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+  .meta { color: #888; font-size: 11px; margin-bottom: 16px; }
+  .meta .fragile { color: #b45309; font-weight: 500; }
+  .meta .status-ok { color: #16a34a; }
+  .meta .status-err { color: #dc2626; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: #ffffff;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .kpi-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .kpi-value { font-size: 18px; font-weight: 600; color: #1a1a1a; }
+  .kpi-sub { font-size: 10px; color: #888; margin-top: 2px; }
+  .pos { color: #16a34a; }
+  .neg { color: #dc2626; }
+  .neutral { color: #525252; }
+
+  .panel {
+    background: #ffffff;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+  .panel-title { font-size: 12px; font-weight: 600; color: #555; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+  th { color: #888; font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: #fafafa; }
+  .badge-buy { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #dcfce7; color: #166534; font-size: 10px; font-weight: 600; }
+  .badge-sell { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #fee2e2; color: #991b1b; font-size: 10px; font-weight: 600; }
+  .badge-atr { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 600; }
+
+  .reload-row { margin-bottom: 12px; }
+  .reload-btn {
+    background: #ffffff;
+    border: 1px solid #d4d4d4;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: #1a1a1a;
+  }
+  .reload-btn:hover { background: #f5f5f5; }
+  .reload-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap-tall { position: relative; height: 280px; }
+  .empty { color: #888; font-style: italic; padding: 12px; text-align: center; }
+  pre.error { background: #fee2e2; color: #991b1b; padding: 8px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+
+<h1>Sim Principal — Live Dashboard</h1>
+<div class="meta" id="meta-line">cargando…</div>
+
+<div class="reload-row">
+  <button class="reload-btn" id="reload-btn" onclick="loadData()">↻ Reload data</button>
+</div>
+
+<div id="error-box"></div>
+
+<div id="kpis" class="kpi-grid" hidden></div>
+
+<div id="content" hidden>
+  <div class="panel">
+    <div class="panel-title">Equity curve</div>
+    <div class="chart-wrap-tall"><canvas id="equity-chart"></canvas></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">Posiciones abiertas</div>
+      <table id="positions-table">
+        <thead><tr><th>Ticker</th><th class="num">Shares</th><th class="num">Avg cost</th><th class="num">Mark</th><th class="num">Valor</th><th class="num">MTM</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Signal score (filled)</div>
+      <div class="chart-wrap"><canvas id="hist-chart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">Order status</div>
+      <table id="status-table">
+        <thead><tr><th>Status</th><th class="num">Count</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="panel-title" style="margin-top:14px;">Top expired notes</div>
+      <table id="expired-table">
+        <thead><tr><th>Nota</th><th class="num">Count</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Cash / equity split (último snapshot)</div>
+      <div class="chart-wrap"><canvas id="cash-chart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Últimos 25 fills</div>
+    <table id="trades-table">
+      <thead><tr><th>Filled at</th><th>Ticker</th><th>Side</th><th class="num">Shares</th><th class="num">Px</th><th class="num">Notional</th><th class="num">Score</th><th>Reason</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const DASHBOARD_SCRIPT = "/sessions/inspiring-modest-einstein/mnt/FinanzIAs/scripts/dashboard_data.py";
+
+let equityChart = null, histChart = null, cashChart = null;
+
+function fmtPct(x, digits=2) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return (x * 100).toFixed(digits) + "%";
+}
+function fmtMoney(x, digits=2) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return "$" + x.toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});
+}
+function fmtNum(x, digits=2) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  return x.toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});
+}
+function fmtRatio(x, digits=2) {
+  if (x === null || x === undefined || !Number.isFinite(x)) return "—";
+  return x.toFixed(digits);
+}
+function pnlClass(x) {
+  if (x === null || x === undefined || Number.isNaN(x)) return "neutral";
+  return x > 0 ? "pos" : (x < 0 ? "neg" : "neutral");
+}
+
+function renderKpis(k, account) {
+  const cards = [
+    {label: "Equity actual", value: fmtMoney(k.period_return !== null ? account.initial_capital * (1 + k.period_return) : account.initial_capital), sub: `Inicial ${fmtMoney(account.initial_capital, 0)}`},
+    {label: "Period return", value: fmtPct(k.period_return), cls: pnlClass(k.period_return)},
+    {label: "Sharpe (anual)", value: fmtRatio(k.sharpe), sub: `n=${k.n_trading_days}d` + (k.fragile ? " · fragile" : ""), cls: k.fragile ? "neutral" : ""},
+    {label: "Max DD", value: fmtPct(-Math.abs(k.max_dd ?? 0), 2), sub: k.max_dd_date || "", cls: "neg"},
+    {label: "Win rate", value: fmtPct(k.win_rate, 1), sub: `${k.n_round_trips} round-trips`},
+    {label: "Profit factor", value: fmtRatio(k.profit_factor), cls: (k.profit_factor ?? 0) > 1 ? "pos" : "neg"},
+    {label: "Expectancy", value: fmtPct(k.expectancy_pct, 2), sub: fmtMoney(k.expectancy_dollars ?? 0, 2)},
+    {label: "Avg holding", value: (k.avg_holding_days ?? 0).toFixed(1) + " d"},
+  ];
+  const html = cards.map(c =>
+    `<div class="kpi">
+       <div class="kpi-label">${c.label}</div>
+       <div class="kpi-value ${c.cls || ""}">${c.value}</div>
+       ${c.sub ? `<div class="kpi-sub">${c.sub}</div>` : ""}
+     </div>`
+  ).join("");
+  document.getElementById("kpis").innerHTML = html;
+  document.getElementById("kpis").hidden = false;
+}
+
+function renderEquity(curve) {
+  const ctx = document.getElementById("equity-chart").getContext("2d");
+  if (equityChart) equityChart.destroy();
+  // Downsample for readability: keep at most ~300 points
+  const points = curve.length > 300
+    ? curve.filter((_, i) => i % Math.ceil(curve.length / 300) === 0).concat([curve[curve.length-1]])
+    : curve;
+  const labels = points.map(p => p.t.slice(5, 16).replace("T", " "));
+  const values = points.map(p => p.equity);
+  equityChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Equity",
+        data: values,
+        borderColor: "#0369a1",
+        backgroundColor: "rgba(3,105,161,0.08)",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.1,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, color: "#666", font: { size: 10 } }, grid: { color: "#f0f0f0" } },
+        y: { ticks: { color: "#666", font: { size: 10 }, callback: v => "$" + v.toLocaleString() }, grid: { color: "#f0f0f0" } },
+      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => "Equity: " + fmtMoney(c.parsed.y, 2) } } },
+    },
+  });
+}
+
+function renderHist(hist) {
+  const ctx = document.getElementById("hist-chart").getContext("2d");
+  if (histChart) histChart.destroy();
+  const labels = hist.bins.slice(0, -1).map((b, i) => `${b.toFixed(1)}–${hist.bins[i+1].toFixed(1)}`);
+  histChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "BUY", data: hist.BUY, backgroundColor: "rgba(22,163,74,0.7)" },
+        { label: "SELL", data: hist.SELL, backgroundColor: "rgba(220,38,38,0.7)" },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: false, ticks: { color: "#666", font: { size: 9 } }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: "#666", font: { size: 10 }, precision: 0 }, grid: { color: "#f0f0f0" } },
+      },
+      plugins: { legend: { position: "top", labels: { font: { size: 11 }, boxWidth: 10 } } },
+    },
+  });
+}
+
+function renderCashSplit(curve) {
+  if (!curve.length) return;
+  const last = curve[curve.length - 1];
+  const ctx = document.getElementById("cash-chart").getContext("2d");
+  if (cashChart) cashChart.destroy();
+  const posValue = Math.max(0, last.equity - last.cash);
+  cashChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: ["Cash", "Posiciones"],
+      datasets: [{
+        data: [last.cash, posValue],
+        backgroundColor: ["#cbd5e1", "#0369a1"],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "right", labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.label}: ${fmtMoney(c.parsed, 2)} (${((c.parsed/last.equity)*100).toFixed(1)}%)` } },
+      },
+    },
+  });
+}
+
+function renderPositions(positions) {
+  const body = document.querySelector("#positions-table tbody");
+  if (!positions.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">Sin posiciones abiertas</td></tr>`;
+    return;
+  }
+  body.innerHTML = positions.map(p => `
+    <tr>
+      <td><strong>${p.ticker}</strong></td>
+      <td class="num">${fmtNum(p.shares, 0)}</td>
+      <td class="num">${fmtMoney(p.avg_cost, 2)}</td>
+      <td class="num">${fmtMoney(p.mark, 2)}</td>
+      <td class="num">${fmtMoney(p.value, 0)}</td>
+      <td class="num ${pnlClass(p.mtm_pct)}">${fmtPct(p.mtm_pct, 2)}</td>
+    </tr>
+  `).join("");
+}
+
+function renderStatus(counts, expired) {
+  const sb = document.querySelector("#status-table tbody");
+  const order = ["filled", "approved", "expired"];
+  sb.innerHTML = order.filter(s => counts[s] !== undefined).map(s => `
+    <tr><td>${s}</td><td class="num">${counts[s]}</td></tr>
+  `).join("");
+  const eb = document.querySelector("#expired-table tbody");
+  if (!expired.length) {
+    eb.innerHTML = `<tr><td colspan="2" class="empty">Ninguna expirada</td></tr>`;
+  } else {
+    eb.innerHTML = expired.map(e => `
+      <tr><td>${escapeHtml(e.note)}</td><td class="num">${e.count}</td></tr>
+    `).join("");
+  }
+}
+
+function renderTrades(trades) {
+  const body = document.querySelector("#trades-table tbody");
+  if (!trades.length) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Sin fills aún</td></tr>`;
+    return;
+  }
+  body.innerHTML = trades.slice(0, 25).map(t => {
+    const isATR = t.reason && t.reason.startsWith("atr_");
+    const sideBadge = isATR ? `<span class="badge-atr">${t.side}·ATR</span>`
+                            : (t.side === "BUY" ? `<span class="badge-buy">BUY</span>` : `<span class="badge-sell">SELL</span>`);
+    const dt = (t.filled_at || "").slice(5, 16).replace("T", " ");
+    return `
+      <tr>
+        <td>${dt}</td>
+        <td><strong>${t.ticker}</strong></td>
+        <td>${sideBadge}</td>
+        <td class="num">${fmtNum(t.fill_shares, 0)}</td>
+        <td class="num">${fmtMoney(t.fill_price, 2)}</td>
+        <td class="num">${fmtMoney(t.notional, 0)}</td>
+        <td class="num">${t.signal_score !== null ? t.signal_score.toFixed(2) : "—"}</td>
+        <td>${escapeHtml(t.reason || "")}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function loadData() {
+  const btn = document.getElementById("reload-btn");
+  const meta = document.getElementById("meta-line");
+  const errBox = document.getElementById("error-box");
+  btn.disabled = true;
+  meta.textContent = "Cargando datos…";
+  errBox.innerHTML = "";
+  try {
+    const result = await window.cowork.callMcpTool("mcp__workspace__bash", {
+      command: `python3 ${DASHBOARD_SCRIPT}`,
+    });
+    // The bash MCP tool returns the script's stdout. Find the JSON line.
+    const raw = (typeof result === "string") ? result : (result.content || result.text || JSON.stringify(result));
+    const text = typeof raw === "string" ? raw : JSON.stringify(raw);
+    // Locate the JSON (last line that starts with "{" — script prints a single line)
+    const lines = text.split(/\r?\n/).filter(l => l.trim().startsWith("{"));
+    if (!lines.length) throw new Error("No JSON in bash output:\n" + text.slice(0, 400));
+    const data = JSON.parse(lines[lines.length - 1]);
+    if (data.error) throw new Error(data.error);
+
+    const k = data.kpis;
+    const fragileTxt = k.fragile ? `<span class="fragile">(⚠ ${k.notes.join(" · ")})</span>` : "";
+    meta.innerHTML = `${data.account.name} · ${data.account.allocation_mode} · max ${data.account.max_positions} pos · refreshed ${new Date(data.generated_at).toLocaleString()} ${fragileTxt}`;
+
+    renderKpis(k, data.account);
+    document.getElementById("content").hidden = false;
+    renderEquity(data.equity_curve);
+    renderPositions(data.positions);
+    renderHist(data.signal_score_hist);
+    renderCashSplit(data.equity_curve);
+    renderStatus(data.status_counts, data.expired_notes_top);
+    renderTrades(data.trades_recent);
+  } catch (e) {
+    meta.innerHTML = `<span class="status-err">Error: ${escapeHtml(e.message || String(e))}</span>`;
+    errBox.innerHTML = `<pre class="error">${escapeHtml(e.stack || e.message || String(e))}</pre>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Auto-load on first render
+loadData();
+</script>

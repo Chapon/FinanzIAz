@@ -372,6 +372,7 @@ def _execute_rebalance(
     slippage: float,
     reason: str,
     trades_log: list[PortfolioTrade],
+    forced_exit_reasons: dict[str, str] | None = None,
 ) -> float:
     """
     Bring actual dollar exposure in line with target_dollars for every ticker
@@ -406,6 +407,8 @@ def _execute_rebalance(
                 pnl = proceeds - cost_basis
                 ret = (proceeds / cost_basis - 1.0) if cost_basis > 0 else 0.0
                 holding = (date - st.entry_date).days
+                # Use forced_exit_reason if this ticker was force-exited, otherwise use global reason
+                exit_reason = (forced_exit_reasons or {}).get(t, reason)
                 trades_log.append(
                     PortfolioTrade(
                         ticker=t,
@@ -418,7 +421,7 @@ def _execute_rebalance(
                         pnl=float(pnl),
                         holding_days=int(holding),
                         entry_reason=st.entry_reason,
-                        exit_reason=reason,
+                        exit_reason=exit_reason,
                     )
                 )
                 st.shares = 0.0
@@ -519,6 +522,7 @@ def portfolio_backtest(
     kelly_fraction: float = DEFAULT_KELLY_FRACTION,
     vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
     max_position_weight: float = DEFAULT_MAX_POSITION_WEIGHT,
+    forced_exit_fn: Callable[[str, pd.DataFrame, _PositionState], tuple[bool, str]] | None = None,
     verbose: bool = False,
 ) -> PortfolioBacktestResult | None:
     """
@@ -586,8 +590,23 @@ def portfolio_backtest(
             vols[t] = _realized_vol(closes[t].iloc[: i + 1])
 
         # ── Determine active set (positions + candidate entries) ──────────────
-        # (1) Mandatory exits — any open position with SELL signal
+        # (1) Mandatory exits — any open position with SELL signal + forced_exit_fn
         forced_exits = [t for t, st in positions.items() if st.is_open and signals[t] == "SELL"]
+        forced_exit_reasons: dict[str, str] = {}
+
+        # Evaluate forced_exit_fn hook for all open positions (not already exiting via signal)
+        if forced_exit_fn is not None:
+            for t in tickers_ok:
+                if positions[t].is_open and t not in forced_exits:
+                    df_slice = frames[t].iloc[: i + 1]
+                    try:
+                        should_exit, reason = forced_exit_fn(t, df_slice, positions[t])
+                        if should_exit:
+                            forced_exits.append(t)
+                            forced_exit_reasons[t] = reason
+                    except Exception as exc:
+                        if verbose:
+                            log.warning("forced_exit_fn(%s@%s) error: %s", t, date, exc)
 
         # (2) Open slots after forced exits
         still_open = [t for t, st in positions.items() if st.is_open and t not in forced_exits]
@@ -679,6 +698,7 @@ def portfolio_backtest(
                 slippage=slippage,
                 reason=reason,
                 trades_log=trades_log,
+                forced_exit_reasons=forced_exit_reasons,
             )
             last_rebalance_month = (date.year, date.month)
 
