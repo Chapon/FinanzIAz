@@ -203,22 +203,24 @@ def _last_closed_cycle_pnl_pct(
 # ── ATR-stop gate (T01) ───────────────────────────────────────────────────────
 
 
-# Reasons used by the ATR-stop gate. Anything starting with ``atr_`` is treated
-# as a forced exit by downstream gates (Gate 2 bypass, etc.) — kept in a tuple
-# so the check stays a cheap startswith().
-ATR_EXIT_REASONS: tuple[str, ...] = ("atr_stop", "atr_tp", "atr_trail")
+# Re-exported for backward compatibility with callers that import
+# ``ATR_EXIT_REASONS`` from this module. Authoritative source is
+# ``paper_trading.gates``.
+from paper_trading.gates import (  # noqa: E402
+    ATR_EXIT_REASONS,
+    atr_exit_decision,
+    is_atr_forced_exit_reason,
+    is_within_earnings_blackout,
+)
 
 
 def _is_atr_forced_exit(reason: str | None) -> bool:
     """True iff ``reason`` was produced by ``_compute_atr_forced_exits``.
 
-    Forced exits bypass the min-holding gate so a fresh position that collapses
-    can still be cut. They do NOT bypass market-hours (Gate 1) — closed market
-    means no fills regardless of urgency.
+    Thin wrapper preserved for backward compatibility — the authoritative
+    implementation now lives in :func:`paper_trading.gates.is_atr_forced_exit_reason`.
     """
-    if not reason:
-        return False
-    return any(reason.startswith(prefix) for prefix in ATR_EXIT_REASONS)
+    return is_atr_forced_exit_reason(reason)
 
 
 def _compute_atr_forced_exits(
@@ -230,17 +232,14 @@ def _compute_atr_forced_exits(
     Evaluate each open position against the ATR stop/TP/trailing levels.
 
     Returns a list of ``TargetTrade`` SELLs for the tickers whose live price
-    crossed at least one threshold. Order of evaluation: ``atr_stop`` (worst
-    case) → ``atr_trail`` (give-back from peak) → ``atr_tp`` (profit lock).
-    The first trigger that fires wins; the other two are not re-evaluated for
-    that ticker.
+    crossed at least one threshold. The per-position decision is delegated to
+    :func:`paper_trading.gates.atr_exit_decision`; this wrapper handles the
+    loop, the settings reads, the ATR computation, and the ``TargetTrade``
+    construction so the gate module stays pure.
 
-    Also returns (via side-effect on the caller) NOTHING — the caller is
-    responsible for updating ``high_water_mark`` separately, after this
-    function has read the *pre-update* high. This keeps the trailing stop
-    semantics correct: if today's price is a new high but is still inside
-    the trailing band off yesterday's high, we don't whipsaw on the same
-    bar that set the new high.
+    The caller is responsible for updating ``high_water_mark`` separately,
+    *after* this function has read the pre-update high — keeps the trailing
+    stop semantics correct.
     """
     from analysis.atr import compute_atr
     from paper_trading.strategies import TargetTrade
@@ -268,46 +267,15 @@ def _compute_atr_forced_exits(
         if atr is None or not np.isfinite(atr) or atr <= 0:
             continue
 
-        avg_cost = float(pos.avg_cost)
-        # Trailing baseline: pre-update HWM. If never seeded, use avg_cost so
-        # the trailing stop has SOME baseline even before the first scan
-        # tick. This is conservative — equivalent to "from entry" until the
-        # next scan upgrades HWM to a real high.
-        hwm = pos.high_water_mark if pos.high_water_mark is not None else avg_cost
-        hwm = float(hwm)
-
-        stop_level = avg_cost - stop_mult * atr
-        tp_level = avg_cost + tp_mult * atr
-        trail_level = hwm - stop_mult * atr if trail_enabled else None
-
-        reason: str | None = None
-        trigger_level: float | None = None
-        if stop_level > 0 and px <= stop_level:
-            reason = (
-                f"atr_stop @ {px:.2f} ≤ {stop_level:.2f} "
-                f"(entry {avg_cost:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
-            )
-            trigger_level = stop_level
-        elif (
-            trail_enabled
-            and trail_level is not None
-            and trail_level > 0
-            and px <= trail_level
-            # Trail is only meaningful once we've seen a high above entry —
-            # otherwise it duplicates the stop-loss. The check is "HWM
-            # strictly above entry by at least 1 ATR" to avoid noise.
-            and hwm > avg_cost + atr
-        ):
-            reason = (
-                f"atr_trail @ {px:.2f} ≤ {trail_level:.2f} (peak {hwm:.2f} − {stop_mult:.1f}×ATR {atr:.2f})"
-            )
-            trigger_level = trail_level
-        elif tp_level > 0 and px >= tp_level:
-            reason = (
-                f"atr_tp @ {px:.2f} ≥ {tp_level:.2f} (entry {avg_cost:.2f} + {tp_mult:.1f}×ATR {atr:.2f})"
-            )
-            trigger_level = tp_level
-
+        reason, _level = atr_exit_decision(
+            current_price=float(px),
+            avg_cost=float(pos.avg_cost),
+            high_water_mark=pos.high_water_mark,
+            atr_value=float(atr),
+            stop_mult=stop_mult,
+            tp_mult=tp_mult,
+            trail_enabled=trail_enabled,
+        )
         if reason is None:
             continue
 
@@ -322,8 +290,6 @@ def _compute_atr_forced_exits(
                 signal_score=1.0,  # max conviction — see roadmap T01
             )
         )
-        # Trigger_level not used downstream but kept for log clarity.
-        _ = trigger_level
 
     return out
 
@@ -357,16 +323,10 @@ def _earnings_blackout_hit(
     scan_at: datetime,
     blackout_days: int,
 ) -> bool:
-    """True iff ``earnings_date`` falls within ±``blackout_days`` of ``scan_at``.
-
-    Compared at calendar-day granularity so an earnings event scheduled for
-    "tomorrow" trips a ±1 window regardless of the intraday scan time. Returns
-    False when there is no known date or the gate is disabled.
+    """Thin wrapper preserved for backward compatibility — see
+    :func:`paper_trading.gates.is_within_earnings_blackout`.
     """
-    if earnings_date is None or blackout_days <= 0:
-        return False
-    delta_days = (earnings_date.date() - scan_at.date()).days
-    return abs(delta_days) <= blackout_days
+    return is_within_earnings_blackout(earnings_date, scan_at, blackout_days)
 
 
 # ── Scan result type ──────────────────────────────────────────────────────────

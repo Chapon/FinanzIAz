@@ -45,6 +45,10 @@ from analysis.portfolio_risk import (
 from config.logging_config import get_logger
 from config.settings_manager import settings
 from database.models import utcnow_naive
+from paper_trading.gates import (
+    compute_vol_overlay,
+    select_uncorrelated_picks,
+)
 from paper_trading.models import PaperAccount, PaperPosition
 
 # Allocation modes whose sizing depends on per-name volatility (and, for
@@ -123,45 +127,31 @@ def _select_uncorrelated(
     history_provider: HistoryProvider,
     threshold: float,
 ) -> list[str]:
-    """Pick up to ``free_slots`` candidates in priority order, skipping any whose
-    mean 60-day return correlation with the active book — the already-held names
-    *plus* the candidates already accepted this scan — exceeds ``threshold``.
+    """Pick up to ``free_slots`` candidates skipping any whose mean correlation
+    with the active book exceeds ``threshold``.
 
-    Comparing against the names accepted earlier in the same scan (not just the
-    pre-existing positions) is what actually prevents a freshly-built book from
-    being five copies of the same trade; correlating only against current
-    holdings would happily admit two highly-correlated new entries at once.
-
-    A candidate with no usable history, or for which no correlation can be
-    computed, is admitted (the gate never blocks on missing data). Each skip is
-    logged. ``threshold >= 1.0`` short-circuits the gate entirely.
+    Thin wrapper around :func:`paper_trading.gates.select_uncorrelated_picks`.
+    Handles the cached returns provider (60-day daily returns memoised per
+    ticker) and the local logging of every skip — the gate module returns
+    enough info to log but does not log itself.
     """
-    if free_slots <= 0:
-        return []
-    if threshold >= 1.0:
-        return ordered_candidates[:free_slots]
-
     cache: dict[str, pd.Series | None] = {}
-    log = get_logger(__name__)
-    accepted: list[str] = []
-    for t in ordered_candidates:
-        if len(accepted) >= free_slots:
-            break
-        cand_ret = _returns_for(t, history_provider, cache)
-        compare_to = held + accepted
-        if cand_ret is None or cand_ret.empty or not compare_to:
-            accepted.append(t)
-            continue
-        held_rets = [
-            r
-            for h in compare_to
-            if (r := _returns_for(h, history_provider, cache)) is not None and not r.empty
-        ]
-        avg = mean_correlation(cand_ret, held_rets)
-        if avg is not None and avg > threshold:
-            log.info("%s skipped: avg_corr=%.2f > %.2f", t, avg, threshold)
-            continue
-        accepted.append(t)
+
+    def returns_provider(t: str) -> pd.Series | None:
+        return _returns_for(t, history_provider, cache)
+
+    accepted, skipped = select_uncorrelated_picks(
+        ordered_candidates,
+        held,
+        free_slots,
+        returns_provider,
+        threshold,
+        mean_corr_fn=mean_correlation,
+    )
+    if skipped:
+        log = get_logger(__name__)
+        for s in skipped:
+            log.info("%s skipped: avg_corr=%.2f > %.2f", s.ticker, s.avg_correlation, threshold)
     return accepted
 
 
@@ -191,6 +181,11 @@ def _apply_vol_overlay_to_buys(
     a single scan. When the book is already over target, the new exposure
     shrinks toward zero (the protective intent); existing positions are left for
     their own SELL signals / ATR stops to unwind.
+
+    Delegates the σ→factor computation to
+    :func:`paper_trading.gates.compute_vol_overlay`; this wrapper handles the
+    dollar→weight conversion, the returns-frame fetch, the logging, and the
+    application of the factor back to the picks' dollar map.
     """
     vt = _portfolio_vol_target()
     if vt <= 0 or portfolio_value <= 0 or not dollars:
@@ -203,16 +198,16 @@ def _apply_vol_overlay_to_buys(
     pick_w = {t: dollars.get(t, 0.0) / portfolio_value for t in picks}
     combined = {**held_w, **pick_w}
     ret_df = returns_frame(list(combined.keys()), history_provider)
-    _, sigma, factor = apply_portfolio_vol_overlay(combined, ret_df, vt)
-    if factor < 1.0:
+    result = compute_vol_overlay(combined, ret_df, vt, apply_fn=apply_portfolio_vol_overlay)
+    if result.factor < 1.0:
         get_logger(__name__).info(
             "portfolio vol overlay (%s): σ=%.1f%% > target %.1f%%, scaled new buys ×%.2f",
             source,
-            (sigma or 0.0) * 100,
+            (result.sigma or 0.0) * 100,
             vt * 100,
-            factor,
+            result.factor,
         )
-        return {t: v * factor for t, v in dollars.items()}
+        return {t: v * result.factor for t, v in dollars.items()}
     return dollars
 
 
