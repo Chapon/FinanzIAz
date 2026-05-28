@@ -612,9 +612,12 @@ def portfolio_backtest(
         still_open = [t for t, st in positions.items() if st.is_open and t not in forced_exits]
         free_slots = max_positions - len(still_open)
 
-        # (3) Candidates ranked by strength (only BUYs — HOLD never triggers a new entry)
+        # (3) Candidates ranked by strength (only BUYs — HOLD never triggers a new entry).
+        # Tickers force-exited this bar are blocked from immediate re-entry; otherwise the
+        # forced exit would silently turn into a same-bar rebalance and the exit_reason
+        # from forced_exit_fn would never reach trades_log.
         candidates = sorted(
-            [t for t in tickers_ok if signals[t] == "BUY" and t not in still_open],
+            [t for t in tickers_ok if signals[t] == "BUY" and t not in still_open and t not in forced_exits],
             key=lambda t: strengths[t],
             reverse=True,
         )

@@ -36,16 +36,14 @@ def _always_buy(df_slice: pd.DataFrame) -> str:
 
 def test_forced_exit_fn_called_for_open_positions():
     """Verify that forced_exit_fn is invoked for each open position."""
-    # Create synthetic data
     data = {
         "AAPL": _series(0.015, rows=300, seed=1),
         "MSFT": _series(0.012, rows=300, seed=2),
     }
 
-    call_log = []  # Record calls
+    call_log = []
 
     def _hook(ticker: str, df_slice: pd.DataFrame, pos_state: _PositionState) -> tuple[bool, str]:
-        """Log all calls; don't actually exit."""
         call_log.append((ticker, pos_state.is_open))
         return False, "logged"
 
@@ -65,29 +63,24 @@ def test_forced_exit_fn_called_for_open_positions():
     )
 
     assert result is not None
-    # Hook should have been called multiple times during the backtest
     assert len(call_log) > 0
-    # Some calls should be for open positions (not before first fill)
     assert any(is_open for _, is_open in call_log)
 
 
 def test_forced_exit_fn_closes_position():
-    """Verify that returning True from forced_exit_fn actually closes the position."""
+    """Returning True from forced_exit_fn must close an open position."""
     data = {
         "AAPL": _series(0.015, rows=300, seed=3),
     }
 
-    close_on_date = [pd.Timestamp("2025-01-15").normalize()]  # Close on a specific date
+    state = {"fired": False}
 
     def _hook(ticker: str, df_slice: pd.DataFrame, pos_state: _PositionState) -> tuple[bool, str]:
-        """Return True on a specific date if position is open."""
-        if df_slice.empty or pos_state.shares <= 0:
-            return False, "no position"
-
-        current_date = df_slice.index[-1].normalize()
-        if current_date in close_on_date:
-            return True, "forced_exit_test"
-        return False, "not time"
+        # Force exit on the very first time we see an open position.
+        if pos_state.is_open and not state["fired"]:
+            state["fired"] = True
+            return True, "test_forced_close"
+        return False, "ok"
 
     result_with_hook = portfolio_backtest(
         _always_buy,
@@ -104,37 +97,22 @@ def test_forced_exit_fn_closes_position():
         verbose=False,
     )
 
-    result_no_hook = portfolio_backtest(
-        _always_buy,
-        tickers=["AAPL"],
-        data=data,
-        allocation_mode=AllocationMode.EQUAL_WEIGHT,
-        max_positions=1,
-        initial_capital=50_000.0,
-        commission=0.001,
-        slippage=0.0005,
-        warmup=50,
-        step=5,
-        forced_exit_fn=None,  # No hook
-        verbose=False,
-    )
-
     assert result_with_hook is not None
-    assert result_no_hook is not None
-
-    # With forced exit on a specific date, should have triggered a close
-    assert result_with_hook.n_trades >= 1
-    assert result_no_hook.n_trades >= 1
+    assert state["fired"], "Hook should have fired at least once"
+    # The forced exit should have produced at least one round trip with the test reason
+    matching = [t for t in result_with_hook.trades if t.exit_reason == "test_forced_close"]
+    assert len(matching) >= 1, (
+        f"Expected exit_reason=='test_forced_close', got {[t.exit_reason for t in result_with_hook.trades]}"
+    )
 
 
 def test_forced_exit_reason_recorded():
-    """Verify that the exit_reason from forced_exit_fn is recorded in trades."""
+    """Custom exit_reason from forced_exit_fn must end up on PortfolioTrade.exit_reason."""
     data = {
         "AAPL": _series(0.015, rows=300, seed=4),
     }
 
     def _hook(ticker: str, df_slice: pd.DataFrame, pos_state: _PositionState) -> tuple[bool, str]:
-        """Force exit with a custom reason."""
         # Exit after holding for 50 days
         if pos_state.entry_date is not None:
             current = df_slice.index[-1]
@@ -159,22 +137,23 @@ def test_forced_exit_reason_recorded():
     )
 
     assert result is not None
-    assert result.n_trades >= 1
+    assert result.n_trades >= 1, "Backtest should produce at least one round-trip"
 
-    # Check that at least one trade has the forced_exit reason
+    # At least one trade must carry the custom 'forced_exit' reason — anything
+    # weaker is just re-asserting that trades exist.
     forced_exits = [t for t in result.trades if "forced_exit" in t.exit_reason]
-    if len(result.trades) > 0:
-        # At least some trades should have the forced_exit reason
-        assert len(forced_exits) > 0 or len(result.trades) > 0  # Less strict check
+    assert len(forced_exits) > 0, (
+        f"Expected at least one trade with 'forced_exit' in exit_reason, got "
+        f"reasons: {[t.exit_reason for t in result.trades]}"
+    )
 
-    # All exit reasons should be non-empty strings
     for trade in result.trades:
         assert isinstance(trade.exit_reason, str)
         assert len(trade.exit_reason) > 0
 
 
 def test_forced_exit_fn_exception_handling():
-    """Verify that exceptions in forced_exit_fn are caught gracefully."""
+    """Exceptions raised inside forced_exit_fn must be swallowed (logged), not propagated."""
     data = {
         "AAPL": _series(0.015, rows=300, seed=5),
     }
@@ -182,13 +161,11 @@ def test_forced_exit_fn_exception_handling():
     call_count = [0]
 
     def _buggy_hook(ticker: str, df_slice: pd.DataFrame, pos_state: _PositionState) -> tuple[bool, str]:
-        """Intentionally raise an exception."""
         call_count[0] += 1
-        if call_count[0] == 5:  # Raise on 5th call
+        if call_count[0] == 5:
             raise ValueError("Hook error for testing")
         return False, "ok"
 
-    # Should not raise, should handle exception gracefully with verbose=True
     result = portfolio_backtest(
         _always_buy,
         tickers=["AAPL"],
@@ -204,5 +181,5 @@ def test_forced_exit_fn_exception_handling():
         verbose=True,
     )
 
-    # Should have completed despite the exception
     assert result is not None
+    assert call_count[0] >= 5, "Hook should have been called multiple times before and after raising"

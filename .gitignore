@@ -42,6 +42,8 @@ finanzias.db-journal
 finanzias.db-wal
 finanzias.db-shm
 finanzias.db.before-restore
+finanzias.db.rebuilt
+finanzias.db.rebuilt-journal
 backups/
 *.log
 
