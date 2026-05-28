@@ -37,6 +37,27 @@ log = get_logger(__name__)
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
+
+def _toggle(key: str, default: bool = True) -> bool:
+    """Read a feature toggle from settings, defaulting to ``default``.
+
+    Wrapped in try/except so unit tests that import ``technical`` without
+    a fully initialised settings store (or with the JSON store missing)
+    still get sane defaults — the engine path always preserves current
+    behaviour unless the user explicitly flips a toggle.
+
+    Sprint 1 toggles wired here: ``hmm_enabled``, ``xgb_signal_enabled``,
+    ``stacking_enabled``. The other two (``correlation_gate_enabled`` and
+    ``vol_overlay_enabled``) live in ``paper_trading.strategies``.
+    """
+    try:
+        from config.settings_manager import settings as _settings
+
+        val = _settings.get(key, default)
+        return bool(val) if val is not None else default
+    except Exception:
+        return default
+
 # ── Data classes ──────────────────────────────────────────────────────────────
 
 
@@ -641,23 +662,36 @@ def analyze(
                 train_xgboost_signal,
             )
 
+            # Sprint-1 toggles: read once per call so monkey-patched settings
+            # in unit tests are picked up. ``hmm_enabled`` gates both the
+            # regime detector and the forward-looking state signal;
+            # ``xgb_signal_enabled`` gates only the XGBoost classifier.
+            hmm_on = _toggle("hmm_enabled", default=True)
+            xgb_on = _toggle("xgb_signal_enabled", default=True)
+
             # Prefer HMM-based regime detection; fall back to rule-based.
             # (Both detectors use GARCH volatility internally when available.)
-            market_context = detect_market_regime_hmm(df) or detect_market_regime(df)
+            if hmm_on:
+                market_context = detect_market_regime_hmm(df) or detect_market_regime(df)
+            else:
+                market_context = detect_market_regime(df)
 
             # GARCH volatility-regime signal (no-op if arch is not installed)
             garch_sig = train_garch_signal(df)
             if garch_sig:
                 signals.append(garch_sig)
 
-            # HMM state-forecast signal (no-op if hmmlearn is not installed)
-            hmm_sig = train_hmm_signal(df)
-            if hmm_sig:
-                signals.append(hmm_sig)
+            # HMM state-forecast signal (no-op if hmmlearn is not installed
+            # or if hmm_enabled is False)
+            if hmm_on:
+                hmm_sig = train_hmm_signal(df)
+                if hmm_sig:
+                    signals.append(hmm_sig)
 
-            xgb_sig = train_xgboost_signal(df)
-            if xgb_sig:
-                signals.append(xgb_sig)
+            if xgb_on:
+                xgb_sig = train_xgboost_signal(df)
+                if xgb_sig:
+                    signals.append(xgb_sig)
         except Exception as exc:
             log.warning("ML signal error for %s: %s", ticker, exc)
 
@@ -750,6 +784,13 @@ def analyze_stacked(
     )
     if result is None:
         return None
+
+    # Sprint-1 toggle: when stacking is disabled we return the heuristic
+    # result unchanged (ml_probability_source stays "heuristic"). Callers
+    # still get a fully valid AnalysisResult — only the meta-learner layer
+    # is bypassed.
+    if not _toggle("stacking_enabled", default=True):
+        return result
 
     try:
         from analysis.ml_signals import (

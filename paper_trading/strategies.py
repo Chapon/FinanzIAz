@@ -99,7 +99,15 @@ HistoryProvider = Callable[[str], pd.DataFrame | None]
 
 
 def _corr_threshold() -> float:
-    """Mean-correlation ceiling for the slot-filling gate (1.0 = disabled)."""
+    """Mean-correlation ceiling for the slot-filling gate (1.0 = disabled).
+
+    Sprint-1 toggle: when ``correlation_gate_enabled`` is False we return 1.0
+    so :func:`select_uncorrelated_picks` accepts every candidate (correlation
+    can never exceed 1.0). This is the cheapest way to short-circuit the gate
+    without changing every call site.
+    """
+    if not bool(settings.get("correlation_gate_enabled", True)):
+        return 1.0
     return float(settings.get("max_avg_correlation"))
 
 
@@ -159,7 +167,15 @@ def _select_uncorrelated(
 
 
 def _portfolio_vol_target() -> float:
-    """Annualised σ ceiling for the whole book (≤ 0 disables the overlay)."""
+    """Annualised σ ceiling for the whole book (≤ 0 disables the overlay).
+
+    Sprint-1 toggle: when ``vol_overlay_enabled`` is False we return 0.0 so the
+    overlay short-circuits (no σ estimation, no scaling). This bypass is honored
+    by every call site because both :func:`compute_vol_overlay` and the inline
+    overlay in ``generate_trades_portfolio_engine`` gate on ``vt > 0``.
+    """
+    if not bool(settings.get("vol_overlay_enabled", True)):
+        return 0.0
     return float(settings.get("vol_target_portfolio_annual"))
 
 
