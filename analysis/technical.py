@@ -47,8 +47,9 @@ def _toggle(key: str, default: bool = True) -> bool:
     behaviour unless the user explicitly flips a toggle.
 
     Sprint 1 toggles wired here: ``hmm_enabled``, ``xgb_signal_enabled``,
-    ``stacking_enabled``. The other two (``correlation_gate_enabled`` and
-    ``vol_overlay_enabled``) live in ``paper_trading.strategies``.
+    ``stacking_enabled``. ``vol_overlay_enabled`` lives in
+    ``paper_trading.strategies``. (``correlation_gate_enabled`` was removed
+    in Sprint 3 — see docs/sprint2_kill_criteria.md.)
     """
     try:
         from config.settings_manager import settings as _settings

@@ -1,0 +1,67 @@
+# Sprint 2 — universo de 42 tickers para harness attribution
+# Curado 2026-05-29. Extiende harness_universe_25.txt con 17 tickers fuera
+# del cache para cubrir los sectores faltantes en la watchlist de Sim Principal.
+#
+# Composición:
+#   Mag7/Big tech (4)        AAPL, MSFT, GOOGL, NVDA
+#   Semis (3)                AMD, AVGO, TSM
+#   Enterprise software (2)  CRM, NOW
+#   Consumer Disc retail (3) HD, LOW, TGT
+#   Consumer Disc travel (3) NKE, BKNG, MCD
+#   Consumer Staples (4)     KO, PG, WMT, MDLZ
+#   Tobacco defensives (1)   PM
+#   Legacy tech (2)          IBM, INTC
+#   Auto (2)                 TSLA, F
+#   Outlier biotech (1)      MLTX
+#   --- agregados fuera del cache, requieren prefetch ---
+#   Finance (4)              JPM, GS, BRK-B, V
+#   Healthcare (4)           UNH, JNJ, LLY, PFE
+#   Energy (2)               XOM, CVX
+#   Utilities (1)            NEE
+#   Real Estate (1)          AMT
+#   Materials (1)            LIN
+#   Industrials (3)          CAT, BA, GE
+#   Media (1)                DIS
+
+AAPL
+MSFT
+GOOGL
+NVDA
+AMD
+AVGO
+TSM
+CRM
+NOW
+HD
+LOW
+TGT
+NKE
+BKNG
+MCD
+KO
+PG
+WMT
+MDLZ
+PM
+IBM
+INTC
+TSLA
+F
+MLTX
+JPM
+GS
+BRK-B
+V
+UNH
+JNJ
+LLY
+PFE
+XOM
+CVX
+NEE
+AMT
+LIN
+CAT
+BA
+GE
+DIS

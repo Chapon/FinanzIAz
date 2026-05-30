@@ -38,8 +38,6 @@ from analysis.portfolio_backtest import (
 )
 from analysis.portfolio_risk import (
     apply_portfolio_vol_overlay,
-    daily_returns,
-    mean_correlation,
     returns_frame,
 )
 from config.logging_config import get_logger
@@ -47,7 +45,6 @@ from config.settings_manager import settings
 from database.models import utcnow_naive
 from paper_trading.gates import (
     compute_vol_overlay,
-    select_uncorrelated_picks,
 )
 from paper_trading.models import PaperAccount, PaperPosition
 
@@ -95,72 +92,14 @@ class TargetTrade:
 HistoryProvider = Callable[[str], pd.DataFrame | None]
 
 
-# ── Correlation gate (T09) ─────────────────────────────────────────────────────
-
-
-def _corr_threshold() -> float:
-    """Mean-correlation ceiling for the slot-filling gate (1.0 = disabled).
-
-    Sprint-1 toggle: when ``correlation_gate_enabled`` is False we return 1.0
-    so :func:`select_uncorrelated_picks` accepts every candidate (correlation
-    can never exceed 1.0). This is the cheapest way to short-circuit the gate
-    without changing every call site.
-    """
-    if not bool(settings.get("correlation_gate_enabled", True)):
-        return 1.0
-    return float(settings.get("max_avg_correlation"))
-
-
-def _returns_for(
-    ticker: str,
-    history_provider: HistoryProvider,
-    cache: dict[str, pd.Series | None],
-) -> pd.Series | None:
-    """Memoised 60-day daily returns for a ticker (None if no usable history)."""
-    if ticker in cache:
-        return cache[ticker]
-    df = history_provider(ticker)
-    if df is None or df.empty or "Close" not in df.columns:
-        cache[ticker] = None
-        return None
-    r = daily_returns(df["Close"].astype(float))
-    cache[ticker] = r if not r.empty else None
-    return cache[ticker]
-
-
-def _select_uncorrelated(
-    ordered_candidates: list[str],
-    held: list[str],
-    free_slots: int,
-    history_provider: HistoryProvider,
-    threshold: float,
-) -> list[str]:
-    """Pick up to ``free_slots`` candidates skipping any whose mean correlation
-    with the active book exceeds ``threshold``.
-
-    Thin wrapper around :func:`paper_trading.gates.select_uncorrelated_picks`.
-    Handles the cached returns provider (60-day daily returns memoised per
-    ticker) and the local logging of every skip — the gate module returns
-    enough info to log but does not log itself.
-    """
-    cache: dict[str, pd.Series | None] = {}
-
-    def returns_provider(t: str) -> pd.Series | None:
-        return _returns_for(t, history_provider, cache)
-
-    accepted, skipped = select_uncorrelated_picks(
-        ordered_candidates,
-        held,
-        free_slots,
-        returns_provider,
-        threshold,
-        mean_corr_fn=mean_correlation,
-    )
-    if skipped:
-        log = get_logger(__name__)
-        for s in skipped:
-            log.info("%s skipped: avg_corr=%.2f > %.2f", s.ticker, s.avg_correlation, threshold)
-    return accepted
+# ── Correlation gate (T09) — REMOVED in Sprint 3 ──────────────────────────────
+# The wiring (``_corr_threshold``, ``_returns_for``, ``_select_uncorrelated``)
+# was removed after attribution showed the gate never rejected a candidate in
+# any realistic harness setup. The pure math function
+# ``paper_trading.gates.select_uncorrelated_picks`` is preserved (kept import
+# above) as vestigial — re-introduce a wrapper here if a future strategy
+# generates many simultaneous BUYs. See docs/sprint2_kill_criteria.md
+# (Enmienda 2) for the full rationale.
 
 
 # ── Portfolio volatility overlay (T10) ──────────────────────────────────────────
@@ -311,15 +250,11 @@ def generate_trades_analyze_single(
     # Slots available after processing forced exits
     held_after = held_tickers - forced_exits
     free_slots = max(0, account.max_positions - len(held_after))
-    # Correlation gate (T09): walk the ranked list and skip candidates too
-    # correlated with the active book before they consume a slot.
-    picks = _select_uncorrelated(
-        [t for _, t in ranked],
-        list(held_after),
-        free_slots,
-        history_provider,
-        _corr_threshold(),
-    )
+    # Correlation gate removed in Sprint 3 (2026-05-29). The gate never rejected
+    # a candidate in any realistic harness setup because analyze_stacked produces
+    # 1-2 BUYs per step. Picks now come straight from the ranked list, truncated
+    # to free_slots. See docs/sprint2_kill_criteria.md (Enmienda 2).
+    picks = [t for _, t in ranked][:free_slots]
 
     if not picks:
         return trades
@@ -474,15 +409,8 @@ def generate_trades_portfolio_engine(
         key=lambda t: strengths.get(t, 0.0),
         reverse=True,
     )
-    # Correlation gate (T09): skip candidates too correlated with the active
-    # book (still-held positions + names already picked this scan).
-    new_entries = _select_uncorrelated(
-        candidates,
-        still_held,
-        free_slots,
-        history_provider,
-        _corr_threshold(),
-    )
+    # Correlation gate removed in Sprint 3 — see strategy_analyze_single above.
+    new_entries = candidates[:free_slots]
     active = still_held + new_entries
 
     # ── Current portfolio value (mark-to-market) ──────────────────────────────

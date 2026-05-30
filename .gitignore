@@ -71,6 +71,8 @@ desktop.ini
 
 # Data temp files
 data/.refresh
+data/harness_results/
+data/harness_walkforward/
 
 # Internal docs generated during analysis sessions (kept locally only)
 ANALISIS_FINANZIAS.md

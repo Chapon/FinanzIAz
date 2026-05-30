@@ -7,7 +7,10 @@ gate when filling free slots so it stops building a "portfolio" that is really
 one trade wearing five tickers (the classic 5-big-tech book).
 
 No I/O, no settings access: callers pass in price / return data and the
-threshold lives in ``config.settings_manager`` (``max_avg_correlation``).
+threshold directly. (Pre-Sprint-3 the threshold lived in
+``config.settings_manager`` as ``max_avg_correlation``; both that setting and
+its in-engine wiring were removed when attribution showed the gate never
+fired in realistic setups. The math is kept for future use.)
 """
 
 from __future__ import annotations

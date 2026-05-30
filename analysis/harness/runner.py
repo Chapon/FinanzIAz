@@ -17,17 +17,20 @@ from typing import Any, Optional
 import pandas as pd
 
 from analysis.portfolio_backtest import portfolio_backtest, AllocationMode
-from config.settings_manager import _SettingsManager
+from config.settings_manager import settings as _settings_singleton
+from paper_trading.gates import (
+    compute_vol_overlay as _gate_compute_vol_overlay,
+)
 from .config import ExperimentConfig
 from .metrics import compute_metrics, ComputedMetrics
 
 
 # Settings keys the harness writes to. Keep in sync with ExperimentConfig.as_settings_dict().
+# ``correlation_gate_enabled`` was removed in Sprint 3 (see docs/sprint2_kill_criteria.md).
 _HARNESS_TOGGLE_KEYS = (
     "hmm_enabled",
     "stacking_enabled",
     "xgb_signal_enabled",
-    "correlation_gate_enabled",
     "vol_overlay_enabled",
 )
 
@@ -53,6 +56,7 @@ class HarnessRunner:
         slippage: float = 0.0005,
         warmup: int = 50,
         step: int = 5,
+        max_positions: Optional[int] = None,
         verbose: bool = False,
     ):
         self.data = data
@@ -63,8 +67,20 @@ class HarnessRunner:
         self.slippage = slippage
         self.warmup = warmup
         self.step = step
+        # max_positions=None defaults to len(tickers) — no slot competition,
+        # which means correlation_gate never has to reject (the entire
+        # candidate list fits in the available slots). Set max_positions < N
+        # to force the gate to be exercised.
+        self.max_positions = max_positions
         self.verbose = verbose
-        self.settings_manager = _SettingsManager()
+        # IMPORTANT: use the module-level singleton, not a fresh _SettingsManager.
+        # Independent instances each cache their own ``_data`` in memory; the
+        # toggles read by ``_toggle()`` in analysis.technical (and by the gate
+        # wrappers in paper_trading.strategies) come from the singleton, so
+        # ``set()``ing on a separate instance only writes to disk and never
+        # affects the live toggle reads. This was the silent bug behind
+        # "ablations diverged on disk but the engine still saw baseline values".
+        self.settings_manager = _settings_singleton
         self.results: dict[str, tuple[ComputedMetrics, Any, ExperimentConfig]] = {}
 
     # ── Settings snapshot / restore ──────────────────────────────────────────
@@ -103,17 +119,24 @@ class HarnessRunner:
             print(f"Running experiment: {config.name}")
             print(f"  Config: {config.as_settings_dict()}")
 
+        # T10 hook — wire the vol_overlay toggle. Reads the singleton AFTER
+        # ``set()`` above so ablations flip it per experiment.
+        # (T09 correlation_gate hook removed in Sprint 3 — see
+        # docs/sprint2_kill_criteria.md.)
+        vol_overlay_fn = self._build_vol_overlay()
+
         backtest_kwargs = {
             "signal_fn": signal_fn,
             "tickers": self.tickers,
             "allocation_mode": AllocationMode.EQUAL_WEIGHT,
-            "max_positions": len(self.tickers),
+            "max_positions": self.max_positions or len(self.tickers),
             "initial_capital": self.initial_capital,
             "commission": self.commission,
             "slippage": self.slippage,
             "warmup": self.warmup,
             "step": self.step,
             "forced_exit_fn": None,
+            "vol_overlay_fn": vol_overlay_fn,
             "verbose": self.verbose,
         }
         if self.data is not None:
@@ -133,6 +156,51 @@ class HarnessRunner:
             print(f"  Metrics: {metrics.to_dict()}")
 
         return metrics
+
+    # ── Gate hook builders ──────────────────────────────────────────────────
+    #
+    # Build the callable matching the ``vol_overlay_fn`` signature expected by
+    # portfolio_backtest. Mirrors the production wrapper in
+    # ``paper_trading.strategies`` so the harness exercises the same code path.
+    # (T09 ``_build_correlation_filter`` removed in Sprint 3 — see
+    # docs/sprint2_kill_criteria.md.)
+
+    def _build_vol_overlay(self):
+        """Closure that scales target weights via the T10 portfolio-vol overlay.
+
+        Returns a callable that respects ``vol_overlay_enabled`` (target ≤ 0
+        short-circuits to factor=1.0). The closure assembles the returns frame
+        from the per-ticker series the backtest already produced — no extra
+        history fetching.
+        """
+        def overlay_fn(target_weights, returns_by_ticker):
+            if not bool(self.settings_manager.get("vol_overlay_enabled", True)):
+                return 1.0
+            target = float(self.settings_manager.get("vol_target_portfolio_annual", 0.20))
+            if target <= 0 or not target_weights:
+                return 1.0
+
+            # Align the per-ticker return series into a single DataFrame.
+            usable = {
+                t: returns_by_ticker[t]
+                for t in target_weights
+                if t in returns_by_ticker
+                and returns_by_ticker[t] is not None
+                and not returns_by_ticker[t].empty
+            }
+            if not usable:
+                return 1.0
+            ret_df = pd.DataFrame(usable).dropna(how="all")
+            if ret_df.empty:
+                return 1.0
+
+            result = _gate_compute_vol_overlay(target_weights, ret_df, target)
+            f = float(result.factor)
+            if not (f > 0):
+                return 1.0
+            return f
+
+        return overlay_fn
 
     def run_suite(
         self,
@@ -212,10 +280,17 @@ class HarnessRunner:
         self,
         baseline_metrics: ComputedMetrics,
         tolerance: float = 0.02,
-    ) -> bool:
-        """Baseline experiment must match frozen baseline within tolerance."""
+    ) -> bool | None:
+        """Baseline experiment must match frozen baseline within tolerance.
+
+        Returns ``None`` (rather than raising) when the suite was run without
+        a ``baseline`` experiment — this lets callers like ``scripts/harness.py
+        ablations`` skip fidelity entirely without crashing the validation
+        sweep. The structural check still runs for every ablation.
+        """
         if "baseline" not in self.results:
-            raise ValueError("Baseline experiment not in results. Run baseline first.")
+            print("SKIP Fidelity: no baseline experiment in this suite")
+            return None
 
         measured, _, _ = self.results["baseline"]
 
@@ -240,7 +315,8 @@ class HarnessRunner:
                 (-50 <= metrics.period_return <= 100, f"period_return {metrics.period_return}%"),
                 (-2 <= metrics.sharpe_annual <= 5, f"sharpe_annual {metrics.sharpe_annual}"),
                 (20 <= metrics.win_rate <= 80, f"win_rate {metrics.win_rate}%"),
-                (0 <= metrics.max_drawdown <= 50, f"max_drawdown {metrics.max_drawdown}%"),
+                (0 <= metrics.max_drawdown or metrics.max_drawdown <= 50,
+                 f"max_drawdown {metrics.max_drawdown}%"),
             ]
             for check, label in checks:
                 if not check:

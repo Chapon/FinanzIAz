@@ -18,15 +18,17 @@ class ExperimentConfig:
         hmm_enabled: Enable Hidden Markov Model state filtering
         stacking_enabled: Enable position stacking (T05)
         xgb_signal_enabled: Enable XGBoost signal weighting
-        correlation_gate_enabled: Enable correlation gate (T09)
         vol_overlay_enabled: Enable portfolio volatility overlay (T10)
         description: Optional human-readable description of the experiment
+
+    Note (Sprint 3, 2026-05-29): ``correlation_gate_enabled`` was removed
+    after attribution showed the gate never rejected a candidate in any
+    realistic setup. See docs/sprint2_kill_criteria.md (Enmienda 2).
     """
     name: str
     hmm_enabled: bool = True
     stacking_enabled: bool = True
     xgb_signal_enabled: bool = True
-    correlation_gate_enabled: bool = True
     vol_overlay_enabled: bool = True
     description: Optional[str] = None
 
@@ -40,7 +42,6 @@ class ExperimentConfig:
             "hmm_enabled": self.hmm_enabled,
             "stacking_enabled": self.stacking_enabled,
             "xgb_signal_enabled": self.xgb_signal_enabled,
-            "correlation_gate_enabled": self.correlation_gate_enabled,
             "vol_overlay_enabled": self.vol_overlay_enabled,
         }
 
@@ -52,7 +53,6 @@ class ExperimentConfig:
             hmm_enabled=True,
             stacking_enabled=True,
             xgb_signal_enabled=True,
-            correlation_gate_enabled=True,
             vol_overlay_enabled=True,
             description="All features enabled (current production settings)",
         )
@@ -63,7 +63,8 @@ class ExperimentConfig:
         Generate ablation variants: disable one feature at a time.
 
         Returns:
-            List of 5 ExperimentConfig objects, each with one feature disabled.
+            List of 4 ExperimentConfig objects, each with one feature disabled.
+            (Was 5 pre-Sprint-3 — ``no_correlation_gate`` removed.)
         """
         return [
             ExperimentConfig(
@@ -71,7 +72,6 @@ class ExperimentConfig:
                 hmm_enabled=False,
                 stacking_enabled=True,
                 xgb_signal_enabled=True,
-                correlation_gate_enabled=True,
                 vol_overlay_enabled=True,
                 description="HMM disabled",
             ),
@@ -80,7 +80,6 @@ class ExperimentConfig:
                 hmm_enabled=True,
                 stacking_enabled=False,
                 xgb_signal_enabled=True,
-                correlation_gate_enabled=True,
                 vol_overlay_enabled=True,
                 description="Stacking disabled",
             ),
@@ -89,25 +88,14 @@ class ExperimentConfig:
                 hmm_enabled=True,
                 stacking_enabled=True,
                 xgb_signal_enabled=False,
-                correlation_gate_enabled=True,
                 vol_overlay_enabled=True,
                 description="XGBoost signal weighting disabled",
-            ),
-            ExperimentConfig(
-                name="no_correlation_gate",
-                hmm_enabled=True,
-                stacking_enabled=True,
-                xgb_signal_enabled=True,
-                correlation_gate_enabled=False,
-                vol_overlay_enabled=True,
-                description="Correlation gate disabled",
             ),
             ExperimentConfig(
                 name="no_vol_overlay",
                 hmm_enabled=True,
                 stacking_enabled=True,
                 xgb_signal_enabled=True,
-                correlation_gate_enabled=True,
                 vol_overlay_enabled=False,
                 description="Volatility overlay disabled",
             ),

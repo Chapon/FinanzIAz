@@ -12,8 +12,9 @@ The toggles, sites and bypass mechanisms:
   hmm_enabled              technical.analyze              hmm_on guard
   xgb_signal_enabled       technical.analyze              xgb_on guard
   stacking_enabled         technical.analyze_stacked      early return
-  correlation_gate_enabled strategies._corr_threshold     returns 1.0
   vol_overlay_enabled      strategies._portfolio_vol_target  returns 0.0
+
+  (correlation_gate_enabled removed in Sprint 3 — see docs/sprint2_kill_criteria.md.)
 
 These tests are intentionally cheap (no DB, no scan loop) -- they prove the
 toggle is read at the right site, not that the resulting backtest diverges.
@@ -159,66 +160,16 @@ def test_stacking_enabled_off_returns_heuristic():
 
 
 # ---------------------------------------------------------------------------
-# 4. correlation_gate_enabled (via in-test replica + gates-level end-to-end)
+# Sprint 3: ``correlation_gate_enabled`` was removed (config, wiring, ablation
+# flag) after attribution found the gate never rejected a candidate in any
+# realistic setup. The pure math function ``gates.select_uncorrelated_picks``
+# is kept and tested in ``tests/test_correlation_gate.py`` for future reuse.
+# The toggle-wiring tests that lived here are intentionally gone.
 # ---------------------------------------------------------------------------
 
 
-def _corr_threshold_replica(settings_get):
-    """In-test mirror of paper_trading.strategies._corr_threshold.
-
-    If you change the real helper, update this replica too.
-    """
-    if not bool(settings_get("correlation_gate_enabled", True)):
-        return 1.0
-    return float(settings_get("max_avg_correlation"))
-
-
-def test_correlation_gate_enabled_default_uses_threshold():
-    """Default ON: helper returns the real max_avg_correlation setting."""
-    from config.settings_manager import settings as _real
-
-    real_threshold = float(_real.get("max_avg_correlation"))
-    assert _corr_threshold_replica(_real.get) == pytest.approx(real_threshold)
-
-
-def test_correlation_gate_enabled_off_returns_one():
-    """OFF: helper returns 1.0."""
-    from config.settings_manager import settings as _real
-
-    def _patched(key, fallback=None):
-        if key == "correlation_gate_enabled":
-            return False
-        return _real.get(key, fallback)
-
-    assert _corr_threshold_replica(_patched) == 1.0
-
-
-def test_correlation_gate_off_admits_everyone():
-    """End-to-end on the real gate: threshold=1.0 admits all candidates without
-    calling the mean-correlation function."""
-    from paper_trading import gates
-
-    called = []
-
-    def fake_mc(a, b):
-        called.append((a, b))
-        return 0.99  # would reject if the gate ran
-
-    accepted, skipped = gates.select_uncorrelated_picks(
-        ordered_candidates=["AAA", "BBB", "CCC"],
-        held=["XYZ"],
-        free_slots=3,
-        returns_provider=lambda _t: pd.Series([0.01, 0.02, 0.03]),
-        threshold=1.0,
-        mean_corr_fn=fake_mc,
-    )
-    assert accepted == ["AAA", "BBB", "CCC"]
-    assert skipped == []
-    assert called == [], "Correlation function must NOT be called when threshold=1.0"
-
-
 # ---------------------------------------------------------------------------
-# 5. vol_overlay_enabled (via in-test replica + gates-level end-to-end)
+# 4. vol_overlay_enabled (via in-test replica + gates-level end-to-end)
 # ---------------------------------------------------------------------------
 
 

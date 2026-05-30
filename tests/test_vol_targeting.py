@@ -166,10 +166,10 @@ def _patch_analyze(monkeypatch, table):
 
 @pytest.fixture(autouse=True)
 def _restore_settings():
-    keys = ("vol_target_portfolio_annual", "max_avg_correlation")
+    # Sprint 3: ``max_avg_correlation`` and the correlation_gate wiring were
+    # removed, so we only need to snapshot/restore the vol-target setting.
+    keys = ("vol_target_portfolio_annual",)
     saved = {k: settings.get(k) for k in keys}
-    # Keep the correlation gate out of the way for these tests.
-    settings.set("max_avg_correlation", 1.0)
     yield
     for k, v in saved.items():
         settings.set(k, v)

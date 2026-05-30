@@ -67,11 +67,22 @@ def compute_metrics(
     if backtest_result is None or not hasattr(backtest_result, 'equity_curve'):
         raise ValueError("Invalid backtest_result: missing equity_curve")
 
-    equity = backtest_result.equity_curve
+    # Normalize equity to a plain numpy array. PortfolioBacktestResult ships a
+    # datetime-indexed pd.Series, mocks ship a numpy array — under pandas 2.x
+    # Series[-1] with a datetime index is a KeyError (not just a deprecation
+    # warning as in 1.x). Coerce once here so the rest of the function can
+    # use positional access uniformly.
+    equity_raw = backtest_result.equity_curve
+    if hasattr(equity_raw, "to_numpy"):
+        equity = np.asarray(equity_raw.to_numpy(), dtype=float)
+    else:
+        equity = np.asarray(equity_raw, dtype=float)
+    # Drop NaN/inf that can sneak in when the backtest force-fills warmup bars
+    equity = equity[np.isfinite(equity)]
     trades = backtest_result.trades
 
     # 1. Period Return (%)
-    final_equity = equity[-1] if len(equity) > 0 else initial_capital
+    final_equity = float(equity[-1]) if len(equity) > 0 else initial_capital
     period_return = 100.0 * (final_equity - initial_capital) / initial_capital
 
     # 2. CAGR (%) — only if we have >=1 year of data

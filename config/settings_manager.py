@@ -242,20 +242,15 @@ SCHEMA: dict[str, SettingSpec] = {
             "setting."
         ),
     ),
-    # Correlation gate (T09 of the engine roadmap)
-    "max_avg_correlation": SettingSpec(
-        (int, float),
-        0.75,
-        min=0.0,
-        max=1.0,
-        doc=(
-            "When filling a free slot, skip a BUY candidate whose mean 60-day "
-            "daily-return correlation with the already-active book (plus names "
-            "already picked this scan) exceeds this. Stops the engine from "
-            "filling every slot with names that move together. 1.0 = disable "
-            "the gate (correlation can never exceed 1.0)."
-        ),
-    ),
+    # NOTE: ``max_avg_correlation`` and ``correlation_gate_enabled`` were removed
+    # in Sprint 3 (2026-05-29) after attribution showed the gate never rejected
+    # a candidate in any realistic harness setup. ``analyze_stacked`` with a
+    # 0.55 buy threshold produces 1-2 BUYs per step, never reaching the
+    # "candidates > slots" condition the gate was designed for. The pure
+    # math function ``paper_trading.gates.select_uncorrelated_picks`` is kept
+    # as vestigial — re-introduce these settings + a wrapper if a future
+    # strategy generates many simultaneous BUYs and wants the gate back.
+    # See ``docs/sprint2_kill_criteria.md`` Enmienda 2.
     # Portfolio volatility targeting overlay (T10 of the engine roadmap)
     "vol_target_portfolio_annual": SettingSpec(
         (int, float),
@@ -295,15 +290,6 @@ SCHEMA: dict[str, SettingSpec] = {
         doc=(
             "Enable XGBoost signal weighting in allocation. When disabled, "
             "uses equal weighting across signal_score bins."
-        ),
-    ),
-    "correlation_gate_enabled": SettingSpec(
-        bool,
-        True,
-        doc=(
-            "Enable correlation gate (T09): skip BUY candidates whose mean "
-            "60-day correlation with active book exceeds max_avg_correlation. "
-            "When disabled, correlation is not checked."
         ),
     ),
     "vol_overlay_enabled": SettingSpec(

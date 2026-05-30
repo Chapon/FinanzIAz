@@ -473,6 +473,52 @@ def signal_from_ml_probability(
 _ML_INDICATORS = {"XGBoost ML", "HMM Régimen", "GARCH Volatilidad"}
 
 
+def signal_from_analyze_stacked(
+    buy_threshold: float = 0.55,
+    sell_threshold: float = 0.45,
+    enable_sma_cross: bool = True,
+    enable_volume: bool = True,
+    enable_xgboost: bool = True,
+) -> SignalFn:
+    """
+    Stacked-analysis signal: routes through ``analyze_stacked`` so the three
+    "analyze-side" Sprint-1 toggles (``hmm_enabled`` / ``xgb_signal_enabled``
+    / ``stacking_enabled``) all affect the trading decision. Used by the
+    T-harness to make ablations actually diverge from the baseline.
+
+    When ``ml_probability`` is available it drives the signal via threshold
+    (so flipping any toggle changes the probability and therefore the signal).
+    Otherwise falls back to ``overall_signal``.
+
+    SLOW: trains XGBoost + HMM + stacking combiner on each call. Use ``step``
+    ≥ 5 in the backtest and budget runtime accordingly (several minutes per
+    ticker over 1 year of daily bars). Intended for offline attribution
+    studies, not live scans.
+    """
+    from analysis.technical import analyze_stacked
+
+    def _fn(df_slice: pd.DataFrame) -> str:
+        res = analyze_stacked(
+            "BT",
+            df_slice,
+            enable_sma_cross=enable_sma_cross,
+            enable_volume=enable_volume,
+            enable_xgboost=enable_xgboost,
+        )
+        if res is None:
+            return "HOLD"
+        if res.ml_probability is not None and np.isfinite(res.ml_probability):
+            p = float(res.ml_probability)
+            if p >= buy_threshold:
+                return "BUY"
+            if p <= sell_threshold:
+                return "SELL"
+            return "HOLD"
+        return res.overall_signal
+
+    return _fn
+
+
 def signal_from_indicator(indicator_name: str) -> SignalFn:
     """
     Extract the raw BUY/SELL/HOLD of a single TechnicalSignal by name.

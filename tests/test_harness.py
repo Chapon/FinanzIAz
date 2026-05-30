@@ -65,31 +65,32 @@ class MockBacktestResult:
 
 
 def test_experiment_config_baseline():
-    """Verify baseline config has all features enabled."""
+    """Verify baseline config has all (current) features enabled.
+
+    Sprint 3: ``correlation_gate_enabled`` was removed — see
+    docs/sprint2_kill_criteria.md.
+    """
     cfg = ExperimentConfig.baseline()
     assert cfg.name == "baseline"
     assert cfg.hmm_enabled is True
     assert cfg.stacking_enabled is True
     assert cfg.xgb_signal_enabled is True
-    assert cfg.correlation_gate_enabled is True
     assert cfg.vol_overlay_enabled is True
 
 
 def test_experiment_config_ablation_variants():
-    """Verify ablation variants disable one feature each."""
+    """Verify ablation variants disable one feature each. (4 variants post-Sprint-3.)"""
     variants = ExperimentConfig.ablation_variants()
-    assert len(variants) == 5
+    assert len(variants) == 4
 
-    # Each variant should have exactly one feature disabled
     for variant in variants:
         enabled_count = sum([
             variant.hmm_enabled,
             variant.stacking_enabled,
             variant.xgb_signal_enabled,
-            variant.correlation_gate_enabled,
             variant.vol_overlay_enabled,
         ])
-        assert enabled_count == 4, f"Variant {variant.name} should have 4/5 features"
+        assert enabled_count == 3, f"Variant {variant.name} should have 3/4 features"
 
 
 def test_experiment_config_serialization():
@@ -99,7 +100,6 @@ def test_experiment_config_serialization():
         hmm_enabled=False,
         stacking_enabled=True,
         xgb_signal_enabled=False,
-        correlation_gate_enabled=True,
         vol_overlay_enabled=False,
         description="Test config",
     )
@@ -116,7 +116,6 @@ def test_experiment_config_as_settings_dict():
         hmm_enabled=False,
         stacking_enabled=True,
         xgb_signal_enabled=False,
-        correlation_gate_enabled=True,
         vol_overlay_enabled=False,
     )
     settings = cfg.as_settings_dict()
@@ -124,7 +123,6 @@ def test_experiment_config_as_settings_dict():
         "hmm_enabled": False,
         "stacking_enabled": True,
         "xgb_signal_enabled": False,
-        "correlation_gate_enabled": True,
         "vol_overlay_enabled": False,
     }
 

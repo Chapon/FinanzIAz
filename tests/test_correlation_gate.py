@@ -1,17 +1,17 @@
 """
-Tests for T09 — correlation check when filling a free slot.
+Tests for T09 correlation math — kept as vestigial after Sprint 3.
 
-Two layers:
+Pure unit tests of ``analysis.portfolio_risk`` (``mean_correlation`` and
+``diversification_ratio``) — high/low/negative correlation, the empty and
+insufficient-overlap edge cases, and the diversification metric on a
+perfectly-correlated vs an uncorrelated book.
 
-1. Pure unit tests of ``analysis.portfolio_risk`` (``mean_correlation`` and
-   ``diversification_ratio``) — high/low/negative correlation, the empty and
-   insufficient-overlap edge cases, and the diversification metric on a
-   perfectly-correlated vs an uncorrelated book.
-
-2. Integration tests that the two live strategies (``analyze_single`` and
-   ``portfolio_engine``) actually skip a candidate that is too correlated with
-   the active book and admit an anti-correlated one. ``analyze()`` is
-   monkeypatched so these stay fast and deterministic (no indicators / network).
+Sprint 3 (2026-05-29): the integration tests that exercised the wiring in
+``paper_trading.strategies`` and the harness were removed because the wiring
+itself was removed (the gate never rejected a candidate in any realistic
+setup). The pure functions live in ``paper_trading.gates.select_uncorrelated_picks``
+and ``analysis.portfolio_risk`` and are kept for future re-introduction.
+See ``docs/sprint2_kill_criteria.md`` Enmienda 2 for the full rationale.
 """
 
 from __future__ import annotations
@@ -151,123 +151,10 @@ def _patch_analyze(monkeypatch, table: dict[str, tuple[str, float | None]]):
 
     monkeypatch.setattr(technical, "analyze", fake_analyze)
 
+# Integration tests for ``analyze_single`` / ``portfolio_engine`` correlation
+# wiring were removed in Sprint 3 — see docs/sprint2_kill_criteria.md (Enmienda 2).
+# The pure math (above) is preserved as the function is kept in
+# ``paper_trading.gates.select_uncorrelated_picks`` for future re-introduction.
 
-@pytest.fixture(autouse=True)
-def _restore_threshold():
-    """Keep the global setting from leaking between tests."""
-    original = settings.get("max_avg_correlation")
-    yield
-    settings.set("max_avg_correlation", original)
-
-
-# ── Integration: analyze_single ─────────────────────────────────────────────
-
-
-def test_analyze_single_blocks_correlated_admits_hedge(monkeypatch):
-    from paper_trading.strategies import generate_trades_analyze_single
-
-    settings.set("max_avg_correlation", 0.75)
-    book = _correlated_book()
-    # AAPL & MSFT already held (HOLD → no forced exit); GOOGL & GLD are BUY
-    # candidates. GOOGL is ~1.0 correlated with the held cluster → blocked;
-    # GLD is anti-correlated → admitted.
-    _patch_analyze(
-        monkeypatch,
-        {
-            "AAPL": ("HOLD", 0.50),
-            "MSFT": ("HOLD", 0.50),
-            "GOOGL": ("BUY", 0.70),
-            "GLD": ("BUY", 0.60),
-        },
-    )
-    positions = [
-        SimpleNamespace(ticker="AAPL", shares=10.0, avg_cost=100.0),
-        SimpleNamespace(ticker="MSFT", shares=10.0, avg_cost=100.0),
-    ]
-    trades = generate_trades_analyze_single(
-        account=_account(),
-        watchlist=["GOOGL", "GLD"],
-        positions=positions,
-        prices={t: float(book[t]["Close"].iloc[-1]) for t in book},
-        history_provider=lambda t: book.get(t),
-    )
-
-    bought = {tr.ticker for tr in trades if tr.side == "BUY"}
-    assert "GLD" in bought
-    assert "GOOGL" not in bought
-
-
-def test_analyze_single_threshold_one_disables_gate(monkeypatch):
-    from paper_trading.strategies import generate_trades_analyze_single
-
-    settings.set("max_avg_correlation", 1.0)  # gate off
-    book = _correlated_book()
-    _patch_analyze(
-        monkeypatch,
-        {
-            "AAPL": ("HOLD", 0.50),
-            "GOOGL": ("BUY", 0.70),
-        },
-    )
-    positions = [SimpleNamespace(ticker="AAPL", shares=10.0, avg_cost=100.0)]
-    trades = generate_trades_analyze_single(
-        account=_account(),
-        watchlist=["GOOGL"],
-        positions=positions,
-        prices={t: float(book[t]["Close"].iloc[-1]) for t in book},
-        history_provider=lambda t: book.get(t),
-    )
-    assert "GOOGL" in {tr.ticker for tr in trades if tr.side == "BUY"}
-
-
-def test_analyze_single_blocks_second_correlated_new_entry(monkeypatch):
-    """No prior positions, but two mutually-correlated candidates: the first is
-    admitted (nothing to compare to), the second is blocked against it."""
-    from paper_trading.strategies import generate_trades_analyze_single
-
-    settings.set("max_avg_correlation", 0.75)
-    book = _correlated_book()
-    _patch_analyze(monkeypatch, {"AAPL": ("BUY", 0.80), "MSFT": ("BUY", 0.70)})
-    trades = generate_trades_analyze_single(
-        account=_account(),
-        watchlist=["AAPL", "MSFT"],
-        positions=[],
-        prices={t: float(book[t]["Close"].iloc[-1]) for t in book},
-        history_provider=lambda t: book.get(t),
-    )
-    bought = {tr.ticker for tr in trades if tr.side == "BUY"}
-    # AAPL ranks first (0.80) and is admitted; MSFT is ~1.0 correlated → blocked.
-    assert bought == {"AAPL"}
-
-
-# ── Integration: portfolio_engine ───────────────────────────────────────────
-
-
-def test_portfolio_engine_blocks_correlated_admits_hedge(monkeypatch):
-    from paper_trading.strategies import generate_trades_portfolio_engine
-
-    settings.set("max_avg_correlation", 0.75)
-    book = _correlated_book()
-    _patch_analyze(
-        monkeypatch,
-        {
-            "AAPL": ("HOLD", 0.50),
-            "MSFT": ("HOLD", 0.50),
-            "GOOGL": ("BUY", 0.70),
-            "GLD": ("BUY", 0.60),
-        },
-    )
-    positions = [
-        SimpleNamespace(ticker="AAPL", shares=10.0, avg_cost=100.0),
-        SimpleNamespace(ticker="MSFT", shares=10.0, avg_cost=100.0),
-    ]
-    trades = generate_trades_portfolio_engine(
-        account=_account(),
-        watchlist=["AAPL", "MSFT", "GOOGL", "GLD"],
-        positions=positions,
-        prices={t: float(book[t]["Close"].iloc[-1]) for t in book},
-        history_provider=lambda t: book.get(t),
-    )
-    buys = {tr.ticker for tr in trades if tr.side == "BUY"}
-    assert "GLD" in buys
-    assert "GOOGL" not in buys
+# Drop the autouse fixture too — there is no ``max_avg_correlation`` setting
+# to restore anymore.

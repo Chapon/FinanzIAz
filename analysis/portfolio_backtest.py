@@ -523,6 +523,9 @@ def portfolio_backtest(
     vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
     max_position_weight: float = DEFAULT_MAX_POSITION_WEIGHT,
     forced_exit_fn: Callable[[str, pd.DataFrame, _PositionState], tuple[bool, str]] | None = None,
+    vol_overlay_fn: (
+        Callable[[dict[str, float], dict[str, "pd.Series"]], float] | None
+    ) = None,
     verbose: bool = False,
 ) -> PortfolioBacktestResult | None:
     """
@@ -621,7 +624,13 @@ def portfolio_backtest(
             key=lambda t: strengths[t],
             reverse=True,
         )
-        new_entries = candidates[: max(0, free_slots)]
+
+        # T09 correlation_filter_fn hook removed in Sprint 3 — attribution
+        # showed the gate never rejected a candidate in any realistic setup
+        # (analyze_stacked threshold 0.55 produces 1-2 BUYs per step, never
+        # reaching "candidates > slots"). See docs/sprint2_kill_criteria.md.
+        free_slots = max(0, free_slots)
+        new_entries = candidates[:free_slots]
 
         # Final active set after this step's decisions
         active = [t for t in tickers_ok if t in still_open or t in new_entries]
@@ -663,6 +672,26 @@ def portfolio_backtest(
                 vol_target_annual=vol_target_annual,
                 max_weight=max_position_weight,
             )
+
+            # T10 hook: portfolio vol overlay. Caller's ``vol_overlay_fn``
+            # returns a scale factor in (0, 1] that we apply uniformly to the
+            # target weights; ``factor >= 1.0`` is a no-op. Hook is responsible
+            # for honoring any "enabled" toggle.
+            if vol_overlay_fn is not None and target_weights:
+                window_lo = max(0, i - 60)
+                returns_by_ticker = {
+                    t: closes[t].iloc[window_lo : i + 1].pct_change().dropna()
+                    for t in tickers_ok
+                }
+                try:
+                    factor = float(vol_overlay_fn(dict(target_weights), returns_by_ticker))
+                except Exception as exc:
+                    if verbose:
+                        log.warning("vol_overlay_fn@%s error: %s", date, exc)
+                    factor = 1.0
+                if np.isfinite(factor) and 0.0 < factor < 1.0:
+                    target_weights = {t: w * factor for t, w in target_weights.items()}
+
             target_dollars = {t: target_weights.get(t, 0.0) * portfolio_val for t in tickers_ok}
 
         # ── Rebalance triggers ────────────────────────────────────────────────
@@ -904,7 +933,7 @@ def format_portfolio_report(r: PortfolioBacktestResult) -> str:
         lines.append("")
         lines.append("Avisos de carga de datos:")
         for w in r.warnings:
-            lines.append(f"  • {w}")
+            lines.append(f"  - {w}")
 
     return "\n".join(lines)
 

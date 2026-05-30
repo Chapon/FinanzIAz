@@ -89,10 +89,12 @@ def test_bool_int_distinction(tmp_path, monkeypatch):
 
 
 def test_feature_toggles_sprint1_persist(tmp_path, monkeypatch):
-    """Sprint 1: Five feature toggles (hmm, stacking, xgb, correlation, vol_overlay)."""
+    """Sprint 1: feature toggles (hmm, stacking, xgb, vol_overlay).
+    (correlation_gate_enabled was removed in Sprint 3 — see
+    docs/sprint2_kill_criteria.md.)"""
     s = _new_manager(tmp_path, monkeypatch)
     toggles = ["hmm_enabled", "stacking_enabled", "xgb_signal_enabled",
-               "correlation_gate_enabled", "vol_overlay_enabled"]
+               "vol_overlay_enabled"]
 
     # All default to True
     for toggle in toggles:

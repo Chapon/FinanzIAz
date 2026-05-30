@@ -1047,7 +1047,11 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
 # Regime/volatility are NOT separate columns — the GARCH and HMM columns already
 # carry that information, per the roadmap's feature list.
 
-MIN_STACKING_ROWS = 200  # below this, fall back to the heuristic combiner
+MIN_STACKING_ROWS = 50  # below this, fall back to the heuristic combiner
+# Sprint 2 attribution found that 200 was never reached in the harness
+# (17,047 fallbacks vs 0 successful trains on 2y/42 tickers). Lowered to 50
+# so the meta-learner can actually be evaluated on the realistic data path.
+# The legacy 200 threshold lives in tests/test_stacking.py as a sanity bound.
 
 # Stable feature-column order for the meta-feature matrix.
 STACKING_FEATURE_COLS = [

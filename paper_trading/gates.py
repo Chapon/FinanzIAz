@@ -175,7 +175,20 @@ def select_uncorrelated_picks(
     *,
     mean_corr_fn: Callable[["pd.Series", list["pd.Series"]], float | None] | None = None,
 ) -> tuple[list[str], list[CorrelationSkip]]:
-    """Pick up to ``free_slots`` candidates skipping any whose mean correlation
+    """VESTIGIAL after Sprint 3 (2026-05-29) — see ``docs/sprint2_kill_criteria.md``.
+
+    The wiring that called this function (``_select_uncorrelated`` in
+    ``paper_trading.strategies`` and the harness's ``_build_correlation_filter``)
+    was removed because attribution found the gate never rejected a candidate
+    in any realistic setup — ``analyze_stacked`` with a 0.55 buy threshold
+    produces 1-2 BUYs per step, never reaching the "candidates > slots"
+    condition the gate was designed for.
+
+    The function itself is preserved as pure math (no I/O, no settings): the
+    next time a strategy generates many simultaneous BUYs and wants a
+    correlation filter, wire this up again rather than rewrite the logic.
+
+    Pick up to ``free_slots`` candidates skipping any whose mean correlation
     with the active book exceeds ``threshold``.
 
     The "active book" is the union of currently held names and candidates
