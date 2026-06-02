@@ -803,6 +803,36 @@ def analyze_stacked(
         if combiner is not None:
             stacked = compute_stacking_probability(df, combiner)
             if stacked is not None:
+                # Sprint 2 attribution diagnostic: log heuristic-vs-stacked
+                # delta so a post-run grep can quantify how much the meta-
+                # learner is actually moving probabilities. Removes the
+                # ambiguity of "did stacking train but produce the same
+                # prob?" vs "did stacking train and change the prob, but the
+                # buy/sell decision was identical anyway?". See Enmienda 3 of
+                # docs/sprint2_kill_criteria.md.
+                heuristic_prob = result.ml_probability
+                if heuristic_prob is not None:
+                    delta = stacked - heuristic_prob
+                    crossed = (
+                        (heuristic_prob < 0.55 and stacked >= 0.55)
+                        or (heuristic_prob > 0.45 and stacked <= 0.45)
+                        or (heuristic_prob >= 0.55 and stacked < 0.55)
+                        or (heuristic_prob <= 0.45 and stacked > 0.45)
+                    )
+                    log.info(
+                        "Stacking shift %s: heur=%.3f -> stack=%.3f delta=%+0.3f crossed=%s",
+                        ticker,
+                        heuristic_prob,
+                        stacked,
+                        delta,
+                        crossed,
+                    )
+                else:
+                    log.info(
+                        "Stacking shift %s: heur=None -> stack=%.3f (no heuristic baseline)",
+                        ticker,
+                        stacked,
+                    )
                 result.ml_probability = stacked
                 result.ml_probability_source = "stacking"
                 # Refresh the probability sentence in the summary to match.

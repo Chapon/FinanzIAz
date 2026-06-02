@@ -58,6 +58,14 @@ class HarnessRunner:
         step: int = 5,
         max_positions: Optional[int] = None,
         verbose: bool = False,
+        # T-régimen-3 wiring. When both are set, vol_overlay_fn is built as a
+        # régime-aware closure that ignores the ``vol_overlay_enabled``
+        # setting and instead consults ``policy`` keyed by the current bar's
+        # régime label (looked up from ``regime_series`` via the max index of
+        # the per-ticker returns the backtester passes in). Leaving either
+        # one None preserves the pre-T-régimen-3 behaviour exactly.
+        regime_series: Optional[pd.Series] = None,
+        vol_overlay_policy: Optional["RegimeFeaturePolicy"] = None,  # noqa: F821
     ):
         self.data = data
         self.tickers = tickers
@@ -73,6 +81,8 @@ class HarnessRunner:
         # to force the gate to be exercised.
         self.max_positions = max_positions
         self.verbose = verbose
+        self.regime_series = regime_series
+        self.vol_overlay_policy = vol_overlay_policy
         # IMPORTANT: use the module-level singleton, not a fresh _SettingsManager.
         # Independent instances each cache their own ``_data`` in memory; the
         # toggles read by ``_toggle()`` in analysis.technical (and by the gate
@@ -168,14 +178,53 @@ class HarnessRunner:
     def _build_vol_overlay(self):
         """Closure that scales target weights via the T10 portfolio-vol overlay.
 
-        Returns a callable that respects ``vol_overlay_enabled`` (target ≤ 0
-        short-circuits to factor=1.0). The closure assembles the returns frame
-        from the per-ticker series the backtest already produced — no extra
-        history fetching.
+        Two modes:
+          * **Régime-aware** (T-régimen-3) — active when both ``regime_series``
+            and ``vol_overlay_policy`` were passed to the constructor. The
+            closure looks up the current bar's régime by taking the max index
+            across the per-ticker return series the backtester gives it, then
+            asks the policy whether vol_overlay should be active. If the
+            policy says no, returns 1.0 (no scaling). If yes, runs the normal
+            overlay computation. The ``vol_overlay_enabled`` setting is
+            IGNORED in this mode — the policy is the sole authority.
+          * **Settings-driven** (legacy / Sprint 1 wiring) — the default.
+            Respects ``vol_overlay_enabled``; flips it per-experiment via
+            the snapshot/restore machinery in ``run_suite``.
         """
+        regime_aware = (self.regime_series is not None
+                        and self.vol_overlay_policy is not None)
+
         def overlay_fn(target_weights, returns_by_ticker):
-            if not bool(self.settings_manager.get("vol_overlay_enabled", True)):
-                return 1.0
+            # Determine whether the overlay should be applied at this bar.
+            if regime_aware:
+                # Look up "current" bar from the per-ticker returns the
+                # backtester just passed. The closure has no other date
+                # signal, but every ticker's return series ends at the
+                # current bar, so the max of any non-empty series works.
+                current_ts = None
+                for s in returns_by_ticker.values():
+                    if s is not None and not s.empty:
+                        if current_ts is None or s.index.max() > current_ts:
+                            current_ts = s.index.max()
+                if current_ts is None:
+                    return 1.0  # nothing to compute on
+                # Find the most recent régime label at or before current_ts.
+                matches = self.regime_series.index <= current_ts
+                if not matches.any():
+                    # Before the régime series starts — treat as warmup.
+                    from analysis.regime_detector import REGIME_WARMUP
+                    regime_at_bar = REGIME_WARMUP
+                else:
+                    regime_at_bar = str(
+                        self.regime_series.loc[matches].iloc[-1]
+                    )
+                effective = self.vol_overlay_policy.effective(regime_at_bar)
+                if not bool(effective.get("vol_overlay_enabled", True)):
+                    return 1.0
+            else:
+                if not bool(self.settings_manager.get("vol_overlay_enabled", True)):
+                    return 1.0
+
             target = float(self.settings_manager.get("vol_target_portfolio_annual", 0.20))
             if target <= 0 or not target_weights:
                 return 1.0
@@ -249,6 +298,37 @@ class HarnessRunner:
             }
             with open(result_file, "w") as f:
                 json.dump(result_dict, f, indent=2, default=str)
+
+            # T-régimen-2: persist the equity curve per variant so downstream
+            # tools (scripts/regime_attribution.py) can slice daily returns by
+            # regime without re-running the backtest. CSV is intentionally
+            # minimal: date,equity — easy to consume from anywhere.
+            equity = getattr(backtest_result, "equity_curve", None)
+            if equity is not None and len(equity) > 0:
+                eq_file = results_dir / f"{exp_name}.equity.csv"
+                eq_df = pd.DataFrame({"equity": equity.values}, index=equity.index)
+                eq_df.index.name = "date"
+                eq_df.to_csv(eq_file)
+
+            # T-régimen-2 fix (2026-06-01): also persist the buy-and-hold
+            # equity curve. This is the equal-weighted market proxy that the
+            # backtester already computes for benchmarking — and crucially it
+            # is the RIGHT input for regime detection. The variant equity
+            # curves smooth out shocks (the strategy de-risks during selloffs),
+            # which silently hid bear and bull_volatile regimes in the first
+            # attribution run on 20260601_095031. The buy-and-hold curve
+            # tracks the underlying market, so the regime detector sees the
+            # actual macro state. One file per variant is wasteful (it's the
+            # same series), but writing it alongside each variant keeps the
+            # consumer logic trivial — pick the first available bh file.
+            bh_equity = getattr(backtest_result, "bh_equity_curve", None)
+            if bh_equity is not None and len(bh_equity) > 0:
+                bh_file = results_dir / f"{exp_name}.bh_equity.csv"
+                bh_df = pd.DataFrame(
+                    {"bh_equity": bh_equity.values}, index=bh_equity.index
+                )
+                bh_df.index.name = "date"
+                bh_df.to_csv(bh_file)
 
         csv_file = output_dir / "index.csv"
         rows = []

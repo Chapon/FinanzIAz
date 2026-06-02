@@ -198,7 +198,106 @@ ciertos regímenes basándonos en una conclusión spuria.
 
 Notar también: con `max_positions=3` el sistema se vuelve trivial (34 trades en 2y), confirmando que reducir slots para forzar el gate produce un setup poco representativo de operación real. **No hay configuración razonable donde correlation_gate aporta valor en el engine actual.**
 
-**Acción Sprint 3**: eliminar `correlation_gate_enabled`, el wrapper en `paper_trading/strategies.py:_select_uncorrelated`, y la closure `_build_correlation_filter` en `analysis/harness/runner.py`. Mantener `paper_trading/gates.py:select_uncorrelated_picks` (lógica pura, reusable) pero marcada como vestigial / no usada.
+**Acción Sprint 3**: eliminar `correlation_gate_enabled`, el wrapper en `paper_trading/strategies.py:_select_uncorrelated`, y la closure `_build_correlation_filter` en `analysis/harness/runner.py`. Mantener `paper_trading/gates.py:select_uncorrelated_picks` (lógica pura, reusable) pero marcada como vestigial / no usada. **EJECUTADO 2026-05-30** — todos los cambios en el commit de Sprint 3, 41/41 tests pasan.
+
+### Enmienda 3 — 2026-05-30 — Walk-forward stacking invalida el KEEP
+
+**Razón**: el walk-forward de 2 ventanas no-overlapping de 12 meses (run `data/harness_walkforward/20260530_152543/`) con MIN_STACKING_ROWS=50 muestra que stacking **NO se activa** cuando el history disponible por ventana es de 12m:
+
+| Window | baseline Sharpe | no_stacking Sharpe | ΔSharpe |
+|---|---|---|---|
+| early_12m | 0.234 | 0.234 | **+0.000** |
+| late_12m | 1.543 | 1.543 | **+0.000** |
+
+Bit-idénticos en ambas ventanas. Stacking no contribuye en ninguna.
+
+**Por qué difiere de A1**: el A1 corrió sobre 2y continuo (~500 bars) → el meta-learner acumuló ~400-450 usable rows post-warmup-post-lookahead → se entrenó. El walk-forward parte el cache en dos slices de 12m (~250 bars cada uno) → solo ~200 usable rows por ventana → el combiner sigue cayendo al heuristic fallback, aún con MIN_STACKING_ROWS=50.
+
+**Decisión revisada — stacking: PENDING (no KEEP firme)**.
+
+El KEEP del A1 era artefacto del setup: stacking funciona cuando hay history continuo abundante, pero no es robusto a windows acotados. Esto deja dos lecturas posibles:
+
+a. **Lectura optimista**: la cuenta real opera continuo, así que el escenario A1 (2y continuo) es más representativo del uso operativo. Stacking aporta en producción real (ΔSharpe -0.19) y eso es lo que importa. El walk-forward es solo una prueba académica que no aplica.
+
+b. **Lectura prudente**: si stacking solo aporta cuando se acumulan 400+ usable rows, eso es una **dependencia frágil** del setup. Cualquier reset del modelo, gap de data, o cambio de régimen que invalide history previa lo deja sin aporte. Es una fuente latente de fragilidad.
+
+**Recomendación**: dejar PENDING hasta resolver una de estas dos vías:
+- Bajar MIN_STACKING_ROWS más (50→25 o 20) y re-correr walk-forward. Si se activa con 200 rows y aporta, lectura (a) gana.
+- Si tras bajar el threshold sigue sin aportar en walk-forward, eliminarlo (kill por dead code en setup robusto) y aceptar que el A1 era un artefacto de no resetear history.
+
+**Resumen final de decisiones acumuladas al 2026-05-30**:
+
+| Feature | Decisión | Estado |
+|---|---|---|
+| HMM | PENDING | Inestable a régimen — análisis Sprint 2 fase 2 |
+| XGBoost | PENDING | Inestable a régimen — análisis Sprint 2 fase 2 |
+| vol_overlay | PENDING | Inestable a régimen — análisis Sprint 2 fase 2 |
+| stacking | PENDING | Aporta con history continuo pero no se activa en walk-forward — investigar threshold o aceptar dependencia de history |
+| correlation_gate | **KILLED** | Sprint 3 ejecutado 2026-05-30, función pura preservada como vestigial |
+
+### Enmienda 4 — 2026-05-31 — Stacking instrumentado: activo pero inestable
+
+Walk-forward con `MIN_STACKING_ROWS=25` + instrumentación de prob shifts
+(run `data/harness_walkforward/20260531_122811/`, log `stacking_walkforward.log`):
+
+| Window | baseline Sharpe | no_stacking Sharpe | ΔSharpe |
+|---|---|---|---|
+| early_12m | 0.208 | 0.301 | **+0.093** (sacar mejora) |
+| late_12m | 1.665 | 1.545 | **-0.120** (sacar daña) |
+
+UNSTABLE — signo opuesto. Pero la instrumentación nueva (log "Stacking shift...
+heur=X -> stack=Y delta=Z crossed=...") revela el mecanismo:
+
+**Frecuencia**: 378 entrenamientos exitosos sobre 3402 calls (11.1%). El 88.9%
+restante son fallbacks por warm-up (bars insuficientes en el primer tramo de
+cada ventana). Sólo 3% son near-miss (20-24 rows): bajar más
+`MIN_STACKING_ROWS` no va a ayudar.
+
+**Cuando entrena, mueve fuerte**: delta de probabilidad mean=0.315,
+median=0.290, max=0.903. **63% de los entrenamientos cambian la decisión
+BUY/SELL/HOLD**. No es feature inerte.
+
+**Patrón estructural** (sobre los 239 crossings):
+
+| Cambio | Cantidad | Significado |
+|---|---|---|
+| BUY → HOLD/SELL | 81 | quita un BUY |
+| SELL → HOLD/BUY | 96 | quita un SELL |
+| HOLD → BUY | 32 | crea un BUY |
+| HOLD → SELL | 29 | crea un SELL |
+
+Stacking quita 3x más señales de las que crea (177 vs 61). Es un **filtro de
+confirmación**, no un generador de signal — y eso es lo que está causando la
+inestabilidad: en régimen alcista benevolente filtrar es bueno (deja pasar
+solo lo bueno), en régimen difícil filtrar es malo (pierde oportunidades).
+
+**Decisión revisada — stacking: PENDING firme.**
+
+- NO KILL: la feature es activa, cambia 63% de las decisiones, y su patrón
+  "filtro conservador" es exactamente lo que puede combinarse con detección
+  de régimen en Sprint 2 fase 2. Apagarlo en regímenes alcistas y prenderlo
+  en regímenes difíciles podría capturar el upside de ambas mitades.
+- NO KEEP firme: la magnitud ΔSharpe ±0.1 es chica comparada con la varianza
+  entre regímenes (Sharpe baseline cambia 8x: 0.21→1.67). No es la palanca
+  dominante.
+- Decisión final sobre stacking depende del éxito de la opción B (régimen-
+  switching). Si en B descubrimos que no hay régimen detectable confiable,
+  entonces kill por bajo impacto neto sin posibilidad de mejora.
+
+**Instrumentación**: el log `Stacking shift ... heur=X -> stack=Y delta=Z
+crossed=...` queda en `analysis/technical.py:analyze_stacked`. Sirve también
+en producción para auditar cuándo el meta-learner está discrepando del
+heuristic — útil para futuras investigaciones, no solo para este Sprint.
+
+**Resumen final de decisiones acumuladas al 2026-05-31**:
+
+| Feature | Decisión | Estado |
+|---|---|---|
+| HMM | PENDING | Inestable a régimen — Sprint 2 fase 2 |
+| XGBoost | PENDING | Inestable a régimen — Sprint 2 fase 2 |
+| vol_overlay | PENDING | Inestable a régimen — Sprint 2 fase 2 |
+| stacking | PENDING firme | Activo (63% crossing), inestable a régimen, candidato para feature switching en Sprint 2 fase 2 |
+| correlation_gate | **KILLED** | Sprint 3 ejecutado 2026-05-30, función pura preservada como vestigial |
 
 **Resumen de decisiones acumuladas al 2026-05-29**:
 

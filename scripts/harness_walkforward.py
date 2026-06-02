@@ -71,6 +71,16 @@ def main():
         "--n-windows", type=int, default=2,
         help="Number of non-overlapping windows to split the data into (default 2)",
     )
+    parser.add_argument(
+        "--suite", default="all",
+        choices=["all", "stacking_test", "corr_test"],
+        help=(
+            "Which experiments per window. 'all' = baseline + 4 ablations (12 backtests "
+            "in default 2-window setup, ~4h). 'stacking_test' = baseline + no_stacking only "
+            "(4 backtests, ~1h). 'corr_test' kept as a no-op stub since the toggle was "
+            "removed in Sprint 3 — only baseline runs in that mode."
+        ),
+    )
     args = parser.parse_args()
 
     # Imports here so --help works without yfinance available
@@ -123,7 +133,18 @@ def main():
     print(f"\nOutput root: {out_root}")
 
     signal_fn = signal_from_analyze_stacked(enable_xgboost=True)
-    experiments = [ExperimentConfig.baseline()] + ExperimentConfig.ablation_variants()
+    if args.suite == "stacking_test":
+        experiments = [
+            ExperimentConfig.baseline(),
+            next(v for v in ExperimentConfig.ablation_variants() if v.name == "no_stacking"),
+        ]
+    elif args.suite == "corr_test":
+        # The correlation_gate toggle was removed in Sprint 3. We keep this
+        # branch as a stub so old commands don't error — it runs only baseline.
+        experiments = [ExperimentConfig.baseline()]
+    else:
+        experiments = [ExperimentConfig.baseline()] + ExperimentConfig.ablation_variants()
+    print(f"Suite: {args.suite}  ->  {len(experiments)} experiments per window")
 
     all_sharpe: dict[str, dict[str, float]] = {}
     all_return: dict[str, dict[str, float]] = {}
@@ -160,7 +181,9 @@ def main():
         }
 
     # ── Consolidated summary ──────────────────────────────────────────────
-    exp_order = ["baseline", "no_hmm", "no_stacking", "no_xgb", "no_correlation_gate", "no_vol_overlay"]
+    # Derive exp_order from what actually ran. Pre-Sprint-3 this was hardcoded
+    # and produced spurious NaN columns for removed experiments.
+    exp_order = [cfg.name for cfg in experiments]
     w_names = list(windows.keys())
 
     print(f"\n{'=' * 76}\nWALK-FORWARD SUMMARY — Sharpe per window\n{'=' * 76}")

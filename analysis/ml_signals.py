@@ -1047,11 +1047,19 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
 # Regime/volatility are NOT separate columns — the GARCH and HMM columns already
 # carry that information, per the roadmap's feature list.
 
-MIN_STACKING_ROWS = 50  # below this, fall back to the heuristic combiner
-# Sprint 2 attribution found that 200 was never reached in the harness
-# (17,047 fallbacks vs 0 successful trains on 2y/42 tickers). Lowered to 50
-# so the meta-learner can actually be evaluated on the realistic data path.
-# The legacy 200 threshold lives in tests/test_stacking.py as a sanity bound.
+MIN_STACKING_ROWS = 25  # below this, fall back to the heuristic combiner
+# History of this threshold:
+#   200 → original Sprint 1 value. Never reached in the harness (17,047
+#         fallbacks vs 0 successful trains on 2y/42 tickers).
+#   50  → Sprint 2 A1 trim. Activated on 2y continuous data (ΔSharpe -0.19)
+#         but NOT on 12m walk-forward windows (~200 usable rows is borderline).
+#   25  → Sprint 2 walk-forward retry (Enmienda 3 of kill_criteria.md). With
+#         12m windows there are ~200 raw bars, ~150 post-warmup, and ~100-120
+#         labelled rows after the forward-return lookahead. 25 leaves margin
+#         for the early steps of a window to start training before
+#         half-window. Lower than this risks training on so little data
+#         the meta-learner is more noise than signal.
+# tests/test_stacking.py still uses the 200 sanity bound for one fallback test.
 
 # Stable feature-column order for the meta-feature matrix.
 STACKING_FEATURE_COLS = [
