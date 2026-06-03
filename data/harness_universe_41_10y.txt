@@ -1,0 +1,52 @@
+# Sprint 2 fase 2 — universo de 41 tickers para attribution 10y
+# Creado 2026-06-02 a partir de harness_universe_42.txt removiendo MLTX.
+#
+# Razón: MLTX (Mereo BioPharma, IPO 2019) sólo tiene 1410 rows en cache vs 2514
+# (10y completos) del resto. Como el walk-forward usa la intersección de índices
+# comunes, MLTX limitaba el rango a ~5.6 años, anulando el propósito del 10y
+# rerun (capturar 2016-2018 bull sostenido + COVID 2020 como bear adicional).
+#
+# Este universe es DESCARTABLE: usado solo para el experimento de validación de
+# HMM-helps-bull. Para attribution / production seguir usando harness_universe_42.
+
+AAPL
+MSFT
+GOOGL
+NVDA
+AMD
+AVGO
+TSM
+CRM
+NOW
+HD
+LOW
+TGT
+NKE
+BKNG
+MCD
+KO
+PG
+WMT
+MDLZ
+PM
+IBM
+INTC
+TSLA
+F
+JPM
+GS
+BRK-B
+V
+UNH
+JNJ
+LLY
+PFE
+XOM
+CVX
+NEE
+AMT
+LIN
+CAT
+BA
+GE
+DIS
