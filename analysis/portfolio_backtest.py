@@ -619,9 +619,39 @@ def portfolio_backtest(
         # Tickers force-exited this bar are blocked from immediate re-entry; otherwise the
         # forced exit would silently turn into a same-bar rebalance and the exit_reason
         # from forced_exit_fn would never reach trades_log.
+        #
+        # Sprint 4 / T05: when ``cross_sectional_enabled`` is on, the rank key
+        # blends the absolute strength with a cross-sectional momentum
+        # percentile against the rest of the universe. Toggle OFF preserves the
+        # legacy ``key=strengths[t]`` path exactly. Computed inside the loop
+        # so per-step settings flips (harness ablations) take effect.
+        candidate_pool = [
+            t for t in tickers_ok
+            if signals[t] == "BUY" and t not in still_open and t not in forced_exits
+        ]
+        rank_key = strengths
+        if candidate_pool:
+            from config.settings_manager import settings as _settings
+            if bool(_settings.get("cross_sectional_enabled", False)):
+                from analysis.ranking import blended_scores
+                lookback = max(2, int(_settings.get("cross_sectional_lookback", 120)))
+                weight = float(_settings.get("cross_sectional_weight", 0.5))
+                weight = min(1.0, max(0.0, weight))
+                # Universe for the cross-sectional rank = every ticker with
+                # data at this bar (not only the BUY pool) so a percentile
+                # reflects the candidate's standing in the full watchlist.
+                closes_at_bar = {
+                    t: closes[t].iloc[: i + 1] for t in tickers_ok
+                }
+                rank_key = blended_scores(
+                    {t: strengths[t] for t in candidate_pool},
+                    closes_at_bar,
+                    lookback,
+                    weight,
+                )
         candidates = sorted(
-            [t for t in tickers_ok if signals[t] == "BUY" and t not in still_open and t not in forced_exits],
-            key=lambda t: strengths[t],
+            candidate_pool,
+            key=lambda t: rank_key[t] if t in rank_key else strengths[t],
             reverse=True,
         )
 
@@ -995,3 +1025,7 @@ def format_portfolio_comparison(results: dict[str, PortfolioBacktestResult]) -> 
     )
 
     return "\n".join(lines)
+
+
+# Sprint 4 / T05 — cross-sectional ranking wired in portfolio_backtest() at the
+# candidate ranking step. See docs/sprint4_t05_cross_sectional_spec.md.

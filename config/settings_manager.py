@@ -301,6 +301,43 @@ SCHEMA: dict[str, SettingSpec] = {
             "no scaling (full allocation)."
         ),
     ),
+    # Sprint 4 / T05 — cross-sectional momentum ranking. When enabled, BUY
+    # candidates are ranked by a blend of the absolute ml_probability strength
+    # and a cross-sectional percentile of the last ``cross_sectional_lookback``-
+    # day return against the rest of the universe. Pure-function math lives in
+    # ``analysis/ranking.py``. Default OFF — shipping decision pending harness
+    # validation. Full spec: docs/sprint4_t05_cross_sectional_spec.md.
+    "cross_sectional_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "Enable cross-sectional ranking (T05): blend absolute strength with "
+            "cross-sectional momentum percentile when choosing BUY candidates. "
+            "When disabled, ranking is purely absolute (legacy behaviour)."
+        ),
+    ),
+    "cross_sectional_lookback": SettingSpec(
+        int,
+        120,
+        min=2,
+        max=504,
+        doc=(
+            "Lookback in trading days for the cross-sectional momentum return. "
+            "120 ≈ 6 months — Jegadeesh-Titman / Asness sweet-spot. Tickers with "
+            "fewer than lookback+1 closes get the neutral percentile (0.5)."
+        ),
+    ),
+    "cross_sectional_weight": SettingSpec(
+        float,
+        0.5,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "Blend factor in [0, 1] for the cross-sectional percentile vs "
+            "absolute strength. 0.0 = pure absolute (legacy), 1.0 = pure "
+            "cross-sectional, 0.5 = equal blend."
+        ),
+    ),
     # Slack notifications on new BUY/SELL orders (T12 of the engine roadmap)
     # Master switch OFF by default. The bot token is NEVER stored here — the
     # engine reads it from the SLACK_BOT_TOKEN env var. Only the non-secret

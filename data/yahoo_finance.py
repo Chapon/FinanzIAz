@@ -59,6 +59,7 @@ from data.failed_tickers import (
 )
 from data.quality import clean_ohlcv
 from database.models import (
+    AnalystDataCache,
     DividendCache,
     EarningsCache,
     HistoricalDataCache,
@@ -803,3 +804,194 @@ def search_ticker(query: str) -> list[dict]:
         if result is not None:
             candidates.append(result)
     return candidates
+
+
+# ── Analyst recommendations + price targets ─────────────────────────────────
+# Yahoo expone snapshots mensuales (mes actual + 3 anteriores) con conteos por
+# bucket (strongBuy, buy, hold, sell, strongSell), más un dict de price targets
+# (mean/median/low/high/current). No cambia con frecuencia (~semanal), así que
+# usamos cache en memoria con TTL para evitar re-fetch al cambiar de ticker.
+
+_ANALYST_CACHE_TTL_SECONDS: int = 24 * 60 * 60  # 24h — sobrevive a reinicios via DB
+_analyst_cache: dict[str, tuple[float, dict]] = {}  # warm cache in-RAM dentro de la sesión
+
+
+def _analyst_cache_read_db(ticker_upper: str) -> dict | None:
+    """Lee la última entrada vigente de ``AnalystDataCache`` para el ticker.
+
+    Devuelve el dict deserializado si está dentro de la ventana TTL, ``None``
+    en caso contrario (cache miss, expirado, o error de DB).
+    """
+    import json
+
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            seconds=_ANALYST_CACHE_TTL_SECONDS
+        )
+        with session_scope() as session:
+            row = (
+                session.query(AnalystDataCache)
+                .filter(AnalystDataCache.ticker == ticker_upper)
+                .filter(AnalystDataCache.fetched_at >= cutoff)
+                .order_by(AnalystDataCache.fetched_at.desc())
+                .first()
+            )
+            if row is None:
+                return None
+            try:
+                return json.loads(row.data_json)
+            except Exception:
+                log.exception("Failed to parse cached analyst JSON for %s", ticker_upper)
+                return None
+    except Exception:
+        # DB hiccup no debe romper el fetch — caemos a la red.
+        log.exception("Analyst cache DB read failed for %s", ticker_upper)
+        return None
+
+
+def _analyst_cache_write_db(ticker_upper: str, payload: dict) -> None:
+    """Persiste la respuesta a DB reemplazando entradas previas del mismo ticker."""
+    import json
+
+    try:
+        with session_scope() as session:
+            session.query(AnalystDataCache).filter(
+                AnalystDataCache.ticker == ticker_upper
+            ).delete()
+            session.add(
+                AnalystDataCache(
+                    ticker=ticker_upper,
+                    data_json=json.dumps(payload),
+                )
+            )
+    except Exception:
+        log.exception("Analyst cache DB write failed for %s", ticker_upper)
+
+
+def _bucket_recommendations(df: pd.DataFrame | None) -> list[dict]:
+    """Normaliza el DataFrame de ``Ticker.recommendations`` a una lista de buckets
+    por mes ordenada del más antiguo al más reciente.
+
+    Cada entrada: ``{"period": "0m"|"-1m"|"-2m"|"-3m", "strongBuy": int,
+    "buy": int, "hold": int, "sell": int, "strongSell": int, "total": int}``.
+    Devuelve ``[]`` si no hay datos.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+
+    buckets = ["strongBuy", "buy", "hold", "sell", "strongSell"]
+    # Algunas versiones de yfinance no traen columna ``period``; en ese caso
+    # asumimos orden 0m, -1m, -2m, -3m por índice.
+    has_period = "period" in df.columns
+    out: list[dict] = []
+    for i, row in df.iterrows():
+        try:
+            period = str(row["period"]) if has_period else f"-{i}m" if i > 0 else "0m"
+            entry = {"period": period}
+            total = 0
+            for b in buckets:
+                v = int(row[b]) if b in row and pd.notna(row[b]) else 0
+                entry[b] = v
+                total += v
+            entry["total"] = total
+            if total > 0:
+                out.append(entry)
+        except Exception:
+            continue
+
+    # Ordenar de más antiguo (-3m) a más reciente (0m) — Google muestra el mes
+    # más reciente abajo o arriba según el layout; lo dejamos cronológico y la
+    # UI decide el orden visual.
+    def _key(b: dict) -> int:
+        p = b["period"]
+        try:
+            return int(p.replace("m", ""))  # "-3m" -> -3, "0m" -> 0
+        except Exception:
+            return 0
+
+    out.sort(key=_key)
+    return out
+
+
+def _normalize_price_targets(raw) -> dict | None:
+    """Convierte el dict de ``Ticker.analyst_price_targets`` a un formato uniforme.
+
+    Devuelve ``{"current": float|None, "mean": float|None, "median": float|None,
+    "low": float|None, "high": float|None}`` o ``None`` si no hay datos útiles.
+    """
+    if not raw or not isinstance(raw, dict):
+        return None
+    keys = ("current", "mean", "median", "low", "high")
+    out = {}
+    for k in keys:
+        v = raw.get(k)
+        try:
+            out[k] = float(v) if v is not None and pd.notna(v) else None
+        except (TypeError, ValueError):
+            out[k] = None
+    # Si todos los targets relevantes son None, no vale la pena
+    if out["mean"] is None and out["median"] is None and out["high"] is None:
+        return None
+    return out
+
+
+def get_analyst_data(ticker: str) -> dict:
+    """Fetch recomendaciones de analistas + price targets para ``ticker``.
+
+    Devuelve un dict con dos llaves:
+      - ``recommendations``: lista de buckets mensuales (ver ``_bucket_recommendations``)
+      - ``price_targets``: dict normalizado o ``None``
+
+    Hard-timeout protegido. Si Yahoo no devuelve nada, ambas llaves quedan vacías
+    pero la función nunca tira excepción al caller.
+    """
+    import time
+
+    ticker_upper = ticker.upper()
+    now = time.time()
+
+    # 1. Cache hit en RAM (instantáneo dentro de la sesión)
+    cached = _analyst_cache.get(ticker_upper)
+    if cached and (now - cached[0]) < _ANALYST_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    # 2. Cache hit en DB (sobrevive a reinicios; TTL 24h)
+    db_payload = _analyst_cache_read_db(ticker_upper)
+    if db_payload is not None:
+        _analyst_cache[ticker_upper] = (now, db_payload)
+        return db_payload
+
+    # 3. Fetch live + write-through a ambos caches
+    def _do_fetch() -> dict:
+        out: dict = {"recommendations": [], "price_targets": None}
+        try:
+            t = _ticker(ticker_upper)
+            # Recomendaciones (mensuales, 4 snapshots)
+            try:
+                recs = t.recommendations
+                out["recommendations"] = _bucket_recommendations(recs)
+            except Exception:
+                log.exception("Recommendations fetch failed for %s", ticker_upper)
+            # Price targets
+            try:
+                pt = getattr(t, "analyst_price_targets", None)
+                out["price_targets"] = _normalize_price_targets(pt)
+            except Exception:
+                log.exception("Price target fetch failed for %s", ticker_upper)
+        except Exception:
+            log.exception("Analyst data fetch failed for %s", ticker_upper)
+        return out
+
+    result = _run_with_timeout(
+        _do_fetch,
+        timeout=HARD_TIMEOUT_SECONDS,
+        default={"recommendations": [], "price_targets": None},
+    )
+    if result is None:
+        result = {"recommendations": [], "price_targets": None}
+
+    _analyst_cache[ticker_upper] = (now, result)
+    # Persistir incluso resultados vacíos — Yahoo no cubre todos los tickers
+    # y no querés re-fetcharlos en cada apertura. La negativa también es info.
+    _analyst_cache_write_db(ticker_upper, result)
+    return result

@@ -26,6 +26,7 @@ from ui.alerts_tab import AlertsTab
 from ui.analysis_tab import AnalysisTab
 from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
+from ui.leads_tab import LeadsTab
 from ui.paper_tab import PaperTradingTab
 from ui.portfolio_tab import PortfolioTab
 from ui.reports_tab import ReportsTab
@@ -116,6 +117,7 @@ class MainWindow(QMainWindow):
         "home": ("Home", "FinanzIAs"),
         "portfolio": ("Portafolio", "Mis Inversiones"),
         "analysis": ("Análisis", "Técnico"),
+        "leads": ("Leads", "Consensus de analistas"),
         "alerts": ("Alertas", "Precios"),
         "paper": ("Paper Trading", "Simulación en vivo"),
         "reports": ("Reportes", "Exportar"),
@@ -168,6 +170,7 @@ class MainWindow(QMainWindow):
         self.home_tab = HomeTab()
         self.portfolio_tab = PortfolioTab()
         self.analysis_tab = AnalysisTab()
+        self.leads_tab = LeadsTab()
         self.alerts_tab = AlertsTab()
         self.paper_tab = PaperTradingTab()
         self.reports_tab = ReportsTab()
@@ -177,11 +180,12 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.home_tab)  # 0
         self.stack.addWidget(self.portfolio_tab)  # 1
         self.stack.addWidget(self.analysis_tab)  # 2
-        self.stack.addWidget(self.alerts_tab)  # 3
-        self.stack.addWidget(self.paper_tab)  # 4
-        self.stack.addWidget(self.reports_tab)  # 5
-        self.stack.addWidget(self.failed_tickers_tab)  # 6
-        self.stack.addWidget(self.settings_tab)  # 7
+        self.stack.addWidget(self.leads_tab)  # 3
+        self.stack.addWidget(self.alerts_tab)  # 4
+        self.stack.addWidget(self.paper_tab)  # 5
+        self.stack.addWidget(self.reports_tab)  # 6
+        self.stack.addWidget(self.failed_tickers_tab)  # 7
+        self.stack.addWidget(self.settings_tab)  # 8
 
         right_layout.addWidget(self.stack, stretch=1)
         root_layout.addWidget(right, stretch=1)
@@ -195,11 +199,12 @@ class MainWindow(QMainWindow):
         "home": 0,
         "portfolio": 1,
         "analysis": 2,
-        "alerts": 3,
-        "paper": 4,
-        "reports": 5,
-        "failed": 6,
-        "settings": 7,
+        "leads": 3,
+        "alerts": 4,
+        "paper": 5,
+        "reports": 6,
+        "failed": 7,
+        "settings": 8,
     }
 
     def _connect_signals(self):
@@ -208,6 +213,8 @@ class MainWindow(QMainWindow):
         self.home_tab.navigate.connect(self._navigate)
         self.settings_tab.setting_changed.connect(self._on_setting_changed)
         self.settings_tab.rsi_scan_requested.connect(self._run_rsi_scan)
+        # Leads tab: doble click → abrir ticker en Análisis
+        self.leads_tab.ticker_selected.connect(self._on_leads_ticker_selected)
 
         # Paper-trading tab <-> scheduler wiring
         self.paper_tab.scan_requested.connect(self._on_paper_tab_scan_request)
@@ -247,6 +254,13 @@ class MainWindow(QMainWindow):
     def _on_position_selected(self, position):
         self._navigate("analysis")
         self.analysis_tab.analyze_ticker(position.ticker)
+
+    def _on_leads_ticker_selected(self, ticker: str):
+        """Doble click en una fila de Leads → abrir ese ticker en Análisis."""
+        if not ticker:
+            return
+        self._navigate("analysis")
+        self.analysis_tab.analyze_ticker(ticker)
 
     def _on_setting_changed(self, key: str, value: bool):
         """React immediately to settings that require live side-effects."""

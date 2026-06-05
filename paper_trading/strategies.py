@@ -229,6 +229,9 @@ def generate_trades_analyze_single(
     ranked: list[tuple[float, str]] = []
     cand_vol: dict[str, float] = {}
     cand_prob: dict[str, float | None] = {}
+    # Sprint 4 / T05 — keep a per-candidate close series so we can compute a
+    # cross-sectional momentum percentile when ``cross_sectional_enabled`` is on.
+    cand_close: dict[str, pd.Series] = {}
     for t in watchlist:
         if t in held_tickers and t not in forced_exits:
             continue
@@ -243,6 +246,20 @@ def generate_trades_analyze_single(
             ranked.append((strength, t))
             cand_vol[t] = _realized_vol(df["Close"].astype(float)) if "Close" in df.columns else 0.0
             cand_prob[t] = _calibrated_prob(res.ml_probability)
+            if "Close" in df.columns:
+                cand_close[t] = df["Close"].astype(float)
+
+    # Sprint 4 / T05 — blend absolute strength with cross-sectional momentum
+    # percentile when toggle is on. Toggle OFF preserves the legacy ordering
+    # (sort by absolute strength) exactly.
+    if ranked and bool(settings.get("cross_sectional_enabled", False)):
+        from analysis.ranking import blended_scores
+        lookback = max(2, int(settings.get("cross_sectional_lookback", 120)))
+        weight = float(settings.get("cross_sectional_weight", 0.5))
+        weight = min(1.0, max(0.0, weight))
+        absolute = {t: s for s, t in ranked}
+        blended = blended_scores(absolute, cand_close, lookback, weight)
+        ranked = [(blended.get(t, s), t) for s, t in ranked]
 
     ranked.sort(reverse=True)
     scores = {t: s for s, t in ranked}
@@ -404,9 +421,32 @@ def generate_trades_portfolio_engine(
     # ── Fill free slots with top-ranked BUY candidates ────────────────────────
     still_held = [t for t in held_tickers if t not in forced_exits]
     free_slots = max(0, account.max_positions - len(still_held))
+    candidate_pool = [
+        t for t in watchlist
+        if signals.get(t) == "BUY" and t not in still_held and t not in forced_exits
+    ]
+    # Sprint 4 / T05 — blend absolute strength with cross-sectional momentum
+    # percentile when the toggle is on; toggle OFF preserves the legacy sort key.
+    rank_key = strengths
+    if candidate_pool and bool(settings.get("cross_sectional_enabled", False)):
+        from analysis.ranking import blended_scores
+        lookback = max(2, int(settings.get("cross_sectional_lookback", 120)))
+        weight = float(settings.get("cross_sectional_weight", 0.5))
+        weight = min(1.0, max(0.0, weight))
+        closes_at_bar = {
+            t: dfs[t]["Close"].astype(float)
+            for t in universe
+            if t in dfs and "Close" in dfs[t].columns
+        }
+        rank_key = blended_scores(
+            {t: strengths.get(t, 0.0) for t in candidate_pool},
+            closes_at_bar,
+            lookback,
+            weight,
+        )
     candidates = sorted(
-        [t for t in watchlist if signals.get(t) == "BUY" and t not in still_held and t not in forced_exits],
-        key=lambda t: strengths.get(t, 0.0),
+        candidate_pool,
+        key=lambda t: rank_key.get(t, strengths.get(t, 0.0)),
         reverse=True,
     )
     # Correlation gate removed in Sprint 3 — see strategy_analyze_single above.

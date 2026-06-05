@@ -57,6 +57,7 @@ from ui.analysis.labels import (
 from ui.analysis.labels import (
     get_tooltip as _tt,
 )
+from ui.analysis.recommendations_card import RecommendationsCard
 from ui.analysis.signal_card import SignalCard
 from ui.analysis.worker import AnalysisWorker
 from ui.chart_widget import ChartWidget
@@ -284,6 +285,10 @@ class AnalysisTab(QWidget):
         metrics_row2.addWidget(self.card_support)
         metrics_row2.addWidget(self.card_resist)
         right_layout.addLayout(metrics_row2)
+
+        # Analyst recommendations + price targets (collapsible, hidden until data arrives)
+        self.recommendations_card = RecommendationsCard()
+        right_layout.addWidget(self.recommendations_card)
 
         right_layout.addWidget(HSeparator())
 
@@ -606,10 +611,18 @@ class AnalysisTab(QWidget):
         self._worker.done.connect(self._on_analysis_done)
         self._worker.start()
 
-    def _on_analysis_done(self, df, result, price_data, company):
+    def _on_analysis_done(self, df, result, price_data, company, analyst=None):
         ticker = self.ticker_edit.text().strip().upper()
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analizar")
+
+        # Recomendaciones de analistas (puede ser None si Yahoo no devolvió nada).
+        # El card se auto-oculta si viene vacío, así que esto es seguro siempre.
+        try:
+            self.recommendations_card.set_data(analyst)
+        except Exception:
+            # No bloquear el resto del análisis si el card falla por algún motivo.
+            self.recommendations_card.setVisible(False)
 
         if df is None or df.empty:
             self.status_label.setText("❌ No se encontraron datos para este ticker.")

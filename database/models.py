@@ -275,6 +275,32 @@ class EarningsCache(Base):
         return f"<EarningsCache({self.ticker} next={when} @ {self.fetched_at})>"
 
 
+class AnalystDataCache(Base):
+    """
+    Cache persistente de recomendaciones de analistas + price targets.
+
+    Sobrevive a reinicios de la app (a diferencia del cache in-memory previo).
+    TTL típica: 24h (los analistas no actualizan recos intraday). Almacenamos
+    el dict completo de ``get_analyst_data`` serializado como JSON — incluye
+    las listas mensuales de buckets y los price targets normalizados.
+
+    Un ticker tiene a lo sumo una fila vigente; al escribir reemplazamos la
+    anterior para mantener la tabla acotada (~500 filas en estado estable
+    cuando se escaneó SP500 completo).
+    """
+
+    __tablename__ = "analyst_data_cache"
+    __table_args__ = (Index("ix_analyst_cache_ticker_fetched", "ticker", "fetched_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    data_json = Column(Text, nullable=False)  # JSON-serialized dict de get_analyst_data
+    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+
+    def __repr__(self):
+        return f"<AnalystDataCache({self.ticker} @ {self.fetched_at})>"
+
+
 class FailedTicker(Base):
     """
     Registro de tickers que fallaron al consultar Yahoo Finance.

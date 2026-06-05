@@ -12,6 +12,7 @@ from PyQt6.QtCore import pyqtSignal
 from analysis.technical import analyze
 from config.settings_manager import settings
 from data.yahoo_finance import (
+    get_analyst_data,
     get_company_info,
     get_current_price,
     get_historical_data,
@@ -21,12 +22,13 @@ from ui.workers import BaseWorker
 
 class AnalysisWorker(BaseWorker):
     """
-    Fetches OHLCV history + current price + company info for a ticker, then
-    runs the full ``analyze`` pipeline. Emits ``done(df, result, price_data,
-    company_info)`` on success.
+    Fetches OHLCV history + current price + company info + analyst recos for a
+    ticker, then runs the full ``analyze`` pipeline. Emits
+    ``done(df, result, price_data, company_info, analyst_data)`` on success.
     """
 
-    done = pyqtSignal(object, object, object, object)  # df, result, price_data, company_info
+    # df, result, price_data, company_info, analyst_data
+    done = pyqtSignal(object, object, object, object, object)
 
     def __init__(self, ticker: str, period: str):
         super().__init__()
@@ -47,8 +49,9 @@ class AnalysisWorker(BaseWorker):
         )
         price_data = get_current_price(self.ticker)
         company = get_company_info(self.ticker)
-        return df, result, price_data, company
+        analyst = get_analyst_data(self.ticker)
+        return df, result, price_data, company, analyst
 
     def on_success(self, result: tuple) -> None:
-        df, ar, price_data, company = result
-        self.done.emit(df, ar, price_data, company)
+        df, ar, price_data, company, analyst = result
+        self.done.emit(df, ar, price_data, company, analyst)

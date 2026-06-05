@@ -19,17 +19,23 @@ class ExperimentConfig:
         stacking_enabled: Enable position stacking (T05)
         xgb_signal_enabled: Enable XGBoost signal weighting
         vol_overlay_enabled: Enable portfolio volatility overlay (T10)
+        cross_sectional_enabled: Enable cross-sectional momentum ranking (Sprint 4 / T05)
         description: Optional human-readable description of the experiment
 
     Note (Sprint 3, 2026-05-29): ``correlation_gate_enabled`` was removed
     after attribution showed the gate never rejected a candidate in any
     realistic setup. See docs/sprint2_kill_criteria.md (Enmienda 2).
+
+    Note (Sprint 4 / T05, 2026-06-03): ``cross_sectional_enabled`` added.
+    Default False — the feature ships only if harness validation passes.
+    Full spec: docs/sprint4_t05_cross_sectional_spec.md.
     """
     name: str
     hmm_enabled: bool = True
     stacking_enabled: bool = True
     xgb_signal_enabled: bool = True
     vol_overlay_enabled: bool = True
+    cross_sectional_enabled: bool = False
     description: Optional[str] = None
 
     def to_dict(self) -> dict:
@@ -43,6 +49,7 @@ class ExperimentConfig:
             "stacking_enabled": self.stacking_enabled,
             "xgb_signal_enabled": self.xgb_signal_enabled,
             "vol_overlay_enabled": self.vol_overlay_enabled,
+            "cross_sectional_enabled": self.cross_sectional_enabled,
         }
 
     @staticmethod
