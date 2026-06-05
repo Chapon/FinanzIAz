@@ -20,6 +20,8 @@ Output schema (top-level keys)::
         "n_round_trips": 20, "avg_holding_days": 3.4,
         "fragile": true, "notes": [...]
       },
+      "monthly_perf": [{"month": "YYYY-MM", "period_return": ..., "sharpe_annual": ..., ...}],
+      "decay_signal": {"status": "stable|improving|decaying|insufficient_data", "slope": ..., ...},
       "positions": [{"ticker": "...", "shares": ..., "avg_cost": ..., "mark": ..., "mtm_pct": ...}],
       "trades_recent": [{"ticker": "...", "side": "BUY", "fill_price": ..., ...}],
       "signal_score_hist": {"BUY": [counts per bin], "SELL": [counts per bin], "bins": [edges]},
@@ -35,6 +37,7 @@ Notes:
       ``price_cache`` snapshot per ticker — best-effort, may be stale.
       Falls back to ``avg_cost`` if unknown (MTM shown as 0%).
     * signal_score histogram uses 10 equal-width bins in [0, 1].
+    * monthly_perf / decay_signal added in T06 (alpha decay tracking).
 """
 
 from __future__ import annotations
@@ -60,6 +63,7 @@ from scripts.baseline_metrics import (  # noqa: E402
     load_fills,
     load_snapshots,
     load_open_positions,
+    monthly_breakdown,
     trade_stats,
 )
 
@@ -204,6 +208,76 @@ def _expired_notes_top(con: sqlite3.Connection, account_id: int, limit: int = 10
     return [{"note": n, "count": int(c)} for n, c in rows]
 
 
+def _monthly_perf(snapshots: list[AccountSnapshot], fills) -> list[dict]:
+    """Per-month performance for the alpha decay panel.
+
+    Returns a list of dicts (one per YYYY-MM), ordered chronologically, with:
+        month, n_trading_days, period_return, sharpe_annual,
+        max_drawdown, n_round_trips, win_rate, profit_factor
+    """
+    trades, _ = fifo_match(fills)
+    return monthly_breakdown(snapshots, trades)
+
+
+# Slope threshold for the decay signal (Sharpe units per month).
+# |slope| < _DECAY_THRESHOLD → "stable"; slope < −threshold → "decaying"; > threshold → "improving"
+_DECAY_THRESHOLD = 0.10
+
+
+def _decay_signal(monthly: list[dict]) -> dict:
+    """Compute alpha decay status from the monthly Sharpe trend.
+
+    Uses the last 4 calendar months that have a non-null sharpe_annual.
+    Fits a simple OLS slope; classifies as:
+
+        "improving"          slope  >  +_DECAY_THRESHOLD
+        "stable"             |slope| <= _DECAY_THRESHOLD
+        "decaying"           slope  <  -_DECAY_THRESHOLD
+        "insufficient_data"  fewer than 3 months with valid Sharpe
+
+    Returns dict with keys: status, slope, n_months, recent_sharpes.
+    ``recent_sharpes`` is a list of [month_str, sharpe_value] pairs.
+    """
+    import math
+
+    pairs = [
+        (m["month"], m["sharpe_annual"])
+        for m in monthly
+        if m.get("sharpe_annual") is not None and math.isfinite(m["sharpe_annual"])
+    ]
+    if len(pairs) < 3:
+        return {
+            "status": "insufficient_data",
+            "slope": None,
+            "n_months": len(pairs),
+            "recent_sharpes": [[mo, s] for mo, s in pairs],
+        }
+
+    recent = pairs[-4:]  # at most last 4 months
+    n = len(recent)
+    xs = list(range(n))
+    ys = [s for _, s in recent]
+    x_mean = sum(xs) / n
+    y_mean = sum(ys) / n
+    num = sum((xs[i] - x_mean) * (ys[i] - y_mean) for i in range(n))
+    den = sum((xs[i] - x_mean) ** 2 for i in range(n))
+    slope = num / den if den != 0 else 0.0
+
+    if slope < -_DECAY_THRESHOLD:
+        status = "decaying"
+    elif slope > _DECAY_THRESHOLD:
+        status = "improving"
+    else:
+        status = "stable"
+
+    return {
+        "status": status,
+        "slope": round(slope, 4),
+        "n_months": len(pairs),
+        "recent_sharpes": [[mo, s] for mo, s in recent],
+    }
+
+
 def _kpis(snapshots: list[AccountSnapshot], fills) -> dict:
     """Bundle the headline metrics shown above the equity chart."""
     em = equity_metrics(snapshots)
@@ -250,12 +324,15 @@ def build_payload(db_path: Path, account_id: int) -> dict:
             return {"error": f"account {account_id} not found in {db_path}"}
         snapshots = load_snapshots(con, account_id)
         fills = load_fills(con, account_id)
+        monthly = _monthly_perf(snapshots, fills)
         payload = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "db_path": str(db_path),
             "account": account,
             "equity_curve": _equity_curve(snapshots),
             "kpis": _kpis(snapshots, fills),
+            "monthly_perf": monthly,
+            "decay_signal": _decay_signal(monthly),
             "positions": _positions_payload(con, account_id),
             "trades_recent": _trades_recent(con, account_id, limit=50),
             "signal_score_hist": _signal_score_hist(con, account_id),
@@ -298,4 +375,76 @@ def _json_default(o):
 
 
 if __name__ == "__main__":
+    raise SystemExit(main())
+tancy_pct": ts.get("expectancy_pct"),
+        "expectancy_dollars": ts.get("expectancy_dollars"),
+        "n_round_trips": n_rt,
+        "n_buys": ts.get("n_buys"),
+        "n_sells": ts.get("n_sells"),
+        "avg_holding_days": ts.get("avg_holding_days"),
+        "fragile": fragile,
+        "notes": notes,
+    }
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+
+def build_payload(db_path: Path, account_id: int) -> dict:
+    con = sqlite3.connect(str(db_path))
+    try:
+        account = _account_row(con, account_id)
+        if account is None:
+            return {"error": f"account {account_id} not found in {db_path}"}
+        snapshots = load_snapshots(con, account_id)
+        fills = load_fills(con, account_id)
+        monthly = _monthly_perf(snapshots, fills)
+        payload = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "db_path": str(db_path),
+            "account": account,
+            "equity_curve": _equity_curve(snapshots),
+            "kpis": _kpis(snapshots, fills),
+            "monthly_perf": monthly,
+            "decay_signal": _decay_signal(monthly),
+            "positions": _positions_payload(con, account_id),
+            "trades_recent": _trades_recent(con, account_id, limit=50),
+            "signal_score_hist": _signal_score_hist(con, account_id),
+            "status_counts": _status_counts(con, account_id),
+            "expired_notes_top": _expired_notes_top(con, account_id, limit=10),
+        }
+        return payload
+    finally:
+        con.close()
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description="Dump dashboard JSON for the live HTML artifact.")
+    p.add_argument("--db", default=None, help="Path to finanzias.db (default: repo root)")
+    p.add_argument("--account", type=int, default=DEFAULT_ACCOUNT_ID, help="Account id (default: 1)")
+    args = p.parse_args(argv)
+    if args.db is None:
+        db_path = _HERE.parent / DEFAULT_DB
+    else:
+        db_path = Path(args.db)
+    if not db_path.exists():
+        print(json.dumps({"error": f"db not found: {db_path}"}))
+        return 1
+    payload = build_payload(db_path, args.account)
+    print(json.dumps(payload, default=_json_default, ensure_ascii=False))
+    return 0
+
+
+def _json_default(o):
+    import math
+    if isinstance(o, float) and not math.isfinite(o):
+        return None
+    if isinstance(o, datetime):
+        return o.isoformat()
+    raise TypeError(f"Unserializable: {type(o).__name__}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+__ == "__main__":
     raise SystemExit(main())
