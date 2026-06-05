@@ -19,10 +19,12 @@ from paper_trading.gates import (
     ATR_EXIT_REASONS,
     CorrelationSkip,
     VolOverlayResult,
+    adv_capped_notional,
     atr_exit_decision,
     compute_vol_overlay,
     is_atr_forced_exit_reason,
     is_within_earnings_blackout,
+    recent_adv_dollars,
     select_uncorrelated_picks,
 )
 
@@ -324,6 +326,103 @@ class TestComputeVolOverlay:
         )
         assert result.factor == 1.0
         assert result.sigma is None
+
+
+# ── recent_adv_dollars (T10) ───────────────────────────────────────────────────
+
+
+def _ohlcv(closes: list[float], volumes: list[float]) -> pd.DataFrame:
+    n = len(closes)
+    idx = pd.date_range("2026-01-01", periods=n, freq="D")
+    return pd.DataFrame(
+        {
+            "Open": closes,
+            "High": closes,
+            "Low": closes,
+            "Close": closes,
+            "Volume": volumes,
+        },
+        index=idx,
+    )
+
+
+class TestRecentAdvDollars:
+    def test_none_history_returns_none(self):
+        assert recent_adv_dollars(None) is None
+
+    def test_zero_lookback_returns_none(self):
+        df = _ohlcv([100.0] * 5, [1000.0] * 5)
+        assert recent_adv_dollars(df, lookback_days=0) is None
+
+    def test_missing_volume_column_returns_none(self):
+        df = _ohlcv([100.0] * 5, [1000.0] * 5).drop(columns=["Volume"])
+        assert recent_adv_dollars(df) is None
+
+    def test_missing_close_column_returns_none(self):
+        df = _ohlcv([100.0] * 5, [1000.0] * 5).drop(columns=["Close"])
+        assert recent_adv_dollars(df) is None
+
+    def test_simple_mean_dollar_volume(self):
+        # Close=10, Volume=100 → dollar vol 1000 every day.
+        df = _ohlcv([10.0] * 5, [100.0] * 5)
+        assert recent_adv_dollars(df, lookback_days=5) == pytest.approx(1000.0)
+
+    def test_only_uses_trailing_window(self):
+        # 10 days; last 3 have dollar vol 2000, earlier ones 100.
+        closes = [1.0] * 7 + [10.0] * 3
+        vols = [100.0] * 7 + [200.0] * 3
+        df = _ohlcv(closes, vols)
+        # tail(3): 10*200 = 2000 each → mean 2000.
+        assert recent_adv_dollars(df, lookback_days=3) == pytest.approx(2000.0)
+
+    def test_nan_rows_dropped(self):
+        df = _ohlcv([10.0, np.nan, 10.0], [100.0, 100.0, 100.0])
+        # Only two finite rows of 1000 → mean 1000.
+        assert recent_adv_dollars(df, lookback_days=3) == pytest.approx(1000.0)
+
+    def test_all_nan_returns_none(self):
+        df = _ohlcv([np.nan, np.nan], [100.0, 100.0])
+        assert recent_adv_dollars(df) is None
+
+    def test_zero_volume_returns_none(self):
+        df = _ohlcv([10.0] * 5, [0.0] * 5)
+        assert recent_adv_dollars(df) is None
+
+
+# ── adv_capped_notional (T10) ──────────────────────────────────────────────────
+
+
+class TestAdvCappedNotional:
+    def test_disabled_when_cap_zero(self):
+        assert adv_capped_notional(5000.0, 1_000_000.0, 0.0) == (5000.0, False)
+
+    def test_disabled_when_cap_negative(self):
+        assert adv_capped_notional(5000.0, 1_000_000.0, -0.1) == (5000.0, False)
+
+    def test_failopen_when_adv_none(self):
+        assert adv_capped_notional(5000.0, None, 0.05) == (5000.0, False)
+
+    def test_failopen_when_adv_zero(self):
+        assert adv_capped_notional(5000.0, 0.0, 0.05) == (5000.0, False)
+
+    def test_failopen_when_notional_nonpositive(self):
+        assert adv_capped_notional(0.0, 1_000_000.0, 0.05) == (0.0, False)
+
+    def test_failopen_when_notional_nonfinite(self):
+        out, capped = adv_capped_notional(float("inf"), 1_000_000.0, 0.05)
+        assert capped is False
+
+    def test_order_under_ceiling_unchanged(self):
+        # ceiling = 0.05 * 1_000_000 = 50_000; order 5000 fits.
+        assert adv_capped_notional(5000.0, 1_000_000.0, 0.05) == (5000.0, False)
+
+    def test_order_at_ceiling_not_capped(self):
+        assert adv_capped_notional(50_000.0, 1_000_000.0, 0.05) == (50_000.0, False)
+
+    def test_order_above_ceiling_trimmed(self):
+        out, capped = adv_capped_notional(80_000.0, 1_000_000.0, 0.05)
+        assert capped is True
+        assert out == pytest.approx(50_000.0)
 
 
 # ── Parity smoke test: gates produce same answers as the engine wrapper ────────

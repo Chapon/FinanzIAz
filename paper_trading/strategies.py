@@ -44,6 +44,7 @@ from config.logging_config import get_logger
 from config.settings_manager import settings
 from database.models import utcnow_naive
 from paper_trading.gates import (
+    VOL_TRIM_REASON_PREFIX,
     compute_vol_overlay,
 )
 from paper_trading.models import PaperAccount, PaperPosition
@@ -90,6 +91,15 @@ class TargetTrade:
 
 
 HistoryProvider = Callable[[str], pd.DataFrame | None]
+
+# T09 — active de-risking. ``VOL_TRIM_REASON_PREFIX`` / ``is_vol_trim_reason``
+# live in ``paper_trading.gates`` (imported above) alongside the ATR reason
+# helpers so the engine's min-holding bypass has a single source of truth.
+
+# Hysteresis: only trim when the overlay would scale the held book down by at
+# least this fraction. Prevents churning tiny SELLs when σ hovers just over
+# target (factor ≈ 0.99). A 0.05 gap ≈ the book σ sitting ~5 % over target.
+_TRIM_MIN_GAP = 0.05
 
 
 # ── Correlation gate (T09) — REMOVED in Sprint 3 ──────────────────────────────
@@ -166,6 +176,91 @@ def _apply_vol_overlay_to_buys(
     return dollars
 
 
+def _vol_trim_enabled() -> bool:
+    """T09 active de-risking opt-in. Requires the T10 overlay target > 0."""
+    return bool(settings.get("vol_overlay_trim_enabled", False)) and _portfolio_vol_target() > 0
+
+
+def _vol_overlay_trim_sells(
+    positions: list[PaperPosition],
+    forced_exits: set[str],
+    prices: dict[str, float],
+    portfolio_value: float,
+    history_provider: HistoryProvider,
+    source: str,
+) -> list["TargetTrade"]:
+    """Emit partial-SELL trims so an over-σ *held* book returns toward target (T09).
+
+    Companion to :func:`_apply_vol_overlay_to_buys`, which only shrinks new buys.
+    The σ→factor estimate here is computed over the **currently-held** book
+    (positions not already being force-sold this scan) so the trim reflects
+    pre-existing risk, not risk that new picks would add. When the factor would
+    scale the book down by at least :data:`_TRIM_MIN_GAP`, each held position is
+    trimmed to ``current_value × factor`` and the difference is sold.
+
+    Returns an empty list when the toggle is off, the overlay is disabled, the
+    book is already within target, or there is nothing meaningful to trim.
+    Trims smaller than ``paper_min_trade_dollars`` are skipped as dust.
+    """
+    if not _vol_trim_enabled() or portfolio_value <= 0:
+        return []
+
+    held = [
+        p
+        for p in positions
+        if p.ticker not in forced_exits
+        and (p.shares or 0) > 1e-9
+        and np.isfinite(prices.get(p.ticker, float("nan")))
+        and (prices.get(p.ticker, 0.0) or 0.0) > 0
+    ]
+    if not held:
+        return []
+
+    vt = _portfolio_vol_target()
+    held_w = {p.ticker: (p.shares * prices[p.ticker]) / portfolio_value for p in held}
+    ret_df = returns_frame(list(held_w.keys()), history_provider)
+    result = compute_vol_overlay(held_w, ret_df, vt, apply_fn=apply_portfolio_vol_overlay)
+    factor = result.factor
+    # Hysteresis: leave the book alone unless it is meaningfully over target.
+    if factor > 1.0 - _TRIM_MIN_GAP:
+        return []
+
+    dust = float(settings.get("paper_min_trade_dollars", 0.0) or 0.0)
+    sigma_pct = (result.sigma or 0.0) * 100
+    reason = f"{VOL_TRIM_REASON_PREFIX} σ={sigma_pct:.0f}%>{vt * 100:.0f}% ×{factor:.2f}"
+    trims: list[TargetTrade] = []
+    for p in held:
+        px = prices[p.ticker]
+        current_value = p.shares * px
+        trim_value = current_value * (1.0 - factor)
+        if trim_value < dust:
+            continue
+        trim_shares = min(float(p.shares), trim_value / px)
+        if trim_shares <= 1e-9:
+            continue
+        trims.append(
+            TargetTrade(
+                ticker=p.ticker,
+                side="SELL",
+                target_shares=trim_shares,
+                target_dollars=float(trim_value),
+                reason=reason,
+                source=source,
+                signal_score=None,  # risk housekeeping, not a conviction trade
+            )
+        )
+    if trims:
+        get_logger(__name__).info(
+            "vol_overlay trim (%s): σ=%.1f%% > target %.1f%%, trimming %d held position(s) ×%.2f",
+            source,
+            sigma_pct,
+            vt * 100,
+            len(trims),
+            factor,
+        )
+    return trims
+
+
 # ── Strategy 1: analyze_single ────────────────────────────────────────────────
 
 
@@ -222,6 +317,18 @@ def generate_trades_analyze_single(
                 )
             )
             forced_exits.add(pos.ticker)
+
+    # ── Active de-risking (T09) — trim the held book toward σ target ──────────
+    # Runs BEFORE the BUY pipeline (and its ``if not picks: return`` early exit)
+    # so an over-volatile book is de-risked even on scans with no new entries.
+    # Opt-in via ``vol_overlay_trim_enabled`` (default off → no behavior change).
+    trim_pv = float(
+        account.cash
+        + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
+    )
+    trades.extend(
+        _vol_overlay_trim_sells(positions, forced_exits, prices, trim_pv, history_provider, source)
+    )
 
     # Candidates for BUY — ranked by conviction. We also stash each candidate's
     # realised vol and calibrated probability so the vol-target / Kelly sizing

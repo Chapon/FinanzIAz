@@ -240,6 +240,23 @@ def select_uncorrelated_picks(
 
 # ── T10 portfolio volatility overlay ──────────────────────────────────────────
 
+# T09 active de-risking: partial-SELL trims emitted by the strategy layer carry
+# this reason prefix. The engine treats them as risk-driven exits that bypass
+# the min-holding gate, mirroring the ``atr_`` stance above.
+VOL_TRIM_REASON_PREFIX = "vol_trim"
+
+
+def is_vol_trim_reason(reason: str | None) -> bool:
+    """True iff ``reason`` was produced by the T09 active-trim layer.
+
+    Used by the engine to let a vol-overlay trim bypass the min-holding gate —
+    de-risking an over-volatile book should not be blocked just because a
+    position was opened recently (same rationale as ATR forced exits).
+    """
+    if not reason:
+        return False
+    return reason.startswith(VOL_TRIM_REASON_PREFIX)
+
 
 @dataclass(frozen=True)
 class VolOverlayResult:
@@ -287,15 +304,87 @@ def compute_vol_overlay(
     )
 
 
+# ── T10 ADV (average daily volume) liquidity cap ──────────────────────────────
+
+# Default trailing window (sessions) for the ADV estimate. ~1 trading month.
+DEFAULT_ADV_LOOKBACK_DAYS = 20
+
+
+def recent_adv_dollars(
+    history: "pd.DataFrame | None",
+    lookback_days: int = DEFAULT_ADV_LOOKBACK_DAYS,
+) -> float | None:
+    """Average daily *dollar* volume over the last ``lookback_days`` sessions.
+
+    ADV$ = mean(Close × Volume) across the trailing window. This is the
+    realistic-fill anchor for the liquidity cap: we only assume we can absorb a
+    fraction of a name's recent traded value.
+
+    Returns ``None`` (caller fails open — no cap) when:
+    * ``history`` is None or ``lookback_days <= 0``;
+    * the frame lacks a ``Close`` or ``Volume`` column;
+    * no finite, positive dollar-volume rows survive in the window.
+
+    Never raises — any unexpected shape degrades to ``None``.
+    """
+    if history is None or lookback_days <= 0:
+        return None
+    try:
+        if "Close" not in history.columns or "Volume" not in history.columns:
+            return None
+        tail = history.tail(lookback_days)
+        dollar_vol = tail["Close"].astype(float) * tail["Volume"].astype(float)
+        dollar_vol = dollar_vol[np.isfinite(dollar_vol)]
+        if dollar_vol.empty:
+            return None
+        adv = float(dollar_vol.mean())
+        return adv if np.isfinite(adv) and adv > 0 else None
+    except Exception:
+        return None
+
+
+def adv_capped_notional(
+    target_dollars: float,
+    adv_dollars: float | None,
+    cap_pct: float,
+) -> tuple[float, bool]:
+    """Cap a BUY notional at ``cap_pct`` of recent ADV$.
+
+    Returns ``(capped_dollars, was_capped)``. ``cap_pct`` is a fraction in
+    (0, 1] (e.g. 0.05 = 5 % of ADV). The order is left unchanged
+    (``was_capped=False``) when:
+    * the gate is disabled (``cap_pct <= 0``);
+    * ADV is unknown or non-positive (``adv_dollars`` is None/≤0) — fail open;
+    * the notional is non-finite or ≤0;
+    * the order already fits under the ceiling.
+
+    Otherwise the notional is trimmed down to ``cap_pct * adv_dollars`` and
+    ``was_capped=True`` is returned so the caller can log the trim.
+    """
+    if cap_pct <= 0 or adv_dollars is None or adv_dollars <= 0:
+        return target_dollars, False
+    if not np.isfinite(target_dollars) or target_dollars <= 0:
+        return target_dollars, False
+    ceiling = cap_pct * adv_dollars
+    if target_dollars <= ceiling:
+        return target_dollars, False
+    return ceiling, True
+
+
 __all__ = [
     "ATR_EXIT_REASONS",
     "CorrelationSkip",
+    "DEFAULT_ADV_LOOKBACK_DAYS",
     "DEFAULT_TRAIL_MIN_EXCESS_ATRS",
     "ReturnsProvider",
+    "VOL_TRIM_REASON_PREFIX",
     "VolOverlayResult",
+    "adv_capped_notional",
     "atr_exit_decision",
     "compute_vol_overlay",
     "is_atr_forced_exit_reason",
+    "is_vol_trim_reason",
     "is_within_earnings_blackout",
+    "recent_adv_dollars",
     "select_uncorrelated_picks",
 ]

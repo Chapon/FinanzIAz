@@ -130,6 +130,34 @@ SCHEMA: dict[str, SettingSpec] = {
             "Default 0.0 = block any loss within the lookback window."
         ),
     ),
+    # ADV liquidity cap (T10 of the validation roadmap)
+    # Disabled by default (0.0) — turning it on changes live BUY sizing, which
+    # would contaminate the kill_only baseline mid-monitoring. Opt-in.
+    "paper_adv_cap_pct": SettingSpec(
+        (int, float),
+        0.0,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "Cap each BUY notional at this fraction of the ticker's recent "
+            "average daily dollar volume (ADV$). 0.0 = disable. e.g. 0.05 = "
+            "never open more than 5% of ADV in one order. The order is trimmed "
+            "down (not blocked); if the trim lands below paper_min_trade_dollars "
+            "the dust gate then skips it. Fails open when history is too thin to "
+            "estimate ADV."
+        ),
+    ),
+    "paper_adv_lookback_days": SettingSpec(
+        int,
+        20,
+        min=1,
+        max=252,
+        doc=(
+            "Trailing sessions used to estimate ADV$ (mean of Close × Volume). "
+            "Default 20 ≈ one trading month. Only consulted when "
+            "paper_adv_cap_pct > 0."
+        ),
+    ),
     # ATR-based stops (T01 of the engine roadmap)
     # Disabled by default — turn on explicitly with `atr_stops_enabled=True`.
     "atr_stops_enabled": SettingSpec(
@@ -264,6 +292,23 @@ SCHEMA: dict[str, SettingSpec] = {
             "book's estimated σ = sqrt(wᵀΣw)·sqrt(252) exceeds this. Never "
             "scales up (no leverage). 0 disables the overlay — no separate flag. "
             "0.12 = 12%."
+        ),
+    ),
+    # T09 (engine roadmap) — active de-risking of the *existing* book. The T10
+    # overlay above only scales NEW buys; without this, an already-overvolatile
+    # book in analyze_single never trims and only unwinds via its own SELL
+    # signals / ATR stops. When enabled, analyze_single emits partial SELL trims
+    # on held positions so the book σ returns toward vol_target_portfolio_annual,
+    # independent of whether there are new buys this scan. Default False — opt-in
+    # so it can be validated against baseline before shipping live.
+    "vol_overlay_trim_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "Active de-risking (T09): when the held book's estimated σ exceeds "
+            "vol_target_portfolio_annual, analyze_single emits partial SELL trims "
+            "to bring existing positions back toward target — not just scale new "
+            "buys. Requires vol_target_portfolio_annual > 0. Default False."
         ),
     ),
     # Feature toggles for research stack validation (Sprint 1 / roadmap)

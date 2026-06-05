@@ -208,9 +208,12 @@ def _last_closed_cycle_pnl_pct(
 # ``paper_trading.gates``.
 from paper_trading.gates import (  # noqa: E402
     ATR_EXIT_REASONS,
+    adv_capped_notional,
     atr_exit_decision,
     is_atr_forced_exit_reason,
+    is_vol_trim_reason,
     is_within_earnings_blackout,
+    recent_adv_dollars,
 )
 
 
@@ -464,6 +467,10 @@ def run_scan(
         min_holding_min = max(0, int(settings.get("paper_min_holding_minutes", 60)))
         anti_flap_min = max(0, int(settings.get("paper_anti_flap_minutes", 30)))
         min_trade_usd = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
+        # T10 ADV liquidity cap. 0.0 = disabled (default). When >0 a BUY's
+        # notional is trimmed to cap_pct of the ticker's recent ADV$.
+        adv_cap_pct = max(0.0, float(settings.get("paper_adv_cap_pct", 0.0)))
+        adv_lookback_days = max(1, int(settings.get("paper_adv_lookback_days", 20)))
         whipsaw_days = max(0, int(settings.get("paper_whipsaw_lookback_days", 7)))
         whipsaw_min_loss = max(0.0, float(settings.get("paper_whipsaw_min_loss_pct", 0.0)))
         earnings_blackout_days = max(0, int(settings.get("earnings_blackout_days", 2)))
@@ -493,6 +500,18 @@ def run_scan(
                 edt = None
             _earnings_seen[ticker] = edt
             return edt
+
+        # Memoize OHLCV history within this scan (used by the T10 ADV cap below).
+        # Fail-open: a provider that raises yields None and the cap is skipped.
+        _history_seen: dict[str, "pd.DataFrame | None"] = {}
+
+        def _history_for(ticker: str) -> "pd.DataFrame | None":
+            if ticker not in _history_seen:
+                try:
+                    _history_seen[ticker] = history_provider(ticker)
+                except Exception:
+                    _history_seen[ticker] = None
+            return _history_seen[ticker]
 
         market_blocked = enforce_hours and not _is_market_open_safe()
         if market_blocked and trades:
@@ -529,10 +548,12 @@ def run_scan(
                 continue
 
             # Gate 2 — min holding period (block premature SELLs).
-            # ATR-forced exits (stop-loss, take-profit, trailing) bypass this
-            # gate — a freshly-opened position that collapses should still be
-            # cut. The forced-exit reason starts with ``atr_``.
-            if trade.side == "SELL" and min_holding_min > 0 and not _is_atr_forced_exit(trade.reason):
+            # Risk-driven exits bypass this gate — a freshly-opened position
+            # that collapses (ATR stop) or sits in an over-volatile book (T09
+            # vol_trim) should still be cut. ATR reasons start with ``atr_``;
+            # trims with ``vol_trim``.
+            risk_exit = _is_atr_forced_exit(trade.reason) or is_vol_trim_reason(trade.reason)
+            if trade.side == "SELL" and min_holding_min > 0 and not risk_exit:
                 p = pos_by_ticker.get(trade.ticker)
                 if p is not None and p.opened_at is not None:
                     age_min = (result.scan_at - p.opened_at).total_seconds() / 60.0
@@ -551,6 +572,26 @@ def run_scan(
                     f"{trade.ticker} BUY bloqueado: anti-flap activo (SELL en últimos {anti_flap_min} min)."
                 )
                 continue
+
+            # Gate 3b — ADV liquidity cap (T10). Trim a BUY whose notional
+            # exceeds cap_pct of the ticker's recent average daily dollar
+            # volume so we never assume we can absorb more than a small slice of
+            # a name's liquidity. This *modifies* the order rather than skipping
+            # it, then falls through to Gate 4 (min-trade) — so a trim that
+            # lands below the dust floor is then skipped there. Fail-open:
+            # unknown ADV (thin/missing history) leaves the order untouched.
+            if trade.side == "BUY" and adv_cap_pct > 0 and trade.target_dollars:
+                adv = recent_adv_dollars(_history_for(trade.ticker), adv_lookback_days)
+                capped, was_capped = adv_capped_notional(
+                    float(trade.target_dollars), adv, adv_cap_pct
+                )
+                if was_capped:
+                    result.warnings.append(
+                        f"{trade.ticker} BUY recortado por ADV: "
+                        f"${float(trade.target_dollars):,.0f} → ${capped:,.0f} "
+                        f"({adv_cap_pct:.0%} de ADV ${adv:,.0f})."
+                    )
+                    trade.target_dollars = capped
 
             # Gate 4 — minimum trade size (skip dust BUYs whose round-trip cost
             # would dominate any expected edge).
