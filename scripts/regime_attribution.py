@@ -89,7 +89,10 @@ def annualised_sharpe(returns: pd.Series,
     if len(r) < 2:
         return float("nan")
     sd = float(r.std(ddof=1))
-    if sd == 0.0:
+    # numpy 2 / pandas: std of a (near-)constant series is not exactly 0.0 —
+    # pairwise summation leaves a ~1e-19 residual — so guard with a tolerance
+    # instead of ``== 0.0`` (which silently produced ~1e16 Sharpes on numpy 2).
+    if not np.isfinite(sd) or sd < 1e-12:
         return float("nan")
     return float(r.mean() / sd * np.sqrt(trading_days_per_year))
 

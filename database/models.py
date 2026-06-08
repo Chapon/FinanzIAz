@@ -301,6 +301,83 @@ class AnalystDataCache(Base):
         return f"<AnalystDataCache({self.ticker} @ {self.fetched_at})>"
 
 
+class NewsEvent(Base):
+    """
+    Noticia cruda capturada *point-in-time* (Sprint 5 · T-CAT-0).
+
+    Append-only: una fila por (noticia, fuente) **observada**. El valor de la
+    tabla está en la serie temporal de observaciones (``fetched_at``), no en el
+    último estado — nunca se sobrescribe la noticia cruda.
+
+    Los campos de clasificación (``event_type``, ``sentiment``,
+    ``classifier_confidence``, ``classified_at``) quedan NULL hasta que T-CAT-2
+    (clasificador LLM) los rellena con un UPDATE in-place. Esa es la única
+    excepción al append-only y es segura: añade metadata, no altera la
+    observación cruda.
+
+    ``content_hash`` (sha1 de ticker | título-normalizado | published_at) es
+    UNIQUE → da idempotencia barata: re-correr el harvester el mismo día no
+    duplica filas.
+    """
+
+    __tablename__ = "news_events"
+    __table_args__ = (
+        Index("ix_news_ticker_published", "ticker", "published_at"),
+        Index("ix_news_content_hash", "content_hash", unique=True),
+        Index("ix_news_unclassified", "event_type"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    title = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)  # summary o cuerpo si la fuente lo provee
+    source = Column(String(50), nullable=False)  # "yfinance", "sec_8k", "pr_rss", ...
+    url = Column(Text, nullable=True)
+    published_at = Column(DateTime, nullable=True)  # timestamp que declara la fuente
+    fetched_at = Column(DateTime, default=utcnow_naive, index=True)  # cuándo LO VIMOS
+    content_hash = Column(String(40), nullable=False)
+
+    # Rellenados por T-CAT-2. NULL = sin clasificar todavía.
+    event_type = Column(String(40), nullable=True)
+    sentiment = Column(String(12), nullable=True)  # positive / neutral / negative
+    classifier_confidence = Column(Float, nullable=True)
+    classified_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<NewsEvent({self.ticker} [{self.source}] {self.title[:40]!r})>"
+
+
+class AnalystEstimateSnapshot(Base):
+    """
+    Snapshot diario del consenso de analistas por ticker+métrica (T-CAT-0).
+
+    Append-only: a lo sumo una fila por (ticker, metric, period_label, día).
+    La serie de snapshots es lo que permite, post-earnings, leer el consenso
+    *tal como estaba el día antes del evento* → base del surprise score
+    (T-CAT-5). yfinance solo expone el consenso **actual**, así que la única
+    vía gratis a la historia point-in-time es snapshotearlo nosotros a diario.
+
+    ``snapshot_date`` se guarda truncado a medianoche para que el chequeo
+    "¿ya tomé snapshot hoy?" sea una igualdad exacta.
+    """
+
+    __tablename__ = "analyst_estimate_snapshots"
+    __table_args__ = (Index("ix_est_ticker_metric_date", "ticker", "metric", "snapshot_date"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    metric = Column(String(24), nullable=False)  # "eps", "revenue", "rec_mean", "price_target"
+    period_label = Column(String(16), nullable=True)  # "0q","+1q","0y","+1y" o "2026-09"
+    consensus_value = Column(Float, nullable=True)
+    num_analysts = Column(Integer, nullable=True)
+    snapshot_date = Column(DateTime, default=utcnow_naive, index=True)  # día de observación (medianoche)
+    fetched_at = Column(DateTime, default=utcnow_naive)
+
+    def __repr__(self):
+        d = self.snapshot_date.date() if self.snapshot_date else "?"
+        return f"<AnalystEstimateSnapshot({self.ticker} {self.metric}/{self.period_label}={self.consensus_value} @ {d})>"
+
+
 class FailedTicker(Base):
     """
     Registro de tickers que fallaron al consultar Yahoo Finance.

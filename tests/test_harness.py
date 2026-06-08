@@ -124,6 +124,7 @@ def test_experiment_config_as_settings_dict():
         "stacking_enabled": True,
         "xgb_signal_enabled": False,
         "vol_overlay_enabled": False,
+        "cross_sectional_enabled": False,  # added Sprint 4 / T05 (2026-06-03)
     }
 
 

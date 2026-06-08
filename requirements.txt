@@ -13,19 +13,22 @@ requests>=2.32.0           # was 2.31.0; bumped for CVE-2024-35195 (cert verify)
 SQLAlchemy>=2.0.0,<3.0
 
 # Data wrangling
-# IMPORTANT — Python 3.12+ compatibility:
-#   * pandas 2.1.0 only has wheels for 3.9-3.12 (the 3.12 wheel landed in
-#     2.1.1). Pin ≥2.2.0 so pip never tries to build from source on Win.
-#   * numpy 1.26.4 is the first 1.26.x with a Python 3.12 stable wheel
-#     across all platforms. Keep <2 because pandas 2.2.x (Python ≥3.12)
-#     itself constrains numpy<2.
+# IMPORTANT — Python 3.12 / 3.13 compatibility:
+#   * pandas 2.2.2 is the first release with numpy-2.0 support AND wheels
+#     across 3.9-3.13. Pin >=2.2.2 so pip never builds from source on Win
+#     and so numpy 2.x is usable.
+#   * numpy: the old <2 pin is gone. It was kept "because pandas 2.2.x
+#     constrains numpy<2", which stopped being true at pandas 2.2.2. numpy
+#     <2 also has no Python 3.13 wheels, so it cannot install on 3.13 at all.
+#     The codebase uses no numpy-2.0-removed APIs (audited: np.float_,
+#     np.NaN, np.in1d, np.trapz, etc. -> zero usages) and the runtime env
+#     already runs numpy 2.2.x. <3.0 guards against a future 3.0 break.
 #   * pandas-ta is INTENTIONALLY NOT in this list. The codebase computes
 #     RSI/MACD/Bollinger/SMA/EMA with pure pandas (``close.ewm(...)``,
 #     ``close.rolling(...)``) in ``analysis/technical.py``. Adding
-#     pandas-ta would only re-introduce the numpy 2.x conflict its newer
-#     0.4.x betas trigger.
-pandas>=2.2.0,<3.0
-numpy>=1.26.4,<2.0
+#     pandas-ta would re-introduce a numpy 2.x conflict its betas trigger.
+pandas>=2.2.2,<3.0
+numpy>=1.26.4,<3.0
 
 # Charts
 matplotlib>=3.8.0,<4.0

@@ -119,6 +119,11 @@ def test_get_analyst_data_end_to_end(mock_yfinance, monkeypatch):
         "data.yahoo_finance._run_with_timeout",
         lambda fn, *a, timeout=None, default=None, **kw: fn(),
     )
+    # Aislar de la finanzias.db real: sin esto, get_analyst_data lee el cache
+    # de DB (AAPL fresco) y nunca usa el mock → el test dependía del estado de
+    # la DB. Forzamos miss de lectura y no-op de escritura.
+    monkeypatch.setattr("data.yahoo_finance._analyst_cache_read_db", lambda t: None)
+    monkeypatch.setattr("data.yahoo_finance._analyst_cache_write_db", lambda t, p: None)
 
     fake_ticker = mock_yfinance.Ticker.return_value
     fake_ticker.recommendations = pd.DataFrame(
