@@ -26,14 +26,14 @@ from typing import Callable
 from config.logging_config import get_logger
 from data.catalyst_taxonomy import (
     EVENT_TYPE_SET,
-    EVENT_KEYWORDS,
     ITEM_CODE_EVENT,
     ITEM_CODE_SENTIMENT,
-    SENTIMENT_KEYWORDS,
     SENTIMENT_SET,
     event_priority,
     extract_item_codes,
+    match_event,
     normalize,
+    score_sentiment,
 )
 
 log = get_logger(__name__)
@@ -75,43 +75,26 @@ def _classify_sec(content: str | None) -> tuple[str, str, float] | None:
     return event, sentiment, _CONF_SEC_ITEM
 
 
-def _match_event_keyword(text: str) -> str | None:
-    """First event_type (materiality order) whose any cue is in ``text``."""
-    for event_type, cues in EVENT_KEYWORDS:
-        for cue in cues:
-            if cue in text:
-                return event_type
-    return None
-
-
-def _score_sentiment(text: str) -> str:
-    """Majority of positive/negative cue hits; ties / no hits → neutral."""
-    pos = sum(1 for w in SENTIMENT_KEYWORDS["positive"] if w in text)
-    neg = sum(1 for w in SENTIMENT_KEYWORDS["negative"] if w in text)
-    if pos > neg:
-        return "positive"
-    if neg > pos:
-        return "negative"
-    return "neutral"
-
-
 def heuristic_classify(title: str, content: str | None, source: str) -> Classification:
     """
     Deterministic classifier. SEC 8-K → structured item-code mapping (high
-    confidence); otherwise keyword cues over the headline+summary text.
-    Never raises.
+    confidence); otherwise word-boundary keyword cues over the **headline only**.
+
+    Matching the title (not the long summary) is deliberate: yfinance summaries
+    are noisy prose that fire many spurious cues, so the headline is the cleaner
+    catalyst signal. Never raises.
     """
     try:
-        # 1) SEC structured path
+        # 1) SEC structured path — uses the item codes carried in content
         if source == "sec_8k":
             sec = _classify_sec(content)
             if sec is not None:
                 event, sentiment, conf = sec
                 return Classification(event, sentiment, conf, "heuristic")
 
-        text = normalize(f"{title} {content or ''}")
-        event = _match_event_keyword(text)
-        sentiment = _score_sentiment(text)
+        text = normalize(title)
+        event = match_event(text)
+        sentiment = score_sentiment(text)
         if event is None:
             return Classification("other", sentiment, _CONF_NONE, "heuristic")
         return Classification(event, sentiment, _CONF_KEYWORD, "heuristic")

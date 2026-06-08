@@ -100,6 +100,39 @@ def test_headline_no_cue_is_other_low_confidence():
     assert c.confidence < 0.5
 
 
+# ── regression: real-world headlines that the v1 heuristic got wrong ──────────
+
+
+def test_title_only_ignores_noisy_summary():
+    # The catalyst signal is the headline; a noisy summary must NOT drive labels.
+    c = heuristic_classify(
+        "A look at the company today",
+        "The firm beat earnings and raised full-year guidance and announced a buyback",
+        "yfinance",
+    )
+    assert c.event_type == "other"
+
+
+def test_analyst_target_headline_is_rating_not_mna():
+    c = heuristic_classify("Morgan Stanley Raises Acme Target on growth confidence", None, "yfinance")
+    assert c.event_type == "analyst_rating"
+
+
+def test_layoffs_is_restructuring():
+    assert heuristic_classify("Company announces major layoffs", None, "yfinance").event_type == "restructuring"
+
+
+def test_insiders_sold_is_insider_activity():
+    c = heuristic_classify("Arm insiders sold $25 million in stock", None, "yfinance")
+    assert c.event_type == "insider_activity"
+
+
+def test_word_boundary_avoids_substring_false_positive():
+    # 'cuts' (negative cue) must not fire inside 'haircuts'.
+    c = heuristic_classify("Barber chain expands haircuts nationwide", None, "yfinance")
+    assert c.sentiment != "negative"
+
+
 # ── classify() coercion of off-taxonomy backends ─────────────────────────────
 
 

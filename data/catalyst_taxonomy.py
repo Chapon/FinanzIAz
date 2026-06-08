@@ -118,32 +118,34 @@ EVENT_KEYWORDS: list[tuple[str, list[str]]] = [
                         "raises full-year", "above consensus", "raises fy"]),
     ("guidance_cut", ["cuts guidance", "lowers guidance", "slashes outlook", "warns on",
                      "profit warning", "cuts forecast", "lowers outlook", "guidance cut"]),
-    ("mna", ["to acquire", "acquisition", "merger", "to buy", "takeover", "buyout",
-            "agrees to acquire", "in talks to buy", "stake in"]),
+    ("mna", ["to acquire", "acquires", "acquisition of", "merger", "to merge with",
+            "agrees to buy", "takeover", "buyout", "agrees to acquire", "in talks to buy"]),
     ("clinical_fda", ["fda", "phase 1", "phase 2", "phase 3", "clinical trial", "trial data",
-                     "approval", "approves", "drug", "therapy", "endpoint"]),
-    ("legal_regulatory", ["lawsuit", "sues", "investigation", "probe", "subpoena", "fine",
-                        "settlement", "antitrust", "sec charges", "delisting", "restatement",
-                        "recall"]),
-    ("executive_change", ["ceo", "cfo", "steps down", "resigns", "appoints", "names new",
-                        "departure", "to retire", "successor"]),
-    ("analyst_rating", ["upgrade", "downgrade", "initiates coverage", "price target",
-                      "raised to buy", "cut to sell", "reiterates", "overweight", "underweight"]),
-    ("product_launch", ["launches", "unveils", "introduces", "new product", "rolls out",
-                      "announces the", "debut"]),
-    ("partnership_contract", ["partnership", "contract", "deal with", "agreement with",
-                           "wins contract", "awarded", "collaborat", "signs"]),
-    ("capital_return", ["buyback", "share repurchase", "dividend", "stock split", "special dividend"]),
-    ("financing_offering", ["offering", "raises capital", "convertible notes", "secondary offering",
-                         "debt offering", "public offering", "private placement", "files to sell"]),
-    ("insider_activity", ["insider", "ceo buys", "ceo sells", "insider buying", "insider selling",
-                       "10b5-1", "form 4"]),
+                     "drug approval", "fda approval", "therapy", "endpoint met", "topline data"]),
+    ("legal_regulatory", ["lawsuit", "sues", "investigation", "probe", "subpoena", "antitrust",
+                        "sec charges", "delisting", "restatement", "recall", "settlement"]),
+    ("executive_change", ["new ceo", "new cfo", "ceo steps down", "cfo steps down", "resigns",
+                        "appoints", "names new", "to retire", "ceo departure", "ceo shift"]),
+    ("analyst_rating", ["upgrade", "upgraded", "downgrade", "downgraded", "initiates coverage",
+                      "price target", "target on", "raises target", "lowers target",
+                      "raised to buy", "cut to sell", "buy rating", "sell rating",
+                      "overweight", "underweight"]),
+    ("product_launch", ["launches", "unveils", "introduces", "new product", "rolls out", "debut"]),
+    ("partnership_contract", ["partnership", "wins contract", "awarded contract", "signs deal",
+                           "signs agreement", "agreement with", "deal with", "collaborat"]),
+    ("capital_return", ["buyback", "share repurchase", "dividend hike", "raises dividend",
+                     "stock split", "special dividend"]),
+    ("financing_offering", ["stock offering", "share offering", "public offering", "debt offering",
+                         "secondary offering", "convertible notes", "private placement",
+                         "files to sell", "capital raise", "raises capital"]),
+    ("insider_activity", ["insider buying", "insider selling", "insiders sold", "insiders bought",
+                       "ceo buys", "ceo sells", "10b5-1", "form 4"]),
     ("restructuring", ["layoffs", "cuts jobs", "restructuring", "impairment", "writedown",
-                    "bankruptcy", "chapter 11", "shuts down", "exit"]),
-    ("macro_sector", ["fed", "inflation", "tariff", "interest rate", "sector", "market selloff",
-                   "rally", "jobs report"]),
-    ("stock_movement", ["soars", "plunges", "jumps", "tumbles", "rallies", "slumps",
-                     "spikes", "why .* stock", "stock plummeted", "stock popped"]),
+                    "bankruptcy", "chapter 11", "shuts down"]),
+    ("macro_sector", ["fed", "inflation", "tariff", "interest rate", "sector update", "market selloff",
+                   "sector bloodbath", "jobs report", "rate hike", "rate cut"]),
+    ("stock_movement", ["soars", "plunges", "tumbles", "slumps", "spikes", "plummeted",
+                     "stock pops", "stock popped", "nosedive", "nosediving"]),
 ]
 
 SENTIMENT_KEYWORDS: dict[str, list[str]] = {
@@ -175,3 +177,41 @@ def extract_item_codes(content: str | None) -> list[str]:
     if not content:
         return []
     return _ITEM_IN_CONTENT.findall(content)
+
+
+# ── Word-boundary cue matching ───────────────────────────────────────────────
+# Substring matching produced false positives ("offering" inside other words,
+# "cuts" inside "haircuts"). Match whole phrases with word boundaries instead;
+# internal spaces match any run of whitespace.
+
+
+def _compile_phrase(phrase: str) -> "re.Pattern[str]":
+    parts = [re.escape(w) for w in phrase.split()]
+    return re.compile(r"\b" + r"\s+".join(parts) + r"\b")
+
+
+EVENT_KEYWORD_RES: list[tuple[str, list]] = [
+    (event_type, [_compile_phrase(c) for c in cues]) for event_type, cues in EVENT_KEYWORDS
+]
+SENTIMENT_KEYWORD_RES: dict[str, list] = {
+    label: [_compile_phrase(w) for w in words] for label, words in SENTIMENT_KEYWORDS.items()
+}
+
+
+def match_event(text: str) -> str | None:
+    """First event_type (materiality order) with a word-boundary cue hit in ``text``."""
+    for event_type, regexes in EVENT_KEYWORD_RES:
+        if any(r.search(text) for r in regexes):
+            return event_type
+    return None
+
+
+def score_sentiment(text: str) -> str:
+    """Majority of positive/negative cue hits; ties / none → neutral."""
+    pos = sum(1 for r in SENTIMENT_KEYWORD_RES["positive"] if r.search(text))
+    neg = sum(1 for r in SENTIMENT_KEYWORD_RES["negative"] if r.search(text))
+    if pos > neg:
+        return "positive"
+    if neg > pos:
+        return "negative"
+    return "neutral"

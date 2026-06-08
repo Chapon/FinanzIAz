@@ -341,7 +341,7 @@ def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) ->
 
 SEC_DATA_BASE = "https://data.sec.gov"
 SEC_TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
-_DEFAULT_SEC_UA = "FinanzIAs Catalyst Harvester (set SEC_EDGAR_USER_AGENT with a contact email)"
+_DEFAULT_SEC_UA = "FinanzIAs/1.0 (set SEC_EDGAR_USER_AGENT=you@example.com)"
 
 # Form 8-K item codes → human-readable labels. Used to build a meaningful
 # headline ("AAPL 8-K: Results of Operations and Financial Condition") instead
@@ -475,13 +475,35 @@ def parse_edgar_submissions(
     return out
 
 
+_warned_default_ua = False
+
+
 def _sec_session():
-    """A ``requests.Session`` with the SEC-required descriptive User-Agent."""
+    """
+    A ``requests.Session`` with the SEC-required descriptive User-Agent.
+
+    EDGAR returns 403 for requests without a proper UA (or the bare
+    ``python-requests`` default). Set ``SEC_EDGAR_USER_AGENT`` to a contact
+    string, e.g. "FinanzIAs you@example.com". On Windows make it persistent so
+    the scheduled harvest sees it too: ``setx SEC_EDGAR_USER_AGENT "..."``
+    (a plain ``set`` only lasts the current shell; PowerShell uses ``$env:``).
+    """
+    global _warned_default_ua
     import requests
 
+    ua = os.environ.get("SEC_EDGAR_USER_AGENT")
+    if not ua:
+        ua = _DEFAULT_SEC_UA
+        if not _warned_default_ua:
+            log.warning(
+                "SEC_EDGAR_USER_AGENT not set — using a placeholder UA; EDGAR may "
+                "return 403. Set it to 'Name you@example.com' (setx on Windows)."
+            )
+            _warned_default_ua = True
     s = requests.Session()
-    ua = os.environ.get("SEC_EDGAR_USER_AGENT") or _DEFAULT_SEC_UA
-    s.headers.update({"User-Agent": ua, "Accept-Encoding": "gzip, deflate"})
+    s.headers.update(
+        {"User-Agent": ua, "Accept": "application/json", "Accept-Encoding": "gzip, deflate"}
+    )
     return s
 
 
