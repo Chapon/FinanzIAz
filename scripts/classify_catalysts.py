@@ -79,10 +79,17 @@ def classify_events(
       - ``reclassify``: every row (optionally narrowed by ``source``);
       - ``max_confidence``: only rows already labeled with
         ``classifier_confidence <= max_confidence`` — handy to LLM-upgrade just
-        the low-confidence ("other") rows cheaply.
+        the low-confidence ("other") rows cheaply. Takes precedence over
+        ``reclassify`` (a warning is logged if both are passed).
     """
     now = now or utcnow_naive()
     report = ClassifyReport()
+    if max_confidence is not None and reclassify:
+        log.warning(
+            "--max-confidence takes precedence over --reclassify: only rows with "
+            "classifier_confidence <= %s will be redone (unclassified rows excluded).",
+            max_confidence,
+        )
     with session_scope() as session:
         q = session.query(NewsEvent)
         if max_confidence is not None:

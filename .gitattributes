@@ -1,0 +1,4 @@
+# Artefactos JSON regenerados por el scheduler diario en Windows (CRLF).
+# `text` hace que git normalice EOL al comparar/commitear → el re-write CRLF
+# del builder no ensucia el working tree (el repo guarda LF).
+data/catalyst/*.json text eol=lf
