@@ -47,8 +47,8 @@ class Classification:
     classifier: str = "heuristic"  # provenance tag (not persisted; for logs/sampling)
 
 
-# Backend signature: (title, content, source) -> Classification
-Backend = Callable[[str, "str | None", str], Classification]
+# Backend signature: (title, content, source, ticker) -> Classification
+Backend = Callable[[str, "str | None", str, "str | None"], Classification]
 
 # Confidence tiers
 _CONF_SEC_ITEM = 0.90   # structured 8-K item code → event_type
@@ -75,14 +75,17 @@ def _classify_sec(content: str | None) -> tuple[str, str, float] | None:
     return event, sentiment, _CONF_SEC_ITEM
 
 
-def heuristic_classify(title: str, content: str | None, source: str) -> Classification:
+def heuristic_classify(
+    title: str, content: str | None, source: str, ticker: str | None = None
+) -> Classification:
     """
     Deterministic classifier. SEC 8-K → structured item-code mapping (high
     confidence); otherwise word-boundary keyword cues over the **headline only**.
 
     Matching the title (not the long summary) is deliberate: yfinance summaries
     are noisy prose that fire many spurious cues, so the headline is the cleaner
-    catalyst signal. Never raises.
+    catalyst signal. ``ticker`` is accepted for backend-signature parity (the
+    heuristic doesn't use it). Never raises.
     """
     try:
         # 1) SEC structured path — uses the item codes carried in content
@@ -106,15 +109,24 @@ def heuristic_classify(title: str, content: str | None, source: str) -> Classifi
 # ── Public entry point ───────────────────────────────────────────────────────
 
 
-def classify(title: str, content: str | None, source: str, *, backend: Backend | None = None) -> Classification:
+def classify(
+    title: str,
+    content: str | None,
+    source: str,
+    ticker: str | None = None,
+    *,
+    backend: Backend | None = None,
+) -> Classification:
     """
     Classify one item. ``backend`` defaults to the heuristic; pass an LLM backend
-    (see :func:`make_llm_backend`) to swap. A backend that raises or returns an
-    off-taxonomy label is coerced to a safe ``other``/``neutral`` result.
+    (see :func:`make_llm_backend`) to swap. ``ticker`` is forwarded to the backend
+    (the LLM uses it to judge whether the headline is really about that company;
+    the heuristic ignores it). A backend that raises or returns an off-taxonomy
+    label is coerced to a safe ``other``/``neutral`` result.
     """
     backend = backend or heuristic_classify
     try:
-        c = backend(title, content, source)
+        c = backend(title, content, source, ticker)
     except Exception:
         log.exception("classifier backend failed for %r — falling back", title)
         return Classification("other", "neutral", _CONF_NONE, "fallback")
@@ -138,11 +150,14 @@ def _coerce(c: Classification) -> Classification:
 # ── Optional LLM backend (lazy, off by default) ──────────────────────────────
 
 _LLM_SYSTEM = (
-    "You are a financial news classifier. Given a headline and optional summary "
-    "for a stock ticker, return ONLY a compact JSON object: "
+    "You are a financial news classifier. You are given a stock TICKER and a "
+    "headline (plus an optional summary). Return ONLY a compact JSON object: "
     '{"event_type": <one of the allowed types>, "sentiment": '
     '"positive"|"neutral"|"negative", "confidence": 0..1}. '
-    "Allowed event_type values: %s. Pick the single most material one."
+    "Allowed event_type values: %s. Pick the single most material event for the "
+    "GIVEN ticker. If the headline is not actually about that ticker (it just "
+    'mentions it in passing, or is about a different company), return "other" '
+    "with low confidence. Sentiment is from the perspective of the given ticker."
 )
 
 
@@ -152,24 +167,30 @@ def make_llm_backend(client=None, model: str = "claude-haiku-4-5-20251001") -> B
     first invoked, so importing this module never pulls the dep. If no client/key
     is available it logs and falls back to the heuristic — it never raises.
 
-    Wire it in explicitly, e.g.::
+    Requires ``pip install anthropic`` and ``ANTHROPIC_API_KEY`` in the env. Wire
+    it in explicitly, e.g.::
 
         from data.catalyst_classifier import make_llm_backend, classify
         backend = make_llm_backend()
-        c = classify(title, content, source, backend=backend)
+        c = classify(title, content, source, ticker, backend=backend)
     """
     from data.catalyst_taxonomy import EVENT_TYPES
 
     system = _LLM_SYSTEM % ", ".join(EVENT_TYPES)
 
-    def _backend(title: str, content: str | None, source: str) -> Classification:
+    def _backend(title: str, content: str | None, source: str, ticker: str | None = None) -> Classification:
         nonlocal client
         try:
             if client is None:
                 import anthropic  # type: ignore
 
                 client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
-            user = f"Ticker headline: {title}\nSummary: {content or '(none)'}\nSource: {source}"
+            user = (
+                f"Ticker: {ticker or '(unknown)'}\n"
+                f"Headline: {title}\n"
+                f"Summary: {content or '(none)'}\n"
+                f"Source: {source}"
+            )
             resp = client.messages.create(
                 model=model,
                 max_tokens=120,
@@ -180,23 +201,106 @@ def make_llm_backend(client=None, model: str = "claude-haiku-4-5-20251001") -> B
             return _parse_llm_json(text)
         except Exception:
             log.exception("LLM backend failed for %r — falling back to heuristic", title)
-            return heuristic_classify(title, content, source)
+            return heuristic_classify(title, content, source, ticker)
 
     return _backend
 
 
-def _parse_llm_json(text: str) -> Classification:
+def make_hybrid_backend(
+    llm_backend: Backend | None = None,
+    *,
+    client=None,
+    model: str = "claude-haiku-4-5-20251001",
+) -> Backend:
+    """
+    Cost-smart backend: SEC 8-K filings are classified by the **heuristic**
+    (structured item codes already give ~0.90-confidence labels, so spending LLM
+    tokens on them is waste); everything else (the noisy yfinance/RSS headlines,
+    where the heuristic is weakest) goes to the **LLM**. Best quality per dollar.
+    """
+    llm = llm_backend or make_llm_backend(client=client, model=model)
+
+    def _backend(title: str, content: str | None, source: str, ticker: str | None = None) -> Classification:
+        if source == "sec_8k":
+            return heuristic_classify(title, content, source, ticker)
+        return llm(title, content, source, ticker)
+
+    return _backend
+
+
+def _parse_llm_json(text: str, tag: str = "llm") -> Classification:
     """Extract the JSON object from a model reply; coercion happens in classify()."""
     import json
     import re
 
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
-        return Classification("other", "neutral", _CONF_NONE, "llm")
+        return Classification("other", "neutral", _CONF_NONE, tag)
     data = json.loads(m.group(0))
     return Classification(
         str(data.get("event_type", "other")),
         str(data.get("sentiment", "neutral")),
         float(data.get("confidence", 0.5)),
-        "llm",
+        tag,
     )
+
+
+def make_ollama_backend(
+    model: str = "llama3.1",
+    host: str | None = None,
+    *,
+    http_post=None,
+) -> Backend:
+    """
+    Build a classifier backed by a **local Ollama** model — free, no API key, no
+    quota, and usable unattended (e.g. the daily scheduler). Talks to the Ollama
+    HTTP server (default ``http://localhost:11434``, overridable via ``host`` or
+    the ``OLLAMA_HOST`` env var) using the chat endpoint with JSON output.
+
+    Prereqs (one time): install Ollama and pull a small instruct model, e.g.
+    ``ollama pull llama3.1``. ``http_post`` is injectable for offline tests.
+    Never raises — any failure (server down, bad JSON) falls back to the heuristic.
+    """
+    import os
+
+    base = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
+    from data.catalyst_taxonomy import EVENT_TYPES
+
+    system = _LLM_SYSTEM % ", ".join(EVENT_TYPES)
+
+    def _backend(title: str, content: str | None, source: str, ticker: str | None = None) -> Classification:
+        try:
+            poster = http_post
+            if poster is None:
+                import requests
+
+                poster = requests.post
+            user = (
+                f"Ticker: {ticker or '(unknown)'}\n"
+                f"Headline: {title}\n"
+                f"Summary: {content or '(none)'}\n"
+                f"Source: {source}"
+            )
+            resp = poster(
+                f"{base}/api/chat",
+                json={
+                    "model": model,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0},
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = (data.get("message") or {}).get("content", "") or ""
+            return _parse_llm_json(text, tag="ollama")
+        except Exception:
+            log.exception("Ollama backend failed for %r — falling back to heuristic", title)
+            return heuristic_classify(title, content, source, ticker)
+
+    return _backend

@@ -65,19 +65,29 @@ def classify_events(
     limit: int | None = None,
     source: str | None = None,
     reclassify: bool = False,
+    max_confidence: float | None = None,
     dry_run: bool = False,
+    show: bool = False,
     now: datetime | None = None,
 ) -> ClassifyReport:
     """
     Classify ``news_events`` rows and persist labels in place (unless dry_run).
 
-    ``classifier(title, content, source)`` is injectable for offline tests.
+    ``classifier(title, content, source, ticker)`` is injectable for offline
+    tests. Row selection:
+      - default: only unclassified rows (``event_type IS NULL``);
+      - ``reclassify``: every row (optionally narrowed by ``source``);
+      - ``max_confidence``: only rows already labeled with
+        ``classifier_confidence <= max_confidence`` — handy to LLM-upgrade just
+        the low-confidence ("other") rows cheaply.
     """
     now = now or utcnow_naive()
     report = ClassifyReport()
     with session_scope() as session:
         q = session.query(NewsEvent)
-        if not reclassify:
+        if max_confidence is not None:
+            q = q.filter(NewsEvent.classifier_confidence <= max_confidence)
+        elif not reclassify:
             q = q.filter(NewsEvent.event_type.is_(None))
         if source:
             q = q.filter(NewsEvent.source == source)
@@ -87,7 +97,7 @@ def classify_events(
         for ev in q.all():
             report.scanned += 1
             try:
-                c = classifier(ev.title, ev.content, ev.source)
+                c = classifier(ev.title, ev.content, ev.source, ev.ticker)
             except Exception:
                 log.exception("classify failed for news id=%s", ev.id)
                 report.failed += 1
@@ -95,6 +105,8 @@ def classify_events(
             report.by_event[c.event_type] += 1
             report.by_sentiment[c.sentiment] += 1
             report.classified += 1
+            if show:
+                print(f"  {ev.ticker:<6} {c.event_type:<20} {c.sentiment:<8} {c.confidence:.2f}  {ev.title[:72]}")
             if dry_run:
                 continue
             ev.event_type = c.event_type
@@ -105,14 +117,18 @@ def classify_events(
     return report
 
 
-def sample_for_review(n: int = 100, *, seed: int | None = None) -> list[tuple]:
+def sample_for_review(n: int = 100, *, source: str | None = None, seed: int | None = None) -> list[tuple]:
     """
     Return a random sample of classified rows for the manual accuracy check the
-    roadmap calls for (N≈100). Each tuple: (ticker, source, event_type,
-    sentiment, confidence, title).
+    roadmap calls for (N≈100). Optionally restrict to one ``source`` (e.g.
+    "yfinance" to eyeball just the headline path). Each tuple: (ticker, source,
+    event_type, sentiment, confidence, title).
     """
     with session_scope() as s:
-        rows = s.query(NewsEvent).filter(NewsEvent.event_type.isnot(None)).all()
+        q = s.query(NewsEvent).filter(NewsEvent.event_type.isnot(None))
+        if source:
+            q = q.filter(NewsEvent.source == source)
+        rows = q.all()
         data = [
             (r.ticker, r.source, r.event_type, r.sentiment, r.classifier_confidence, r.title)
             for r in rows
@@ -122,12 +138,57 @@ def sample_for_review(n: int = 100, *, seed: int | None = None) -> list[tuple]:
     return data[:n]
 
 
+def _build_classifier(backend_name: str, model: str | None):
+    """Return the (title, content, source, ticker) classifier for ``backend_name``."""
+    if backend_name == "heuristic":
+        return classify  # default heuristic backend
+    from functools import partial
+
+    from data.catalyst_classifier import make_hybrid_backend, make_llm_backend, make_ollama_backend
+
+    anthropic_model = model or "claude-haiku-4-5-20251001"
+    ollama_model = model or "llama3.1"
+    if backend_name == "llm":
+        backend = make_llm_backend(model=anthropic_model)
+    elif backend_name == "ollama":
+        backend = make_ollama_backend(model=ollama_model)
+    elif backend_name == "hybrid":
+        backend = make_hybrid_backend(model=anthropic_model)
+    elif backend_name == "hybrid-ollama":
+        backend = make_hybrid_backend(llm_backend=make_ollama_backend(model=ollama_model))
+    else:
+        raise ValueError(f"unknown backend {backend_name!r}")
+    return partial(classify, backend=backend)
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="T-CAT-2 catalyst classifier runner.")
     p.add_argument("--limit", type=int, default=None, help="Max rows to classify this run.")
     p.add_argument("--source", type=str, default=None, help="Only this source (e.g. sec_8k, yfinance).")
     p.add_argument("--reclassify", action="store_true", help="Redo rows even if already classified.")
+    p.add_argument(
+        "--max-confidence",
+        type=float,
+        default=None,
+        help="Only redo already-labeled rows with confidence <= this (e.g. 0.3 to LLM-upgrade the 'other' rows).",
+    )
+    p.add_argument(
+        "--backend",
+        choices=["heuristic", "llm", "ollama", "hybrid", "hybrid-ollama"],
+        default="heuristic",
+        help=(
+            "heuristic (free, default) | llm (Anthropic API, paid) | ollama (free local model) "
+            "| hybrid (SEC→heuristic, rest→Anthropic) | hybrid-ollama (SEC→heuristic, rest→local Ollama; "
+            "free + scheduler-friendly)."
+        ),
+    )
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Model override. Defaults: claude-haiku-4-5-20251001 (llm/hybrid) or llama3.1 (ollama).",
+    )
     p.add_argument("--dry-run", action="store_true", help="Report distribution without writing.")
+    p.add_argument("--show", action="store_true", help="Print each row as it's classified (eyeball the backend live).")
     p.add_argument("--sample", type=int, default=0, help="Dump N classified rows for manual QA and exit.")
     p.add_argument("--seed", type=int, default=None, help="Seed for --sample shuffling.")
     return p.parse_args(argv)
@@ -136,17 +197,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.sample:
-        rows = sample_for_review(args.sample, seed=args.seed)
+        rows = sample_for_review(args.sample, source=args.source, seed=args.seed)
         for ticker, src, evt, sent, conf, title in rows:
             c = f"{conf:.2f}" if conf is not None else " -- "
             print(f"{ticker:<6} {src:<14} {evt:<20} {sent:<8} {c}  {title}")
         print(f"\n{len(rows)} sampled — eyeball event_type accuracy here.")
         return 0
+    classifier = _build_classifier(args.backend, args.model)
+    if args.backend != "heuristic":
+        log.info("classifying with %s backend (model=%s)", args.backend, args.model)
     report = classify_events(
+        classifier=classifier,
         limit=args.limit,
         source=args.source,
         reclassify=args.reclassify,
+        max_confidence=args.max_confidence,
         dry_run=args.dry_run,
+        show=args.show,
     )
     print(report.summary())
     return 0

@@ -137,7 +137,7 @@ def test_word_boundary_avoids_substring_false_positive():
 
 
 def test_classify_coerces_bad_labels():
-    bad = lambda t, c, s: Classification("NOT_A_TYPE", "ecstatic", 5.0, "llm")
+    bad = lambda t, c, s, k=None: Classification("NOT_A_TYPE", "ecstatic", 5.0, "llm")
     out = classify("x", None, "yfinance", backend=bad)
     assert out.event_type == "other"
     assert out.sentiment == "neutral"
@@ -145,12 +145,72 @@ def test_classify_coerces_bad_labels():
 
 
 def test_classify_backend_exception_falls_back():
-    def boom(t, c, s):
+    def boom(t, c, s, k=None):
         raise RuntimeError("backend down")
 
     out = classify("x", None, "yfinance", backend=boom)
     assert out.event_type == "other"
     assert out.classifier == "fallback"
+
+
+def test_classify_forwards_ticker_to_backend():
+    seen = {}
+
+    def echo(title, content, source, ticker=None):
+        seen["ticker"] = ticker
+        return Classification("mna", "neutral", 0.7, "llm")
+
+    classify("Some headline", None, "yfinance", "NVDA", backend=echo)
+    assert seen["ticker"] == "NVDA"
+
+
+def test_ollama_backend_parses_json_and_falls_back():
+    from data.catalyst_classifier import make_ollama_backend
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": {"content": '{"event_type":"mna","sentiment":"positive","confidence":0.9}'}}
+
+    ok = make_ollama_backend(http_post=lambda *a, **k: _Resp())
+    c = ok("Acme to acquire Beta", None, "yfinance", "ACME")
+    assert c.event_type == "mna" and c.classifier == "ollama"
+
+    def boom(*a, **k):
+        raise RuntimeError("connection refused")
+
+    down = make_ollama_backend(http_post=boom)
+    c2 = down("NVDA beats earnings, tops estimates", None, "yfinance", "NVDA")
+    assert c2.event_type == "earnings_results"  # fell back to heuristic
+
+
+def test_hybrid_ollama_routes_sec_to_heuristic():
+    from data.catalyst_classifier import make_hybrid_backend, make_ollama_backend
+
+    def must_not_call(*a, **k):
+        raise AssertionError("SEC must not hit Ollama")
+
+    hybrid = make_hybrid_backend(llm_backend=make_ollama_backend(http_post=must_not_call))
+    sec = hybrid("AAPL 8-K: Results", "Items: 2.02", "sec_8k", "AAPL")
+    assert sec.event_type == "earnings_results" and sec.confidence >= 0.9
+
+
+def test_hybrid_uses_heuristic_for_sec_and_llm_for_rest():
+    from data.catalyst_classifier import make_hybrid_backend
+
+    def llm_that_must_not_run_on_sec(title, content, source, ticker=None):
+        assert source != "sec_8k", "hybrid must not send SEC filings to the LLM"
+        return Classification("mna", "positive", 0.8, "llm")
+
+    hybrid = make_hybrid_backend(llm_backend=llm_that_must_not_run_on_sec)
+    # SEC → heuristic (item code 2.02 → earnings_results, conf 0.90)
+    sec = hybrid("AAPL 8-K: Results", "Items: 2.02", "sec_8k", "AAPL")
+    assert sec.event_type == "earnings_results" and sec.confidence >= 0.9
+    # non-SEC → llm
+    head = hybrid("Acme to acquire Beta", None, "yfinance", "ACME")
+    assert head.classifier == "llm" and head.event_type == "mna"
 
 
 def test_parse_llm_json_extracts_object():

@@ -41,3 +41,9 @@ openpyxl>=3.1.0
 # Quant / ML
 hmmlearn>=0.3.0
 arch>=6.0
+
+# Optional — LLM catalyst classifier backend (Sprint 5 · T-CAT-2).
+# Only needed to run `classify_catalysts.py --backend llm|hybrid`; the default
+# heuristic backend needs nothing. Install on demand: `pip install anthropic`
+# and set ANTHROPIC_API_KEY. Left commented so it isn't force-installed.
+# anthropic>=0.40

@@ -26,6 +26,9 @@ cd /d "%REPO%"
 echo. >> "%LOG%"
 echo ===== %DATE% %TIME% catalyst harvest start ===== >> "%LOG%"
 "%PY%" scripts\harvest_catalysts.py --sources yfinance,sec >> "%LOG%" 2>&1
-"%PY%" scripts\classify_catalysts.py >> "%LOG%" 2>&1
+REM hybrid-ollama: SEC 8-K via heuristic (item codes, 0.90); yfinance/RSS headlines
+REM via local qwen2.5:14b on the GPU (good ticker-attribution + catalyst detection).
+REM Free, unattended. Falls back to heuristic automatically if Ollama isn't running.
+"%PY%" scripts\classify_catalysts.py --backend hybrid-ollama --model qwen2.5:14b >> "%LOG%" 2>&1
 echo ===== %DATE% %TIME% catalyst harvest done ===== >> "%LOG%"
 endlocal
