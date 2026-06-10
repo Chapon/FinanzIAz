@@ -1,5 +1,5 @@
 @echo off
-REM ── FinanzIAs · Sprint 5 Catalyst Engine ──────────────────────────────────
+REM == FinanzIAs - Sprint 5 Catalyst Engine ==================================
 REM Daily point-in-time harvest (T-CAT-0/1) + classification (T-CAT-2).
 REM Run by Windows Task Scheduler ~18:30 ART (post NY close).
 REM
@@ -7,7 +7,7 @@ REM SEC_EDGAR_USER_AGENT is read from the persistent user environment
 REM (set once with: setx SEC_EDGAR_USER_AGENT "FinanzIAs you@example.com").
 REM No secrets live in this file, so it's safe to commit.
 REM
-REM Register the task (one time, normal terminal — no admin needed):
+REM Register the task (one time, normal terminal, no admin needed):
 REM   schtasks /Create /TN "FinanzIAs Catalyst Harvest" ^
 REM     /TR "D:\Rodrigo\FinanzIAs\FinanzIAs\scripts\daily_catalyst_harvest.bat" ^
 REM     /SC DAILY /ST 18:30 /F
@@ -15,7 +15,10 @@ REM Inspect / run / remove:
 REM   schtasks /Query /TN "FinanzIAs Catalyst Harvest"
 REM   schtasks /Run   /TN "FinanzIAs Catalyst Harvest"
 REM   schtasks /Delete /TN "FinanzIAs Catalyst Harvest" /F
-REM ───────────────────────────────────────────────────────────────────────────
+REM
+REM NOTE: this file MUST keep CRLF line endings (cmd.exe mis-parses LF-only
+REM batch files, eating characters). Enforced via .gitattributes.
+REM ==========================================================================
 
 setlocal
 set REPO=D:\Rodrigo\FinanzIAs\FinanzIAs
@@ -23,12 +26,15 @@ set PY=C:\Users\chapa\anaconda3\python.exe
 set LOG=%USERPROFILE%\.finanzias\catalyst_harvest.log
 
 cd /d "%REPO%"
+REM cmd redirection creates the file but NOT the directory; without this the
+REM whole script dies silently on the first >> if ~/.finanzias doesn't exist.
+if not exist "%USERPROFILE%\.finanzias" mkdir "%USERPROFILE%\.finanzias"
 echo. >> "%LOG%"
 echo ===== %DATE% %TIME% catalyst harvest start ===== >> "%LOG%"
 "%PY%" scripts\harvest_catalysts.py --sources yfinance,sec >> "%LOG%" 2>&1
-REM hybrid-ollama: SEC 8-K via heuristic (item codes, 0.90); yfinance/RSS headlines
-REM via local qwen2.5:14b on the GPU (good ticker-attribution + catalyst detection).
-REM Free, unattended. Falls back to heuristic automatically if Ollama isn't running.
+REM hybrid-ollama: SEC 8-K via heuristic (item codes, 0.90); yfinance/RSS
+REM headlines via local qwen2.5:14b on the GPU. Free, unattended. Falls back
+REM to the heuristic automatically if Ollama isn't running.
 "%PY%" scripts\classify_catalysts.py --backend hybrid-ollama --model qwen2.5:14b >> "%LOG%" 2>&1
 echo ===== %DATE% %TIME% catalyst harvest done ===== >> "%LOG%"
 endlocal

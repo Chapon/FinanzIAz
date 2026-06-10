@@ -2,3 +2,8 @@
 # `text` hace que git normalice EOL al comparar/commitear → el re-write CRLF
 # del builder no ensucia el working tree (el repo guarda LF).
 data/catalyst/*.json text eol=lf
+
+# Batch files DEBEN ser CRLF: cmd.exe parsea mal los .bat con LF-only
+# (se come caracteres al inicio de línea y el script muere en silencio).
+*.bat text eol=crlf
+*.cmd text eol=crlf
