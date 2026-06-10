@@ -24,6 +24,7 @@ Output schema (top-level keys)::
       "decay_signal": {"status": "stable|improving|decaying|insufficient_data", "slope": ..., ...},
       "positions": [{"ticker": "...", "shares": ..., "avg_cost": ..., "mark": ..., "mtm_pct": ...}],
       "trades_recent": [{"ticker": "...", "side": "BUY", "fill_price": ..., ...}],
+      "post_sell": {"per_sell": [...], "monthly": [...], "summary": {...}},
       "signal_score_hist": {"BUY": [counts per bin], "SELL": [counts per bin], "bins": [edges]},
       "status_counts": {"filled": ..., "approved": ..., "expired": ...},
       "expired_notes_top": [{"note": "...", "count": ...}]
@@ -38,6 +39,10 @@ Notes:
       Falls back to ``avg_cost`` if unknown (MTM shown as 0%).
     * signal_score histogram uses 10 equal-width bins in [0, 1].
     * monthly_perf / decay_signal added in T06 (alpha decay tracking).
+    * post_sell added in T6.2 (opportunity cost post-SELL, roadmap v3):
+      forward return close-to-close 5/20 días hábiles después de cada SELL
+      filled, usando la fila más fresca de ``historical_data_cache`` (1d).
+      fwd > 0 ⇒ el precio siguió subiendo después de vender (upside regalado).
 """
 
 from __future__ import annotations
@@ -278,6 +283,157 @@ def _decay_signal(monthly: list[dict]) -> dict:
     }
 
 
+# ── T6.2: opportunity cost post-SELL ─────────────────────────────────────────
+
+# Forward horizons en días hábiles. 5/20 = los mismos que usó la auditoría
+# de decisiones 2026-06-09 y que usa analysis/catalyst_reaction.py.
+_POST_SELL_HORIZONS = (5, 20)
+
+
+def _load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float]] | None:
+    """Serie de cierres diarios desde ``historical_data_cache`` (stdlib puro).
+
+    Toma la fila más recientemente fetcheada con interval='1d' para el ticker
+    y parsea el ``data_json`` (orient="split" de pandas) sin pandas.
+    Devuelve [(date_iso10, close), ...] ordenado ascendente, o None.
+    """
+    row = con.execute(
+        "SELECT data_json FROM historical_data_cache "
+        "WHERE ticker = ? AND interval = '1d' "
+        "ORDER BY fetched_at DESC LIMIT 1",
+        (ticker,),
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        d = json.loads(row[0])
+        cols = d["columns"]
+        # Columnas pueden venir planas ("Close") o como tuplas serializadas
+        # (["Close", "MSFT"]) si el frame era MultiIndex.
+        names = [c[0] if isinstance(c, list) else c for c in cols]
+        ci = names.index("Close")
+        pairs: list[tuple[str, float]] = []
+        for ts, vals in zip(d["index"], d["data"]):
+            c = vals[ci]
+            if c is not None and float(c) > 0:
+                pairs.append((str(ts)[:10], float(c)))
+        pairs.sort()
+        return pairs or None
+    except Exception:
+        return None
+
+
+def _fwd_return_from_series(
+    pairs: list[tuple[str, float]], date_iso10: str, horizon: int
+) -> float | None:
+    """Return close-to-close ``horizon`` días hábiles después de ``date_iso10``.
+
+    Base = cierre del primer día de trading en o después de la fecha (para un
+    SELL filled, el mismo día del fill). None si faltan barras futuras todavía
+    — el panel se completa solo a medida que pasan los días.
+    """
+    import bisect
+
+    if not pairs:
+        return None
+    dates = [p[0] for p in pairs]
+    pos = bisect.bisect_left(dates, date_iso10)
+    exit_pos = pos + horizon
+    if pos >= len(pairs) or exit_pos >= len(pairs):
+        return None
+    p0 = pairs[pos][1]
+    p1 = pairs[exit_pos][1]
+    if p0 <= 0:
+        return None
+    return p1 / p0 - 1.0
+
+
+def _post_sell_panel(con: sqlite3.Connection, account_id: int) -> dict:
+    """Opportunity cost después de cada SELL (T6.2, roadmap v3).
+
+    Para cada SELL filled: forward return del precio 5/20 días hábiles después
+    del fill (fwd > 0 ⇒ el precio siguió subiendo ⇒ upside regalado). Es la
+    métrica que la auditoría 2026-06-09 calculó a mano, como medición continua.
+    Sirve de feedback loop para evaluar T6.1/T6.3/T6.4 en producción.
+
+    Returns::
+
+        {
+          "per_sell": [{order_id, ticker, filled_at, fill_price, reason,
+                        signal_score, fwd5, fwd20}, ...],   # asc por filled_at
+          "monthly": [{month, n_sells, n_fwd5, median_fwd5, pct_positive_fwd5,
+                       n_fwd20, median_fwd20}, ...],
+          "summary": {n_sells, n_fwd5, median_fwd5, mean_fwd5,
+                      pct_positive_fwd5, n_fwd20, median_fwd20, mean_fwd20,
+                      pct_positive_fwd20}
+        }
+    """
+    import statistics
+
+    rows = con.execute(
+        "SELECT id, ticker, fill_price, filled_at, reason, signal_score "
+        "FROM paper_orders WHERE account_id = ? AND side = 'SELL' "
+        "AND status = 'filled' AND filled_at IS NOT NULL "
+        "ORDER BY filled_at",
+        (account_id,),
+    ).fetchall()
+
+    series_cache: dict[str, list[tuple[str, float]] | None] = {}
+    per_sell: list[dict] = []
+    for oid, ticker, px, dt, reason, score in rows:
+        if ticker not in series_cache:
+            series_cache[ticker] = _load_close_series(con, ticker)
+        pairs = series_cache[ticker]
+        d10 = str(dt)[:10]
+        fwds = {
+            h: (_fwd_return_from_series(pairs, d10, h) if pairs else None)
+            for h in _POST_SELL_HORIZONS
+        }
+        per_sell.append({
+            "order_id": int(oid),
+            "ticker": ticker,
+            "filled_at": dt,
+            "fill_price": float(px) if px is not None else None,
+            "reason": reason,
+            "signal_score": float(score) if score is not None else None,
+            "fwd5": fwds[5],
+            "fwd20": fwds[20],
+        })
+
+    def _agg(values: list[float], prefix: str, with_mean: bool = False) -> dict:
+        out: dict = {f"n_{prefix}": len(values)}
+        if values:
+            out[f"median_{prefix}"] = statistics.median(values)
+            out[f"pct_positive_{prefix}"] = sum(1 for v in values if v > 0) / len(values)
+            if with_mean:
+                out[f"mean_{prefix}"] = statistics.fmean(values)
+        else:
+            out[f"median_{prefix}"] = None
+            out[f"pct_positive_{prefix}"] = None
+            if with_mean:
+                out[f"mean_{prefix}"] = None
+        return out
+
+    monthly: list[dict] = []
+    months = sorted({s["filled_at"][:7] for s in per_sell if s["filled_at"]})
+    for mo in months:
+        in_month = [s for s in per_sell if s["filled_at"] and s["filled_at"][:7] == mo]
+        f5 = [s["fwd5"] for s in in_month if s["fwd5"] is not None]
+        f20 = [s["fwd20"] for s in in_month if s["fwd20"] is not None]
+        row = {"month": mo, "n_sells": len(in_month)}
+        row.update(_agg(f5, "fwd5"))
+        row.update(_agg(f20, "fwd20"))
+        monthly.append(row)
+
+    f5_all = [s["fwd5"] for s in per_sell if s["fwd5"] is not None]
+    f20_all = [s["fwd20"] for s in per_sell if s["fwd20"] is not None]
+    summary: dict = {"n_sells": len(per_sell)}
+    summary.update(_agg(f5_all, "fwd5", with_mean=True))
+    summary.update(_agg(f20_all, "fwd20", with_mean=True))
+
+    return {"per_sell": per_sell, "monthly": monthly, "summary": summary}
+
+
 def _kpis(snapshots: list[AccountSnapshot], fills) -> dict:
     """Bundle the headline metrics shown above the equity chart."""
     em = equity_metrics(snapshots)
@@ -335,6 +491,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
             "decay_signal": _decay_signal(monthly),
             "positions": _positions_payload(con, account_id),
             "trades_recent": _trades_recent(con, account_id, limit=50),
+            "post_sell": _post_sell_panel(con, account_id),
             "signal_score_hist": _signal_score_hist(con, account_id),
             "status_counts": _status_counts(con, account_id),
             "expired_notes_top": _expired_notes_top(con, account_id, limit=10),
