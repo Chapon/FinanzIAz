@@ -96,6 +96,22 @@ SCHEMA: dict[str, SettingSpec] = {
     "paper_min_holding_minutes": SettingSpec(
         int, 60, min=0, max=10_080, doc="Cannot SELL a position opened within last N min"
     ),
+    # T6.4 score-hysteresis (validado en T6.1, docs/exit_replay_t61_2026-06-10.md):
+    # los SELLs por señal a 1-3 días regalan el rally del horizonte 5d del label.
+    "paper_signal_sell_min_age_bdays": SettingSpec(
+        int, 3, min=0, max=30,
+        doc=(
+            "T6.4: SELLs de señal (con signal_score) esperan esta edad mínima en "
+            "días hábiles. 0 = off. Exits atr_*/vol_trim no aplican."
+        ),
+    ),
+    "paper_signal_sell_bypass_score": SettingSpec(
+        (int, float), 0.25, min=0.0, max=1.0,
+        doc=(
+            "T6.4: SELLs de señal con score < este umbral ejecutan directo sin "
+            "esperar la edad mínima (convicción alta de venta). 0 = sin bypass."
+        ),
+    ),
     "paper_anti_flap_minutes": SettingSpec(
         int, 30, min=0, max=10_080, doc="Cannot BUY a ticker we filled-SELL on within last N min"
     ),

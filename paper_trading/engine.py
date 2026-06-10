@@ -214,6 +214,7 @@ from paper_trading.gates import (  # noqa: E402
     is_vol_trim_reason,
     is_within_earnings_blackout,
     recent_adv_dollars,
+    signal_sell_min_age_block,
 )
 
 
@@ -465,6 +466,9 @@ def run_scan(
         # state used by the per-trade gates inside the loop below.
         enforce_hours = bool(settings.get("paper_enforce_market_hours", True))
         min_holding_min = max(0, int(settings.get("paper_min_holding_minutes", 60)))
+        # T6.4 score-hysteresis: edad mínima (días hábiles) para SELLs de señal.
+        signal_sell_min_age = max(0, int(settings.get("paper_signal_sell_min_age_bdays", 3)))
+        signal_sell_bypass = float(settings.get("paper_signal_sell_bypass_score", 0.25))
         anti_flap_min = max(0, int(settings.get("paper_anti_flap_minutes", 30)))
         min_trade_usd = max(0.0, float(settings.get("paper_min_trade_dollars", 50.0)))
         # T10 ADV liquidity cap. 0.0 = disabled (default). When >0 a BUY's
@@ -564,6 +568,26 @@ def run_scan(
                             f"{age_min:.1f} min < min_holding={min_holding_min} min."
                         )
                         continue
+
+            # Gate 2b — T6.4 score-hysteresis: SELLs de señal (con score) en la
+            # zona de convicción media/alta de venta esperan una edad mínima en
+            # días hábiles (validado en T6.1: el modelo predice a 5d y los exits
+            # a 1-3d cortan el rally). Score < bypass ejecuta directo; exits de
+            # riesgo (atr_*/vol_trim) ya quedaron afuera vía ``risk_exit``.
+            if trade.side == "SELL" and not risk_exit:
+                p = pos_by_ticker.get(trade.ticker)
+                block_msg = signal_sell_min_age_block(
+                    reason=trade.reason,
+                    signal_score=trade.signal_score,
+                    opened_at=(p.opened_at if p is not None else None),
+                    scan_at=result.scan_at,
+                    min_age_bdays=signal_sell_min_age,
+                    bypass_score=signal_sell_bypass,
+                )
+                if block_msg is not None:
+                    result.skipped += 1
+                    result.warnings.append(f"{trade.ticker} {block_msg}")
+                    continue
 
             # Gate 3 — anti-flap (block BUYs right after a SELL of the same ticker).
             if trade.side == "BUY" and trade.ticker in recent_sell_tickers:

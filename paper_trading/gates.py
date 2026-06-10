@@ -258,6 +258,60 @@ def is_vol_trim_reason(reason: str | None) -> bool:
     return reason.startswith(VOL_TRIM_REASON_PREFIX)
 
 
+# ── T6.4 score-hysteresis: edad mínima para SELLs de señal ───────────────────
+
+# Validado en T6.1 (docs/exit_replay_t61_2026-06-10.md): los SELLs por señal a
+# 1-3 días de edad regalan el rally que el modelo (label 5d) predice. La única
+# variante pre-registrada que pasó kill criteria fue min-holding 3 días
+# hábiles (+3.18 pts, DD ratio 0.92). SELLs de convicción alta de venta
+# (score < bypass) ejecutan directo — cierra el follow-up "signal_score
+# bypass"; exits de riesgo (atr_*, vol_trim) nunca pasan por acá.
+
+
+def signal_sell_min_age_block(
+    *,
+    reason: str | None,
+    signal_score: float | None,
+    opened_at: "datetime | None",
+    scan_at: datetime,
+    min_age_bdays: int,
+    bypass_score: float,
+) -> str | None:
+    """T6.4 — devuelve el motivo de bloqueo si el SELL de señal debe esperar.
+
+    Bloquea un SELL cuando TODAS estas condiciones se cumplen:
+      * ``min_age_bdays > 0`` (0 = gate apagado),
+      * el reason NO es un exit de riesgo (``atr_*`` / ``vol_trim``),
+      * hay ``signal_score`` (los rebalanceos/housekeeping van con None),
+      * ``signal_score >= bypass_score`` (score bajo = convicción alta de
+        venta → ejecuta directo),
+      * la posición tiene menos de ``min_age_bdays`` días hábiles de edad
+        (np.busday_count entre la fecha de apertura y la del scan).
+
+    Devuelve None si el SELL puede ejecutar; si bloquea, devuelve el string
+    de warning listo para loguear (mismo contrato que el resto de gates:
+    el caller no re-deriva nada).
+    """
+    if min_age_bdays <= 0:
+        return None
+    if is_atr_forced_exit_reason(reason) or is_vol_trim_reason(reason):
+        return None
+    if signal_score is None:
+        return None
+    if signal_score < bypass_score:
+        return None
+    if opened_at is None:
+        return None
+
+    age_bdays = int(np.busday_count(opened_at.date(), scan_at.date()))
+    if age_bdays >= min_age_bdays:
+        return None
+    return (
+        f"SELL de señal bloqueado (T6.4 hysteresis): edad {age_bdays} días hábiles "
+        f"< min {min_age_bdays} y score {signal_score:.2f} ≥ bypass {bypass_score:.2f}."
+    )
+
+
 @dataclass(frozen=True)
 class VolOverlayResult:
     """Outcome of :func:`compute_vol_overlay`. ``factor < 1.0`` means the
@@ -387,4 +441,5 @@ __all__ = [
     "is_within_earnings_blackout",
     "recent_adv_dollars",
     "select_uncorrelated_picks",
+    "signal_sell_min_age_block",
 ]

@@ -66,6 +66,7 @@ def _relax_other_gates() -> None:
     settings.set("paper_anti_flap_minutes", 0)
     settings.set("paper_whipsaw_lookback_days", 0)
     settings.set("paper_min_holding_minutes", 0)
+    settings.set("paper_signal_sell_min_age_bdays", 0)  # T6.4 off en estos tests
     settings.set("earnings_blackout_days", 0)
 
 
