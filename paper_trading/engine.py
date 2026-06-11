@@ -872,13 +872,70 @@ def _maybe_notify_slack(
 # ── Manual-mode approvals ─────────────────────────────────────────────────────
 
 
+def _approval_gate_block(order: PaperOrder, earnings_provider: EarningsProvider) -> str | None:
+    """T7.2 (M4 del code review): re-correr Gates 1 y 6 al momento de aprobar.
+
+    Una orden pendiente puede aprobarse horas o días después de creada, en
+    condiciones distintas a las del scan que la generó — "quedó pendiente del
+    viernes, se aprueba el lunes dentro del blackout de earnings" es el
+    mousetrap exacto que Gate 6 existe para prevenir. Semántica idéntica a
+    ``run_scan``:
+
+    - Gate 1 — market hours (``paper_enforce_market_hours``).
+    - Gate 6 — earnings blackout (``earnings_blackout_days``): bloquea BUYs;
+      SELLs solo si ``earnings_blackout_block_sells=True``; los exits forzados
+      por ATR (T01) siempre pasan. Fail-open si el provider falla.
+
+    Los demás gates (anti-flap, min-holding, hysteresis, churn) NO se
+    re-chequean: regulan señales automáticas y la aprobación es una decisión
+    manual explícita del usuario.
+
+    Returns the human-readable block reason, or ``None`` if the fill may
+    proceed.
+    """
+    # Gate 1 — market hours.
+    if bool(settings.get("paper_enforce_market_hours", True)) and not _is_market_open_safe():
+        return "mercado cerrado (paper_enforce_market_hours=True)."
+
+    # Gate 6 — earnings blackout.
+    blackout_days = max(0, int(settings.get("earnings_blackout_days", 2)))
+    if blackout_days > 0 and not _is_atr_forced_exit(order.reason):
+        block_sells = bool(settings.get("earnings_blackout_block_sells", False))
+        if order.side == "BUY" or block_sells:
+            try:
+                edt = earnings_provider(order.ticker)
+            except Exception:
+                from config.logging_config import get_logger
+
+                get_logger(__name__).warning(
+                    "approve re-gate: earnings provider failed for %s — failing open.",
+                    order.ticker,
+                    exc_info=True,
+                )
+                edt = None
+            if edt is not None and _earnings_blackout_hit(edt, utcnow_naive(), blackout_days):
+                return f"earnings el {edt:%Y-%m-%d} dentro de ±{blackout_days}d (blackout)."
+    return None
+
+
 def approve_order(
     order_id: int,
     *,
     prices_provider: PricesProvider | None = None,
+    earnings_provider: EarningsProvider | None = None,
+    override_gates: bool = False,
 ) -> PaperOrder | None:
-    """Fill a pending order at the current market price."""
+    """Fill a pending order at the current market price.
+
+    T7.2: antes del fill se re-aplican Gate 1 (market hours) y Gate 6
+    (earnings blackout) — ver :func:`_approval_gate_block`. Una orden
+    bloqueada NO se consume: queda ``pending`` con el motivo en ``notes`` y
+    se devuelve tal cual, para que el caller muestre la razón y, si el
+    usuario insiste, reintente con ``override_gates=True`` (la aprobación
+    humana explícita es el override documentado).
+    """
     prices_provider = prices_provider or _default_prices_provider
+    earnings_provider = earnings_provider or _default_earnings_provider
 
     with session_scope() as session:
         order: PaperOrder | None = session.query(PaperOrder).filter(PaperOrder.id == order_id).first()
@@ -888,6 +945,18 @@ def approve_order(
         acct = session.query(PaperAccount).filter(PaperAccount.id == order.account_id).first()
         if acct is None:
             return None
+
+        # T7.2 — re-gates en la aprobación (Gates 1 y 6).
+        if not override_gates:
+            block_reason = _approval_gate_block(order, earnings_provider)
+            if block_reason is not None:
+                order.notes = (
+                    (order.notes or "") + f"\n[approve] bloqueada por re-gate: {block_reason}"
+                ).strip()
+                session.flush()
+                session.refresh(order)
+                session.expunge(order)
+                return order  # status sigue "pending" — no se consume.
 
         prices = prices_provider([order.ticker])
         px = prices.get(order.ticker)
@@ -1236,6 +1305,12 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
     ``expire_pending_after_hours`` as ``expired`` so the engine starts
     each session with a clean slate.
 
+    T7.2: also sweeps orders stuck in ``approved`` — a status that should be
+    transient (approve_order rewrites it to ``filled`` or ``expired`` in the
+    same transaction). Orders frozen there predate that fix and would sit in
+    limbo forever; they never touched cash/positions, so expiring them is
+    side-effect-free.
+
     Returns the number of orders expired.
     """
     from database.models import session_scope
@@ -1255,6 +1330,24 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
                 o.status = "expired"
                 o.decided_at = utcnow_naive()
                 o.notes = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()
+                expired += 1
+
+            # T7.2 — limbo "approved": aprobadas que nunca llegaron a filled
+            # (bug pre-fix). El cutoff las cubre de sobra; no hay fill que
+            # revertir porque _fill_trade nunca corrió para ellas.
+            limbo = (
+                session.query(PaperOrder)
+                .filter(PaperOrder.account_id == account_id)
+                .filter(PaperOrder.status == "approved")
+                .filter(PaperOrder.created_at <= cutoff)
+                .all()
+            )
+            for o in limbo:
+                o.status = "expired"
+                o.decided_at = utcnow_naive()
+                o.notes = (
+                    (o.notes or "") + "\n[reconcile] approved-limbo (pre-T7.2), expired."
+                ).strip()
                 expired += 1
         if expired:
             from config.logging_config import get_logger

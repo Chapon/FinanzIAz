@@ -978,8 +978,35 @@ class PaperTradingTab(QWidget):
             return
         if not ok:
             QMessageBox.warning(self, "Aprobar", "La orden ya no está pendiente.")
+        elif ok.status == "pending":
+            # T7.2: bloqueada por re-gate (market hours / earnings blackout).
+            if self._offer_gate_override(ok):
+                try:
+                    approve_order(order_id, override_gates=True)
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"No se pudo aprobar la orden:\n{e}")
+                    return
         self._refresh_orders()
         self._fetch_prices()  # positions may have changed
+
+    def _offer_gate_override(self, order) -> bool:
+        """T7.2: la aprobación fue bloqueada por un re-gate. Mostrar el motivo
+        y preguntar si se aprueba igual (override explícito). Returns True si
+        el usuario confirma."""
+        reason = ""
+        if order.notes:
+            lines = [ln for ln in order.notes.strip().splitlines() if ln.strip()]
+            if lines:
+                reason = lines[-1].replace("[approve] bloqueada por re-gate:", "").strip()
+        resp = QMessageBox.question(
+            self,
+            "Bloqueada por guardrails",
+            f"La aprobación de {order.ticker} {order.side} fue bloqueada:\n\n"
+            f"{reason}\n\n¿Aprobar igual (override explícito)?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return resp == QMessageBox.StandardButton.Yes
 
     def _reject_order(self, order_id: int):
         try:
@@ -1014,6 +1041,20 @@ class PaperTradingTab(QWidget):
         if filled is None:
             QMessageBox.warning(self, "Aprobar", "La orden ya no está pendiente.")
             return
+        if filled.status == "pending":
+            # T7.2: bloqueada por re-gate. Ofrecer override explícito.
+            if not self._offer_gate_override(filled):
+                self._refresh_orders()
+                return
+            try:
+                filled = approve_order(order_id, override_gates=True)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"No se pudo aprobar la orden:\n{e}")
+                return
+            if filled is None or filled.status == "pending":
+                QMessageBox.warning(self, "Aprobar", "No se pudo completar la aprobación.")
+                self._refresh_orders()
+                return
 
         side = filled.side
         ticker = filled.ticker
