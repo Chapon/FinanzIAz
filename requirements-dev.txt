@@ -23,8 +23,8 @@ freezegun>=1.4         # frozen clocks for scheduler tests
 # Pre-commit hooks
 pre-commit>=3.7
 
-# Database migrations
-alembic>=1.13
+# Database migrations: alembic se movió a requirements.txt (T7.3 — init_db
+# lo usa en runtime). No duplicar acá.
 
 # Security audit (optional but recommended)
 pip-audit>=2.7

@@ -415,7 +415,7 @@ class FailedTicker(Base):
 
 
 def init_db():
-    """Create all tables, run lightweight migrations, and seed default portfolio."""
+    """Create all tables, sync the alembic timeline, and seed default portfolio."""
     # Register paper-trading models so their tables are included in create_all.
     # Import here (not at module top) to avoid a circular import.
     try:
@@ -425,48 +425,54 @@ def init_db():
 
         get_logger(__name__).exception("paper_trading.models import failed")
     Base.metadata.create_all(ENGINE)
-    _migrate()
+    _alembic_sync()
     with session_scope() as session:
         if session.query(Portfolio).count() == 0:
             default = Portfolio(name="Mi Portafolio", description="Portafolio principal", currency="USD")
             session.add(default)
 
 
-def _migrate():
-    """Add new columns to existing tables without losing data."""
-    import sqlite3
+def _alembic_sync(engine=None, db_path: str | None = None):
+    """Schema migrations via alembic — único camino de esquema (T7.3, M1).
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    # positions.purchase_date
-    cur.execute("PRAGMA table_info(positions)")
-    cols = [row[1] for row in cur.fetchall()]
-    if "purchase_date" not in cols:
-        cur.execute("ALTER TABLE positions ADD COLUMN purchase_date DATETIME")
-        conn.commit()
-    # paper_orders.signal_score — new in v2 (migration 0002). Legacy rows keep
-    # NULL so analytics can distinguish "no score recorded" from "score=0".
-    cur.execute("PRAGMA table_info(paper_orders)")
-    paper_cols = [row[1] for row in cur.fetchall()]
-    if paper_cols and "signal_score" not in paper_cols:
-        cur.execute("ALTER TABLE paper_orders ADD COLUMN signal_score REAL")
-        conn.commit()
-    # paper_equity_snapshots.portfolio_sigma — new in T10. Legacy snapshots keep
-    # NULL (no σ estimate recorded). Guard on existence so we don't fail before
-    # create_all has materialised the table on a fresh DB.
-    cur.execute("PRAGMA table_info(paper_equity_snapshots)")
-    snap_cols = [row[1] for row in cur.fetchall()]
-    if snap_cols and "portfolio_sigma" not in snap_cols:
-        cur.execute("ALTER TABLE paper_equity_snapshots ADD COLUMN portfolio_sigma REAL")
-        conn.commit()
-    # paper_accounts.slack_notify — new in T12 (per-account Slack opt-out).
-    # DEFAULT 1 so existing accounts keep notifying (global default is ON).
-    cur.execute("PRAGMA table_info(paper_accounts)")
-    acct_cols = [row[1] for row in cur.fetchall()]
-    if acct_cols and "slack_notify" not in acct_cols:
-        cur.execute("ALTER TABLE paper_accounts ADD COLUMN slack_notify BOOLEAN DEFAULT 1")
-        conn.commit()
-    conn.close()
+    Reemplaza al viejo ``_migrate()`` de parches ``ALTER TABLE`` manuales:
+    ese delta quedó congelado en la revisión alembic ``0004`` (catch-up).
+    A partir de acá, todo cambio de esquema = revisión alembic nueva
+    (``alembic revision --autogenerate -m "..."``); este hook la aplica solo
+    en el próximo arranque.
+
+    Flujo:
+    - DB nueva (sin ``alembic_version``): ``create_all`` ya construyó el
+      esquema completo → ``stamp head`` para arrancar el timeline alineado.
+    - DB existente: ``upgrade head``. Las revisiones catch-up (0004) son
+      idempotentes, así que una DB ya-completa pasa sin DDL.
+
+    Los kwargs existen solo para tests (apuntar a una DB temporal).
+    """
+    from sqlalchemy import inspect as _sa_inspect
+
+    try:
+        from alembic import command
+        from alembic.config import Config
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "alembic es requerido desde T7.3 — `pip install alembic` (está en requirements.txt)"
+        ) from exc
+
+    engine = engine if engine is not None else ENGINE
+    db_path = db_path if db_path is not None else DB_PATH
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Config programático (sin alembic.ini) a propósito: evita que fileConfig
+    # pise la configuración de logging de la app en cada arranque.
+    cfg = Config()
+    cfg.set_main_option("script_location", os.path.join(root, "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    if _sa_inspect(engine).has_table("alembic_version"):
+        command.upgrade(cfg, "head")
+    else:
+        command.stamp(cfg, "head")
 
 
 def get_session() -> SASession:

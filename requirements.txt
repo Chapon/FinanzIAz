@@ -11,6 +11,9 @@ requests>=2.32.0           # was 2.31.0; bumped for CVE-2024-35195 (cert verify)
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
+# T7.3: alembic pasó de dev-only a runtime — init_db corre `upgrade head` en
+# cada arranque (único camino de esquema desde la migración catch-up 0004).
+alembic>=1.13
 
 # Data wrangling
 # IMPORTANT — Python 3.12 / 3.13 compatibility:

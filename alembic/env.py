@@ -28,8 +28,11 @@ from database.models import DB_PATH, Base
 
 config = context.config
 
-# Inject the runtime DB URL (overrides alembic.ini's empty `sqlalchemy.url`).
-config.set_main_option("sqlalchemy.url", f"sqlite:///{DB_PATH}")
+# Inject the runtime DB URL (overrides alembic.ini's empty `sqlalchemy.url`)
+# — unless the caller already set one (programmatic Config desde init_db, o
+# tests apuntando a una DB temporal).
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{DB_PATH}")
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

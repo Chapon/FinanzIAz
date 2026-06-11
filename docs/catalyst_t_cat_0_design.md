@@ -43,6 +43,9 @@ columna `fetched_at` indexada, `Index(...)` explícito en `__table_args__`. Se r
 Como es SQLite, agregar tablas nuevas no requiere migración destructiva — `create_all` las
 crea si no existen. (No tocar `_migrate()` salvo para columnas nuevas en tablas viejas.)
 
+> **Nota 2026-06-11 (T7.3)**: el párrafo anterior quedó obsoleto — `_migrate()` ya no
+> existe y los cambios de esquema van por revisión alembic. Ver `docs/schema_management.md`.
+
 ```python
 class NewsEvent(Base):
     """
