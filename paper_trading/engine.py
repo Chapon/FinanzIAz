@@ -266,6 +266,12 @@ from paper_trading.gates import (  # noqa: E402
     recent_adv_dollars,
     signal_sell_min_age_block,
 )
+from analysis.impact_score import exit_veto_block  # noqa: E402  (T-CAT-4 Gate 2c)
+
+# Provider for the T-CAT-4 exit-veto: (ticker, scan_at) -> CatalystSignal | None.
+# Injected and default None so the default trading path never builds the
+# (expensive) reaction table; the veto is also gated behind a default-OFF flag.
+CatalystSignalProvider = Callable[[str, datetime], "object | None"]
 
 
 def _is_atr_forced_exit(reason: str | None) -> bool:
@@ -425,6 +431,7 @@ def run_scan(
     prices_provider: PricesProvider | None = None,
     history_provider: HistoryProvider | None = None,
     earnings_provider: EarningsProvider | None = None,
+    catalyst_signal_provider: CatalystSignalProvider | None = None,
     slack_notifier: SlackNotifier | None = None,
 ) -> ScanResult | None:
     """Scan the market once, execute trades (or queue them), snapshot equity."""
@@ -534,6 +541,13 @@ def run_scan(
         # T08 (Sprint 0): SELLs señaladas por estrategia pasan por default durante
         # el blackout — el setting permite restaurar el comportamiento legacy.
         earnings_block_sells = bool(settings.get("earnings_blackout_block_sells", False))
+        # T-CAT-4 exit-veto (Gate 2c). DEFAULT OFF: solo se activa cuando el
+        # backtest de T-CAT-6 lo valide (ver docs\catalyst_t_cat_4_design.md §7).
+        # Además requiere un catalyst_signal_provider inyectado — sin él el gate
+        # no corre, así que el hot-path por defecto no construye nada.
+        catalyst_veto_enabled = bool(settings.get("paper_catalyst_exit_veto_enabled", False))
+        catalyst_veto_min_score = float(settings.get("paper_catalyst_veto_min_score", 0.30))
+        catalyst_veto_gray_high = float(settings.get("paper_catalyst_veto_gray_high", 0.50))
 
         # Memoize earnings lookups within this scan so we hit the provider at
         # most once per ticker. Fail-open: a provider that raises is treated as
@@ -640,6 +654,44 @@ def run_scan(
                 if block_msg is not None:
                     result.skipped += 1
                     result.warnings.append(f"{trade.ticker} {block_msg}")
+                    continue
+
+            # Gate 2c — T-CAT-4 exit-veto. Simétrico del earnings-blackout de
+            # BUYs (Gate 6): pospone un SELL de señal en zona gris de score
+            # (mismo universo que T6.4) cuando hay un catalyst positivo inminente
+            # (earnings próximo). DEFAULT OFF + requiere provider inyectado; los
+            # risk-exits (atr_*/vol_trim) nunca se vetan. No toca BUYs.
+            if (
+                trade.side == "SELL"
+                and not risk_exit
+                and catalyst_veto_enabled
+                and catalyst_signal_provider is not None
+            ):
+                try:
+                    signal = catalyst_signal_provider(trade.ticker, result.scan_at)
+                except Exception:
+                    from config.logging_config import get_logger
+
+                    get_logger(__name__).warning(
+                        "exit-veto: signal provider failed for %s — failing open.",
+                        trade.ticker,
+                        exc_info=True,
+                    )
+                    signal = None
+                veto_msg = exit_veto_block(
+                    reason=trade.reason,
+                    signal_score=trade.signal_score,
+                    ticker=trade.ticker,
+                    scan_at=result.scan_at,
+                    signal=signal,
+                    enabled=catalyst_veto_enabled,
+                    gray_low=signal_sell_bypass,
+                    gray_high=catalyst_veto_gray_high,
+                    veto_min_score=catalyst_veto_min_score,
+                )
+                if veto_msg is not None:
+                    result.skipped += 1
+                    result.warnings.append(f"{trade.ticker} {veto_msg}")
                     continue
 
             # Gate 3 — anti-flap (block BUYs right after a SELL of the same ticker).

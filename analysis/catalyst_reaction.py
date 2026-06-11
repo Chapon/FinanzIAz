@@ -47,10 +47,10 @@ PriceLoader = Callable[[str], "pd.DataFrame | None"]
 # ── forward returns ──────────────────────────────────────────────────────────
 
 
-def _close_series(df: "pd.DataFrame | None") -> "pd.Series | None":
-    if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+def _price_series(df: "pd.DataFrame | None", col: str = "Close") -> "pd.Series | None":
+    if df is None or getattr(df, "empty", True) or col not in df.columns:
         return None
-    s = df["Close"].squeeze()
+    s = df[col].squeeze()
     try:
         s = s.astype(float)
     except Exception:
@@ -64,13 +64,34 @@ def _close_series(df: "pd.DataFrame | None") -> "pd.Series | None":
     return s.sort_index()
 
 
-def forward_return(df: "pd.DataFrame | None", event_date, horizon: int) -> float | None:
-    """
-    Return close-to-close return ``horizon`` trading days after the event.
+def _close_series(df: "pd.DataFrame | None") -> "pd.Series | None":
+    return _price_series(df, "Close")
 
-    Entry = the first trading day on/after ``event_date`` (so an event on a
-    weekend enters Monday). Returns None if the bar isn't found or there aren't
-    ``horizon`` future bars yet. Point-in-time: never uses prices before entry.
+
+def forward_return(
+    df: "pd.DataFrame | None",
+    event_date,
+    horizon: int,
+    *,
+    entry: str = "close",
+) -> float | None:
+    """
+    Forward return ``horizon`` trading days after the event.
+
+    ``entry`` controls the entry price (M2 of the 2026-06-09 code review):
+
+    - ``"close"`` (default, what T-CAT-3 measures): close-to-close. Entry =
+      Close of the first trading day on/after ``event_date``; exit = Close
+      ``horizon`` bars later. Good for *describing* how a name reacted.
+    - ``"next_open"``: enter at the **Open of the next session** after that bar
+      and exit at the **same** Close[pos+horizon]. A headline released
+      after-hours has its gap baked into the event-day Close, so an *actionable*
+      signal must enter at the next open — that's the move we could really
+      capture. Requires an ``"Open"`` column; returns None if it's missing.
+
+    Both keep the exit bar aligned (Close[pos+horizon]) so the two are directly
+    comparable. Returns None if the bar isn't found or there aren't enough
+    future bars yet. Point-in-time: never uses prices before entry.
     """
     close = _close_series(df)
     if close is None or len(close) == 0:
@@ -83,8 +104,20 @@ def forward_return(df: "pd.DataFrame | None", event_date, horizon: int) -> float
     exit_pos = pos + horizon
     if pos >= len(close) or exit_pos >= len(close):
         return None
-    p0 = float(close.iloc[pos])
     p1 = float(close.iloc[exit_pos])
+
+    if entry == "next_open":
+        open_s = _price_series(df, "Open")
+        if open_s is None:
+            return None
+        entry_pos = pos + 1
+        # next session must exist and precede the (shared) exit bar
+        if entry_pos >= len(open_s) or entry_pos > exit_pos:
+            return None
+        p0 = float(open_s.iloc[entry_pos])
+    else:
+        p0 = float(close.iloc[pos])
+
     if not np.isfinite(p0) or not np.isfinite(p1) or p0 <= 0:
         return None
     return p1 / p0 - 1.0
