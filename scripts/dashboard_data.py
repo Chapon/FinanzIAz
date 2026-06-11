@@ -25,6 +25,8 @@ Output schema (top-level keys)::
       "positions": [{"ticker": "...", "shares": ..., "avg_cost": ..., "mark": ..., "mtm_pct": ...}],
       "trades_recent": [{"ticker": "...", "side": "BUY", "fill_price": ..., ...}],
       "post_sell": {"per_sell": [...], "monthly": [...], "summary": {...}},
+      "hit_rate": {"by_bucket": [...], "by_reason": [...], "by_regime": [...],
+                   "sell_reliability": {...}, "notes": [...]},
       "signal_score_hist": {"BUY": [counts per bin], "SELL": [counts per bin], "bins": [edges]},
       "status_counts": {"filled": ..., "approved": ..., "expired": ...},
       "expired_notes_top": [{"note": "...", "count": ...}]
@@ -61,6 +63,7 @@ sys.path.insert(0, str(_HERE.parent))
 
 from scripts.baseline_metrics import (  # noqa: E402
     AccountSnapshot,
+    _parse_dt,
     daily_endpoints,
     daily_returns,
     equity_metrics,
@@ -434,6 +437,261 @@ def _post_sell_panel(con: sqlite3.Connection, account_id: int) -> dict:
     return {"per_sell": per_sell, "monthly": monthly, "summary": summary}
 
 
+# ── T6.3: hit-rate tracking real (ex-T07) ────────────────────────────────────
+
+# Rango de score donde la auditoría 2026-06-09 sospecha descalibración al
+# pesimismo en los SELLs de señal (ejecutan con 0.22-0.47 y el precio sigue
+# subiendo después). El resumen "sell_reliability" mide exactamente eso.
+_SELL_RELIABILITY_RANGE = (0.20, 0.45)
+
+
+def _reason_kind(reason: str | None) -> str:
+    """Clasifica el reason de una orden en familias estables.
+
+    "signal" = decisión del modelo (analyze BUY/SELL); las demás son exits de
+    riesgo mecánicos cuyo signal_score es un sentinel (1.0), no una
+    probabilidad — por eso los buckets de score solo usan "signal".
+    """
+    if not reason:
+        return "other"
+    r = reason.strip().lower()
+    if r.startswith("analyze"):
+        return "signal"
+    if r.startswith("atr_stop"):
+        return "atr_stop"
+    if r.startswith("atr_trail"):
+        return "atr_trail"
+    if r.startswith("vol_trim"):
+        return "vol_trim"
+    return "other"
+
+
+def _score_bucket(score: float | None) -> str | None:
+    """Bucket de ancho 0.1 en [0,1] como string estable, ej. "0.3-0.4"."""
+    if score is None:
+        return None
+    idx = min(max(int(float(score) * 10), 0), 9)
+    return f"{idx / 10:.1f}-{(idx + 1) / 10:.1f}"
+
+
+def _hit_for(side: str, fwd5: float | None) -> bool | None:
+    """Definición de hit direccional a 5 días hábiles (mismo horizonte que el
+    label de entrenamiento del modelo):
+
+      BUY  hit ⇔ fwd5 > 0   (compré y subió)
+      SELL hit ⇔ fwd5 <= 0  (vendí y no siguió subiendo)
+    """
+    if fwd5 is None:
+        return None
+    return fwd5 > 0 if side == "BUY" else fwd5 <= 0
+
+
+def _hit_group_stats(orders: list[dict]) -> dict:
+    """Agregados de un grupo de órdenes ya anotadas con fwd5/fwd20/hit/realized."""
+    import statistics
+
+    f5 = [o["fwd5"] for o in orders if o["fwd5"] is not None]
+    f20 = [o["fwd20"] for o in orders if o["fwd20"] is not None]
+    hits = [o["hit"] for o in orders if o["hit"] is not None]
+    scores = [o["signal_score"] for o in orders if o["signal_score"] is not None]
+    realized = [o["realized_pct"] for o in orders if o.get("realized_pct") is not None]
+    return {
+        "n": len(orders),
+        "n_fwd5": len(f5),
+        "hit_rate_fwd5": (sum(hits) / len(hits)) if hits else None,
+        "p_up_fwd5": (sum(1 for v in f5 if v > 0) / len(f5)) if f5 else None,
+        "median_fwd5": statistics.median(f5) if f5 else None,
+        "median_fwd20": statistics.median(f20) if f20 else None,
+        "avg_score": statistics.fmean(scores) if scores else None,
+        "median_realized_pct": statistics.median(realized) if realized else None,
+    }
+
+
+def _regime_for_dates(con: sqlite3.Connection, dates_iso10: list[str]) -> dict[str, str] | None:
+    """Mapa fecha → régimen de mercado, best-effort (T6.3).
+
+    Proxy equal-weight de los closes cacheados (1d) de todo el universo,
+    normalizados a 1.0 en su primera barra, clasificado con
+    ``analysis.regime_detector`` (mismas defaults que el harness). Requiere
+    pandas; si algo falta devuelve None y el panel omite el corte por régimen.
+    """
+    if not dates_iso10:
+        return None
+    try:
+        import pandas as pd
+
+        from analysis.regime_detector import detect_regime_series
+
+        tickers = [
+            r[0]
+            for r in con.execute(
+                "SELECT DISTINCT ticker FROM historical_data_cache WHERE interval='1d'"
+            ).fetchall()
+        ]
+        cols: dict[str, dict[str, float]] = {}
+        for t in tickers:
+            pairs = _load_close_series(con, t)
+            if pairs and len(pairs) >= 2:
+                base = pairs[0][1]
+                cols[t] = {d: px / base for d, px in pairs}
+        if len(cols) < 5:
+            return None
+        frame = pd.DataFrame(cols).sort_index()
+        proxy = frame.mean(axis=1, skipna=True).dropna()
+        if len(proxy) < 80:  # warmup 60 barras + margen
+            return None
+        market_df = pd.DataFrame({"Close": proxy})
+        series = detect_regime_series(market_df)["regime"]
+        out: dict[str, str] = {}
+        idx = list(series.index)  # date strings iso10, ordenadas
+        import bisect
+
+        for d in dates_iso10:
+            pos = bisect.bisect_right(idx, d) - 1  # asof: barra <= fecha
+            out[d] = str(series.iloc[pos]) if pos >= 0 else "warmup"
+        return out
+    except Exception:
+        return None
+
+
+def _hit_rate_panel(con: sqlite3.Connection, account_id: int, fills) -> dict:
+    """Hit-rate real por bucket de signal_score, reason y régimen (T6.3/ex-T07).
+
+    Sobre cada orden filled: forward return 5/20d (mismas series y semántica
+    que el panel T6.2) + hit direccional (ver ``_hit_for``) + realized return
+    FIFO para SELLs. El foco es la reliability del rango SELL 0.2-0.45: si el
+    score está calibrado como P(subida), un SELL con score 0.30 debería ver el
+    precio subir ~30% de las veces; ``calibration_gap = p_up_real - avg_score``
+    > 0 significa SELLs descalibrados al pesimismo (vendemos cosas que suben).
+
+    Returns::
+
+        {
+          "horizon_days": 5,
+          "by_bucket": [{side, bucket, n, avg_score, p_up_fwd5, hit_rate_fwd5,
+                         median_fwd5, median_fwd20, median_realized_pct,
+                         calibration_gap}, ...],   # solo reason_kind=="signal"
+          "by_reason": [{side, reason_kind, n, ...stats}, ...],
+          "by_regime": [{regime, side, n, ...stats}, ...],  # [] si no hay proxy
+          "sell_reliability": {range, n, n_fwd5, avg_score, p_up_fwd5,
+                               calibration_gap, hit_rate_fwd5, median_fwd5,
+                               median_realized_pct} | None,
+          "notes": [...]
+        }
+    """
+    rows = con.execute(
+        "SELECT id, ticker, side, fill_price, filled_at, reason, signal_score "
+        "FROM paper_orders WHERE account_id = ? AND status = 'filled' "
+        "AND filled_at IS NOT NULL ORDER BY filled_at",
+        (account_id,),
+    ).fetchall()
+
+    # Realized return por SELL vía FIFO (un Trade por SELL fill); match por
+    # (ticker, filled_at) en orden cronológico.
+    realized_by_key: dict[tuple[str, str], list[float]] = {}
+    if fills:
+        trades, _ = fifo_match(fills)
+        for t in trades:
+            if t.cost_basis > 0:
+                key = (t.ticker, t.close_date.isoformat())
+                realized_by_key.setdefault(key, []).append(t.pnl / t.cost_basis)
+
+    series_cache: dict[str, list[tuple[str, float]] | None] = {}
+    annotated: list[dict] = []
+    for oid, ticker, side, px, dt, reason, score in rows:
+        if ticker not in series_cache:
+            series_cache[ticker] = _load_close_series(con, ticker)
+        pairs = series_cache[ticker]
+        d10 = str(dt)[:10]
+        fwd5 = _fwd_return_from_series(pairs, d10, 5) if pairs else None
+        fwd20 = _fwd_return_from_series(pairs, d10, 20) if pairs else None
+        kind = _reason_kind(reason)
+        realized = None
+        if side == "SELL":
+            # Normalizar el timestamp igual que fifo_match (que parsea con
+            # _parse_dt) — el filled_at crudo de la DB usa espacio, no "T".
+            try:
+                key = (ticker, _parse_dt(str(dt)).isoformat())
+            except Exception:
+                key = (ticker, str(dt))
+            lst = realized_by_key.get(key)
+            if lst:
+                realized = lst.pop(0)
+        annotated.append({
+            "order_id": int(oid),
+            "ticker": ticker,
+            "side": side,
+            "filled_at": dt,
+            "date": d10,
+            "reason_kind": kind,
+            # score sentinel de exits de riesgo no es probabilidad → None
+            "signal_score": float(score) if (score is not None and kind == "signal") else None,
+            "fwd5": fwd5,
+            "fwd20": fwd20,
+            "hit": _hit_for(side, fwd5),
+            "realized_pct": realized,
+        })
+
+    notes: list[str] = []
+
+    # by_bucket — solo órdenes de señal con score
+    by_bucket: list[dict] = []
+    sig = [o for o in annotated if o["reason_kind"] == "signal" and o["signal_score"] is not None]
+    keys = sorted({(o["side"], _score_bucket(o["signal_score"])) for o in sig})
+    for side, bucket in keys:
+        grp = [o for o in sig if o["side"] == side and _score_bucket(o["signal_score"]) == bucket]
+        stats = _hit_group_stats(grp)
+        gap = None
+        if stats["p_up_fwd5"] is not None and stats["avg_score"] is not None:
+            gap = stats["p_up_fwd5"] - stats["avg_score"]
+        by_bucket.append({"side": side, "bucket": bucket, "calibration_gap": gap, **stats})
+
+    # by_reason
+    by_reason: list[dict] = []
+    for side, kind in sorted({(o["side"], o["reason_kind"]) for o in annotated}):
+        grp = [o for o in annotated if o["side"] == side and o["reason_kind"] == kind]
+        by_reason.append({"side": side, "reason_kind": kind, **_hit_group_stats(grp)})
+
+    # by_regime — best-effort
+    by_regime: list[dict] = []
+    regime_map = _regime_for_dates(con, sorted({o["date"] for o in annotated}))
+    if regime_map:
+        for o in annotated:
+            o["regime"] = regime_map.get(o["date"], "warmup")
+        for regime, side in sorted({(o["regime"], o["side"]) for o in annotated}):
+            grp = [o for o in annotated if o["regime"] == regime and o["side"] == side]
+            by_regime.append({"regime": regime, "side": side, **_hit_group_stats(grp)})
+    else:
+        notes.append("by_regime omitido: no se pudo construir el proxy de mercado")
+
+    # sell_reliability — el número que pidió la auditoría
+    lo, hi = _SELL_RELIABILITY_RANGE
+    rel_grp = [
+        o for o in sig
+        if o["side"] == "SELL" and lo <= o["signal_score"] <= hi
+    ]
+    sell_reliability = None
+    if rel_grp:
+        stats = _hit_group_stats(rel_grp)
+        gap = None
+        if stats["p_up_fwd5"] is not None and stats["avg_score"] is not None:
+            gap = stats["p_up_fwd5"] - stats["avg_score"]
+        sell_reliability = {"range": [lo, hi], "calibration_gap": gap, **stats}
+
+    n_no_fwd = sum(1 for o in annotated if o["fwd5"] is None)
+    if n_no_fwd:
+        notes.append(f"{n_no_fwd} órdenes sin fwd5 todavía (fills recientes o sin cache)")
+
+    return {
+        "horizon_days": 5,
+        "by_bucket": by_bucket,
+        "by_reason": by_reason,
+        "by_regime": by_regime,
+        "sell_reliability": sell_reliability,
+        "notes": notes,
+    }
+
+
 def _kpis(snapshots: list[AccountSnapshot], fills) -> dict:
     """Bundle the headline metrics shown above the equity chart."""
     em = equity_metrics(snapshots)
@@ -492,6 +750,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
             "positions": _positions_payload(con, account_id),
             "trades_recent": _trades_recent(con, account_id, limit=50),
             "post_sell": _post_sell_panel(con, account_id),
+            "hit_rate": _hit_rate_panel(con, account_id, fills),
             "signal_score_hist": _signal_score_hist(con, account_id),
             "status_counts": _status_counts(con, account_id),
             "expired_notes_top": _expired_notes_top(con, account_id, limit=10),
