@@ -146,6 +146,32 @@ SCHEMA: dict[str, SettingSpec] = {
             "Default 0.0 = block any loss within the lookback window."
         ),
     ),
+    # Anti-churn v2 (T6.5): frequency-based cooldown, independiente del P/L.
+    # El anti-whipsaw (Gate 5) solo mira ciclos perdedores y por eso no frenó
+    # el churn de KO (3 ciclos en 7 días, el primero ganador).
+    "paper_churn_max_cycles": SettingSpec(
+        int,
+        3,
+        min=0,
+        max=20,
+        doc=(
+            "T6.5: block re-BUY when the ticker already closed >= N cycles "
+            "within paper_churn_lookback_days, regardless of P/L. Solo cuentan "
+            "SELLs que dejan la posición en cero (trims parciales no). "
+            "0 = disable the gate."
+        ),
+    ),
+    "paper_churn_lookback_days": SettingSpec(
+        int,
+        10,
+        min=0,
+        max=90,
+        doc=(
+            "T6.5: rolling window (calendar days) para contar ciclos cerrados "
+            "del gate anti-churn. El cooldown expira solo: los ciclos viejos "
+            "salen de la ventana. 0 = disable the gate."
+        ),
+    ),
     # ADV liquidity cap (T10 of the validation roadmap)
     # Disabled by default (0.0) — turning it on changes live BUY sizing, which
     # would contaminate the kill_only baseline mid-monitoring. Opt-in.

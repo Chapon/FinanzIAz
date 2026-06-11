@@ -200,6 +200,56 @@ def _last_closed_cycle_pnl_pct(
     return (float(last_sell.fill_price) - avg_buy) / avg_buy * 100.0
 
 
+def _closed_cycles_count(
+    session,
+    account_id: int,
+    ticker: str,
+    within_days: int,
+) -> int:
+    """Count closed cycles for ``ticker`` whose closing SELL filled within
+    ``within_days`` (calendar days).
+
+    Walks every filled order for the ticker chronologically tracking net
+    shares; a SELL fill that leaves the position at ~zero closes a cycle.
+    Partial SELLs (e.g. T09 vol-overlay trims) do NOT count — only full
+    exits do, so de-risking a position never feeds the churn counter.
+
+    Used by Gate 5b (anti-churn v2 / T6.5): the anti-whipsaw gate only looks
+    at *losing* cycles, which is why it never slowed the KO churn (3 cycles
+    in 7 days, the first one a winner). This counter is P/L-agnostic.
+    """
+    if within_days <= 0:
+        return 0
+
+    cutoff = utcnow_naive() - timedelta(days=within_days)
+
+    fills = (
+        session.query(PaperOrder)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.ticker == ticker)
+        .filter(PaperOrder.status == "filled")
+        .order_by(PaperOrder.filled_at.asc())
+        .all()
+    )
+
+    shares = 0.0
+    count = 0
+    for o in fills:
+        qty = float(o.fill_shares or 0.0)
+        if qty <= 0:
+            continue
+        if o.side == "BUY":
+            shares += qty
+        elif o.side == "SELL":
+            shares -= qty
+            # Tolerancia relativa: floats de shares fraccionales acumulan ruido.
+            if shares <= max(1e-6, abs(qty) * 1e-9):
+                shares = 0.0
+                if o.filled_at is not None and o.filled_at >= cutoff:
+                    count += 1
+    return count
+
+
 # ── ATR-stop gate (T01) ───────────────────────────────────────────────────────
 
 
@@ -477,6 +527,9 @@ def run_scan(
         adv_lookback_days = max(1, int(settings.get("paper_adv_lookback_days", 20)))
         whipsaw_days = max(0, int(settings.get("paper_whipsaw_lookback_days", 7)))
         whipsaw_min_loss = max(0.0, float(settings.get("paper_whipsaw_min_loss_pct", 0.0)))
+        # T6.5 anti-churn v2: frecuencia de ciclos, independiente del P/L.
+        churn_max_cycles = max(0, int(settings.get("paper_churn_max_cycles", 3)))
+        churn_lookback_days = max(0, int(settings.get("paper_churn_lookback_days", 10)))
         earnings_blackout_days = max(0, int(settings.get("earnings_blackout_days", 2)))
         # T08 (Sprint 0): SELLs señaladas por estrategia pasan por default durante
         # el blackout — el setting permite restaurar el comportamiento legacy.
@@ -638,6 +691,25 @@ def run_scan(
                         f"{trade.ticker} BUY bloqueado: anti-whipsaw — último ciclo "
                         f"cerró con {pnl_pct:+.2f}% (umbral -{whipsaw_min_loss:.2f}%) "
                         f"dentro de {whipsaw_days}d."
+                    )
+                    continue
+
+            # Gate 5b — anti-churn v2 (T6.5). Block re-BUY by *frequency*,
+            # regardless of P/L: >= N closed cycles within the lookback window
+            # means we keep flip-flopping on the ticker and the cooldown kicks
+            # in. Gate 5 only blocks after losers — KO churned 3 cycles in 7
+            # days starting with a winner and sailed through. The cooldown
+            # expires on its own as old cycles fall out of the window.
+            if trade.side == "BUY" and churn_max_cycles > 0 and churn_lookback_days > 0:
+                n_cycles = _closed_cycles_count(
+                    session, acct.id, trade.ticker, churn_lookback_days
+                )
+                if n_cycles >= churn_max_cycles:
+                    result.skipped += 1
+                    result.warnings.append(
+                        f"{trade.ticker} BUY bloqueado: anti-churn — {n_cycles} ciclos "
+                        f"cerrados en {churn_lookback_days}d (máx {churn_max_cycles - 1}). "
+                        f"Cooldown hasta que expire la ventana."
                     )
                     continue
 
