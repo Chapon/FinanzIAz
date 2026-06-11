@@ -52,6 +52,10 @@ reports_output/
 exports/
 *.tmp
 
+# Snapshot del dashboard (byproduct de scripts/refresh_dashboard.py, se regenera)
+dashboard_snapshot.json
+snapshot.json
+
 # Pytest / coverage / type checking
 .pytest_cache/
 .coverage
