@@ -310,8 +310,8 @@ class NewsEvent(Base):
     último estado — nunca se sobrescribe la noticia cruda.
 
     Los campos de clasificación (``event_type``, ``sentiment``,
-    ``classifier_confidence``, ``classified_at``) quedan NULL hasta que T-CAT-2
-    (clasificador LLM) los rellena con un UPDATE in-place. Esa es la única
+    ``classifier_confidence``, ``classified_at``, ``classified_by``) quedan
+    NULL hasta que T-CAT-2 (clasificador LLM) los rellena con un UPDATE in-place. Esa es la única
     excepción al append-only y es segura: añade metadata, no altera la
     observación cruda.
 
@@ -342,6 +342,9 @@ class NewsEvent(Base):
     sentiment = Column(String(12), nullable=True)  # positive / neutral / negative
     classifier_confidence = Column(Float, nullable=True)
     classified_at = Column(DateTime, nullable=True)
+    # Backend que produjo el label ("heuristic" / "ollama" / "llm" / "fallback").
+    # T7.4: habilita QA por backend y detectar corridas con Ollama caído a posteriori.
+    classified_by = Column(String(20), nullable=True)
 
     def __repr__(self):
         return f"<NewsEvent({self.ticker} [{self.source}] {self.title[:40]!r})>"

@@ -44,7 +44,7 @@ class Classification:
     event_type: str
     sentiment: str
     confidence: float
-    classifier: str = "heuristic"  # provenance tag (not persisted; for logs/sampling)
+    classifier: str = "heuristic"  # provenance tag — persistido en news_events.classified_by (T7.4)
 
 
 # Backend signature: (title, content, source, ticker) -> Classification

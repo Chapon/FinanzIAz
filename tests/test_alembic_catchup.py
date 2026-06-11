@@ -28,6 +28,7 @@ import os
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 import paper_trading.models  # noqa: F401  — registra tablas paper en Base.metadata
 from database import models as db_models
@@ -52,6 +53,11 @@ def _cfg(db_path) -> Config:
     cfg.set_main_option("script_location", os.path.join(ROOT, "alembic"))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     return cfg
+
+
+def _head(cfg: Config) -> str:
+    """Revisión head actual del timeline — los tests no hardcodean '000X'."""
+    return ScriptDirectory.from_config(cfg).get_current_head()
 
 
 def _schema_snapshot(engine) -> dict:
@@ -113,13 +119,13 @@ def test_upgrade_is_idempotent_on_complete_db(tmp_path):
     command.stamp(_cfg(path), "0003")
     before = _schema_snapshot(engine)
 
-    command.upgrade(_cfg(path), "head")  # 0004 corre con guards → sin DDL
+    command.upgrade(_cfg(path), "head")  # 0004/0005 corren con guards → sin DDL
     command.upgrade(_cfg(path), "head")  # ya en head → no-op
 
     assert _schema_snapshot(engine) == before
     with engine.connect() as conn:
         rev = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert rev == "0004"
+    assert rev == _head(_cfg(path))
 
 
 def test_alembic_sync_stamps_fresh_db(tmp_path):
@@ -132,7 +138,7 @@ def test_alembic_sync_stamps_fresh_db(tmp_path):
 
     with engine.connect() as conn:
         rev = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert rev == "0004"
+    assert rev == _head(_cfg(path))
 
 
 def test_alembic_sync_upgrades_stamped_db(tmp_path):
@@ -149,7 +155,7 @@ def test_alembic_sync_upgrades_stamped_db(tmp_path):
     assert any(c["name"] == "slack_notify" for c in insp.get_columns("paper_accounts"))
     with engine.connect() as conn:
         rev = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    assert rev == "0004"
+    assert rev == _head(_cfg(path))
 
 
 @pytest.mark.skipif(not _SQLITE_SUPPORTS_DROP_COLUMN, reason="SQLite < 3.35: sin DROP COLUMN")
@@ -166,3 +172,33 @@ def test_downgrade_0004_removes_delta(tmp_path):
     for t in POST_0003_TABLES:
         assert not insp.has_table(t)
     assert not any(c["name"] == "slack_notify" for c in insp.get_columns("paper_accounts"))
+
+
+# ── 0005: news_events.classified_by (T7.4) ───────────────────────────────────
+
+
+@pytest.mark.skipif(not _SQLITE_SUPPORTS_DROP_COLUMN, reason="SQLite < 3.35: sin DROP COLUMN")
+def test_upgrade_from_0004_adds_classified_by(tmp_path):
+    """DB en estado-0004 real (sin classified_by) → upgrade head agrega la columna."""
+    path = tmp_path / "v4.db"
+    engine = _fresh_full_db(path)
+    with engine.begin() as conn:
+        conn.execute(sa.text("ALTER TABLE news_events DROP COLUMN classified_by"))
+    command.stamp(_cfg(path), "0004")
+
+    command.upgrade(_cfg(path), "head")
+
+    insp = sa.inspect(engine)
+    assert any(c["name"] == "classified_by" for c in insp.get_columns("news_events"))
+
+
+def test_0005_is_idempotent_when_column_exists(tmp_path):
+    """DB completa (create_all ya trae classified_by) stampeada en 0004 → guard salta el DDL."""
+    path = tmp_path / "v4full.db"
+    engine = _fresh_full_db(path)
+    command.stamp(_cfg(path), "0004")
+    before = _schema_snapshot(engine)
+
+    command.upgrade(_cfg(path), "head")
+
+    assert _schema_snapshot(engine) == before

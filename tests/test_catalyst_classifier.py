@@ -296,6 +296,76 @@ def test_sample_for_review_is_deterministic_with_seed(test_db):
     assert len(a) == 2
 
 
+# ── T7.4: classified_by persistido + T7.5: contador de fallbacks ─────────────
+
+
+def test_runner_persists_classified_by(test_db):
+    _seed_unclassified()
+    rep = classify_events()
+    assert rep.by_classifier == {"heuristic": 3}
+    with session_scope() as s:
+        tags = {e.ticker: e.classified_by for e in s.query(NewsEvent).all()}
+    assert tags == {"NVDA": "heuristic", "AAPL": "heuristic", "PLTR": "heuristic"}
+
+
+def test_runner_dry_run_does_not_persist_classified_by(test_db):
+    _seed_unclassified()
+    classify_events(dry_run=True)
+    with session_scope() as s:
+        assert s.query(NewsEvent).filter(NewsEvent.classified_by.isnot(None)).count() == 0
+
+
+def test_sample_for_review_includes_classified_by(test_db):
+    _seed_unclassified()
+    classify_events()
+    rows = sample_for_review(3)
+    assert all(r[5] == "heuristic" for r in rows)  # (ticker, source, evt, sent, conf, BY, title)
+
+
+def _fake_backend_classifier(tag: str):
+    """Classifier que simula un backend devolviendo siempre el tag dado."""
+
+    def _clf(title, content, source, ticker=None):
+        return Classification("other", "neutral", 0.5, tag)
+
+    return _clf
+
+
+def test_runner_counts_llm_fallbacks_when_backend_down(test_db):
+    # Run hybrid-ollama con Ollama caído: todo sale tagueado "heuristic".
+    # Las 2 filas yfinance esperaban "ollama" → fallbacks; la sec_8k está
+    # exenta (el hybrid la rutea al heuristic por diseño).
+    _seed_unclassified()
+    rep = classify_events(
+        classifier=_fake_backend_classifier("heuristic"),
+        llm_tag="ollama",
+        llm_exempt_sources=frozenset({"sec_8k"}),
+    )
+    assert rep.llm_fallbacks == 2
+    assert "LLM_FALLBACKS=2" in rep.summary()
+
+
+def test_runner_no_fallbacks_when_llm_healthy(test_db):
+    _seed_unclassified()
+    rep = classify_events(
+        classifier=_fake_backend_classifier("ollama"),
+        llm_tag="ollama",
+        llm_exempt_sources=frozenset({"sec_8k"}),
+    )
+    # La fila sec_8k también vino "ollama" (backend puro la procesó): no es fallback.
+    assert rep.llm_fallbacks == 0
+    assert "LLM_FALLBACKS" not in rep.summary()
+    with session_scope() as s:
+        assert s.query(NewsEvent).filter(NewsEvent.classified_by == "ollama").count() == 3
+
+
+def test_runner_no_fallback_tracking_without_llm_tag(test_db):
+    # Run heurístico normal: llm_tag=None → nunca cuenta fallbacks.
+    _seed_unclassified()
+    rep = classify_events(classifier=_fake_backend_classifier("heuristic"))
+    assert rep.llm_fallbacks == 0
+
+
 if __name__ == "__main__":
     import pytest
 

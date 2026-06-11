@@ -50,13 +50,20 @@ class ClassifyReport:
     failed: int = 0
     by_event: Counter = field(default_factory=Counter)
     by_sentiment: Counter = field(default_factory=Counter)
+    by_classifier: Counter = field(default_factory=Counter)  # T7.4: provenance
+    llm_fallbacks: int = 0  # T7.5: filas que esperaban LLM y cayeron al heuristic
 
     def summary(self) -> str:
         top = ", ".join(f"{k}={v}" for k, v in self.by_event.most_common(5))
-        return (
+        line = (
             f"Classify: scanned {self.scanned} | classified {self.classified} "
-            f"| failed {self.failed} | sentiment {dict(self.by_sentiment)} | top events: {top or '—'}"
+            f"| failed {self.failed} | backend {dict(self.by_classifier)} "
+            f"| sentiment {dict(self.by_sentiment)} | top events: {top or '—'}"
         )
+        if self.llm_fallbacks:
+            # Token grep-able desde el log del scheduler (T7.5).
+            line += f"\nLLM_FALLBACKS={self.llm_fallbacks} — ¿Ollama caído? Revisar 'backend failed' arriba."
+        return line
 
 
 def classify_events(
@@ -69,6 +76,8 @@ def classify_events(
     dry_run: bool = False,
     show: bool = False,
     now: datetime | None = None,
+    llm_tag: str | None = None,
+    llm_exempt_sources: frozenset[str] = frozenset({"sec_8k"}),
 ) -> ClassifyReport:
     """
     Classify ``news_events`` rows and persist labels in place (unless dry_run).
@@ -81,6 +90,13 @@ def classify_events(
         ``classifier_confidence <= max_confidence`` — handy to LLM-upgrade just
         the low-confidence ("other") rows cheaply. Takes precedence over
         ``reclassify`` (a warning is logged if both are passed).
+
+    T7.5 — ``llm_tag``: tag de provenance esperado cuando se corre con un
+    backend LLM ("ollama" / "llm"). Una fila cuyo ``classifier`` difiere del
+    tag esperado cayó al fallback heurístico (backend caído) y se cuenta en
+    ``report.llm_fallbacks``. ``llm_exempt_sources`` excluye las fuentes que
+    los backends hybrid rutean al heuristic POR DISEÑO (sec_8k) — pasar
+    ``frozenset()`` para backends puros (ollama/llm sin hybrid).
     """
     now = now or utcnow_naive()
     report = ClassifyReport()
@@ -111,6 +127,9 @@ def classify_events(
                 continue
             report.by_event[c.event_type] += 1
             report.by_sentiment[c.sentiment] += 1
+            report.by_classifier[c.classifier] += 1
+            if llm_tag and c.classifier != llm_tag and ev.source not in llm_exempt_sources:
+                report.llm_fallbacks += 1
             report.classified += 1
             if show:
                 print(f"  {ev.ticker:<6} {c.event_type:<20} {c.sentiment:<8} {c.confidence:.2f}  {ev.title[:72]}")
@@ -120,6 +139,7 @@ def classify_events(
             ev.sentiment = c.sentiment
             ev.classifier_confidence = c.confidence
             ev.classified_at = now
+            ev.classified_by = c.classifier  # T7.4: provenance persistida
     log.info("%s%s", "[dry-run] " if dry_run else "", report.summary())
     return report
 
@@ -129,7 +149,8 @@ def sample_for_review(n: int = 100, *, source: str | None = None, seed: int | No
     Return a random sample of classified rows for the manual accuracy check the
     roadmap calls for (N≈100). Optionally restrict to one ``source`` (e.g.
     "yfinance" to eyeball just the headline path). Each tuple: (ticker, source,
-    event_type, sentiment, confidence, title).
+    event_type, sentiment, confidence, classified_by, title) — el backend va
+    incluido para poder evaluar accuracy POR BACKEND (T7.4).
     """
     with session_scope() as s:
         q = s.query(NewsEvent).filter(NewsEvent.event_type.isnot(None))
@@ -137,7 +158,7 @@ def sample_for_review(n: int = 100, *, source: str | None = None, seed: int | No
             q = q.filter(NewsEvent.source == source)
         rows = q.all()
         data = [
-            (r.ticker, r.source, r.event_type, r.sentiment, r.classifier_confidence, r.title)
+            (r.ticker, r.source, r.event_type, r.sentiment, r.classifier_confidence, r.classified_by, r.title)
             for r in rows
         ]
     rng = random.Random(seed)
@@ -205,14 +226,19 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.sample:
         rows = sample_for_review(args.sample, source=args.source, seed=args.seed)
-        for ticker, src, evt, sent, conf, title in rows:
+        for ticker, src, evt, sent, conf, by, title in rows:
             c = f"{conf:.2f}" if conf is not None else " -- "
-            print(f"{ticker:<6} {src:<14} {evt:<20} {sent:<8} {c}  {title}")
+            print(f"{ticker:<6} {src:<14} {evt:<20} {sent:<8} {c} {by or '--':<10} {title}")
         print(f"\n{len(rows)} sampled — eyeball event_type accuracy here.")
         return 0
     classifier = _build_classifier(args.backend, args.model)
     if args.backend != "heuristic":
         log.info("classifying with %s backend (model=%s)", args.backend, args.model)
+    # T7.5: tag esperado por backend para detectar fallbacks. Los hybrid rutean
+    # sec_8k al heuristic por diseño → exento; los puros no exentan nada.
+    _LLM_TAGS = {"ollama": "ollama", "hybrid-ollama": "ollama", "llm": "llm", "hybrid": "llm"}
+    llm_tag = _LLM_TAGS.get(args.backend)
+    exempt = frozenset({"sec_8k"}) if args.backend.startswith("hybrid") else frozenset()
     report = classify_events(
         classifier=classifier,
         limit=args.limit,
@@ -221,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
         max_confidence=args.max_confidence,
         dry_run=args.dry_run,
         show=args.show,
+        llm_tag=llm_tag,
+        llm_exempt_sources=exempt,
     )
     print(report.summary())
     return 0
