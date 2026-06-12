@@ -344,55 +344,149 @@ def get_company_info(ticker: str) -> dict:
     return result if result is not None else fallback
 
 
+# Tamaño de lote por defecto para get_historical_data_batch. Yahoo tolera mal
+# payloads gigantes (sube el riesgo de timeout y de respuestas parciales), así
+# que partimos universos grandes en chunks de este tamaño.
+_DEFAULT_BATCH_SIZE = 20
+
+
+def _read_historical_cache(
+    ticker_upper: str, period: str, interval: str
+) -> pd.DataFrame | None:
+    """Devuelve el frame cacheado fresco para (ticker, period, interval) o None.
+
+    Misma lógica de lectura que usaba ``get_historical_data`` inline; extraída
+    para que la versión single y la batch compartan exactamente el mismo cache.
+    """
+    if not _cache_enabled():
+        return None
+    try:
+        with session_scope() as session:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
+            cached = (
+                session.query(HistoricalDataCache)
+                .filter(HistoricalDataCache.ticker == ticker_upper)
+                .filter(HistoricalDataCache.period == period)
+                .filter(HistoricalDataCache.interval == interval)
+                .filter(HistoricalDataCache.fetched_at >= cutoff)
+                .order_by(HistoricalDataCache.fetched_at.desc())
+                .first()
+            )
+            if cached:
+                df = pd.read_json(StringIO(cached.data_json), orient="split")
+                df.index = pd.to_datetime(df.index)
+                return df
+    except Exception:
+        log.exception("Historical cache read failed for %s", ticker_upper)
+    return None
+
+
+def _write_historical_cache(
+    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
+) -> None:
+    """Reemplaza la entrada de cache para (ticker, period, interval)."""
+    if not _cache_enabled():
+        return
+    try:
+        with session_scope() as session:
+            session.query(HistoricalDataCache).filter(
+                HistoricalDataCache.ticker == ticker_upper,
+                HistoricalDataCache.period == period,
+                HistoricalDataCache.interval == interval,
+            ).delete()
+            session.add(
+                HistoricalDataCache(
+                    ticker=ticker_upper,
+                    period=period,
+                    interval=interval,
+                    data_json=df.to_json(orient="split", date_format="iso"),
+                )
+            )
+    except Exception:
+        log.exception("Historical cache write failed for %s", ticker_upper)
+
+
+def _normalize_ohlcv(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Aplana el MultiIndex de columnas de una descarga single-ticker.
+
+    ``yf.download`` para un solo símbolo devuelve columnas MultiIndex
+    ``(field, ticker)`` con el field en el nivel 0. Devuelve None si el frame
+    viene vacío.
+    """
+    if df is None or df.empty:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df.index = pd.to_datetime(df.index)
+    return df
+
+
+def _finalize_historical(
+    ticker_upper: str, df: pd.DataFrame | None, period: str, interval: str
+) -> pd.DataFrame | None:
+    """QA + cache write + record_success/failure para un frame ya descargado.
+
+    Punto único de finalización compartido por ``get_historical_data`` y
+    ``get_historical_data_batch`` para que ambos hagan exactamente la misma
+    limpieza, validación y registro de fallos por ticker.
+    """
+    if df is None:
+        record_failure(
+            ticker_upper,
+            f"Sin datos históricos ({period}/{interval}) — símbolo posiblemente deslistado",
+            operation="historical",
+        )
+        return None
+
+    # Quality check + light cleaning. Issues get logged; unusable frames
+    # (all-NaN Close) are rejected so callers don't have to defend against
+    # silent garbage.
+    df, report = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
+    if df is None or not report.is_usable:
+        log.warning("Historical data for %s rejected after QA: %s", ticker_upper, report.summary())
+        record_failure(ticker_upper, f"Datos rechazados por QA: {report.summary()}", operation="historical")
+        return None
+    if report.has_issues():
+        log.info("Historical data for %s: %s", ticker_upper, report.summary())
+
+    _write_historical_cache(ticker_upper, period, interval, df)
+    # Descarga exitosa — limpiar registro de fallos previos si existía.
+    record_success(ticker_upper)
+    return df
+
+
 def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame | None:
     """
     Download OHLCV historical data with SQLite cache (TTL=1h).
     Cache key: (ticker, period, interval). At most one entry per combination.
     period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
     interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+
+    Para varios tickers preferí ``get_historical_data_batch``: agrupa los
+    cache-misses en una sola llamada que reutiliza un único crumb de Yahoo,
+    reduciendo los 401 "Invalid Crumb".
     """
     ticker_upper = ticker.upper()
 
     # 1. Cache read
-    if _cache_enabled():
-        try:
-            with session_scope() as session:
-                cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
-                cached = (
-                    session.query(HistoricalDataCache)
-                    .filter(HistoricalDataCache.ticker == ticker_upper)
-                    .filter(HistoricalDataCache.period == period)
-                    .filter(HistoricalDataCache.interval == interval)
-                    .filter(HistoricalDataCache.fetched_at >= cutoff)
-                    .order_by(HistoricalDataCache.fetched_at.desc())
-                    .first()
-                )
-                if cached:
-                    df = pd.read_json(StringIO(cached.data_json), orient="split")
-                    df.index = pd.to_datetime(df.index)
-                    return df
-        except Exception:
-            log.exception("Historical cache read failed for %s", ticker)
+    cached = _read_historical_cache(ticker_upper, period, interval)
+    if cached is not None:
+        return cached
 
     # 2. Live download — guarded by hard timeout
     def _do_download() -> pd.DataFrame | None:
         try:
             df = yf.download(
-                ticker,
+                ticker_upper,
                 period=period,
                 interval=interval,
                 progress=False,
                 auto_adjust=True,
                 timeout=NETWORK_TIMEOUT_SECONDS,
             )
-            if df.empty:
-                return None
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            df.index = pd.to_datetime(df.index)
-            return df
+            return _normalize_ohlcv(df)
         except Exception:
-            log.exception("Historical data download failed for %s", ticker)
+            log.exception("Historical data download failed for %s", ticker_upper)
             return None
 
     df = _run_with_timeout(
@@ -400,48 +494,121 @@ def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -
         timeout=HARD_TIMEOUT_SECONDS * 2,  # downloads can be larger
         default=None,
     )
-    if df is None:
-        record_failure(
-            ticker,
-            f"Sin datos históricos ({period}/{interval}) — símbolo posiblemente deslistado",
-            operation="historical",
-        )
+    # 3. QA + cache + record (shared finalizer)
+    return _finalize_historical(ticker_upper, df, period, interval)
+
+
+def _chunked(seq: list[str], size: int):
+    """Parte ``seq`` en sublistas de a lo sumo ``size`` elementos."""
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
+def _slice_ticker(batch_df: pd.DataFrame | None, ticker_upper: str) -> pd.DataFrame | None:
+    """Extrae el sub-frame OHLCV de ``ticker_upper`` de una descarga batch.
+
+    ``yf.download(..., group_by="ticker")`` con varios símbolos devuelve
+    columnas MultiIndex ``(ticker, field)`` (ticker en nivel 0). Con un solo
+    símbolo en el lote devuelve columnas planas (solo field). Yahoo además
+    rellena con NaN los símbolos que fallaron dentro del lote, así que se
+    descartan las filas all-NaN y se trata como fallo si no queda nada.
+    """
+    if batch_df is None:
+        return None
+    try:
+        if isinstance(batch_df.columns, pd.MultiIndex):
+            if ticker_upper not in batch_df.columns.get_level_values(0):
+                return None
+            sub = batch_df[ticker_upper].copy()
+        else:
+            # Lote de un solo símbolo → columnas planas, ya es el frame del ticker.
+            sub = batch_df.copy()
+        sub.index = pd.to_datetime(sub.index)
+        sub = sub.dropna(how="all")
+        if sub.empty:
+            return None
+        return sub
+    except Exception:
+        log.exception("Failed slicing batch frame for %s", ticker_upper)
         return None
 
-    # 2.5 Quality check + light cleaning. Issues get logged; unusable frames
-    # (all-NaN Close) are rejected so callers don't have to defend against
-    # silent garbage.
-    df, report = clean_ohlcv(df, fill_method="ffill", max_fill_gap=2)
-    if df is None or not report.is_usable:
-        log.warning("Historical data for %s rejected after QA: %s", ticker, report.summary())
-        record_failure(ticker, f"Datos rechazados por QA: {report.summary()}", operation="historical")
-        return None
-    if report.has_issues():
-        log.info("Historical data for %s: %s", ticker, report.summary())
 
-    # 3. Cache write — replace any existing entry for this (ticker, period, interval)
-    if _cache_enabled():
+def _download_batch(
+    chunk: list[str], period: str, interval: str
+) -> pd.DataFrame | None:
+    """Una sola descarga yf.download para todo ``chunk`` (un crumb compartido)."""
+
+    def _do_download() -> pd.DataFrame | None:
         try:
-            with session_scope() as session:
-                session.query(HistoricalDataCache).filter(
-                    HistoricalDataCache.ticker == ticker_upper,
-                    HistoricalDataCache.period == period,
-                    HistoricalDataCache.interval == interval,
-                ).delete()
-                session.add(
-                    HistoricalDataCache(
-                        ticker=ticker_upper,
-                        period=period,
-                        interval=interval,
-                        data_json=df.to_json(orient="split", date_format="iso"),
-                    )
-                )
+            df = yf.download(
+                " ".join(chunk),
+                period=period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+                group_by="ticker",
+                threads=False,  # serial: comparte crumb, más amable con el rate limit
+                timeout=NETWORK_TIMEOUT_SECONDS,
+            )
+            if df is None or df.empty:
+                return None
+            return df
         except Exception:
-            log.exception("Historical cache write failed for %s", ticker)
+            log.exception("Batch historical download failed for %s", chunk)
+            return None
 
-    # Descarga exitosa — limpiar registro de fallos previos si existía.
-    record_success(ticker)
-    return df
+    return _run_with_timeout(
+        _do_download,
+        timeout=HARD_TIMEOUT_SECONDS * 3,  # un lote es más grande que una descarga single
+        default=None,
+    )
+
+
+def get_historical_data_batch(
+    tickers: list[str],
+    period: str = "1y",
+    interval: str = "1d",
+    batch_size: int = _DEFAULT_BATCH_SIZE,
+) -> dict[str, pd.DataFrame | None]:
+    """Versión por lotes de ``get_historical_data``.
+
+    Lee el cache por ticker (idéntico a la versión single), agrupa SOLO los
+    cache-misses en llamadas ``yf.download`` de a ``batch_size`` símbolos y
+    reparte el resultado. Reutilizar un único crumb/cookie para todo el lote en
+    vez de pedir uno por ticker reduce drásticamente los 401 "Invalid Crumb".
+
+    La calidad de los datos es idéntica a la versión single: mismo endpoint,
+    mismo ``auto_adjust``, misma QA (``clean_ohlcv``) y mismo registro de fallos
+    por ticker — un símbolo deslistado dentro del lote se marca individualmente
+    sin tumbar a los demás.
+
+    Devuelve un dict ``{TICKER: DataFrame | None}`` con todos los símbolos
+    pedidos (de-duplicados, en mayúsculas).
+    """
+    result: dict[str, pd.DataFrame | None] = {}
+    misses: list[str] = []
+    seen: set[str] = set()
+
+    # 1. Cache read por ticker (los hits no entran al lote).
+    for raw in tickers:
+        t = raw.upper()
+        if t in seen:
+            continue
+        seen.add(t)
+        cached = _read_historical_cache(t, period, interval)
+        if cached is not None:
+            result[t] = cached
+        else:
+            misses.append(t)
+
+    # 2. Una descarga por chunk para los misses → 3. slice + QA + cache por ticker.
+    for chunk in _chunked(misses, max(1, batch_size)):
+        batch = _download_batch(chunk, period, interval)
+        for t in chunk:
+            df_t = _slice_ticker(batch, t)
+            result[t] = _finalize_historical(t, df_t, period, interval)
+
+    return result
 
 
 def get_dividends_since(ticker: str, since_date: datetime) -> float:

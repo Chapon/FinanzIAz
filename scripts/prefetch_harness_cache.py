@@ -24,7 +24,7 @@ from pathlib import Path
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
-from data.yahoo_finance import get_historical_data
+from data.yahoo_finance import get_historical_data_batch
 
 
 def parse_universe_file(path: Path) -> list[str]:
@@ -72,6 +72,13 @@ def main():
         default="1d",
         help="Bar interval (default: 1d).",
     )
+    parser.add_argument(
+        "-b", "--batch-size",
+        type=int,
+        default=20,
+        help="Tickers por descarga agrupada (default: 20). Agrupar reutiliza un "
+             "único crumb de Yahoo y reduce los 401 'Invalid Crumb'.",
+    )
     args = parser.parse_args()
 
     if not args.universe_file.exists():
@@ -86,17 +93,23 @@ def main():
     failures: list[str] = []
     started = time.time()
 
+    # Descarga agrupada: los cache-misses se piden en lotes que comparten un
+    # único crumb de Yahoo (menos 401). El dict resultante cubre TODOS los
+    # tickers pedidos, con None para los que fallaron.
+    results = get_historical_data_batch(
+        tickers,
+        period=args.period,
+        interval=args.interval,
+        batch_size=args.batch_size,
+    )
     for i, t in enumerate(tickers, start=1):
-        t0 = time.time()
-        df = get_historical_data(t, period=args.period, interval=args.interval)
-        elapsed = time.time() - t0
+        df = results.get(t.upper())
         if df is None or df.empty:
-            print(f"  [{i:>2}/{len(tickers)}] FAIL  {t:<8}  ({elapsed:.1f}s)")
+            print(f"  [{i:>2}/{len(tickers)}] FAIL  {t:<8}")
             failures.append(t)
         else:
             rows_per_ticker[t] = len(df)
-            mark = "cache" if elapsed < 0.5 else "fetch"
-            print(f"  [{i:>2}/{len(tickers)}] OK    {t:<8}  rows={len(df):>4}  ({elapsed:.1f}s  {mark})")
+            print(f"  [{i:>2}/{len(tickers)}] OK    {t:<8}  rows={len(df):>4}")
 
     total = time.time() - started
     print("-" * 60)
