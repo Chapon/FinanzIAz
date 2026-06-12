@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-06-12T03:56:53.458123+00:00",
+    "built_at": "2026-06-12T13:26:09.070686+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -30,13 +30,13 @@
     },
     "ADBE": {
       "ticker": "ADBE",
-      "n_quarters": 25,
-      "beat_rate": 0.96,
+      "n_quarters": 24,
+      "beat_rate": 0.9583,
       "miss_rate": 0.0,
-      "mean_surprise": 0.032226,
-      "median_surprise": 0.025097,
+      "mean_surprise": 0.031234,
+      "median_surprise": 0.024663,
       "last_surprise": 0.025818,
-      "directional_score": 0.6018
+      "directional_score": 0.6
     },
     "AMAT": {
       "ticker": "AMAT",
@@ -221,12 +221,12 @@
     "KLAC": {
       "ticker": "KLAC",
       "n_quarters": 24,
-      "beat_rate": 1.0,
+      "beat_rate": 0.9583,
       "miss_rate": 0.0,
-      "mean_surprise": 0.058934,
-      "median_surprise": 0.05216,
-      "last_surprise": 0.025082,
-      "directional_score": 0.6471
+      "mean_surprise": 0.057189,
+      "median_surprise": 0.051065,
+      "last_surprise": 0.021739,
+      "directional_score": 0.6208
     },
     "KMB": {
       "ticker": "KMB",
