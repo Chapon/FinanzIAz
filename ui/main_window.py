@@ -27,6 +27,7 @@ from ui.analysis_tab import AnalysisTab
 from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
 from ui.leads_tab import LeadsTab
+from ui.news_tab import NewsTab
 from ui.paper_tab import PaperTradingTab
 from ui.portfolio_tab import PortfolioTab
 from ui.reports_tab import ReportsTab
@@ -118,6 +119,7 @@ class MainWindow(QMainWindow):
         "portfolio": ("Portafolio", "Mis Inversiones"),
         "analysis": ("Análisis", "Técnico"),
         "leads": ("Leads", "Consensus de analistas"),
+        "news": ("Noticias", "Resumen diario"),
         "alerts": ("Alertas", "Precios"),
         "paper": ("Paper Trading", "Simulación en vivo"),
         "reports": ("Reportes", "Exportar"),
@@ -140,6 +142,11 @@ class MainWindow(QMainWindow):
         self.paper_scheduler.scan_started.connect(self._on_paper_scan_started)
         self.paper_scheduler.scan_completed.connect(self._on_paper_scan_completed)
         self.paper_scheduler.scan_failed.connect(self._on_paper_scan_failed)
+        # Daily catalyst refresh (noticias frescas a la mañana, sin esperar al
+        # Task Scheduler nocturno de las 18:30).
+        self.paper_scheduler.catalyst_refresh_started.connect(self._on_catalyst_refresh_started)
+        self.paper_scheduler.catalyst_refresh_completed.connect(self._on_catalyst_refresh_completed)
+        self.paper_scheduler.catalyst_refresh_failed.connect(self._on_catalyst_refresh_failed)
         self.paper_scheduler.start()
 
     def _build_ui(self):
@@ -176,6 +183,7 @@ class MainWindow(QMainWindow):
         self.reports_tab = ReportsTab()
         self.failed_tickers_tab = FailedTickersTab()
         self.settings_tab = SettingsTab()
+        self.news_tab = NewsTab()
 
         self.stack.addWidget(self.home_tab)  # 0
         self.stack.addWidget(self.portfolio_tab)  # 1
@@ -186,6 +194,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.reports_tab)  # 6
         self.stack.addWidget(self.failed_tickers_tab)  # 7
         self.stack.addWidget(self.settings_tab)  # 8
+        self.stack.addWidget(self.news_tab)  # 9
 
         right_layout.addWidget(self.stack, stretch=1)
         root_layout.addWidget(right, stretch=1)
@@ -205,6 +214,7 @@ class MainWindow(QMainWindow):
         "reports": 6,
         "failed": 7,
         "settings": 8,
+        "news": 9,
     }
 
     def _connect_signals(self):
@@ -250,6 +260,12 @@ class MainWindow(QMainWindow):
                 self.failed_tickers_tab.refresh()
             except Exception as e:
                 log.warning("failed-tickers refresh failed: %s", e)
+        elif key == "news":
+            # Carga lazy: refresca solo si nunca cargó o los datos están viejos.
+            try:
+                self.news_tab.maybe_refresh()
+            except Exception as e:
+                log.warning("news refresh failed: %s", e)
 
     def _on_position_selected(self, position):
         self._navigate("analysis")
@@ -317,6 +333,33 @@ class MainWindow(QMainWindow):
             self.paper_scheduler.scan_now(int(account_id))
         except Exception as e:
             self.status_bar.showMessage(f"No se pudo iniciar el escaneo: {e}", 6_000)
+
+    # ── Daily catalyst refresh callbacks ──────────────────────────────────────
+
+    def _on_catalyst_refresh_started(self):
+        self.status_bar.showMessage(
+            "Noticias: actualizando harvest + clasificación del día…", 8_000
+        )
+
+    def _on_catalyst_refresh_completed(self, res):
+        h, c = res.get("harvest_rc"), res.get("classify_rc")
+        ok = (h == 0 and c == 0)
+        msg = "Noticias del día actualizadas." if ok else (
+            f"Noticias: refresh terminó con avisos (harvest={h}, classify={c}) — ver log."
+        )
+        self.status_bar.showMessage(msg, 10_000)
+        # Refrescar la pestaña si está a la vista; si no, invalidar para que
+        # cargue datos frescos la próxima vez que se entre.
+        try:
+            if self.stack.currentWidget() is self.news_tab:
+                self.news_tab.refresh()
+            else:
+                self.news_tab.invalidate()
+        except Exception as e:
+            log.warning("news tab refresh after catalyst refresh failed: %s", e)
+
+    def _on_catalyst_refresh_failed(self, err: str):
+        self.status_bar.showMessage(f"Noticias: refresh del día falló: {err}", 10_000)
 
     # ── Qt lifecycle ──────────────────────────────────────────────────────────
 

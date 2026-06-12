@@ -24,6 +24,16 @@ Three independent triggers, all gated by user settings:
    success so a missed week catches up on the next launch. This is the in-app
    alternative to a Task Scheduler job — see docs/roadmap_v3_2026-06-09.md.
 
+5. **Daily catalyst refresh** (``catalyst_refresh_on_open``, default on) —
+   harvest (T-CAT-1) + classify (T-CAT-2) in-process, primera vez que la app
+   abre en el día. El Task Scheduler nocturno (18:30 ART) sigue existiendo,
+   pero las noticias dan ventaja DURANTE el día: este trigger garantiza datos
+   frescos a la mañana sin depender de aquel. Idempotente (content_hash +
+   UPDATE solo de filas NULL) y gated: corre a lo sumo una vez por día
+   calendario y solo si ``refresh_due`` (sin harvest hoy, o backlog sin
+   clasificar). Emite ``catalyst_refresh_completed`` para que la UI refresque
+   la pestaña Noticias.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -152,6 +162,28 @@ class SurpriseBuildWorker(QThread):
             self.build_failed.emit(f"{type(e).__name__}: {e}")
 
 
+class CatalystRefreshWorker(QThread):
+    """Run the daily news pipeline (harvest + classify) off the UI thread.
+
+    Network + LLM bound (yfinance/EDGAR fetch, luego qwen via Ollama por cada
+    headline nueva), puede tardar varios minutos — por eso QThread. Escrituras
+    DB idempotentes (las mismas de los scripts del .bat nocturno).
+    Emits ``refresh_completed(result_dict)`` or ``refresh_failed(error)``.
+    """
+
+    refresh_completed = pyqtSignal(object)  # {"harvest_rc": int, "classify_rc": int}
+    refresh_failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from analysis.news_digest import run_catalyst_refresh
+
+            res = run_catalyst_refresh()
+            self.refresh_completed.emit(res)
+        except Exception as e:
+            self.refresh_failed.emit(f"{type(e).__name__}: {e}")
+
+
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 
@@ -161,6 +193,11 @@ class PaperScheduler(QObject):
     scan_started = pyqtSignal(int)  # account_id
     scan_completed = pyqtSignal(object)  # ScanResult
     scan_failed = pyqtSignal(int, str)  # account_id, error
+
+    # Daily catalyst refresh (trigger 5)
+    catalyst_refresh_started = pyqtSignal()
+    catalyst_refresh_completed = pyqtSignal(object)  # result dict
+    catalyst_refresh_failed = pyqtSignal(str)
 
     # How often the daily-cron timer ticks to check the wall clock (ms).
     _DAILY_CHECK_MS = 60_000  # every minute
@@ -183,6 +220,10 @@ class PaperScheduler(QObject):
 
         # T-CAT-5a weekly surprise-profile rebuild (in-app, single worker).
         self._surprise_worker: "SurpriseBuildWorker | None" = None
+
+        # Daily catalyst refresh (in-app, single worker, once per calendar day).
+        self._catalyst_worker: "CatalystRefreshWorker | None" = None
+        self._last_catalyst_refresh: date | None = None
 
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
@@ -218,6 +259,10 @@ class PaperScheduler(QObject):
         # UI has painted; the daily tick re-checks once a day thereafter.
         QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_build_surprise)
 
+        # Daily catalyst refresh — primera apertura del día; el tick diario
+        # re-chequea por si la app queda abierta pasada la medianoche.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_refresh_catalysts)
+
     def stop(self) -> None:
         """Stop all timers and wait briefly for any running worker."""
         self._interval_timer.stop()
@@ -228,6 +273,9 @@ class PaperScheduler(QObject):
         if self._surprise_worker is not None:
             self._surprise_worker.wait(2_000)
             self._surprise_worker = None
+        if self._catalyst_worker is not None:
+            self._catalyst_worker.wait(2_000)
+            self._catalyst_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -267,6 +315,10 @@ class PaperScheduler(QObject):
         # Weekly surprise rebuild rides the once-a-minute daily timer; build_due
         # short-circuits cheaply until the interval has elapsed.
         self._maybe_build_surprise()
+
+        # Catalyst refresh: cubre el caso "app abierta pasada la medianoche".
+        # El gate por día calendario hace que esto sea un no-op el resto del día.
+        self._maybe_refresh_catalysts()
 
         if not settings.get("paper_daily_scan_enabled", True):
             return
@@ -393,6 +445,63 @@ class PaperScheduler(QObject):
     def _reap_surprise_worker(self) -> None:
         w = self._surprise_worker
         self._surprise_worker = None
+        if w is not None:
+            w.deleteLater()
+
+    # ── Daily catalyst refresh (trigger 5) ─────────────────────────────────────
+
+    def _maybe_refresh_catalysts(self) -> None:
+        """Launch harvest+classify iff enabled, not yet run today, and due.
+
+        Gates en orden de costo: flag → once-per-day → worker vivo → refresh_due
+        (2 queries chicas e indexadas). Se estampa el día aunque falle, para no
+        loopear contra un backend roto; el próximo arranque de la app reintenta.
+        """
+        if not settings.get("catalyst_refresh_on_open", True):
+            return
+        today = utcnow_naive().date()
+        if self._last_catalyst_refresh == today:
+            return
+        if self._catalyst_worker is not None and self._catalyst_worker.isRunning():
+            return
+        try:
+            from analysis.news_digest import refresh_due
+
+            if not refresh_due():
+                # Nada que hacer (ya cosechado hoy y sin backlog) — estampar
+                # para que el tick por minuto no re-consulte el resto del día.
+                self._last_catalyst_refresh = today
+                return
+        except Exception:
+            log.exception("catalyst refresh_due check failed")
+            return
+        self._last_catalyst_refresh = today
+        self._launch_catalyst_refresh()
+
+    def _launch_catalyst_refresh(self) -> None:
+        worker = CatalystRefreshWorker(parent=self)
+        worker.refresh_completed.connect(self._on_catalyst_completed)
+        worker.refresh_failed.connect(self._on_catalyst_failed)
+        worker.finished.connect(self._reap_catalyst_worker)
+        self._catalyst_worker = worker
+        log.info("daily catalyst refresh starting (harvest + classify)")
+        self.catalyst_refresh_started.emit()
+        worker.start()
+
+    def _on_catalyst_completed(self, res) -> None:
+        log.info(
+            "daily catalyst refresh done: harvest_rc=%s classify_rc=%s",
+            res.get("harvest_rc"), res.get("classify_rc"),
+        )
+        self.catalyst_refresh_completed.emit(res)
+
+    def _on_catalyst_failed(self, err: str) -> None:
+        log.warning("daily catalyst refresh failed (reintenta al próximo arranque): %s", err)
+        self.catalyst_refresh_failed.emit(err)
+
+    def _reap_catalyst_worker(self) -> None:
+        w = self._catalyst_worker
+        self._catalyst_worker = None
         if w is not None:
             w.deleteLater()
 

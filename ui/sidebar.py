@@ -162,6 +162,7 @@ class Sidebar(QFrame):
         ("portfolio", "📊", "Portafolio"),
         ("analysis", "📈", "Análisis"),
         ("leads", "🎯", "Leads"),
+        ("news", "📰", "Noticias"),
         ("alerts", "🔔", "Alertas"),
         ("paper", "🧪", "Paper Trading"),
         ("reports", "📄", "Reportes"),
