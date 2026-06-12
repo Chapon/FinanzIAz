@@ -15,6 +15,15 @@ Three independent triggers, all gated by user settings:
    ~5 min after NYSE close) we run a final scan of the day. Re-armed every
    calendar day.
 
+4. **Weekly surprise rebuild** (``surprise_build_enabled``, default on;
+   ``surprise_build_interval_days``, default 7) — T-CAT-5a. Rides the
+   once-a-minute daily timer (and a one-shot just after launch): when
+   ``build_due`` says the interval has elapsed since ``surprise_last_build``,
+   a background worker regenerates ``data/catalyst/surprise_profiles.json``
+   from yfinance. Only runs while the app is open; the timestamp is stamped on
+   success so a missed week catches up on the next launch. This is the in-app
+   alternative to a Task Scheduler job — see docs/roadmap_v3_2026-06-09.md.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -117,6 +126,32 @@ class PaperScanWorker(QThread):
             self.scan_failed.emit(self.account_id, f"{type(e).__name__}: {e}")
 
 
+class SurpriseBuildWorker(QThread):
+    """Rebuild the T-CAT-5a surprise profiles JSON on a background thread.
+
+    Network-bound (yfinance ``get_earnings_dates`` per ticker), so it runs off
+    the UI thread. Read-only on the DB (only resolves the account universe).
+    Emits ``build_completed(result_dict)`` on success or ``build_failed(error)``.
+    """
+
+    build_completed = pyqtSignal(object)  # result dict from run_build
+    build_failed = pyqtSignal(str)
+
+    def __init__(self, account_id: int, limit: int = 16, parent=None):
+        super().__init__(parent)
+        self.account_id = int(account_id)
+        self.limit = int(limit)
+
+    def run(self):
+        try:
+            from scripts.build_surprise_profiles import run_build
+
+            res = run_build(account_id=self.account_id, limit=self.limit)
+            self.build_completed.emit(res)
+        except Exception as e:
+            self.build_failed.emit(f"{type(e).__name__}: {e}")
+
+
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 
@@ -145,6 +180,9 @@ class PaperScheduler(QObject):
 
         self._last_daily_run: date | None = None
         self._started: bool = False
+
+        # T-CAT-5a weekly surprise-profile rebuild (in-app, single worker).
+        self._surprise_worker: "SurpriseBuildWorker | None" = None
 
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
@@ -176,6 +214,10 @@ class PaperScheduler(QObject):
         if settings.get("paper_daily_scan_enabled", True):
             self._daily_timer.start()
 
+        # T-CAT-5a weekly surprise rebuild — check shortly after launch so the
+        # UI has painted; the daily tick re-checks once a day thereafter.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_build_surprise)
+
     def stop(self) -> None:
         """Stop all timers and wait briefly for any running worker."""
         self._interval_timer.stop()
@@ -183,6 +225,9 @@ class PaperScheduler(QObject):
         for w in list(self._workers.values()):
             w.wait(2_000)  # wait up to 2s per worker
         self._workers.clear()
+        if self._surprise_worker is not None:
+            self._surprise_worker.wait(2_000)
+            self._surprise_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -219,6 +264,10 @@ class PaperScheduler(QObject):
         self._scan_all_active()
 
     def _on_daily_tick(self) -> None:
+        # Weekly surprise rebuild rides the once-a-minute daily timer; build_due
+        # short-circuits cheaply until the interval has elapsed.
+        self._maybe_build_surprise()
+
         if not settings.get("paper_daily_scan_enabled", True):
             return
         now_et = _now_et()
@@ -295,6 +344,55 @@ class PaperScheduler(QObject):
 
     def _reap_worker(self, account_id: int) -> None:
         w = self._workers.pop(account_id, None)
+        if w is not None:
+            w.deleteLater()
+
+    # ── T-CAT-5a weekly surprise rebuild ───────────────────────────────────────
+
+    def _maybe_build_surprise(self) -> None:
+        """Launch a surprise-profile rebuild iff enabled and the weekly interval
+        has elapsed. Cheap and idempotent: ``build_due`` short-circuits until due,
+        and a still-running worker blocks a second launch."""
+        if not settings.get("surprise_build_enabled", True):
+            return
+        if self._surprise_worker is not None and self._surprise_worker.isRunning():
+            return
+        try:
+            from analysis.surprise_score import DEFAULT_BUILD_INTERVAL_DAYS, build_due
+
+            interval = int(settings.get("surprise_build_interval_days", DEFAULT_BUILD_INTERVAL_DAYS))
+            if not build_due(settings.get("surprise_last_build", None), utcnow_naive(), interval):
+                return
+        except Exception:
+            log.exception("surprise build_due check failed")
+            return
+        self._launch_surprise_build()
+
+    def _launch_surprise_build(self) -> None:
+        account_id = int(settings.get("surprise_build_account_id", 1) or 1)
+        worker = SurpriseBuildWorker(account_id, parent=self)
+        worker.build_completed.connect(self._on_surprise_completed)
+        worker.build_failed.connect(self._on_surprise_failed)
+        worker.finished.connect(self._reap_surprise_worker)
+        self._surprise_worker = worker
+        log.info("surprise rebuild starting (account %s)", account_id)
+        worker.start()
+
+    def _on_surprise_completed(self, res) -> None:
+        # Stamp only on success so a failed run retries on the next daily tick.
+        try:
+            settings.set("surprise_last_build", utcnow_naive().isoformat())
+            log.info("surprise rebuild done: %s (%s/%s usable quarters≥min)",
+                     res.get("out"), res.get("n_usable"), res.get("n_tickers"))
+        except Exception:
+            log.exception("stamping surprise_last_build failed")
+
+    def _on_surprise_failed(self, err: str) -> None:
+        log.warning("surprise rebuild failed (will retry next tick): %s", err)
+
+    def _reap_surprise_worker(self) -> None:
+        w = self._surprise_worker
+        self._surprise_worker = None
         if w is not None:
             w.deleteLater()
 

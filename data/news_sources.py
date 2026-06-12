@@ -250,6 +250,58 @@ def collect_yfinance_estimates(ticker: str) -> list[EstimateSnapshot]:
     return out
 
 
+# ── yfinance earnings history (past surprise track record — T-CAT-5a) ─────────
+
+
+def collect_yfinance_earnings_history(ticker: str, limit: int = 16) -> list[tuple]:
+    """
+    Fetch the ticker's *past* EPS surprise history for the v0 surprise score
+    (Sprint 5 · T-CAT-5a). Returns rows ``(period_label, eps_estimate,
+    eps_reported)`` most-recent-first, only quarters that already reported.
+
+    Source = ``yfinance.Ticker.get_earnings_dates(limit=)`` → DataFrame indexed
+    by earnings date with 'EPS Estimate' / 'Reported EPS' columns. Future rows
+    (no Reported EPS) are dropped. Never raises.
+
+    ⚠️  The 'EPS Estimate' here is yfinance's *current* view, not the consensus
+    as of the day before the print — a known revision/look-ahead caveat. This is
+    the v0 free path; T-CAT-5b replaces it with point-in-time snapshots.
+    """
+    out: list[tuple] = []
+    try:
+        from data.yahoo_finance import _ticker
+
+        t = _ticker(ticker)
+        df = None
+        try:
+            df = t.get_earnings_dates(limit=limit)
+        except Exception:
+            df = _getattr(t, "earnings_dates")  # property fallback (older yfinance)
+
+        if df is None or getattr(df, "empty", True):
+            return out
+
+        cols = {str(c).strip().lower(): c for c in df.columns}
+        est_col = cols.get("eps estimate")
+        rep_col = cols.get("reported eps")
+        if est_col is None or rep_col is None:
+            return out
+
+        for idx, row in df.iterrows():
+            est = _safe_float(row.get(est_col) if hasattr(row, "get") else None)
+            rep = _safe_float(row.get(rep_col) if hasattr(row, "get") else None)
+            if rep is None:  # not reported yet → not part of the track record
+                continue
+            try:
+                period_label = idx.strftime("%Y-%m-%d")
+            except Exception:
+                period_label = str(idx)
+            out.append((period_label, est, rep))
+    except Exception:
+        log.exception("yfinance earnings history fetch failed for %s", ticker)
+    return out
+
+
 # ── Per-ticker RSS (Yahoo by default, others via env) ────────────────────────
 
 

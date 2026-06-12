@@ -190,9 +190,14 @@ class CatalystSignal:
     expected_direction: int   # -1 | 0 | +1
     expected_magnitude: float # [0, 1]
     score: float              # direction × magnitude × confidence_weight
+    basis: str = "reaction"   # "reaction" (mean move) | "surprise" (T-CAT-5a track record)
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+# surprise_loader(ticker) -> SurpriseProfile | None  (T-CAT-5a, injected/offline)
+SurpriseLoader = Callable[[str], "object | None"]
 
 
 def _busday_delta(asof: datetime, target: datetime) -> int:
@@ -206,6 +211,7 @@ def imminent_catalyst(
     *,
     reaction_table: dict | None,
     earnings_loader: EarningsLoader,
+    surprise_loader: "SurpriseLoader | None" = None,
     horizon_bdays: int = 3,
     score_horizon: int = DEFAULT_HORIZON,
 ) -> "CatalystSignal | None":
@@ -214,11 +220,18 @@ def imminent_catalyst(
     within ``horizon_bdays`` business days. v1 source = next earnings date (the
     only freely-datable future event; same loader Gate 6 blackout uses).
 
-    Expected direction/magnitude come from the historical reaction to
-    ``earnings_results`` for the ticker (falling back to the global earnings
-    stat). No history → ``expected_direction = 0`` so the caller does NOT veto
-    (no evidence of upside, don't interfere with the exit). Fail-soft: a loader
-    that raises or returns None → ``None``.
+    Direction precedence:
+      1. **Surprise track record (T-CAT-5a)** — if ``surprise_loader`` yields a
+         *usable* :class:`~analysis.surprise_score.SurpriseProfile` (≥ MIN_QUARTERS
+         and a non-zero ``directional_score``), its sign drives the expected
+         direction and its conviction sets the magnitude. This is the directional
+         prior T-CAT-6 lacked: a ticker that consistently beats consensus gets a
+         positive earnings prior instead of the (symmetric, ≈0) reaction mean.
+      2. **Historical reaction mean** — the prior behaviour, used when there's no
+         usable surprise profile.
+
+    No usable signal in either path → ``expected_direction = 0`` so the caller
+    does NOT veto. Fail-soft: a loader that raises or returns None is ignored.
     """
     try:
         edt = earnings_loader(ticker)
@@ -241,13 +254,38 @@ def imminent_catalyst(
         reaction_table=reaction_table,
         horizon=score_horizon,
     )
+
+    # ── direction precedence: surprise track record beats the neutral mean ────
+    profile = None
+    if surprise_loader is not None:
+        try:
+            profile = surprise_loader(ticker)
+        except Exception:
+            log.exception("imminent_catalyst: surprise_loader failed for %s", ticker)
+            profile = None
+
+    if profile is not None and getattr(profile, "is_usable", False) \
+            and getattr(profile, "direction", 0) != 0:
+        direction = int(profile.direction)
+        # conviction from the track record; keep the reaction magnitude as a floor
+        # so a known catalyst still carries weight even with a mild surprise edge.
+        magnitude = max(float(score.magnitude), abs(float(profile.directional_score)))
+        basis = "surprise"
+        sig_score = direction * magnitude * float(score.confidence_weight)
+    else:
+        direction = int(score.direction)
+        magnitude = float(score.magnitude)
+        basis = "reaction"
+        sig_score = direction * magnitude * float(score.confidence_weight)
+
     return CatalystSignal(
         kind="earnings",
         days_until=int(days_until),
-        expected_direction=int(score.direction),
-        expected_magnitude=float(score.magnitude),
+        expected_direction=int(direction),
+        expected_magnitude=float(magnitude),
         # drop relevance_weight here: imminence has no headline dollar figure
-        score=float(score.direction * score.magnitude * score.confidence_weight),
+        score=float(sig_score),
+        basis=basis,
     )
 
 
@@ -302,3 +340,4 @@ def exit_veto_block(
         f"(score {signal.score:.2f} ≥ {veto_min_score:.2f}); score de venta "
         f"{signal_score:.2f} en zona gris [{gray_low:.2f}, {gray_high:.2f}]."
     )
+# T-CAT-5a: surprise track record wired into imminent_catalyst (see surprise_score.py)
