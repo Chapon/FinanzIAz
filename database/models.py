@@ -32,6 +32,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -51,8 +52,31 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db
 ENGINE = create_engine(
     f"sqlite:///{DB_PATH}",
     echo=False,
-    connect_args={"check_same_thread": False},
+    # ``timeout`` (segundos) define cuánto espera una conexión por el lock de
+    # escritura antes de levantar "database is locked". El default de sqlite3
+    # es 5s; lo subimos para tolerar scans/harvests largos concurrentes.
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
+
+
+@event.listens_for(ENGINE, "connect")
+def _set_sqlite_pragma(dbapi_conn, _connection_record):
+    """
+    Configura cada conexión SQLite nueva para minimizar 'database is locked':
+
+    - ``journal_mode=WAL``: permite lectores concurrentes con un escritor
+      activo (el modo ``DELETE`` por defecto bloquea lectura y escritura).
+    - ``busy_timeout``: a nivel SQLite, espera por el lock en vez de fallar
+      de inmediato (refuerza el ``timeout`` de connect_args).
+    - ``synchronous=NORMAL``: seguro bajo WAL y bastante más rápido en escritura.
+    """
+    cursor = dbapi_conn.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")  # milisegundos
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
 
 # Single sessionmaker bound to the engine. Re-using one factory is more
 # efficient than re-building it on every ``get_session()`` call.
