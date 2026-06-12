@@ -170,32 +170,47 @@ def harvest(
         log.info("[dry-run] %s", report.summary())
         return report
 
-    with session_scope() as session:
-        for t in universe:
-            try:
-                res = collector(t, sources)
-            except Exception:
-                log.exception("collect failed for %s", t)
-                report.failed.append(t)
-                continue
-            for item in res.news:
-                try:
+    # Fase 1 — recolectar (RED) FUERA de toda sesión. Tener la conexión tomada
+    # durante los fetch de red (yfinance/SEC/RSS, ~90s para 52 tickers) era un
+    # lock-holder enorme que chocaba con el scan/bulk-fetch paralelo →
+    # "database is locked" + agotamiento del QueuePool. Mismo patrón que
+    # classify_events. Idéntico al camino dry_run, que ya recolecta sin sesión.
+    collected: list[tuple[str, object]] = []
+    for t in universe:
+        try:
+            res = collector(t, sources)
+        except Exception:
+            log.exception("collect failed for %s", t)
+            report.failed.append(t)
+            continue
+        collected.append((t, res))
+
+    # Fase 2 — persistir en transacciones CORTAS, una por ticker. Los contadores
+    # se vuelcan al report SOLO tras commit exitoso (antes un rollback por un
+    # item fallido descartaba en silencio todo lo pendiente del run pero dejaba
+    # los contadores inflados). El dedup in-run (seen_hashes) se mantiene global.
+    for t, res in collected:
+        n_new = n_dup = e_new = e_dup = 0
+        try:
+            with session_scope() as session:
+                for item in res.news:
                     if _insert_news_if_new(session, item, seen_hashes):
-                        report.news_new += 1
+                        n_new += 1
                     else:
-                        report.news_dup += 1
-                except Exception:
-                    session.rollback()
-                    log.exception("news insert failed for %s", t)
-            for snap in res.estimates:
-                try:
+                        n_dup += 1
+                for snap in res.estimates:
                     if _insert_estimate_if_new_today(session, snap, today):
-                        report.est_new += 1
+                        e_new += 1
                     else:
-                        report.est_dup += 1
-                except Exception:
-                    session.rollback()
-                    log.exception("estimate insert failed for %s", t)
+                        e_dup += 1
+        except Exception:
+            log.exception("persist failed for %s", t)
+            report.failed.append(t)
+            continue
+        report.news_new += n_new
+        report.news_dup += n_dup
+        report.est_new += e_new
+        report.est_dup += e_dup
 
     log.info("%s", report.summary())
     return report

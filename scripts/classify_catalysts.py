@@ -106,8 +106,20 @@ def classify_events(
             "classifier_confidence <= %s will be redone (unclassified rows excluded).",
             max_confidence,
         )
+    # Fase 1 — leer las filas candidatas en una transacción CORTA y soltarlas
+    # como tuplas planas. NO mantenemos la sesión abierta durante la
+    # clasificación: el backend LLM (qwen) tarda ~segundos por fila y tener una
+    # conexión tomada ~20s mientras el scan paralelo escribe era lo que
+    # disparaba "database is locked" + agotamiento del QueuePool. Bajo WAL este
+    # SELECT es concurrente y no toma el lock de escritura.
     with session_scope() as session:
-        q = session.query(NewsEvent)
+        q = session.query(
+            NewsEvent.id,
+            NewsEvent.title,
+            NewsEvent.content,
+            NewsEvent.source,
+            NewsEvent.ticker,
+        )
         if max_confidence is not None:
             q = q.filter(NewsEvent.classifier_confidence <= max_confidence)
         elif not reclassify:
@@ -117,29 +129,49 @@ def classify_events(
         q = q.order_by(NewsEvent.id.asc())
         if limit:
             q = q.limit(limit)
-        for ev in q.all():
-            report.scanned += 1
-            try:
-                c = classifier(ev.title, ev.content, ev.source, ev.ticker)
-            except Exception:
-                log.exception("classify failed for news id=%s", ev.id)
-                report.failed += 1
-                continue
-            report.by_event[c.event_type] += 1
-            report.by_sentiment[c.sentiment] += 1
-            report.by_classifier[c.classifier] += 1
-            if llm_tag and c.classifier != llm_tag and ev.source not in llm_exempt_sources:
-                report.llm_fallbacks += 1
-            report.classified += 1
-            if show:
-                print(f"  {ev.ticker:<6} {c.event_type:<20} {c.sentiment:<8} {c.confidence:.2f}  {ev.title[:72]}")
-            if dry_run:
-                continue
-            ev.event_type = c.event_type
-            ev.sentiment = c.sentiment
-            ev.classifier_confidence = c.confidence
-            ev.classified_at = now
-            ev.classified_by = c.classifier  # T7.4: provenance persistida
+        candidates = q.all()  # Row(id, title, content, source, ticker)
+
+    # Fase 2 — clasificar FUERA de toda sesión (acá viven las llamadas al LLM).
+    # Acumulamos los updates a aplicar; los contadores del report se mantienen
+    # idénticos a la versión anterior (se incrementan incluso en dry_run).
+    pending: list[tuple[int, object]] = []
+    for ev_id, title, content, src, ticker in candidates:
+        report.scanned += 1
+        try:
+            c = classifier(title, content, src, ticker)
+        except Exception:
+            log.exception("classify failed for news id=%s", ev_id)
+            report.failed += 1
+            continue
+        report.by_event[c.event_type] += 1
+        report.by_sentiment[c.sentiment] += 1
+        report.by_classifier[c.classifier] += 1
+        if llm_tag and c.classifier != llm_tag and src not in llm_exempt_sources:
+            report.llm_fallbacks += 1
+        report.classified += 1
+        if show:
+            print(f"  {ticker:<6} {c.event_type:<20} {c.sentiment:<8} {c.confidence:.2f}  {title[:72]}")
+        if dry_run:
+            continue
+        pending.append((ev_id, c))
+
+    # Fase 3 — persistir en lotes CORTOS. Cada lote es su propia transacción, así
+    # ninguna escritura retiene el lock más que un puñado de UPDATEs. Idempotente:
+    # re-correr no cambia nada (mismo (event_type, sentiment, ...)).
+    if pending:
+        write_chunk = 100
+        for i in range(0, len(pending), write_chunk):
+            with session_scope() as session:
+                for ev_id, c in pending[i : i + write_chunk]:
+                    ev = session.get(NewsEvent, ev_id)
+                    if ev is None:
+                        continue
+                    ev.event_type = c.event_type
+                    ev.sentiment = c.sentiment
+                    ev.classifier_confidence = c.confidence
+                    ev.classified_at = now
+                    ev.classified_by = c.classifier  # T7.4: provenance persistida
+
     log.info("%s%s", "[dry-run] " if dry_run else "", report.summary())
     return report
 

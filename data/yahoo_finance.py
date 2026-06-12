@@ -13,6 +13,7 @@ guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
 the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -130,29 +131,83 @@ def _acquire_rate_token(n: int = 1) -> None:
         pass
 
 
+# Firmas de errores transitorios de Yahoo que vale la pena reintentar y que NO
+# merecen un traceback completo en el log. El caso típico: Yahoo invalida el
+# "crumb" anti-bot (HTTP 401 "Invalid Crumb"/"Unauthorized") o nos throttlea
+# (429). yfinance 1.x ya no usa nuestra requests.Session con retry adapter
+# (maneja su propio curl_cffi), así que el reintento tiene que vivir acá.
+_TRANSIENT_HINTS = (
+    "401",
+    "invalid crumb",
+    "unauthorized",
+    "429",
+    "too many requests",
+    "rate limit",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True si ``exc`` parece un fallo transitorio de auth/throttle de Yahoo.
+
+    Incluye el ``TypeError: argument of type 'NoneType' is not iterable`` que
+    yfinance tira desde su scraper de crumb cuando Yahoo devuelve ``result:
+    null`` — es síntoma de un 401, no un bug de datos.
+    """
+    if isinstance(exc, TypeError) and "nonetype" in str(exc).lower():
+        return True
+    msg = f"{type(exc).__name__}: {exc}".lower()
+    return any(hint in msg for hint in _TRANSIENT_HINTS)
+
+
 def _run_with_timeout(
     fn: Callable[..., T],
     *args,
     timeout: float = HARD_TIMEOUT_SECONDS,
     default: T | None = None,
+    retries: int = RETRY_TOTAL,
+    retry_backoff: float = RETRY_BACKOFF,
     **kwargs,
 ) -> T | None:
     """
     Run ``fn(*args, **kwargs)`` and abort if it takes longer than ``timeout``.
     On timeout / exception returns ``default`` (None by default).
-    Acquires one global rate-limiter token before submitting.
+    Acquires one global rate-limiter token before each submit.
+
+    Errores transitorios de Yahoo (401/crumb/429) se reintentan hasta
+    ``retries`` veces con backoff exponencial y se loguean en una línea
+    (sin traceback). Cualquier otro error se loguea con traceback una sola vez.
     """
-    _acquire_rate_token()
-    future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
-    try:
-        return future.result(timeout=timeout)
-    except FuturesTimeoutError:
-        future.cancel()
-        log.warning("Hard timeout (%ss) running %s", timeout, getattr(fn, "__name__", fn))
-        return default
-    except Exception:
-        log.exception("yfinance call %s raised", getattr(fn, "__name__", fn))
-        return default
+    attempt = 0
+    fn_name = getattr(fn, "__name__", fn)
+    while True:
+        _acquire_rate_token()
+        future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            future.cancel()
+            log.warning("Hard timeout (%ss) running %s", timeout, fn_name)
+            return default
+        except Exception as exc:
+            transient = _is_transient(exc)
+            if transient and attempt < retries:
+                attempt += 1
+                sleep_s = retry_backoff * (2 ** (attempt - 1))
+                log.warning(
+                    "Transient yfinance error on %s (attempt %d/%d): %s — retry in %.1fs",
+                    fn_name,
+                    attempt,
+                    retries,
+                    exc,
+                    sleep_s,
+                )
+                time.sleep(sleep_s)
+                continue
+            if transient:
+                log.warning("yfinance call %s failed (transient, gave up): %s", fn_name, exc)
+            else:
+                log.exception("yfinance call %s raised", fn_name)
+            return default
 
 
 def _cache_enabled() -> bool:

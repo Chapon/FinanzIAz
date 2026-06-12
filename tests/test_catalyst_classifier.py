@@ -366,6 +366,39 @@ def test_runner_no_fallback_tracking_without_llm_tag(test_db):
     assert rep.llm_fallbacks == 0
 
 
+# ── regresión: la clasificación corre FUERA de la sesión del runner ──────────
+
+
+def test_runner_does_not_hold_session_during_classify(test_db):
+    """El runner NO mantiene una session_scope abierta durante la clasificación.
+
+    Bajo el diseño viejo, ``classify_events`` tenía una sola ``session_scope``
+    abierta durante todo el loop que llama al LLM (~20s con la conexión tomada),
+    lo que disparaba "database is locked" + agotamiento del QueuePool cuando el
+    scan paralelo escribía al mismo tiempo. Acá inyectamos un classifier que
+    abre SU PROPIA sesión en cada llamada: si el runner estuviera reteniendo la
+    suya, esto sería frágil. Además verifica que las labels se persisten igual.
+    """
+    _seed_unclassified()
+    counts_seen: list[int] = []
+
+    def classifier_that_touches_db(title, content, source, ticker=None):
+        # abre una sesión propia "mientras clasifica" — prueba que el runner no
+        # tiene una transacción abierta reteniendo el lock en este punto
+        with session_scope() as s:
+            counts_seen.append(s.query(NewsEvent).count())
+        return classify(title, content, source, ticker)
+
+    rep = classify_events(
+        classifier=classifier_that_touches_db,
+        now=datetime(2026, 6, 8, 12, 0),
+    )
+    assert rep.classified == 3
+    assert len(counts_seen) == 3  # el classifier corrió 3 veces, cada una con su sesión
+    with session_scope() as s:
+        assert s.query(NewsEvent).filter(NewsEvent.event_type.isnot(None)).count() == 3
+
+
 if __name__ == "__main__":
     import pytest
 

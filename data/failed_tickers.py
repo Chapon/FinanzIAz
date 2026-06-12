@@ -109,6 +109,19 @@ def record_success(ticker: str) -> None:
     try:
         symbol = ticker.upper().strip()
         with session_scope() as session:
+            # Read-before-write: el caso normal (ticker nunca falló) no tiene
+            # fila que borrar. Saltarse el DELETE evita abrir una transacción de
+            # ESCRITURA por cada ticker exitoso — durante un scan sano de ~52
+            # tickers en paralelo eso eran ~52 write-locks innecesarios que
+            # alimentaban "database is locked" + agotamiento del pool. El SELECT
+            # es concurrente bajo WAL y no toma el lock de escritura.
+            exists = (
+                session.query(FailedTicker.id)
+                .filter(FailedTicker.ticker == symbol)
+                .first()
+            )
+            if exists is None:
+                return
             session.query(FailedTicker).filter(FailedTicker.ticker == symbol).delete()
     except Exception:
         log.exception("No se pudo limpiar registro de éxito para %s", ticker)
