@@ -134,8 +134,9 @@ def test_multiindex_split_per_ticker(monkeypatch):
 def test_partial_failure_isolated(monkeypatch, _isolate):
     monkeypatch.setattr(yf_mod, "_read_historical_cache", lambda *a: None)
     good = _ohlcv()
-    nan_frame = _ohlcv()
-    nan_frame[:] = float("nan")  # símbolo deslistado → Yahoo rellena con NaN
+    # símbolo deslistado → Yahoo rellena con NaN (float para evitar el cast int64)
+    nan_frame = _ohlcv().astype("float64")
+    nan_frame[:] = float("nan")
     monkeypatch.setattr(
         yf_mod, "_download_batch",
         lambda chunk, p, i: _multiindex_batch({"AAPL": good, "ZZZZ": nan_frame}),

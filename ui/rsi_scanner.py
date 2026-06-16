@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 
 from alerts.alert_manager import AlertManager
 from analysis.technical import compute_rsi
-from data.yahoo_finance import get_historical_data
+from data.yahoo_finance import get_historical_data_batch
 from database.models import Position, session_scope
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.workers import BaseWorker
@@ -45,11 +45,13 @@ class RsiScanWorker(BaseWorker):
         self.tickers = tickers
 
     def do_work(self) -> None:
+        # Prefetch en lote: un crumb compartido por chunk reduce los 401.
+        fetched = get_historical_data_batch(self.tickers, period="3mo")
         for ticker in self.tickers:
             if self.is_cancelled():
                 return
             try:
-                df = get_historical_data(ticker, period="3mo")
+                df = fetched.get(ticker.upper())
                 if df is None or len(df) < 15:
                     self.error_row.emit(ticker, "Datos insuficientes")
                     continue

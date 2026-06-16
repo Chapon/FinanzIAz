@@ -197,11 +197,13 @@ def _load_prices(
     frames: dict[str, pd.DataFrame] = {}
 
     if data is None:
-        # Auto-fetch via yfinance
-        from data.yahoo_finance import get_historical_data
+        # Auto-fetch via yfinance — en lote: un crumb compartido por chunk
+        # reduce los 401 "Invalid Crumb" vs. pedir ticker por ticker.
+        from data.yahoo_finance import get_historical_data_batch
 
+        fetched = get_historical_data_batch(tickers, period=period)
         for t in tickers:
-            df = get_historical_data(t, period=period)
+            df = fetched.get(t.upper())
             if df is None or df.empty or "Close" not in df.columns:
                 warnings.append(f"{t}: no data, skipped.")
                 continue

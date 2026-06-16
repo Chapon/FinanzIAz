@@ -84,7 +84,7 @@ def main():
     args = parser.parse_args()
 
     # Imports here so --help works without yfinance available
-    from data.yahoo_finance import get_historical_data
+    from data.yahoo_finance import get_historical_data_batch
     from analysis.harness import ExperimentConfig, HarnessRunner
     from analysis.backtest import signal_from_analyze_stacked
 
@@ -92,8 +92,10 @@ def main():
     print(f"Loading {args.period} of OHLCV for {len(tickers)} tickers from cache...")
     full_data: dict = {}
     failed: list[str] = []
+    # Descarga en lote: los cache-misses comparten un crumb por chunk (menos 401).
+    fetched = get_historical_data_batch(tickers, period=args.period)
     for t in tickers:
-        df = get_historical_data(t, period=args.period)
+        df = fetched.get(t.upper())
         if df is None or df.empty or "Close" not in df.columns:
             failed.append(t)
         else:

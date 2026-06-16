@@ -98,13 +98,17 @@ class SignalWorker(BaseWorker):
 
         from analysis.technical import analyze
         from config.settings_manager import settings as _settings
-        from data.yahoo_finance import get_historical_data
+        from data.yahoo_finance import get_historical_data_batch
 
         sma_cross = _settings.get("sma_cross")
 
+        # Prefetch OHLCV en un lote (un crumb compartido por chunk → menos 401);
+        # el análisis sigue paralelizado, solo la descarga se agrupa.
+        prefetched = get_historical_data_batch(self.tickers, period="1y")
+
         def _analyze_one(ticker: str) -> tuple[str, str]:
             try:
-                df = get_historical_data(ticker, period="1y")
+                df = prefetched.get(ticker.upper())
                 if df is None or len(df) < 50:
                     log.debug("%s: insufficient data (%s rows)", ticker, len(df) if df is not None else 0)
                     return ticker, "Hold"
