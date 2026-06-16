@@ -82,14 +82,20 @@ def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
 _VALID_YF_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
 
 
+def _resolve_history_period() -> str:
+    """Período OHLCV configurable vía ``paper_history_period`` (default ``"2y"``),
+    validado contra ``_VALID_YF_PERIODS``. Compartido por el provider per-ticker
+    y el warm-up batch del scan para que no se desincronicen."""
+    raw = settings.get("paper_history_period", "2y")
+    return str(raw) if str(raw) in _VALID_YF_PERIODS else "2y"
+
+
 def _default_history_provider(ticker: str) -> pd.DataFrame | None:
     """Fetch OHLCV history. Period is configurable via ``paper_history_period``
     (default ``"2y"``) — see ``config/settings_manager.py``."""
     from data.yahoo_finance import get_historical_data
 
-    raw = settings.get("paper_history_period", "2y")
-    period = str(raw) if str(raw) in _VALID_YF_PERIODS else "2y"
-    return get_historical_data(ticker, period=period)
+    return get_historical_data(ticker, period=_resolve_history_period())
 
 
 def _is_market_open_safe() -> bool:
@@ -436,6 +442,9 @@ def run_scan(
 ) -> ScanResult | None:
     """Scan the market once, execute trades (or queue them), snapshot equity."""
     prices_provider = prices_provider or _default_prices_provider
+    # Recordar si el history_provider fue inyectado (tests): en ese caso el
+    # warm-up batch de abajo NO debe tocar la red.
+    history_was_injected = history_provider is not None
     history_provider = history_provider or _default_history_provider
     earnings_provider = earnings_provider or _default_earnings_provider
 
@@ -461,6 +470,26 @@ def run_scan(
         )
 
         tickers = sorted(set(watchlist) | {p.ticker for p in positions})
+
+        # Warm-up de la cache OHLCV en UNA descarga por lotes antes de que las
+        # llamadas per-ticker de history_provider corran (estrategia, ATR exits,
+        # sigma). get_historical_data_batch escribe cada ticker a la cache SQLite,
+        # así que esos history_provider(ticker) pegan a cache fresca y no emiten
+        # un request (ni un handshake de crumb) por ticker → muchos menos 401.
+        # Best-effort: si falla, el provider per-ticker sigue andando. Solo con el
+        # provider por defecto — si se inyectó uno (tests), no tocar la red.
+        if tickers and not history_was_injected:
+            try:
+                from data.yahoo_finance import get_historical_data_batch
+
+                get_historical_data_batch(tickers, period=_resolve_history_period())
+            except Exception:
+                from config.logging_config import get_logger
+
+                get_logger(__name__).exception(
+                    "Batch history warm-up failed; falling back to per-ticker fetch"
+                )
+
         prices = prices_provider(tickers) if tickers else {}
 
         # Equity before any trades
