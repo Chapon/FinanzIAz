@@ -19,7 +19,13 @@ Usage
     python scripts/harvest_catalysts.py --account-id 1
     python scripts/harvest_catalysts.py --universe sp500
     python scripts/harvest_catalysts.py --tickers NVDA,PLTR,RKLB
+    python scripts/harvest_catalysts.py --sources yfinance,sec,finnhub
     python scripts/harvest_catalysts.py --dry-run       # collect + report, no writes
+
+Finnhub: set a free key once (Windows: ``setx FINNHUB_API_KEY "your-key"``) so
+the scheduled harvest sees it. Without the key the finnhub source is skipped.
+News rows are deduped both by content_hash and by canonical URL, so enabling
+overlapping sources (e.g. finnhub + yfinance) won't double-count a shared story.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Allow ``python scripts/harvest_catalysts.py`` from the repo root.
 ROOT = Path(__file__).resolve().parent.parent
@@ -70,6 +77,43 @@ def _midnight(dt: datetime) -> datetime:
     return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+# Tracking query params that don't identify the article — dropped so the same
+# story arriving via two sources/feeds with different campaign tags collapses.
+_TRACKING_PREFIXES = ("utm_",)
+_TRACKING_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ncid", "cmp", "_ga", "guccounter"}
+
+
+def canonical_url(url: str | None) -> str | None:
+    """
+    Normalize a URL into a stable dedup key.
+
+    Forces https, lowercases + de-``www``s the host, strips tracking query
+    params, drops the fragment and any trailing slash. Returns None for a falsy
+    or scheme-less/host-less string. Best-effort: on any parse error it falls
+    back to the lowercased raw string so a weird URL still dedups against itself.
+    """
+    if not url or not str(url).strip():
+        return None
+    raw = str(url).strip()
+    try:
+        s = urlsplit(raw)
+        if not s.netloc:
+            return None
+        host = s.netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        q = [
+            (k, v)
+            for k, v in parse_qsl(s.query, keep_blank_values=False)
+            if not k.lower().startswith(_TRACKING_PREFIXES) and k.lower() not in _TRACKING_KEYS
+        ]
+        q.sort()
+        path = s.path.rstrip("/")
+        return urlunsplit(("https", host, path, urlencode(q), ""))
+    except Exception:
+        return raw.lower()
+
+
 def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
     """Watchlist ∪ open positions for the account (mirrors engine.py)."""
     from paper_trading.models import PaperPosition, PaperWatchlistItem
@@ -86,15 +130,34 @@ def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
     return sorted(watch | pos)
 
 
-def _insert_news_if_new(session, item, seen: set[str]) -> bool:
-    """Insert a NewsItem unless its content_hash already exists. Returns True if new."""
+def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> bool:
+    """
+    Insert a NewsItem unless it's a duplicate. Returns True if new.
+
+    Two dedup layers:
+      1. URL: the same article URL (canonicalized) from any source collapses —
+         catches a story carried by both Finnhub and Yahoo/RSS in the same run,
+         where the titles differ so ``content_hash`` would not catch it.
+      2. content_hash: (ticker, normalized title, hour) — the original guard for
+         items without a URL or with differing URLs but the same headline.
+    Both are checked in-run (the sets) and against already-stored rows.
+    """
+    cu = canonical_url(item.url)
+    if cu is not None and cu in seen_urls:
+        return False
     h = item.content_hash()
     if h in seen:
         return False
     seen.add(h)
+    if cu is not None:
+        seen_urls.add(cu)
     exists = session.query(NewsEvent.id).filter(NewsEvent.content_hash == h).first()
     if exists is not None:
         return False
+    if item.url is not None:
+        url_dup = session.query(NewsEvent.id).filter(NewsEvent.url == item.url).first()
+        if url_dup is not None:
+            return False
     session.add(
         NewsEvent(
             ticker=item.ticker,
@@ -157,6 +220,7 @@ def harvest(
     today = _midnight(now)
     report = HarvestReport(tickers=len(universe))
     seen_hashes: set[str] = set()
+    seen_urls: set[str] = set()
 
     if dry_run:
         for t in universe:
@@ -194,7 +258,7 @@ def harvest(
         try:
             with session_scope() as session:
                 for item in res.news:
-                    if _insert_news_if_new(session, item, seen_hashes):
+                    if _insert_news_if_new(session, item, seen_hashes, seen_urls):
                         n_new += 1
                     else:
                         n_dup += 1
@@ -221,7 +285,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--account-id", type=int, default=DEFAULT_ACCOUNT_ID, help="Paper account whose watchlist to harvest.")
     p.add_argument("--universe", choices=["sim", "sp500"], default="sim", help="sim = account watchlist; sp500 = full index.")
     p.add_argument("--tickers", type=str, default=None, help="Comma-separated override, e.g. NVDA,PLTR,RKLB.")
-    p.add_argument("--sources", type=str, default="yfinance", help="Comma-separated: yfinance,sec,rss.")
+    p.add_argument(
+        "--sources",
+        type=str,
+        default="yfinance",
+        help="Comma-separated: yfinance,sec,rss,finnhub (finnhub needs FINNHUB_API_KEY).",
+    )
     p.add_argument("--dry-run", action="store_true", help="Collect and report without writing to the DB.")
     return p.parse_args(argv)
 

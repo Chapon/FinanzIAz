@@ -19,9 +19,13 @@ Sources wired today (T-CAT-1: full MVP)
 - generic RSS (Yahoo per-ticker headline feed by default; PR Newswire /
   Business Wire / GlobeNewswire via ``CATALYST_EXTRA_FEEDS``) → NewsItem,
   parsed with ``feedparser`` if installed; silently skipped if not.
+- Finnhub ``company-news`` → NewsItem. A free aggregator over dozens of outlets
+  (Reuters / CNBC / Bloomberg / …); we keep the originating outlet in the source
+  tag as ``finnhub:<Outlet>``. Needs ``FINNHUB_API_KEY``; skipped if unset.
 
-Source selection is by token set: ``{"yfinance"}`` (default), plus ``"sec"``
-and/or ``"rss"``. The harvester CLI maps ``--sources yfinance,sec,rss`` here.
+Source selection is by token set: ``{"yfinance"}`` (default), plus ``"sec"``,
+``"rss"`` and/or ``"finnhub"``. The harvester CLI maps
+``--sources yfinance,sec,rss,finnhub`` here.
 
 SEC etiquette: EDGAR requires a descriptive ``User-Agent`` with a contact
 address. Set ``SEC_EDGAR_USER_AGENT`` (e.g. "FinanzIAs you@example.com") or the
@@ -38,7 +42,7 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from config.logging_config import get_logger
 
@@ -389,6 +393,124 @@ def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) ->
     return out
 
 
+# ── Finnhub company-news (aggregates Reuters / CNBC / Bloomberg / …) ─────────
+#
+# Finnhub's free tier exposes a per-symbol news endpoint that aggregates dozens
+# of outlets and, crucially, names the originating outlet in each item's
+# ``source`` field. We preserve that as ``finnhub:<Outlet>`` so downstream code
+# can later weight by publisher credibility without a schema change. Requires a
+# free API key in ``FINNHUB_API_KEY`` (or ``FINNHUB_TOKEN``); if it's missing
+# the source logs once and returns [] so the MVP keeps running on the free
+# sources alone — same contract as the SEC/RSS collectors.
+#
+# Endpoint: GET /company-news?symbol=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD&token=…
+# Item shape: {datetime: epoch-s, headline, summary, url, source: "<Outlet>",
+#              related, id, category, image}.
+
+FINNHUB_BASE = "https://finnhub.io/api/v1"
+
+
+def _finnhub_api_key(api_key: str | None = None) -> str | None:
+    return api_key or os.environ.get("FINNHUB_API_KEY") or os.environ.get("FINNHUB_TOKEN")
+
+
+def _finnhub_source_label(outlet) -> str:
+    """
+    Map Finnhub's per-item outlet to a ``news_events.source`` tag.
+
+    ``"finnhub:<Outlet>"`` keeps provenance (Reuters/CNBC/…) while staying within
+    the column's 50-char limit; falls back to plain ``"finnhub"`` when the outlet
+    is missing. The ``finnhub:`` prefix means the classifier (which only special-
+    cases ``"sec_8k"``) routes these through its keyword path, as intended.
+    """
+    o = str(outlet or "").strip()
+    if not o:
+        return "finnhub"
+    return f"finnhub:{o}"[:50]
+
+
+def parse_finnhub_news(ticker: str, payload) -> list[NewsItem]:
+    """
+    Map a Finnhub ``company-news`` JSON array to NewsItems. Pure / no network.
+
+    ``payload`` is a list of dicts; anything else (None, error dict) yields [].
+    Items without a usable ``headline`` are skipped. ``published_at`` comes from
+    the ``datetime`` epoch field (seconds, UTC → naive like every other source).
+    """
+    out: list[NewsItem] = []
+    try:
+        if not isinstance(payload, list):
+            return out
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            title = raw.get("headline")
+            if not title:
+                continue
+            out.append(
+                NewsItem(
+                    ticker=ticker.upper(),
+                    title=title,
+                    source=_finnhub_source_label(raw.get("source")),
+                    content=raw.get("summary") or None,
+                    url=raw.get("url") or None,
+                    published_at=_epoch_to_dt(raw.get("datetime")),
+                )
+            )
+    except Exception:
+        log.exception("parse_finnhub_news failed for %s", ticker)
+    return out
+
+
+_warned_no_finnhub_key = False
+
+
+def collect_finnhub_news(
+    ticker: str,
+    *,
+    session=None,
+    api_key: str | None = None,
+    days_back: int = 7,
+    now: datetime | None = None,
+) -> list[NewsItem]:
+    """
+    Fetch recent company news for ``ticker`` from Finnhub and map to NewsItems.
+
+    Queries the last ``days_back`` days (matches the daily harvest cadence).
+    Needs ``FINNHUB_API_KEY`` (or ``FINNHUB_TOKEN``); without it logs once and
+    returns []. Never raises — a failed request returns []. ``session`` (any
+    object with a ``.get`` like ``requests`` or a ``Session``) is injectable for
+    offline tests.
+    """
+    global _warned_no_finnhub_key
+    key = _finnhub_api_key(api_key)
+    if not key:
+        if not _warned_no_finnhub_key:
+            log.info(
+                "FINNHUB_API_KEY not set — Finnhub source skipped. Get a free key "
+                "at finnhub.io and set it (setx FINNHUB_API_KEY \"…\" on Windows)."
+            )
+            _warned_no_finnhub_key = True
+        return []
+    try:
+        import requests
+
+        sess = session or requests
+        now = now or datetime.now(timezone.utc)
+        frm = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        to = now.strftime("%Y-%m-%d")
+        r = sess.get(
+            f"{FINNHUB_BASE}/company-news",
+            params={"symbol": ticker.upper(), "from": frm, "to": to, "token": key},
+            timeout=20,
+        )
+        r.raise_for_status()
+        return parse_finnhub_news(ticker, r.json())
+    except Exception:
+        log.exception("collect_finnhub_news failed for %s", ticker)
+        return []
+
+
 # ── SEC 8-K via EDGAR (point-in-time, the most reliable source) ──────────────
 
 SEC_DATA_BASE = "https://data.sec.gov"
@@ -620,8 +742,8 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
     """
     Run the enabled sources for one ticker and return combined news + estimates.
     Default sources = {"yfinance"} (news + estimates). Pass e.g.
-    {"yfinance", "sec", "rss"} to enable more. Each source is independently
-    guarded — one failing source never sinks the others.
+    {"yfinance", "sec", "rss", "finnhub"} to enable more. Each source is
+    independently guarded — one failing source never sinks the others.
     """
     sources = sources or {"yfinance"}
     res = _CollectResult()
@@ -632,6 +754,8 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
         res.news.extend(collect_sec_8k(ticker))
     if "rss" in sources:
         res.news.extend(collect_rss(ticker, default_feed_urls(ticker)))
+    if "finnhub" in sources:
+        res.news.extend(collect_finnhub_news(ticker))
     return res
 
 

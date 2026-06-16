@@ -22,7 +22,7 @@ from data.news_sources import (
     parse_yf_news_item,
 )
 from database.models import AnalystEstimateSnapshot, NewsEvent, session_scope
-from scripts.harvest_catalysts import harvest, resolve_universe
+from scripts.harvest_catalysts import canonical_url, harvest, resolve_universe
 
 
 # ── fake collectors ──────────────────────────────────────────────────────────
@@ -40,8 +40,8 @@ def _fixed_collector(news_by_ticker, est_by_ticker=None):
     return _collect
 
 
-def _news(ticker, title, when=None):
-    return NewsItem(ticker=ticker, title=title, source="yfinance", published_at=when)
+def _news(ticker, title, when=None, url=None, source="yfinance"):
+    return NewsItem(ticker=ticker, title=title, source=source, published_at=when, url=url)
 
 
 # ── content_hash ─────────────────────────────────────────────────────────────
@@ -144,6 +144,66 @@ def test_news_dedup_within_same_batch(test_db):
     assert rep.news_dup == 1
     with session_scope() as s:
         assert s.query(NewsEvent).count() == 1
+
+
+# ── canonical_url ────────────────────────────────────────────────────────────
+
+
+def test_canonical_url_none_and_empty():
+    assert canonical_url(None) is None
+    assert canonical_url("") is None
+    assert canonical_url("   ") is None
+    assert canonical_url("not-a-url") is None  # no host
+
+
+def test_canonical_url_strips_tracking_www_slash_scheme():
+    a = canonical_url("http://www.Reuters.com/tech/nvda-deal/?utm_source=x&fbclid=y")
+    b = canonical_url("https://reuters.com/tech/nvda-deal")
+    assert a == b == "https://reuters.com/tech/nvda-deal"
+
+
+def test_canonical_url_keeps_meaningful_query_sorted():
+    assert canonical_url("https://x.com/a?b=2&a=1#frag") == "https://x.com/a?a=1&b=2"
+
+
+# ── harvest: URL dedup across sources ────────────────────────────────────────
+
+
+def test_url_dedup_within_batch_across_sources(test_db):
+    when = datetime(2026, 6, 5, 14, 0)
+    # Same article, two outlets, DIFFERENT titles → content_hash differs, but the
+    # canonical URL is identical (one has tracking params) → must collapse to 1.
+    a = _news("NVDA", "NVDA lands deal", when, url="https://www.reuters.com/nvda?utm_source=z", source="finnhub:Reuters")
+    b = _news("NVDA", "Nvidia signs supply pact", when, url="https://reuters.com/nvda", source="yfinance")
+    collector = _fixed_collector({"NVDA": [a, b]})
+    rep = harvest(["NVDA"], collector=collector, now=when)
+    assert rep.news_new == 1
+    assert rep.news_dup == 1
+    with session_scope() as s:
+        assert s.query(NewsEvent).count() == 1
+
+
+def test_url_dedup_against_already_stored_row(test_db):
+    when = datetime(2026, 6, 5, 14, 0)
+    first = _news("NVDA", "NVDA lands deal", when, url="https://reuters.com/nvda")
+    harvest(["NVDA"], collector=_fixed_collector({"NVDA": [first]}), now=when)
+    # A later run sees the same URL with a different headline → still a dup.
+    again = _news("NVDA", "Totally different headline", when, url="https://reuters.com/nvda")
+    rep = harvest(["NVDA"], collector=_fixed_collector({"NVDA": [again]}), now=when)
+    assert rep.news_new == 0
+    assert rep.news_dup == 1
+    with session_scope() as s:
+        assert s.query(NewsEvent).count() == 1
+
+
+def test_distinct_urls_are_not_deduped(test_db):
+    when = datetime(2026, 6, 5, 14, 0)
+    a = _news("NVDA", "story one", when, url="https://reuters.com/one")
+    b = _news("NVDA", "story two", when, url="https://reuters.com/two")
+    rep = harvest(["NVDA"], collector=_fixed_collector({"NVDA": [a, b]}), now=when)
+    assert rep.news_new == 2
+    with session_scope() as s:
+        assert s.query(NewsEvent).count() == 2
 
 
 # ── harvest: estimate append-only across days ────────────────────────────────

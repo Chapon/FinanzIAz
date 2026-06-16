@@ -16,12 +16,15 @@ import data.news_sources as ns
 from data.news_sources import (
     NewsItem,
     _CollectResult,
+    _finnhub_source_label,
     _rss_source_label,
     collect_all,
+    collect_finnhub_news,
     cik_for_ticker,
     default_feed_urls,
     parse_company_tickers,
     parse_edgar_submissions,
+    parse_finnhub_news,
     yahoo_rss_url,
 )
 
@@ -177,6 +180,89 @@ def test_rss_source_label():
     assert _rss_source_label("https://example.com/feed") == "rss"
 
 
+# ── Finnhub company-news ─────────────────────────────────────────────────────
+
+FINNHUB_PAYLOAD = [
+    {
+        "datetime": 1_700_000_000,
+        "headline": "NVDA lands hyperscaler deal",
+        "summary": "Multi-year GPU supply agreement.",
+        "url": "https://www.reuters.com/tech/nvda-deal",
+        "source": "Reuters",
+        "related": "NVDA",
+        "id": 1,
+    },
+    {
+        "datetime": 1_700_003_600,
+        "headline": "Analysts react to NVDA guidance",
+        "summary": "",
+        "url": "https://www.cnbc.com/nvda-guidance",
+        "source": "CNBC",
+        "id": 2,
+    },
+    {"summary": "no headline here", "url": "https://x.com/none", "source": "Foo"},  # skipped
+]
+
+
+def test_parse_finnhub_maps_fields_and_outlet():
+    items = parse_finnhub_news("nvda", FINNHUB_PAYLOAD)
+    assert len(items) == 2  # the headline-less item is dropped
+    first = items[0]
+    assert first.ticker == "NVDA"
+    assert first.title == "NVDA lands hyperscaler deal"
+    assert first.source == "finnhub:Reuters"  # outlet preserved
+    assert first.content == "Multi-year GPU supply agreement."
+    assert first.url == "https://www.reuters.com/tech/nvda-deal"
+    assert first.published_at is not None
+    assert items[1].source == "finnhub:CNBC"
+    assert items[1].content is None  # empty summary normalized to None
+
+
+def test_parse_finnhub_defensive_on_junk():
+    assert parse_finnhub_news("X", None) == []
+    assert parse_finnhub_news("X", {"error": "bad symbol"}) == []
+    assert parse_finnhub_news("X", ["not a dict", 42]) == []
+
+
+def test_finnhub_source_label_falls_back_and_caps():
+    assert _finnhub_source_label(None) == "finnhub"
+    assert _finnhub_source_label("  ") == "finnhub"
+    assert _finnhub_source_label("Bloomberg") == "finnhub:Bloomberg"
+    long = _finnhub_source_label("X" * 80)
+    assert len(long) <= 50 and long.startswith("finnhub:")
+
+
+def test_collect_finnhub_skips_without_key(monkeypatch):
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+    monkeypatch.delenv("FINNHUB_TOKEN", raising=False)
+    # no network attempted, returns [] cleanly
+    assert collect_finnhub_news("NVDA") == []
+
+
+def test_collect_finnhub_uses_injected_session():
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return FINNHUB_PAYLOAD
+
+    captured = {}
+
+    class _Sess:
+        def get(self, url, params=None, timeout=None):
+            captured["url"] = url
+            captured["params"] = params
+            return _Resp()
+
+    items = collect_finnhub_news("nvda", session=_Sess(), api_key="testkey", days_back=7)
+    assert len(items) == 2
+    assert captured["url"].endswith("/company-news")
+    assert captured["params"]["symbol"] == "NVDA"
+    assert captured["params"]["token"] == "testkey"
+    assert "from" in captured["params"] and "to" in captured["params"]
+
+
 # ── collect_all wiring across sources ────────────────────────────────────────
 
 
@@ -201,6 +287,26 @@ def test_collect_all_includes_sec_and_rss_when_selected(monkeypatch):
     res = collect_all("NVDA", {"yfinance", "sec", "rss"})
     got = sorted(i.source for i in res.news)
     assert got == ["sec_8k", "yahoo_rss", "yfinance-fake"]
+
+
+def test_collect_all_includes_finnhub_when_selected(monkeypatch):
+    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [_n(t, "yf")])
+    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
+    monkeypatch.setattr(ns, "collect_finnhub_news", lambda t: [_n(t, "finnhub:Reuters")])
+
+    res = collect_all("NVDA", {"yfinance", "finnhub"})
+    got = sorted(i.source for i in res.news)
+    assert got == ["finnhub:Reuters", "yfinance-fake"]
+
+
+def test_collect_all_default_does_not_call_finnhub(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [])
+    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
+    monkeypatch.setattr(ns, "collect_finnhub_news", lambda t: calls.append("finnhub") or [])
+
+    collect_all("NVDA")
+    assert calls == []  # finnhub not invoked by default
 
 
 def _n(ticker, source):
