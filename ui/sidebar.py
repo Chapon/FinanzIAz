@@ -165,6 +165,7 @@ class Sidebar(QFrame):
         ("news", "📰", "Noticias"),
         ("alerts", "🔔", "Alertas"),
         ("paper", "🧪", "Paper Trading"),
+        ("metrics", "📊", "Métricas"),
         ("reports", "📄", "Reportes"),
         ("failed", "⚠️", "Tickers fallidos"),
         ("settings", "⚙️", "Ajustes"),

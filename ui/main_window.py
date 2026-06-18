@@ -28,6 +28,7 @@ from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
 from ui.leads_tab import LeadsTab
 from ui.news_tab import NewsTab
+from ui.metrics_tab import MetricsTab
 from ui.paper_tab import PaperTradingTab
 from ui.portfolio_tab import PortfolioTab
 from ui.reports_tab import ReportsTab
@@ -120,6 +121,7 @@ class MainWindow(QMainWindow):
         "analysis": ("Análisis", "Técnico"),
         "leads": ("Leads", "Consensus de analistas"),
         "news": ("Noticias", "Resumen diario"),
+        "metrics": ("Métricas", "Efectividad del modelo"),
         "alerts": ("Alertas", "Precios"),
         "paper": ("Paper Trading", "Simulación en vivo"),
         "reports": ("Reportes", "Exportar"),
@@ -184,6 +186,7 @@ class MainWindow(QMainWindow):
         self.failed_tickers_tab = FailedTickersTab()
         self.settings_tab = SettingsTab()
         self.news_tab = NewsTab()
+        self.metrics_tab = MetricsTab()
 
         self.stack.addWidget(self.home_tab)  # 0
         self.stack.addWidget(self.portfolio_tab)  # 1
@@ -195,6 +198,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.failed_tickers_tab)  # 7
         self.stack.addWidget(self.settings_tab)  # 8
         self.stack.addWidget(self.news_tab)  # 9
+        self.stack.addWidget(self.metrics_tab)  # 10
 
         right_layout.addWidget(self.stack, stretch=1)
         root_layout.addWidget(right, stretch=1)
@@ -215,6 +219,7 @@ class MainWindow(QMainWindow):
         "failed": 7,
         "settings": 8,
         "news": 9,
+        "metrics": 10,
     }
 
     def _connect_signals(self):
@@ -266,6 +271,12 @@ class MainWindow(QMainWindow):
                 self.news_tab.maybe_refresh()
             except Exception as e:
                 log.warning("news refresh failed: %s", e)
+        elif key == "metrics":
+            # Carga lazy de las métricas de efectividad del modelo.
+            try:
+                self.metrics_tab.maybe_refresh()
+            except Exception as e:
+                log.warning("metrics refresh failed: %s", e)
 
     def _on_position_selected(self, position):
         self._navigate("analysis")
