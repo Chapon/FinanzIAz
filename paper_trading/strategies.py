@@ -82,6 +82,10 @@ class TargetTrade:
     reason: str
     source: str  # strategy name ("analyze_single" | "portfolio_engine")
     signal_score: float | None = None  # conviction in [0,1]; None for rebalance trades
+    # Precio de fill modelado para salidas forzadas por nivel (T01). Cuando está
+    # seteado, el auto-fill lo usa como precio base en lugar del último precio del
+    # scan, para reflejar el gap/touch real del stop (ver gates.model_exit_fill_price).
+    fill_price_override: float | None = None
 
     def __repr__(self) -> str:
         dollars = f"${self.target_dollars:,.2f}" if self.target_dollars is not None else "—"

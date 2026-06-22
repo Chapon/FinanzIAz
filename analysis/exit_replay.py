@@ -175,6 +175,46 @@ def atr_exit(
     return None
 
 
+def _atr_trigger_level(reason: str, *, avg_cost: float, hwm: float, atr_value: float,
+                       p: "AtrParams") -> float | None:
+    """Nivel-gatillo que corresponde a un ``reason`` ATR, para modelar el fill."""
+    if reason == "atr_stop":
+        return avg_cost - p.stop_mult * atr_value
+    if reason == "atr_trail":
+        return hwm - p.stop_mult * atr_value
+    if reason == "atr_tp":
+        return avg_cost + p.tp_mult * atr_value
+    return None
+
+
+def _exit_fill_price(reason: str, level: float | None, bar: "Bar") -> float:
+    """Fill realista (stdlib) espejo de ``gates.model_exit_fill_price``.
+
+    Stops/trailing (vende al caer): gap-open (``open<=level`` → open) /
+    touch intradía (``low<=level`` → level) / fallback close.
+    Take-profit (vende al subir): simétrico con open/high. ``bar`` =
+    ``(date, open, high, low, close)``.
+    """
+    _, o, h, lo, c = bar
+    if level is None or not math.isfinite(level) or level <= 0:
+        return c
+
+    def _ok(x: float | None) -> bool:
+        return x is not None and math.isfinite(x) and x > 0
+
+    if not reason.startswith("atr_tp"):
+        if _ok(o) and o <= level:
+            return o
+        if _ok(lo) and lo <= level:
+            return level
+        return c
+    if _ok(o) and o >= level:
+        return o
+    if _ok(h) and h >= level:
+        return level
+    return c
+
+
 # ── Replay de un ciclo ───────────────────────────────────────────────────────
 
 
@@ -226,6 +266,7 @@ def replay_event(
     last_idx = min(d_idx + cap_days, len(bars) - 1)
     exit_idx: int | None = None
     exit_reason = ""
+    exit_level: float | None = None  # nivel-gatillo si el exit fue ATR
     deltas: list[tuple[str, float]] = []
 
     for i in range(d_idx + 1, last_idx + 1):
@@ -242,6 +283,11 @@ def replay_event(
             )
         if fired is not None:
             exit_idx, exit_reason = i, fired
+            # HWM acá es el pre-close (el update ocurre tras el break), igual que
+            # el engine → el nivel del trail usa el HWM previo.
+            exit_level = _atr_trigger_level(
+                fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p
+            )
         elif scheduled_exit_idx is not None and i >= scheduled_exit_idx:
             exit_idx, exit_reason = i, "deferred_signal_sell"
         elif i == last_idx:
@@ -255,7 +301,12 @@ def replay_event(
         hwm = max(hwm, close_i)
 
     assert exit_idx is not None  # last_idx siempre cierra
-    exit_price = bars[exit_idx][4]
+    # Fill realista: las salidas ATR usan el modelo gap/touch sobre la barra de
+    # salida; los exits no-ATR (deferred_signal_sell, cap_reached) llenan al close.
+    if exit_reason in ("atr_stop", "atr_trail", "atr_tp"):
+        exit_price = _exit_fill_price(exit_reason, exit_level, bars[exit_idx])
+    else:
+        exit_price = bars[exit_idx][4]
     pnl_sim = (exit_price * ev.shares
                - ev.sell_commission - ev.sell_slippage
                - ev.avg_cost * ev.shares)

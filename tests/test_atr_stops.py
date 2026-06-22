@@ -127,7 +127,7 @@ def test_gate_stop_loss_fires(test_db):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
-    settings.set("atr_tp_mult", 100.0)  # huge, so TP doesn't accidentally fire
+    settings.set("atr_tp_mult", 50.0)  # max → TP@150, doesn't accidentally fire
     settings.set("atr_trail_enabled", False)  # isolate stop-loss
 
     a = create_account(name="A", initial_capital=10_000.0)
@@ -159,7 +159,7 @@ def test_gate_stop_loss_fires(test_db):
 def test_gate_take_profit_fires(test_db):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
-    settings.set("atr_stop_mult", 100.0)  # huge → stop won't fire
+    settings.set("atr_stop_mult", 20.0)  # max → stop@80, won't fire
     settings.set("atr_tp_mult", 2.0)
     settings.set("atr_trail_enabled", False)
 
@@ -190,7 +190,7 @@ def test_gate_trailing_fires(test_db):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
-    settings.set("atr_tp_mult", 100.0)  # don't accidentally take profit
+    settings.set("atr_tp_mult", 50.0)  # max → TP@150, don't accidentally take profit
     settings.set("atr_trail_enabled", True)
 
     a = create_account(name="A", initial_capital=10_000.0)
@@ -344,7 +344,7 @@ def test_run_scan_fires_stop_and_bypasses_min_holding(test_db, monkeypatch):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
-    settings.set("atr_tp_mult", 100.0)
+    settings.set("atr_tp_mult", 50.0)  # max → TP@150, won't fire
     settings.set("atr_trail_enabled", False)
     settings.set("paper_enforce_market_hours", False)
     settings.set("paper_min_holding_minutes", 60)  # 1h min holding
@@ -403,7 +403,7 @@ def test_run_scan_atr_exit_overrides_strategy_sell(test_db, monkeypatch):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
-    settings.set("atr_tp_mult", 100.0)
+    settings.set("atr_tp_mult", 50.0)  # max → TP@150, won't fire
     settings.set("atr_trail_enabled", False)
     settings.set("paper_enforce_market_hours", False)
     settings.set("paper_min_holding_minutes", 0)

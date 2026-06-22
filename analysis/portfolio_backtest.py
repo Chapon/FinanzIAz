@@ -375,12 +375,20 @@ def _execute_rebalance(
     reason: str,
     trades_log: list[PortfolioTrade],
     forced_exit_reasons: dict[str, str] | None = None,
+    exit_fill_prices: dict[str, float] | None = None,
 ) -> float:
     """
     Bring actual dollar exposure in line with target_dollars for every ticker
     that appears in positions OR target_dollars. Closes positions whose target
     is zero; partial-sells or partial-buys otherwise.
     Returns updated cash.
+
+    ``exit_fill_prices`` (opcional): precio de fill *base* por ticker para
+    salidas forzadas por nivel (ATR), modelado con el gap/touch de la barra.
+    Cuando está presente para un ticker, su SELL se ejecuta a ese precio (el
+    slippage se aplica encima) en vez de al close. El sizing/exposición sigue
+    usando el close. Sin el dict (default) el comportamiento es idéntico al
+    histórico.
     """
     all_tickers = set(positions.keys()) | set(target_dollars.keys())
 
@@ -398,7 +406,11 @@ def _execute_rebalance(
             sell_shares = min(st.shares, sell_dollars / price)
             if sell_shares <= 0:
                 continue
-            fill_price = price * (1 - slippage)
+            # Precio de fill: por defecto el close; si hay un fill modelado para
+            # una salida ATR de este ticker, se usa como base (slippage encima).
+            base_px = (exit_fill_prices or {}).get(t)
+            exec_px = base_px if (base_px is not None and np.isfinite(base_px) and base_px > 0) else price
+            fill_price = exec_px * (1 - slippage)
             proceeds = sell_shares * fill_price * (1 - commission)
             cash += proceeds
             st.shares -= sell_shares
@@ -524,7 +536,13 @@ def portfolio_backtest(
     kelly_fraction: float = DEFAULT_KELLY_FRACTION,
     vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
     max_position_weight: float = DEFAULT_MAX_POSITION_WEIGHT,
-    forced_exit_fn: Callable[[str, pd.DataFrame, _PositionState], tuple[bool, str]] | None = None,
+    # El hook puede devolver (should_exit, reason) o, para salidas por nivel (ATR),
+    # (should_exit, reason, trigger_level) → habilita el fill realista gap/touch.
+    forced_exit_fn: (
+        Callable[[str, pd.DataFrame, _PositionState],
+                 "tuple[bool, str] | tuple[bool, str, float | None]"]
+        | None
+    ) = None,
     vol_overlay_fn: (
         Callable[[dict[str, float], dict[str, "pd.Series"]], float] | None
     ) = None,
@@ -598,6 +616,9 @@ def portfolio_backtest(
         # (1) Mandatory exits — any open position with SELL signal + forced_exit_fn
         forced_exits = [t for t, st in positions.items() if st.is_open and signals[t] == "SELL"]
         forced_exit_reasons: dict[str, str] = {}
+        # Nivel-gatillo por ticker cuando el hook lo provee (3-tuple) → habilita
+        # el fill realista (gap/touch) en vez de llenar al close.
+        forced_exit_levels: dict[str, float] = {}
 
         # Evaluate forced_exit_fn hook for all open positions (not already exiting via signal)
         if forced_exit_fn is not None:
@@ -605,13 +626,41 @@ def portfolio_backtest(
                 if positions[t].is_open and t not in forced_exits:
                     df_slice = frames[t].iloc[: i + 1]
                     try:
-                        should_exit, reason = forced_exit_fn(t, df_slice, positions[t])
+                        res = forced_exit_fn(t, df_slice, positions[t])
+                        # Backward-compatible: (should, reason) o (should, reason, level).
+                        should_exit, reason = res[0], res[1]
+                        level = res[2] if len(res) > 2 else None
                         if should_exit:
                             forced_exits.append(t)
                             forced_exit_reasons[t] = reason
+                            if level is not None and np.isfinite(level) and level > 0:
+                                forced_exit_levels[t] = float(level)
                     except Exception as exc:
                         if verbose:
                             log.warning("forced_exit_fn(%s@%s) error: %s", t, date, exc)
+
+        # Fill realista para las salidas ATR con nivel conocido: modela el precio
+        # de ejecución con el OHLC de la barra (gap-open vs touch intradía).
+        exit_fill_prices: dict[str, float] = {}
+        if forced_exit_levels:
+            from paper_trading.gates import model_exit_fill_price
+
+            for t, lvl in forced_exit_levels.items():
+                reason_t = forced_exit_reasons.get(t, "")
+                if not reason_t.startswith("atr_"):
+                    continue
+                try:
+                    bar = frames[t].iloc[i]
+                    bo = float(bar["Open"]) if "Open" in bar else None
+                    bh = float(bar["High"]) if "High" in bar else None
+                    bl = float(bar["Low"]) if "Low" in bar else None
+                except (KeyError, IndexError, ValueError, TypeError):
+                    bo = bh = bl = None
+                cur = float(closes[t].iloc[i])
+                exit_fill_prices[t] = model_exit_fill_price(
+                    reason=reason_t, trigger_level=lvl,
+                    bar_open=bo, bar_high=bh, bar_low=bl, current_price=cur,
+                )
 
         # (2) Open slots after forced exits
         still_open = [t for t, st in positions.items() if st.is_open and t not in forced_exits]
@@ -763,6 +812,7 @@ def portfolio_backtest(
                 reason=reason,
                 trades_log=trades_log,
                 forced_exit_reasons=forced_exit_reasons,
+                exit_fill_prices=exit_fill_prices,
             )
             last_rebalance_month = (date.year, date.month)
 

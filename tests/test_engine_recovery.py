@@ -57,6 +57,45 @@ def test_reconcile_expires_old_pending_orders(test_db):
     assert statuses["MSFT"] == "pending"
 
 
+def test_reconcile_keeps_risk_exit_sells_alive(test_db):
+    """Las salidas de riesgo (atr_stop/trail/tp, vol_trim) NO se expiran aunque
+    estén viejas: son un aviso de venta que el usuario ejecuta a mano en el
+    broker. Los BUY y los SELL de señal sí expiran."""
+    a = _make_account()
+    old = utcnow_naive() - timedelta(hours=48)
+
+    with session_scope() as session:
+        session.add(PaperOrder(
+            account_id=a.id, ticker="KO", side="SELL", target_shares=10,
+            reason="atr_stop @ 80.28 ≤ 80.78 (entry 83.94 − 2.0×ATR 1.58)",
+            source="atr_stop_gate", status="pending", created_at=old,
+        ))
+        session.add(PaperOrder(
+            account_id=a.id, ticker="MO", side="SELL", target_shares=5,
+            reason="atr_trail @ 70.81 ≤ 71.21 (peak 74.14 − 2.0×ATR 1.46)",
+            source="atr_stop_gate", status="pending", created_at=old,
+        ))
+        session.add(PaperOrder(
+            account_id=a.id, ticker="PEP", side="SELL", target_shares=8,
+            reason="analyze SELL (0.30)", status="pending", created_at=old,
+        ))
+        session.add(PaperOrder(
+            account_id=a.id, ticker="AAPL", side="BUY", target_dollars=100,
+            reason="analyze BUY", status="pending", created_at=old,
+        ))
+
+    n = reconcile_account(a.id, expire_pending_after_hours=24)
+    assert n == 2  # solo el SELL de señal y el BUY
+
+    with session_scope() as session:
+        rows = session.query(PaperOrder).filter(PaperOrder.account_id == a.id).all()
+        statuses = {r.ticker: r.status for r in rows}
+    assert statuses["KO"] == "pending"   # atr_stop sobrevive
+    assert statuses["MO"] == "pending"   # atr_trail sobrevive
+    assert statuses["PEP"] == "expired"  # SELL de señal expira
+    assert statuses["AAPL"] == "expired"  # BUY expira
+
+
 def test_reconcile_does_nothing_when_no_stale_orders(test_db):
     a = _make_account()
     n = reconcile_account(a.id)

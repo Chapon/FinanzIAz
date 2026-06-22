@@ -269,6 +269,7 @@ from paper_trading.gates import (  # noqa: E402
     is_atr_forced_exit_reason,
     is_vol_trim_reason,
     is_within_earnings_blackout,
+    model_exit_fill_price,
     recent_adv_dollars,
     signal_sell_min_age_block,
 )
@@ -333,7 +334,7 @@ def _compute_atr_forced_exits(
         if atr is None or not np.isfinite(atr) or atr <= 0:
             continue
 
-        reason, _level = atr_exit_decision(
+        reason, level = atr_exit_decision(
             current_price=float(px),
             avg_cost=float(pos.avg_cost),
             high_water_mark=pos.high_water_mark,
@@ -345,6 +346,37 @@ def _compute_atr_forced_exits(
         if reason is None:
             continue
 
+        # Fill realista (T01 #2/#3): el nivel es solo el GATILLO; el fill real
+        # depende de cómo la barra cruzó el nivel (gap-open vs touch intradía).
+        # Lo modelamos con el OHLC de la última barra y dejamos constancia honesta
+        # del precio efectivo + el gap respecto del nivel en el ``reason``.
+        bar_o = bar_h = bar_l = None
+        try:
+            if df is not None and not df.empty:
+                if "Open" in df.columns:
+                    bar_o = float(df["Open"].iloc[-1])
+                if "High" in df.columns:
+                    bar_h = float(df["High"].iloc[-1])
+                if "Low" in df.columns:
+                    bar_l = float(df["Low"].iloc[-1])
+        except (ValueError, TypeError, IndexError, KeyError):
+            bar_o = bar_h = bar_l = None
+
+        fill_override = None
+        if level is not None and np.isfinite(level) and level > 0:
+            modeled = model_exit_fill_price(
+                reason=reason,
+                trigger_level=float(level),
+                bar_open=bar_o,
+                bar_high=bar_h,
+                bar_low=bar_l,
+                current_price=float(px),
+            )
+            if modeled is not None and np.isfinite(modeled) and modeled > 0:
+                fill_override = float(modeled)
+                gap_pct = (modeled - float(level)) / float(level) * 100.0
+                reason = f"{reason} | fill≈{modeled:.2f} (gap {gap_pct:+.2f}% vs nivel)"
+
         out.append(
             TargetTrade(
                 ticker=pos.ticker,
@@ -354,6 +386,7 @@ def _compute_atr_forced_exits(
                 reason=reason,
                 source="atr_stop_gate",
                 signal_score=1.0,  # max conviction — see roadmap T01
+                fill_price_override=fill_override,
             )
         )
 
@@ -546,6 +579,40 @@ def run_scan(
                     .all()
                 )
             }
+
+        # ── Cancelar avisos de salida ATR cuyo gatillo ya no aplica ──────────
+        # Las salidas de riesgo no expiran por tiempo (reconcile las preserva),
+        # pero si el precio se RECUPERA y el ATR ya no dispara para una posición
+        # que sigue abierta, el aviso de venta perdió su razón → se cancela para
+        # no vender en plena recuperación. Si vuelve a caer, el próximo scan lo
+        # re-detecta y re-avisa. No se tocan avisos de tickers cuya posición ya
+        # no existe (pudo ejecutarse a mano y falta reconciliar).
+        open_tickers = {p.ticker for p in positions}
+        for o in (
+            session.query(PaperOrder)
+            .filter(PaperOrder.account_id == acct.id)
+            .filter(PaperOrder.status == "pending")
+            .filter(PaperOrder.side == "SELL")
+            .all()
+        ):
+            if not _is_atr_forced_exit(o.reason):
+                continue
+            if o.ticker in atr_exit_tickers:
+                continue  # sigue gatillado → se mantiene el aviso
+            if o.ticker not in open_tickers:
+                continue  # posición ya no existe → no tocar
+            o.status = "expired"
+            o.decided_at = utcnow_naive()
+            o.notes = (
+                (o.notes or "")
+                + "\n[scan] salida de riesgo cancelada: el precio se recuperó, "
+                "el gatillo ya no aplica."
+            ).strip()
+            existing_pending.discard((o.ticker, o.side))
+            result.warnings.append(
+                f"{o.ticker} SELL (salida de riesgo) cancelada: el precio se "
+                "recuperó y el gatillo ya no aplica."
+            )
 
         # ── Lite-pro guardrails ──────────────────────────────────────────────
         # Read configurable thresholds (with safe defaults) and pre-compute
@@ -857,7 +924,16 @@ def run_scan(
                 result.skipped += 1
                 result.warnings.append(f"{trade.ticker}: sin precio, trade omitido.")
                 continue
-            order = _fill_trade(session, acct, trade, price=px)
+            # Salidas forzadas por nivel (ATR) con fill modelado: el precio base
+            # del fill es el modelado (gap/touch), no el último precio del scan.
+            # El slippage se aplica encima igual. Se valida igual que haya precio
+            # de mercado para el ticker (px) antes de operar.
+            fill_px = px
+            if trade.fill_price_override is not None and np.isfinite(
+                trade.fill_price_override
+            ) and trade.fill_price_override > 0:
+                fill_px = float(trade.fill_price_override)
+            order = _fill_trade(session, acct, trade, price=fill_px)
             if order is None:
                 result.skipped += 1
                 result.warnings.append(f"{trade.ticker}: fill rechazado (cash o shares insuficientes).")
@@ -1408,6 +1484,15 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
                 .all()
             )
             for o in stale:
+                # Las SALIDAS DE RIESGO (atr_stop/trail/tp, vol_trim) NO se
+                # expiran: son un aviso de "vendé esto" que el usuario ejecuta a
+                # mano en el broker, y dejarlo caer en silencio es peligroso.
+                # Siguen pendientes (y re-avisando) hasta que se ejecuten o se
+                # rechacen. Los BUY y los SELL de señal sí expiran normal.
+                if o.side == "SELL" and (
+                    _is_atr_forced_exit(o.reason) or is_vol_trim_reason(o.reason)
+                ):
+                    continue
                 o.status = "expired"
                 o.decided_at = utcnow_naive()
                 o.notes = ((o.notes or "") + "\n[reconcile] expired automatically.").strip()

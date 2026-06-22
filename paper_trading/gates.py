@@ -132,6 +132,60 @@ def atr_exit_decision(
     return None, None
 
 
+def model_exit_fill_price(
+    *,
+    reason: str,
+    trigger_level: float,
+    bar_open: float | None,
+    bar_high: float | None,
+    bar_low: float | None,
+    current_price: float,
+) -> float:
+    """Precio de fill *realista* para una salida forzada por nivel (T01).
+
+    El nivel (``stop_level``/``trail_level``/``tp_level``) es solo el **gatillo**.
+    El fill real depende de cómo la barra cruzó el nivel:
+
+    Stops y trailing (se vende al **caer** bajo el nivel):
+      * **Gap**: si la barra abrió en/por debajo del nivel (``open <= level``) el
+        precio atravesó el nivel en el hueco → el fill realista es el ``open``
+        (no hay forma de ejecutar en el nivel si nunca hubo precio ahí).
+      * **Touch intradía**: si no abrió debajo pero el mínimo tocó el nivel
+        (``low <= level < open``) el stop se habría ejecutado *en* el nivel →
+        fill ≈ ``level``.
+      * **Fallback**: sin OHLC utilizable, se usa ``current_price``.
+
+    Take-profit (se vende al **subir** sobre el nivel): simétrico con
+    ``open``/``high``.
+
+    Devuelve siempre un float finito y positivo; ante cualquier valor degenerado
+    cae a ``current_price``. El slippage se aplica *después*, en el fill, sobre
+    este precio base.
+    """
+    cur = float(current_price)
+    lvl = float(trigger_level)
+    if not np.isfinite(lvl) or lvl <= 0:
+        return cur
+
+    def _ok(x: float | None) -> bool:
+        return x is not None and np.isfinite(x) and x > 0
+
+    is_tp = str(reason).startswith("atr_tp")
+    if not is_tp:
+        # Sell-below (stop / trail).
+        if _ok(bar_open) and float(bar_open) <= lvl:
+            return float(bar_open)
+        if _ok(bar_low) and float(bar_low) <= lvl:
+            return lvl
+        return cur
+    # Take-profit: sell-above.
+    if _ok(bar_open) and float(bar_open) >= lvl:
+        return float(bar_open)
+    if _ok(bar_high) and float(bar_high) >= lvl:
+        return lvl
+    return cur
+
+
 # ── T08 earnings blackout gate ────────────────────────────────────────────────
 
 
