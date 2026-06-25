@@ -1152,14 +1152,34 @@ def approve_order(
         filled = _fill_trade(session, acct, trade, price=px, reuse_order=order)
 
         # Si _fill_trade no pudo ejecutar (cash/shares insuficientes), no dejar
-        # la orden colgada en "approved" para siempre — marcarla como expirada
-        # con motivo. _fill_trade exitoso reescribe order.status a "filled" via
-        # _stamp_order_filled(reuse_order=order); si sigue "approved" es que falló.
+        # la orden colgada en "approved" para siempre. _fill_trade exitoso
+        # reescribe order.status a "filled" via _stamp_order_filled(reuse_order=
+        # order); si sigue "approved" es que falló.
         if filled is None and order.status == "approved":
-            order.status = "expired"
-            order.notes = (
-                (order.notes or "") + "\n[approve] fill rechazado: cash o shares insuficientes."
-            ).strip()
+            # Aprobación encadenada (N2): una BUY que no se llena por falta de
+            # cash NO debe expirar si todavía hay una SELL pendiente que, al
+            # aprobarse, libera el cash que la financia. El budget se sizea
+            # contra cash+est_proceeds del scan, pero en manual las SELL no se
+            # ejecutan solas → aprobar la BUY primero la mataba por "cash
+            # fantasma" (12 BUYs expiradas, auditoría 2026-06-25). La dejamos
+            # pending para reintentar tras aprobar la(s) SELL(s). _fill_trade ya
+            # topa el budget en acct.cash al precio de aprobación → nunca sobre-
+            # apalanca. reconcile_account la barre igual si nunca se financia.
+            if order.side == "BUY" and _has_pending_sells(
+                session, acct.id, exclude_order_id=order.id
+            ):
+                order.status = "pending"
+                order.decided_at = None
+                order.notes = (
+                    (order.notes or "")
+                    + "\n[approve] sin liquidez suficiente; queda pendiente — "
+                    "aprobá primero la(s) SELL(s) pendiente(s) para liberar cash."
+                ).strip()
+            else:
+                order.status = "expired"
+                order.notes = (
+                    (order.notes or "") + "\n[approve] fill rechazado: cash o shares insuficientes."
+                ).strip()
 
         session.flush()
 
@@ -1188,6 +1208,25 @@ def reject_order(order_id: int, note: str = "") -> PaperOrder | None:
 
 
 # ── Internal: create pending / fill trade ─────────────────────────────────────
+
+
+def _has_pending_sells(session, account_id: int, *, exclude_order_id: int | None = None) -> bool:
+    """¿Hay alguna SELL pendiente en la cuenta (que podría liberar cash)?
+
+    Soporta la aprobación encadenada (N2): una BUY sub-financiada NO expira si
+    todavía hay una SELL pendiente que, al aprobarse, libera el cash que la
+    financia. Sin SELLs pendientes no hay financiamiento posible → la BUY sí es
+    inejecutable y expira como antes.
+    """
+    q = (
+        session.query(PaperOrder.id)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.side == "SELL")
+        .filter(PaperOrder.status == "pending")
+    )
+    if exclude_order_id is not None:
+        q = q.filter(PaperOrder.id != exclude_order_id)
+    return session.query(q.exists()).scalar()
 
 
 def _create_pending_order(
