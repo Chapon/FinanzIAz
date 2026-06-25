@@ -507,6 +507,250 @@ def test_run_scan_disabled_no_exit(test_db, monkeypatch):
         assert pos.shares == 10.0
 
 
+# ── Auto-fill de risk-exits en cuenta MANUAL (N3/A2) ──────────────────────────
+#
+# En una cuenta manual las sugerencias de señal se encolan como orden pendiente
+# (requieren aprobación). EXCEPCIÓN: las salidas de riesgo (atr_*/vol_trim) se
+# llenan al toque igual que en auto — un stop que queda pending puede expirar
+# sin aprobar mientras la posición sigue cayendo, y eso no es gestión de riesgo.
+
+
+def test_run_scan_manual_account_auto_fills_atr_stop(test_db, monkeypatch):
+    """En manual, un atr_stop se LLENA solo (no queda pending) y reusa el
+    fill_price_override modelado (gap/touch), igual que el camino auto."""
+    from paper_trading import engine
+    from paper_trading.models import PaperOrder
+
+    settings.set("atr_stops_enabled", True)
+    settings.set("atr_period", 14)
+    settings.set("atr_stop_mult", 2.0)
+    settings.set("atr_tp_mult", 50.0)  # max → TP@150, won't fire
+    settings.set("atr_trail_enabled", False)
+    settings.set("paper_enforce_market_hours", False)
+    settings.set("paper_min_holding_minutes", 60)  # también probamos el bypass
+    settings.set("paper_anti_flap_minutes", 0)
+
+    a = create_account(name="M", initial_capital=10_000.0, mode="manual")
+    with session_scope() as s:
+        # Abierta hace 5 min: Gate 2 (min-holding) la bloquearía si fuera señal.
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="AAPL",
+                shares=10.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(minutes=5),
+                high_water_mark=100.0,
+            )
+        )
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    # ATR ≈ 1.0 → stop level = 100 - 2 = 98. Forzamos un gap: la última barra
+    # abrió en 92 (≤ 98) → el fill modelado es el open (92), distinto del precio
+    # de scan (90). Así verificamos que el override se honra en manual.
+    df = _make_ohlcv([100.0] * 60)
+    df.iloc[-1, df.columns.get_loc("Open")] = 92.0
+    df.iloc[-1, df.columns.get_loc("Low")] = 89.0
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: lambda *a, **kw: [])
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"AAPL": 90.0},  # debajo del stop (98)
+        history_provider=lambda _t: df,
+    )
+
+    assert result is not None
+    # Se llenó, NO se encoló.
+    assert result.filled == 1
+    assert result.queued == 0
+    assert result.pending_orders == []
+
+    with session_scope() as s:
+        # Posición cerrada.
+        pos = (
+            s.query(PaperPosition)
+            .filter(PaperPosition.account_id == a.id)
+            .filter(PaperPosition.ticker == "AAPL")
+            .first()
+        )
+        assert pos is None or pos.shares <= 1e-9
+
+        # No quedó ninguna orden pendiente; sí una SELL filled por atr_stop.
+        assert (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == a.id)
+            .filter(PaperOrder.status == "pending")
+            .count()
+            == 0
+        )
+        filled = (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == a.id)
+            .filter(PaperOrder.status == "filled")
+            .filter(PaperOrder.side == "SELL")
+            .all()
+        )
+        assert len(filled) == 1
+        o = filled[0]
+        assert o.reason is not None and o.reason.startswith("atr_stop")
+        # El fill usó el override de gap (≈92), no el precio crudo de scan (90).
+        # SELL → slippage baja el precio: 92 * (1 - 0.0005) ≈ 91.95.
+        assert o.fill_price > 91.0
+        assert abs(o.fill_price - 92.0) < abs(o.fill_price - 90.0)
+
+
+def test_run_scan_manual_account_signal_sell_stays_pending(test_db, monkeypatch):
+    """Contraprueba: en manual una SELL de SEÑAL (no-riesgo) sigue requiriendo
+    aprobación — se encola como pending, no se llena."""
+    from paper_trading import engine
+    from paper_trading.models import PaperOrder
+    from paper_trading.strategies import TargetTrade
+
+    settings.set("atr_stops_enabled", False)
+    settings.set("paper_enforce_market_hours", False)
+    settings.set("paper_min_holding_minutes", 0)
+    settings.set("paper_anti_flap_minutes", 0)
+    settings.set("paper_signal_sell_min_age_bdays", 0)  # no bloquear por edad
+
+    a = create_account(name="M", initial_capital=10_000.0, mode="manual")
+    with session_scope() as s:
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="AAPL",
+                shares=10.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(days=2),
+                high_water_mark=100.0,
+            )
+        )
+
+    df = _make_ohlcv([100.0] * 60)
+
+    def strat(account, watchlist, positions, prices, history_provider):
+        return [
+            TargetTrade(
+                ticker="AAPL",
+                side="SELL",
+                target_shares=10.0,
+                target_dollars=None,
+                reason="analyze SELL (0.30)",
+                source="analyze_single",
+                signal_score=0.30,
+            )
+        ]
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: strat)
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"AAPL": 99.0},
+        history_provider=lambda _t: df,
+    )
+
+    assert result is not None
+    assert result.filled == 0
+    assert result.queued == 1
+
+    with session_scope() as s:
+        pending = (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == a.id)
+            .filter(PaperOrder.status == "pending")
+            .all()
+        )
+        assert len(pending) == 1
+        assert pending[0].side == "SELL"
+        assert pending[0].reason is not None and pending[0].reason.startswith("analyze")
+        # La posición sigue intacta (no se ejecutó nada).
+        pos = (
+            s.query(PaperPosition)
+            .filter(PaperPosition.account_id == a.id)
+            .filter(PaperPosition.ticker == "AAPL")
+            .first()
+        )
+        assert pos is not None and pos.shares == 10.0
+
+
+def test_run_scan_manual_account_auto_fills_vol_trim(test_db, monkeypatch):
+    """En manual, un trim de riesgo (vol_trim, T09) también se llena directo —
+    cubre la otra mitad de ``risk_exit`` además de los atr_*."""
+    from paper_trading import engine
+    from paper_trading.models import PaperOrder
+    from paper_trading.strategies import TargetTrade
+
+    settings.set("atr_stops_enabled", False)
+    settings.set("paper_enforce_market_hours", False)
+    settings.set("paper_min_holding_minutes", 60)  # vol_trim debe bypassearlo
+    settings.set("paper_anti_flap_minutes", 0)
+
+    a = create_account(name="M", initial_capital=10_000.0, mode="manual")
+    with session_scope() as s:
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="AAPL",
+                shares=10.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(minutes=5),  # fresca
+                high_water_mark=100.0,
+            )
+        )
+
+    df = _make_ohlcv([100.0] * 60)
+
+    def strat(account, watchlist, positions, prices, history_provider):
+        return [
+            TargetTrade(
+                ticker="AAPL",
+                side="SELL",
+                target_shares=4.0,  # trim parcial
+                target_dollars=None,
+                reason="vol_trim σ=0.21>target 0.12",
+                source="vol_overlay",
+                signal_score=1.0,
+            )
+        ]
+
+    monkeypatch.setattr(engine, "get_strategy_fn", lambda _: strat)
+
+    result = engine.run_scan(
+        a.id,
+        prices_provider=lambda _t: {"AAPL": 99.0},
+        history_provider=lambda _t: df,
+    )
+
+    assert result is not None
+    assert result.filled == 1
+    assert result.queued == 0
+
+    with session_scope() as s:
+        assert (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == a.id)
+            .filter(PaperOrder.status == "pending")
+            .count()
+            == 0
+        )
+        o = (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == a.id)
+            .filter(PaperOrder.status == "filled")
+            .filter(PaperOrder.side == "SELL")
+            .one()
+        )
+        assert o.reason is not None and o.reason.startswith("vol_trim")
+        # Trim parcial: quedan 6 shares.
+        pos = (
+            s.query(PaperPosition)
+            .filter(PaperPosition.account_id == a.id)
+            .filter(PaperPosition.ticker == "AAPL")
+            .first()
+        )
+        assert pos is not None and abs(pos.shares - 6.0) < 1e-9
+
+
 def test_run_scan_seeds_hwm_for_legacy_position(test_db, monkeypatch):
     """A legacy position with HWM=NULL gets it seeded on first scan."""
     from paper_trading import engine

@@ -884,7 +884,15 @@ def run_scan(
                         )
                         continue
 
-            if acct.mode == "manual":
+            # Modo manual: las sugerencias de señal se encolan como orden
+            # pendiente (requieren aprobación). EXCEPCIÓN — las salidas de
+            # riesgo (atr_stop/trail/tp, vol_trim) se ejecutan al toque igual
+            # que en auto: un stop que queda pending puede expirar sin aprobar
+            # (reconcile_account → expired) mientras la posición sigue cayendo,
+            # y un stop que expira por inacción no es gestión de riesgo (N3/A2).
+            # Los risk-exits caen al path de fill de abajo, reusando el
+            # fill_price_override modelado (gap/touch) idéntico al camino auto.
+            if acct.mode == "manual" and not risk_exit:
                 key = (trade.ticker, trade.side)
                 if key in existing_pending:
                     result.skipped += 1
@@ -918,7 +926,9 @@ def run_scan(
                 )
                 continue
 
-            # AUTO — fill now
+            # Fill now — camino auto, y también risk-exits de cuentas manuales
+            # (ver bifurcación de arriba). Validamos precio de mercado antes de
+            # operar; el fill usa el override modelado si está presente.
             px = prices.get(trade.ticker)
             if px is None or not np.isfinite(px) or px <= 0:
                 result.skipped += 1

@@ -25,7 +25,7 @@ from data.yahoo_finance import _parse_next_earnings
 from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
 from paper_trading.engine import _earnings_blackout_hit
-from paper_trading.models import PaperWatchlistItem
+from paper_trading.models import PaperPosition, PaperWatchlistItem
 from paper_trading.strategies import TargetTrade
 
 # ── Pure predicate: _earnings_blackout_hit ────────────────────────────────────
@@ -259,6 +259,18 @@ def test_atr_forced_sell_bypasses_earnings_gate(test_db, monkeypatch):
 
     with session_scope() as s:
         s.add(PaperWatchlistItem(account_id=a.id, ticker="TSLA"))
+        # Posición real para que el risk-exit pueda llenarse (N3/A2: en manual
+        # los atr_* se ejecutan directo, no quedan pending).
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="TSLA",
+                shares=10.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(days=2),
+                high_water_mark=100.0,
+            )
+        )
 
     def atr_sell_strategy(account, watchlist, positions, prices, history_provider):
         return [
@@ -283,8 +295,10 @@ def test_atr_forced_sell_bypasses_earnings_gate(test_db, monkeypatch):
     )
 
     assert result is not None
-    # ATR SELL bypasses the blackout → it gets queued, no blackout warning.
-    assert result.queued == 1
+    # ATR SELL bypasses the blackout → en manual se LLENA directo (N3/A2), no
+    # queda pending; y no aparece warning de blackout (no fue bloqueado).
+    assert result.filled == 1
+    assert result.queued == 0
     assert not any("blackout" in w for w in result.warnings)
 
 
