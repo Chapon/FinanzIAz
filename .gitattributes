@@ -1,3 +1,7 @@
+# Normalización global: git guarda todo en LF y normaliza el working tree.
+# Las reglas específicas de abajo OVERRIDEAN esto (van después a propósito).
+* text=auto eol=lf
+
 # Artefactos JSON regenerados por el scheduler diario en Windows (CRLF).
 # `text` hace que git normalice EOL al comparar/commitear → el re-write CRLF
 # del builder no ensucia el working tree (el repo guarda LF).
