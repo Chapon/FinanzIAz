@@ -8,7 +8,7 @@ Lista **operativa** de tareas (el qué sigue). El por qué estratégico vive en 
 
 **Política de decisión (orden de Chapa 2026-06-25):** ante una duda entre una opción rápida y una más costosa, elegir **siempre la que dé mejor calidad de datos / mayor ganancia esperada** del trading. Por eso varias tareas eligen el camino más completo (auto-fill real de stops, sizing contra cash real, validación walk-forward) en vez del parche mínimo.
 
-_Última actualización: 2026-06-25._
+_Última actualización: 2026-06-26._
 
 ---
 
@@ -59,12 +59,6 @@ _Última actualización: 2026-06-25._
 ---
 
 ## Bugs / robustez de datos (del log de runtime 2026-06-25)
-
-### B1. `get_current_price` crashea con `KeyError: 'exchangeTimezoneName'` de yfinance · severidad ALTA (robustez)
-- **Síntoma:** `data.yahoo_finance: yfinance call _do_fetch raised` + traceback `last_price → _get_1y_prices → get_history_metadata → format_history_metadata` (`tz = md["exchangeTimezoneName"]`). Pasa con símbolos de metadata incompleta (ej. `K`, posiblemente deslistados).
-- **Causa:** en `_do_fetch` (`data/yahoo_finance.py:288`), `price = getattr(info, "last_price", None)`. `getattr(..., None)` **NO** atrapa el KeyError porque `last_price` es una *property* que lanza (getattr solo cae al default ante AttributeError). La excepción sube y `except Exception: raise` la re-lanza → traceback ruidoso + dispara el path de retry/timeout.
-- **Impacto:** un símbolo malo ensucia el log y puede cascada a hard-timeouts (ver B3); el fetch no degrada con gracia a "sin precio".
-- **Fix:** envolver la lectura de `last_price` (y props de `fast_info`) en try/except y tratar la excepción como "sin precio" → `return None` (como ya hace con `price is None`), registrando `failed_ticker`, en vez de re-lanzar. Test: símbolo con metadata sin `exchangeTimezoneName` → None, no excepción.
 
 ### B2. Símbolos muertos en el universo no se saltean (K / Kellanova) · severidad MEDIA
 - **Síntoma:** `Quote not found for symbol: K` y `$K: possibly delisted (period=2y)` repetido varias veces en una sola corrida.
@@ -123,6 +117,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 ## Hecho reciente
 
+- [x] **Bug B1 — `get_current_price` crasheaba con `KeyError: 'exchangeTimezoneName'`** (robustez ALTA). Las props lazy de `fast_info` (`last_price`/`previous_close`/…) pueden lanzar en símbolos con metadata incompleta/deslistados; `getattr(..., None)` solo cae al default ante `AttributeError`, así que el KeyError se filtraba → `log.exception` ruidoso + posible cascada a hard-timeouts (B3). Fix: helper `_safe_fast_info` que degrada el fallo estructural a "dato ausente" (`price=None` → path "sin precio" + `record_failure`), pero **re-lanza los transitorios** (401/crumb/429 vía `_is_transient`) para que el retry los siga reintentando. 5 tests nuevos (`tests/test_yahoo_finance.py`). Commit `8791303` (suite 930 passed).
 - [x] **Tarea ② — Aprobación encadenada de BUY/SELL en cuenta manual** (N2). `approve_order`: una BUY sin cash no expira si hay una SELL pendiente que la financia → queda `pending`; aprobar la SELL libera cash y re-aprobar la BUY la llena al budget real, sin sobre-apalancar (`_fill_trade` topa en cash). Validado (`docs/chained_approval_validation_2026-06-25.md`): 6/8 de las BUYs expiradas por cash se recuperan bajo encadenado (~$96.625 de entradas), las 2 sin SELL co-pendiente siguen expirando — **SHIP**. Commit `cf58a6d` (suite 925 passed).
 - [x] **Tarea ① — Auto-fill de risk-exits (`atr_*`/`vol_trim`) en cuenta manual** (N3/A2). `engine.run_scan` bifurca: en manual los risk-exits se llenan directo con el `fill_price_override` modelado, el resto sigue `pending`. Validado por replay (`docs/risk_exit_autofill_replay_2026-06-25.md`): ΔP/L +3.95 pts vs pending-expira (peor caso), max DD 7.40%→14.98% si expiran — **SHIP**. Commit `8ff57e1` (suite 921 passed).
 - [x] Harness de earnings blackout + decisión **restaurar `earnings_blackout_days=2`** (BUYs near-earnings −3.45%/17% win vs +1.1% normales; Δ ~+$4.200) — commit `dfd1dd5` (suite Windows 914 passed). Falta solo setear el flag (ver Acciones manuales).
