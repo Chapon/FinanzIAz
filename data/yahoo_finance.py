@@ -271,6 +271,31 @@ def get_current_price(ticker: str) -> dict | None:
         return None
 
 
+def _safe_fast_info(info: object, name: str, default: T | None = None) -> T | None:
+    """Lee una property de ``fast_info`` sin que un atributo roto tumbe el fetch.
+
+    Las properties de ``fast_info`` (``last_price``, ``previous_close``, …) son
+    lazy: pegan a la red y parsean metadata, así que pueden **lanzar** en vez de
+    devolver ``None`` — el caso típico es ``KeyError: 'exchangeTimezoneName'`` en
+    símbolos con metadata incompleta/deslistados (bug B1). ``getattr(obj, name,
+    default)`` solo cae al default ante ``AttributeError``, así que esa excepción
+    se filtraba, subía por todo el fetch y terminaba en ``log.exception`` con un
+    traceback ruidoso (y podía cascada a hard-timeouts).
+
+    Tratamos cualquier fallo estructural de lectura como "dato ausente"
+    (``default``). Los errores **transitorios** de Yahoo (401/crumb/429) sí se
+    re-lanzan para que ``_run_with_timeout`` los reintente: un throttle no es un
+    símbolo muerto.
+    """
+    try:
+        value = getattr(info, name, default)
+    except Exception as exc:
+        if _is_transient(exc):
+            raise
+        return default
+    return value if value is not None else default
+
+
 def _fetch_ticker_info(ticker: str) -> dict | None:
     """Raw yfinance fetch — returns a clean dict. Hard-timeout protected.
 
@@ -285,8 +310,8 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
             t = _ticker(ticker)
             info = t.fast_info
 
-            price = getattr(info, "last_price", None)
-            prev_close = getattr(info, "previous_close", None)
+            price = _safe_fast_info(info, "last_price")
+            prev_close = _safe_fast_info(info, "previous_close")
             if price is None:
                 last_exc.append("Sin precio (símbolo posiblemente deslistado)")
                 return None
@@ -300,11 +325,11 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
                 "price": round(float(price), 4),
                 "prev_close": round(float(prev_close), 4) if prev_close else None,
                 "change_pct": round(change_pct, 2) if change_pct is not None else None,
-                "volume": getattr(info, "three_month_average_volume", None),
-                "market_cap": getattr(info, "market_cap", None),
-                "fifty_two_week_high": getattr(info, "year_high", None),
-                "fifty_two_week_low": getattr(info, "year_low", None),
-                "currency": getattr(info, "currency", "USD"),
+                "volume": _safe_fast_info(info, "three_month_average_volume"),
+                "market_cap": _safe_fast_info(info, "market_cap"),
+                "fifty_two_week_high": _safe_fast_info(info, "year_high"),
+                "fifty_two_week_low": _safe_fast_info(info, "year_low"),
+                "currency": _safe_fast_info(info, "currency", "USD"),
             }
         except Exception as e:
             last_exc.append(f"{type(e).__name__}: {e}")
