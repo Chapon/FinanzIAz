@@ -3,7 +3,11 @@
 # Run scripts/audit_dependencies.py periodically to check for CVEs.
 
 # UI
-PyQt6>=6.6.0,<7.0
+# PyQt6 capeado a 6.7.x: 6.8+ (probado 6.11.0) rompe en Windows con
+# "DLL load failed importing QtCore" (ERROR_PROC_NOT_FOUND, mismatch de Qt6).
+# 6.7.1 es la version validada en el entorno real. Subir es parte de la tarea
+# de upgrade de deps del backlog.
+PyQt6>=6.7.1,<6.8
 
 # Market data
 yfinance>=0.2.40           # frequent releases — Yahoo Finance API drifts
@@ -16,22 +20,20 @@ SQLAlchemy>=2.0.0,<3.0
 alembic>=1.13
 
 # Data wrangling
-# IMPORTANT — Python 3.12 / 3.13 compatibility:
-#   * pandas 2.2.2 is the first release with numpy-2.0 support AND wheels
-#     across 3.9-3.13. Pin >=2.2.2 so pip never builds from source on Win
-#     and so numpy 2.x is usable.
-#   * numpy: the old <2 pin is gone. It was kept "because pandas 2.2.x
-#     constrains numpy<2", which stopped being true at pandas 2.2.2. numpy
-#     <2 also has no Python 3.13 wheels, so it cannot install on 3.13 at all.
-#     The codebase uses no numpy-2.0-removed APIs (audited: np.float_,
-#     np.NaN, np.in1d, np.trapz, etc. -> zero usages) and the runtime env
-#     already runs numpy 2.2.x. <3.0 guards against a future 3.0 break.
+#   * pandas 2.2.2 es la primera release con soporte numpy-2.0 y wheels para
+#     3.9-3.13; pin >=2.2.2 para que pip nunca compile desde fuente en Windows.
+#   * numpy CAPEADO a <2.0: el entorno real validado (suite verde) corre
+#     numpy 1.26.4 + scikit-learn 1.4.2, y sklearn 1.4.2 esta compilado contra
+#     numpy 1.x. Subir a numpy 2.x va atado al bump de scikit-learn (que ademas
+#     remueve CalibratedClassifierCV(cv="prefit"), usado por ml_signals.py) y es
+#     la tarea de upgrade de deps del backlog. El codigo no usa APIs removidas
+#     en numpy 2.0 (auditado: np.float_, np.NaN, np.in1d, np.trapz -> cero usos).
 #   * pandas-ta is INTENTIONALLY NOT in this list. The codebase computes
 #     RSI/MACD/Bollinger/SMA/EMA with pure pandas (``close.ewm(...)``,
 #     ``close.rolling(...)``) in ``analysis/technical.py``. Adding
 #     pandas-ta would re-introduce a numpy 2.x conflict its betas trigger.
 pandas>=2.2.2,<3.0
-numpy>=1.26.4,<3.0
+numpy>=1.26.4,<2.0
 
 # Charts
 matplotlib>=3.8.0,<4.0
@@ -44,6 +46,15 @@ openpyxl>=3.1.0
 # Quant / ML
 hmmlearn>=0.3.0
 arch>=6.0
+# scikit-learn: dependencia transitiva (hmmlearn/arch) que fijamos explicito.
+# CAPEADA a <1.8 porque 1.8 removio CalibratedClassifierCV(cv="prefit"), que usa
+# analysis/ml_signals.py (_build_calibrator). El entorno real corre 1.4.2.
+# Levantar el cap (y migrar a FrozenEstimator) es la tarea de upgrade del backlog.
+scikit-learn>=1.4.2,<1.8
+# xgboost: clasificador ML del engine (buy_score / ml_probability). El codigo
+# degrada con gracia si falta (ml_signals._XGB_OK -> 0.5 neutral), pero el
+# entorno real lo corre siempre ON (ver CLAUDE.md). 3.x es la linea validada.
+xgboost>=2.0,<4.0
 
 # Optional — LLM catalyst classifier backend (Sprint 5 · T-CAT-2).
 # Only needed to run `classify_catalysts.py --backend llm|hybrid`; the default

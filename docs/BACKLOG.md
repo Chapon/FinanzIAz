@@ -114,6 +114,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 - **Subir la frecuencia de scan** — atacaría la raíz del gap de stops (tarea 1) sin tocar lógica; evaluar costo de red yfinance vs beneficio.
 - **Documentar el estado efectivo de los flags** en `docs/SETTINGS_REFERENCE.md` (los valores leídos de `~/.finanzias/settings.json` el 2026-06-25).
 - **Hueco residual anti-churn (N5):** un flip-flop *ganador* único sell→buy en scans separados por >30 min y que no llega al 3er ciclo pasa todos los gates. Impacto bajo.
+- **Actualizar dependencias a las últimas versiones** (numpy 2.x · scikit-learn ≥1.8 · PyQt6 ≥6.8 · scipy/statsmodels). Hoy `requirements.txt` capea **numpy `<2.0`**, **scikit-learn `<1.8`** y **PyQt6 `<6.8`** para reproducir el entorno real validado (suite verde con numpy 1.26.4 / sklearn 1.4.2 / PyQt6 6.7.1 — ver `requirements.lock`). Para subir hace falta: (a) migrar `analysis/ml_signals.py` `_build_calibrator` de `CalibratedClassifierCV(cv="prefit")` a `FrozenEstimator` (sklearn 1.8 removió `cv="prefit"`); (b) confirmar que PyQt6 ≥6.8 cargue en Windows (6.11.0 daba `DLL load failed importing QtCore`); (c) revisar warnings de deprecación de numpy 2.5 (hmmlearn `a_sum.shape=`) y sklearn (`penalty` en LogisticRegression). **Kill-criteria:** suite Windows verde con el stack nuevo. Cerrar regenerando el lock (`python scripts/lock_requirements.py`).
 
 ## Hecho reciente
 
