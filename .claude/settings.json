@@ -1,13 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\\\Users\\\\chapa\\\\anaconda3\\\\python.exe\" -c \"import sys; sys.path.insert\\(0, '.'\\); from data.yahoo_finance import get_historical_data; print\\('OK'\\)\")",
-      "Bash(\"C:\\\\Users\\\\chapa\\\\anaconda3\\\\python.exe\" main.py)",
-      "Bash(git add *)",
-      "Bash(git commit -m ' *)",
-      "Bash(git push *)",
-      "Bash(python -m pytest tests/ -ra -m \"not network\" --tb=short)",
-      "Bash(git commit *)"
-    ]
+      "Bash(python:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python main.py:*)",
+      "Bash(python scripts/*)",
+      "Bash(pip:*)",
+      "Bash(conda:*)",
+      "Bash(git:*)",
+      "Bash(powershell:*)",
+      "Bash(cmd /c:*)"
+    ],
+    "deny": []
   }
 }
