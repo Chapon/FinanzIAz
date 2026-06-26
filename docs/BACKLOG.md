@@ -18,8 +18,7 @@ _Última actualización: 2026-06-26._
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
-- **Setear `earnings_blackout_days: 2`** en `~/.finanzias/settings.json` (decisión data-driven 2026-06-25; dejar `earnings_blackout_block_sells: false`). Ver evidencia en *Hecho reciente* / `docs/earnings_blackout_replay_2026-06-25.md`.
-- **Verificar ADV cap** en el próximo scan: el flag ya está en `0.05`; confirmar que aparece el warning de trim en un BUY ilíquido y que un BUY normal NO se recorta.
+- _(vacío — `~/.finanzias/settings.json` confirmado al día 2026-06-26)_
 
 ## Próximo (priorizado — el de arriba es el siguiente)
 
@@ -113,6 +112,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 ## Hecho reciente
 
+- [x] **Acciones manuales cerradas (2026-06-26)** — confirmado en `~/.finanzias/settings.json` vivo: `earnings_blackout_days=2` + `earnings_blackout_block_sells=false` (ya estaban seteados) y `paper_adv_cap_pct=0.05`. **Verificación del ADV cap:** los tests de integración `tests/test_adv_cap.py` (driven sobre `run_scan` con el flag en 0.05) confirman que un BUY ilíquido (>5% ADV$) se recorta con el warning "recortado por ADV" y uno normal NO se toca — los dos casos que pedía la acción manual. No hubo cambios en el repo (los flags viven fuera de él).
 - [x] **Bug B4 — red de seguridad autouse contra escrituras a la `finanzias.db` real** (prevención MEDIA). Fixture `_guard_real_db` en `tests/conftest.py` que rebindea `ENGINE`/`SessionLocal` a una SQLite in-memory por test (`StaticPool` + `check_same_thread=False` para aislar también las escrituras de cache desde el ThreadPool de yfinance); opt-out `@pytest.mark.real_db`. Previene toda la clase de bug que el 2026-06-25 corrompió AAPL/MSFT 1y. Incluye `tests/test_db_guard.py` (valida el guard), el fix puntual de `test_historical_batch` y `scripts/purge_synthetic_cache.py` (DB real ya verificada limpia). Commit `828dcd8` (suite 932 passed). **Toda la deuda de infra de testing/deps de esta tanda quedó cerrada.**
 - [x] **Coherencia requirements ↔ `.venv`** + tarea de upgrade. `.venv` recreado (estaba con binarios cp313 sobre Python 3.12); `requirements.txt` capeado al stack validado (numpy `<2.0`, scikit-learn `<1.8`, PyQt6 `<6.8`, xgboost declarado) y `requirements.lock` regenerado desde el venv sano. Commit `eeff335`.
 - [x] **Bug B1 — `get_current_price` crasheaba con `KeyError: 'exchangeTimezoneName'`** (robustez ALTA). Las props lazy de `fast_info` (`last_price`/`previous_close`/…) pueden lanzar en símbolos con metadata incompleta/deslistados; `getattr(..., None)` solo cae al default ante `AttributeError`, así que el KeyError se filtraba → `log.exception` ruidoso + posible cascada a hard-timeouts (B3). Fix: helper `_safe_fast_info` que degrada el fallo estructural a "dato ausente" (`price=None` → path "sin precio" + `record_failure`), pero **re-lanza los transitorios** (401/crumb/429 vía `_is_transient`) para que el retry los siga reintentando. 5 tests nuevos (`tests/test_yahoo_finance.py`). Commit `8791303` (suite 930 passed).
