@@ -112,6 +112,52 @@ def ohlcv_factory():
 
 
 @pytest.fixture(autouse=True)
+def _guard_real_db(request, monkeypatch):
+    """Red de seguridad (bug B4): ningún test debe tocar la ``finanzias.db`` real.
+
+    Rebindea ``database.models.ENGINE``/``SessionLocal`` a una SQLite in-memory
+    por test (con todas las tablas creadas), de modo que cualquier writer de
+    cache (``get_historical_data_batch`` → ``_finalize_historical`` →
+    ``_write_historical_cache``, además de ``PriceCache``/``EarningsCache``…)
+    escriba en la DB temporal y **nunca** en producción. El 2026-06-25
+    ``test_historical_batch`` corrompió AAPL/MSFT 1y por no aislar la DB.
+
+    Detalles:
+    - ``StaticPool`` + ``check_same_thread=False`` comparten la conexión
+      in-memory entre threads — los fetch de yfinance escriben cache desde el
+      ``ThreadPoolExecutor`` de ``_run_with_timeout``, en otro thread.
+    - Opt-out explícito: ``@pytest.mark.real_db`` (registrado en pyproject).
+    - Si el test ya pide el fixture ``test_db``, ese aísla por su cuenta; no se
+      duplica el rebind.
+    """
+    if request.node.get_closest_marker("real_db") or "test_db" in request.fixturenames:
+        yield
+        return
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    import paper_trading.models  # noqa: F401 — registra las tablas en Base.metadata
+    from database import models as db_models
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    test_sessionmaker = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    monkeypatch.setattr(db_models, "ENGINE", engine)
+    monkeypatch.setattr(db_models, "SessionLocal", test_sessionmaker)
+
+    db_models.Base.metadata.create_all(engine)
+    yield
+    engine.dispose()
+
+
+@pytest.fixture(autouse=True)
 def _disable_settings_persistence(tmp_path, monkeypatch):
     """
     Redirect ``settings.json`` to a per-test tmp directory so test runs don't

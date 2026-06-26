@@ -22,9 +22,18 @@ from data import yahoo_finance as yf_mod
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
-    """No tocar rate limiter, sleeps, ni el record de fallos reales."""
+    """No tocar rate limiter, sleeps, el record de fallos reales NI LA CACHE REAL.
+
+    CRÍTICO: ``get_historical_data_batch`` escribe a la cache vía
+    ``_finalize_historical`` → ``_write_historical_cache``, que pega a la
+    ``finanzias.db`` real (estos tests no usan el fixture ``test_db``). Sin
+    mockear la escritura, correr la suite **corrompe** el cache de producción
+    con los frames sintéticos de ``_ohlcv`` (rampa 100→104, 2026-01-01..05).
+    Pasó: rompió AAPL/MSFT 1y en la pestaña Análisis (2026-06-25).
+    """
     monkeypatch.setattr(yf_mod, "_acquire_rate_token", lambda *_a, **_k: None)
     monkeypatch.setattr(yf_mod.time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(yf_mod, "_write_historical_cache", lambda *_a, **_k: None)
     recorded = {"fail": [], "success": []}
     monkeypatch.setattr(
         yf_mod, "record_failure",
