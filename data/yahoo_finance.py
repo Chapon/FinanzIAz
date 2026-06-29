@@ -13,6 +13,7 @@ guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
 the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,6 +51,9 @@ from config.constants import (
     NETWORK_RETRY_TOTAL as RETRY_TOTAL,
 )
 from config.constants import (
+    NETWORK_THROTTLE_COOLDOWN_SECONDS as THROTTLE_COOLDOWN_SECONDS,
+)
+from config.constants import (
     PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
 )
 from config.logging_config import get_logger
@@ -57,6 +61,7 @@ from data.failed_tickers import (
     get_failing_set,
     record_failure,
     record_success,
+    record_transient,
 )
 from data.quality import clean_ohlcv
 from database.models import (
@@ -159,6 +164,52 @@ def _is_transient(exc: BaseException) -> bool:
     return any(hint in msg for hint in _TRANSIENT_HINTS)
 
 
+# ── Circuit-breaker de throttle (bug B3) ─────────────────────────────────────
+# Cuando Yahoo deja de responder (hard-timeout, 401/crumb/429 repetido, o un lote
+# entero vuelve vacío) abrimos un breaker por ``THROTTLE_COOLDOWN_SECONDS``.
+# Mientras está abierto:
+#   1. Las nuevas llamadas de red fallan rápido (no se queman 15s×N tickers) →
+#      el scan termina en segundos en vez de colgarse minutos.
+#   2. Los fallos se clasifican como TRANSITORIOS (no delisting permanente), así
+#      un large-cap real que falló por el throttle NO queda excluido del universo.
+_throttle_lock = threading.Lock()
+_throttle_until = 0.0  # time.monotonic() hasta cuando el breaker está abierto
+
+
+def _note_throttle(cooldown: float = THROTTLE_COOLDOWN_SECONDS) -> None:
+    """Abre (o extiende) el breaker: Yahoo está throttleando/no responde."""
+    global _throttle_until
+    with _throttle_lock:
+        _throttle_until = max(_throttle_until, time.monotonic() + cooldown)
+
+
+def _is_throttled() -> bool:
+    """True si el breaker está abierto (cooldown vigente)."""
+    with _throttle_lock:
+        return time.monotonic() < _throttle_until
+
+
+def reset_throttle() -> None:
+    """Cierra el breaker. Para tests — el estado es global al proceso."""
+    global _throttle_until
+    with _throttle_lock:
+        _throttle_until = 0.0
+
+
+def _record_miss(ticker: str, error: str, operation: str) -> None:
+    """Registra un fetch fallido clasificándolo según el breaker.
+
+    Con el breaker abierto (throttle activo) el fallo es casi seguro culpa de
+    Yahoo, no del símbolo → ``record_transient`` (no envenena el failing set).
+    Con el breaker cerrado el símbolo falló en una red sana → ``record_failure``
+    (delisting/ticker inválido genuino, se saltea en adelante).
+    """
+    if _is_throttled():
+        record_transient(ticker, error, operation)
+    else:
+        record_failure(ticker, error, operation)
+
+
 def _run_with_timeout(
     fn: Callable[..., T],
     *args,
@@ -176,7 +227,14 @@ def _run_with_timeout(
     Errores transitorios de Yahoo (401/crumb/429) se reintentan hasta
     ``retries`` veces con backoff exponencial y se loguean en una línea
     (sin traceback). Cualquier otro error se loguea con traceback una sola vez.
+
+    Si el circuit-breaker de throttle está abierto, retorna ``default`` de
+    inmediato sin tocar la red (fail-fast) — evita quemar el timeout completo
+    en cada ticker mientras Yahoo no responde.
     """
+    if _is_throttled():
+        log.debug("Throttle breaker abierto: %s salteado (fail-fast)", getattr(fn, "__name__", fn))
+        return default
     attempt = 0
     fn_name = getattr(fn, "__name__", fn)
     while True:
@@ -187,6 +245,7 @@ def _run_with_timeout(
         except FuturesTimeoutError:
             future.cancel()
             log.warning("Hard timeout (%ss) running %s", timeout, fn_name)
+            _note_throttle()  # Yahoo colgó → abrir breaker para los próximos tickers
             return default
         except Exception as exc:
             transient = _is_transient(exc)
@@ -205,6 +264,7 @@ def _run_with_timeout(
                 continue
             if transient:
                 log.warning("yfinance call %s failed (transient, gave up): %s", fn_name, exc)
+                _note_throttle()  # throttle persistente → abrir breaker
             else:
                 log.exception("yfinance call %s raised", fn_name)
             return default
@@ -338,7 +398,9 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
     result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
     if result is None:
         err = last_exc[0] if last_exc else "Sin datos disponibles"
-        record_failure(ticker, err, operation="price")
+        # _record_miss: con el breaker abierto (throttle) lo marca transitorio en
+        # vez de envenenar el failing set con un símbolo real (bug B3).
+        _record_miss(ticker, err, operation="price")
     else:
         # El ticker volvió a funcionar — limpiar registro previo si existía.
         record_success(ticker)
@@ -456,7 +518,8 @@ def _finalize_historical(
     limpieza, validación y registro de fallos por ticker.
     """
     if df is None:
-        record_failure(
+        # _record_miss: bajo throttle (breaker abierto) es transitorio, no delisting.
+        _record_miss(
             ticker_upper,
             f"Sin datos históricos ({period}/{interval}) — símbolo posiblemente deslistado",
             operation="historical",
@@ -607,6 +670,15 @@ def get_historical_data_batch(
     por ticker — un símbolo deslistado dentro del lote se marca individualmente
     sin tumbar a los demás.
 
+    Resiliencia (bug B3/B2):
+    - Saltea los tickers ya conocidos como ``failing``/``ignored`` (igual que
+      ``get_bulk_prices``) para no re-consultar símbolos muertos cada scan.
+    - Si un chunk **entero** vuelve vacío (``_download_batch`` → None) es casi
+      seguro un throttle/timeout de Yahoo, NO N delistings simultáneos: abre el
+      breaker y marca a esos tickers como TRANSITORIOS (no envenena el failing
+      set con large-caps reales). Solo los slices vacíos dentro de un lote que
+      SÍ trajo datos se tratan como fallo individual.
+
     Devuelve un dict ``{TICKER: DataFrame | None}`` con todos los símbolos
     pedidos (de-duplicados, en mayúsculas).
     """
@@ -614,12 +686,19 @@ def get_historical_data_batch(
     misses: list[str] = []
     seen: set[str] = set()
 
+    # 0. Saltear tickers conocidos como permanentemente malos (cierra B2: no
+    #    re-consultar un símbolo muerto en cada warm-up del scan).
+    skip_set = get_failing_set()
+
     # 1. Cache read por ticker (los hits no entran al lote).
     for raw in tickers:
         t = raw.upper()
         if t in seen:
             continue
         seen.add(t)
+        if t in skip_set:
+            result[t] = None
+            continue
         cached = _read_historical_cache(t, period, interval)
         if cached is not None:
             result[t] = cached
@@ -629,6 +708,22 @@ def get_historical_data_batch(
     # 2. Una descarga por chunk para los misses → 3. slice + QA + cache por ticker.
     for chunk in _chunked(misses, max(1, batch_size)):
         batch = _download_batch(chunk, period, interval)
+        if batch is None:
+            # Falla wholesale del chunk = throttle/timeout, no N delistings.
+            # No envenenamos el failing set; estos tickers simplemente faltan
+            # este scan y se reintentan el próximo.
+            _note_throttle()
+            for t in chunk:
+                result[t] = None
+                record_transient(
+                    t, f"Lote histórico vacío ({period}/{interval}) — throttle probable", "historical"
+                )
+            log.warning(
+                "Histórico batch vacío para %d tickers (throttle probable): %s",
+                len(chunk),
+                ", ".join(chunk),
+            )
+            continue
         for t in chunk:
             df_t = _slice_ticker(batch, t)
             result[t] = _finalize_historical(t, df_t, period, interval)
@@ -993,6 +1088,21 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
             except Exception:
                 log.exception("Parallel fetch failed for %s", ticker)
                 live_results[ticker] = None
+
+    # 2b. Detección wholesale (bug B3): si había ≥2 misses y TODOS fallaron, no son
+    # N símbolos muertos a la vez — es throttle de Yahoo. Abrimos el breaker y, por
+    # si alguno alcanzó a quedar 'failing' antes de abrirlo (carrera al inicio del
+    # throttle), lo degradamos a transitorio para no excluir large-caps reales.
+    failed = [t for t in cache_misses if live_results.get(t) is None]
+    if len(cache_misses) >= 2 and len(failed) == len(cache_misses):
+        _note_throttle()
+        log.warning(
+            "Bulk prices: %d/%d tickers sin precio a la vez (throttle probable) — no se envenena el failing set",
+            len(failed),
+            len(cache_misses),
+        )
+        for t in failed:
+            record_transient(t, "Bulk de precios vacío — throttle probable", "price", override=True)
 
     # 3. Single batch cache write for all successful fetches
     new_entries = [

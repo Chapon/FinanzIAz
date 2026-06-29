@@ -12,9 +12,11 @@ from __future__ import annotations
 import logging
 import types
 
+import pandas as pd
 import pytest
 
 from data import yahoo_finance as yfm
+from data import failed_tickers as ft
 from data.failed_tickers import get_failing_set
 
 
@@ -92,3 +94,82 @@ def test_fetch_ticker_info_happy_path(test_db, mock_yfinance):
     assert result["change_pct"] == pytest.approx(round(((150.0 - 148.0) / 148.0) * 100, 2))
     # El happy-path no deja al ticker en la lista de fallidos.
     assert "AAPL" not in get_failing_set()
+
+
+# --- Circuit-breaker de throttle (bug B3) ------------------------------------
+
+
+def test_record_miss_failing_when_breaker_closed(test_db):
+    """Sin throttle: un fallo se registra como permanente (entra al failing set)."""
+    yfm.reset_throttle()
+    yfm._record_miss("DEAD", "sin datos", "price")
+    assert "DEAD" in get_failing_set()
+
+
+def test_record_miss_transient_when_breaker_open(test_db):
+    """Con throttle: el fallo es transitorio → NO entra al failing set, se reintenta."""
+    yfm._note_throttle()
+    assert yfm._is_throttled()
+    yfm._record_miss("JPM", "lote vacío", "historical")
+    assert "JPM" not in get_failing_set()  # large-cap real no queda excluido
+    # Pero sí queda registrado como transitorio para visibilidad en la UI.
+    statuses = {r.ticker: r.status for r in ft.get_all()}
+    assert statuses.get("JPM") == ft.STATUS_TRANSIENT
+
+
+def test_run_with_timeout_fail_fast_when_throttled(test_db):
+    """Breaker abierto → la llamada NO toca la red, retorna default de inmediato."""
+    yfm._note_throttle()
+    called = {"n": 0}
+
+    def _fn():
+        called["n"] += 1
+        return "ran"
+
+    out = yfm._run_with_timeout(_fn, default="fallback")
+    assert out == "fallback"
+    assert called["n"] == 0  # no se ejecutó: fail-fast
+
+
+def test_record_transient_preserves_failing_unless_override(test_db):
+    """Un transitorio no degrada un veredicto permanente, salvo override explícito."""
+    ft.record_failure("K", "deslistado", "historical")
+    assert "K" in get_failing_set()
+    # Sin override: se preserva el failing.
+    ft.record_transient("K", "lote vacío", "historical")
+    assert "K" in get_failing_set()
+    # Con override (wholesale confirmado): se degrada a transitorio.
+    ft.record_transient("K", "bulk vacío", "price", override=True)
+    assert "K" not in get_failing_set()
+
+
+# --- Batch warm-up: resiliencia y B2 -----------------------------------------
+
+
+def test_batch_wholesale_empty_marks_transient_not_failing(test_db, mock_yfinance):
+    """B3: si TODO el lote vuelve vacío, los tickers reales NO se envenenan."""
+    yfm.reset_throttle()
+    mock_yfinance.download.return_value = pd.DataFrame()  # lote entero vacío → throttle
+
+    out = yfm.get_historical_data_batch(["JPM", "KLAC", "LOW"], period="2y")
+
+    assert out["JPM"] is None and out["KLAC"] is None and out["LOW"] is None
+    failing = get_failing_set()
+    assert not ({"JPM", "KLAC", "LOW"} & failing)  # ninguno excluido del universo
+    assert yfm._is_throttled()  # breaker abierto para frenar la cascada
+
+
+def test_batch_skips_known_failing_ticker(test_db, mock_yfinance):
+    """B2: un símbolo ya marcado failing no se re-consulta en el warm-up batch."""
+    yfm.reset_throttle()
+    ft.record_failure("K", "deslistado confirmado", "historical")
+    mock_yfinance.download.return_value = pd.DataFrame()
+
+    out = yfm.get_historical_data_batch(["K", "AAPL"], period="2y")
+
+    assert out["K"] is None  # skip directo, sin red
+    # yf.download se llamó solo para AAPL (K no entró al query).
+    assert mock_yfinance.download.called
+    queried = mock_yfinance.download.call_args[0][0]
+    assert "K" not in queried.split()
+    assert "AAPL" in queried.split()

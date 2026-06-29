@@ -36,6 +36,9 @@ _STATUS_LABELS = {
     registry.STATUS_FAILING: ("Fallando", PALETTE["red"]),
     registry.STATUS_RETRY: ("Reintentar", PALETTE.get("yellow", "#d29922")),
     registry.STATUS_IGNORED: ("Ignorado", PALETTE["text3"]),
+    # Transitorio (B3): falló por throttle/timeout de Yahoo, no por símbolo muerto.
+    # No se saltea — se reintenta solo en el próximo scan.
+    registry.STATUS_TRANSIENT: ("Transitorio", PALETTE.get("blue", PALETTE["text3"])),
 }
 
 

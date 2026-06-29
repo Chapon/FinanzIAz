@@ -442,6 +442,8 @@ class ScanResult:
     filled: int = 0  # executed immediately
     queued: int = 0  # pending approval
     skipped: int = 0  # rejected by engine (no price, insufficient cash, …)
+    prices_requested: int = 0  # tickers para los que se pidió precio este scan
+    prices_missing: int = 0  # cuántos quedaron sin precio usable (B3 telemetría)
     equity_before: float = 0.0
     equity_after: float = 0.0
     warnings: list[str] = field(default_factory=list)
@@ -525,7 +527,27 @@ def run_scan(
 
         prices = prices_provider(tickers) if tickers else {}
 
-        # Equity before any trades
+        # ── Telemetría de cobertura de precios (B3) ──────────────────────────
+        # Si Yahoo throttlea, varios tickers vuelven sin precio: las decisiones
+        # corren sobre un universo reducido (ATR exits y la strategy ya saltean
+        # los tickers sin precio, no operan a ciegas). Lo hacemos VISIBLE en vez
+        # de silencioso, y avisamos fuerte si una POSICIÓN abierta quedó sin
+        # precio — ahí un stop que debería evaluarse no pudo correr este scan.
+        missing_tickers = [t for t in tickers if t not in prices]
+        held_without_price = sorted(p.ticker for p in positions if p.ticker not in prices)
+        scan_warnings: list[str] = []
+        if missing_tickers:
+            from config.logging_config import get_logger
+
+            msg = f"{len(missing_tickers)}/{len(tickers)} tickers sin precio este scan"
+            if held_without_price:
+                msg += f" — posiciones SIN evaluar (stops no corridos): {', '.join(held_without_price)}"
+            get_logger(__name__).warning("Scan %s (cuenta %d): %s", account_name, account_id, msg)
+            scan_warnings.append(msg)
+
+        # Equity before any trades. Para los tickers sin precio se mark-to-avg_cost
+        # (snapshot de equity tolerante); las DECISIONES de trade no usan ese
+        # fallback (ver guards en _compute_atr_forced_exits y la strategy).
         equity_before = acct.cash + sum(p.shares * prices.get(p.ticker, p.avg_cost) for p in positions)
 
         # ── ATR-stop gate (T01) ──────────────────────────────────────────
@@ -560,7 +582,10 @@ def run_scan(
             strategy=acct.strategy,
             prices=prices,
             generated=len(trades),
+            prices_requested=len(tickers),
+            prices_missing=len(missing_tickers),
             equity_before=float(equity_before),
+            warnings=list(scan_warnings),
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.

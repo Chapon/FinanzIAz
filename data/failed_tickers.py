@@ -10,7 +10,8 @@ Yahoo Finance (delisted, ticker incorrecto, sin datos, etc.) para:
 
 API pública
 -----------
-- ``record_failure(ticker, error, operation)``  → graba o actualiza
+- ``record_failure(ticker, error, operation)``  → graba o actualiza (permanente)
+- ``record_transient(ticker, error, operation)``→ fallo transitorio (se reintenta)
 - ``record_success(ticker)``                    → limpia el registro
 - ``get_all()``                                 → lista para la UI
 - ``get_failing_set()``                         → set de tickers a omitir
@@ -18,6 +19,15 @@ API pública
 - ``mark_ignored(ticker)``                      → status "ignored"
 - ``delete(ticker)``                            → borra del registro
 - ``clear_all()``                               → vacía la tabla
+
+``failing`` vs ``transient``
+----------------------------
+``failing``/``ignored`` son los únicos status que ``get_failing_set`` saltea: el
+símbolo se considera permanentemente malo (deslistado, ticker incorrecto). Un
+``transient`` es un fallo que casi seguro es culpa de Yahoo (timeout, throttle,
+401/crumb, lote entero vacío), NO del símbolo — se registra para visibilidad pero
+**no** se saltea, así un large-cap real que falló por un throttle vuelve a
+intentarse el próximo scan en vez de quedar excluido del universo (bug B3).
 
 Todas las operaciones son tolerantes a fallos: si la DB no está disponible,
 loguean y devuelven valores neutros para no romper el flujo principal.
@@ -35,6 +45,7 @@ log = get_logger(__name__)
 STATUS_FAILING = "failing"
 STATUS_RETRY = "retry"
 STATUS_IGNORED = "ignored"
+STATUS_TRANSIENT = "transient"
 
 
 @dataclass
@@ -97,6 +108,54 @@ def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
                 )
     except Exception:
         log.exception("No se pudo registrar fallo para %s", ticker)
+
+
+def record_transient(ticker: str, error: str, operation: str = "fetch", *, override: bool = False) -> None:
+    """
+    Registra un fallo **transitorio** (timeout/throttle/401/lote vacío) para
+    ``ticker``: visible en la UI pero NO entra al ``failing`` set, así el símbolo
+    se reintenta el próximo scan en vez de quedar excluido del universo.
+
+    Si el ticker ya estaba marcado ``failing``/``ignored`` (positivamente malo,
+    p.ej. deslistado confirmado) NO se degrada: ese conocimiento se preserva.
+
+    ``override=True`` permite degradar un ``failing`` a transitorio — se usa
+    cuando *a posteriori* se confirma que el fallo fue wholesale (todo un lote/
+    bulk falló a la vez = throttle, no un símbolo muerto). ``ignored`` (decisión
+    explícita del usuario) nunca se pisa.
+    """
+    if not ticker:
+        return
+    try:
+        symbol = ticker.upper().strip()
+        err_msg = (error or "")[:500]
+        op = (operation or "fetch")[:50]
+
+        with session_scope() as session:
+            existing = session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
+            if existing:
+                # No pisar un veredicto permanente con uno transitorio, salvo override
+                # (y nunca pisar 'ignored', que es decisión manual del usuario).
+                if existing.status == STATUS_IGNORED:
+                    return
+                if existing.status == STATUS_FAILING and not override:
+                    return
+                existing.last_error = err_msg
+                existing.last_operation = op
+                existing.fail_count = (existing.fail_count or 0) + 1
+                existing.status = STATUS_TRANSIENT
+            else:
+                session.add(
+                    FailedTicker(
+                        ticker=symbol,
+                        last_error=err_msg,
+                        last_operation=op,
+                        fail_count=1,
+                        status=STATUS_TRANSIENT,
+                    )
+                )
+    except Exception:
+        log.exception("No se pudo registrar fallo transitorio para %s", ticker)
 
 
 def record_success(ticker: str) -> None:

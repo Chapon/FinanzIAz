@@ -34,7 +34,7 @@ def _isolate(monkeypatch):
     monkeypatch.setattr(yf_mod, "_acquire_rate_token", lambda *_a, **_k: None)
     monkeypatch.setattr(yf_mod.time, "sleep", lambda *_a, **_k: None)
     monkeypatch.setattr(yf_mod, "_write_historical_cache", lambda *_a, **_k: None)
-    recorded = {"fail": [], "success": []}
+    recorded = {"fail": [], "success": [], "transient": []}
     monkeypatch.setattr(
         yf_mod, "record_failure",
         lambda t, *a, **k: recorded["fail"].append(t.upper()),
@@ -42,6 +42,10 @@ def _isolate(monkeypatch):
     monkeypatch.setattr(
         yf_mod, "record_success",
         lambda t, *a, **k: recorded["success"].append(t.upper()),
+    )
+    monkeypatch.setattr(
+        yf_mod, "record_transient",
+        lambda t, *a, **k: recorded["transient"].append(t.upper()),
     )
     return recorded
 
@@ -221,11 +225,20 @@ def test_dedup_and_uppercase(monkeypatch):
 # ── batch nulo (toda la descarga falló) ──────────────────────────────────────
 
 
-def test_whole_batch_none_marks_all_failed(monkeypatch, _isolate):
+def test_whole_batch_none_marks_transient_not_failing(monkeypatch, _isolate):
+    """B3: un lote ENTERO vacío = throttle/timeout de Yahoo, no N delistings.
+
+    No se envenena el failing set (large-caps reales seguirían excluidos del
+    universo): se marca TRANSITORIO y se abre el circuit-breaker para frenar la
+    cascada de hard-timeouts del resto del scan.
+    """
+    yf_mod.reset_throttle()
     monkeypatch.setattr(yf_mod, "_read_historical_cache", lambda *a: None)
     monkeypatch.setattr(yf_mod, "_download_batch", lambda chunk, p, i: None)
 
     out = yf_mod.get_historical_data_batch(["AAPL", "MSFT"])
 
     assert out["AAPL"] is None and out["MSFT"] is None
-    assert set(_isolate["fail"]) == {"AAPL", "MSFT"}
+    assert _isolate["fail"] == []  # NINGUNO marcado como permanentemente fallido
+    assert set(_isolate["transient"]) == {"AAPL", "MSFT"}
+    assert yf_mod._is_throttled()  # breaker abierto → el resto del scan falla rápido

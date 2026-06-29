@@ -158,6 +158,22 @@ def _guard_real_db(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_throttle_breaker():
+    """Cierra el circuit-breaker de throttle (B3) antes y después de cada test.
+
+    ``data.yahoo_finance`` guarda el estado del breaker a nivel de módulo
+    (global al proceso). Un test que dispare un throttle (timeout/lote vacío)
+    dejaría el breaker abierto y los fetch de los tests siguientes fallarían
+    rápido (fail-fast). Lo reseteamos para que cada test arranque limpio.
+    """
+    from data import yahoo_finance as _yfm
+
+    _yfm.reset_throttle()
+    yield
+    _yfm.reset_throttle()
+
+
+@pytest.fixture(autouse=True)
 def _disable_settings_persistence(tmp_path, monkeypatch):
     """
     Redirect ``settings.json`` to a per-test tmp directory so test runs don't

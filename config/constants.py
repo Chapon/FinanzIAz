@@ -105,6 +105,12 @@ NETWORK_TIMEOUT_SECONDS: float = 10.0  # per-request socket timeout
 NETWORK_HARD_TIMEOUT_SECONDS: float = 15.0  # absolute wall-clock cap
 NETWORK_RETRY_TOTAL: int = 2
 NETWORK_RETRY_BACKOFF: float = 1.0
+# Circuit-breaker: cuando Yahoo deja de responder (timeout/throttle/401 repetido)
+# o un lote entero vuelve vacío, abrimos el breaker por esta ventana. Mientras
+# está abierto: (1) las nuevas llamadas fallan rápido (no se queman 15s×N) y
+# (2) los fallos se clasifican como TRANSITORIOS, no como delisting permanente,
+# para no envenenar el failing set con large-caps reales (bug B3).
+NETWORK_THROTTLE_COOLDOWN_SECONDS: float = 90.0
 PRICE_CACHE_TTL_MINUTES: int = 5
 HISTORICAL_CACHE_TTL_HOURS: int = 1
 DIVIDEND_CACHE_HOURS: int = 6
