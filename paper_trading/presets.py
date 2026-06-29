@@ -96,6 +96,7 @@ WATCHLIST_PRESETS: dict[str, list[str]] = {
         "GM",
     ],
     # Staples: alimentos, bebidas, hogar — defensivo clásico.
+    # (Kellanova "K" removida: delistada tras la adquisición de Mars — B2.)
     "Consumo defensivo": [
         "PG",
         "KO",
@@ -108,7 +109,6 @@ WATCHLIST_PRESETS: dict[str, list[str]] = {
         "CL",
         "KMB",
         "GIS",
-        "K",
     ],
     # Pharma + dispositivos + seguros de salud.
     "Salud": [
