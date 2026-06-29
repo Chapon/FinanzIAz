@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-06-20T00:59:41.019583+00:00",
+    "built_at": "2026-06-27T22:43:57.457139+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -343,10 +343,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.066257,
-      "median_surprise": 0.079878,
-      "last_surprise": 0.331878,
-      "directional_score": 0.553
+      "mean_surprise": 0.07182,
+      "median_surprise": 0.08499,
+      "last_surprise": 0.212458,
+      "directional_score": 0.5575
     },
     "NKE": {
       "ticker": "NKE",
