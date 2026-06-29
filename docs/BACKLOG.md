@@ -8,7 +8,7 @@ Lista **operativa** de tareas (el qué sigue). El por qué estratégico vive en 
 
 **Política de decisión (orden de Chapa 2026-06-25):** ante una duda entre una opción rápida y una más costosa, elegir **siempre la que dé mejor calidad de datos / mayor ganancia esperada** del trading. Por eso varias tareas eligen el camino más completo (auto-fill real de stops, sizing contra cash real, validación walk-forward) en vez del parche mínimo.
 
-_Última actualización: 2026-06-26._
+_Última actualización: 2026-06-29._
 
 ---
 
@@ -62,12 +62,7 @@ _Última actualización: 2026-06-26._
 - **Síntoma:** `Quote not found for symbol: K` y `$K: possibly delisted (period=2y)` repetido varias veces en una sola corrida.
 - **Causa probable:** K falla pero se reintenta dentro de la misma corrida — el skip de `failed_tickers` no lo cubre, o K está en una lista que lo bypassea, o el símbolo está mal (Kellanova cotiza como K en NYSE pero yfinance lo 404ea).
 - **Fix:** garantizar que un 404 se registre en `failed_tickers` y se saltee en el resto de la corrida (y en bulk fetch); revisar si K se remueve del universo o se mapea. Verificar el flujo de skip end-to-end.
-
-### B3. El scan no consigue precio de large-caps reales + cascada de hard-timeouts · severidad ALTA (investigar)
-- **Síntoma (scan 02:45):** `$JPM/$KLAC/$LOW/$LMT: possibly delisted; no price data found (period=1y/5d)` —NO están deslistadas— seguido de varios `Hard timeout (15.0s) running _do_fetch`.
-- **Riesgo:** si el scan diario corre con precios faltantes de tickers reales, las decisiones de trading operan sobre datos incompletos/stale. Es lo más peligroso del log.
-- **Hipótesis a investigar:** (a) rate-limiting de Yahoo tras el harvest+classify largo (01:31-02:10) justo antes del scan; (b) fallout del KeyError de B1 ensuciando la sesión yfinance; (c) crumb/401 resurgiendo. Con 52 tickers × 15s de timeout el scan se vuelve lentísimo además.
-- **Acción:** loguear cuántos tickers fallan por scan; hacer el scan resiliente (saltear fallidos rápido, no 15s c/u); reproducir y ubicar la causa. Evaluar bajar el timeout y/o paralelizar con cap. Para decisiones de trading: si faltan precios de tickers con posición, NO operar a ciegas.
+- **Estado (2026-06-29):** ✅ flujo de skip end-to-end cerrado por `e38f751` — `get_historical_data_batch` ahora honra el `failing` set igual que `get_bulk_prices` (un símbolo muerto ya no se re-consulta cada scan). Residual menor: decidir si K se remapea/saca del universo (no bloquea).
 
 ### Observaciones (ruido de log, no crashes)
 - **XGBoost inestable:** el warning `val_acc std >8% > 8%` se dispara para la mayoría de los tickers en cada arranque → el modelo es ampliamente inestable. Refuerza la **tarea 4** (validar/degradar la `ml_probability`). Considerar bajar el ruido del log (a debug) o revisar el umbral.
@@ -112,6 +107,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 ## Hecho reciente
 
+- [x] **Bug B3 — el scan operaba sin precio de large-caps reales por throttle de Yahoo** (severidad ALTA). Un throttle/timeout transitorio durante el warm-up batch envenenaba el `failing` set con tickers **reales** (clasificados como "deslistados") y `get_bulk_prices` después los salteaba → scan sin precio de JPM/KLAC/LOW/LMT. Fix: estado `transient` en `failed_tickers` (no entra al `failing` set; `override` para degradar wholesale, nunca pisa `ignored`), circuit-breaker de throttle (`_note_throttle`/`_is_throttled`/`reset_throttle` + `NETWORK_THROTTLE_COOLDOWN_SECONDS=90s`, fail-fast bajo throttle), `_record_miss` throttle-aware, `get_historical_data_batch` honra el `failing` set (**cierra B2**) + wholesale→transient, `get_bulk_prices` detección wholesale, telemetría `prices_requested`/`prices_missing` en `ScanResult` + warning fuerte si una posición abierta quedó sin precio (stop no corrido), etiqueta "Transitorio" en la pestaña de fallidos. Commit `e38f751` (suite Windows 940 passed, 1 skipped).
 - [x] **Acciones manuales cerradas (2026-06-26)** — confirmado en `~/.finanzias/settings.json` vivo: `earnings_blackout_days=2` + `earnings_blackout_block_sells=false` (ya estaban seteados) y `paper_adv_cap_pct=0.05`. **Verificación del ADV cap:** los tests de integración `tests/test_adv_cap.py` (driven sobre `run_scan` con el flag en 0.05) confirman que un BUY ilíquido (>5% ADV$) se recorta con el warning "recortado por ADV" y uno normal NO se toca — los dos casos que pedía la acción manual. No hubo cambios en el repo (los flags viven fuera de él).
 - [x] **Bug B4 — red de seguridad autouse contra escrituras a la `finanzias.db` real** (prevención MEDIA). Fixture `_guard_real_db` en `tests/conftest.py` que rebindea `ENGINE`/`SessionLocal` a una SQLite in-memory por test (`StaticPool` + `check_same_thread=False` para aislar también las escrituras de cache desde el ThreadPool de yfinance); opt-out `@pytest.mark.real_db`. Previene toda la clase de bug que el 2026-06-25 corrompió AAPL/MSFT 1y. Incluye `tests/test_db_guard.py` (valida el guard), el fix puntual de `test_historical_batch` y `scripts/purge_synthetic_cache.py` (DB real ya verificada limpia). Commit `828dcd8` (suite 932 passed). **Toda la deuda de infra de testing/deps de esta tanda quedó cerrada.**
 - [x] **Coherencia requirements ↔ `.venv`** + tarea de upgrade. `.venv` recreado (estaba con binarios cp313 sobre Python 3.12); `requirements.txt` capeado al stack validado (numpy `<2.0`, scikit-learn `<1.8`, PyQt6 `<6.8`, xgboost declarado) y `requirements.lock` regenerado desde el venv sano. Commit `eeff335`.
