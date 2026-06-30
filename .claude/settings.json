@@ -9,7 +9,10 @@
       "Bash(conda:*)",
       "Bash(git:*)",
       "Bash(powershell:*)",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "PowerShell(git:*)",
+      "PowerShell(echo:*)",
+      "PowerShell(python:*)"
     ],
     "deny": []
   }
