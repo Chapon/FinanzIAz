@@ -321,6 +321,100 @@ def replay_event(
     )
 
 
+def replay_atr_recalib(
+    ev: SellEvent,
+    bars: list[Bar],
+    *,
+    cap_days: int,
+    atr_p: AtrParams,
+) -> SimExit | None:
+    """Re-simula un ciclo que salió por ATR bajo parámetros ATR alternativos.
+
+    A diferencia de ``replay_event`` (que asume el exit real ya ocurrió y
+    arranca en D+1 para medir el upside regalado por un SELL de señal), acá se
+    re-evalúa **desde el día del exit real ``D``** con los nuevos ``atr_p``: si
+    el nuevo stop/trail/tp dispara en ``D`` se sale en ``D``, si no la posición
+    continúa hasta que dispare o se alcance ``cap_days`` (vende al close).
+
+    Sirve para la recalibración de stops (backlog A1): variantes con stop
+    **igual o más laxo** que el real (mult ≥ el real, o sin stops). Con un stop
+    más estricto el disparo previo a ``D`` no se modela y el resultado sería
+    optimista — fuera de alcance.
+
+    Mismo orden intradía que el engine: cada día se evalúa el ATR con el HWM
+    *previo* al close, después se actualiza el HWM. El HWM se seedea desde el
+    entry hasta el cierre de ``D-1`` (el engine ya pasó por esos scans).
+
+    Devuelve None si no hay barras suficientes (sin cache, o ``D`` no es la
+    última barra disponible y no hay día de continuación).
+    """
+    if not bars:
+        return None
+    d_idx = _idx_on_or_after(bars, ev.sell_date)
+    if d_idx >= len(bars) or bars[d_idx][0] != ev.sell_date:
+        return None  # el día del fill tiene que existir como barra
+
+    atrs = atr_series(bars, atr_p.period)
+
+    # HWM al cierre de D-1: seed = entry fill, actualizado con los closes desde
+    # el entry hasta D-1 (el engine evaluó D con ese HWM previo).
+    e_idx = _idx_on_or_after(bars, ev.entry_date)
+    hwm = ev.entry_price
+    for i in range(e_idx, d_idx):
+        hwm = max(hwm, bars[i][4])
+
+    last_idx = min(d_idx + cap_days, len(bars) - 1)
+    exit_idx: int | None = None
+    exit_reason = ""
+    exit_level: float | None = None
+    deltas: list[tuple[str, float]] = []
+
+    for i in range(d_idx, last_idx + 1):
+        date_i, _, _, _, close_i = bars[i]
+        a = atrs[i]
+        fired = None
+        if a is not None:
+            fired = atr_exit(
+                current_price=close_i,
+                avg_cost=ev.avg_cost,
+                high_water_mark=hwm,
+                atr_value=a,
+                p=atr_p,
+            )
+        if fired is not None:
+            exit_idx, exit_reason = i, fired
+            exit_level = _atr_trigger_level(
+                fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p
+            )
+        elif i == last_idx:
+            exit_idx, exit_reason = i, "cap_reached"
+
+        # MTM delta diario vs el real (que está en cash a sell_price desde D)
+        deltas.append((date_i, (close_i - ev.sell_price) * ev.shares))
+
+        if exit_idx is not None:
+            break
+        hwm = max(hwm, close_i)
+
+    assert exit_idx is not None
+    if exit_reason in ("atr_stop", "atr_trail", "atr_tp"):
+        exit_price = _exit_fill_price(exit_reason, exit_level, bars[exit_idx])
+    else:
+        exit_price = bars[exit_idx][4]
+    pnl_sim = (exit_price * ev.shares
+               - ev.sell_commission - ev.sell_slippage
+               - ev.avg_cost * ev.shares)
+    return SimExit(
+        event=ev,
+        modified=True,
+        exit_date=bars[exit_idx][0],
+        exit_price=exit_price,
+        exit_reason=exit_reason,
+        pnl_sim=pnl_sim,
+        daily_delta=deltas,
+    )
+
+
 # ── Variantes ────────────────────────────────────────────────────────────────
 
 

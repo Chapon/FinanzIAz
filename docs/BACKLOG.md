@@ -8,7 +8,7 @@ Lista **operativa** de tareas (el qué sigue). El por qué estratégico vive en 
 
 **Política de decisión (orden de Chapa 2026-06-25):** ante una duda entre una opción rápida y una más costosa, elegir **siempre la que dé mejor calidad de datos / mayor ganancia esperada** del trading. Por eso varias tareas eligen el camino más completo (auto-fill real de stops, sizing contra cash real, validación walk-forward) en vez del parche mínimo.
 
-_Última actualización: 2026-06-29._
+_Última actualización: 2026-06-30._
 
 ---
 
@@ -22,23 +22,14 @@ _Última actualización: 2026-06-29._
 
 ## Próximo (priorizado — el de arriba es el siguiente)
 
-### 1. Recalibrar / decidir continuidad de los stops ATR  ·  ref A1 · severidad MEDIA
-- **Qué:** primero la pregunta correcta —**¿los stops ATR rinden con fills honestos, y a qué múltiplo?**— no asumir que solo falta subir el multiplicador.
-- **Por qué:** el "ejecuta por debajo del nivel" es casi todo **gap de scan discreto**, no slippage (WMT abrió ~2% bajo el nivel; slippage modelado solo 5 bps). El stop es un *market-on-next-scan*, no una orden real en mercado. A menor frecuencia de scan, peor el gap.
-- **Dónde:** `engine._compute_atr_forced_exits` → `gates.atr_exit_decision`; flags `atr_stops_enabled`/`atr_stop_mult`/`atr_period`/`atr_trail_enabled`.
-- **Gate previo:** ✅ CONFIRMADO 2026-06-25 — `atr_stops_enabled: true`, está vivo (no es exploración). **Parámetros actuales = baseline a batir:** `atr_stop_mult=2.0`, `atr_tp_mult=4.0`, `atr_period=14`, `atr_trail_enabled=true`. La recalibración compara contra estos valores.
-- **Decisión de calidad (mayor ganancia):** evaluar en el harness, todas con fill modelado, estas variantes: (a) sin stops ATR, (b) múltiplo actual, (c) múltiplo más alto en baja-vol, (d) **chequeo intradía** del stop usando datos intradía (mejor calidad de fill que el EOD; ver nota yfinance: 1m≈7d, 1h≈730d de histórico — limitado, evaluar si alcanza). Preferir la variante que más mejore el P/L neto aunque sea más trabajo.
-- **Kill-criteria (pre-registrado, estilo T6.1):** se shipea la variante que mejore el P/L total **≥ +2 puntos** sobre el real **sin** empeorar el max DD más de **1.5×**. Si gana "sin stops", se apagan. Si ninguna pasa, se documenta y quedan como están.
-- **Depende de:** ✅ desbloqueada — la tarea ① (auto-fill de risk-exits, commit `8ff57e1`) ya está, así que el comportamiento de los stops live coincide con lo backtesteado.
-
-### 2. Alinear `signal_weighted` con lo que realmente hace  ·  ref N1 · severidad MEDIA
+### 1. Alinear `signal_weighted` con lo que realmente hace  ·  ref N1 · severidad MEDIA
 - **Qué:** hoy la cuenta dice `allocation_mode="signal_weighted"` pero ese modo **no** está en `_VOL_SIZED_MODES` (`strategies.py:54`), así que cae al `else` = **slices iguales de cash** (equal-weight). La config miente.
 - **Por qué:** Chapa cree que sizea por convicción y en realidad es equal-weight. No es catastrófico (equal-weight es más seguro que pesar por un score sin poder predictivo, ver tarea 4), pero hay que cerrar la mentira de config.
 - **Dónde:** `strategies.generate_trades_analyze_single` (ramas de allocation, líneas ~409-435) + `_compute_target_weights` en `analysis/portfolio_backtest.py` + enum `AllocationMode`.
 - **Decisión de calidad (mayor ganancia):** implementar sizing **basado en riesgo** real en vez de equal-weight crudo: activar `inverse_vol` o `vol_target` (peso ∝ 1/σ), que es lo que hacen los sistemas pro (risk parity / vol targeting) y NO depende del buy_score sin alpha. Validar por harness contra equal-weight antes de cambiar el modo de la cuenta. Si no mejora, renombrar la cuenta a `equal_weight` para que la config sea honesta.
 - **Kill-criteria:** la variante de sizing por riesgo se adopta si mejora Sharpe/P-L sin subir DD > 1.5×; si no, se deja equal-weight (renombrado).
 
-### 3. Scale-out parcial en los SELL de señal  ·  ref A4/N4 · severidad MEDIA
+### 2. Scale-out parcial en los SELL de señal  ·  ref A4/N4 · severidad MEDIA
 - **Qué:** dejar de cerrar el 100% de la posición ante cada flip de señal; vender una fracción y mantener el resto (idealmente con trailing).
 - **Por qué:** 57% de las veces el precio subió tras vender (mean fwd5 **+3.92%**): el consenso de indicadores se vuelve bajista cerca de pisos de corto plazo y revierte. Cerrar todo en un flip ruidoso regala upside y amplifica el churn. Es el sesgo pesimista confirmado en SELLs.
 - **Dónde:** `strategies.generate_trades_analyze_single` líneas ~306-319 (hoy `target_shares = float(pos.shares)`, posición entera).
@@ -46,7 +37,7 @@ _Última actualización: 2026-06-29._
 - **Kill-criteria:** replay comparando cierre 100% vs scale-out 50%+trailing: se shipea si mejora el P/L ≥ +1.5 pts sin empeorar DD > 1.5×.
 - **Sinergia:** se beneficia de la hysteresis ya activa (Gate 2b, T6.4) y del exit-veto T-CAT (sigue OFF).
 
-### 4. Validar (o degradar a display) la `ml_probability` / buy_score  ·  ref A3 · severidad MEDIA
+### 3. Validar (o degradar a display) la `ml_probability` / buy_score  ·  ref A3 · severidad MEDIA
 - **Qué:** el `buy_score` = `_default_strength("BUY", ml_probability)` = la probabilidad ML calibrada de `analyze()`. corr(score, fwd5) ≈ **0.00** (n=21): no anticipa el retorno a 5 días en esta muestra. Hoy decide *qué* nombres entran (ranking), no *cuánto* (el sizing no lo usa, ver tarea 2).
 - **Por qué:** si el score no tiene alpha, rankear por él elige los nombres equivocados. El problema real no es "sacarlo del sizing" (ya está fuera) sino **si debe seguir eligiendo entradas**.
 - **Dónde:** `analysis.technical.analyze` (genera `ml_probability`), `strategies._default_strength`, ranking en `generate_trades_analyze_single`.
@@ -57,6 +48,22 @@ _Última actualización: 2026-06-29._
 ---
 
 ## Bugs / robustez de datos (del log de runtime 2026-06-25)
+
+### `database is locked` al escribir `earnings_cache` (delete-then-insert)  ·  severidad BAJA · robustez
+- **Síntoma:** `sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) database is locked` en `DELETE FROM earnings_cache WHERE earnings_cache.ticker = ?` (visto con `DUK`).
+- **Dónde:** `data/yahoo_finance.py` → `get_next_earnings_date`, paso 3 (cache write, líneas ~906-911): hace `session.query(EarningsCache).filter(ticker==...).delete()` seguido de `session.add(...)` dentro de un `session_scope()`.
+- **No es crash:** el bloque está en `try/except Exception: log.exception(...)` → **fail-open**. El gate de earnings (T08 blackout) defaultea a no bloquear y el traceback que aparece es lo que imprime `log.exception`, no una excepción que sube. Por eso no rompe el scan.
+- **Causa raíz:** contención de escritura sobre SQLite pese a que el engine ya tiene WAL + `busy_timeout=30000` + `timeout=30` (`database/models.py:52-79`). WAL permite muchos lectores pero **un solo escritor**; el lock persiste cuando: (a) corren dos procesos escribiendo a la vez —típicamente el scan de la app escribiendo `earnings_cache`/`price_cache` mientras el Task Scheduler diario corre `harvest_catalysts.py` escribiendo `news_events`—, o (b) un upgrade read→write donde SQLite devuelve `SQLITE_BUSY` de inmediato sin respetar `busy_timeout` (lo hace a propósito para no deadlockear). El patrón delete+insert mantiene el lock de escritura más tiempo que un upsert.
+- **Impacto:** bajo. Se pierde la escritura de cache de ese ticker → el próximo scan re-pega a Yahoo por su calendario de earnings (llamada redundante) + ruido de log. Sin impacto en decisiones de trading ni corrupción (la lectura es SELECT, no toca esto).
+- **Fix propuesto (orden de menor a mayor):** (1) tratar el lock como transitorio y reintentar con backoff —reusar `_is_transient`/`_run_with_timeout` que ya existen para el 401 crumb— en vez de solo loguear; (2) reemplazar el delete+insert por un **upsert** (`INSERT ... ON CONFLICT(ticker) DO UPDATE`) para acortar la ventana de lock y evitar el ciclo borrar/insertar; (3) bajar el log a `debug`/`warning` (no `exception`) ya que es fail-open esperable bajo contención. Validar que no se pisen escrituras concurrentes legítimas.
+- **Kill-criteria:** suite Windows verde + el warning desaparece (o baja a debug) bajo un scan concurrente con el harvest corriendo.
+
+### Precio de Yahoo ~10× corrupto ejecutó un round-trip entero (KLAC)  ·  severidad MEDIA · robustez
+- **Síntoma:** el ciclo KLAC de la cuenta 1 se abrió y cerró en escala **~$1942–1987** (BUY 2026-06-01 @ 1942.70 ×2, SELL 2026-06-05 @ 1987.83 por `atr_trail`) cuando el precio real de KLAC en junio 2026 era **~$190–210** (factor ~10×). Detectado al recalibrar los stops ATR (A1): el fill difería del close del cache en +930%.
+- **Impacto:** el notional del trade quedó ~10× inflado ($3.885 en vez de ~$388) → distorsiona el peso en el portfolio y el sizing de los ciclos vecinos (el cash "ocupado" fue 10× el real). El P/L en % del ciclo es coherente internamente (+2.3%), pero el $ absoluto y todo lo que dependa del notional (DD, exposición, ADV cap) están sesgados. No es crash.
+- **Causa raíz (a confirmar):** precio basura de Yahoo en el momento del scan (familia del "Invalid Crumb"/401 que `bec78e6`/`3f833bb` mitigaron para el fetch, pero acá el valor corrupto **pasó el filtro y se usó como precio de entrada/salida**). El ATR del reason (93.85 sobre ~$1987 ≈ 4.7%, plausible; sobre ~$200 sería absurdo) confirma que todo el ciclo corrió en la escala inflada.
+- **Fix propuesto:** sanity-check de precio antes de fillar una orden — rechazar/marcar un fill cuyo precio difiera del último close cacheado (o de un EOD de referencia) por > X% (p.ej. 50%), igual que la higiene que ya hace el harness A1 (`partition_atr_events`). Evaluar también un guard en `get_current_price`/`get_bulk_prices` que descarte cotizaciones fuera de banda vs el histórico reciente. Revisar si hay otros ciclos contaminados además de KLAC.
+- **Kill-criteria:** suite Windows verde + un fill con precio fuera de banda (>50% vs último close) se rechaza/marca en vez de ejecutarse; barrido de la DB viva sin otros round-trips con notional fuera de escala.
 
 ### Observaciones (ruido de log, no crashes)
 - **XGBoost inestable:** el warning `val_acc std >8% > 8%` se dispara para la mayoría de los tickers en cada arranque → el modelo es ampliamente inestable. Refuerza la **tarea 4** (validar/degradar la `ml_probability`). Considerar bajar el ruido del log (a debug) o revisar el umbral.
@@ -101,6 +108,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 ## Hecho reciente
 
+- [x] **A1 — Recalibrar / decidir continuidad de los stops ATR** (severidad MEDIA). **Veredicto: NO-SHIP, los stops quedan en mult 2.0** (`docs/atr_stop_recalib_2026-06-30.md`). Harness nuevo `scripts/run_atr_stop_recalib.py` + motor `replay_atr_recalib` (`analysis/exit_replay.py`, re-evalúa el ciclo ATR desde el día del exit real bajo params alternativos, fills modelados) + `tests/test_atr_stop_recalib.py`. Resultado sobre 6 exits ATR limpios (KLAC excluido por precio corrupto, ver abajo): `no_stops` (+5.38 pts) y `mult_3.0` (+4.46 pts) **pasan el umbral numérico pero NO son robustos** — leave-one-out sin LRCX (que aporta 63% del efecto) los tumba a +1.99/+1.07 pts, bajo el umbral. Muestra n=6 en régimen de rebote sin drawdown (survivorship) → apagar/aflojar un guardrail de riesgo sería especulativo. Re-evaluar con ≥1 período de stress o n≥~20. Suite Windows 950 passed, 1 skipped. _(commit pendiente)_
 - [x] **Bug B2 — símbolos muertos en el universo no se salteaban (K / Kellanova)** (severidad MEDIA). Dos partes: (1) el flujo de skip end-to-end quedó cerrado por `e38f751` — `get_historical_data_batch` ahora honra el `failing` set igual que `get_bulk_prices`, así un símbolo muerto no se re-consulta cada scan; (2) K (Kellanova) se confirmó **delistada** tras la adquisición de Mars (Yahoo ya no la lista), así que se removió del preset "Consumo defensivo" y del universo S&P 500 fallback en `2c9587c`. La watchlist viva en la DB que aún la tenga la saltea sola (delisting genuino → `failing` set). Suite Windows 940 passed, 1 skipped.
 - [x] **Bug B3 — el scan operaba sin precio de large-caps reales por throttle de Yahoo** (severidad ALTA). Un throttle/timeout transitorio durante el warm-up batch envenenaba el `failing` set con tickers **reales** (clasificados como "deslistados") y `get_bulk_prices` después los salteaba → scan sin precio de JPM/KLAC/LOW/LMT. Fix: estado `transient` en `failed_tickers` (no entra al `failing` set; `override` para degradar wholesale, nunca pisa `ignored`), circuit-breaker de throttle (`_note_throttle`/`_is_throttled`/`reset_throttle` + `NETWORK_THROTTLE_COOLDOWN_SECONDS=90s`, fail-fast bajo throttle), `_record_miss` throttle-aware, `get_historical_data_batch` honra el `failing` set (**cierra B2**) + wholesale→transient, `get_bulk_prices` detección wholesale, telemetría `prices_requested`/`prices_missing` en `ScanResult` + warning fuerte si una posición abierta quedó sin precio (stop no corrido), etiqueta "Transitorio" en la pestaña de fallidos. Commit `e38f751` (suite Windows 940 passed, 1 skipped).
 - [x] **Acciones manuales cerradas (2026-06-26)** — confirmado en `~/.finanzias/settings.json` vivo: `earnings_blackout_days=2` + `earnings_blackout_block_sells=false` (ya estaban seteados) y `paper_adv_cap_pct=0.05`. **Verificación del ADV cap:** los tests de integración `tests/test_adv_cap.py` (driven sobre `run_scan` con el flag en 0.05) confirman que un BUY ilíquido (>5% ADV$) se recorta con el warning "recortado por ADV" y uno normal NO se toca — los dos casos que pedía la acción manual. No hubo cambios en el repo (los flags viven fuera de él).
