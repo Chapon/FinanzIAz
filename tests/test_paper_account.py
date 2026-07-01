@@ -67,6 +67,23 @@ def test_list_accounts_filters_active_only(test_db):
     assert {a.name for a in actives} == {"A"}
 
 
+def test_toggle_active_round_trip(test_db):
+    # ACC1: activar → desactivar → activar vía update_account_config, verificando
+    # que list_accounts(active_only) refleja el estado en cada paso.
+    a = _make_account(name="Toggle")
+    assert a.is_active is True
+    assert {x.name for x in list_accounts(active_only=True)} == {"Toggle"}
+
+    upd = update_account_config(a.id, is_active=False)
+    assert upd is not None and upd.is_active is False
+    assert list_accounts(active_only=True) == []
+    assert {x.name for x in list_accounts()} == {"Toggle"}  # sigue existiendo
+
+    upd = update_account_config(a.id, is_active=True)
+    assert upd is not None and upd.is_active is True
+    assert {x.name for x in list_accounts(active_only=True)} == {"Toggle"}
+
+
 def test_delete_account_returns_true_when_exists(test_db):
     a = _make_account()
     assert delete_account(a.id) is True

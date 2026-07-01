@@ -73,6 +73,7 @@ from paper_trading.account import (
     get_watchlist,
     list_accounts,
     remove_watchlist_ticker,
+    update_account_config,
 )
 from paper_trading.costs import get_active_commission_model
 from paper_trading.engine import approve_order, reject_order
@@ -88,6 +89,17 @@ from ui.paper.workers import PricesWorker
 # keeps working. New code should import from ``ui.paper`` directly.
 _PricesWorker = PricesWorker
 _EquityCurveChart = EquityCurveChart
+
+
+def needs_pause_confirmation(positions, pending) -> bool:
+    """Whether pausing an account should ask the user to confirm first.
+
+    Pausing has two non-obvious consequences — open positions stop getting
+    stops/risk-exits and pending orders never fill — so we only confirm when
+    there is actually something at stake. Pure function so the decision is
+    testable without a Qt event loop.
+    """
+    return bool(positions) or bool(pending)
 
 
 # ── Main paper-trading tab ────────────────────────────────────────────────────
@@ -175,6 +187,11 @@ class PaperTradingTab(QWidget):
             f"QPushButton:disabled {{ color: {PALETTE['text3']}; }}"
         )
 
+        # Stashed so the pause/resume toggle can be restyled from
+        # ``_refresh_account_action_buttons`` (out of this local scope).
+        self._primary_btn_qss = _PRIMARY_BTN_QSS
+        self._secondary_btn_qss = _SECONDARY_BTN_QSS
+
         self.new_btn = QPushButton("+ Nueva")
         self.new_btn.setMinimumHeight(36)
         self.new_btn.setStyleSheet(_PRIMARY_BTN_QSS)
@@ -188,6 +205,15 @@ class PaperTradingTab(QWidget):
         self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.edit_btn.clicked.connect(self._edit_account)
         top.addWidget(self.edit_btn)
+
+        # One-click pause/resume of the selected account (toggle: label + style
+        # reflect current state). Backend is ``is_active`` on the account.
+        self.toggle_active_btn = QPushButton("⏸ Pausar")
+        self.toggle_active_btn.setMinimumHeight(36)
+        self.toggle_active_btn.setStyleSheet(_SECONDARY_BTN_QSS)
+        self.toggle_active_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_active_btn.clicked.connect(self._toggle_account_active)
+        top.addWidget(self.toggle_active_btn)
 
         self.delete_btn = QPushButton("Eliminar")
         self.delete_btn.setMinimumHeight(36)
@@ -518,6 +544,93 @@ class PaperTradingTab(QWidget):
         if dlg.exec():
             self._load_accounts()
 
+    def _selected_account(self):
+        """Return the selected ``PaperAccount`` from the cached list (no DB hit)."""
+        if self._current_account_id is None:
+            return None
+        for a in self._accounts:
+            if int(a.id) == self._current_account_id:
+                return a
+        return None
+
+    def _refresh_account_action_buttons(self):
+        """Sync the pause/resume toggle and the scan button to the selected account.
+
+        Called from ``_load_accounts`` and ``_on_account_changed`` — the two
+        points where the selected account (and its ``is_active``) can change.
+        """
+        acct = self._selected_account()
+        if acct is None:
+            self.toggle_active_btn.setEnabled(False)
+            self.toggle_active_btn.setText("⏸ Pausar")
+            self.toggle_active_btn.setStyleSheet(self._secondary_btn_qss)
+            self.scan_btn.setEnabled(False)
+            return
+        self.toggle_active_btn.setEnabled(True)
+        if acct.is_active:
+            self.toggle_active_btn.setText("⏸ Pausar")
+            self.toggle_active_btn.setStyleSheet(self._secondary_btn_qss)
+        else:
+            self.toggle_active_btn.setText("▶ Activar")
+            self.toggle_active_btn.setStyleSheet(self._primary_btn_qss)
+        # An inactive account is a no-op in ``run_scan`` (engine.py) — don't let
+        # the scan button pretend a manual scan would do anything.
+        self.scan_btn.setEnabled(bool(acct.is_active))
+
+    def _toggle_account_active(self):
+        """Pause (deactivate) or resume (activate) the selected account in one click."""
+        if self._current_account_id is None:
+            return
+        acct = get_account(self._current_account_id)
+        if acct is None:
+            QMessageBox.warning(self, "Error", "La cuenta ya no existe.")
+            self._load_accounts()
+            return
+
+        new_state = not acct.is_active
+        if not new_state:
+            # Pausing has two non-obvious consequences (no stops on open
+            # positions + pending orders never fill). Confirm explicitly when
+            # the account actually has something at stake.
+            positions = get_positions(self._current_account_id)
+            pending = get_pending_orders(self._current_account_id)
+            if needs_pause_confirmation(positions, pending):
+                body = (
+                    "Al pausar esta cuenta el scan automático y el manual la van "
+                    "a saltear:<br><br>"
+                    "<ul>"
+                    "<li>NO se van a generar nuevas órdenes.</li>"
+                    "<li>Las órdenes pendientes NO se van a llenar.</li>"
+                    "<li>A las posiciones abiertas NO se les van a correr "
+                    "stops/risk-exits mientras esté pausada.</li>"
+                    "</ul>"
+                    "La historia y las posiciones se conservan.<br><br>"
+                    "¿Pausar igual?"
+                )
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Icon.Warning)
+                box.setWindowTitle("Pausar cuenta")
+                box.setTextFormat(Qt.TextFormat.RichText)
+                box.setText(body)
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                box.setDefaultButton(QMessageBox.StandardButton.No)  # safer default
+                if box.exec() != QMessageBox.StandardButton.Yes:
+                    return
+
+        updated = update_account_config(self._current_account_id, is_active=new_state)
+        if updated is None:
+            QMessageBox.warning(self, "Error", "La cuenta ya no existe.")
+            self._load_accounts()
+            return
+
+        # Refreshes the combo "(inactiva)" suffix, KPIs and the toggle itself.
+        self._load_accounts()
+        verb = "activada" if new_state else "pausada"
+        with contextlib.suppress(Exception):
+            self.window().statusBar().showMessage(f"Cuenta {verb}.", 4000)
+
     def _delete_account(self):
         if self._current_account_id is None:
             return
@@ -573,8 +686,9 @@ class PaperTradingTab(QWidget):
         QTimer.singleShot(15_000, self._reset_scan_button)
 
     def _reset_scan_button(self):
-        self.scan_btn.setEnabled(True)
         self.scan_btn.setText("⚡ Escanear ahora")
+        # Re-enable only if the selected account is active (inactive = no-op scan).
+        self._refresh_account_action_buttons()
 
     # ── Watchlist ─────────────────────────────────────────────────────────────
 
@@ -661,13 +775,15 @@ class PaperTradingTab(QWidget):
         for btn in (
             self.edit_btn,
             self.delete_btn,
-            self.scan_btn,
             self.refresh_btn,
             self.add_ticker_btn,
             self.preset_btn,
         ):
             btn.setEnabled(has_account)
         self.ticker_input.setEnabled(has_account)
+        # scan + pause/resume buttons are account-active-aware, not just
+        # account-present — the helper is the single source of truth.
+        self._refresh_account_action_buttons()
 
         if not has_account:
             self.config_label.setText("Seleccioná o creá una cuenta para empezar.")
