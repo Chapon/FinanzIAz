@@ -12,7 +12,17 @@
       "Bash(cmd /c:*)",
       "PowerShell(git:*)",
       "PowerShell(echo:*)",
-      "PowerShell(python:*)"
+      "PowerShell(python:*)",
+      "PowerShell(pip:*)",
+      "PowerShell(conda:*)",
+      "Bash(echo:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(which:*)",
+      "PowerShell(.venv/Scripts/python.exe:*)",
+      "Skill(ship)",
+      "Skill(ship:*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ],
     "deny": []
   }
