@@ -25,7 +25,7 @@ Schema del payload (``build_metrics``)::
       "account_id": 1,
       "realized": {
         "n_round_trips", "total_pnl", "n_wins", "n_losses", "win_rate",
-        "profit_factor", "avg_win", "avg_loss", "expectancy",
+        "profit_factor", "avg_win", "avg_loss", "payoff_ratio", "expectancy",
         "avg_hold_days", "total_costs",
         "by_exit_kind": {kind: {"n", "pnl", "avg"}},
         "per_ticker": [{"ticker","pnl","n"}...],
@@ -40,6 +40,14 @@ Schema del payload (``build_metrics``)::
         "per_buy": [{"ticker","score","fwd5","fwd20","day"}...]
       },
       "sell_calibration": {"n","up_after","up_after_pct","mean_fwd5"},
+      "sell_timing": {   # calidad de la SALIDA (mirror de timing; venta buena = fwd5≤0)
+        "n5","good5","good5_pct","mean5","median5",
+        "n20","good20","good20_pct","mean20","median20",
+        "by_exit_kind": {kind: {"n","good_pct","mean_fwd5"}},
+        "sell_score_fwd5_corr", "sell_score_fwd5_n",
+        "top_avoided":[…], "top_regret":[…],
+        "per_sell": [{"ticker","score","exit_kind","fwd5","fwd20","day"}...]
+      },
       "churn": {"n_le7d", "events":[{"ticker","gap_days","sell_id","buy_id"}...]},
       "timeline": [{"day","cum_pnl","trades","rolling_win_rate"}...],
       "open_positions": [{"ticker","shares","avg_cost","mark","mtm_pct"}...],
@@ -247,6 +255,7 @@ def _realized_panel(rts: list[dict]) -> dict:
     if not rts:
         return dict(n_round_trips=0, total_pnl=0.0, n_wins=0, n_losses=0,
                     win_rate=0.0, profit_factor=None, avg_win=0.0, avg_loss=0.0,
+                    payoff_ratio=None,
                     expectancy=0.0, avg_hold_days=0.0, total_costs=0.0,
                     by_exit_kind={}, per_ticker=[], worst_ticker=None,
                     pnl_ex_worst=0.0, top_winners=[], top_losers=[], round_trips=[])
@@ -269,6 +278,11 @@ def _realized_panel(rts: list[dict]) -> dict:
     )
     worst = per_ticker[0] if per_ticker else None
     pnl_ex_worst = total - (worst["pnl"] if worst else 0.0)
+    avg_win = gw / len(wins) if wins else 0.0
+    avg_loss = -gl / len(losses) if losses else 0.0
+    # payoff ratio = ganancia media / |pérdida media|. Para un sistema asimétrico
+    # es el verdadero veredicto (un win-rate < 50% es viable si payoff > 1).
+    payoff_ratio = (avg_win / abs(avg_loss)) if avg_loss else None
 
     def _slim(r: dict) -> dict:
         return {k: r[k] for k in ("ticker", "pnl", "pnl_pct", "hold_days",
@@ -281,8 +295,9 @@ def _realized_panel(rts: list[dict]) -> dict:
         n_losses=len(losses),
         win_rate=len(wins) / len(rts),
         profit_factor=(gw / gl if gl else None),
-        avg_win=(gw / len(wins) if wins else 0.0),
-        avg_loss=(-gl / len(losses) if losses else 0.0),
+        avg_win=avg_win,
+        avg_loss=avg_loss,
+        payoff_ratio=payoff_ratio,
         expectancy=total / len(rts),
         avg_hold_days=sum(r["hold_days"] for r in rts) / len(rts),
         total_costs=sum(r["costs"] for r in rts),
@@ -360,6 +375,66 @@ def _sell_calibration_panel(con: sqlite3.Connection, orders: list[dict]) -> dict
     )
 
 
+def _sell_timing_panel(con: sqlite3.Connection, orders: list[dict]) -> dict:
+    """Calidad de la SALIDA por forward-return post-SELL (mirror de _timing_panel).
+
+    Convención **invertida** respecto de las compras: una venta es BUENA si el
+    precio NO subió después (evitó una caída / preservó ganancia → ``fwd5 ≤ 0``)
+    y MALA si siguió subiendo (vendiste temprano → ``fwd5 > 0``, "regret").
+    Recorre TODAS las SELL filled (no solo signal_sell) y segmenta por exit_kind.
+    """
+    series_cache: dict[str, list | None] = {}
+
+    def series(t: str):
+        if t not in series_cache:
+            series_cache[t] = load_close_series(con, t)
+        return series_cache[t]
+
+    f5: list[float] = []
+    f20: list[float] = []
+    pairs: list[tuple[float, float]] = []
+    per_sell: list[dict] = []
+    by_kind: dict[str, list] = defaultdict(lambda: [0, 0, 0.0])  # kind -> [n, n_good, sum_fwd5]
+    for o in orders:
+        if o["side"] != "SELL":
+            continue
+        day = _day(o["filled_at"])
+        if not day:
+            continue
+        r5 = forward_return(series(o["ticker"]), day, FWD_SHORT)
+        r20 = forward_return(series(o["ticker"]), day, FWD_LONG)
+        kind = _exit_kind(o["reason"])
+        per_sell.append({"ticker": o["ticker"], "score": o["score"], "exit_kind": kind,
+                         "fwd5": r5, "fwd20": r20, "day": day})
+        if r5 is not None:
+            f5.append(r5)
+            by_kind[kind][0] += 1
+            if r5 <= 0:
+                by_kind[kind][1] += 1
+            by_kind[kind][2] += r5
+            if o["score"] is not None:
+                pairs.append((float(o["score"]), r5))
+        if r20 is not None:
+            f20.append(r20)
+    g5 = [x for x in f5 if x <= 0]   # venta buena = el precio no subió después
+    g20 = [x for x in f20 if x <= 0]
+    with_f5 = [p for p in per_sell if p["fwd5"] is not None]
+    return dict(
+        n5=len(f5), good5=len(g5), good5_pct=(len(g5) / len(f5) if f5 else 0.0),
+        mean5=(sum(f5) / len(f5) if f5 else 0.0), median5=_median(f5),
+        n20=len(f20), good20=len(g20), good20_pct=(len(g20) / len(f20) if f20 else 0.0),
+        mean20=(sum(f20) / len(f20) if f20 else 0.0), median20=_median(f20),
+        by_exit_kind={k: {"n": v[0], "good_pct": (v[1] / v[0] if v[0] else 0.0),
+                          "mean_fwd5": (v[2] / v[0] if v[0] else 0.0)}
+                      for k, v in by_kind.items()},
+        sell_score_fwd5_corr=_corr(pairs), sell_score_fwd5_n=len(pairs),
+        # mejores ventas = más caída evitada (fwd5 más negativo); peores = regret.
+        top_avoided=sorted(with_f5, key=lambda x: x["fwd5"])[:5],
+        top_regret=sorted(with_f5, key=lambda x: -x["fwd5"])[:5],
+        per_sell=per_sell,
+    )
+
+
 def _churn_panel(orders: list[dict]) -> dict:
     ev: dict[str, list] = defaultdict(list)
     for o in orders:
@@ -432,6 +507,7 @@ def build_metrics(con: sqlite3.Connection, account_id: int = 1,
         "realized": _realized_panel(rts),
         "timing": _timing_panel(con, orders),
         "sell_calibration": _sell_calibration_panel(con, orders),
+        "sell_timing": _sell_timing_panel(con, orders),
         "churn": _churn_panel(orders),
         "timeline": _timeline(rts),
         "open_positions": _open_positions(con, account_id),

@@ -158,6 +158,47 @@ def test_build_metrics_filters_by_account():
     assert m2["realized"]["total_pnl"] == pytest.approx(-100.0, abs=1e-6)  # solo CCC
 
 
+def test_realized_payoff_ratio():
+    # E2: payoff = avg_win / |avg_loss|. Ganador +100, perdedor -50 → 2.0.
+    con = _make_db()
+    _order(con, 1, "AAA", "BUY", 100.0, 1, "2026-01-01 10:00:00", comm=0, slip=0)
+    _order(con, 2, "AAA", "SELL", 200.0, 1, "2026-01-05 10:00:00", comm=0, slip=0)
+    _order(con, 3, "BBB", "BUY", 100.0, 1, "2026-01-02 10:00:00", comm=0, slip=0)
+    _order(con, 4, "BBB", "SELL", 50.0, 1, "2026-01-06 10:00:00", comm=0, slip=0)
+    r = mp.build_metrics(con, 1)["realized"]
+    assert r["avg_win"] == pytest.approx(100.0)
+    assert r["avg_loss"] == pytest.approx(-50.0)
+    assert r["payoff_ratio"] == pytest.approx(2.0)
+
+
+def test_sell_timing_panel_inverted_and_by_kind():
+    # MET2: venta buena = precio NO sube después (fwd5 ≤ 0). Signo invertido vs
+    # compras. AAA (signal_sell) baja → buena; BBB (atr_stop) sube → regret.
+    con = _make_db()
+    _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
+    _order(con, 2, "AAA", "SELL", 100.0, 10, "2026-01-02 10:00:00", comm=0, slip=0,
+           reason="analyze SELL (0.40)", score=0.40)
+    _order(con, 3, "BBB", "BUY", 50.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
+    _order(con, 4, "BBB", "SELL", 50.0, 10, "2026-01-02 10:00:00", comm=0, slip=0,
+           reason="atr_stop @ 50 ≤ 51", score=0.20)
+    _hist(con, "AAA", [("2026-01-02", 100.0), ("2026-01-05", 99.0), ("2026-01-06", 98.0),
+                       ("2026-01-07", 97.0), ("2026-01-08", 96.0), ("2026-01-09", 95.0),
+                       ("2026-01-12", 94.0)])
+    _hist(con, "BBB", [("2026-01-02", 50.0), ("2026-01-05", 51.0), ("2026-01-06", 52.0),
+                       ("2026-01-07", 53.0), ("2026-01-08", 54.0), ("2026-01-09", 55.0),
+                       ("2026-01-12", 56.0)])
+    st = mp.build_metrics(con, 1)["sell_timing"]
+    assert st["n5"] == 2
+    assert st["good5"] == 1                       # AAA bajó (buena), BBB subió (mala)
+    assert st["good5_pct"] == pytest.approx(0.5)
+    assert st["by_exit_kind"]["signal_sell"]["good_pct"] == pytest.approx(1.0)
+    assert st["by_exit_kind"]["atr_stop"]["good_pct"] == pytest.approx(0.0)
+    assert st["by_exit_kind"]["signal_sell"]["mean_fwd5"] < 0   # caída evitada
+    assert st["by_exit_kind"]["atr_stop"]["mean_fwd5"] > 0      # regret
+    assert st["top_avoided"][0]["ticker"] == "AAA"
+    assert st["top_regret"][0]["ticker"] == "BBB"
+
+
 def test_churn_detection():
     con = _make_db()
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00")

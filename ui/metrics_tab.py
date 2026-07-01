@@ -114,7 +114,7 @@ class EffectivenessChart(QFrame):
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 14)
         root.setSpacing(8)
-        title = QLabel("Evolución de la efectividad (P/L acumulado + win-rate)")
+        title = QLabel("Evolución del P/L acumulado (win-rate de contexto, no es el veredicto)")
         title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 15px; font-weight: 700;")
         root.addWidget(title)
         sub = QLabel("Líneas punteadas = commits que cambian la lógica del engine")
@@ -232,7 +232,10 @@ class MetricsTab(QWidget):
              "'Sin peor nombre' = el mismo total excluyendo el ticker que más perdió, "
              "para ver cuánto pesa un solo nombre tóxico."),
             ("winrate", "WIN RATE", "area",
-             "Porcentaje de round-trips cerrados con ganancia (P/L > 0)."),
+             "Porcentaje de round-trips cerrados con ganancia (P/L > 0). "
+             "NO es el veredicto de efectividad: para un sistema asimétrico un "
+             "win-rate < 50% es viable si el payoff ratio > 1. Mirá payoff, "
+             "expectancy y profit factor para juzgar el sistema."),
             ("pf", "PROFIT FACTOR", "bar",
              "Ganancia bruta de los trades ganadores dividida por la pérdida bruta de "
              "los perdedores. Mayor a 1 significa que el sistema gana plata; 2 = ganás "
@@ -240,9 +243,21 @@ class MetricsTab(QWidget):
             ("expectancy", "EXPECTANCY / TRADE", "area",
              "Ganancia promedio esperable por cada round-trip cerrado "
              "(P/L total ÷ cantidad de trades)."),
+            ("payoff", "PAYOFF RATIO", "bar",
+             "Ganancia media de los ganadores ÷ |pérdida media| de los perdedores "
+             "(avg_win / |avg_loss|). Para un sistema asimétrico es el verdadero "
+             "veredicto: con payoff > 1 un win-rate < 50% igual puede ser rentable."),
+            ("exworst", "P/L SIN PEOR NOMBRE", "spike",
+             "P/L realizado total excluyendo el ticker que más perdió. Muestra "
+             "cuánto pesa un solo nombre tóxico sobre el resultado."),
             ("goodbad", "COMPRAS BUENAS / MALAS", "bar",
              "Cantidad de compras buenas (round-trip cerrado con P/L > 0) frente a las "
              "malas (P/L ≤ 0)."),
+            ("sellquality", "VENTAS BUENAS / MALAS", "bar",
+             "Calidad de la SALIDA por forward-return: venta BUENA = el precio NO "
+             "subió en los 5 días hábiles siguientes (evitó una caída / preservó "
+             "ganancia, fwd5 ≤ 0); venta MALA = siguió subiendo (vendiste temprano, "
+             "'regret', fwd5 > 0). Convención INVERTIDA respecto de las compras."),
             ("timing", "TIMING BUENO (fwd5>0)", "area",
              "Porcentaje de compras cuyo precio SUBIÓ en los 5 días hábiles siguientes "
              "al BUY (forward return a 5 días > 0). Mide la calidad de la ENTRADA, "
@@ -314,6 +329,26 @@ class MetricsTab(QWidget):
         for t in (self.exit_table, self.ticker_table, self.rt_table, self.timing_table):
             row.addWidget(t["frame"], 1)
         self.root.addLayout(row)
+
+        # ── 2ª fila de tablas: timing de ventas (calidad de la SALIDA, MET2) ──
+        self.sell_timing_table = self._make_table(
+            "Timing de ventas (forward return tras el SELL)",
+            ["Ticker", "Fecha", "Score", "Salida", "fwd5", "fwd20"],
+            section_tip="Calidad de la SALIDA: cuánto se movió el precio DESPUÉS del "
+                        "SELL. Venta buena = el precio no subió (fwd5 ≤ 0, verde); mala = "
+                        "siguió subiendo (fwd5 > 0, rojo, 'regret'). Color INVERTIDO "
+                        "respecto de las compras. Un atr_stop con regret igual hizo su "
+                        "trabajo (protección de capital), no es señal para apagar stops.",
+            col_tips=["Símbolo", "Fecha de la venta",
+                      "Signal score del modelo al vender",
+                      "Tipo de salida (signal_sell / atr_stop / atr_trail / atr_tp)",
+                      "Retorno del precio 5 días hábiles tras el SELL (negativo = venta buena)",
+                      "Retorno del precio 20 días hábiles tras el SELL"],
+            fixed_height=_TABLE_HEIGHT)
+        row2 = QHBoxLayout()
+        row2.setSpacing(14)
+        row2.addWidget(self.sell_timing_table["frame"], 1)
+        self.root.addLayout(row2)
 
     def _make_table(self, title: str, headers: list[str], *,
                     section_tip: str | None = None,
@@ -424,15 +459,29 @@ class MetricsTab(QWidget):
         self.cards["pnl"].set_value(_money(r["total_pnl"]),
                                     f"sin peor nombre: {_money(r['pnl_ex_worst'])}",
                                     r["total_pnl"] > 0)
+        # Win-rate reencuadrado: NO es el veredicto de efectividad (color neutro),
+        # el titular real es el payoff ratio (sistema asimétrico).
         self.cards["winrate"].set_value(_pct(r["win_rate"]),
-                                        f"{r['n_round_trips']} trades", r["win_rate"] >= 0.5)
+                                        "no es el veredicto — mirá payoff", None)
         pf = r["profit_factor"]
         self.cards["pf"].set_value(f"{pf:.2f}" if pf else "—",
                                    "ganancia/pérdida bruta", (pf or 0) >= 1.0)
         self.cards["expectancy"].set_value(_money(r["expectancy"]),
                                            f"avg win {_money(r['avg_win'])}", r["expectancy"] > 0)
+        payoff = r["payoff_ratio"]
+        self.cards["payoff"].set_value(f"{payoff:.2f}×" if payoff else "—",
+                                       "avg win / |avg loss|", (payoff or 0) >= 1.0)
+        self.cards["exworst"].set_value(
+            _money(r["pnl_ex_worst"]),
+            f"peor: {r['worst_ticker']['ticker']}" if r["worst_ticker"] else "",
+            r["pnl_ex_worst"] > 0)
         self.cards["goodbad"].set_value(f"{r['n_wins']} / {r['n_losses']}",
                                         "buenas / malas", r["n_wins"] >= r["n_losses"])
+        st = m["sell_timing"]
+        self.cards["sellquality"].set_value(
+            f"{st['good5']} / {st['n5'] - st['good5']}",
+            f"mean fwd5 {_pct(st['mean5'], signed=True)} (regret)",
+            st["good5_pct"] >= 0.5)
         self.cards["timing"].set_value(_pct(t["good5_pct"]),
                                        f"mean fwd5 {_pct(t['mean5'], signed=True)}",
                                        t["good5_pct"] >= 0.5)
@@ -452,6 +501,8 @@ class MetricsTab(QWidget):
         # fwd5 por compra (timing), en orden y salteando los None.
         fwd5_seq = [b["fwd5"] * 100 for b in sorted(t["per_buy"], key=lambda x: (x["day"] or ""))
                     if b["fwd5"] is not None]
+        sell_fwd5_seq = [s["fwd5"] * 100 for s in sorted(st["per_sell"], key=lambda x: (x["day"] or ""))
+                         if s["fwd5"] is not None]
 
         def _spark(key: str, series: list[float]):
             card = self.cards[key]
@@ -465,8 +516,9 @@ class MetricsTab(QWidget):
         _spark("expectancy", pnl_seq)
         _spark("goodbad", pnl_seq)
         _spark("timing", fwd5_seq)
+        _spark("sellquality", sell_fwd5_seq)
         # Estas son métricas escalares: ocultamos el sparkline vacío.
-        for key in ("pf", "costs", "expired"):
+        for key in ("pf", "payoff", "exworst", "costs", "expired"):
             self.cards[key].spark.hide()
 
         # chart
@@ -477,6 +529,7 @@ class MetricsTab(QWidget):
         self._fill_ticker_table(r["per_ticker"])
         self._fill_rt_table(r["round_trips"])
         self._fill_timing_table(t["per_buy"])
+        self._fill_sell_timing_table(st["per_sell"])
 
     # ── llenado de tablas ──────────────────────────────────────────────────────
     @staticmethod
@@ -561,4 +614,24 @@ class MetricsTab(QWidget):
                                          (f5 > 0) if f5 is not None else None, True))
             tbl.setItem(i, 4, self._cell(_pct(f20, signed=True) if f20 is not None else "—",
                                          (f20 > 0) if f20 is not None else None, True))
+        self._autosize(tbl)
+
+    def _fill_sell_timing_table(self, per_sell: list[dict]):
+        # Mirror de _fill_timing_table pero con la convención de color INVERTIDA:
+        # verde cuando fwd5 ≤ 0 (venta buena) y rojo cuando fwd5 > 0 (regret).
+        tbl = self.sell_timing_table["table"]
+        ordered = sorted(per_sell, key=lambda r: (r["day"] or ""), reverse=True)
+        tbl.setRowCount(len(ordered))
+        for i, r in enumerate(ordered):
+            sc = r["score"]
+            tbl.setItem(i, 0, self._cell(r["ticker"]))
+            tbl.setItem(i, 1, self._cell(r["day"] or "—"))
+            tbl.setItem(i, 2, self._cell(f"{sc:.2f}" if sc is not None else "—", align_right=True))
+            tbl.setItem(i, 3, self._cell(r["exit_kind"]))
+            f5 = r["fwd5"]
+            f20 = r["fwd20"]
+            tbl.setItem(i, 4, self._cell(_pct(f5, signed=True) if f5 is not None else "—",
+                                         (f5 <= 0) if f5 is not None else None, True))
+            tbl.setItem(i, 5, self._cell(_pct(f20, signed=True) if f20 is not None else "—",
+                                         (f20 <= 0) if f20 is not None else None, True))
         self._autosize(tbl)
