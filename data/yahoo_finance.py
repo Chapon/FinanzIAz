@@ -279,6 +279,111 @@ def _cache_enabled() -> bool:
         return True
 
 
+# ── Sanity de precios fuera de banda (E5) ─────────────────────────────────────
+# Yahoo devuelve ocasionalmente una cotización con la escala corrupta (~10× por
+# la familia "Invalid Crumb"/401 o un split mal conciliado). El caso KLAC
+# 2026-06-01/05 se abrió y cerró un round-trip entero a ~$1.940 cuando el precio
+# real era ~$194 → el notional quedó 10× inflado y contaminó métricas, DD, ADV y
+# hasta la muestra de salidas ATR. Un precio así difiere del último close diario
+# cacheado por > banda: lo tratamos como basura, no como precio real. Misma
+# lógica de higiene que ``scripts/run_atr_stop_recalib.partition_atr_events``.
+
+# Banda por defecto: un salto > 50% vs el último close diario es basura, no una
+# cotización real (un movimiento day-over-day de esa magnitud es un halt raro,
+# no lo normal). Override vía setting ``price_sanity_band_pct``; 0 desactiva.
+_DEFAULT_PRICE_SANITY_BAND = 0.5
+
+
+def _price_sanity_band() -> float:
+    """Banda relativa aceptada vs el close de referencia (fracción). 0 = off."""
+    try:
+        from config.settings_manager import settings
+
+        band = float(settings.get("price_sanity_band_pct", _DEFAULT_PRICE_SANITY_BAND))
+    except Exception:
+        band = _DEFAULT_PRICE_SANITY_BAND
+    return band if band > 0 else 0.0
+
+
+def reference_close(ticker: str) -> float | None:
+    """Último close diario válido del cache OHLCV, como ancla de escala.
+
+    Devuelve None si no hay frame cacheado (cold cache / cache off) → el guard
+    debe fail-open cuando no puede juzgar la escala. Lee el frame ``1d`` más
+    fresco sin importar el ``period`` con que se haya cacheado.
+    """
+    if not _cache_enabled():
+        return None
+    try:
+        with session_scope() as session:
+            cached = (
+                session.query(HistoricalDataCache)
+                .filter(HistoricalDataCache.ticker == ticker.upper())
+                .filter(HistoricalDataCache.interval == "1d")
+                .order_by(HistoricalDataCache.fetched_at.desc())
+                .first()
+            )
+            if cached is None:
+                return None
+            df = pd.read_json(StringIO(cached.data_json), orient="split")
+        if "Close" not in df.columns or df.empty:
+            return None
+        closes = pd.to_numeric(df["Close"], errors="coerce").dropna()
+        closes = closes[closes > 0]
+        if closes.empty:
+            return None
+        return float(closes.iloc[-1])
+    except Exception:
+        log.exception("reference_close failed for %s", ticker)
+        return None
+
+
+def is_price_out_of_band(
+    price: float | None, reference: float | None, band: float | None = None
+) -> bool:
+    """True si ``price`` difiere de ``reference`` por más de ``band`` (fracción).
+
+    Fail-open: si falta el precio, la referencia o la banda está en 0, devuelve
+    False (no podemos juzgar la escala → no bloqueamos).
+    """
+    b = _price_sanity_band() if band is None else float(band)
+    if b <= 0 or reference is None or price is None:
+        return False
+    try:
+        ref = float(reference)
+        px = float(price)
+    except (TypeError, ValueError):
+        return False
+    if ref <= 0 or px <= 0:
+        return False
+    return abs(px / ref - 1.0) > b
+
+
+def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
+    """Descarta un fetch en vivo cuyo precio esté fuera de banda vs el histórico.
+
+    Devuelve el ``info`` intacto si el precio es sano (o no hay referencia), o
+    None si es basura de escala. NO envenena el ``failing`` set: la corrupción es
+    transitoria (símbolo vivo, dato podrido) → el próximo scan reintenta.
+    """
+    if info is None:
+        return None
+    price = info.get("price")
+    ref = reference_close(ticker_upper)
+    if is_price_out_of_band(price, ref):
+        log.warning(
+            "Precio fuera de banda para %s: %.4f vs último close %.4f "
+            "(desvío %.0f%% > %.0f%%) — descartado como cotización corrupta",
+            ticker_upper,
+            float(price),
+            float(ref),
+            abs(float(price) / float(ref) - 1.0) * 100,
+            _price_sanity_band() * 100,
+        )
+        return None
+    return info
+
+
 def get_current_price(ticker: str) -> dict | None:
     """
     Fetch current price and key metrics for a ticker.
@@ -309,6 +414,12 @@ def get_current_price(ticker: str) -> dict | None:
 
         # 2. Fetch live
         info = _fetch_ticker_info(ticker)
+        if info is None:
+            return None
+
+        # 2b. Guard de sanity (E5): descartar cotizaciones con escala corrupta
+        # (~10× tipo KLAC) antes de cachearlas o devolverlas.
+        info = _reject_if_out_of_band(ticker.upper(), info)
         if info is None:
             return None
 
@@ -1089,7 +1200,15 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
                 log.exception("Parallel fetch failed for %s", ticker)
                 live_results[ticker] = None
 
-    # 2b. Detección wholesale (bug B3): si había ≥2 misses y TODOS fallaron, no son
+    # 2b. Guard de sanity (E5): descartar cotizaciones con escala corrupta
+    # (~10× tipo KLAC) antes de cachearlas/mergearlas. Solo sobre los fetch en
+    # vivo — lo que salió del cache ya pasó el guard cuando se trajo por primera
+    # vez. Un precio fuera de banda queda como miss (None) y se reintenta el
+    # próximo scan; NO envenena el failing set (la corrupción es transitoria).
+    for ticker in list(live_results):
+        live_results[ticker] = _reject_if_out_of_band(ticker, live_results[ticker])
+
+    # 2c. Detección wholesale (bug B3): si había ≥2 misses y TODOS fallaron, no son
     # N símbolos muertos a la vez — es throttle de Yahoo. Abrimos el breaker y, por
     # si alguno alcanzó a quedar 'failing' antes de abrirlo (carrera al inicio del
     # throttle), lo degradamos a transitorio para no excluir large-caps reales.

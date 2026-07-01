@@ -79,6 +79,20 @@ def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
     return out
 
 
+def _price_out_of_band(ticker: str, price: float | None) -> bool:
+    """Sanity de escala (E5): True si ``price`` está fuera de banda vs el último
+    close diario cacheado del ticker.
+
+    Última línea de defensa antes de fillar, por si un precio de escala corrupta
+    (~10× tipo KLAC 2026-06-01) esquiva el guard del fetch (provider inyectado en
+    tests, precio cacheado de antes del guard, path alternativo). Fail-open si no
+    hay referencia (no podemos juzgar la escala → no bloqueamos).
+    """
+    from data.yahoo_finance import is_price_out_of_band, reference_close
+
+    return is_price_out_of_band(price, reference_close(ticker))
+
+
 _VALID_YF_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
 
 
@@ -968,6 +982,17 @@ def run_scan(
                 trade.fill_price_override
             ) and trade.fill_price_override > 0:
                 fill_px = float(trade.fill_price_override)
+            # Guard de sanity (E5): no fillar sobre un precio de escala corrupta
+            # (~10× tipo KLAC) aunque haya esquivado el guard del fetch. Preferimos
+            # NO operar a operar sobre basura (el notional inflado contamina peso,
+            # DD, ADV y la muestra de exits).
+            if _price_out_of_band(trade.ticker, fill_px):
+                result.skipped += 1
+                result.warnings.append(
+                    f"{trade.ticker}: precio {fill_px:.2f} fuera de banda vs histórico "
+                    "— fill rechazado por sanity (posible cotización corrupta)."
+                )
+                continue
             order = _fill_trade(session, acct, trade, price=fill_px)
             if order is None:
                 result.skipped += 1
@@ -1155,6 +1180,17 @@ def approve_order(
         if px is None or not np.isfinite(px) or px <= 0:
             order.status = "expired"
             order.notes = (order.notes or "") + "\n[approve] sin precio, expirada."
+            order.decided_at = utcnow_naive()
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+        # Guard de sanity (E5): un precio de aprobación con escala corrupta (~10×
+        # tipo KLAC) no debe fillarse. Tratado como "sin precio" → expira; el
+        # usuario re-genera la orden cuando Yahoo devuelva un precio sano.
+        if _price_out_of_band(order.ticker, px):
+            order.status = "expired"
+            order.notes = (order.notes or "") + "\n[approve] precio fuera de banda, expirada."
             order.decided_at = utcnow_naive()
             session.flush()
             session.refresh(order)

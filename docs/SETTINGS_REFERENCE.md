@@ -36,6 +36,11 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 | `paper_adv_cap_pct` | `0.0` (OFF) | Cap del notional de cada BUY como fracción del ADV$. 0.05 = máx 5% del ADV. Trimea (no bloquea). Opt-in. |
 | `paper_adv_lookback_days` | `20` | Sesiones para estimar el ADV$ (media de Close×Volume). Solo si cap > 0. |
 
+## Sanity de precios (E5)
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `price_sanity_band_pct` | `0.5` | Descarta cotizaciones cuya escala difiera del último close diario cacheado por > esta fracción (0.5 = ±50%). Ataca la basura ~10× de Yahoo (KLAC 2026-06-01). Guard en `data/yahoo_finance` (fetch) + `paper_trading/engine` (antes de fillar). `0` desactiva. Fail-open si no hay histórico de referencia. |
+
 ## Stops ATR (T01) — opt-in
 | Flag | Default | Qué hace |
 |------|---------|----------|
