@@ -25,6 +25,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -39,6 +40,7 @@ from PyQt6.QtWidgets import (
 from analysis.metrics_panel import build_metrics, commit_markers
 from config.logging_config import get_logger
 from database.models import DB_PATH
+from paper_trading.account import list_accounts
 from ui.dashboard_charts import KpiCard, _apply_chart_rcparams
 from ui.styles import CHART_STYLE, PALETTE
 from ui.workers import BaseWorker
@@ -50,6 +52,18 @@ _STALE_SECONDS = 120
 _REPO_DIR = Path(__file__).resolve().parents[1]
 # Altura fija de las 4 tablas inferiores (alineadas en una fila a lo ancho).
 _TABLE_HEIGHT = 460
+
+
+def pick_initial_account_index(account_ids: list[int], preferred_id: int | None) -> int:
+    """Índice de ``preferred_id`` en ``account_ids``; si no está (o es None), 0.
+
+    Función pura para testear la selección inicial del combo sin un event loop Qt.
+    """
+    if preferred_id is not None:
+        for i, aid in enumerate(account_ids):
+            if aid == preferred_id:
+                return i
+    return 0
 
 
 class MetricsWorker(BaseWorker):
@@ -173,6 +187,7 @@ class MetricsTab(QWidget):
         self._worker: MetricsWorker | None = None
         self._loaded_at: float | None = None
         self._build_ui()
+        self._load_accounts()  # puebla el combo y fija la selección inicial
 
     # ── construcción ──────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -187,6 +202,19 @@ class MetricsTab(QWidget):
         self.root = QVBoxLayout(container)
         self.root.setContentsMargins(24, 20, 24, 24)
         self.root.setSpacing(16)
+
+        # ── selector de cuenta (paper sim) ──
+        # Elige qué cuenta alimenta TODO el panel (KPIs, gráfico y tablas).
+        # Independiente del combo del paper_tab (no se sincronizan).
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        header.addWidget(QLabel("Cuenta:"))
+        self.account_combo = QComboBox()
+        self.account_combo.setMinimumWidth(260)
+        self.account_combo.currentIndexChanged.connect(self._on_account_changed)
+        header.addWidget(self.account_combo)
+        header.addStretch()
+        self.root.addLayout(header)
 
         self.status_lbl = QLabel("Cargando métricas…")
         self.status_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
@@ -324,6 +352,40 @@ class MetricsTab(QWidget):
             frame.setToolTip(section_tip)
         lay.addWidget(table)
         return {"frame": frame, "table": table}
+
+    # ── selector de cuenta ────────────────────────────────────────────────────
+    def _load_accounts(self):
+        """Puebla el combo con TODAS las cuentas y fija la selección inicial.
+
+        Replica el patrón del paper_tab pero sin disparar refresh acá: el
+        primer cálculo lo hace ``maybe_refresh()`` al mostrarse la pestaña.
+        """
+        accounts = list_accounts()
+        self.account_combo.blockSignals(True)
+        self.account_combo.clear()
+        if not accounts:
+            self.account_combo.addItem("— No hay cuentas —", userData=None)
+        else:
+            for a in accounts:
+                label = f"{a.name}   ·   {a.strategy}/{a.mode}"
+                if not a.is_active:
+                    label += "  (inactiva)"
+                self.account_combo.addItem(label, userData=int(a.id))
+            idx = pick_initial_account_index([int(a.id) for a in accounts], self.account_id)
+            self.account_combo.setCurrentIndex(idx)
+            data = self.account_combo.itemData(idx)
+            if data is not None:
+                self.account_id = int(data)
+        self.account_combo.blockSignals(False)
+
+    def _on_account_changed(self, _idx: int):
+        data = self.account_combo.currentData()
+        if data is None:
+            return
+        self.account_id = int(data)
+        # Recalcular YA para esta cuenta, sin esperar el stale de 120s.
+        self.invalidate()
+        self.refresh()
 
     # ── refresh lifecycle (patrón NewsTab) ────────────────────────────────────
     def maybe_refresh(self):

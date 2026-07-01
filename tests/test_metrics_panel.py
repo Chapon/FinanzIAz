@@ -136,6 +136,28 @@ def test_build_metrics_realized_and_timing():
     assert t["good5"] == 1
 
 
+def test_build_metrics_filters_by_account():
+    # MET1: build_metrics devuelve los datos de la cuenta pedida, sin mezclar.
+    con = _make_db()
+    # Cuenta 1: un round-trip ganador de AAA (+200).
+    _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0, acct=1)
+    _order(con, 2, "AAA", "SELL", 120.0, 10, "2026-01-08 10:00:00", comm=0, slip=0,
+           reason="analyze SELL (0.30)", acct=1)
+    # Cuenta 2: un round-trip perdedor de CCC (-100) → payload distinto.
+    _order(con, 10, "CCC", "BUY", 50.0, 10, "2026-02-01 10:00:00", comm=0, slip=0, acct=2)
+    _order(con, 11, "CCC", "SELL", 40.0, 10, "2026-02-05 10:00:00", comm=0, slip=0,
+           reason="atr_stop @ 40 ≤ 41", acct=2)
+
+    m1 = mp.build_metrics(con, 1)
+    m2 = mp.build_metrics(con, 2)
+
+    # Cada cuenta ve solo sus propios round-trips (sin cross-contamination).
+    assert m1["realized"]["n_round_trips"] == 1
+    assert m1["realized"]["total_pnl"] == pytest.approx(200.0, abs=1e-6)  # solo AAA
+    assert m2["realized"]["n_round_trips"] == 1
+    assert m2["realized"]["total_pnl"] == pytest.approx(-100.0, abs=1e-6)  # solo CCC
+
+
 def test_churn_detection():
     con = _make_db()
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00")
