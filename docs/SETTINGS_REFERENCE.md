@@ -34,7 +34,17 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 | Flag | Default | Qué hace |
 |------|---------|----------|
 | `paper_adv_cap_pct` | `0.0` (OFF) | Cap del notional de cada BUY como fracción del ADV$. 0.05 = máx 5% del ADV. Trimea (no bloquea). Opt-in. |
-| `paper_adv_lookback_days` | `20` | Sesiones para estimar el ADV$ (media de Close×Volume). Solo si cap > 0. |
+| `paper_adv_lookback_days` | `20` | Sesiones para estimar el ADV$ (media de Close×Volume). Consultado por el ADV cap y por el piso de liquidez de E1b. |
+
+## Screen de universo (E1b, anti-MLTX) — opt-in
+Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad fundamental **antes** de que entren. Validado 2026-07-02 contra la watchlist real (52 nombres): excluye MLTX sin sacar ningún nombre bueno (INTC/TEAM con pérdidas pero revenue real, ASML/TSM sin facts EDGAR → fail-open, todos conservados). Ver `docs/universe_screen_e1b_2026-07-02.md`.
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `paper_universe_screen_enabled` | `False` (OFF) | Master switch. ON → cada candidato de BUY se filtra por ADV$ (liquidez) y fundamentals EDGAR XBRL (pérdidas sostenidas + revenue nulo/bajo → frágil). OFF = sin cambio de comportamiento ni red. |
+| `paper_universe_min_adv_dollars` | `0.0` (OFF) | Piso de ADV$: excluye candidatos con ADV$ (Close×Volume) por debajo. 0 = pata de liquidez apagada. Fail-open si el histórico es muy fino. |
+| `paper_universe_fundamentals_enabled` | `True` | Pata fundamental: excluye nombres con net income anual sostenidamente < 0 **y** revenue ausente o < `paper_universe_revenue_floor_dollars`. Fail-open ante facts EDGAR faltantes. |
+| `paper_universe_min_negative_years` | `2` | Cuántos años anuales recientes de net income, todos < 0, hacen falta para llamar frágil a un nombre (evita excluir por una pérdida puntual). |
+| `paper_universe_revenue_floor_dollars` | `10_000_000` | Un nombre con pérdidas sostenidas es frágil solo si su revenue anual más reciente está por debajo de este piso (≈ pre-revenue). Nombres no rentables pero con revenue real NO se excluyen. |
 
 ## Sanity de precios (E5)
 | Flag | Default | Qué hace |

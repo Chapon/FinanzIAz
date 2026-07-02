@@ -196,8 +196,67 @@ SCHEMA: dict[str, SettingSpec] = {
         max=252,
         doc=(
             "Trailing sessions used to estimate ADV$ (mean of Close × Volume). "
-            "Default 20 ≈ one trading month. Only consulted when "
-            "paper_adv_cap_pct > 0."
+            "Default 20 ≈ one trading month. Consulted by the ADV cap (T10) and "
+            "the E1b universe liquidity floor."
+        ),
+    ),
+    # E1b universe quality/liquidity screen (anti-MLTX). Filters BUY *candidates*
+    # before they enter — never touches held positions. Master switch OFF by
+    # default: turning it on changes which names can enter live, a trading
+    # decision that must clear its kill-criteria (excludes MLTX-type names
+    # without removing good ones) against the real watchlist first. Fail-open:
+    # a name is dropped only on positive evidence of illiquidity / fragility.
+    "paper_universe_screen_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "E1b master switch. When True, each BUY candidate is screened by "
+            "recent ADV$ (liquidity floor) and EDGAR XBRL fundamentals "
+            "(sustained losses + negligible revenue → fragile). Candidates that "
+            "fail are skipped before ranking/sizing. Held positions are never "
+            "screened. OFF = no behavior change."
+        ),
+    ),
+    "paper_universe_min_adv_dollars": SettingSpec(
+        (int, float),
+        0.0,
+        min=0.0,
+        doc=(
+            "E1b liquidity floor: exclude a BUY candidate whose recent average "
+            "daily dollar volume (Close×Volume, paper_adv_lookback_days window) "
+            "is below this. 0.0 = disable the liquidity leg. Fails open when "
+            "history is too thin to estimate ADV$."
+        ),
+    ),
+    "paper_universe_fundamentals_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "E1b fundamentals leg. When True (and the screen is on), a candidate "
+            "with sustained negative annual net income AND revenue below "
+            "paper_universe_revenue_floor_dollars is excluded (pre-revenue "
+            "clinical-biotech signature). Fails open on missing EDGAR facts."
+        ),
+    ),
+    "paper_universe_min_negative_years": SettingSpec(
+        int,
+        2,
+        min=1,
+        max=10,
+        doc=(
+            "E1b: require this many consecutive most-recent annual net-income "
+            "figures, all < 0, before a name counts as fragile. Guards against "
+            "excluding a name over a single one-off loss year."
+        ),
+    ),
+    "paper_universe_revenue_floor_dollars": SettingSpec(
+        (int, float),
+        10_000_000.0,
+        min=0.0,
+        doc=(
+            "E1b: a name with sustained losses is fragile only if its latest "
+            "annual revenue is below this floor (≈ pre-revenue). Revenue-"
+            "generating but unprofitable growth names are NOT excluded."
         ),
     ),
     # ATR-based stops (T01 of the engine roadmap)

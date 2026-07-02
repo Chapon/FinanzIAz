@@ -275,6 +275,58 @@ def _default_strength(signal: str, ml_probability: float | None) -> float:
     return {"BUY": 1.0, "HOLD": 0.5, "SELL": 0.0}.get(signal, 0.0)
 
 
+def _universe_thresholds():
+    """E1b thresholds when the screen is on, else ``None`` (screen disabled).
+
+    Returning ``None`` when the master switch is off keeps the BUY loop on its
+    exact legacy path (no ADV/EDGAR work, no behavior change).
+    """
+    from paper_trading.universe import UniverseThresholds, screen_enabled
+
+    if not screen_enabled():
+        return None
+    return UniverseThresholds.from_settings()
+
+
+def _screen_out_candidate(ticker: str, df: "pd.DataFrame", thresholds) -> bool:
+    """True → drop this BUY candidate (E1b). Logs the reason. Never raises.
+
+    Liquidity (ADV$, from the already-fetched history) is checked first so an
+    illiquid microcap is dropped without an EDGAR round-trip. Fundamentals are
+    fetched only when the liquidity leg passes and the fundamentals leg is on.
+    Fail-open: any error keeps the candidate.
+    """
+    from paper_trading.gates import recent_adv_dollars
+    from paper_trading.universe import screen_candidate
+
+    try:
+        lookback = int(settings.get("paper_adv_lookback_days"))
+        adv = recent_adv_dollars(df, lookback_days=lookback)
+        liquidity_excluded = (
+            thresholds.min_adv_dollars > 0
+            and adv is not None
+            and adv < thresholds.min_adv_dollars
+        )
+        facts = None
+        if thresholds.fundamentals_enabled and not liquidity_excluded:
+            from data.edgar_fundamentals import get_fundamental_facts
+
+            facts = get_fundamental_facts(ticker)
+        verdict = screen_candidate(ticker, adv, facts, thresholds)
+        if verdict.excluded:
+            get_logger(__name__).info(
+                "E1b: candidato BUY %s excluido (%s) — %s",
+                ticker,
+                verdict.reason,
+                verdict.detail,
+            )
+            return True
+        return False
+    except Exception:
+        get_logger(__name__).exception("E1b screen falló para %s — se conserva", ticker)
+        return False
+
+
 def generate_trades_analyze_single(
     account: PaperAccount,
     watchlist: list[str],
@@ -343,6 +395,11 @@ def generate_trades_analyze_single(
     # Sprint 4 / T05 — keep a per-candidate close series so we can compute a
     # cross-sectional momentum percentile when ``cross_sectional_enabled`` is on.
     cand_close: dict[str, pd.Series] = {}
+    # E1b — universe quality/liquidity screen. Only built (and only touching
+    # EDGAR) when the master switch is on; OFF → screen_thresholds stays None and
+    # the loop behaves exactly as before. Applied to BUY *candidates* only, so
+    # held positions keep getting their SELL/stop evaluation upstream.
+    screen_thresholds = _universe_thresholds()
     for t in watchlist:
         if t in held_tickers and t not in forced_exits:
             continue
@@ -353,6 +410,8 @@ def generate_trades_analyze_single(
         if res is None:
             continue
         if res.overall_signal == "BUY":
+            if screen_thresholds is not None and _screen_out_candidate(t, df, screen_thresholds):
+                continue
             strength = _default_strength("BUY", res.ml_probability)
             ranked.append((strength, t))
             cand_vol[t] = _realized_vol(df["Close"].astype(float)) if "Close" in df.columns else 0.0
