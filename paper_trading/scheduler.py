@@ -1,7 +1,7 @@
 """
 Background scheduler for paper-trading scans.
 
-Three independent triggers, all gated by user settings:
+Independent triggers, all gated by user settings:
 
 1. **Startup** (``paper_scan_on_startup``) — a single scan of every active
    account a few seconds after the app launches.
@@ -33,6 +33,15 @@ Three independent triggers, all gated by user settings:
    calendario y solo si ``refresh_due`` (sin harvest hoy, o backlog sin
    clasificar). Emite ``catalyst_refresh_completed`` para que la UI refresque
    la pestaña Noticias.
+
+6. **Hourly catalyst harvest** (``catalyst_hourly_harvest_enabled``, default
+   on; ``catalyst_hourly_harvest_minutes``, default 60, piso 15) — tarea 10,
+   decisión de Chapa 2026-07-07: el harvest intradía es responsabilidad de la
+   app (solo corre con la app abierta), Windows Task Scheduler corre solo el
+   pipeline completo de las 15:00. Rides el tick por minuto del daily timer:
+   durante RTH lanza un harvest-only (sin classify → sin GPU) cada N minutos.
+   Caso motivador: TSLA 2026-07-06, noticia publicada 14:45 ET ingresada
+   19:05 por el run único diario.
 
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
@@ -184,6 +193,53 @@ class CatalystRefreshWorker(QThread):
             self.refresh_failed.emit(f"{type(e).__name__}: {e}")
 
 
+def hourly_harvest_due(
+    *,
+    enabled: bool,
+    now: datetime,
+    last: datetime | None,
+    interval_min: int,
+    hourly_worker_running: bool,
+    daily_worker_running: bool,
+    market_open: bool,
+) -> bool:
+    """Decisión pura del harvest horario (tarea 10) — testeable offline.
+
+    Gates: flag → intervalo transcurrido → sin worker horario vivo → sin
+    refresh diario vivo (mismo pipeline; dos harvesters concurrentes solo
+    suman contención de SQLite) → mercado abierto.
+    """
+    if not enabled:
+        return False
+    interval_min = max(15, int(interval_min))
+    if last is not None and (now - last).total_seconds() < interval_min * 60:
+        return False
+    if hourly_worker_running or daily_worker_running:
+        return False
+    return bool(market_open)
+
+
+class CatalystHarvestWorker(QThread):
+    """Run the harvest-only news pipeline off the UI thread (tarea 10).
+
+    Network-bound (yfinance/EDGAR/finnhub), sin classify → sin GPU. Escrituras
+    DB idempotentes (dedup por canonical URL en el harvester). Emits
+    ``harvest_completed(result_dict)`` or ``harvest_failed(error)``.
+    """
+
+    harvest_completed = pyqtSignal(object)  # {"harvest_rc": int}
+    harvest_failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from analysis.news_digest import run_catalyst_harvest_only
+
+            res = run_catalyst_harvest_only()
+            self.harvest_completed.emit(res)
+        except Exception as e:
+            self.harvest_failed.emit(f"{type(e).__name__}: {e}")
+
+
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 
@@ -224,6 +280,12 @@ class PaperScheduler(QObject):
         # Daily catalyst refresh (in-app, single worker, once per calendar day).
         self._catalyst_worker: "CatalystRefreshWorker | None" = None
         self._last_catalyst_refresh: date | None = None
+
+        # Hourly harvest-only refresh durante RTH (tarea 10) — solo con la app
+        # abierta, por decisión de Chapa 2026-07-07 (Windows corre únicamente
+        # el pipeline completo de las 15:00).
+        self._hourly_harvest_worker: "CatalystHarvestWorker | None" = None
+        self._last_hourly_harvest: datetime | None = None
 
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
@@ -276,6 +338,9 @@ class PaperScheduler(QObject):
         if self._catalyst_worker is not None:
             self._catalyst_worker.wait(2_000)
             self._catalyst_worker = None
+        if self._hourly_harvest_worker is not None:
+            self._hourly_harvest_worker.wait(2_000)
+            self._hourly_harvest_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -319,6 +384,10 @@ class PaperScheduler(QObject):
         # Catalyst refresh: cubre el caso "app abierta pasada la medianoche".
         # El gate por día calendario hace que esto sea un no-op el resto del día.
         self._maybe_refresh_catalysts()
+
+        # Harvest horario durante RTH (tarea 10): no-op fuera de mercado o si
+        # todavía no pasó el intervalo.
+        self._maybe_hourly_harvest()
 
         if not settings.get("paper_daily_scan_enabled", True):
             return
@@ -502,6 +571,54 @@ class PaperScheduler(QObject):
     def _reap_catalyst_worker(self) -> None:
         w = self._catalyst_worker
         self._catalyst_worker = None
+        if w is not None:
+            w.deleteLater()
+
+    # ── Hourly catalyst harvest durante RTH (tarea 10) ─────────────────────────
+
+    def _maybe_hourly_harvest(self) -> None:
+        """Launch harvest-only iff enabled, market open, interval elapsed.
+
+        Gates en orden de costo: flag → intervalo → workers vivos → mercado
+        abierto (puede pegar a Yahoo; por eso va último). Corre SOLO con la app
+        abierta (rides el tick por minuto del daily timer). Se estampa el
+        timestamp al lanzar, aunque el harvest falle: el reintento natural es
+        el próximo intervalo, no el próximo tick.
+        """
+        now = utcnow_naive()
+        if not hourly_harvest_due(
+            enabled=bool(settings.get("catalyst_hourly_harvest_enabled", True)),
+            now=now,
+            last=self._last_hourly_harvest,
+            interval_min=int(settings.get("catalyst_hourly_harvest_minutes", 60)),
+            hourly_worker_running=(
+                self._hourly_harvest_worker is not None
+                and self._hourly_harvest_worker.isRunning()
+            ),
+            daily_worker_running=(
+                self._catalyst_worker is not None and self._catalyst_worker.isRunning()
+            ),
+            market_open=_is_market_open_now(),
+        ):
+            return
+        self._last_hourly_harvest = now
+        worker = CatalystHarvestWorker(parent=self)
+        worker.harvest_completed.connect(self._on_hourly_harvest_completed)
+        worker.harvest_failed.connect(self._on_hourly_harvest_failed)
+        worker.finished.connect(self._reap_hourly_harvest_worker)
+        self._hourly_harvest_worker = worker
+        log.info("hourly catalyst harvest starting (harvest-only, RTH)")
+        worker.start()
+
+    def _on_hourly_harvest_completed(self, res) -> None:
+        log.info("hourly catalyst harvest done: harvest_rc=%s", res.get("harvest_rc"))
+
+    def _on_hourly_harvest_failed(self, err: str) -> None:
+        log.warning("hourly catalyst harvest failed (reintenta al próximo intervalo): %s", err)
+
+    def _reap_hourly_harvest_worker(self) -> None:
+        w = self._hourly_harvest_worker
+        self._hourly_harvest_worker = None
         if w is not None:
             w.deleteLater()
 

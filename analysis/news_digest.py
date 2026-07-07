@@ -426,6 +426,28 @@ def refresh_due(*, now: datetime | None = None) -> bool:
         return False
 
 
+def run_catalyst_harvest_only(*, harvest_main=None) -> dict:
+    """
+    Corre SOLO el harvest (T-CAT-1) in-process, sin classify — para el harvest
+    horario in-app del PaperScheduler (tarea 10): noticias frescas durante RTH
+    sin tocar la GPU cada hora. El classify pesado corre 1x/día (Task Scheduler
+    15:00 y/o el refresh diario in-app).
+
+    Mismas fuentes que el .bat (yfinance, sec, finnhub — el collector de
+    finnhub se saltea solo si falta FINNHUB_API_KEY). ``harvest_main``
+    inyectable para tests offline. Devuelve {"harvest_rc": int}; nunca lanza.
+    """
+    if harvest_main is None:
+        from scripts.harvest_catalysts import main as harvest_main
+
+    try:
+        harvest_rc = int(harvest_main(["--sources", "yfinance,sec,finnhub"]))
+    except Exception:
+        log.exception("hourly catalyst harvest: crashed")
+        harvest_rc = -1
+    return {"harvest_rc": harvest_rc}
+
+
 def run_catalyst_refresh(
     *,
     model: str = DEFAULT_CLASSIFY_MODEL,

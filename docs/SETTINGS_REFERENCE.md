@@ -71,6 +71,13 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 | `cross_sectional_enabled` | `False` | Ranking cross-sectional. KILLED (ruido, T05); dead-code. |
 | `paper_history_period` | `"2y"` | Ventana que el scanner pasa a `analyze()`/XGBoost (6mo/1y/2y/5y/10y). |
 
+## Catalyst harvest horario in-app (tarea 10)
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `catalyst_hourly_harvest_enabled` | `True` | Harvest-only (sin classify/GPU) cada N min durante RTH, **solo con la app abierta** (rides el tick por minuto del scheduler). El pipeline completo (harvest+classify) corre 1×/día vía Task Scheduler de Windows (15:00) y/o `catalyst_refresh_on_open`. |
+| `catalyst_hourly_harvest_minutes` | `60` | Intervalo del harvest horario (piso 15 min). |
+| `catalyst_refresh_on_open` | `True` | Refresh diario in-app (harvest+classify) la primera vez que la app abre en el día, si `refresh_due`. |
+
 ## Catalyst exit-veto (T-CAT-4, Gate 2c) — DEFAULT OFF
 Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no superado (ver skill `backtest-replay-harness`):
 `paper_catalyst_exit_veto_enabled` (off), `paper_catalyst_veto_min_score`, `paper_catalyst_veto_gray_high`.

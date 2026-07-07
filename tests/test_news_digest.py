@@ -24,6 +24,7 @@ from analysis.news_digest import (
     make_ollama_briefer,
     rank_news,
     refresh_due,
+    run_catalyst_harvest_only,
     run_catalyst_refresh,
     unclassified_count,
 )
@@ -317,6 +318,27 @@ def test_run_catalyst_refresh_harvest_crash_still_classifies():
     res = run_catalyst_refresh(harvest_main=boom, classify_main=fake_classify)
     assert res["harvest_rc"] == -1
     assert res["classify_rc"] == 0  # el backlog previo se clasifica igual
+
+
+def test_run_catalyst_harvest_only_uses_bat_sources_and_no_classify():
+    calls = {}
+
+    def fake_harvest(argv):
+        calls["harvest"] = argv
+        return 0
+
+    res = run_catalyst_harvest_only(harvest_main=fake_harvest)
+    assert res == {"harvest_rc": 0}  # sin classify_rc: no toca la GPU
+    # mismas fuentes que el .bat (finnhub incluido; se saltea solo sin API key)
+    assert calls["harvest"] == ["--sources", "yfinance,sec,finnhub"]
+
+
+def test_run_catalyst_harvest_only_crash_is_contained():
+    def boom(argv):
+        raise RuntimeError("EDGAR down")
+
+    res = run_catalyst_harvest_only(harvest_main=boom)
+    assert res == {"harvest_rc": -1}  # nunca lanza (QThread lo llama directo)
 
 
 def test_fetch_window_rows_are_rankeable(test_db):
