@@ -14,7 +14,7 @@ _Última actualización: 2026-07-07._
 
 ## En curso (WIP, máx 1)
 
-- _(vacío — **V2/tarea 3 cerrada 2026-07-08** con hashes `2ac88a0` (V2a) + `6fccbb7` (V2b), ver Hecho reciente. El siguiente es la **tarea 4 (R1)** — circuit breaker de drawdown.)_
+- **Tarea 4 — R1 · Circuit breaker de drawdown** (arrancada 2026-07-08). **Etapa 1/3 lista:** pre-registro (`docs/dd_breaker_r1_2026-07-08.md`, umbral **DD ≥ 15% desde el peak rolling de 90d** — decisión de Chapa 2026-07-08) + detector puro `paper_trading/dd_breaker.py` (`compute_drawdown_state`, display/logic-only, NO cableado a decisiones — regla 3) + 11 tests offline. Suite Windows verde (1137 passed, 1 skipped). **Falta:** (2) validar en el harness E4 sobre ventanas de stress contra el kill-criteria (reduce max DD ≥ 20% rel. sin recortar P/L normal > 0.5 pts); (3) si PASS, cablear gate en `run_scan` + flags (`paper_dd_breaker_enabled` default OFF, `_pct`=0.15, `_window_days`=90) + banner UI. Aún SIN commitear.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
