@@ -372,9 +372,10 @@ class PaperTradingTab(QWidget):
         pen_l.setContentsMargins(14, 12, 14, 12)
         pen_l.setSpacing(8)
         pen_l.addWidget(self._header_with_count("Órdenes pendientes", attr="_pending_header"))
-        self.pending_table = QTableWidget(0, 8)
+        self.pending_table = QTableWidget(0, 9)
         self.pending_table.setHorizontalHeaderLabels(
-            ["Fecha", "Side", "Ticker", "Shares", "Target $", "Comisión est.", "Motivo", "Acciones"]
+            ["Fecha", "Side", "Ticker", "Shares", "Target $", "Comisión est.", "Motivo",
+             "R:R / niveles", "Acciones"]
         )
         self._apply_table_style(self.pending_table, row_height=52)
         # "Acciones" is the stretch-last column, so it soaks up the leftover
@@ -382,7 +383,8 @@ class PaperTradingTab(QWidget):
         # other columns can collapse to their (now word-wrapped) headers
         # instead of all being forced to a wide floor.
         self.pending_table.horizontalHeader().setMinimumSectionSize(46)
-        self.pending_table.setColumnWidth(7, 240)
+        self.pending_table.setColumnWidth(7, 150)   # R:R / niveles (V2)
+        self.pending_table.setColumnWidth(8, 240)   # Acciones
         # Tooltip on hover over Ticker column (col 2)
         install_ticker_tooltips(self.pending_table, 2)
         self.pending_table.setMinimumHeight(_TABLE_MIN_H)
@@ -925,6 +927,14 @@ class PaperTradingTab(QWidget):
         table.setItem(row, 5, QTableWidgetItem(self._estimate_pending_commission(o)))
         table.setItem(row, 6, QTableWidgetItem(o.reason or ""))
 
+        # R:R / niveles (V2): la nota display-only que el engine estampó al crear
+        # el BUY (stop/TP + R:R). Los SELL / órdenes sin nota muestran "—".
+        rr_txt = o.notes if (o.side == "BUY" and o.notes) else "—"
+        rr_item = QTableWidgetItem(rr_txt)
+        if o.notes:
+            rr_item.setToolTip(o.notes)
+        table.setItem(row, 7, rr_item)
+
         if pending:
             actions = QWidget()
             alay = QHBoxLayout(actions)
@@ -992,7 +1002,7 @@ class PaperTradingTab(QWidget):
             alay.addWidget(approve_real)
             alay.addWidget(reject)
             alay.addStretch()
-            table.setCellWidget(row, 7, actions)
+            table.setCellWidget(row, 8, actions)
             # Force the row height after placing the cell widget so
             # Qt allocates enough vertical space for the buttons.
             table.setRowHeight(row, 52)

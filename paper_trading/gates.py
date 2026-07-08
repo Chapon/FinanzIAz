@@ -132,6 +132,54 @@ def atr_exit_decision(
     return None, None
 
 
+def entry_risk_levels(
+    *,
+    entry_price: float,
+    atr_value: float,
+    stop_mult: float,
+    tp_mult: float,
+) -> dict | None:
+    """Niveles de riesgo ex-ante de una entrada long (display-only, V2).
+
+    Reproduce los niveles que el gate ATR (:func:`atr_exit_decision`) va a
+    enforcear sobre la posición una vez abierta: ``stop = entry − stop_mult×ATR``
+    y ``TP = entry + tp_mult×ATR``. Devuelve además el **R:R implícito**
+    (reward/risk = ``tp_mult/stop_mult``) para que cada compra tenga un precio
+    objetivo y un stop concretos (pedido de Chapa 2026-07-06).
+
+    NO filtra ni bloquea nada (regla 3): es solo el número mostrado. Devuelve
+    ``None`` ante inputs degenerados (no-finitos, ≤0, multiplicadores inválidos).
+    """
+    if not all(np.isfinite([entry_price, atr_value, stop_mult, tp_mult])):
+        return None
+    if entry_price <= 0 or atr_value <= 0 or stop_mult <= 0 or tp_mult < 0:
+        return None
+    stop = entry_price - stop_mult * atr_value
+    tp = entry_price + tp_mult * atr_value
+    risk = entry_price - stop      # = stop_mult × ATR
+    reward = tp - entry_price      # = tp_mult × ATR
+    rr = (reward / risk) if risk > 0 else None
+    return {
+        "entry": float(entry_price),
+        "stop": float(stop),
+        "tp": float(tp),
+        "rr": (float(rr) if rr is not None else None),
+        "atr": float(atr_value),
+    }
+
+
+def format_entry_risk_note(levels: dict | None) -> str | None:
+    """Nota compacta y legible para ``PaperOrder.notes`` (V2).
+
+    Ej.: ``"R:R 2.0 · stop $102.50 · TP $115.00"``. ``None`` si no hay niveles.
+    """
+    if not levels:
+        return None
+    rr = levels.get("rr")
+    rr_txt = f"{rr:.1f}" if rr is not None else "—"
+    return f"R:R {rr_txt} · stop ${levels['stop']:.2f} · TP ${levels['tp']:.2f}"
+
+
 def model_exit_fill_price(
     *,
     reason: str,

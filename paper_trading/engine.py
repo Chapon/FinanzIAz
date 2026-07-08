@@ -407,6 +407,37 @@ def _compute_atr_forced_exits(
     return out
 
 
+def _buy_risk_note(ticker: str, entry_price: float, history_provider) -> str | None:
+    """Nota R:R/stop/TP para una BUY (V2, display-only, fail-open).
+
+    Computa el ATR del ticker (mismos params que el gate ATR) y deriva los
+    niveles de riesgo ex-ante que el engine enforcearía sobre la posición, para
+    estamparlos en ``PaperOrder.notes`` y mostrarlos en la UI de Paper. NO toca
+    ninguna decisión (regla 3). Devuelve ``None`` si no se puede computar (sin
+    historia/ATR) — la orden se crea igual.
+    """
+    try:
+        from analysis.atr import compute_atr
+        from paper_trading.gates import entry_risk_levels, format_entry_risk_note
+
+        if entry_price is None or not np.isfinite(entry_price) or entry_price <= 0:
+            return None
+        period = max(2, int(settings.get("atr_period", 14)))
+        stop_mult = max(0.0, float(settings.get("atr_stop_mult", 2.0)))
+        tp_mult = max(0.0, float(settings.get("atr_tp_mult", 4.0)))
+        df = history_provider(ticker)
+        atr = compute_atr(df, period=period)
+        if atr is None or not np.isfinite(atr) or atr <= 0:
+            return None
+        levels = entry_risk_levels(
+            entry_price=float(entry_price), atr_value=float(atr),
+            stop_mult=stop_mult, tp_mult=tp_mult,
+        )
+        return format_entry_risk_note(levels)
+    except Exception:
+        return None
+
+
 def _update_high_water_marks(positions: list, prices: dict[str, float]) -> None:
     """
     Seed / advance ``high_water_mark`` for each position based on the live
@@ -938,6 +969,15 @@ def run_scan(
             # y un stop que expira por inacción no es gestión de riesgo (N3/A2).
             # Los risk-exits caen al path de fill de abajo, reusando el
             # fill_price_override modelado (gap/touch) idéntico al camino auto.
+            # R:R ex-ante (V2): para cada BUY, estampar los niveles stop/TP + R:R
+            # que el engine define, en notes (persistente) y visible en la UI de
+            # Paper. Display-only, fail-open, no toca la decisión (regla 3).
+            buy_note = None
+            if trade.side == "BUY":
+                _px = prices.get(trade.ticker)
+                if _px is not None and np.isfinite(_px) and _px > 0:
+                    buy_note = _buy_risk_note(trade.ticker, float(_px), _history_for)
+
             if acct.mode == "manual" and not risk_exit:
                 key = (trade.ticker, trade.side)
                 if key in existing_pending:
@@ -952,6 +992,7 @@ def run_scan(
                     acct,
                     trade,
                     current_price=prices.get(trade.ticker),
+                    notes=buy_note,
                 )
                 existing_pending.add(key)
                 result.queued += 1
@@ -1000,7 +1041,7 @@ def run_scan(
                     "— fill rechazado por sanity (posible cotización corrupta)."
                 )
                 continue
-            order = _fill_trade(session, acct, trade, price=fill_px)
+            order = _fill_trade(session, acct, trade, price=fill_px, notes=buy_note)
             if order is None:
                 result.skipped += 1
                 result.warnings.append(f"{trade.ticker}: fill rechazado (cash o shares insuficientes).")
@@ -1303,6 +1344,7 @@ def _create_pending_order(
     trade: TargetTrade,
     *,
     current_price: float | None = None,
+    notes: str | None = None,
 ) -> PaperOrder:
     """
     Persist a TargetTrade as a pending PaperOrder.
@@ -1311,6 +1353,9 @@ def _create_pending_order(
     lo computamos a partir de target_dollars + current_price + slippage para
     que el usuario vea un número de shares entero en la orden pendiente.
     Para SELL ya se setea target_shares; lo redondeamos hacia abajo a entero.
+
+    ``notes`` (V2, opcional): nota display-only (R:R/stop/TP para BUYs) que se
+    guarda en ``PaperOrder.notes`` y se muestra en la UI de Paper.
     """
     target_shares = trade.target_shares
 
@@ -1344,6 +1389,7 @@ def _create_pending_order(
         source=trade.source,
         signal_score=trade.signal_score,
         status="pending",
+        notes=notes,
     )
     session.add(order)
     session.flush()
@@ -1357,6 +1403,7 @@ def _fill_trade(
     *,
     price: float,
     reuse_order: PaperOrder | None = None,
+    notes: str | None = None,
 ) -> PaperOrder | None:
     """
     Execute a trade against the live account state. Returns the filled
@@ -1456,6 +1503,7 @@ def _fill_trade(
             fill_shares=shares_got,
             commission_paid=commission_paid,
             slippage_cost=slippage_cost,
+            notes=notes,
         )
 
     elif side == "SELL":
@@ -1511,6 +1559,7 @@ def _fill_trade(
             fill_shares=sell_shares,
             commission_paid=commission_paid,
             slippage_cost=slippage_cost,
+            notes=notes,
         )
 
     return None
@@ -1526,8 +1575,13 @@ def _stamp_order_filled(
     fill_shares: float,
     commission_paid: float,
     slippage_cost: float,
+    notes: str | None = None,
 ) -> PaperOrder:
-    """Create or update a PaperOrder as 'filled' and return it."""
+    """Create or update a PaperOrder as 'filled' and return it.
+
+    ``notes`` (V2) solo se aplica a órdenes recién creadas (auto BUY); en el
+    path ``reuse_order`` la nota ya fue estampada al crear la pendiente.
+    """
     now = utcnow_naive()
     if reuse_order is None:
         order = PaperOrder(
@@ -1546,6 +1600,7 @@ def _stamp_order_filled(
             fill_shares=float(fill_shares),
             commission_paid=float(commission_paid),
             slippage_cost=float(slippage_cost),
+            notes=notes,
         )
         session.add(order)
         session.flush()

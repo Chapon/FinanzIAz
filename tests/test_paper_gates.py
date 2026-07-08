@@ -22,6 +22,8 @@ from paper_trading.gates import (
     adv_capped_notional,
     atr_exit_decision,
     compute_vol_overlay,
+    entry_risk_levels,
+    format_entry_risk_note,
     is_atr_forced_exit_reason,
     is_within_earnings_blackout,
     recent_adv_dollars,
@@ -153,6 +155,44 @@ class TestAtrExitDecision:
         )
         assert "@" in reason
         assert "ATR" in reason
+
+
+# ── entry_risk_levels / format_entry_risk_note (V2) ────────────────────────────
+
+
+class TestEntryRiskLevels:
+    def test_levels_and_rr(self):
+        lv = entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=2.0, tp_mult=4.0)
+        assert lv["stop"] == pytest.approx(94.0)   # 100 − 2×3
+        assert lv["tp"] == pytest.approx(112.0)     # 100 + 4×3
+        assert lv["rr"] == pytest.approx(2.0)       # tp_mult/stop_mult
+        assert lv["atr"] == pytest.approx(3.0)
+
+    def test_rr_independent_of_price_and_atr(self):
+        a = entry_risk_levels(entry_price=50.0, atr_value=1.5, stop_mult=2.0, tp_mult=4.0)
+        b = entry_risk_levels(entry_price=200.0, atr_value=8.0, stop_mult=2.0, tp_mult=4.0)
+        assert a["rr"] == pytest.approx(2.0)
+        assert b["rr"] == pytest.approx(2.0)
+
+    def test_degenerate_inputs_return_none(self):
+        assert entry_risk_levels(entry_price=0.0, atr_value=3.0, stop_mult=2.0, tp_mult=4.0) is None
+        assert entry_risk_levels(entry_price=100.0, atr_value=0.0, stop_mult=2.0, tp_mult=4.0) is None
+        assert entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=0.0, tp_mult=4.0) is None
+        assert entry_risk_levels(entry_price=float("nan"), atr_value=3.0,
+                                 stop_mult=2.0, tp_mult=4.0) is None
+
+    def test_zero_tp_mult_allowed_rr_zero(self):
+        lv = entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=2.0, tp_mult=0.0)
+        assert lv["tp"] == pytest.approx(100.0)
+        assert lv["rr"] == pytest.approx(0.0)
+
+    def test_format_note_compact(self):
+        lv = entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=2.0, tp_mult=4.0)
+        note = format_entry_risk_note(lv)
+        assert note == "R:R 2.0 · stop $94.00 · TP $112.00"
+
+    def test_format_note_none_on_none(self):
+        assert format_entry_risk_note(None) is None
 
 
 # ── is_within_earnings_blackout ────────────────────────────────────────────────
