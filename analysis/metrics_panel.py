@@ -27,11 +27,20 @@ Schema del payload (``build_metrics``)::
         "n_round_trips", "total_pnl", "n_wins", "n_losses", "win_rate",
         "profit_factor", "avg_win", "avg_loss", "payoff_ratio", "expectancy",
         "avg_hold_days", "total_costs",
+        "excursion": {"n","median_mae","median_mfe","avg_mae","avg_mfe",
+                      "worst_mae","best_mfe"},   # MAE/MFE distribución (V1)
         "by_exit_kind": {kind: {"n", "pnl", "avg"}},
         "per_ticker": [{"ticker","pnl","n"}...],
         "worst_ticker": {"ticker","pnl"}, "pnl_ex_worst": float,
         "top_winners": [...], "top_losers": [...],
-        "round_trips": [ {...} ]   # cronológico por sell_day
+        "round_trips": [ {..., "mae", "mfe"} ]   # cronológico por sell_day
+      },
+      "friction": {   # V1: costo total de operar (todas las órdenes filled)
+        "commission","slippage","friction","n_orders","gross_pnl","pct_of_gross"
+      },
+      "benchmark": {  # V1: retorno de la cuenta vs SPY sobre la misma ventana
+        "available","ticker","start_day","end_day",
+        "account_return","spy_return","vs_spy"
       },
       "timing": {
         "n5","good5","good5_pct","mean5","median5",
@@ -70,6 +79,11 @@ from typing import Any
 FWD_SHORT = 5
 FWD_LONG = 20
 CHURN_DAYS = 7
+
+# Benchmark de mercado (V1). SPY total-return implícito del cache yfinance
+# (auto_adjust=True) — sesgo documentado en el BACKLOG: los dividendos ya están
+# reinvertidos en el ajuste, así que la comparación es contra el retorno total.
+BENCHMARK_TICKER = "SPY"
 
 # Keywords que marcan commits que cambian la *lógica de trading* (para el overlay
 # del gráfico de efectividad). Se filtran del git log por subject.
@@ -126,6 +140,87 @@ def load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, f
         if cl is not None and isinstance(idx, str):
             out.append((idx[:10], float(cl)))
     return out or None
+
+
+def load_ohlc_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float, float]] | None:
+    """Lista ``(YYYY-MM-DD, high, low)`` ordenada por fecha desde la fila 1d más fresca.
+
+    Igual que ``load_close_series`` pero devuelve el rango intradía (High/Low) que
+    un stop/target realmente ve — usado para MAE/MFE. Tolera columnas planas
+    (``"High"``) o serializadas como tupla (``["High","MSFT"]``, frame MultiIndex).
+    Devuelve ``None`` si no hay cache, o si faltan las columnas High/Low.
+    """
+    row = con.execute(
+        "SELECT data_json FROM historical_data_cache "
+        "WHERE ticker=? AND interval='1d' ORDER BY fetched_at DESC LIMIT 1",
+        (ticker,),
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        d = json.loads(row[0])
+        names = [c[0] if isinstance(c, list) else c for c in d["columns"]]
+        hi = names.index("High")
+        lo = names.index("Low")
+    except (ValueError, KeyError, json.JSONDecodeError):
+        return None
+    out: list[tuple[str, float, float]] = []
+    for idx, vals in zip(d.get("index", []), d.get("data", [])):
+        try:
+            h = vals[hi]
+            lw = vals[lo]
+        except (IndexError, TypeError):
+            continue
+        if h is not None and lw is not None and isinstance(idx, str):
+            out.append((idx[:10], float(h), float(lw)))
+    out.sort()
+    return out or None
+
+
+def excursions(series_hl: list[tuple[str, float, float]] | None,
+               buy_day: str | None, sell_day: str | None,
+               buy_price: float | None) -> tuple[float | None, float | None]:
+    """MAE/MFE de un round-trip long, en fracción sobre el precio de entrada.
+
+    Sobre las barras diarias con ``buy_day <= fecha <= sell_day`` (inclusive):
+      * MFE (max favorable excursion) = ``max(High)/buy_price - 1`` — la mejor
+        ganancia no realizada que llegó a estar disponible.
+      * MAE (max adverse excursion) = ``min(Low)/buy_price - 1`` — la peor pérdida
+        no realizada que la posición aguantó (típicamente ≤ 0).
+
+    Devuelve ``(mae, mfe)``. ``(None, None)`` si falta serie, precio o ventana.
+    Usa High/Low (no close-to-close): es lo que ve un stop/target intradía.
+    """
+    if not series_hl or not buy_day or buy_price is None or buy_price <= 0:
+        return (None, None)
+    end = sell_day or buy_day
+    highs: list[float] = []
+    lows: list[float] = []
+    for d, h, lw in series_hl:
+        if d < buy_day:
+            continue
+        if d > end:
+            break
+        highs.append(h)
+        lows.append(lw)
+    if not highs:
+        return (None, None)
+    mfe = max(highs) / buy_price - 1.0
+    mae = min(lows) / buy_price - 1.0
+    return (mae, mfe)
+
+
+def _annotate_excursions(con: sqlite3.Connection, rts: list[dict]) -> None:
+    """Agrega ``mae``/``mfe`` a cada round-trip in-place (High/Low del cache 1d)."""
+    series_cache: dict[str, list[tuple[str, float, float]] | None] = {}
+    for r in rts:
+        t = r["ticker"]
+        if t not in series_cache:
+            series_cache[t] = load_ohlc_series(con, t)
+        mae, mfe = excursions(series_cache[t], r.get("buy_day"), r.get("sell_day"),
+                              r.get("buy_price"))
+        r["mae"] = mae
+        r["mfe"] = mfe
 
 
 def forward_return(series: list[tuple[str, float]] | None, day: str, n: int) -> float | None:
@@ -257,6 +352,9 @@ def _realized_panel(rts: list[dict]) -> dict:
                     win_rate=0.0, profit_factor=None, avg_win=0.0, avg_loss=0.0,
                     payoff_ratio=None,
                     expectancy=0.0, avg_hold_days=0.0, total_costs=0.0,
+                    excursion={"n": 0, "median_mae": None, "median_mfe": None,
+                               "avg_mae": None, "avg_mfe": None,
+                               "worst_mae": None, "best_mfe": None},
                     by_exit_kind={}, per_ticker=[], worst_ticker=None,
                     pnl_ex_worst=0.0, top_winners=[], top_losers=[], round_trips=[])
     wins = [r for r in rts if r["pnl"] > 0]
@@ -284,9 +382,26 @@ def _realized_panel(rts: list[dict]) -> dict:
     # es el verdadero veredicto (un win-rate < 50% es viable si payoff > 1).
     payoff_ratio = (avg_win / abs(avg_loss)) if avg_loss else None
 
+    # Distribución de MAE/MFE (excursión intradía). Alimenta la calibración de
+    # stops/targets con TODOS los round-trips (no solo los 6 exits ATR de A1).
+    maes = [r["mae"] for r in rts if r.get("mae") is not None]
+    mfes = [r["mfe"] for r in rts if r.get("mfe") is not None]
+    excursion = {
+        "n": len(maes),
+        "median_mae": _median(maes) if maes else None,
+        "median_mfe": _median(mfes) if mfes else None,
+        "avg_mae": (sum(maes) / len(maes)) if maes else None,
+        "avg_mfe": (sum(mfes) / len(mfes)) if mfes else None,
+        "worst_mae": min(maes) if maes else None,
+        "best_mfe": max(mfes) if mfes else None,
+    }
+
     def _slim(r: dict) -> dict:
-        return {k: r[k] for k in ("ticker", "pnl", "pnl_pct", "hold_days",
-                                  "exit_kind", "sell_reason", "buy_day", "sell_day")}
+        d = {k: r[k] for k in ("ticker", "pnl", "pnl_pct", "hold_days",
+                               "exit_kind", "sell_reason", "buy_day", "sell_day")}
+        d["mae"] = r.get("mae")
+        d["mfe"] = r.get("mfe")
+        return d
 
     return dict(
         n_round_trips=len(rts),
@@ -301,6 +416,7 @@ def _realized_panel(rts: list[dict]) -> dict:
         expectancy=total / len(rts),
         avg_hold_days=sum(r["hold_days"] for r in rts) / len(rts),
         total_costs=sum(r["costs"] for r in rts),
+        excursion=excursion,
         by_exit_kind={k: {"n": v[0], "pnl": v[1], "avg": v[1] / v[0] if v[0] else 0.0}
                       for k, v in by_kind.items()},
         per_ticker=per_ticker,
@@ -485,6 +601,40 @@ def _open_positions(con: sqlite3.Connection, account_id: int) -> list[dict]:
     return out
 
 
+def _friction_panel(con: sqlite3.Connection, account_id: int, realized: dict) -> dict:
+    """Fricción total pagada (comisión + slippage) y su peso sobre el P/L bruto.
+
+    Suma ``commission_paid + slippage_cost`` sobre **todas** las órdenes filled
+    (BUY y SELL, incluidas las compras de posiciones aún abiertas) — el dato ya
+    vive en ``paper_orders`` pero nadie lo agregaba. Distinto de
+    ``realized.total_costs``, que solo cuenta los costos de los round-trips ya
+    cerrados (BUY emparejado con su SELL).
+
+    ``pct_of_gross`` = fricción / P/L **bruto** realizado (neto + costos de los
+    round-trips), para ver cuánto del margen bruto se lo comió el costo de operar.
+    ``None`` si el bruto no es positivo (ratio sin sentido).
+    """
+    row = con.execute(
+        "SELECT COALESCE(SUM(commission_paid),0), COALESCE(SUM(slippage_cost),0), COUNT(*) "
+        "FROM paper_orders WHERE account_id=? AND status='filled'",
+        (account_id,),
+    ).fetchone()
+    commission = float(row[0] or 0.0)
+    slippage = float(row[1] or 0.0)
+    n_orders = int(row[2] or 0)
+    friction = commission + slippage
+    gross_pnl = realized["total_pnl"] + realized["total_costs"]
+    pct_of_gross = (friction / gross_pnl) if gross_pnl > 0 else None
+    return {
+        "commission": commission,
+        "slippage": slippage,
+        "friction": friction,
+        "n_orders": n_orders,
+        "gross_pnl": gross_pnl,
+        "pct_of_gross": pct_of_gross,
+    }
+
+
 def _expired_buys(con: sqlite3.Connection, account_id: int) -> dict:
     rows = con.execute(
         "SELECT ticker,COUNT(*) FROM paper_orders "
@@ -495,19 +645,87 @@ def _expired_buys(con: sqlite3.Connection, account_id: int) -> dict:
     return {"n": sum(by.values()), "by_ticker": by}
 
 
+def _close_on_or_after(series: list[tuple[str, float]], day: str) -> float | None:
+    """Primer close en o después de ``day`` (serie ascendente)."""
+    for d, c in series:
+        if d >= day:
+            return c
+    return None
+
+
+def _close_on_or_before(series: list[tuple[str, float]], day: str) -> float | None:
+    """Último close en o antes de ``day`` (serie ascendente)."""
+    out: float | None = None
+    for d, c in series:
+        if d <= day:
+            out = c
+        else:
+            break
+    return out
+
+
+def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
+    """Retorno de la cuenta vs SPY sobre la MISMA ventana (V1).
+
+    Toma el primer y último ``paper_equity_snapshots`` de la cuenta como ventana
+    y compara el retorno de equity contra el retorno de SPY entre esas fechas
+    (cache diario, ``load_close_series``). Permite, por primera vez, separar
+    sistema de mercado: ``vs_spy = account_return − spy_return`` (alpha del período).
+
+    Best-effort/display-only: ``available=False`` si faltan snapshots (<2) o el
+    cache de SPY. No lanza si la tabla de snapshots no existe (DB sintética).
+    """
+    empty = {"available": False, "ticker": BENCHMARK_TICKER,
+             "start_day": None, "end_day": None,
+             "account_return": None, "spy_return": None, "vs_spy": None}
+    try:
+        rows = con.execute(
+            "SELECT snapshot_at, total_equity FROM paper_equity_snapshots "
+            "WHERE account_id=? ORDER BY snapshot_at ASC",
+            (account_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return empty
+    if len(rows) < 2:
+        return empty
+    start_day = _day(rows[0][0])
+    end_day = _day(rows[-1][0])
+    start_eq = float(rows[0][1] or 0.0)
+    end_eq = float(rows[-1][1] or 0.0)
+    account_return = (end_eq / start_eq - 1.0) if start_eq > 0 else None
+    spy = load_close_series(con, BENCHMARK_TICKER)
+    if not spy or start_day is None or end_day is None:
+        return {**empty, "start_day": start_day, "end_day": end_day,
+                "account_return": account_return}
+    spy = sorted(spy)
+    p0 = _close_on_or_after(spy, start_day)
+    p1 = _close_on_or_before(spy, end_day)
+    spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
+    vs_spy = (account_return - spy_return) if (
+        account_return is not None and spy_return is not None) else None
+    return {"available": spy_return is not None, "ticker": BENCHMARK_TICKER,
+            "start_day": start_day, "end_day": end_day,
+            "account_return": account_return, "spy_return": spy_return,
+            "vs_spy": vs_spy}
+
+
 # ── entrypoint ────────────────────────────────────────────────────────────────
 def build_metrics(con: sqlite3.Connection, account_id: int = 1,
                   now: datetime | None = None) -> dict[str, Any]:
     """Calcula el payload completo de métricas para ``account_id``."""
     orders = _filled_orders(con, account_id)
     rts = pair_round_trips(orders)
+    _annotate_excursions(con, rts)  # agrega mae/mfe a cada round-trip (V1)
+    realized = _realized_panel(rts)
     return {
         "generated_at": (now or datetime.now(timezone.utc)).isoformat(),
         "account_id": account_id,
-        "realized": _realized_panel(rts),
+        "realized": realized,
         "timing": _timing_panel(con, orders),
         "sell_calibration": _sell_calibration_panel(con, orders),
         "sell_timing": _sell_timing_panel(con, orders),
+        "friction": _friction_panel(con, account_id, realized),
+        "benchmark": _benchmark_panel(con, account_id),
         "churn": _churn_panel(orders),
         "timeline": _timeline(rts),
         "open_positions": _open_positions(con, account_id),

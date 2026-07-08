@@ -9,6 +9,7 @@ a future "compare two accounts" view).
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 
 import matplotlib
 
@@ -19,6 +20,43 @@ from matplotlib.figure import Figure
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from ui.styles import CHART_STYLE, PALETTE
+
+
+def build_benchmark_overlay(snapshots: list,
+                            spy_pairs: list[tuple[str, float]] | None
+                            ) -> list[tuple[datetime, float]]:
+    """Normaliza SPY a la equity inicial sobre la ventana de los snapshots (V1).
+
+    ``snapshots``: ``PaperEquitySnapshot`` ascendentes (``.snapshot_at``,
+    ``.total_equity``). ``spy_pairs``: ``[(YYYY-MM-DD, close)]``. Devuelve
+    ``[(datetime, valor)]`` por cada barra SPY dentro de ``[primer, último]``
+    snapshot, escalada para arrancar en la equity inicial → una línea comparable
+    en las mismas unidades ($) que la curva de equity. ``[]`` si falta data.
+
+    Función pura (sin Qt) para poder testear la alineación sin event loop.
+    """
+    if not snapshots or not spy_pairs:
+        return []
+    try:
+        start_eq = float(snapshots[0].total_equity)
+        start_day = snapshots[0].snapshot_at.date().isoformat()
+        end_day = snapshots[-1].snapshot_at.date().isoformat()
+    except (AttributeError, TypeError, ValueError):
+        return []
+    if start_eq <= 0:
+        return []
+    pairs = sorted(spy_pairs)
+    base = next((c for d, c in pairs if d >= start_day), None)
+    if not base or base <= 0:
+        return []
+    scale = start_eq / base
+    out: list[tuple[datetime, float]] = []
+    for d, c in pairs:
+        if d < start_day or d > end_day:
+            continue
+        with contextlib.suppress(ValueError):
+            out.append((datetime.fromisoformat(d), c * scale))
+    return out
 
 
 class EquityCurveChart(QWidget):
@@ -83,8 +121,15 @@ class EquityCurveChart(QWidget):
         self.canvas.draw()
 
     # ── Public API ───────────────────────────────────────────────────────────
-    def set_data(self, snapshots: list) -> None:
-        """Render the equity curve from a list of ``PaperEquitySnapshot``."""
+    def set_data(self, snapshots: list,
+                 benchmark: list[tuple[datetime, float]] | None = None) -> None:
+        """Render the equity curve from a list of ``PaperEquitySnapshot``.
+
+        ``benchmark`` (opcional, V1): línea SPY normalizada a la equity inicial,
+        ``[(datetime, valor)]`` — se dibuja punteada para comparar el modelo vs
+        el mercado. Cuando hay benchmark siempre se hace un full redraw (para
+        redibujar la línea y su leyenda).
+        """
         if not snapshots:
             if self._plotted_count > 0:
                 self._line = None
@@ -98,8 +143,10 @@ class EquityCurveChart(QWidget):
         ys = [float(s.total_equity) for s in snapshots]
 
         # Incremental update when appending to the same series; full redraw otherwise.
+        # Con benchmark forzamos full redraw (hay que redibujar la línea SPY).
         same_series = (
-            self._line is not None
+            not benchmark
+            and self._line is not None
             and self._plotted_count > 0
             and len(snapshots) >= self._plotted_count
             and self._first_xs == xs[0]
@@ -108,16 +155,19 @@ class EquityCurveChart(QWidget):
         if same_series:
             self._incremental_update(xs, ys)
         else:
-            self._full_redraw(xs, ys)
+            self._full_redraw(xs, ys, benchmark)
 
         self._plotted_count = len(snapshots)
         self._first_xs = xs[0]
 
     # ── Drawing internals ────────────────────────────────────────────────────
-    def _full_redraw(self, xs: list, ys: list) -> None:
+    def _full_redraw(self, xs: list, ys: list,
+                     benchmark: list[tuple[datetime, float]] | None = None) -> None:
         self.ax.clear()
         self._style_axes()
-        (self._line,) = self.ax.plot(xs, ys, color=PALETTE["accent"], linewidth=1.8)
+        (self._line,) = self.ax.plot(
+            xs, ys, color=PALETTE["accent"], linewidth=1.8, label="Equity"
+        )
         self._fill = self.ax.fill_between(
             xs,
             ys,
@@ -133,6 +183,17 @@ class EquityCurveChart(QWidget):
                 linewidth=0.6,
                 alpha=0.7,
             )
+        # Overlay SPY (V1): mismo eje $, normalizado a la equity inicial.
+        if benchmark:
+            bx = [d for d, _ in benchmark]
+            by = [v for _, v in benchmark]
+            self.ax.plot(
+                bx, by,
+                color=PALETTE.get("text2", "#9AA4B2"),
+                linewidth=1.2, linestyle="--", alpha=0.9,
+                label="SPY (normalizado)",
+            )
+            self.ax.legend(loc="upper left", fontsize=8, frameon=False)
         self.ax.set_ylabel("Equity ($)", color=PALETTE["text2"], fontsize=10)
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
         self.figure.autofmt_xdate(rotation=15)

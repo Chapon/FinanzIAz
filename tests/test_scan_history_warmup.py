@@ -41,7 +41,10 @@ def _history(n: int = 30) -> pd.DataFrame:
 
 def test_warmup_batches_full_universe_with_default_provider(test_db, monkeypatch):
     """Sin history_provider inyectado → run_scan llama get_historical_data_batch
-    UNA vez con el set completo de tickers (watchlist ∪ posiciones)."""
+    UNA vez con el set completo de tickers (watchlist ∪ posiciones ∪ SPY).
+
+    SPY se suma SOLO para cachear el benchmark de Métricas (V1); no entra al
+    universo de decisiones (precios/gates usan ``tickers`` sin SPY)."""
     import data.yahoo_finance as yfmod
     from paper_trading import engine
 
@@ -70,7 +73,7 @@ def test_warmup_batches_full_universe_with_default_provider(test_db, monkeypatch
     )
 
     assert len(calls) == 1
-    assert calls[0] == ["AAPL", "MSFT"]  # ordenado, universo completo
+    assert calls[0] == ["AAPL", "MSFT", "SPY"]  # ordenado, universo completo + SPY (benchmark V1)
 
 
 def test_warmup_skipped_when_history_provider_injected(test_db, monkeypatch):

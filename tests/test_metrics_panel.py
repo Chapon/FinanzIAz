@@ -171,6 +171,144 @@ def test_realized_payoff_ratio():
     assert r["payoff_ratio"] == pytest.approx(2.0)
 
 
+def _hist_ohlc(con, ticker, bars: list[tuple[str, float, float, float]]):
+    """Cache 1d con High/Low distintos del Close: bars = [(date, high, low, close)]."""
+    payload = {
+        "columns": ["Open", "High", "Low", "Close", "Volume"],
+        "index": [f"{d}T00:00:00.000" for d, _, _, _ in bars],
+        "data": [[c, h, lw, c, 1000] for _, h, lw, c in bars],
+    }
+    con.execute(
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+        "VALUES (?,?,?,?,?)",
+        (ticker, "2y", "1d", json.dumps(payload), "2026-06-17"),
+    )
+
+
+# ── MAE/MFE (V1) ──────────────────────────────────────────────────────────────
+def test_load_ohlc_series_basic():
+    con = _make_db()
+    _hist_ohlc(con, "AAA", [("2026-01-01", 105.0, 95.0, 100.0),
+                            ("2026-01-02", 112.0, 101.0, 110.0)])
+    s = mp.load_ohlc_series(con, "AAA")
+    assert s == [("2026-01-01", 105.0, 95.0), ("2026-01-02", 112.0, 101.0)]
+
+
+def test_load_ohlc_series_missing():
+    con = _make_db()
+    assert mp.load_ohlc_series(con, "ZZZ") is None
+
+
+def test_excursions_window_high_low():
+    # entrada 100; ventana 01→05; max High 130 (MFE +30%), min Low 88 (MAE -12%).
+    # La barra del 08 (fuera de la ventana) NO debe influir.
+    series = [("2026-01-01", 105.0, 98.0), ("2026-01-02", 115.0, 92.0),
+              ("2026-01-03", 130.0, 100.0), ("2026-01-05", 120.0, 88.0),
+              ("2026-01-08", 200.0, 60.0)]
+    mae, mfe = mp.excursions(series, "2026-01-01", "2026-01-05", 100.0)
+    assert mfe == pytest.approx(0.30)
+    assert mae == pytest.approx(-0.12)
+
+
+def test_excursions_none_when_no_series_or_window():
+    assert mp.excursions(None, "2026-01-01", "2026-01-05", 100.0) == (None, None)
+    # ventana sin barras (todas anteriores a la compra)
+    series = [("2025-12-01", 105.0, 95.0)]
+    assert mp.excursions(series, "2026-01-01", "2026-01-05", 100.0) == (None, None)
+
+
+def test_build_metrics_round_trip_mae_mfe():
+    con = _make_db()
+    _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
+    _order(con, 2, "AAA", "SELL", 118.0, 10, "2026-01-05 10:00:00", comm=0, slip=0)
+    _hist_ohlc(con, "AAA", [("2026-01-01", 104.0, 99.0, 100.0),
+                            ("2026-01-02", 108.0, 90.0, 105.0),   # Low 90 → MAE -10%
+                            ("2026-01-03", 125.0, 110.0, 120.0),  # High 125 → MFE +25%
+                            ("2026-01-05", 120.0, 115.0, 118.0)])
+    r = mp.build_metrics(con, 1)["realized"]
+    rt = r["round_trips"][0]
+    assert rt["mae"] == pytest.approx(-0.10)
+    assert rt["mfe"] == pytest.approx(0.25)
+    exc = r["excursion"]
+    assert exc["n"] == 1
+    assert exc["median_mae"] == pytest.approx(-0.10)
+    assert exc["median_mfe"] == pytest.approx(0.25)
+    assert exc["worst_mae"] == pytest.approx(-0.10)
+    assert exc["best_mfe"] == pytest.approx(0.25)
+
+
+# ── fricción (V1) ─────────────────────────────────────────────────────────────
+def test_friction_panel_sums_all_orders():
+    con = _make_db()
+    # Round-trip cerrado (BUY+SELL) + una compra de posición abierta (sin SELL).
+    _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=2.0, slip=1.0)
+    _order(con, 2, "AAA", "SELL", 120.0, 10, "2026-01-05 10:00:00", comm=2.0, slip=1.0)
+    _order(con, 3, "BBB", "BUY", 50.0, 10, "2026-01-03 10:00:00", comm=5.0, slip=2.0)  # abierta
+    fr = mp.build_metrics(con, 1)["friction"]
+    # comisión total = 2+2+5 = 9 ; slippage = 1+1+2 = 4 ; fricción = 13
+    assert fr["commission"] == pytest.approx(9.0)
+    assert fr["slippage"] == pytest.approx(4.0)
+    assert fr["friction"] == pytest.approx(13.0)
+    assert fr["n_orders"] == 3
+    # P/L bruto del round-trip cerrado = (120-100)*10 = 200 ; costos round-trip = 6
+    # gross = net(194) + costos(6) = 200 ; pct = 13/200
+    assert fr["gross_pnl"] == pytest.approx(200.0)
+    assert fr["pct_of_gross"] == pytest.approx(13.0 / 200.0)
+
+
+def test_friction_pct_none_when_gross_not_positive():
+    con = _make_db()
+    _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=1.0, slip=0.5)
+    _order(con, 2, "AAA", "SELL", 90.0, 10, "2026-01-05 10:00:00", comm=1.0, slip=0.5)
+    fr = mp.build_metrics(con, 1)["friction"]
+    assert fr["pct_of_gross"] is None  # bruto = -100 < 0
+
+
+# ── benchmark vs SPY (V1) ─────────────────────────────────────────────────────
+def _snap(con, when, equity):
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS paper_equity_snapshots "
+        "(id INTEGER PRIMARY KEY, account_id INT, snapshot_at TEXT, cash REAL, "
+        "positions_value REAL, total_equity REAL, portfolio_sigma REAL)"
+    )
+    con.execute(
+        "INSERT INTO paper_equity_snapshots "
+        "(account_id, snapshot_at, cash, positions_value, total_equity, portfolio_sigma) "
+        "VALUES (1, ?, 0, 0, ?, NULL)",
+        (when, equity),
+    )
+
+
+def test_benchmark_panel_vs_spy():
+    con = _make_db()
+    _snap(con, "2026-01-01 16:00:00", 50000.0)
+    _snap(con, "2026-01-31 16:00:00", 52500.0)   # cuenta +5%
+    _hist(con, "SPY", [("2026-01-01", 400.0), ("2026-01-15", 404.0), ("2026-01-31", 408.0)])
+    bm = mp.build_metrics(con, 1)["benchmark"]
+    assert bm["available"] is True
+    assert bm["account_return"] == pytest.approx(0.05)
+    assert bm["spy_return"] == pytest.approx(0.02)         # 408/400 - 1
+    assert bm["vs_spy"] == pytest.approx(0.03)             # alpha del período
+    assert bm["start_day"] == "2026-01-01" and bm["end_day"] == "2026-01-31"
+
+
+def test_benchmark_unavailable_without_snapshots_table():
+    con = _make_db()  # _make_db no crea paper_equity_snapshots
+    bm = mp.build_metrics(con, 1)["benchmark"]
+    assert bm["available"] is False
+    assert bm["vs_spy"] is None
+
+
+def test_benchmark_unavailable_without_spy_cache():
+    con = _make_db()
+    _snap(con, "2026-01-01 16:00:00", 50000.0)
+    _snap(con, "2026-01-31 16:00:00", 52500.0)
+    bm = mp.build_metrics(con, 1)["benchmark"]   # sin cache de SPY
+    assert bm["available"] is False
+    assert bm["account_return"] == pytest.approx(0.05)   # el retorno propio igual se reporta
+    assert bm["spy_return"] is None
+
+
 def test_sell_timing_panel_inverted_and_by_kind():
     # MET2: venta buena = precio NO sube después (fwd5 ≤ 0). Signo invertido vs
     # compras. AAA (signal_sell) baja → buena; BBB (atr_stop) sube → regret.

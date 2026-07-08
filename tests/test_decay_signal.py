@@ -18,7 +18,9 @@ Cubre:
 
 from __future__ import annotations
 
+import json
 import math
+import sqlite3
 from datetime import datetime, timedelta
 
 import pytest
@@ -27,6 +29,27 @@ import pytest
 # el path del repo esté en sys.path antes de importar.
 from scripts.dashboard_data import _decay_signal, _monthly_perf
 from scripts.baseline_metrics import AccountSnapshot, Fill
+
+
+def _con_with_cache(spy_closes: list[tuple[str, float]] | None = None) -> sqlite3.Connection:
+    """Con en memoria con ``historical_data_cache`` (opcionalmente con SPY)."""
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        "CREATE TABLE historical_data_cache (id INTEGER PRIMARY KEY, ticker TEXT, "
+        "period TEXT, interval TEXT, data_json TEXT, fetched_at TEXT)"
+    )
+    if spy_closes:
+        payload = {
+            "columns": ["Open", "High", "Low", "Close", "Volume"],
+            "index": [f"{d}T00:00:00.000" for d, _ in spy_closes],
+            "data": [[c, c, c, c, 1000] for _, c in spy_closes],
+        }
+        con.execute(
+            "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+            "VALUES ('SPY','2y','1d',?,?)",
+            (json.dumps(payload), "2026-06-17"),
+        )
+    return con
 
 
 # ── Helpers para construir monthly dicts sintéticos ──────────────────────────
@@ -228,26 +251,45 @@ class TestMonthlyPerf:
     def test_returns_list(self):
         snaps = _make_snapshots(60)
         fills = _make_fills(4)
-        result = _monthly_perf(snaps, fills)
+        result = _monthly_perf(_con_with_cache(), snaps, fills)
         assert isinstance(result, list)
 
     def test_has_expected_keys(self):
         snaps = _make_snapshots(60)
         fills = _make_fills(2)
-        result = _monthly_perf(snaps, fills)
+        result = _monthly_perf(_con_with_cache(), snaps, fills)
         assert len(result) > 0
         row = result[0]
         for key in ("month", "n_trading_days", "period_return", "sharpe_annual",
-                    "max_drawdown", "n_round_trips"):
+                    "max_drawdown", "n_round_trips", "spy_return", "vs_spy"):
             assert key in row, f"Missing key: {key}"
 
     def test_ordered_chronologically(self):
         snaps = _make_snapshots(90)
         fills = _make_fills(2)
-        result = _monthly_perf(snaps, fills)
+        result = _monthly_perf(_con_with_cache(), snaps, fills)
         months = [r["month"] for r in result]
         assert months == sorted(months)
 
     def test_empty_snapshots(self):
-        result = _monthly_perf([], [])
+        result = _monthly_perf(_con_with_cache(), [], [])
         assert result == []
+
+    def test_vs_spy_computed_when_cache_present(self):
+        # V1: con SPY cacheado, cada mes reporta spy_return y vs_spy.
+        snaps = _make_snapshots(60)  # abril y mayo 2026
+        fills = _make_fills(2)
+        con = _con_with_cache([("2026-04-01", 400.0), ("2026-04-30", 408.0),   # abril +2%
+                               ("2026-05-01", 408.0), ("2026-05-30", 408.0)])  # mayo 0%
+        result = _monthly_perf(con, snaps, fills)
+        by_month = {r["month"]: r for r in result}
+        assert by_month["2026-04"]["spy_return"] == pytest.approx(0.02)
+        assert by_month["2026-05"]["spy_return"] == pytest.approx(0.0)
+        # vs_spy = period_return del mes − spy_return del mes
+        apr = by_month["2026-04"]
+        assert apr["vs_spy"] == pytest.approx(apr["period_return"] - 0.02)
+
+    def test_vs_spy_none_without_cache(self):
+        snaps = _make_snapshots(60)
+        result = _monthly_perf(_con_with_cache(), snaps, _make_fills(2))
+        assert all(r["spy_return"] is None and r["vs_spy"] is None for r in result)

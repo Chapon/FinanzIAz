@@ -262,11 +262,28 @@ class MetricsTab(QWidget):
              "Porcentaje de compras cuyo precio SUBIÓ en los 5 días hábiles siguientes "
              "al BUY (forward return a 5 días > 0). Mide la calidad de la ENTRADA, "
              "aunque la posición siga abierta y todavía no se haya vendido."),
-            ("costs", "COSTOS TOTALES", "bar",
-             "Suma de comisión + slippage pagados en todos los round-trips cerrados."),
+            ("costs", "FRICCIÓN TOTAL", "bar",
+             "Comisión + slippage pagados en TODAS las órdenes ejecutadas (compras "
+             "y ventas, incluidas las compras de posiciones aún abiertas). El "
+             "subtítulo muestra qué fracción del P/L bruto realizado se comió el "
+             "costo de operar. Distinto de los costos de round-trip (solo cerrados)."),
             ("expired", "BUYS NO LLENADOS", "spike",
              "Órdenes de compra que expiraron sin llegar a ejecutarse "
              "(la cuenta opera en modo manual)."),
+            ("excursion", "MAE / MFE MEDIANA", "bar",
+             "Excursión intradía típica por round-trip (mediana). MAE = peor caída "
+             "no realizada que la posición aguantó (fondo); MFE = mejor suba no "
+             "realizada que llegó a estar disponible (techo). Calculada sobre "
+             "High/Low diarios entre la compra y la venta — es lo que ve un "
+             "stop/target intradía. Alimenta la calibración de stops/targets con "
+             "TODOS los trades cerrados, no solo los pocos exits ATR."),
+            ("benchmark", "VS SPY (PERÍODO)", "area",
+             "Retorno de la cuenta MENOS el retorno de SPY sobre la misma ventana "
+             "(del primer al último snapshot de equity). Es el alpha del período: "
+             "positivo = la cuenta le ganó al mercado; negativo = un índice pasivo "
+             "hubiera rendido más. Separa por fin sistema de mercado. SPY = "
+             "total-return implícito del cache (auto_adjust). '—' si falta el "
+             "cache de SPY o hay menos de 2 snapshots."),
         ]
         for i, (key, title, kind, tip) in enumerate(defs):
             card = KpiCard(title, "—", "", kind=kind)
@@ -307,13 +324,16 @@ class MetricsTab(QWidget):
             fixed_height=_TABLE_HEIGHT)
         self.rt_table = self._make_table(
             "Round-trips realizados (compra buena = P/L > 0)",
-            ["Ticker", "Compra", "Venta", "Hold", "Salida", "P/L", "P/L %"],
+            ["Ticker", "Compra", "Venta", "Hold", "Salida", "P/L", "P/L %", "MAE", "MFE"],
             section_tip="Cada operación cerrada (BUY emparejado con su SELL por FIFO), "
-                        "de la más reciente a la más vieja.",
+                        "de la más reciente a la más vieja. MAE/MFE = peor caída / mejor "
+                        "suba no realizada intradía mientras la posición estuvo abierta.",
             col_tips=["Símbolo", "Fecha de compra", "Fecha de venta",
                       "Días de tenencia entre compra y venta",
                       "Tipo de salida que cerró el trade",
-                      "Ganancia/pérdida neta de costos", "Ganancia/pérdida en porcentaje"],
+                      "Ganancia/pérdida neta de costos", "Ganancia/pérdida en porcentaje",
+                      "MAE — peor pérdida no realizada que la posición aguantó (min Low ÷ entrada − 1)",
+                      "MFE — mejor ganancia no realizada disponible (max High ÷ entrada − 1)"],
             fixed_height=_TABLE_HEIGHT)
         self.timing_table = self._make_table(
             "Timing de compras (forward return tras el BUY)",
@@ -485,9 +505,28 @@ class MetricsTab(QWidget):
         self.cards["timing"].set_value(_pct(t["good5_pct"]),
                                        f"mean fwd5 {_pct(t['mean5'], signed=True)}",
                                        t["good5_pct"] >= 0.5)
-        self.cards["costs"].set_value(_money(r["total_costs"]), "comisión + slippage", False)
+        fr = m["friction"]
+        pct = fr["pct_of_gross"]
+        self.cards["costs"].set_value(
+            _money(fr["friction"]),
+            f"{_pct(pct)} del P/L bruto" if pct is not None else "comisión + slippage (todas)",
+            False)
         self.cards["expired"].set_value(str(m["expired_buys"]["n"]),
                                         "órdenes expiradas", m["expired_buys"]["n"] == 0)
+        exc = r["excursion"]
+        self.cards["excursion"].set_value(
+            f"{_pct(exc['median_mae'], signed=True)} / {_pct(exc['median_mfe'], signed=True)}"
+            if exc["n"] else "—",
+            "peor caída / mejor suba (mediana)", None)
+        bm = m["benchmark"]
+        if bm["available"]:
+            self.cards["benchmark"].set_value(
+                _pct(bm["vs_spy"], signed=True),
+                f"cuenta {_pct(bm['account_return'], signed=True)} · "
+                f"SPY {_pct(bm['spy_return'], signed=True)}",
+                (bm["vs_spy"] or 0) > 0)
+        else:
+            self.cards["benchmark"].set_value("—", "sin cache de SPY todavía", None)
         # ── sparklines ──
         # Cada card lleva un mini-gráfico abajo. Le damos serie a las que tienen
         # una secuencia con sentido y ocultamos el recuadro en las que son un
@@ -518,7 +557,7 @@ class MetricsTab(QWidget):
         _spark("timing", fwd5_seq)
         _spark("sellquality", sell_fwd5_seq)
         # Estas son métricas escalares: ocultamos el sparkline vacío.
-        for key in ("pf", "payoff", "exworst", "costs", "expired"):
+        for key in ("pf", "payoff", "exworst", "costs", "expired", "excursion", "benchmark"):
             self.cards[key].spark.hide()
 
         # chart
@@ -597,6 +636,13 @@ class MetricsTab(QWidget):
             tbl.setItem(i, 4, self._cell(r["exit_kind"]))
             tbl.setItem(i, 5, self._cell(_money(r["pnl"]), r["pnl"] > 0, True))
             tbl.setItem(i, 6, self._cell(_pct(r["pnl_pct"], signed=True), r["pnl"] > 0, True))
+            mae = r.get("mae")
+            mfe = r.get("mfe")
+            # MAE siempre en rojo (caída), MFE siempre en verde (suba disponible).
+            tbl.setItem(i, 7, self._cell(_pct(mae, signed=True) if mae is not None else "—",
+                                         False if mae is not None else None, True))
+            tbl.setItem(i, 8, self._cell(_pct(mfe, signed=True) if mfe is not None else "—",
+                                         True if mfe is not None else None, True))
         self._autosize(tbl)
 
     def _fill_timing_table(self, per_buy: list[dict]):

@@ -216,15 +216,28 @@ def _expired_notes_top(con: sqlite3.Connection, account_id: int, limit: int = 10
     return [{"note": n, "count": int(c)} for n, c in rows]
 
 
-def _monthly_perf(snapshots: list[AccountSnapshot], fills) -> list[dict]:
+def _monthly_perf(con: sqlite3.Connection, snapshots: list[AccountSnapshot], fills) -> list[dict]:
     """Per-month performance for the alpha decay panel.
 
     Returns a list of dicts (one per YYYY-MM), ordered chronologically, with:
         month, n_trading_days, period_return, sharpe_annual,
-        max_drawdown, n_round_trips, win_rate, profit_factor
+        max_drawdown, n_round_trips, win_rate, profit_factor,
+        spy_return, vs_spy   # V1: retorno de SPY del mes y alpha (period_return − SPY)
     """
     trades, _ = fifo_match(fills)
-    return monthly_breakdown(snapshots, trades)
+    monthly = monthly_breakdown(snapshots, trades)
+    spy = _load_close_series(con, "SPY")  # V1 benchmark (cache diario)
+    for row in monthly:
+        mo = row.get("month")
+        spy_return = None
+        if spy and mo:
+            in_month = [(d, c) for d, c in spy if d[:7] == mo]
+            if len(in_month) >= 2 and in_month[0][1] > 0:
+                spy_return = in_month[-1][1] / in_month[0][1] - 1.0
+        pr = row.get("period_return")
+        row["spy_return"] = spy_return
+        row["vs_spy"] = (pr - spy_return) if (pr is not None and spy_return is not None) else None
+    return monthly
 
 
 # Slope threshold for the decay signal (Sharpe units per month).
@@ -738,7 +751,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
             return {"error": f"account {account_id} not found in {db_path}"}
         snapshots = load_snapshots(con, account_id)
         fills = load_fills(con, account_id)
-        monthly = _monthly_perf(snapshots, fills)
+        monthly = _monthly_perf(con, snapshots, fills)
         payload = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "db_path": str(db_path),

@@ -531,7 +531,14 @@ def run_scan(
             try:
                 from data.yahoo_finance import get_historical_data_batch
 
-                get_historical_data_batch(tickers, period=_resolve_history_period())
+                from analysis.metrics_panel import BENCHMARK_TICKER
+
+                # SPY entra al warm-up SOLO para cachearlo (benchmark de Métricas,
+                # V1). NO se agrega a `tickers`, así que no toca precios ni gates.
+                get_historical_data_batch(
+                    sorted(set(tickers) | {BENCHMARK_TICKER}),
+                    period=_resolve_history_period(),
+                )
             except Exception:
                 from config.logging_config import get_logger
 
