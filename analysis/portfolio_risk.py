@@ -76,6 +76,114 @@ def mean_correlation(
     return float(np.mean(corrs))
 
 
+def book_mean_correlation(returns: pd.DataFrame | None) -> float | None:
+    """Correlación promedio par-a-par (triángulo superior) de un book (V2).
+
+    Mide qué tan "un solo trade con N tickers" es el book: cerca de 1.0 = todos
+    los nombres se mueven juntos (diversificación ilusoria). Usa correlación
+    pairwise-complete (ignora NaN). Devuelve ``None`` con <2 columnas o si ningún
+    par tiene correlación finita.
+    """
+    if returns is None or getattr(returns, "empty", True) or returns.shape[1] < 2:
+        return None
+    corr = returns.corr()
+    n = corr.shape[0]
+    vals: list[float] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            c = corr.iat[i, j]
+            if np.isfinite(c):
+                vals.append(float(c))
+    return float(np.mean(vals)) if vals else None
+
+
+def book_concentration(
+    positions: list[dict],
+    *,
+    returns: pd.DataFrame | None = None,
+    sector_of: Callable[[str], str | None] | None = None,
+) -> dict:
+    """Resumen de concentración de un book vivo (V2, display-only).
+
+    ``positions``: ``[{"ticker","market_value","unrealized_pnl"}, ...]`` (una por
+    posición abierta). ``returns`` (opcional): frame de retornos diarios para la
+    correlación media. ``sector_of`` (opcional): callable ticker→sector (None si
+    se desconoce → se agrupa en "Sin dato").
+
+    Devuelve pesos por nombre, el nombre más concentrado, el HHI (Herfindahl) y
+    los "nombres efectivos" (1/HHI), la exposición sectorial, la correlación media
+    del book y el P/L no realizado excluyendo el mejor / peor nombre (para ver
+    cuánto pesa un solo ticker). NO filtra ni bloquea nada.
+    """
+    from collections import defaultdict
+
+    empty = {
+        "n": 0, "total_value": 0.0, "weights": [], "top_ticker": None,
+        "top_weight": None, "hhi": None, "effective_names": None,
+        "sectors": [], "mean_correlation": None,
+        "total_unrealized_pnl": 0.0, "pnl_ex_best": None, "pnl_ex_worst": None,
+        "best_ticker": None, "worst_ticker": None,
+    }
+    if not positions:
+        return empty
+    total = sum(float(p.get("market_value", 0.0) or 0.0) for p in positions)
+    if total <= 0:
+        return {**empty, "n": len(positions)}
+
+    enriched = []
+    for p in positions:
+        mv = float(p.get("market_value", 0.0) or 0.0)
+        sec = None
+        if sector_of is not None:
+            try:
+                sec = sector_of(p["ticker"])
+            except Exception:
+                sec = None
+        enriched.append({
+            "ticker": p["ticker"],
+            "market_value": mv,
+            "weight": mv / total,
+            "unrealized_pnl": float(p.get("unrealized_pnl", 0.0) or 0.0),
+            "sector": sec or "Sin dato",
+        })
+    weights_sorted = sorted(enriched, key=lambda x: -x["weight"])
+    top = weights_sorted[0]
+    hhi = sum(x["weight"] ** 2 for x in enriched)
+    effective = (1.0 / hhi) if hhi > 0 else None
+
+    sec_map: dict[str, float] = defaultdict(float)
+    for x in enriched:
+        sec_map[x["sector"]] += x["weight"]
+    sectors = sorted(
+        ({"sector": s, "weight": w} for s, w in sec_map.items()),
+        key=lambda x: -x["weight"],
+    )
+
+    total_upnl = sum(x["unrealized_pnl"] for x in enriched)
+    by_pnl = sorted(enriched, key=lambda x: x["unrealized_pnl"])
+    worst = by_pnl[0]
+    best = by_pnl[-1]
+
+    return {
+        "n": len(enriched),
+        "total_value": total,
+        "weights": [{"ticker": x["ticker"], "weight": x["weight"],
+                     "market_value": x["market_value"], "sector": x["sector"],
+                     "unrealized_pnl": x["unrealized_pnl"]} for x in weights_sorted],
+        "top_ticker": top["ticker"],
+        "top_weight": top["weight"],
+        "hhi": hhi,
+        "effective_names": effective,
+        "sectors": sectors,
+        "mean_correlation": book_mean_correlation(returns),
+        "total_unrealized_pnl": total_upnl,
+        "pnl_ex_best": total_upnl - best["unrealized_pnl"],
+        "pnl_ex_worst": total_upnl - worst["unrealized_pnl"],
+        "best_ticker": best["ticker"],
+        "worst_ticker": worst["ticker"],
+    }
+
+
 def diversification_ratio(
     returns: pd.DataFrame,
     weights: dict[str, float] | None = None,

@@ -66,6 +66,7 @@ from data.failed_tickers import (
 from data.quality import clean_ohlcv
 from database.models import (
     AnalystDataCache,
+    CompanyInfoCache,
     DividendCache,
     EarningsCache,
     HistoricalDataCache,
@@ -518,8 +519,64 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
     return result
 
 
+# TTL del cache de company-info (nombre/sector/industria). La clasificación
+# sectorial es esencialmente estática → TTL larga (7 días) para no re-scrapear.
+COMPANY_INFO_CACHE_TTL_HOURS = 24 * 7
+
+
+def _read_company_info_cache(ticker_upper: str) -> dict | None:
+    """Fila vigente de ``CompanyInfoCache`` como dict parcial, o None."""
+    if not _cache_enabled():
+        return None
+    try:
+        with session_scope() as session:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=COMPANY_INFO_CACHE_TTL_HOURS)
+            row = (
+                session.query(CompanyInfoCache)
+                .filter(CompanyInfoCache.ticker == ticker_upper)
+                .filter(CompanyInfoCache.fetched_at >= cutoff)
+                .order_by(CompanyInfoCache.fetched_at.desc())
+                .first()
+            )
+            if row is None:
+                return None
+            return {"name": row.name or ticker_upper,
+                    "sector": row.sector or "N/A",
+                    "industry": row.industry or "N/A"}
+    except Exception:
+        return None
+
+
+def _write_company_info_cache(ticker_upper: str, info: dict) -> None:
+    """Upsert por ticker de la metadata de compañía (best-effort)."""
+    if not _cache_enabled():
+        return
+    try:
+        with session_scope() as session:
+            session.query(CompanyInfoCache).filter(
+                CompanyInfoCache.ticker == ticker_upper
+            ).delete()
+            session.add(CompanyInfoCache(
+                ticker=ticker_upper,
+                name=info.get("name"),
+                sector=info.get("sector"),
+                industry=info.get("industry"),
+            ))
+    except Exception:
+        log.debug("company_info cache write failed for %s", ticker_upper, exc_info=True)
+
+
 def get_company_info(ticker: str) -> dict:
-    """Fetch company name, sector, description from yfinance. Hard-timeout protected."""
+    """Company name, sector, description desde yfinance (cache-first, hard-timeout).
+
+    Lee primero ``CompanyInfoCache`` (TTL 7d); solo si no hay fila vigente hace el
+    scrape lento de ``.info`` y persiste nombre/sector/industria. El cache habilita
+    la exposición sectorial del panel de concentración (V2) sin red.
+    """
+    ticker_upper = ticker.upper()
+    cached = _read_company_info_cache(ticker_upper)
+    if cached is not None:
+        return cached
 
     def _do_fetch() -> dict:
         t = _ticker(ticker)
@@ -539,7 +596,10 @@ def get_company_info(ticker: str) -> dict:
 
     fallback = {"name": ticker, "sector": "N/A"}
     result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
-    return result if result is not None else fallback
+    if result is not None:
+        _write_company_info_cache(ticker_upper, result)
+        return result
+    return fallback
 
 
 # Tamaño de lote por defecto para get_historical_data_batch. Yahoo tolera mal

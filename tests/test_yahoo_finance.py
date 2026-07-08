@@ -173,3 +173,43 @@ def test_batch_skips_known_failing_ticker(test_db, mock_yfinance):
     queried = mock_yfinance.download.call_args[0][0]
     assert "K" not in queried.split()
     assert "AAPL" in queried.split()
+
+
+# ── get_company_info: cache-first (V2) ─────────────────────────────────────────
+def test_company_info_cache_first_skips_fetch(test_db, monkeypatch):
+    """Con una fila vigente en company_info_cache, no se hace el scrape lento."""
+    yfm._write_company_info_cache("MU", {"name": "Micron", "sector": "Technology",
+                                         "industry": "Semiconductors"})
+
+    def _boom(*a, **k):
+        raise AssertionError("no debería fetchear cuando hay cache")
+
+    monkeypatch.setattr(yfm, "_run_with_timeout", _boom)
+    info = yfm.get_company_info("MU")
+    assert info["sector"] == "Technology"
+    assert info["name"] == "Micron"
+
+
+def test_company_info_fetch_writes_cache(test_db, monkeypatch):
+    """Un miss fetchea y persiste; la 2ª llamada sale del cache sin re-fetchear."""
+    monkeypatch.setattr(
+        yfm, "_run_with_timeout",
+        lambda fn, **k: {"name": "Apple", "sector": "Technology", "industry": "Consumer Electronics"},
+    )
+    info = yfm.get_company_info("AAPL")
+    assert info["sector"] == "Technology"
+
+    def _boom(*a, **k):
+        raise AssertionError("2ª llamada debería salir del cache")
+
+    monkeypatch.setattr(yfm, "_run_with_timeout", _boom)
+    info2 = yfm.get_company_info("AAPL")
+    assert info2["sector"] == "Technology" and info2["name"] == "Apple"
+
+
+def test_company_info_fetch_failure_returns_fallback_no_cache(test_db, monkeypatch):
+    """Si el scrape falla (None), devuelve fallback y NO cachea el negativo."""
+    monkeypatch.setattr(yfm, "_run_with_timeout", lambda fn, **k: None)
+    info = yfm.get_company_info("ZZZ")
+    assert info == {"name": "ZZZ", "sector": "N/A"}
+    assert yfm._read_company_info_cache("ZZZ") is None

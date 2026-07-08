@@ -42,6 +42,12 @@ Schema del payload (``build_metrics``)::
         "available","ticker","start_day","end_day",
         "account_return","spy_return","vs_spy"
       },
+      "concentration": {  # V2: concentración del book vivo (display-only)
+        "n","total_value","weights":[{"ticker","weight","market_value","sector",
+        "unrealized_pnl"}...],"top_ticker","top_weight","hhi","effective_names",
+        "sectors":[{"sector","weight"}...],"mean_correlation",
+        "total_unrealized_pnl","pnl_ex_best","pnl_ex_worst","best_ticker","worst_ticker"
+      },
       "timing": {
         "n5","good5","good5_pct","mean5","median5",
         "n20","good20","good20_pct","mean20","median20",
@@ -635,6 +641,78 @@ def _friction_panel(con: sqlite3.Connection, account_id: int, realized: dict) ->
     }
 
 
+def cached_sector(con: sqlite3.Connection, ticker: str) -> str | None:
+    """Sector cacheado de un ticker (``company_info_cache``), o ``None``.
+
+    Read-only y fail-open: si la tabla no existe (DB vieja/sintética) o el sector
+    es NULL/"N/A", devuelve ``None`` → el panel lo agrupa como "Sin dato". La
+    población del cache la hace ``data.yahoo_finance.get_company_info`` (con red),
+    fuera de este módulo.
+    """
+    try:
+        row = con.execute(
+            "SELECT sector FROM company_info_cache WHERE ticker=? "
+            "ORDER BY fetched_at DESC LIMIT 1",
+            (ticker.upper(),),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if not row or not row[0] or str(row[0]).strip() in ("", "N/A"):
+        return None
+    return str(row[0])
+
+
+def _concentration_panel(con: sqlite3.Connection, account_id: int) -> dict:
+    """Concentración del book vivo (V2): pesos, sector, correlación, P/L sin mejor/peor.
+
+    Read-only: arma las posiciones abiertas con su market value (marcado al último
+    close cacheado), la correlación media desde el cache histórico y el sector
+    desde ``company_info_cache``; delega el cálculo puro en
+    ``analysis.portfolio_risk.book_concentration``. Fail-open ante datos faltantes.
+    """
+    from analysis.portfolio_risk import book_concentration, returns_frame
+
+    rows = con.execute(
+        "SELECT ticker, shares, avg_cost FROM paper_positions "
+        "WHERE account_id=? AND shares>0 ORDER BY ticker",
+        (account_id,),
+    ).fetchall()
+    positions: list[dict] = []
+    for tkr, sh, ac in rows:
+        s = load_close_series(con, tkr)
+        mark = s[-1][1] if s else (ac or 0.0)
+        shares = float(sh or 0.0)
+        avg = float(ac or 0.0)
+        positions.append({
+            "ticker": tkr,
+            "market_value": shares * float(mark),
+            "unrealized_pnl": (float(mark) - avg) * shares if avg > 0 else 0.0,
+        })
+
+    # Frame de retornos desde el cache (para la correlación media). El history
+    # provider arma un DataFrame ['Close'] por ticker a partir de load_close_series.
+    def _hp(t: str):
+        s = load_close_series(con, t)
+        if not s:
+            return None
+        import pandas as pd
+
+        return pd.DataFrame({"Close": [c for _, c in s]},
+                            index=[d for d, _ in s])
+
+    rf = None
+    tickers = [p["ticker"] for p in positions]
+    if len(tickers) >= 2:
+        try:
+            rf = returns_frame(tickers, _hp)
+        except Exception:
+            rf = None
+
+    return book_concentration(
+        positions, returns=rf, sector_of=lambda t: cached_sector(con, t)
+    )
+
+
 def _expired_buys(con: sqlite3.Connection, account_id: int) -> dict:
     rows = con.execute(
         "SELECT ticker,COUNT(*) FROM paper_orders "
@@ -726,6 +804,7 @@ def build_metrics(con: sqlite3.Connection, account_id: int = 1,
         "sell_timing": _sell_timing_panel(con, orders),
         "friction": _friction_panel(con, account_id, realized),
         "benchmark": _benchmark_panel(con, account_id),
+        "concentration": _concentration_panel(con, account_id),
         "churn": _churn_panel(orders),
         "timeline": _timeline(rts),
         "open_positions": _open_positions(con, account_id),

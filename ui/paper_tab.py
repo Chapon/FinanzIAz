@@ -344,7 +344,7 @@ class PaperTradingTab(QWidget):
         pos_l.setContentsMargins(14, 12, 14, 12)
         pos_l.setSpacing(8)
         pos_l.addWidget(self._header_with_count("Posiciones abiertas", attr="_positions_header"))
-        self.positions_table = QTableWidget(0, 9)
+        self.positions_table = QTableWidget(0, 10)
         self.positions_table.setHorizontalHeaderLabels(
             [
                 "Ticker",
@@ -353,6 +353,7 @@ class PaperTradingTab(QWidget):
                 "Avg Cost",
                 "Precio",
                 "Market Value",
+                "Peso %",
                 "P&L $",
                 "P&L %",
                 "Comisión est.",
@@ -1331,6 +1332,15 @@ class PaperTradingTab(QWidget):
 
     def _refresh_positions_table(self):
         self.positions_table.setRowCount(0)
+
+        # Peso % (V2): market value de cada nombre sobre el valor total del book,
+        # para que una sobre-concentración (MU 46.6%, AAPL 33.3%) salte a la vista.
+        def _mv(pos) -> float:
+            px_ = self._prices.get(pos.ticker)
+            return float((px_ * pos.shares) if px_ is not None else pos.shares * pos.avg_cost)
+
+        total_mv = sum(_mv(p) for p in self._positions)
+
         for p in self._positions:
             row = self.positions_table.rowCount()
             self.positions_table.insertRow(row)
@@ -1350,16 +1360,22 @@ class PaperTradingTab(QWidget):
             self.positions_table.setItem(row, 4, QTableWidgetItem(price_txt))
             mv = (px * p.shares) if px is not None else p.shares * p.avg_cost
             self.positions_table.setItem(row, 5, QTableWidgetItem(f"${mv:,.2f}"))
+            # Peso % del nombre en el book (rojo si ≥ 30% — sobre-concentrado).
+            weight = (mv / total_mv) if total_mv > 0 else 0.0
+            weight_item = QTableWidgetItem(f"{weight * 100:.1f}%")
+            if weight >= 0.30:
+                weight_item.setForeground(QColor(PALETTE["red"]))
+            self.positions_table.setItem(row, 6, weight_item)
             cost = p.shares * p.avg_cost
             pnl_usd = mv - cost
             pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
             color = PALETTE["positive"] if pnl_usd >= 0 else PALETTE["red"]
             pnl_usd_item = QTableWidgetItem(f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}")
             pnl_usd_item.setForeground(QColor(color))
-            self.positions_table.setItem(row, 6, pnl_usd_item)
+            self.positions_table.setItem(row, 7, pnl_usd_item)
             pnl_item = QTableWidgetItem(f"{pnl_pct:+.2f}%")
             pnl_item.setForeground(QColor(color))
-            self.positions_table.setItem(row, 7, pnl_item)
+            self.positions_table.setItem(row, 8, pnl_item)
 
             # Comisión estimada de cierre — qué pagarías si cerrás ahora a
             # mercado. Usa el modelo IBKR activo (Tiered/Fixed) configurado
@@ -1377,7 +1393,7 @@ class PaperTradingTab(QWidget):
                 comm_txt = f"≈${est:,.2f}"
             else:
                 comm_txt = "—"
-            self.positions_table.setItem(row, 8, QTableWidgetItem(comm_txt))
+            self.positions_table.setItem(row, 9, QTableWidgetItem(comm_txt))
         self._positions_header.setText(f"· {len(self._positions)}")
 
     def _refresh_kpis(self):

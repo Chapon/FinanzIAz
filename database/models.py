@@ -325,6 +325,33 @@ class AnalystDataCache(Base):
         return f"<AnalystDataCache({self.ticker} @ {self.fetched_at})>"
 
 
+class CompanyInfoCache(Base):
+    """Cache persistente de metadata de compañía (nombre / sector / industria).
+
+    ``get_company_info`` hace un scrape lento de ``yfinance.Ticker(t).info`` (con
+    hard-timeout). Antes se re-pegaba a la red en cada llamada; ahora se cachea
+    con TTL largo (la clasificación sectorial no cambia intraday). Habilita, entre
+    otras cosas, la **exposición sectorial** del panel de concentración (V2) sin
+    tocar la red desde la pestaña read-only de Métricas.
+
+    Un ticker tiene a lo sumo una fila vigente (upsert por ticker). ``sector`` es
+    nullable: una fila con NULL/"N/A" es un resultado negativo cacheado (Yahoo no
+    devolvió sector) para no re-scrapear.
+    """
+
+    __tablename__ = "company_info_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, unique=True, index=True)
+    name = Column(String(200), nullable=True)
+    sector = Column(String(100), nullable=True)
+    industry = Column(String(120), nullable=True)
+    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+
+    def __repr__(self):
+        return f"<CompanyInfoCache({self.ticker} sector={self.sector} @ {self.fetched_at})>"
+
+
 class NewsEvent(Base):
     """
     Noticia cruda capturada *point-in-time* (Sprint 5 · T-CAT-0).

@@ -309,6 +309,68 @@ def test_benchmark_unavailable_without_spy_cache():
     assert bm["spy_return"] is None
 
 
+# ── concentración del book (V2) ───────────────────────────────────────────────
+def _company_info(con, ticker, sector):
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS company_info_cache (id INTEGER PRIMARY KEY, "
+        "ticker TEXT, name TEXT, sector TEXT, industry TEXT, fetched_at TEXT)"
+    )
+    con.execute(
+        "INSERT INTO company_info_cache (ticker,sector,fetched_at) VALUES (?,?,?)",
+        (ticker, sector, "2026-06-17"),
+    )
+
+
+def test_cached_sector_failopen_without_table():
+    con = _make_db()  # _make_db no crea company_info_cache
+    assert mp.cached_sector(con, "MU") is None
+
+
+def test_cached_sector_reads_and_ignores_na():
+    con = _make_db()
+    _company_info(con, "MU", "Technology")
+    _company_info(con, "ZZZ", "N/A")
+    assert mp.cached_sector(con, "MU") == "Technology"
+    assert mp.cached_sector(con, "ZZZ") is None       # "N/A" → None
+    assert mp.cached_sector(con, "NOPE") is None
+
+
+def test_concentration_panel_weights_and_pnl():
+    con = _make_db()
+    con.execute("INSERT INTO paper_positions VALUES (1,1,'MU',100,50.0)")
+    con.execute("INSERT INTO paper_positions VALUES (2,1,'AAPL',50,100.0)")
+    _hist(con, "MU", [("2026-06-16", 55.0), ("2026-06-17", 60.0)])     # mark 60 → mv 6000, upnl +1000
+    _hist(con, "AAPL", [("2026-06-16", 110.0), ("2026-06-17", 90.0)])  # mark 90 → mv 4500, upnl -500
+    c = mp.build_metrics(con, 1)["concentration"]
+    assert c["n"] == 2
+    assert c["total_value"] == pytest.approx(10500.0)
+    assert c["top_ticker"] == "MU"
+    assert c["top_weight"] == pytest.approx(6000.0 / 10500.0)
+    assert c["total_unrealized_pnl"] == pytest.approx(500.0)   # +1000 -500
+    assert c["best_ticker"] == "MU" and c["worst_ticker"] == "AAPL"
+    assert c["pnl_ex_best"] == pytest.approx(-500.0)           # sin MU
+    assert c["pnl_ex_worst"] == pytest.approx(1000.0)          # sin AAPL
+
+
+def test_concentration_panel_sector_from_cache():
+    con = _make_db()
+    _company_info(con, "MU", "Technology")
+    _company_info(con, "AAPL", "Technology")
+    con.execute("INSERT INTO paper_positions VALUES (1,1,'MU',100,50.0)")
+    con.execute("INSERT INTO paper_positions VALUES (2,1,'AAPL',50,100.0)")
+    _hist(con, "MU", [("2026-06-16", 55.0), ("2026-06-17", 60.0)])
+    _hist(con, "AAPL", [("2026-06-16", 110.0), ("2026-06-17", 120.0)])
+    c = mp.build_metrics(con, 1)["concentration"]
+    assert c["sectors"][0]["sector"] == "Technology"
+    assert c["sectors"][0]["weight"] == pytest.approx(1.0)
+
+
+def test_concentration_panel_empty_account():
+    con = _make_db()
+    c = mp.build_metrics(con, 1)["concentration"]
+    assert c["n"] == 0 and c["weights"] == [] and c["top_ticker"] is None
+
+
 def test_sell_timing_panel_inverted_and_by_kind():
     # MET2: venta buena = precio NO sube después (fwd5 ≤ 0). Signo invertido vs
     # compras. AAA (signal_sell) baja → buena; BBB (atr_stop) sube → regret.

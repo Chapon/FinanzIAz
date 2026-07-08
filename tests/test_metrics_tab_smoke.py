@@ -50,6 +50,21 @@ def _payload_with_data() -> dict:
         "CREATE TABLE paper_equity_snapshots (id INTEGER PRIMARY KEY, account_id INT, "
         "snapshot_at TEXT, cash REAL, positions_value REAL, total_equity REAL, portfolio_sigma REAL)"
     )
+    con.execute(
+        "CREATE TABLE company_info_cache (id INTEGER PRIMARY KEY, ticker TEXT, name TEXT, "
+        "sector TEXT, industry TEXT, fetched_at TEXT)"
+    )
+    # Posición abierta (para el panel de concentración) + su sector cacheado.
+    con.execute("INSERT INTO paper_positions VALUES (9,1,'BBB',100,50.0)")
+    con.execute("INSERT INTO company_info_cache (ticker,sector,fetched_at) "
+                "VALUES ('BBB','Technology','2026-01-10')")
+    bbb = {
+        "columns": ["Open", "High", "Low", "Close", "Volume"],
+        "index": ["2026-01-07T00:00:00.000", "2026-01-08T00:00:00.000"],
+        "data": [[58, 60, 55, 58, 1000], [62, 64, 60, 62, 1000]],
+    }
+    con.execute("INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+                "VALUES ('BBB','2y','1d',?,?)", (json.dumps(bbb), "2026-01-10"))
     con.execute("INSERT INTO paper_orders VALUES (1,1,'AAA','BUY',100.0,10,1.0,0.5,0.8,"
                 "'analyze BUY','filled','2026-01-01 10:00:00')")
     con.execute("INSERT INTO paper_orders VALUES (2,1,'AAA','SELL',120.0,10,1.0,0.5,0.3,"
@@ -86,6 +101,9 @@ def test_metrics_tab_renders_full_payload(qapp):
     assert tab.cards["costs"].value_lbl.text() != ""
     # La tabla de round-trips ganó las columnas MAE/MFE (9 columnas).
     assert tab.rt_table["table"].columnCount() == 9
+    # Concentración (V2): resumen poblado + una fila (posición BBB) con su sector.
+    assert "BBB" in tab.concentration_summary.text() or "Top" in tab.concentration_summary.text()
+    assert tab.concentration_table["table"].rowCount() == 1
 
 
 def test_metrics_tab_renders_empty_payload(qapp):

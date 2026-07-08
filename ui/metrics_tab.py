@@ -76,6 +76,11 @@ class MetricsWorker(BaseWorker):
         self.account_id = account_id
 
     def do_work(self) -> dict:
+        # Warm-up del cache de sector para las posiciones abiertas (V2) ANTES de
+        # abrir la conexión ro de build_metrics, así el panel de concentración
+        # ve los sectores recién cacheados. Best-effort y en el hilo del worker
+        # (no bloquea la UI); get_company_info es cache-first.
+        self._warm_sectors()
         con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
         try:
             payload = build_metrics(con, self.account_id)
@@ -86,6 +91,27 @@ class MetricsWorker(BaseWorker):
         except Exception:  # nunca romper por git
             payload["commit_markers"] = []
         return payload
+
+    def _warm_sectors(self) -> None:
+        """Puebla company_info_cache con el sector de los nombres del book (V2)."""
+        try:
+            con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
+            try:
+                rows = con.execute(
+                    "SELECT DISTINCT ticker FROM paper_positions "
+                    "WHERE account_id=? AND shares>0",
+                    (self.account_id,),
+                ).fetchall()
+            finally:
+                con.close()
+            if not rows:
+                return
+            from data.yahoo_finance import get_company_info
+
+            for (tkr,) in rows:
+                get_company_info(tkr)  # cache-first; fetchea+cachea en un miss
+        except Exception:
+            log.debug("sector warm-up failed", exc_info=True)
 
     def on_success(self, result: dict) -> None:
         self.result_ready.emit(result)
@@ -370,6 +396,34 @@ class MetricsTab(QWidget):
         row2.addWidget(self.sell_timing_table["frame"], 1)
         self.root.addLayout(row2)
 
+        # ── 3ª fila: concentración del book vivo (V2, display-only) ──
+        self.concentration_summary = QLabel("—")
+        self.concentration_summary.setWordWrap(True)
+        self.concentration_summary.setStyleSheet(
+            f"color: {PALETTE['text2']}; font-size: 12px; font-weight: 600;")
+        self.concentration_summary.setToolTip(
+            "Resumen de concentración del book VIVO (posiciones abiertas): nombre más "
+            "pesado, 'nombres efectivos' (1/HHI — cuántos nombres equivalentes hay "
+            "realmente), correlación media par-a-par (cerca de 1.0 = un solo trade con "
+            "N tickers), y P/L no realizado excluyendo el mejor / peor nombre.")
+        self.root.addWidget(self.concentration_summary)
+        self.concentration_table = self._make_table(
+            "Concentración del book (peso, sector, P/L no realizado)",
+            ["Ticker", "Peso %", "Sector", "Valor", "P/L no real."],
+            section_tip="Cuánto pesa cada nombre en el book VIVO (posiciones abiertas), "
+                        "marcado al último precio cacheado. De un vistazo se ve si un solo "
+                        "ticker domina la cartera (MU llegó a 46.6%, AAPL 33.3% sin que nada "
+                        "lo mostrara). Display-only: no filtra ni bloquea (regla 3).",
+            col_tips=["Símbolo", "Peso del nombre sobre el valor total del book (rojo ≥ 30%)",
+                      "Sector (yfinance cacheado; 'Sin dato' si no se pudo obtener)",
+                      "Market value de la posición (shares × último precio)",
+                      "P/L no realizado de la posición (mark − avg_cost)"],
+            fixed_height=_TABLE_HEIGHT)
+        row3 = QHBoxLayout()
+        row3.setSpacing(14)
+        row3.addWidget(self.concentration_table["frame"], 1)
+        self.root.addLayout(row3)
+
     def _make_table(self, title: str, headers: list[str], *,
                     section_tip: str | None = None,
                     col_tips: list[str] | None = None,
@@ -569,6 +623,7 @@ class MetricsTab(QWidget):
         self._fill_rt_table(r["round_trips"])
         self._fill_timing_table(t["per_buy"])
         self._fill_sell_timing_table(st["per_sell"])
+        self._fill_concentration(m["concentration"])
 
     # ── llenado de tablas ──────────────────────────────────────────────────────
     @staticmethod
@@ -660,6 +715,41 @@ class MetricsTab(QWidget):
                                          (f5 > 0) if f5 is not None else None, True))
             tbl.setItem(i, 4, self._cell(_pct(f20, signed=True) if f20 is not None else "—",
                                          (f20 > 0) if f20 is not None else None, True))
+        self._autosize(tbl)
+
+    def _fill_concentration(self, cc: dict):
+        # Resumen (label) + tabla de pesos del book vivo (V2, display-only).
+        if not cc or cc["n"] == 0:
+            self.concentration_summary.setText("Sin posiciones abiertas.")
+            self.concentration_table["table"].setRowCount(0)
+            return
+        parts: list[str] = []
+        if cc["top_ticker"]:
+            parts.append(f"Top: {cc['top_ticker']} {_pct(cc['top_weight'])}")
+        if cc["effective_names"] is not None:
+            parts.append(f"{cc['effective_names']:.1f} nombres efectivos")
+        if cc["mean_correlation"] is not None:
+            parts.append(f"correlación media {cc['mean_correlation']:.2f}")
+        if cc["pnl_ex_best"] is not None and cc["best_ticker"]:
+            parts.append(f"P/L sin mejor ({cc['best_ticker']}) {_money(cc['pnl_ex_best'])}")
+        if cc["pnl_ex_worst"] is not None and cc["worst_ticker"]:
+            parts.append(f"sin peor ({cc['worst_ticker']}) {_money(cc['pnl_ex_worst'])}")
+        if cc["sectors"]:
+            sec_txt = " / ".join(f"{s['sector']} {_pct(s['weight'])}" for s in cc["sectors"][:4])
+            parts.append(f"sectores: {sec_txt}")
+        self.concentration_summary.setText("   ·   ".join(parts))
+
+        tbl = self.concentration_table["table"]
+        weights = cc["weights"]
+        tbl.setRowCount(len(weights))
+        for i, w in enumerate(weights):
+            hot = w["weight"] >= 0.30   # nombre sobre-concentrado → rojo
+            tbl.setItem(i, 0, self._cell(w["ticker"]))
+            tbl.setItem(i, 1, self._cell(_pct(w["weight"]), False if hot else None, True))
+            tbl.setItem(i, 2, self._cell(w.get("sector") or "Sin dato"))
+            tbl.setItem(i, 3, self._cell(_money(w["market_value"]), None, True))
+            upnl = w["unrealized_pnl"]
+            tbl.setItem(i, 4, self._cell(_money(upnl), upnl > 0, True))
         self._autosize(tbl)
 
     def _fill_sell_timing_table(self, per_sell: list[dict]):

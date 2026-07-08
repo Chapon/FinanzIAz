@@ -23,9 +23,12 @@ import pandas as pd
 import pytest
 
 from analysis.portfolio_risk import (
+    book_concentration,
+    book_mean_correlation,
     daily_returns,
     diversification_ratio,
     mean_correlation,
+    returns_frame,
 )
 from config.settings_manager import settings
 
@@ -120,6 +123,86 @@ def test_diversification_ratio_above_one_for_uncorrelated():
 
 def test_diversification_ratio_degenerate_inputs():
     assert diversification_ratio(pd.DataFrame()) == 1.0
+
+
+# ── Pure: book_mean_correlation (V2) ────────────────────────────────────────
+
+
+def test_book_mean_correlation_high_for_common_factor():
+    book = _correlated_book()
+    rf = returns_frame(["AAPL", "MSFT", "GOOGL"], lambda t: book[t])
+    assert book_mean_correlation(rf) > 0.9
+
+
+def test_book_mean_correlation_lower_with_hedge():
+    book = _correlated_book()
+    rf = returns_frame(["AAPL", "MSFT", "GLD"], lambda t: book[t])
+    # GLD anti-correla con el cluster → promedio par-a-par cae por debajo del cluster puro.
+    assert book_mean_correlation(rf) < 0.5
+
+
+def test_book_mean_correlation_none_single_or_empty():
+    book = _correlated_book()
+    rf1 = returns_frame(["AAPL"], lambda t: book[t])
+    assert book_mean_correlation(rf1) is None
+    assert book_mean_correlation(pd.DataFrame()) is None
+    assert book_mean_correlation(None) is None
+
+
+# ── Pure: book_concentration (V2) ───────────────────────────────────────────
+
+
+def _positions():
+    # MU domina el book (60%); pesos que se ven a simple vista.
+    return [
+        {"ticker": "MU", "market_value": 6000.0, "unrealized_pnl": 800.0},
+        {"ticker": "AAPL", "market_value": 3000.0, "unrealized_pnl": -200.0},
+        {"ticker": "TJX", "market_value": 1000.0, "unrealized_pnl": 50.0},
+    ]
+
+
+def test_book_concentration_weights_and_top():
+    c = book_concentration(_positions())
+    assert c["n"] == 3
+    assert c["total_value"] == pytest.approx(10000.0)
+    assert c["top_ticker"] == "MU"
+    assert c["top_weight"] == pytest.approx(0.6)
+    # HHI = 0.6²+0.3²+0.1² = 0.46 ; nombres efectivos = 1/0.46 ≈ 2.17
+    assert c["hhi"] == pytest.approx(0.46)
+    assert c["effective_names"] == pytest.approx(1 / 0.46)
+    # weights ordenados desc
+    assert [w["ticker"] for w in c["weights"]] == ["MU", "AAPL", "TJX"]
+
+
+def test_book_concentration_pnl_ex_best_worst():
+    c = book_concentration(_positions())
+    # total unrealized = 800 - 200 + 50 = 650
+    assert c["total_unrealized_pnl"] == pytest.approx(650.0)
+    assert c["best_ticker"] == "MU" and c["worst_ticker"] == "AAPL"
+    assert c["pnl_ex_best"] == pytest.approx(650.0 - 800.0)   # sin MU: -150
+    assert c["pnl_ex_worst"] == pytest.approx(650.0 - (-200.0))  # sin AAPL: 850
+
+
+def test_book_concentration_sectors_grouped():
+    sectors = {"MU": "Technology", "AAPL": "Technology", "TJX": "Consumer"}
+    c = book_concentration(_positions(), sector_of=lambda t: sectors.get(t))
+    by = {s["sector"]: s["weight"] for s in c["sectors"]}
+    assert by["Technology"] == pytest.approx(0.9)   # MU 0.6 + AAPL 0.3
+    assert by["Consumer"] == pytest.approx(0.1)
+    # el sector más pesado va primero
+    assert c["sectors"][0]["sector"] == "Technology"
+
+
+def test_book_concentration_missing_sector_grouped_as_sin_dato():
+    c = book_concentration(_positions(), sector_of=lambda t: None)
+    assert c["sectors"][0]["sector"] == "Sin dato"
+    assert c["sectors"][0]["weight"] == pytest.approx(1.0)
+
+
+def test_book_concentration_empty_and_zero_value():
+    assert book_concentration([])["n"] == 0
+    z = book_concentration([{"ticker": "X", "market_value": 0.0, "unrealized_pnl": 0.0}])
+    assert z["n"] == 1 and z["total_value"] == 0.0 and z["weights"] == []
 
 
 # ── Integration helpers ─────────────────────────────────────────────────────
