@@ -1,6 +1,6 @@
 # R1 — Circuit breaker de drawdown a nivel cuenta (pre-registro)
 
-**Fecha:** 2026-07-08 · **Estado:** PRE-REGISTRO (umbral fijado antes de codear, regla 2) · detector puro shippeado como enabler; gate/UI pendientes del veredicto del harness E4.
+**Fecha:** 2026-07-08 · **Estado:** **CERRADO NO-SHIP (2026-07-09)** — el harness falló el kill-criteria de stress (ver *Veredicto* abajo). El detector puro quedó shippeado como enabler (hash `7bdb4c8`); el **gate/flags/UI NO se cablean** (regla 2). El detector permanece disponible como aviso visual sin acción.
 
 ## Contexto
 
@@ -39,11 +39,34 @@ Racional del **15% / 90d**: 15% es el estándar retail y da margen sobre el DD v
 
 Suite Windows verde es condición transversal de "done" en cada etapa.
 
+## Veredicto del harness (2026-07-09) — **NO-SHIP**
+
+Harness: `scripts/run_dd_breaker_validation.py` sobre `data/harness_universe_41_10y.txt` (41 tickers, cartera `analyze_single` equal-weight, 5 slots, step=5, `enable_xgboost=False`, capital inicial $50k). Una sola corrida 10y baseline vs breaker (contexto de equity continuo, warmup resuelto). Semántica del breaker en el replay: stateful, se arma al cruzar DD ≥ 15% y se desarma a un nuevo peak de la ventana de 90d (proxy **más permisivo** que el rearme manual vivo — reabre BUYs antes, no después). Artefacto: `data/dd_breaker_validation/20260709_154647/summary.json` (no versionado, igual que el resto de `data/*_validation/`).
+
+| Ventana de stress | max DD baseline | max DD breaker | reducción rel. |
+|---|---|---|---|
+| 2018 Q4 | −30.4% | −30.4% | **0.0%** |
+| COVID 2020 | −32.9% | −32.9% | **0.0%** |
+| Bear 2022 | −35.8% | −33.6% | 6.1% |
+| **MEDIA** | −33.0% | −32.3% | **2.2%** |
+
+- **Kill-criteria STRESS: reducción media de DD 2.2% (requiere ≥ 20%) → FAIL.**
+- Kill-criteria NORMAL: recorte medio de P/L −1.0 pt (mejoró; requiere ≤ 0.5 pts de recorte) → PASS. Irrelevante ante el FAIL de stress.
+- Costo corroborante: el equity terminal 10y cayó **$732.890 → $536.054 (−27%)** suprimiendo 39 steps de entrada, a cambio de ~2% de DD de stress ahorrado. Trade pésimo.
+
+### Causa raíz (por qué era estructuralmente improbable que pasara)
+
+Un breaker que suprime **solo entradas nuevas** no puede reducir un drawdown que proviene del **book ya tenido**. En 2018Q4 y COVID-2020 la reducción fue exactamente **0.0%**: el DD lo generan las 5 posiciones que ya estaban abiertas al entrar el crash, y el breaker —por diseño (regla del pre-registro: "nunca frena una salida", no fuerza exits ni reduce lo tenido)— no las toca. Solo 2022, un bear lento y prolongado, dio algo (6.1%) porque hubo tiempo para que la supresión de entradas evitara *abrir* posiciones nuevas dentro de la caída.
+
+Peor aún, el rearme a nuevo peak de 90d mantiene el breaker armado durante toda la recuperación temprana post-crash (un nuevo peak tras un −35% tarda meses), justo cuando están las mejores entradas del rebote — de ahí el −27% de equity terminal. Las ventanas de "normal" (años calendario 2017/2019/2021) no capturan ese costo porque los rebotes caen en los huecos entre ventanas; el equity terminal sí.
+
+**Reencuadre de R1:** el guardrail estándar de desk "degradar: menos sizing → solo exits → halt" tiene tres escalones. Lo que se testeó es el escalón **"solo exits" (suprimir entradas nuevas)** y resulta **insuficiente para controlar DD** en un book long-only concentrado. Los escalones que sí cortan DD —**reducir sizing / de-grossing (forzar salidas parciales del book)**— son un diseño distinto y más invasivo, y quedaron fuera del alcance pre-registrado a propósito (el breaker "nunca frena una salida"). Un R1-v2 que quiera reducir DD de verdad tendría que des-apalancar lo tenido, lo cual choca con ese principio y necesitaría su propio pre-registro + kill-criteria.
+
 ## Etapas
 
-1. **Pre-registro + detector puro + tests** (este commit) — no toca decisiones (regla 3). El gate y la UI NO se cablean todavía.
-2. **Validación harness E4** — el breaker se evalúa como variante sobre las ventanas de stress; veredicto documentado acá.
-3. **Cableado** (solo si PASS) — gate en `run_scan` + flags + banner, **default OFF**. Encenderlo vivo es decisión de Chapa (igual que E1b / ADV cap).
+1. **Pre-registro + detector puro + tests** (hash `7bdb4c8`) — no toca decisiones (regla 3). ✅
+2. **Validación harness** (hook `breaker_fn` en `portfolio_backtest.py` + `run_dd_breaker_validation.py` + tests). ✅ **Veredicto NO-SHIP** (arriba).
+3. **Cableado** (gate/flags/banner) — **NO se ejecuta** (kill-criteria de stress FAIL). El detector queda como aviso visual sin acción; su re-uso o descarte, y un eventual R1-v2 de-grossing, quedan como decisión de Chapa en el backlog.
 
 ## Notas de diseño
 

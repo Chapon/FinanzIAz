@@ -164,6 +164,7 @@ class PortfolioBacktestResult:
     n_rebalances_drift: int = 0
     n_rebalances_month: int = 0
     n_slot_fills: int = 0
+    n_breaker_suppressed: int = 0
     # Buy-and-hold equal-weight benchmark
     bh_return_pct: float = 0.0
     bh_cagr: float = 0.0
@@ -546,6 +547,13 @@ def portfolio_backtest(
     vol_overlay_fn: (
         Callable[[dict[str, float], dict[str, "pd.Series"]], float] | None
     ) = None,
+    # R1 account-level drawdown breaker (harness-only hook). Given the bar date,
+    # the current portfolio value and the equity curve so far, returns True to
+    # SUPPRESS new BUY entries this step — held positions still exit / rebalance
+    # (the breaker never blocks a way out). None = legacy behavior (no
+    # suppression). The live gate lives in ``run_scan``; this hook exists to
+    # validate the guardrail against the pre-registered kill-criteria.
+    breaker_fn: Callable[["pd.Timestamp", float, "pd.Series"], bool] | None = None,
     verbose: bool = False,
 ) -> PortfolioBacktestResult | None:
     """
@@ -579,6 +587,7 @@ def portfolio_backtest(
     n_reb_drift = 0
     n_reb_month = 0
     n_slot_fills = 0
+    n_breaker_suppressed = 0
 
     last_rebalance_month: tuple[int, int] | None = None
 
@@ -712,6 +721,20 @@ def portfolio_backtest(
         # reaching "candidates > slots"). See docs/sprint2_kill_criteria.md.
         free_slots = max(0, free_slots)
         new_entries = candidates[:free_slots]
+
+        # R1 drawdown breaker: when armed, suppress *new* entries only. Held
+        # positions keep their forced exits / rebalance (the breaker never blocks
+        # a way out, same rule as the live gate). Evaluated before ``active`` so
+        # suppressed names never open. ``equity.iloc[:i]`` is the curve up to the
+        # previous bar; ``portfolio_val`` is this bar's mark-to-market.
+        if breaker_fn is not None and new_entries:
+            try:
+                if breaker_fn(date, portfolio_val, equity.iloc[:i]):
+                    new_entries = []
+                    n_breaker_suppressed += 1
+            except Exception as exc:
+                if verbose:
+                    log.warning("breaker_fn@%s error: %s", date, exc)
 
         # Final active set after this step's decisions
         active = [t for t in tickers_ok if t in still_open or t in new_entries]
@@ -905,6 +928,7 @@ def portfolio_backtest(
         n_rebalances_drift=int(n_reb_drift),
         n_rebalances_month=int(n_reb_month),
         n_slot_fills=int(n_slot_fills),
+        n_breaker_suppressed=int(n_breaker_suppressed),
         bh_return_pct=float(bh_ret),
         bh_cagr=float(bh_cagr),
         bh_sharpe=float(bh_sharpe),
