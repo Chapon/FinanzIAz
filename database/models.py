@@ -396,6 +396,12 @@ class NewsEvent(Base):
     # Backend que produjo el label ("heuristic" / "ollama" / "llm" / "fallback").
     # T7.4: habilita QA por backend y detectar corridas con Ollama caído a posteriori.
     classified_by = Column(String(20), nullable=True)
+    # OPS1(a): polaridad numérica point-in-time (misma llamada del classify, costo
+    # marginal ~cero). sentiment_score ∈ [-1,+1], relevance ∈ [0,1]. NULL = fila
+    # clasificada antes de OPS1. NO entra a ninguna decisión (regla 3): es
+    # acumulación de dato point-in-time para el meta-modelo (tarea 9).
+    sentiment_score = Column(Float, nullable=True)
+    relevance = Column(Float, nullable=True)
 
     def __repr__(self):
         return f"<NewsEvent({self.ticker} [{self.source}] {self.title[:40]!r})>"

@@ -171,6 +171,8 @@ def classify_events(
                     ev.classifier_confidence = c.confidence
                     ev.classified_at = now
                     ev.classified_by = c.classifier  # T7.4: provenance persistida
+                    ev.sentiment_score = c.sentiment_score  # OPS1(a): polaridad numérica
+                    ev.relevance = c.relevance  # OPS1(a): relevancia point-in-time
 
     log.info("%s%s", "[dry-run] " if dry_run else "", report.summary())
     return report

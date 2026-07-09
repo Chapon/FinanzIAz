@@ -45,6 +45,11 @@ class Classification:
     sentiment: str
     confidence: float
     classifier: str = "heuristic"  # provenance tag — persistido en news_events.classified_by (T7.4)
+    # OPS1(a): polaridad numérica point-in-time. sentiment_score ∈ [-1,+1]
+    # (dirección/magnitud para el ticker), relevance ∈ [0,1] (qué tan sobre/material
+    # al ticker es el titular). NO entra a decisiones (regla 3): dato para la tarea 9.
+    sentiment_score: float = 0.0
+    relevance: float = 0.0
 
 
 # Backend signature: (title, content, source, ticker) -> Classification
@@ -54,6 +59,29 @@ Backend = Callable[[str, "str | None", str, "str | None"], Classification]
 _CONF_SEC_ITEM = 0.90   # structured 8-K item code → event_type
 _CONF_KEYWORD = 0.60    # headline keyword cue
 _CONF_NONE = 0.20       # no cue → other/neutral
+
+# OPS1(a): dirección numérica del sentiment categórico. El heurístico no mide
+# magnitud, así que usa media escala (±0.5); el LLM devuelve su propio score fino.
+_SENTIMENT_SCORE = {"positive": 0.5, "neutral": 0.0, "negative": -0.5}
+
+
+def _heuristic_numeric(sentiment: str, confidence: float) -> tuple[float, float]:
+    """Deriva ``(sentiment_score, relevance)`` numéricos para el backend heurístico.
+
+    El heurístico no mide magnitud ni chequea que el titular sea realmente del
+    ticker, así que el score es la dirección categórica a media escala (±0.5) y la
+    relevancia es la confianza como proxy honesto (item-code SEC 0.90 > keyword
+    0.60 > sin cue 0.20). El LLM sí devuelve valores finos propios.
+    """
+    return _SENTIMENT_SCORE.get(sentiment, 0.0), float(confidence)
+
+
+def _as_float(value: object, default: float) -> float:
+    """Coacciona ``value`` a float; ante basura del LLM cae al default."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 # ── Heuristic backend ────────────────────────────────────────────────────────
@@ -93,14 +121,17 @@ def heuristic_classify(
             sec = _classify_sec(content)
             if sec is not None:
                 event, sentiment, conf = sec
-                return Classification(event, sentiment, conf, "heuristic")
+                ss, rel = _heuristic_numeric(sentiment, conf)
+                return Classification(event, sentiment, conf, "heuristic", ss, rel)
 
         text = normalize(title)
         event = match_event(text)
         sentiment = score_sentiment(text)
+        conf = _CONF_NONE if event is None else _CONF_KEYWORD
+        ss, rel = _heuristic_numeric(sentiment, conf)
         if event is None:
-            return Classification("other", sentiment, _CONF_NONE, "heuristic")
-        return Classification(event, sentiment, _CONF_KEYWORD, "heuristic")
+            return Classification("other", sentiment, conf, "heuristic", ss, rel)
+        return Classification(event, sentiment, conf, "heuristic", ss, rel)
     except Exception:
         log.exception("heuristic_classify failed for %r", title)
         return Classification("other", "neutral", _CONF_NONE, "heuristic")
@@ -142,23 +173,52 @@ def _coerce(c: Classification) -> Classification:
     except (TypeError, ValueError):
         conf = _CONF_NONE
     conf = min(1.0, max(0.0, conf))
-    if event == c.event_type and sentiment == c.sentiment and conf == c.confidence:
+    # OPS1(a): clampear la polaridad numérica a su rango (el LLM puede devolver
+    # basura o fuera de rango). sentiment_score ∈ [-1,+1], relevance ∈ [0,1].
+    ss = min(1.0, max(-1.0, _as_float(c.sentiment_score, 0.0)))
+    rel = min(1.0, max(0.0, _as_float(c.relevance, 0.0)))
+    if (
+        event == c.event_type
+        and sentiment == c.sentiment
+        and conf == c.confidence
+        and ss == c.sentiment_score
+        and rel == c.relevance
+    ):
         return c
-    return Classification(event, sentiment, conf, c.classifier)
+    return Classification(event, sentiment, conf, c.classifier, ss, rel)
 
 
 # ── Optional LLM backend (lazy, off by default) ──────────────────────────────
 
 _LLM_SYSTEM = (
     "You are a financial news classifier. You are given a stock TICKER and a "
-    "headline (plus an optional summary). Return ONLY a compact JSON object: "
-    '{"event_type": <one of the allowed types>, "sentiment": '
-    '"positive"|"neutral"|"negative", "confidence": 0..1}. '
+    "headline (plus an optional summary). Return ONLY a compact JSON object with "
+    'these keys: "event_type" (one of the allowed types), "sentiment" '
+    '("positive"|"neutral"|"negative"), "confidence" (0..1), "sentiment_score" '
+    "(-1..1, how positive or negative the news is FOR THE GIVEN TICKER: -1 very "
+    "negative, 0 neutral, +1 very positive), \"relevance\" (0..1, how much the "
+    "headline is actually about and material to the GIVEN ticker: 0 = only "
+    "mentions it in passing or is about another company, 1 = squarely about it). "
     "Allowed event_type values: %s. Pick the single most material event for the "
-    "GIVEN ticker. If the headline is not actually about that ticker (it just "
-    'mentions it in passing, or is about a different company), return "other" '
-    "with low confidence. Sentiment is from the perspective of the given ticker."
+    "GIVEN ticker. If the headline is not actually about that ticker, return "
+    '"other" with low confidence, sentiment_score 0 and relevance near 0. '
+    "Sentiment is from the perspective of the given ticker."
 )
+
+# OPS1(a): schema JSON para los structured outputs de Ollama (``format`` acepta
+# un JSON schema, no solo "json"). Fuerza el shape del objeto → elimina la clase
+# de bugs de parseo de texto libre.
+_OLLAMA_FORMAT: dict = {
+    "type": "object",
+    "properties": {
+        "event_type": {"type": "string"},
+        "sentiment": {"type": "string", "enum": ["positive", "neutral", "negative"]},
+        "confidence": {"type": "number"},
+        "sentiment_score": {"type": "number"},
+        "relevance": {"type": "number"},
+    },
+    "required": ["event_type", "sentiment", "confidence", "sentiment_score", "relevance"],
+}
 
 
 def make_llm_backend(client=None, model: str = "claude-haiku-4-5-20251001") -> Backend:
@@ -237,11 +297,15 @@ def _parse_llm_json(text: str, tag: str = "llm") -> Classification:
     if not m:
         return Classification("other", "neutral", _CONF_NONE, tag)
     data = json.loads(m.group(0))
+    sentiment = str(data.get("sentiment", "neutral"))
+    # OPS1(a): si el modelo no devolvió el score numérico, derivarlo del categórico.
     return Classification(
         str(data.get("event_type", "other")),
-        str(data.get("sentiment", "neutral")),
-        float(data.get("confidence", 0.5)),
+        sentiment,
+        _as_float(data.get("confidence"), 0.5),
         tag,
+        _as_float(data.get("sentiment_score"), _SENTIMENT_SCORE.get(sentiment, 0.0)),
+        _as_float(data.get("relevance"), 0.5),
     )
 
 
@@ -286,7 +350,7 @@ def make_ollama_backend(
                 json={
                     "model": model,
                     "stream": False,
-                    "format": "json",
+                    "format": _OLLAMA_FORMAT,  # OPS1(a): structured outputs (JSON schema)
                     "options": {"temperature": 0},
                     "messages": [
                         {"role": "system", "content": system},
