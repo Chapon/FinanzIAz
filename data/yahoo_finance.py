@@ -72,6 +72,7 @@ from database.models import (
     HistoricalDataCache,
     PriceCache,
     session_scope,
+    utcnow_naive,
 )
 
 log = get_logger(__name__)
@@ -1074,14 +1075,57 @@ def get_next_earnings_date(ticker: str) -> datetime | None:
 
     # 3. Cache write (including the negative result — earnings_dt may be None)
     if _cache_enabled():
-        try:
-            with session_scope() as session:
-                session.query(EarningsCache).filter(EarningsCache.ticker == ticker_upper).delete()
-                session.add(EarningsCache(ticker=ticker_upper, earnings_date=earnings_dt))
-        except Exception:
-            log.exception("Earnings cache write failed for %s", ticker)
+        _write_earnings_cache(ticker_upper, earnings_dt)
 
     return earnings_dt
+
+
+def _is_sqlite_locked(exc: BaseException) -> bool:
+    """True si ``exc`` es la contención de escritura de SQLite (``database is locked``).
+
+    WAL permite muchos lectores pero un solo escritor; bajo el harvest horario
+    (T-CAT) el classify y el scan compiten por el lock. Es transitorio: reintentar
+    con un backoff corto lo resuelve casi siempre.
+    """
+    return "database is locked" in str(exc).lower()
+
+
+def _write_earnings_cache(
+    ticker_upper: str, earnings_dt: "datetime | None", *, attempts: int = 3
+) -> None:
+    """Upsert in-place la fila de earnings_cache de un ticker, tolerando el lock.
+
+    OPS1(b): reemplaza el delete+insert por un update de la fila más reciente
+    (o insert si no hay), lo que **acorta la ventana de lock** — el harvest
+    horario multiplica la contención scan-vs-harvest. El ``database is locked`` se
+    trata como transitorio (reintento con backoff corto); en el fallo final se
+    loguea **warning**, no exception, porque es fail-open esperable bajo
+    contención (el próximo scan re-pega a Yahoo por su calendario). ``fetched_at``
+    se refresca en el update para que el TTL de lectura lo tome como fresco.
+    """
+    for i in range(attempts):
+        try:
+            with session_scope() as session:
+                row = (
+                    session.query(EarningsCache)
+                    .filter(EarningsCache.ticker == ticker_upper)
+                    .order_by(EarningsCache.fetched_at.desc())
+                    .first()
+                )
+                if row is None:
+                    session.add(
+                        EarningsCache(ticker=ticker_upper, earnings_date=earnings_dt)
+                    )
+                else:
+                    row.earnings_date = earnings_dt
+                    row.fetched_at = utcnow_naive()
+            return
+        except Exception as exc:
+            if _is_sqlite_locked(exc) and i < attempts - 1:
+                time.sleep(0.1 * (i + 1))  # backoff corto: 0.1s, 0.2s
+                continue
+            log.warning("Earnings cache write failed for %s: %s", ticker_upper, exc)
+            return
 
 
 def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
