@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -489,6 +490,13 @@ class ScanResult:
     skipped: int = 0  # rejected by engine (no price, insufficient cash, …)
     prices_requested: int = 0  # tickers para los que se pidió precio este scan
     prices_missing: int = 0  # cuántos quedaron sin precio usable (B3 telemetría)
+    # OPS1(c) — timing por fase (segundos): fetch (warm-up + precios), analyze
+    # (ATR exits + strategy) y process (loop de gates+fill; van interleaveados en
+    # el mismo loop, no se separan en tiempo). ``scan_seconds`` es el total
+    # wall-clock del scan. Sin esto no se puede decidir si bajar el intervalo de
+    # 15 min es viable ni detectar degradación de Yahoo antes de que muerda.
+    phase_seconds: dict[str, float] = field(default_factory=dict)
+    scan_seconds: float = 0.0
     equity_before: float = 0.0
     equity_after: float = 0.0
     warnings: list[str] = field(default_factory=list)
@@ -500,12 +508,16 @@ class ScanResult:
     new_orders: list[OrderNotice] = field(default_factory=list)
 
     def summary(self) -> str:
-        return (
+        base = (
             f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
             f"· generated={self.generated} filled={self.filled} "
             f"queued={self.queued} skipped={self.skipped}  "
             f"· equity ${self.equity_before:,.2f} → ${self.equity_after:,.2f}"
         )
+        if self.scan_seconds > 0:
+            phases = " ".join(f"{k} {v:.2f}s" for k, v in self.phase_seconds.items())
+            base += f"  · {self.scan_seconds:.2f}s ({phases})"
+        return base
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -527,6 +539,8 @@ def run_scan(
     history_was_injected = history_provider is not None
     history_provider = history_provider or _default_history_provider
     earnings_provider = earnings_provider or _default_earnings_provider
+
+    t_scan_start = perf_counter()  # OPS1(c): timing por fase
 
     with session_scope() as session:
         acct: PaperAccount = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
@@ -579,6 +593,8 @@ def run_scan(
 
         prices = prices_provider(tickers) if tickers else {}
 
+        t_after_fetch = perf_counter()  # OPS1(c): fin de fetch (warm-up + precios)
+
         # ── Telemetría de cobertura de precios (B3) ──────────────────────────
         # Si Yahoo throttlea, varios tickers vuelven sin precio: las decisiones
         # corren sobre un universo reducido (ATR exits y la strategy ya saltean
@@ -626,6 +642,8 @@ def run_scan(
             t for t in strategy_trades if not (t.side == "SELL" and t.ticker in atr_exit_tickers)
         ]
         trades: list[TargetTrade] = atr_exits + strategy_trades
+
+        t_after_analyze = perf_counter()  # OPS1(c): fin de analyze (ATR exits + strategy)
 
         result = ScanResult(
             account_id=account_id,
@@ -1090,6 +1108,19 @@ def run_scan(
     # critical path and is fully fail-open: a missing token, a disabled switch,
     # or a notifier that raises must never affect the scan result.
     _maybe_notify_slack(result, account_name, account_slack_notify, slack_notifier)
+
+    # OPS1(c) — timing por fase. ``process`` absorbe el loop de gates+fill más el
+    # snapshot/slack del final; fetch+analyze+process == scan_seconds exacto.
+    t_scan_end = perf_counter()
+    result.phase_seconds = {
+        "fetch": round(t_after_fetch - t_scan_start, 4),
+        "analyze": round(t_after_analyze - t_after_fetch, 4),
+        "process": round(t_scan_end - t_after_analyze, 4),
+    }
+    result.scan_seconds = round(t_scan_end - t_scan_start, 4)
+    from config.logging_config import get_logger
+
+    get_logger(__name__).info(result.summary())
     return result
 
 
