@@ -3,18 +3,29 @@ Alert manager: checks price alerts and fires callbacks when triggered.
 """
 
 from collections.abc import Callable
-from datetime import datetime
 
 from data.yahoo_finance import get_current_price
 from database.models import Alert, session_scope, utcnow_naive
+from integrations.slack import AlertNotice, default_notifier, format_alert_message
 
 
 class AlertManager:
-    def __init__(self, on_triggered: Callable | None = None):
+    def __init__(
+        self,
+        on_triggered: Callable | None = None,
+        notifier: Callable[[str], bool] | None = None,
+    ):
         """
-        on_triggered: callback(alert: Alert, current_price: float) called when alert fires.
+        on_triggered: callback(alert: Alert, current_price: float) called when
+            an alert fires (the GUI uses it to pop a QMessageBox).
+        notifier: callable(text) -> bool that delivers a *batched* Slack message
+            for every alert triggered in one ``check_alerts`` pass. Defaults to
+            ``integrations.slack.default_notifier`` (real Slack, fail-open).
+            Tests inject a recording mock (same pattern as the engine's
+            ``prices_provider`` / ``slack_notifier``).
         """
         self.on_triggered = on_triggered
+        self._notifier = notifier
 
     def check_alerts(self, portfolio_id: int | None = None) -> list[Alert]:
         """
@@ -22,6 +33,7 @@ class AlertManager:
         Returns list of triggered alerts.
         """
         triggered: list[Alert] = []
+        notices: list[AlertNotice] = []
         with session_scope() as session:
             query = session.query(Alert).filter(Alert.is_active.is_(True))
             if portfolio_id is not None:
@@ -44,11 +56,53 @@ class AlertManager:
                     alert.is_active = False
                     alert.triggered_at = utcnow_naive()
                     triggered.append(alert)
+                    # Snapshot to plain values while the ORM is still attached;
+                    # the ORM detaches on session close and the Slack POST runs
+                    # after commit (see _notify_slack).
+                    notices.append(
+                        AlertNotice(
+                            ticker=alert.ticker,
+                            alert_type=alert.alert_type,
+                            target_value=alert.target_value,
+                            current_price=price,
+                            message=alert.message or "",
+                        )
+                    )
                     if self.on_triggered:
                         self.on_triggered(alert, price)
             # commit happens automatically on context exit
 
+        # POST to Slack *after* the commit: a network failure must never revert
+        # the is_active=False / triggered_at marking (fail-open, backlog NOTIF1).
+        self._notify_slack(notices)
         return triggered
+
+    def _notify_slack(self, notices: list[AlertNotice]) -> None:
+        """Send one batched Slack message for the alerts fired in this check.
+
+        Fully fail-open: gated by ``slack_price_alerts_enabled`` (default True →
+        no-op without a token/channel), and a delivery error is swallowed with a
+        warning so it never escapes into ``check_alerts``.
+        """
+        if not notices:
+            return
+        from config.settings_manager import settings
+
+        if not settings.get("slack_price_alerts_enabled", True):
+            return
+        text = format_alert_message(notices)
+        if not text:
+            return
+        notifier = self._notifier or default_notifier
+        try:
+            notifier(text)
+        except Exception:
+            from config.logging_config import get_logger
+
+            get_logger(__name__).warning(
+                "Slack price-alert notify failed (fail-open, DB marking unaffected).",
+                exc_info=True,
+            )
 
     @staticmethod
     def _is_triggered(alert: Alert, current_price: float) -> bool:

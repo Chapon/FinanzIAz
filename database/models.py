@@ -202,7 +202,7 @@ class Alert(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
     ticker = Column(String(20), nullable=False, index=True)
-    alert_type = Column(String(20), nullable=False)  # "ABOVE", "BELOW", "CHANGE_PCT"
+    alert_type = Column(String(20), nullable=False)  # "ABOVE" | "BELOW"
     target_value = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True, index=True)
     triggered_at = Column(DateTime, nullable=True)

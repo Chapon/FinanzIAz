@@ -610,6 +610,21 @@ class SettingsTab(QWidget):
         outage_row.toggled.connect(self._on_toggle)
         self._rows["slack_data_outage_enabled"] = outage_row
         layout.addWidget(outage_row)
+        layout.addWidget(HSeparator())
+
+        # 4) Aviso de alertas de precio (NOTIF1) — independiente del master de órdenes.
+        price_alerts_row = SettingsRow(
+            "slack_price_alerts_enabled",
+            "Avisar por Slack las alertas de precio",
+            settings.get("slack_price_alerts_enabled"),
+            tooltip="Cuando una alerta de precio se dispara (además del popup en la "
+            "app), manda un mensaje al canal con todas las disparadas en ese "
+            "chequeo. Independiente del interruptor de órdenes; usa el mismo "
+            "token/canal. No hace nada sin token configurado (fail-open).",
+        )
+        price_alerts_row.toggled.connect(self._on_toggle)
+        self._rows["slack_price_alerts_enabled"] = price_alerts_row
+        layout.addWidget(price_alerts_row)
 
         hint = QLabel(
             "El canal y el token se configuran con scripts/setup_slack.py "

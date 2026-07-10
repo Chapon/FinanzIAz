@@ -527,6 +527,17 @@ SCHEMA: dict[str, SettingSpec] = {
             "(fail-open); reuses the same SLACK_BOT_TOKEN / channel."
         ),
     ),
+    "slack_price_alerts_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Send a Slack message when a price alert fires "
+            "(AlertManager.check_alerts), batched to one message per check, on "
+            "top of the in-app popup. Independent of slack_notifications_enabled "
+            "(that governs engine orders). Default True: no-op without a "
+            "token/channel (fail-open); reuses the same SLACK_BOT_TOKEN / channel."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

@@ -82,4 +82,15 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no superado (ver skill `backtest-replay-harness`):
 `paper_catalyst_exit_veto_enabled` (off), `paper_catalyst_veto_min_score`, `paper_catalyst_veto_gray_high`.
 
+## Notificaciones Slack
+El **bot token NUNCA vive acá** — se lee de la env var `SLACK_BOT_TOKEN`. Solo el canal (no secreto) va en settings o en la env var `SLACK_CHANNEL`. Todo fail-open: sin token/canal, cada aviso es no-op. Ver `integrations/slack.py` y `scripts/setup_slack.py`.
+
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `slack_notifications_enabled` | `False` | Master switch de órdenes: `run_scan` manda un resumen por escaneo con las órdenes nuevas. |
+| `slack_notify_on` | `"both"` | Qué órdenes avisan: `pending` / `filled` / `both`. |
+| `slack_channel` | `""` | Canal id/nombre destino (p.ej. `#trading`). Overridable con `SLACK_CHANNEL`. Vacío + sin env ⇒ no manda. |
+| `slack_data_outage_enabled` | `True` | Avisa cuando Yahoo se cae de forma sostenida (breaker NET1 nivel ≥2) y al recuperarse. Independiente del master de órdenes. |
+| `slack_price_alerts_enabled` | `True` | Avisa cuando una **alerta de precio** dispara (`AlertManager.check_alerts`), batcheado 1 mensaje por chequeo, además del popup. Independiente del master de órdenes. (NOTIF1) |
+
 > Sizing (cuando aplique): `kelly_fraction`, `vol_target_annual`, `max_position_weight`, `ibkr_commission_plan`. Ver el código para defaults exactos.

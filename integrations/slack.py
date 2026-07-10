@@ -207,6 +207,52 @@ def format_outage_message(kind: str, *, minutes: float, level: int) -> str:
     return ""
 
 
+# ── Price alerts (NOTIF1) ────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class AlertNotice:
+    """
+    Session-detached snapshot of one price alert that fired in a single
+    ``AlertManager.check_alerts`` pass. Plain values only, captured while the
+    ORM object is still attached, so the batched Slack message can be built
+    *after* the DB transaction closes.
+    """
+
+    ticker: str
+    alert_type: str  # "ABOVE" | "BELOW"
+    target_value: float
+    current_price: float
+    message: str = ""
+
+
+def format_alert_message(triggered: Sequence[AlertNotice]) -> str:
+    """
+    The batched price-alert message: a header followed by one line per fired
+    alert, e.g.::
+
+        🔔 *FinanzIAs · Alerta de precio*
+        MARA alcanzó $13.40 — objetivo BELOW $14.00 · rebote
+
+    Returns ``""`` for an empty list (same contract as ``format_scan_summary``:
+    the caller uses truthiness to decide whether to send anything).
+    """
+    triggered = list(triggered)
+    if not triggered:
+        return ""
+
+    lines = ["🔔 *FinanzIAs · Alerta de precio*"]
+    for a in triggered:
+        line = (
+            f"{a.ticker} alcanzó {_fmt_money(a.current_price)} — "
+            f"objetivo {a.alert_type} {_fmt_money(a.target_value)}"
+        )
+        if a.message:
+            line += f" · {a.message}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 # ── Network boundary (fail-open) ─────────────────────────────────────────────────
 
 
