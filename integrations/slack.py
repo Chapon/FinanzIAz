@@ -184,6 +184,29 @@ def format_scan_summary(
     return "\n".join(lines)
 
 
+# ── Data-outage alert (NET1, pieza 3c) ───────────────────────────────────────
+
+
+def format_outage_message(kind: str, *, minutes: float, level: int) -> str:
+    """Mensaje de outage de datos de Yahoo (NET1). Puro / testeable.
+
+    ``kind`` ∈ {"open", "recovered"}. Un kind desconocido devuelve ``""`` (mismo
+    contrato que ``format_scan_summary``: el caller usa la truthiness para decidir
+    si manda algo).
+    """
+    if kind == "open":
+        return (
+            f"⚠️ *FinanzIAs · Yahoo sin responder* hace ~{minutes:.0f} min "
+            f"(nivel {level}) — precios congelados, stops no actualizados. "
+            "El breaker reintenta con backoff."
+        )
+    if kind == "recovered":
+        return (
+            f"✅ *FinanzIAs · Yahoo se recuperó* tras ~{minutes:.0f} min — precios al día."
+        )
+    return ""
+
+
 # ── Network boundary (fail-open) ─────────────────────────────────────────────────
 
 

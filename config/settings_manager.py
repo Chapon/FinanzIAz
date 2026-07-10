@@ -516,6 +516,17 @@ SCHEMA: dict[str, SettingSpec] = {
             "var. Empty + no env var ⇒ notifications are skipped (fail-open)."
         ),
     ),
+    "slack_data_outage_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Send a Slack alert when Yahoo stops responding for a sustained "
+            "period (NET1 breaker escalates to level ≥2): one message when the "
+            "outage persists and one on recovery. Independent of "
+            "slack_notifications_enabled. No-op without a token/channel "
+            "(fail-open); reuses the same SLACK_BOT_TOKEN / channel."
+        ),
+    ),
     # Paper trading analysis tuning
     "paper_history_period": SettingSpec(
         str,

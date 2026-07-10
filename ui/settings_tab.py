@@ -594,6 +594,22 @@ class SettingsTab(QWidget):
         notify_on_row.value_changed.connect(self._on_choice_change)
         self._choice_rows["slack_notify_on"] = notify_on_row
         layout.addWidget(notify_on_row)
+        layout.addWidget(HSeparator())
+
+        # 3) Aviso de outage de datos (NET1) — independiente del master de órdenes.
+        outage_row = SettingsRow(
+            "slack_data_outage_enabled",
+            "Avisar por Slack si Yahoo se cae",
+            settings.get("slack_data_outage_enabled"),
+            tooltip="Cuando Yahoo deja de responder de forma sostenida (el breaker "
+            "escala a nivel ≥2), manda un aviso al canal (y otro al recuperarse) "
+            "para saber que los precios están congelados y los stops no se "
+            "actualizan. Independiente del interruptor de órdenes; usa el mismo "
+            "token/canal. No hace nada sin token configurado (fail-open).",
+        )
+        outage_row.toggled.connect(self._on_toggle)
+        self._rows["slack_data_outage_enabled"] = outage_row
+        layout.addWidget(outage_row)
 
         hint = QLabel(
             "El canal y el token se configuran con scripts/setup_slack.py "

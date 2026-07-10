@@ -192,6 +192,7 @@ _throttle_until = 0.0     # time.monotonic() hasta cuando el cooldown está vige
 _throttle_level = 0       # nivel de escalada (0 = breaker cerrado)
 _throttle_since = 0.0     # time.monotonic() del inicio del incidente actual
 _throttle_probing = False  # un thread está pagando el probe canario
+_outage_notified = False   # ya se avisó (Slack) de este incidente (NET1 pieza 3c)
 
 
 def _throttle_cooldown_for(level: int) -> float:
@@ -207,7 +208,7 @@ def _note_throttle() -> None:
     tickers fallando a la vez = un solo salto de nivel. La siguiente escalada solo
     ocurre cuando el cooldown expira y un nuevo intento (el probe) vuelve a fallar.
     """
-    global _throttle_until, _throttle_level, _throttle_since
+    global _throttle_until, _throttle_level, _throttle_since, _outage_notified
     with _throttle_lock:
         now = time.monotonic()
         if now < _throttle_until:
@@ -220,6 +221,10 @@ def _note_throttle() -> None:
             _throttle_since = now
         level = _throttle_level
         elapsed = now - _throttle_since
+        # Aviso de outage: UN mensaje por incidente, al persistir (nivel ≥2).
+        notify_outage = level >= 2 and not _outage_notified
+        if notify_outage:
+            _outage_notified = True
     if was_closed:
         log.warning(
             "Throttle de Yahoo detectado — breaker abierto (nivel 1, cooldown %.0fs)",
@@ -231,6 +236,8 @@ def _note_throttle() -> None:
             "(cooldown %.0fs, %.0f min de incidente)",
             level, cooldown, elapsed / 60.0,
         )
+    if notify_outage:  # fuera del lock (NET1 pieza 3c)
+        _maybe_notify_outage("open", minutes=elapsed / 60.0, level=level)
 
 
 def _note_fetch_success() -> None:
@@ -238,15 +245,42 @@ def _note_fetch_success() -> None:
 
     Fast-path silencioso cuando ya estaba cerrado (se llama en cada fetch OK).
     """
-    global _throttle_until, _throttle_level, _throttle_since
+    global _throttle_until, _throttle_level, _throttle_since, _outage_notified
     with _throttle_lock:
         if _throttle_level == 0:
             return
         elapsed = time.monotonic() - _throttle_since
+        was_notified = _outage_notified
         _throttle_until = 0.0
         _throttle_level = 0
         _throttle_since = 0.0
+        _outage_notified = False
     log.warning("Yahoo se recuperó tras %.0f min — breaker de throttle cerrado", elapsed / 60.0)
+    if was_notified:  # solo si avisamos la apertura (fuera del lock)
+        _maybe_notify_outage("recovered", minutes=elapsed / 60.0, level=0)
+
+
+def _maybe_notify_outage(kind: str, *, minutes: float, level: int) -> None:
+    """Aviso Slack opcional del outage de datos (NET1 pieza 3c). Fail-open total,
+    fuera de locks, gated por ``slack_data_outage_enabled`` (default True). No-op
+    sin token/canal (misma infra T12). El notifier es un hook a nivel de módulo
+    (``_outage_notifier``) para que los tests puedan inyectar un mock."""
+    try:
+        from config.settings_manager import settings
+
+        if not bool(settings.get("slack_data_outage_enabled", True)):
+            return
+        from integrations.slack import default_notifier, format_outage_message
+
+        text = format_outage_message(kind, minutes=minutes, level=level)
+        if not text:
+            return
+        (_outage_notifier or default_notifier)(text)
+    except Exception:
+        log.debug("Slack outage notify falló (fail-open): %s", kind, exc_info=True)
+
+
+_outage_notifier = None  # inyectable en tests; None → integrations.slack.default_notifier
 
 
 def _is_throttled() -> bool:
@@ -262,12 +296,13 @@ def _is_throttled() -> bool:
 
 def reset_throttle() -> None:
     """Cierra el breaker sin log. Para tests — el estado es global al proceso."""
-    global _throttle_until, _throttle_level, _throttle_since, _throttle_probing
+    global _throttle_until, _throttle_level, _throttle_since, _throttle_probing, _outage_notified
     with _throttle_lock:
         _throttle_until = 0.0
         _throttle_level = 0
         _throttle_since = 0.0
         _throttle_probing = False
+        _outage_notified = False
 
 
 def throttle_state() -> dict:
