@@ -111,6 +111,13 @@ NETWORK_RETRY_BACKOFF: float = 1.0
 # (2) los fallos se clasifican como TRANSITORIOS, no como delisting permanente,
 # para no envenenar el failing set con large-caps reales (bug B3).
 NETWORK_THROTTLE_COOLDOWN_SECONDS: float = 90.0
+# NET1: el cooldown escala exponencialmente por cada ventana de throttle
+# consecutiva (90s → 4.5m → 13.5m → 30m…), capeado. Al expirar, UN thread paga un
+# probe de 1 ticker (timeout corto) antes de liberar el batch — así no se
+# martillea a Yahoo cada 60s con el universo entero, lo que prolonga el throttle.
+NETWORK_THROTTLE_BACKOFF_FACTOR: float = 3.0
+NETWORK_THROTTLE_MAX_COOLDOWN_SECONDS: float = 1800.0  # cap 30 min
+NETWORK_THROTTLE_PROBE_TIMEOUT_SECONDS: float = 5.0
 PRICE_CACHE_TTL_MINUTES: int = 5
 HISTORICAL_CACHE_TTL_HOURS: int = 1
 DIVIDEND_CACHE_HOURS: int = 6

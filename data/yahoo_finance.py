@@ -54,6 +54,15 @@ from config.constants import (
     NETWORK_THROTTLE_COOLDOWN_SECONDS as THROTTLE_COOLDOWN_SECONDS,
 )
 from config.constants import (
+    NETWORK_THROTTLE_BACKOFF_FACTOR as THROTTLE_BACKOFF_FACTOR,
+)
+from config.constants import (
+    NETWORK_THROTTLE_MAX_COOLDOWN_SECONDS as THROTTLE_MAX_COOLDOWN_SECONDS,
+)
+from config.constants import (
+    NETWORK_THROTTLE_PROBE_TIMEOUT_SECONDS as THROTTLE_PROBE_TIMEOUT_SECONDS,
+)
+from config.constants import (
     PRICE_CACHE_TTL_MINUTES as CACHE_TTL_MINUTES,
 )
 from config.logging_config import get_logger
@@ -166,36 +175,148 @@ def _is_transient(exc: BaseException) -> bool:
     return any(hint in msg for hint in _TRANSIENT_HINTS)
 
 
-# ── Circuit-breaker de throttle (bug B3) ─────────────────────────────────────
+# ── Circuit-breaker de throttle (bug B3 + NET1 backoff/probe) ────────────────
 # Cuando Yahoo deja de responder (hard-timeout, 401/crumb/429 repetido, o un lote
-# entero vuelve vacío) abrimos un breaker por ``THROTTLE_COOLDOWN_SECONDS``.
-# Mientras está abierto:
+# entero vuelve vacío) abrimos un breaker. Mientras está abierto:
 #   1. Las nuevas llamadas de red fallan rápido (no se queman 15s×N tickers) →
 #      el scan termina en segundos en vez de colgarse minutos.
 #   2. Los fallos se clasifican como TRANSITORIOS (no delisting permanente), así
 #      un large-cap real que falló por el throttle NO queda excluido del universo.
+# NET1: el cooldown ESCALA (90s → 4.5m → 13.5m → 30m…) por cada ventana fallida
+# consecutiva, y al expirar UN solo thread paga un probe de 1 ticker antes de
+# liberar el batch completo. Esto evita martillear a Yahoo con el universo entero
+# cada 60s (lo que prolongaba el propio throttle). El logging de WARNING vive acá
+# (transiciones); los checks repetidos con el breaker abierto son debug.
 _throttle_lock = threading.Lock()
-_throttle_until = 0.0  # time.monotonic() hasta cuando el breaker está abierto
+_throttle_until = 0.0     # time.monotonic() hasta cuando el cooldown está vigente
+_throttle_level = 0       # nivel de escalada (0 = breaker cerrado)
+_throttle_since = 0.0     # time.monotonic() del inicio del incidente actual
+_throttle_probing = False  # un thread está pagando el probe canario
 
 
-def _note_throttle(cooldown: float = THROTTLE_COOLDOWN_SECONDS) -> None:
-    """Abre (o extiende) el breaker: Yahoo está throttleando/no responde."""
-    global _throttle_until
+def _throttle_cooldown_for(level: int) -> float:
+    """Cooldown del nivel dado: base × factor^(nivel-1), capeado (NET1)."""
+    raw = THROTTLE_COOLDOWN_SECONDS * (THROTTLE_BACKOFF_FACTOR ** max(0, level - 1))
+    return min(raw, THROTTLE_MAX_COOLDOWN_SECONDS)
+
+
+def _note_throttle() -> None:
+    """Abre o ESCALA el breaker: Yahoo throttlea/no responde.
+
+    De-bounce (NET1): escala a lo sumo una vez por ventana de cooldown, así N
+    tickers fallando a la vez = un solo salto de nivel. La siguiente escalada solo
+    ocurre cuando el cooldown expira y un nuevo intento (el probe) vuelve a fallar.
+    """
+    global _throttle_until, _throttle_level, _throttle_since
     with _throttle_lock:
-        _throttle_until = max(_throttle_until, time.monotonic() + cooldown)
+        now = time.monotonic()
+        if now < _throttle_until:
+            return  # ya abierto en esta ventana → no re-escalar (de-bounce)
+        was_closed = _throttle_level == 0
+        _throttle_level += 1
+        cooldown = _throttle_cooldown_for(_throttle_level)
+        _throttle_until = now + cooldown
+        if was_closed:
+            _throttle_since = now
+        level = _throttle_level
+        elapsed = now - _throttle_since
+    if was_closed:
+        log.warning(
+            "Throttle de Yahoo detectado — breaker abierto (nivel 1, cooldown %.0fs)",
+            cooldown,
+        )
+    else:
+        log.warning(
+            "Throttle de Yahoo persiste — breaker escalado a nivel %d "
+            "(cooldown %.0fs, %.0f min de incidente)",
+            level, cooldown, elapsed / 60.0,
+        )
+
+
+def _note_fetch_success() -> None:
+    """Un fetch real funcionó → Yahoo volvió: cierra el breaker y resetea el nivel.
+
+    Fast-path silencioso cuando ya estaba cerrado (se llama en cada fetch OK).
+    """
+    global _throttle_until, _throttle_level, _throttle_since
+    with _throttle_lock:
+        if _throttle_level == 0:
+            return
+        elapsed = time.monotonic() - _throttle_since
+        _throttle_until = 0.0
+        _throttle_level = 0
+        _throttle_since = 0.0
+    log.warning("Yahoo se recuperó tras %.0f min — breaker de throttle cerrado", elapsed / 60.0)
 
 
 def _is_throttled() -> bool:
-    """True si el breaker está abierto (cooldown vigente)."""
+    """True si el cooldown está vigente (fail-fast).
+
+    Ojo (NET1): cuando el cooldown ya expiró pero el nivel es ≥1, devuelve False;
+    el gate ``_should_attempt_fetch`` (no esta función) es quien decide, vía el
+    probe canario, si Yahoo realmente volvió.
+    """
     with _throttle_lock:
         return time.monotonic() < _throttle_until
 
 
 def reset_throttle() -> None:
-    """Cierra el breaker. Para tests — el estado es global al proceso."""
-    global _throttle_until
+    """Cierra el breaker sin log. Para tests — el estado es global al proceso."""
+    global _throttle_until, _throttle_level, _throttle_since, _throttle_probing
     with _throttle_lock:
         _throttle_until = 0.0
+        _throttle_level = 0
+        _throttle_since = 0.0
+        _throttle_probing = False
+
+
+def throttle_state() -> dict:
+    """Snapshot del breaker para telemetría/UI (NET1): open/level/cooldown/incidente."""
+    with _throttle_lock:
+        now = time.monotonic()
+        return {
+            "open": _throttle_level > 0,
+            "level": _throttle_level,
+            "cooldown_remaining": max(0.0, _throttle_until - now),
+            "incident_seconds": (now - _throttle_since) if _throttle_level > 0 else 0.0,
+        }
+
+
+def _probe_yahoo_alive() -> bool:
+    """Probe canario NET1: ¿responde Yahoo? Sondea SPY (1 ticker, timeout corto).
+
+    SPY es líquido y ya se cachea por V1. Un éxito resetea el breaker vía
+    ``_note_fetch_success`` (dentro de ``_fetch_ticker_info``); un fallo re-escala
+    vía ``_note_throttle`` (dentro de ``_run_with_timeout``).
+    """
+    return _fetch_ticker_info("SPY", timeout=THROTTLE_PROBE_TIMEOUT_SECONDS) is not None
+
+
+def _should_attempt_fetch(probe_fn: "Callable[[], bool]" = _probe_yahoo_alive) -> bool:
+    """Gate NET1 del batch: ¿puede este caller pegar a la red?
+
+    - nivel 0 (breaker cerrado) → True.
+    - cooldown vigente → False (fail-fast, sin red).
+    - cooldown expirado, nivel ≥1 → UN thread paga ``probe_fn`` (1 ticker); los
+      demás fail-fast mientras corre. probe OK → el fetch exitoso ya reseteó el
+      breaker → True (se libera el batch). probe falla → ya re-escaló → False.
+    """
+    global _throttle_probing
+    with _throttle_lock:
+        if _throttle_level == 0:
+            return True
+        if time.monotonic() < _throttle_until:
+            return False
+        if _throttle_probing:
+            return False  # otro thread ya está sondeando
+        _throttle_probing = True
+    try:
+        return bool(probe_fn())
+    except Exception:
+        return False
+    finally:
+        with _throttle_lock:
+            _throttle_probing = False
 
 
 def _record_miss(ticker: str, error: str, operation: str) -> None:
@@ -246,8 +367,10 @@ def _run_with_timeout(
             return future.result(timeout=timeout)
         except FuturesTimeoutError:
             future.cancel()
-            log.warning("Hard timeout (%ss) running %s", timeout, fn_name)
-            _note_throttle()  # Yahoo colgó → abrir breaker para los próximos tickers
+            # NET1: la transición la loguea _note_throttle (WARNING una vez por
+            # ventana); acá bajamos a debug para no repetir por cada ticker.
+            log.debug("Hard timeout (%ss) running %s", timeout, fn_name)
+            _note_throttle()  # Yahoo colgó → abrir/escalar breaker
             return default
         except Exception as exc:
             transient = _is_transient(exc)
@@ -265,8 +388,9 @@ def _run_with_timeout(
                 time.sleep(sleep_s)
                 continue
             if transient:
-                log.warning("yfinance call %s failed (transient, gave up): %s", fn_name, exc)
-                _note_throttle()  # throttle persistente → abrir breaker
+                # NET1: transición logueada por _note_throttle; acá debug.
+                log.debug("yfinance call %s failed (transient, gave up): %s", fn_name, exc)
+                _note_throttle()  # throttle persistente → abrir/escalar breaker
             else:
                 log.exception("yfinance call %s raised", fn_name)
             return default
@@ -469,11 +593,12 @@ def _safe_fast_info(info: object, name: str, default: T | None = None) -> T | No
     return value if value is not None else default
 
 
-def _fetch_ticker_info(ticker: str) -> dict | None:
+def _fetch_ticker_info(ticker: str, *, timeout: float = HARD_TIMEOUT_SECONDS) -> dict | None:
     """Raw yfinance fetch — returns a clean dict. Hard-timeout protected.
 
     On failure (None / exception), registra el ticker en ``failed_tickers``
-    para que la UI lo muestre y los próximos bulk fetch lo salteen.
+    para que la UI lo muestre y los próximos bulk fetch lo salteen. ``timeout``
+    es parametrizable para el probe canario de NET1 (sondeo corto de 1 ticker).
     """
 
     last_exc: list[str] = []
@@ -508,7 +633,7 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
             last_exc.append(f"{type(e).__name__}: {e}")
             raise
 
-    result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=None)
+    result = _run_with_timeout(_do_fetch, timeout=timeout, default=None)
     if result is None:
         err = last_exc[0] if last_exc else "Sin datos disponibles"
         # _record_miss: con el breaker abierto (throttle) lo marca transitorio en
@@ -517,6 +642,7 @@ def _fetch_ticker_info(ticker: str) -> dict | None:
     else:
         # El ticker volvió a funcionar — limpiar registro previo si existía.
         record_success(ticker)
+        _note_fetch_success()  # NET1: un fetch OK cierra el breaker (recovery)
     return result
 
 
@@ -877,6 +1003,15 @@ def get_historical_data_batch(
         else:
             misses.append(t)
 
+    # NET1: gate del breaker — con throttle vigente NO se lanza el batch (fail-fast,
+    # sin red); al expirar el cooldown, un probe de 1 ticker decide si Yahoo volvió
+    # antes de liberar el lote completo. Evita martillear con el universo entero.
+    if misses and not _should_attempt_fetch():
+        for t in misses:
+            result[t] = None
+            record_transient(t, "Breaker de throttle abierto — batch histórico salteado", "historical")
+        return result
+
     # 2. Una descarga por chunk para los misses → 3. slice + QA + cache por ticker.
     for chunk in _chunked(misses, max(1, batch_size)):
         batch = _download_batch(chunk, period, interval)
@@ -890,12 +1025,15 @@ def get_historical_data_batch(
                 record_transient(
                     t, f"Lote histórico vacío ({period}/{interval}) — throttle probable", "historical"
                 )
-            log.warning(
+            # NET1: la transición la loguea _note_throttle (WARNING una vez por
+            # ventana); acá debug para no repetir en cada check bajo throttle.
+            log.debug(
                 "Histórico batch vacío para %d tickers (throttle probable): %s",
                 len(chunk),
                 ", ".join(chunk),
             )
             continue
+        _note_fetch_success()  # NET1: chunk con datos → Yahoo responde, cerrar breaker
         for t in chunk:
             df_t = _slice_ticker(batch, t)
             result[t] = _finalize_historical(t, df_t, period, interval)
@@ -1291,6 +1429,14 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     if not cache_misses:
         return results
 
+    # NET1: gate del breaker — con throttle vigente NO se lanza el batch (fail-fast);
+    # al expirar el cooldown un probe de 1 ticker decide si Yahoo volvió antes de
+    # liberar el lote. Los misses quedan transitorios (no se envenena el failing set).
+    if not _should_attempt_fetch():
+        for t in cache_misses:
+            record_transient(t, "Breaker de throttle abierto — batch de precios salteado", "price", override=True)
+        return results
+
     # 2. Parallel live fetches — pure network I/O, no DB locks
     live_results: dict[str, dict | None] = {}
     max_workers = min(BULK_FETCH_WORKERS, len(cache_misses))
@@ -1319,7 +1465,9 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     failed = [t for t in cache_misses if live_results.get(t) is None]
     if len(cache_misses) >= 2 and len(failed) == len(cache_misses):
         _note_throttle()
-        log.warning(
+        # NET1: la transición la loguea _note_throttle (WARNING una vez por
+        # ventana); acá debug para no repetir en cada check bajo throttle.
+        log.debug(
             "Bulk prices: %d/%d tickers sin precio a la vez (throttle probable) — no se envenena el failing set",
             len(failed),
             len(cache_misses),
