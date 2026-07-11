@@ -30,7 +30,7 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 | `portfolios` | Cartera real del usuario. |
 | `positions` | Posiciones de la cartera real. |
 | `transactions` | Transacciones (P&L). |
-| `alerts` | Alertas de precio. |
+| `alerts` | Alertas de precio. Estado derivado: `is_active=False` ⇒ "disparada"; `is_active=True` + `is_paused=True` ⇒ "pausada" (no se evalúa en `check_alerts`); resto ⇒ "activa" (ALRT1, col `is_paused` NOT NULL default false, migración 0008). |
 | `price_cache` | Cache de precios actuales. |
 | `dividend_cache` | Cache de dividendos. |
 | `historical_data_cache` | OHLCV histórico cacheado (5y/10y precargados). Lo llena `get_historical_data[_batch]`. |

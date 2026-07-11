@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 from alerts.alert_manager import AlertManager
 from config.settings_manager import settings
 from data.yahoo_finance import get_company_info, validate_ticker
-from database.models import Portfolio, Position, Transaction, session_scope, utcnow_naive
+from database.models import Alert, Portfolio, Position, Transaction, session_scope, utcnow_naive
 from ui.validators import TickerValidator, is_valid_ticker
 
 
@@ -318,14 +318,23 @@ class AddPositionDialog(QDialog):
 
 
 class AddAlertDialog(QDialog):
-    def __init__(self, portfolio_id: int, parent=None):
+    """Diálogo dual: crea una alerta nueva, o **edita** una existente si se pasa
+    ``alert`` (ALRT1). En modo edición prefillea los campos y ``_accept`` llama
+    a ``update_alert`` (que re-arma la alerta); el path de creación queda intacto
+    (lo usa también ``rsi_scanner`` vía ``create_alert``)."""
+
+    def __init__(self, portfolio_id: int, parent=None, *, alert: Alert | None = None):
         super().__init__(parent)
         self.portfolio_id = portfolio_id
-        self.setWindowTitle("Nueva Alerta de Precio")
+        self._alert = alert
+        self.setWindowTitle("Editar Alerta" if alert is not None else "Nueva Alerta de Precio")
         self.setMinimumWidth(400)
         self._build_ui()
+        if alert is not None:
+            self._prefill(alert)
 
     def _build_ui(self):
+        editing = self._alert is not None
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
 
@@ -353,11 +362,17 @@ class AddAlertDialog(QDialog):
         layout.addLayout(form)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Crear Alerta")
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Guardar" if editing else "Crear Alerta")
         btns.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def _prefill(self, alert: Alert):
+        self.ticker_edit.setText(alert.ticker)
+        self.type_combo.setCurrentIndex(0 if alert.alert_type == "ABOVE" else 1)
+        self.target_spin.setValue(alert.target_value)
+        self.msg_edit.setText(alert.message or "")
 
     def _accept(self):
         ticker = self.ticker_edit.text().strip().upper()
@@ -372,13 +387,22 @@ class AddAlertDialog(QDialog):
             QMessageBox.warning(self, "Error", "El precio objetivo debe ser mayor a 0.")
             return
 
-        AlertManager.create_alert(
-            portfolio_id=self.portfolio_id,
-            ticker=ticker,
-            alert_type=alert_type,
-            target_value=target,
-            message=self.msg_edit.text().strip(),
-        )
+        if self._alert is not None:
+            AlertManager.update_alert(
+                self._alert.id,
+                ticker=ticker,
+                alert_type=alert_type,
+                target_value=target,
+                message=self.msg_edit.text().strip(),
+            )
+        else:
+            AlertManager.create_alert(
+                portfolio_id=self.portfolio_id,
+                ticker=ticker,
+                alert_type=alert_type,
+                target_value=target,
+                message=self.msg_edit.text().strip(),
+            )
         self.accept()
 
 

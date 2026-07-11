@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -17,7 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from alerts.alert_manager import AlertManager
+from alerts.alert_manager import AlertManager, alert_row_actions, alert_status
 from database.models import Alert
 from ui.dialogs import AddAlertDialog
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
@@ -61,6 +62,10 @@ class AlertsTab(QWidget):
         self.table.verticalHeader().setVisible(False)
         # Tooltip on hover over the Ticker column (col 0)
         install_ticker_tooltips(self.table, 0)
+        # ALRT1: menú contextual (Editar / Pausar / Eliminar) + doble-click = Editar.
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        self.table.cellDoubleClicked.connect(self._on_double_click)
         root.addWidget(self.table)
 
         bottom = QHBoxLayout()
@@ -117,9 +122,12 @@ class AlertsTab(QWidget):
                 ),
             )
 
-            status = "Activa" if alert.is_active else "Disparada"
-            status_item = cell(status)
-            status_item.setForeground(QColor("#3fb950" if alert.is_active else "#d29922"))
+            # ALRT1: tres estados. Activa (verde) / Pausada (gris) / Disparada (naranja).
+            status = alert_status(alert)
+            status_label = {"activa": "Activa", "pausada": "Pausada", "disparada": "Disparada"}[status]
+            status_color = {"activa": "#3fb950", "pausada": "#8b949e", "disparada": "#d29922"}[status]
+            status_item = cell(status_label)
+            status_item.setForeground(QColor(status_color))
             self.table.setItem(row, 3, status_item)
 
             created = fmt_local(alert.created_at, "%d/%m/%Y %H:%M")
@@ -142,10 +150,13 @@ class AlertsTab(QWidget):
             self._load_alerts()
 
     def _delete_alert(self):
+        """Handler del botón "Eliminar seleccionada" (usa la fila seleccionada)."""
         row = self.table.currentRow()
         if row < 0 or row >= len(self._alerts):
             return
-        alert = self._alerts[row]
+        self._confirm_delete(self._alerts[row])
+
+    def _confirm_delete(self, alert: Alert):
         reply = QMessageBox.question(
             self,
             "Confirmar",
@@ -155,6 +166,44 @@ class AlertsTab(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             AlertManager.delete_alert(alert.id)
             self._load_alerts()
+
+    def _show_context_menu(self, pos):
+        """Menú contextual sobre la fila bajo el cursor (ALRT1)."""
+        row = self.table.rowAt(pos.y())
+        if row < 0 or row >= len(self._alerts):
+            return
+        self.table.selectRow(row)
+        alert = self._alerts[row]
+        actions = alert_row_actions(alert)
+
+        menu = QMenu(self)
+        edit_act = menu.addAction("Editar")
+        pause_act = menu.addAction(actions["pausar_label"]) if actions["pausar_visible"] else None
+        delete_act = menu.addAction("Eliminar")
+
+        chosen = menu.exec(self.table.mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen == edit_act:
+            self._edit_alert(alert)
+        elif pause_act is not None and chosen == pause_act:
+            self._toggle_pause(alert)
+        elif chosen == delete_act:
+            self._confirm_delete(alert)
+
+    def _on_double_click(self, row: int, _col: int):
+        """Doble-click en una fila = Editar (atajo del menú contextual)."""
+        if 0 <= row < len(self._alerts):
+            self._edit_alert(self._alerts[row])
+
+    def _edit_alert(self, alert: Alert):
+        dlg = AddAlertDialog(self._portfolio_id, self, alert=alert)
+        if dlg.exec():
+            self._load_alerts()
+
+    def _toggle_pause(self, alert: Alert):
+        AlertManager.set_paused(alert.id, not bool(alert.is_paused))
+        self._load_alerts()
 
     def _check_alerts(self):
         self.check_btn.setEnabled(False)

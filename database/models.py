@@ -33,6 +33,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     event,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -205,6 +206,9 @@ class Alert(Base):
     alert_type = Column(String(20), nullable=False)  # "ABOVE" | "BELOW"
     target_value = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True, index=True)
+    # ALRT1: estado "pausada" separado de is_active (que ya significa "disparada"
+    # cuando es False). Una alerta pausada no se evalúa en check_alerts.
+    is_paused = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow_naive)
     message = Column(Text, nullable=True)

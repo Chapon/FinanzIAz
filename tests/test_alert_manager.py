@@ -13,11 +13,17 @@ Two layers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from alerts.alert_manager import AlertManager
+from alerts.alert_manager import (
+    AlertManager,
+    alert_row_actions,
+    alert_status,
+)
 from config.settings_manager import settings
-from database.models import Alert, Portfolio, session_scope
+from database.models import Alert, Portfolio, session_scope, utcnow_naive
 from integrations.slack import AlertNotice, format_alert_message
 
 
@@ -162,3 +168,103 @@ def test_check_alerts_flag_off_skips_notifier(portfolio_id, monkeypatch):
     # Still fires + marks in DB, just no Slack post.
     assert [a.ticker for a in triggered] == ["MARA"]
     assert notifier.calls == []
+
+
+# ── ALRT1: gestión (editar / pausar) + helpers puros ─────────────────────────
+
+
+def _stub(is_active: bool, is_paused: bool):
+    """Objeto mínimo para los helpers puros (sin DB ni ORM)."""
+    return SimpleNamespace(is_active=is_active, is_paused=is_paused)
+
+
+def test_update_alert_persists_and_rearms_even_a_triggered_one(portfolio_id):
+    a = AlertManager.create_alert(portfolio_id, "mara", "BELOW", 14.0, "viejo")
+    # Simular que ya se disparó.
+    with session_scope() as s:
+        row = s.query(Alert).filter(Alert.id == a.id).one()
+        row.is_active = False
+        row.triggered_at = utcnow_naive()
+
+    updated = AlertManager.update_alert(
+        a.id, ticker="aapl", alert_type="ABOVE", target_value=200.0, message="nuevo"
+    )
+    # Los 4 campos + normalización de ticker + re-armado.
+    assert updated.ticker == "AAPL"
+    assert updated.alert_type == "ABOVE"
+    assert updated.target_value == 200.0
+    assert updated.message == "nuevo"
+    assert updated.is_active is True
+    assert updated.triggered_at is None
+
+    with session_scope() as s:
+        row = s.query(Alert).filter(Alert.id == a.id).one()
+        assert row.ticker == "AAPL"
+        assert row.is_active is True
+        assert row.triggered_at is None
+
+
+def test_update_alert_missing_returns_none(portfolio_id):
+    assert (
+        AlertManager.update_alert(
+            999999, ticker="AAPL", alert_type="ABOVE", target_value=1.0, message=""
+        )
+        is None
+    )
+
+
+def test_set_paused_toggles_and_is_idempotent(portfolio_id):
+    a = AlertManager.create_alert(portfolio_id, "MARA", "BELOW", 14.0)
+    assert a.is_paused is False
+
+    assert AlertManager.set_paused(a.id, True).is_paused is True
+    assert AlertManager.set_paused(a.id, True).is_paused is True  # idempotente
+    assert AlertManager.set_paused(a.id, False).is_paused is False
+    with session_scope() as s:
+        assert s.query(Alert).filter(Alert.id == a.id).one().is_paused is False
+
+
+def test_check_alerts_does_not_evaluate_paused(portfolio_id, monkeypatch):
+    AlertManager.create_alert(portfolio_id, "MARA", "BELOW", 14.0)  # activa → dispara
+    paused = AlertManager.create_alert(portfolio_id, "AAPL", "ABOVE", 200.0)
+    AlertManager.set_paused(paused.id, True)
+
+    priced: dict[str, int] = {}
+
+    def _price(ticker):
+        priced[ticker] = priced.get(ticker, 0) + 1
+        return {"price": {"MARA": 13.0, "AAPL": 250.0}[ticker]}
+
+    monkeypatch.setattr("alerts.alert_manager.get_current_price", _price)
+
+    triggered = AlertManager(notifier=_RecordingNotifier()).check_alerts(portfolio_id)
+
+    assert [a.ticker for a in triggered] == ["MARA"]  # solo la activa
+    assert "AAPL" not in priced  # la pausada ni siquiera consulta precio
+    with session_scope() as s:
+        aapl = s.query(Alert).filter(Alert.ticker == "AAPL").one()
+        assert aapl.is_active is True  # intacta
+        assert aapl.triggered_at is None
+
+
+def test_alert_status_maps_three_states():
+    assert alert_status(_stub(is_active=True, is_paused=False)) == "activa"
+    assert alert_status(_stub(is_active=True, is_paused=True)) == "pausada"
+    assert alert_status(_stub(is_active=False, is_paused=False)) == "disparada"
+    # Borde: disparada gana aunque quedara is_paused=True.
+    assert alert_status(_stub(is_active=False, is_paused=True)) == "disparada"
+
+
+def test_alert_row_actions_per_state():
+    activa = alert_row_actions(_stub(True, False))
+    assert activa["editar"] is True and activa["eliminar"] is True
+    assert activa["pausar_visible"] is True
+    assert activa["pausar_label"] == "Pausar"
+
+    pausada = alert_row_actions(_stub(True, True))
+    assert pausada["pausar_visible"] is True
+    assert pausada["pausar_label"] == "Reanudar"
+
+    disparada = alert_row_actions(_stub(False, False))
+    assert disparada["pausar_visible"] is False  # nada que pausar
+    assert disparada["editar"] is True and disparada["eliminar"] is True

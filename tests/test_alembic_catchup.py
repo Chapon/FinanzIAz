@@ -202,3 +202,33 @@ def test_0005_is_idempotent_when_column_exists(tmp_path):
     command.upgrade(_cfg(path), "head")
 
     assert _schema_snapshot(engine) == before
+
+
+# ── 0008: alerts.is_paused (ALRT1) ───────────────────────────────────────────
+
+
+@pytest.mark.skipif(not _SQLITE_SUPPORTS_DROP_COLUMN, reason="SQLite < 3.35: sin DROP COLUMN")
+def test_upgrade_from_0007_adds_is_paused(tmp_path):
+    """DB en estado-0007 real (sin is_paused) → upgrade head agrega la columna."""
+    path = tmp_path / "v7.db"
+    engine = _fresh_full_db(path)
+    with engine.begin() as conn:
+        conn.execute(sa.text("ALTER TABLE alerts DROP COLUMN is_paused"))
+    command.stamp(_cfg(path), "0007")
+
+    command.upgrade(_cfg(path), "head")
+
+    insp = sa.inspect(engine)
+    assert any(c["name"] == "is_paused" for c in insp.get_columns("alerts"))
+
+
+def test_0008_is_idempotent_when_column_exists(tmp_path):
+    """DB completa (create_all ya trae is_paused) stampeada en 0007 → guard salta el DDL."""
+    path = tmp_path / "v7full.db"
+    engine = _fresh_full_db(path)
+    command.stamp(_cfg(path), "0007")
+    before = _schema_snapshot(engine)
+
+    command.upgrade(_cfg(path), "head")
+
+    assert _schema_snapshot(engine) == before

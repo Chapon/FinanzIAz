@@ -35,7 +35,13 @@ class AlertManager:
         triggered: list[Alert] = []
         notices: list[AlertNotice] = []
         with session_scope() as session:
-            query = session.query(Alert).filter(Alert.is_active.is_(True))
+            # Pausadas (is_paused=True) no se evalúan: no consultan precio ni
+            # disparan popup/Slack (ALRT1). Comparten el query con NOTIF1.
+            query = (
+                session.query(Alert)
+                .filter(Alert.is_active.is_(True))
+                .filter(Alert.is_paused.is_(False))
+            )
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
             alerts = query.all()
@@ -137,6 +143,53 @@ class AlertManager:
             return alert
 
     @staticmethod
+    def update_alert(
+        alert_id: int,
+        *,
+        ticker: str,
+        alert_type: str,
+        target_value: float,
+        message: str = "",
+    ) -> Alert | None:
+        """Edita una alerta y la **re-arma siempre**.
+
+        Editar setea ``is_active=True`` y ``triggered_at=None`` — editar una
+        alerta disparada la reactiva con los valores nuevos (caso de uso:
+        "ajustar el target y volver a esperar"). El ticker se normaliza a
+        mayúsculas como en ``create_alert``. Devuelve la alerta detachada, o
+        ``None`` si no existe.
+        """
+        with session_scope() as session:
+            alert = session.query(Alert).filter(Alert.id == alert_id).first()
+            if alert is None:
+                return None
+            alert.ticker = ticker.upper()
+            alert.alert_type = alert_type
+            alert.target_value = target_value
+            alert.message = message
+            alert.is_active = True
+            alert.triggered_at = None
+            session.flush()
+            session.refresh(alert)
+            session.expunge(alert)
+            return alert
+
+    @staticmethod
+    def set_paused(alert_id: int, paused: bool) -> Alert | None:
+        """Pausa o reanuda una alerta (idempotente). Devuelve la alerta
+        detachada, o ``None`` si no existe. No toca ``is_active``/``triggered_at``:
+        pausar una disparada no la re-arma (para eso está ``update_alert``)."""
+        with session_scope() as session:
+            alert = session.query(Alert).filter(Alert.id == alert_id).first()
+            if alert is None:
+                return None
+            alert.is_paused = bool(paused)
+            session.flush()
+            session.refresh(alert)
+            session.expunge(alert)
+            return alert
+
+    @staticmethod
     def delete_alert(alert_id: int) -> None:
         with session_scope() as session:
             alert = session.query(Alert).filter(Alert.id == alert_id).first()
@@ -155,3 +208,38 @@ class AlertManager:
             # Detach from session so they can be used after close
             session.expunge_all()
             return alerts
+
+
+# ── Estado / acciones de UI (puros, testeables sin GUI) ──────────────────────
+
+
+def alert_status(alert) -> str:
+    """Estado derivado de una alerta para la columna Estado (ALRT1).
+
+    ``"disparada"`` si ``not is_active`` (gana sobre pausada — una alerta
+    disparada ya no se evalúa aunque tuviera ``is_paused=True``); ``"pausada"``
+    si está activa y pausada; ``"activa"`` en el resto.
+    """
+    if not alert.is_active:
+        return "disparada"
+    if getattr(alert, "is_paused", False):
+        return "pausada"
+    return "activa"
+
+
+def alert_row_actions(alert) -> dict:
+    """Qué ítems del menú contextual mostrar/habilitar para una fila (ALRT1).
+
+    - ``editar``: siempre habilitado.
+    - ``pausar_visible``: solo si la alerta está activa (no disparada — una
+      disparada no tiene nada que pausar).
+    - ``pausar_label``: ``"Reanudar"`` si está pausada, ``"Pausar"`` si no.
+    - ``eliminar``: siempre habilitado.
+    """
+    status = alert_status(alert)
+    return {
+        "editar": True,
+        "pausar_visible": status in ("activa", "pausada"),
+        "pausar_label": "Reanudar" if status == "pausada" else "Pausar",
+        "eliminar": True,
+    }
