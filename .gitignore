@@ -75,6 +75,8 @@ desktop.ini
 
 # Data temp files
 data/.refresh
+# Cache OHLCV columnar (ARQ1): backend Parquet, regenerable desde Yahoo — nunca versionar.
+data/parquet/
 data/harness_results/
 data/harness_walkforward/
 data/walkforward_power/

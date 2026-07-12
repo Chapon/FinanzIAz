@@ -35,6 +35,14 @@ alembic>=1.13
 pandas>=2.2.2,<3.0
 numpy>=1.26.4,<2.0
 
+# Columnar cache backend (ARQ1) — cache histórico OHLCV en Parquet por (ticker,
+# period, interval) + DuckDB como motor analítico sobre el directorio de parquets.
+# Reemplaza el JSON-en-SQLite (pd.read_json en cada lectura). Ambas son self-
+# contained: pyarrow depende solo de numpy (compatible con el cap <2.0; NO fuerza
+# el bump) y duckdb no tiene deps. Ver docs/arq1_parquet_cache.md.
+pyarrow>=16.0
+duckdb>=1.0
+
 # Charts
 matplotlib>=3.8.0,<4.0
 mplfinance>=0.12.10b0

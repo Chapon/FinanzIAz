@@ -232,6 +232,14 @@ class MarketDataService:
                 session.query(DividendCache).filter(DividendCache.ticker == sym).delete()
         except Exception:
             log.exception("invalidate(%s) failed", sym)
+        # ARQ1: limpiar también el cache Parquet (si existe) — independiente del
+        # backend activo, para no dejar archivos stale al alternar de backend.
+        try:
+            from data import parquet_cache
+
+            parquet_cache.invalidate(sym)
+        except Exception:
+            log.exception("invalidate parquet(%s) failed", sym)
 
     # ── telemetry ────────────────────────────────────────────────────────────
     def stats(self) -> dict:

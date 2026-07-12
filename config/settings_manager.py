@@ -73,6 +73,15 @@ SCHEMA: dict[str, SettingSpec] = {
     "confirm_sell": SettingSpec(bool, True, doc="Show extra confirmation before selling"),
     # Market data
     "cache": SettingSpec(bool, True, doc="Use 5-min price cache (disable for real-time)"),
+    # ARQ1: backend del cache OHLCV histórico. "sqlite" = JSON-en-SQLite (legacy,
+    # default de paridad, cero cambio de comportamiento); "parquet" = archivo
+    # Parquet por (ticker,period,interval) en data/parquet/ (rápido, menos locks);
+    # "dual" = escribe a ambos y lee prefiriendo parquet (migración incremental).
+    # Rollback = volver a "sqlite". Requiere correr scripts/migrate_historical_cache_to_parquet.py.
+    "historical_cache_backend": SettingSpec(
+        str, "sqlite", choices=("sqlite", "parquet", "dual"),
+        doc="Backend del cache OHLCV: sqlite (legacy) | parquet (ARQ1) | dual (migración)",
+    ),
     "pre_market": SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
     "perf_log": SettingSpec(bool, True, doc="Save P&L history"),
     # Technical analysis

@@ -440,6 +440,22 @@ def _cache_enabled() -> bool:
         return True
 
 
+def _historical_cache_backend() -> str:
+    """Backend del cache OHLCV (ARQ1): 'sqlite' | 'parquet' | 'dual'.
+
+    Default 'sqlite' (paridad, cero cambio de comportamiento). El import de
+    ``parquet_cache`` es lazy (solo cuando el backend lo usa) para que el modo
+    legacy no dependa de pyarrow/duckdb.
+    """
+    try:
+        from config.settings_manager import settings
+
+        val = settings.get("historical_cache_backend", "sqlite")
+        return val if val in ("sqlite", "parquet", "dual") else "sqlite"
+    except Exception:
+        return "sqlite"
+
+
 # ── Sanity de precios fuera de banda (E5) ─────────────────────────────────────
 # Yahoo devuelve ocasionalmente una cotización con la escala corrupta (~10× por
 # la familia "Invalid Crumb"/401 o un split mal conciliado). El caso KLAC
@@ -466,6 +482,39 @@ def _price_sanity_band() -> float:
     return band if band > 0 else 0.0
 
 
+def _sqlite_latest_1d(ticker_upper: str) -> pd.DataFrame | None:
+    """Frame ``1d`` más fresco del ticker desde SQLite (sin importar el period)."""
+    with session_scope() as session:
+        cached = (
+            session.query(HistoricalDataCache)
+            .filter(HistoricalDataCache.ticker == ticker_upper)
+            .filter(HistoricalDataCache.interval == "1d")
+            .order_by(HistoricalDataCache.fetched_at.desc())
+            .first()
+        )
+        if cached is None:
+            return None
+        return pd.read_json(StringIO(cached.data_json), orient="split")
+
+
+def _read_latest_1d_frame(ticker_upper: str) -> pd.DataFrame | None:
+    """Frame ``1d`` más fresco según el backend activo (ARQ1). Sin TTL."""
+    backend = _historical_cache_backend()
+    if backend in ("parquet", "dual"):
+        try:
+            from data import parquet_cache
+
+            df = parquet_cache.latest_1d(ticker_upper)
+        except Exception:
+            log.exception("parquet latest_1d failed for %s", ticker_upper)
+            df = None
+        if df is not None:
+            return df
+        if backend == "parquet":
+            return None
+    return _sqlite_latest_1d(ticker_upper)
+
+
 def reference_close(ticker: str) -> float | None:
     """Último close diario válido del cache OHLCV, como ancla de escala.
 
@@ -476,18 +525,8 @@ def reference_close(ticker: str) -> float | None:
     if not _cache_enabled():
         return None
     try:
-        with session_scope() as session:
-            cached = (
-                session.query(HistoricalDataCache)
-                .filter(HistoricalDataCache.ticker == ticker.upper())
-                .filter(HistoricalDataCache.interval == "1d")
-                .order_by(HistoricalDataCache.fetched_at.desc())
-                .first()
-            )
-            if cached is None:
-                return None
-            df = pd.read_json(StringIO(cached.data_json), orient="split")
-        if "Close" not in df.columns or df.empty:
+        df = _read_latest_1d_frame(ticker.upper())
+        if df is None or "Close" not in df.columns or df.empty:
             return None
         closes = pd.to_numeric(df["Close"], errors="coerce").dropna()
         closes = closes[closes > 0]
@@ -770,16 +809,10 @@ def get_company_info(ticker: str) -> dict:
 _DEFAULT_BATCH_SIZE = 20
 
 
-def _read_historical_cache(
+def _sqlite_read_historical_cache(
     ticker_upper: str, period: str, interval: str
 ) -> pd.DataFrame | None:
-    """Devuelve el frame cacheado fresco para (ticker, period, interval) o None.
-
-    Misma lógica de lectura que usaba ``get_historical_data`` inline; extraída
-    para que la versión single y la batch compartan exactamente el mismo cache.
-    """
-    if not _cache_enabled():
-        return None
+    """Lectura del cache OHLCV desde SQLite (backend legacy)."""
     try:
         with session_scope() as session:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CACHE_TTL_HOURS)
@@ -801,12 +834,44 @@ def _read_historical_cache(
     return None
 
 
-def _write_historical_cache(
+def _parquet_read_historical_cache(
+    ticker_upper: str, period: str, interval: str
+) -> pd.DataFrame | None:
+    """Lectura del cache OHLCV desde Parquet (backend ARQ1). Mismo TTL."""
+    try:
+        from data import parquet_cache
+
+        return parquet_cache.read(ticker_upper, period, interval, HISTORICAL_CACHE_TTL_HOURS)
+    except Exception:
+        log.exception("Parquet historical cache read failed for %s", ticker_upper)
+        return None
+
+
+def _read_historical_cache(
+    ticker_upper: str, period: str, interval: str
+) -> pd.DataFrame | None:
+    """Devuelve el frame cacheado fresco para (ticker, period, interval) o None.
+
+    Puerta única de lectura compartida por la versión single y la batch. Despacha
+    al backend activo (ARQ1): en 'dual' lee parquet y cae a SQLite si falta (así
+    sirve claves aún no migradas).
+    """
+    if not _cache_enabled():
+        return None
+    backend = _historical_cache_backend()
+    if backend in ("parquet", "dual"):
+        df = _parquet_read_historical_cache(ticker_upper, period, interval)
+        if df is not None:
+            return df
+        if backend == "parquet":
+            return None
+    return _sqlite_read_historical_cache(ticker_upper, period, interval)
+
+
+def _sqlite_write_historical_cache(
     ticker_upper: str, period: str, interval: str, df: pd.DataFrame
 ) -> None:
-    """Reemplaza la entrada de cache para (ticker, period, interval)."""
-    if not _cache_enabled():
-        return
+    """Reemplaza la entrada de cache en SQLite (backend legacy)."""
     try:
         with session_scope() as session:
             session.query(HistoricalDataCache).filter(
@@ -824,6 +889,35 @@ def _write_historical_cache(
             )
     except Exception:
         log.exception("Historical cache write failed for %s", ticker_upper)
+
+
+def _parquet_write_historical_cache(
+    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
+) -> None:
+    """Reemplaza la entrada de cache en Parquet (backend ARQ1)."""
+    try:
+        from data import parquet_cache
+
+        parquet_cache.write(ticker_upper, period, interval, df)
+    except Exception:
+        log.exception("Parquet historical cache write failed for %s", ticker_upper)
+
+
+def _write_historical_cache(
+    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
+) -> None:
+    """Reemplaza la entrada de cache para (ticker, period, interval).
+
+    Despacha al backend activo (ARQ1); en 'dual' escribe a ambos (SQLite +
+    Parquet) para la migración incremental.
+    """
+    if not _cache_enabled():
+        return
+    backend = _historical_cache_backend()
+    if backend in ("sqlite", "dual"):
+        _sqlite_write_historical_cache(ticker_upper, period, interval, df)
+    if backend in ("parquet", "dual"):
+        _parquet_write_historical_cache(ticker_upper, period, interval, df)
 
 
 def _normalize_ohlcv(df: pd.DataFrame | None) -> pd.DataFrame | None:
