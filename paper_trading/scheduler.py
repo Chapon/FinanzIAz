@@ -43,6 +43,16 @@ Independent triggers, all gated by user settings:
    Caso motivador: TSLA 2026-07-06, noticia publicada 14:45 ET ingresada
    19:05 por el run único diario.
 
+7. **Daily dashboard refresh** (``dashboard_refresh_enabled``, default on) —
+   regenera el snapshot del artifact del dashboard vía
+   ``scripts/refresh_dashboard.refresh_dashboard`` (lee ``finanzias.db`` e
+   inyecta el ``const DATA`` del index.html). Decisión de Chapa 2026-07-12
+   ("Ambos"): corre 1×/día calendario al abrir la app (gate por fecha) **y**
+   además tras cada scan de la cuenta del dashboard mientras la app está
+   abierta. Reemplaza la tarea del Windows Task Scheduler que lo corría a las
+   8:00 — ahora solo con la app abierta. Puramente local (sin red); no-op
+   silencioso si la DB o el artifact no existen en la máquina.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -240,6 +250,33 @@ class CatalystHarvestWorker(QThread):
             self.harvest_failed.emit(f"{type(e).__name__}: {e}")
 
 
+class DashboardRefreshWorker(QThread):
+    """Regenera el snapshot del dashboard fuera del UI thread (trigger 7).
+
+    Puramente local: lee ``finanzias.db`` e inyecta ``const DATA`` en el
+    index.html del artifact (sin red). Va en ``QThread`` igual para no bloquear
+    la UI mientras ``build_payload`` arma el snapshot. ``refresh_dashboard`` no
+    lanza por condiciones esperables (devuelve ``{"ok": False, ...}``). Emits
+    ``refresh_completed(result_dict)`` or ``refresh_failed(error)``.
+    """
+
+    refresh_completed = pyqtSignal(object)  # dict de refresh_dashboard
+    refresh_failed = pyqtSignal(str)
+
+    def __init__(self, account_id: int, parent=None):
+        super().__init__(parent)
+        self.account_id = int(account_id)
+
+    def run(self):
+        try:
+            from scripts.refresh_dashboard import refresh_dashboard
+
+            res = refresh_dashboard(account_id=self.account_id)
+            self.refresh_completed.emit(res)
+        except Exception as e:
+            self.refresh_failed.emit(f"{type(e).__name__}: {e}")
+
+
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 
 
@@ -287,6 +324,12 @@ class PaperScheduler(QObject):
         self._hourly_harvest_worker: "CatalystHarvestWorker | None" = None
         self._last_hourly_harvest: datetime | None = None
 
+        # Daily dashboard refresh (trigger 7) — in-app, single worker. "Ambos"
+        # (Chapa 2026-07-12): 1×/día al abrir (gate por fecha) + tras cada scan
+        # de la cuenta del dashboard. Reemplaza la tarea del Task Scheduler.
+        self._dashboard_worker: "DashboardRefreshWorker | None" = None
+        self._last_dashboard_refresh: date | None = None
+
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
         # suspiciously long time (scheduler stalled or worker thread died).
@@ -325,6 +368,10 @@ class PaperScheduler(QObject):
         # re-chequea por si la app queda abierta pasada la medianoche.
         QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_refresh_catalysts)
 
+        # Daily dashboard refresh — snapshot fresco del artifact al abrir; el
+        # tick diario re-chequea pasada la medianoche y cada scan lo re-dispara.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_refresh_dashboard)
+
     def stop(self) -> None:
         """Stop all timers and wait briefly for any running worker."""
         self._interval_timer.stop()
@@ -341,6 +388,9 @@ class PaperScheduler(QObject):
         if self._hourly_harvest_worker is not None:
             self._hourly_harvest_worker.wait(2_000)
             self._hourly_harvest_worker = None
+        if self._dashboard_worker is not None:
+            self._dashboard_worker.wait(2_000)
+            self._dashboard_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -388,6 +438,10 @@ class PaperScheduler(QObject):
         # Harvest horario durante RTH (tarea 10): no-op fuera de mercado o si
         # todavía no pasó el intervalo.
         self._maybe_hourly_harvest()
+
+        # Dashboard: garantiza el refresh 1×/día aunque la app quede abierta
+        # pasada la medianoche (no-op el resto del día por el gate por fecha).
+        self._maybe_refresh_dashboard()
 
         if not settings.get("paper_daily_scan_enabled", True):
             return
@@ -454,13 +508,21 @@ class PaperScheduler(QObject):
         worker.start()
 
     def _on_scan_completed(self, result) -> None:
-        """Stamp heartbeat then forward the result to listeners."""
+        """Stamp heartbeat, refresh the dashboard, then forward the result."""
+        aid = 0
         try:
             aid = int(getattr(result, "account_id", 0)) or 0
             if aid:
                 self._last_scan_at[aid] = utcnow_naive()
         except Exception:
             pass
+        # Dashboard "Ambos": tras cada scan de la cuenta del dashboard re-genera
+        # el snapshot (ungated; el path 1×/día vive en _maybe_refresh_dashboard).
+        if aid and aid == self._dashboard_account_id():
+            try:
+                self._refresh_dashboard_now()
+            except Exception:
+                log.exception("post-scan dashboard refresh failed")
         self.scan_completed.emit(result)
 
     def _reap_worker(self, account_id: int) -> None:
@@ -619,6 +681,65 @@ class PaperScheduler(QObject):
     def _reap_hourly_harvest_worker(self) -> None:
         w = self._hourly_harvest_worker
         self._hourly_harvest_worker = None
+        if w is not None:
+            w.deleteLater()
+
+    # ── Daily dashboard refresh (trigger 7) ────────────────────────────────────
+
+    def _dashboard_account_id(self) -> int:
+        return int(settings.get("dashboard_refresh_account_id", 1) or 1)
+
+    def _maybe_refresh_dashboard(self) -> None:
+        """Refresca el dashboard 1×/día (al abrir / tick diario). Gate por día
+        calendario. El path post-scan ("Ambos") llama ``_refresh_dashboard_now``
+        directo, sin este gate. Se estampa el día antes de lanzar para no
+        re-chequear en cada tick por minuto; los reintentos los cubre el
+        post-scan."""
+        if not settings.get("dashboard_refresh_enabled", True):
+            return
+        today = utcnow_naive().date()
+        if self._last_dashboard_refresh == today:
+            return
+        self._last_dashboard_refresh = today
+        self._refresh_dashboard_now()
+
+    def _refresh_dashboard_now(self) -> None:
+        """Lanza el worker si está habilitado, hay targets (DB + artifact) y no
+        hay otro corriendo. ``targets_ready`` evita spawnear un ``QThread`` inútil
+        en una máquina sin el artifact del dashboard descargado."""
+        if not settings.get("dashboard_refresh_enabled", True):
+            return
+        if self._dashboard_worker is not None and self._dashboard_worker.isRunning():
+            return
+        try:
+            from scripts.refresh_dashboard import targets_ready
+
+            if not targets_ready():
+                return
+        except Exception:
+            log.exception("dashboard targets_ready check failed")
+            return
+        worker = DashboardRefreshWorker(self._dashboard_account_id(), parent=self)
+        worker.refresh_completed.connect(self._on_dashboard_completed)
+        worker.refresh_failed.connect(self._on_dashboard_failed)
+        worker.finished.connect(self._reap_dashboard_worker)
+        self._dashboard_worker = worker
+        worker.start()
+
+    def _on_dashboard_completed(self, res) -> None:
+        if isinstance(res, dict) and res.get("ok"):
+            log.info("dashboard refresh done: %s posiciones · %s",
+                     res.get("positions"), res.get("generated_at"))
+        else:
+            reason = res.get("reason") if isinstance(res, dict) else res
+            log.debug("dashboard refresh sin cambios: %s", reason)
+
+    def _on_dashboard_failed(self, err: str) -> None:
+        log.warning("dashboard refresh failed: %s", err)
+
+    def _reap_dashboard_worker(self) -> None:
+        w = self._dashboard_worker
+        self._dashboard_worker = None
         if w is not None:
             w.deleteLater()
 
