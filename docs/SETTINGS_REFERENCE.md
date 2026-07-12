@@ -76,7 +76,7 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 |------|---------|----------|
 | `catalyst_hourly_harvest_enabled` | `True` | Harvest-only (sin classify/GPU) cada N min durante RTH, **solo con la app abierta** (rides el tick por minuto del scheduler). El pipeline completo (harvest+classify) corre 1×/día in-app vía `catalyst_refresh_on_open`. (Antes había además una tarea del Windows Task Scheduler a las 15:00; se removió 2026-07-12 — todo corre in-app.) |
 | `catalyst_hourly_harvest_minutes` | `60` | Intervalo del harvest horario (piso 15 min). |
-| `catalyst_refresh_on_open` | `True` | Refresh diario in-app (harvest+classify) la primera vez que la app abre en el día, si `refresh_due`. Harvest con `--sources yfinance,sec` (el horario suma `finnhub`). |
+| `catalyst_refresh_on_open` | `True` | Refresh diario in-app (harvest+classify) la primera vez que la app abre en el día, si `refresh_due`. Harvest con `--sources yfinance,sec,finnhub` (idéntico al harvest horario y al `.bat` removido; finnhub se saltea solo sin API key). |
 
 ## Dashboard refresh in-app (trigger 7 — reemplaza la tarea de Windows)
 Regenera el snapshot del artifact del dashboard (`scripts/refresh_dashboard.py`) leyendo `finanzias.db`. Reemplaza la tarea del Windows Task Scheduler que lo corría a las 8:00 (removida 2026-07-12): ahora **solo corre con la app abierta**. Puramente local (sin red); no-op si la DB o el artifact no existen.

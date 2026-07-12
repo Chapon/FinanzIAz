@@ -302,7 +302,9 @@ def test_run_catalyst_refresh_calls_both_with_bat_args():
 
     res = run_catalyst_refresh(harvest_main=fake_harvest, classify_main=fake_classify)
     assert res == {"harvest_rc": 0, "classify_rc": 0}
-    assert calls["harvest"] == ["--sources", "yfinance,sec"]
+    # mismas fuentes que el .bat nocturno y el harvest horario (finnhub incluido,
+    # alineado 2026-07-12 al mover el scheduling in-app)
+    assert calls["harvest"] == ["--sources", "yfinance,sec,finnhub"]
     # mismos args del .bat nocturno (hybrid-ollama + qwen2.5:14b)
     assert calls["classify"][:2] == ["--backend", "hybrid-ollama"]
     assert "qwen2.5:14b" in calls["classify"]

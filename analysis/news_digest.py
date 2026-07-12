@@ -468,7 +468,10 @@ def run_catalyst_refresh(
         from scripts.classify_catalysts import main as classify_main
 
     try:
-        harvest_rc = int(harvest_main(["--sources", "yfinance,sec"]))
+        # Mismas fuentes que el .bat nocturno / el harvest horario (finnhub
+        # incluido; se saltea solo sin API key). Alineado 2026-07-12 al mover
+        # todo el scheduling in-app y remover la tarea de Windows.
+        harvest_rc = int(harvest_main(["--sources", "yfinance,sec,finnhub"]))
     except Exception:
         log.exception("catalyst refresh: harvest crashed")
         harvest_rc = -1
