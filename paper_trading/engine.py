@@ -661,54 +661,6 @@ def run_scan(
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
         trades.sort(key=lambda t: 0 if t.side == "SELL" else 1)
 
-        # In manual mode, remember which (ticker, side) pairs already have a
-        # pending order so we don't duplicate the same intent on every scan.
-        existing_pending: set[tuple[str, str]] = set()
-        if acct.mode == "manual":
-            existing_pending = {
-                (o.ticker, o.side)
-                for o in (
-                    session.query(PaperOrder)
-                    .filter(PaperOrder.account_id == acct.id)
-                    .filter(PaperOrder.status == "pending")
-                    .all()
-                )
-            }
-
-        # ── Cancelar avisos de salida ATR cuyo gatillo ya no aplica ──────────
-        # Las salidas de riesgo no expiran por tiempo (reconcile las preserva),
-        # pero si el precio se RECUPERA y el ATR ya no dispara para una posición
-        # que sigue abierta, el aviso de venta perdió su razón → se cancela para
-        # no vender en plena recuperación. Si vuelve a caer, el próximo scan lo
-        # re-detecta y re-avisa. No se tocan avisos de tickers cuya posición ya
-        # no existe (pudo ejecutarse a mano y falta reconciliar).
-        open_tickers = {p.ticker for p in positions}
-        for o in (
-            session.query(PaperOrder)
-            .filter(PaperOrder.account_id == acct.id)
-            .filter(PaperOrder.status == "pending")
-            .filter(PaperOrder.side == "SELL")
-            .all()
-        ):
-            if not _is_atr_forced_exit(o.reason):
-                continue
-            if o.ticker in atr_exit_tickers:
-                continue  # sigue gatillado → se mantiene el aviso
-            if o.ticker not in open_tickers:
-                continue  # posición ya no existe → no tocar
-            o.status = "expired"
-            o.decided_at = utcnow_naive()
-            o.notes = (
-                (o.notes or "")
-                + "\n[scan] salida de riesgo cancelada: el precio se recuperó, "
-                "el gatillo ya no aplica."
-            ).strip()
-            existing_pending.discard((o.ticker, o.side))
-            result.warnings.append(
-                f"{o.ticker} SELL (salida de riesgo) cancelada: el precio se "
-                "recuperó y el gatillo ya no aplica."
-            )
-
         # ── Lite-pro guardrails ──────────────────────────────────────────────
         # Read configurable thresholds (with safe defaults) and pre-compute
         # state used by the per-trade gates inside the loop below.
@@ -780,6 +732,76 @@ def run_scan(
             result.warnings.append(
                 "Mercado cerrado y paper_enforce_market_hours=True — "
                 f"se generaron {len(trades)} señales pero no se ejecutarán."
+            )
+
+        # ── Prefetch de red ANTES de abrir la ventana de escritura ───────────
+        # Desde el primer flush (updates de HWM al autoflush de la próxima
+        # query, o el primer fill) esta transacción retiene el write lock de
+        # SQLite hasta el commit. Cualquier llamada de red dentro del loop de
+        # gates (earnings del Gate 6, history del Gate 3b / nota R:R) estira
+        # esa ventana a decenas de segundos, y peor: la escritura de
+        # earnings_cache abre su PROPIA conexión y choca contra nuestro propio
+        # lock → 30s de busy_timeout + "database is locked" (incidente
+        # 2026-07-13: process=99s; harvest, price_cache y earnings_cache
+        # muertos a los 30s). Memoizar acá — con la sesión todavía sin flushes
+        # pendientes de escritura emitidos — deja el loop de abajo 100% sobre
+        # datos locales; los gates leen estos mismos dicts vía los helpers.
+        # Fail-open igual que los gates; costo extra: a lo sumo un lookup por
+        # ticker que un gate previo hubiese salteado (cacheado con TTL, inocuo).
+        if not market_blocked:
+            for _t in trades:
+                if _t.side == "BUY":
+                    _history_for(_t.ticker)  # Gate 3b (ADV cap) + nota R:R
+                if earnings_blackout_days > 0 and not _is_atr_forced_exit(_t.reason):
+                    if _t.side == "BUY" or earnings_block_sells:
+                        _earnings_date_for(_t.ticker)
+
+        # In manual mode, remember which (ticker, side) pairs already have a
+        # pending order so we don't duplicate the same intent on every scan.
+        existing_pending: set[tuple[str, str]] = set()
+        if acct.mode == "manual":
+            existing_pending = {
+                (o.ticker, o.side)
+                for o in (
+                    session.query(PaperOrder)
+                    .filter(PaperOrder.account_id == acct.id)
+                    .filter(PaperOrder.status == "pending")
+                    .all()
+                )
+            }
+
+        # ── Cancelar avisos de salida ATR cuyo gatillo ya no aplica ──────────
+        # Las salidas de riesgo no expiran por tiempo (reconcile las preserva),
+        # pero si el precio se RECUPERA y el ATR ya no dispara para una posición
+        # que sigue abierta, el aviso de venta perdió su razón → se cancela para
+        # no vender en plena recuperación. Si vuelve a caer, el próximo scan lo
+        # re-detecta y re-avisa. No se tocan avisos de tickers cuya posición ya
+        # no existe (pudo ejecutarse a mano y falta reconciliar).
+        open_tickers = {p.ticker for p in positions}
+        for o in (
+            session.query(PaperOrder)
+            .filter(PaperOrder.account_id == acct.id)
+            .filter(PaperOrder.status == "pending")
+            .filter(PaperOrder.side == "SELL")
+            .all()
+        ):
+            if not _is_atr_forced_exit(o.reason):
+                continue
+            if o.ticker in atr_exit_tickers:
+                continue  # sigue gatillado → se mantiene el aviso
+            if o.ticker not in open_tickers:
+                continue  # posición ya no existe → no tocar
+            o.status = "expired"
+            o.decided_at = utcnow_naive()
+            o.notes = (
+                (o.notes or "")
+                + "\n[scan] salida de riesgo cancelada: el precio se recuperó, "
+                "el gatillo ya no aplica."
+            ).strip()
+            existing_pending.discard((o.ticker, o.side))
+            result.warnings.append(
+                f"{o.ticker} SELL (salida de riesgo) cancelada: el precio se "
+                "recuperó y el gatillo ya no aplica."
             )
 
         # Index positions by ticker for the min-holding check.
