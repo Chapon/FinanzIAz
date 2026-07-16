@@ -62,6 +62,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - **Trunk-based**: se trabaja directo sobre `main`. No hay ramas de feature ni PRs en el historial.
 - Push directo: `git push` a `origin/main`.
 - Pushear sólo después de que la suite pase en Windows y el commit esté completo (no fragmentos a medias).
+- **Al cerrar una tarea, después de actualizar el backlog, se pushea a `main`** (orden de Chapa 2026-07-15). El cierre completo es: suite verde → commit → mover la tarea a *Hecho reciente* en el BACKLOG con el hash → `git push origin main`. No dejar tareas cerradas sin pushear.
 
 ## Checklist rápido
 
@@ -69,4 +70,5 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 2. `git status` / `git diff --stat` — sin artefactos basura.
 3. `git add` de la unidad lógica completa (código + tests + docs).
 4. Commit con subject en el formato correcto + cuerpo si el cambio es grande + trailer Co-Authored-By.
-5. `git push` a origin/main.
+5. Actualizar el BACKLOG (mover la tarea a *Hecho reciente* con el hash) si corresponde.
+6. `git push` a origin/main — **siempre al cerrar una tarea, no queda nada cerrado sin pushear**.
