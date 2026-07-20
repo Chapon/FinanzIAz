@@ -98,6 +98,21 @@ class GarchForecast:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
+def _close_series(df: pd.DataFrame) -> pd.Series:
+    """La columna ``Close`` SIEMPRE como Series.
+
+    ``df["Close"].squeeze()`` —que era el idiom acá— devuelve un **escalar** cuando
+    el frame tiene una sola fila, y entonces `.shift`/`.pct_change`/`.head` explotan
+    con AttributeError en pleno scan. `squeeze` se usaba para aplanar el caso de
+    columnas ``Close`` duplicadas; eso se resuelve tomando la primera columna.
+    """
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return pd.Series(close, dtype="float64")
+
+
 # ── Memo del fit (GARCH2X) ───────────────────────────────────────────────────
 # Un mismo análisis de ticker fitea el MISMO df dos veces: vía `train_garch_signal`
 # (la señal) y vía `compute_annual_volatility` (dentro de `detect_market_regime*`).
@@ -131,13 +146,13 @@ def _fingerprint(df: pd.DataFrame, horizon: int) -> tuple | None:
             return None
         index = df.index
         last_ts = str(index[-1]) if len(index) else ""
-        return (
-            horizon,
-            len(df),
-            last_ts,
-            tuple(np.round(close[:5], 6)),
-            tuple(np.round(close[-5:], 6)),
-        )
+        # Los closes van como BYTES, no como tupla de floats: un NaN dentro de la
+        # muestra haría que la huella nunca se iguale a sí misma (NaN != NaN), y el
+        # lookup fallaría siempre — cache miss silencioso que devuelve el doble fit
+        # y encima llena el cache con entradas inalcanzables. Los bytes comparan por
+        # patrón de bits, así que NaN == NaN a los efectos de la clave.
+        muestra = np.round(close[:5], 6).tobytes() + np.round(close[-5:], 6).tobytes()
+        return (horizon, len(df), last_ts, muestra)
     except Exception:
         return None
 
@@ -161,20 +176,6 @@ def reset_garch_cache() -> None:
     """Vacía el memo — para tests y para forzar un refit."""
     with _garch_cache_lock:
         _garch_cache.clear()
-
-
-def _close_series(df: pd.DataFrame) -> pd.Series:
-    """La columna ``Close`` SIEMPRE como Series.
-
-    ``df["Close"].squeeze()`` —que era el idiom acá— devuelve un **escalar** cuando
-    el frame tiene una sola fila, y entonces `.shift`/`.pct_change`/`.head` explotan
-    con AttributeError en pleno scan. `squeeze` se usaba para aplanar el caso de
-    columnas ``Close`` duplicadas; eso se resuelve tomando la primera columna.
-    """
-    close = df["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    return pd.Series(close, dtype="float64")
 
 
 def _log_returns(df: pd.DataFrame) -> pd.Series:

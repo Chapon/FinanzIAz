@@ -134,6 +134,27 @@ def test_normalize_symbols_strips_whitespace():
     assert normalize_symbols(["  AAPL  ", "\tMSFT\n"]) == ["AAPL", "MSFT"]
 
 
+@pytest.mark.parametrize("basura", ["nan", "None", "NaN", "Reports", "Notes", "n/a", "—", ""])
+def test_normalize_symbols_rejects_junk(basura):
+    """`astype(str)` sobre un hueco de la tabla produce "nan"/"None".
+
+    Son ASCII, no vacíos y de ≤6 chars, así que un filtro laxo los dejaba entrar al
+    universo como tickers — un 404 garantizado por scan, justo lo que UNIV1 elimina.
+    """
+    assert normalize_symbols([basura]) == []
+
+
+def test_normalize_symbols_keeps_real_shapes():
+    """No pasarse de estricto: las formas legítimas del índice tienen que sobrevivir."""
+    entrada = ["AAPL", "T", "BRK.B", "BF.B", "GOOGL", "XYZ"]
+    assert normalize_symbols(entrada) == ["AAPL", "T", "BRK-B", "BF-B", "GOOGL", "XYZ"]
+
+
+def test_normalize_symbols_survives_none_values():
+    """Un ``None`` crudo no puede convertirse en el ticker "None"."""
+    assert normalize_symbols([None, "AAPL"]) == ["AAPL"]
+
+
 # ── (b) Fallback depurado ────────────────────────────────────────────────────
 
 # Confirmados sin barras contra Yahoo el 2026-07-20 (adquisiciones y renames).
@@ -208,13 +229,21 @@ def test_other_yfinance_errors_still_pass_through():
     assert filt.filter(_record("algo inesperado explotó")) is True
 
 
-def test_install_is_idempotent():
-    """Instalar dos veces no debe apilar filtros duplicados."""
+def test_install_is_idempotent(monkeypatch):
+    """Instalar dos veces no apila filtros duplicados.
+
+    Hay que resetear el flag ``_installed`` a mano: `data.yahoo_finance` ya llamó a
+    `install()` al importarse, así que sin esto el test pasaría trivialmente
+    (agregando 0 filtros) sin ejercitar nada.
+    """
+    monkeypatch.setattr(yf_noise, "_installed", False)
     logger = logging.getLogger("yfinance-test-univ1")
     before = len(logger.filters)
-    yf_noise.install("yfinance-test-univ1")
-    yf_noise.install("yfinance-test-univ1")
-    assert len(logger.filters) - before <= 1
+
+    assert yf_noise.install("yfinance-test-univ1") is True   # primera: instala
+    assert yf_noise.install("yfinance-test-univ1") is False  # segunda: no-op
+
+    assert len(logger.filters) - before == 1
 
 
 def test_404_is_not_classified_as_transient():

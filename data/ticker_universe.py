@@ -29,6 +29,7 @@ PARA→PSKY)— se consultan igual en cada run y devuelven 404.
 from __future__ import annotations
 
 import io
+import re
 import time
 
 from config.logging_config import get_logger
@@ -51,6 +52,12 @@ _BROWSER_USER_AGENT = (
 # Si el parse devuelve menos que esto, algo cambió en la página → mejor el fallback
 # conocido que un universo truncado.
 MIN_EXPECTED_SYMBOLS = 400
+
+# Forma de un ticker de Yahoo: mayúsculas/dígitos con un sufijo de clase opcional
+# (``BRK-B``, ``BF-B``, ``T``). Rechaza los strings basura que produce el parseo de
+# la tabla ("nan", "None", encabezados sueltos).
+_TICKER_RE = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)?")
+MAX_SYMBOL_LEN = 6
 
 _warned_missing_parser = False
 
@@ -123,14 +130,21 @@ _SP500_FALLBACK: tuple[str, ...] = (
 def normalize_symbols(raw: list[str]) -> list[str]:
     """Normaliza símbolos crudos de la tabla de Wikipedia al formato de yfinance.
 
-    ``BRK.B`` → ``BRK-B``; descarta strings vacíos, no-ASCII o demasiado largos
-    (filas de nota al pie que se cuelan en la columna). Función pura — el grueso
-    del parseo se testea acá sin depender de un parser de HTML.
+    ``BRK.B`` → ``BRK-B``; descarta todo lo que no tenga **forma de ticker**.
+    Función pura — el grueso del parseo se testea acá sin depender de un parser
+    de HTML.
+
+    El filtro es una forma, no solo un largo: ``df["Symbol"].astype(str)`` convierte
+    un hueco de la tabla en el string ``"nan"`` (y un ``None`` en ``"None"``), que
+    son ASCII, no vacíos y de ≤6 caracteres — o sea que pasarían un filtro laxo y
+    entrarían al universo como tickers, garantizando un 404 por scan: exactamente
+    lo que esta tarea vino a eliminar. Un ticker real es mayúsculas/dígitos con
+    guiones opcionales (``BRK-B``), así que eso es lo que se exige.
     """
     out: list[str] = []
     for value in raw:
         symbol = str(value).strip().replace(".", "-")
-        if symbol and symbol.isascii() and len(symbol) <= 6:
+        if len(symbol) <= MAX_SYMBOL_LEN and _TICKER_RE.fullmatch(symbol):
             out.append(symbol)
     return out
 

@@ -125,6 +125,36 @@ def test_different_frames_get_different_results(fit_counter):
     assert calls["n"] == 2
 
 
+def test_frame_with_nan_closes_still_hits_the_cache(fit_counter):
+    """Un NaN en la muestra de closes no puede romper el matching de la huella.
+
+    Si los closes van a la clave como tupla de floats, `NaN != NaN` hace que la
+    huella nunca se iguale a sí misma: el lookup falla SIEMPRE, vuelve el doble
+    fit y el cache se llena de entradas inalcanzables. Por eso van como bytes.
+    """
+    calls, _ = fit_counter
+    df = _make_df()
+    df.iloc[2, 0] = np.nan  # NaN dentro de los primeros 5 closes
+
+    gs.compute_annual_volatility(df)
+    gs.train_garch_signal(df)
+
+    assert calls["n"] == 1, "el frame con NaN se fiteó dos veces"
+    assert len(gs._garch_cache) == 1, "se creó una entrada inalcanzable por cada llamada"
+
+
+def test_fingerprint_is_stable_across_calls(fit_counter):
+    """La huella del mismo frame tiene que ser igual y hashear igual."""
+    df = _make_df()
+    df.iloc[0, 0] = np.nan
+
+    a = gs._fingerprint(df, 5)
+    b = gs._fingerprint(df, 5)
+
+    assert a == b
+    assert a in {b: 1}
+
+
 def test_different_horizon_is_a_different_entry(fit_counter):
     """El horizonte es parte de la huella: cambiarlo obliga a refitear."""
     calls, _ = fit_counter
