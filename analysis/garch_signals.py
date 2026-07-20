@@ -24,8 +24,9 @@ Requires: pip install arch   (graceful fallback to EWMA if unavailable)
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -97,36 +98,88 @@ class GarchForecast:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-_GARCH_FORECAST_CACHE: dict[tuple[tuple[str, Any], ...], GarchForecast | None] = {}
+# ── Memo del fit (GARCH2X) ───────────────────────────────────────────────────
+# Un mismo análisis de ticker fitea el MISMO df dos veces: vía `train_garch_signal`
+# (la señal) y vía `compute_annual_volatility` (dentro de `detect_market_regime*`).
+# Memoizamos por huella del contenido del frame para pagar un solo fit.
+#
+# Tres detalles que importan:
+#   1. **Se cachea también el `None`.** Los fits degenerados (no converge, params
+#      fuera de la región válida) devuelven None, y son justo los que el log
+#      2026-07-15 mostraba duplicados. Si solo se cachea el éxito, el caso que
+#      motivó la tarea sigue fiteando dos veces.
+#   2. **Tamaño acotado.** La app corre horas y cada barra nueva genera una huella
+#      distinta, así que un dict sin tope crece sin límite. FIFO simple.
+#   3. **La huella nunca puede tirar.** Si no se puede calcular (frame raro), se
+#      devuelve None y se saltea el cache: fitear de más es barato, romper el scan no.
+
+_GARCH_CACHE_MAXSIZE = 256
+_garch_cache: OrderedDict[tuple, GarchForecast | None] = OrderedDict()
+_garch_cache_lock = threading.Lock()
 
 
-def _fingerprint(
-    df: pd.DataFrame,
-    horizon: int,
-    ticker: str | None = None,
-) -> tuple[tuple[str, Any], ...]:
-    """Return a stable fingerprint for a dataframe used by GARCH fit caching."""
-    if df.empty:
-        return (("empty", True),)
-    close = df["Close"].squeeze()
-    last_ts = None
+def _fingerprint(df: pd.DataFrame, horizon: int) -> tuple | None:
+    """Huella estable del contenido del frame, o ``None`` si no se puede calcular.
+
+    Se basa en el contenido (largo + último timestamp + primeros/últimos closes)
+    y no en el ticker: dos frames con esos cinco componentes iguales son el mismo
+    frame a todos los efectos del fit, y ningún caller tiene el ticker a mano.
+    """
     try:
-        last_ts = df.index[-1]
+        close = np.asarray(_close_series(df), dtype=float).ravel()
+        if close.size == 0:
+            return None
+        index = df.index
+        last_ts = str(index[-1]) if len(index) else ""
+        return (
+            horizon,
+            len(df),
+            last_ts,
+            tuple(np.round(close[:5], 6)),
+            tuple(np.round(close[-5:], 6)),
+        )
     except Exception:
-        last_ts = None
-    return (
-        ("ticker", ticker or ""),
-        ("horizon", horizon),
-        ("len", len(df)),
-        ("last_ts", str(last_ts)),
-        ("close_head", tuple(np.round(np.asarray(close.head(5)), 6))),
-        ("close_tail", tuple(np.round(np.asarray(close.tail(5)), 6))),
-    )
+        return None
+
+
+def _cache_lookup(key: tuple) -> tuple[bool, GarchForecast | None]:
+    """``(hit, valor)`` — ``hit`` distingue "cacheado como None" de "no está"."""
+    with _garch_cache_lock:
+        if key in _garch_cache:
+            return True, _garch_cache[key]
+    return False, None
+
+
+def _cache_store(key: tuple, value: GarchForecast | None) -> None:
+    with _garch_cache_lock:
+        _garch_cache[key] = value
+        while len(_garch_cache) > _GARCH_CACHE_MAXSIZE:
+            _garch_cache.popitem(last=False)  # FIFO: sale la más vieja
+
+
+def reset_garch_cache() -> None:
+    """Vacía el memo — para tests y para forzar un refit."""
+    with _garch_cache_lock:
+        _garch_cache.clear()
+
+
+def _close_series(df: pd.DataFrame) -> pd.Series:
+    """La columna ``Close`` SIEMPRE como Series.
+
+    ``df["Close"].squeeze()`` —que era el idiom acá— devuelve un **escalar** cuando
+    el frame tiene una sola fila, y entonces `.shift`/`.pct_change`/`.head` explotan
+    con AttributeError en pleno scan. `squeeze` se usaba para aplanar el caso de
+    columnas ``Close`` duplicadas; eso se resuelve tomando la primera columna.
+    """
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return pd.Series(close, dtype="float64")
 
 
 def _log_returns(df: pd.DataFrame) -> pd.Series:
     """Daily log-returns as a clean pd.Series (no NaNs, no zeros)."""
-    close = df["Close"].squeeze()
+    close = _close_series(df)
     ret = np.log(close / close.shift(1)).dropna()
     # arch library prefers returns in percent to improve optimiser conditioning
     return ret * 100.0
@@ -146,7 +199,7 @@ def _classify_vol_regime(current_pct: float, forecast_pct: float) -> str:
 
 def _ewma_annual_vol(df: pd.DataFrame) -> float:
     """EWMA(span=20) annualised volatility %, used as fallback."""
-    close = df["Close"].squeeze()
+    close = _close_series(df)
     returns = close.pct_change().dropna()
     if len(returns) < 5:
         return 0.0
@@ -160,7 +213,6 @@ def _ewma_annual_vol(df: pd.DataFrame) -> float:
 def fit_garch_forecast(
     df: pd.DataFrame,
     horizon: int = GARCH_FORECAST_H,
-    ticker: str | None = None,
 ) -> GarchForecast | None:
     """
     Fit a symmetric GARCH(1,1) model on daily log-returns and return a
@@ -168,6 +220,9 @@ def fit_garch_forecast(
 
     Mean model: Zero (appropriate for daily equity returns at this scale).
     Vol model:  GARCH(1,1) with Gaussian innovations.
+
+    El resultado se memoiza por huella del frame (incluyendo el ``None`` de los
+    fits degenerados) para no pagar dos veces el mismo fit dentro de un análisis.
 
     Returns
     -------
@@ -177,11 +232,24 @@ def fit_garch_forecast(
     if not _ARCH_OK:
         return None
 
-    fingerprint = _fingerprint(df, horizon=horizon, ticker=ticker)
-    cached = _GARCH_FORECAST_CACHE.get(fingerprint)
-    if cached is not None:
-        return cached
+    key = _fingerprint(df, horizon)
+    if key is not None:
+        hit, cached = _cache_lookup(key)
+        if hit:
+            return cached
 
+    result = _fit_garch_forecast_uncached(df, horizon)
+
+    if key is not None:
+        _cache_store(key, result)
+    return result
+
+
+def _fit_garch_forecast_uncached(
+    df: pd.DataFrame,
+    horizon: int,
+) -> GarchForecast | None:
+    """El fit real. Separado para que TODOS sus ``return`` pasen por el memo."""
     returns = _log_returns(df)
     if len(returns) < GARCH_MIN_ROWS:
         return None
@@ -274,7 +342,7 @@ def fit_garch_forecast(
         log.warning("GARCH fit error: %s", exc)
         return None
 
-    forecast = GarchForecast(
+    return GarchForecast(
         current_vol=current_annual,
         forecast_vol=forecast_annual,
         long_run_vol=long_run_annual,
@@ -284,8 +352,6 @@ def fit_garch_forecast(
         persistence=round(persistence, 4),
         vol_regime=vol_regime,
     )
-    _GARCH_FORECAST_CACHE[fingerprint] = forecast
-    return forecast
 
 
 # ── 2. Best-available annualised volatility ──────────────────────────────────
