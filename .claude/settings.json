@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(python:*)",
       "Bash(python -m pytest:*)",
@@ -34,6 +35,14 @@
       "Bash(cut:*)",
       "Bash(diff:*)",
       "Bash(true:*)",
+      "Bash(/c/Users/chapa/anaconda3/python.exe:*)",
+      "Bash(\"/c/Users/chapa/anaconda3/python.exe\":*)",
+      "Bash(./.venv/Scripts/python.exe:*)",
+      "Bash(ruff:*)",
+      "PowerShell(Get-Command:*)",
+      "PowerShell(Get-ScheduledTask:*)",
+      "PowerShell(Write-Output:*)",
+      "PowerShell(Test-Path:*)",
       "Skill(ship)",
       "Skill(ship:*)",
       "Skill(test)",
