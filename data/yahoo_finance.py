@@ -51,10 +51,10 @@ from config.constants import (
     NETWORK_RETRY_TOTAL as RETRY_TOTAL,
 )
 from config.constants import (
-    NETWORK_THROTTLE_COOLDOWN_SECONDS as THROTTLE_COOLDOWN_SECONDS,
+    NETWORK_THROTTLE_BACKOFF_FACTOR as THROTTLE_BACKOFF_FACTOR,
 )
 from config.constants import (
-    NETWORK_THROTTLE_BACKOFF_FACTOR as THROTTLE_BACKOFF_FACTOR,
+    NETWORK_THROTTLE_COOLDOWN_SECONDS as THROTTLE_COOLDOWN_SECONDS,
 )
 from config.constants import (
     NETWORK_THROTTLE_MAX_COOLDOWN_SECONDS as THROTTLE_MAX_COOLDOWN_SECONDS,
@@ -73,6 +73,8 @@ from data.failed_tickers import (
     record_transient,
 )
 from data.quality import clean_ohlcv
+from data.yf_noise import install as _install_yf_noise_filter
+from data.yf_noise import is_unknown_symbol
 from database.models import (
     AnalystDataCache,
     CompanyInfoCache,
@@ -85,6 +87,10 @@ from database.models import (
 )
 
 log = get_logger(__name__)
+
+# yfinance loguea sus 404 de quoteSummary él mismo (no los tira como excepción),
+# así que el filtro tiene que estar puesto antes del primer fetch. Ver data/yf_noise.py.
+_install_yf_noise_filter()
 
 T = TypeVar("T")
 
@@ -1829,6 +1835,10 @@ def get_analyst_data(ticker: str) -> dict:
                 out["recommendations"] = _bucket_recommendations(recs)
             except Exception:
                 log.exception("Recommendations fetch failed for %s", ticker_upper)
+            # UNIV1: si el primer módulo reveló que el símbolo no existe, no gastamos
+            # el segundo request — un "Quote not found" es permanente, no transitorio.
+            if is_unknown_symbol(ticker_upper):
+                return out
             # Price targets
             try:
                 pt = getattr(t, "analyst_price_targets", None)
@@ -1846,6 +1856,17 @@ def get_analyst_data(ticker: str) -> dict:
     )
     if result is None:
         result = {"recommendations": [], "price_targets": None}
+
+    # UNIV1: Yahoo dijo que el símbolo no existe (deslistado o renombrado). Lo
+    # registramos acá —fuera del handler de logging, ver data/yf_noise.py— para que
+    # _record_miss aplique la lógica B3: delisting genuino solo con el breaker
+    # cerrado; bajo throttle queda transitorio y se reintenta.
+    if is_unknown_symbol(ticker_upper):
+        _record_miss(
+            ticker_upper,
+            "Quote not found: el símbolo no existe en Yahoo (deslistado o renombrado)",
+            operation="analyst",
+        )
 
     _analyst_cache[ticker_upper] = (now, result)
     # Persistir incluso resultados vacíos — Yahoo no cubre todos los tickers

@@ -18,6 +18,7 @@ from PyQt6.QtCore import pyqtSignal
 from analysis.leads import LeadRow, compute_lead_score
 from config.constants import BULK_FETCH_WORKERS
 from config.logging_config import get_logger
+from data.failed_tickers import filter_skippable
 from data.yahoo_finance import get_analyst_data
 from ui.workers import BaseWorker
 
@@ -38,7 +39,15 @@ class LeadsScanWorker(BaseWorker):
         self.tickers = list(tickers)
 
     def do_work(self) -> list[LeadRow]:
-        total = len(self.tickers)
+        # UNIV1: los símbolos que Yahoo ya declaró inexistentes (deslistados o
+        # renombrados) no se re-consultan. Sin esto, un fallback stale quema ~2
+        # requests 404 por ticker muerto en cada scan — presión de throttle gratis.
+        tickers, skipped = filter_skippable(self.tickers)
+        if skipped:
+            log.info("Leads: %d tickers salteados por el failing set: %s",
+                     len(skipped), ", ".join(sorted(skipped)[:10]))
+
+        total = len(tickers)
         if total == 0:
             return []
 
@@ -48,7 +57,7 @@ class LeadsScanWorker(BaseWorker):
         # Paralelizamos al límite que ya respeta el rate limiter global de
         # yfinance — no podemos ir más rápido sin riesgo de 429s.
         with ThreadPoolExecutor(max_workers=BULK_FETCH_WORKERS, thread_name_prefix="leads-scan") as pool:
-            future_to_ticker = {pool.submit(get_analyst_data, t): t for t in self.tickers}
+            future_to_ticker = {pool.submit(get_analyst_data, t): t for t in tickers}
 
             for fut in as_completed(future_to_ticker):
                 if self.is_cancelled():
