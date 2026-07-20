@@ -25,6 +25,7 @@ Requires: pip install arch   (graceful fallback to EWMA if unavailable)
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -96,6 +97,32 @@ class GarchForecast:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+_GARCH_FORECAST_CACHE: dict[tuple[tuple[str, Any], ...], GarchForecast | None] = {}
+
+
+def _fingerprint(
+    df: pd.DataFrame,
+    horizon: int,
+    ticker: str | None = None,
+) -> tuple[tuple[str, Any], ...]:
+    """Return a stable fingerprint for a dataframe used by GARCH fit caching."""
+    if df.empty:
+        return (("empty", True),)
+    close = df["Close"].squeeze()
+    last_ts = None
+    try:
+        last_ts = df.index[-1]
+    except Exception:
+        last_ts = None
+    return (
+        ("ticker", ticker or ""),
+        ("horizon", horizon),
+        ("len", len(df)),
+        ("last_ts", str(last_ts)),
+        ("close_head", tuple(np.round(np.asarray(close.head(5)), 6))),
+        ("close_tail", tuple(np.round(np.asarray(close.tail(5)), 6))),
+    )
+
 
 def _log_returns(df: pd.DataFrame) -> pd.Series:
     """Daily log-returns as a clean pd.Series (no NaNs, no zeros)."""
@@ -133,6 +160,7 @@ def _ewma_annual_vol(df: pd.DataFrame) -> float:
 def fit_garch_forecast(
     df: pd.DataFrame,
     horizon: int = GARCH_FORECAST_H,
+    ticker: str | None = None,
 ) -> GarchForecast | None:
     """
     Fit a symmetric GARCH(1,1) model on daily log-returns and return a
@@ -148,6 +176,11 @@ def fit_garch_forecast(
     """
     if not _ARCH_OK:
         return None
+
+    fingerprint = _fingerprint(df, horizon=horizon, ticker=ticker)
+    cached = _GARCH_FORECAST_CACHE.get(fingerprint)
+    if cached is not None:
+        return cached
 
     returns = _log_returns(df)
     if len(returns) < GARCH_MIN_ROWS:
@@ -172,7 +205,7 @@ def fit_garch_forecast(
         # must NOT propagate them to consumers — return None instead.
         conv_flag = getattr(res, "convergence_flag", None)
         if conv_flag is not None and conv_flag != 0:
-            log.info(
+            log.debug(
                 "GARCH did not converge (flag=%s, n=%d) — falling back to EWMA.",
                 conv_flag,
                 len(returns),
@@ -182,14 +215,14 @@ def fit_garch_forecast(
         # Conditional σ series is in %-per-day (matches the input scale)
         cond_vol_daily = float(res.conditional_volatility.iloc[-1])
         if not np.isfinite(cond_vol_daily) or cond_vol_daily <= 0:
-            log.info("GARCH conditional vol non-finite/non-positive (%s)", cond_vol_daily)
+            log.debug("GARCH conditional vol non-finite/non-positive (%s)", cond_vol_daily)
             return None
 
         # h-step-ahead variance forecast; take the mean across the horizon
         fc = res.forecast(horizon=horizon, reindex=False)
         var_path = np.asarray(fc.variance.iloc[-1].values, dtype=float)
         if var_path.size == 0 or not np.all(np.isfinite(var_path)) or np.any(var_path <= 0):
-            log.info("GARCH forecast variance invalid: %s", var_path.tolist())
+            log.debug("GARCH forecast variance invalid: %s", var_path.tolist())
             return None
         forecast_vol_daily = float(np.sqrt(np.mean(var_path)))
         if not np.isfinite(forecast_vol_daily) or forecast_vol_daily <= 0:
@@ -214,7 +247,7 @@ def fit_garch_forecast(
             and beta >= 0
             and persistence < 1.0
         ):
-            log.info(
+            log.debug(
                 "GARCH parameters out of valid region (ω=%.4g α=%.4g β=%.4g α+β=%.4g)",
                 omega,
                 alpha,
@@ -241,7 +274,7 @@ def fit_garch_forecast(
         log.warning("GARCH fit error: %s", exc)
         return None
 
-    return GarchForecast(
+    forecast = GarchForecast(
         current_vol=current_annual,
         forecast_vol=forecast_annual,
         long_run_vol=long_run_annual,
@@ -251,6 +284,8 @@ def fit_garch_forecast(
         persistence=round(persistence, 4),
         vol_regime=vol_regime,
     )
+    _GARCH_FORECAST_CACHE[fingerprint] = forecast
+    return forecast
 
 
 # ── 2. Best-available annualised volatility ──────────────────────────────────
