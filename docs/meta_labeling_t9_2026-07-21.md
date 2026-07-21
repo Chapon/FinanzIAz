@@ -216,6 +216,16 @@ bloques temporales de la curva de equity, no sobre trades individuales.
 Ventanas de régimen de E4: `bull_normal` + `stress_2018q4` + `stress_covid_2020` +
 `stress_bear_2022`.
 
+> **Aclaración agregada el 2026-07-21, antes de correr ningún brazo** (no cambia
+> ningún umbral; explicita algo que ya se desprende de §5 y que conviene dejar
+> escrito para que nadie lo "descubra" después): **los cuatro brazos se simulan
+> sobre la misma ventana, que es la ventana out-of-sample de M1** — o sea desde
+> el primer año de test del walk-forward (§5) hasta el final de la muestra. B0,
+> B1 y F1 podrían correr sobre los 10 años completos, pero M1 no tiene
+> predicciones honestas para los primeros 4 (son sus años de entrenamiento).
+> Dejarlos correr sobre ventanas distintas no compararía rankings: compararía
+> mercados distintos. Los ~4 primeros años se usan **solo** para entrenar.
+
 ## 9. Kill-criteria (CONGELADOS)
 
 **Métrica primaria: CAGR sobre el equity terminal de `portfolio_sim`.** No P/L
@@ -288,7 +298,201 @@ warning `val_acc std 8% > 8%` (línea ~725) compara sin redondear y formatea con
 
 ---
 
-## 13. Resultados
+## 13. Resultados · **VEREDICTO: NO-SHIP**
 
-_(a completar después de correr — nada de esta sección existe al momento de congelar
-lo de arriba)_
+Corrido 2026-07-21 con `python scripts/run_meta_label_t9.py --diagnostics`.
+**Ningún brazo se cablea. `strategies.py` y `engine.py` quedan intactos.**
+
+### 13.1 Gates de integridad (evaluados ANTES de leer resultados)
+
+| brazo | equity vs cash | invariante de exits |
+|---|---|---|
+| B0_neutral | 0.0000% | — (es el baseline) |
+| B1_buy_score | 0.0000% | **OK** — 60 posiciones compartidas, salida idéntica |
+| M1_meta_pooled | 0.0000% | **OK** — 392 posiciones compartidas, salida idéntica |
+| F1_mom121 | 0.0000% | **OK** — 97 posiciones compartidas, salida idéntica |
+
+Los cuatro pasan. Recién acá se leyeron los números.
+
+### 13.2 Población y modelo
+
+- **47.005 barras BUY etiquetadas** (374 descartadas por ventana incompleta, 0 por
+  features faltantes). **Tasa base `y=1` = 20.0%**, consistente con lo anticipado en
+  §3: el TP está al doble de distancia que el stop.
+- Walk-forward: **6 folds OOS (2021–2026)**, ventana de entrenamiento expandiendo de
+  19.074 a 44.196 muestras, con **369–943 muestras purgadas** por fold.
+
+| año | train | purgadas | calib | test | base `y=1` | **AUC OOS** |
+|---|---|---|---|---|---|---|
+| 2021 | 19.074 | 943 | 3.814 | 5.821 | 22.0% | 0.505 |
+| 2022 | 25.015 | 823 | 5.003 | 4.161 | 15.7% | 0.520 |
+| 2023 | 29.630 | 369 | 5.926 | 4.925 | 20.3% | 0.462 |
+| 2024 | 34.100 | 824 | 6.820 | 5.236 | 23.3% | 0.499 |
+| 2025 | 39.271 | 889 | 7.854 | 4.746 | 18.4% | 0.477 |
+| 2026 | 44.196 | 710 | 8.839 | 2.099 | 24.9% | 0.566 |
+
+> **AUC OOS agregada = 0.4980.** Cero poder discriminante, y ni siquiera del lado
+> bueno del 0.500. **El pooling arregló lo que tenía que arreglar** — el modelo pasó
+> de val sets de 40 muestras a 3.814–8.839 y de 41 modelos inestables a uno solo —
+> **y aun así no hay señal.** Ese es el resultado: el problema nunca fue el tamaño
+> del val set, era que no hay nada que aprender con estas features.
+
+### 13.3 Los cuatro brazos (ventana OOS 2021-01-01 → fin, 26.988 candidatos)
+
+| brazo | CAGR | Δ CAGR | Sharpe | max DD | DD ratio | equity | tomadas | PASS |
+|---|---|---|---|---|---|---|---|---|
+| **B0_neutral** | **21.18%** | — | 1.06 | 21.6% | — | 142.225 | 820 | — |
+| B1_buy_score | 19.01% | **−2.17** | 1.16 | 15.5% | 0.72× | 130.393 | 725 | **no** |
+| **M1_meta_pooled** (primario) | 13.14% | **−8.03** | 0.80 | 17.6% | 0.82× | 97.982 | 816 | **no** |
+| F1_mom121 | 17.17% | **−4.00** | 0.79 | 29.6% | 1.37× | 119.033 | 798 | **no** |
+
+**Ningún brazo le gana al orden alfabético. Los tres pierden contra él**, y el
+primario es el que más pierde. El umbral pre-registrado era **+1.5**; M1 dio **−8.03**.
+No hay lectura caritativa posible.
+
+Robustez: **PBO = 0.492** y **DSR = 0.920** con 4 brazos como intentos. El PBO
+pegado a 0.50 es exactamente lo que se espera cuando ninguna variante tiene
+información real: elegir la mejor en muestra no dice nada fuera de muestra. (El DSR
+alto **no rescata nada**: mide P(Sharpe verdadero > 0), o sea que el brazo gana
+plata, no que le gane al baseline — el mercado subió en la ventana.)
+
+### 13.4 El gate que hace válido al resultado: el oráculo
+
+Un resultado nulo no vale nada si el instrumento es ciego. Por eso se corrió un
+brazo **ORÁCULO** que rankea por el retorno **realizado** del ciclo (mira el futuro
+descaradamente; jamás shipeable) y su inverso:
+
+| brazo | CAGR | Sharpe | max DD | equity |
+|---|---|---|---|---|
+| B0_neutral | 21.18% | 1.06 | 21.6% | 142.225 |
+| **ORÁCULO** | **368.86%** | 7.64 | 7.3% | 235.271.171 |
+| ANTI_ORÁCULO | −81.76% | −8.56 | 100.0% | 5 |
+
+**El harness detecta rankings con muchísima sensibilidad** — un ranking perfecto
+convierte $50.000 en $235 millones y uno perfectamente malo lo funde. El espacio
+entre −81.76% y +368.86% de CAGR estaba disponible para que cualquiera de los tres
+brazos lo capturara. Ninguno capturó nada. **El nulo es un hallazgo, no un defecto de
+medición.**
+
+### 13.5 Por qué pasó — los scores rankean levemente al revés
+
+| score | corr vs retorno | corr vs etiqueta | ret medio top-20% | ret medio bot-20% |
+|---|---|---|---|---|
+| B1 `buy_score` | **−0.0259** | −0.0089 | 0.34% | **0.57%** |
+| M1 meta proba | **−0.0436** | −0.0251 | 0.13% | **0.46%** |
+| F1 mom 12-1 | −0.0056 | +0.0049 | 0.62% | 0.61% |
+| _(la etiqueta `y`)_ | **+0.5635** | — | — | — |
+
+Tres cosas, todas con **n = 26.988** (no con n=27):
+
+1. **La etiqueta es la correcta.** `corr(y, retorno) = +0.5635`; los candidatos con
+   `y=1` rinden **+6.31%** promedio contra **−1.01%** de los `y=0`. Un modelo que
+   pudiera predecirla ganaría mucha plata. **El target no es el problema — predecirlo
+   sí.**
+2. **El `buy_score` rankea al revés.** Su top-20% rinde **menos** que su bottom-20%
+   (0.34% vs 0.57%). Esto **confirma y multiplica por mil el poder** del hallazgo de
+   la auditoría 2026-06-30 (`corr(score, fwd5) ≈ −0.08, n=27`): mismo signo, ahora
+   con n=26.988 y contra el retorno **realizado del ciclo**, no contra un proxy.
+3. **El meta-modelo es el peor de los tres** (−0.0436), y es levemente negativo
+   **contra su propia etiqueta** fuera de muestra (−0.0251). Aprendió del pasado una
+   relación que se invierte en el futuro.
+
+### 13.6 EL HALLAZGO QUE VALE MÁS QUE LA FEATURE
+
+> **Un AUC de 0.498 no se comporta como elegir al azar. Se comporta mucho peor.**
+
+Es contraintuitivo y es el resultado más transferible de la tarea. La intuición dice
+"si el modelo no sabe nada, elegir con él da lo mismo que elegir al azar". Es falso, y
+acá se ve la diferencia: **8 puntos de CAGR** entre M1 (13.14%) y el orden alfabético
+(21.18%).
+
+El mecanismo: el orden alfabético es **arbitrario pero no sistemático** — a lo largo
+de 5,5 años reparte los slots entre todo el pool de candidatos. Un modelo con AUC
+0.498 no reparte: aplica **consistentemente** su criterio, y si ese criterio está
+apenas del lado equivocado, **concentra** la cartera en el subconjunto malo, elección
+tras elección. Un sesgo diminuto aplicado 816 veces con 5 slots compuestos durante
+5,5 años no se promedia a cero: se acumula.
+
+**Consecuencia práctica para todo el backlog:** "el modelo no tiene alpha, así que
+usarlo es inofensivo" es un razonamiento **incorrecto**. Un score sin alpha que
+igual decide es activamente caro. Esto se suma como tercera pieza a la serie:
+
+- **Tarea 7:** cuanto menos se le hace caso al SELL de señal, mejor (dosis-respuesta
+  monótona) → la señal de salida es peor que los niveles ATR.
+- **Tarea 8:** apagar entradas destruye el compounding; escalarlas lo mejora → el eje
+  que rinde es *cuánto exponerse*, no *cuándo cortar*.
+- **Tarea 9 (esta):** ningún ranking disponible le gana a no rankear, y usar uno malo
+  cuesta 8 puntos de CAGR → el eje *cuáles elegir* tampoco rinde con lo que hay.
+
+Las tres apuntan al mismo lugar: **el valor no está en refinar las decisiones sobre
+los candidatos que `analyze()` produce, está en de dónde salen los candidatos.** Eso
+son las tareas 11 (PEAD / anomalía precio-volumen) y 12 (FORM4), que traen
+**información nueva** en vez de re-procesar la misma.
+
+### 13.7 B1 vs B0 — la regla propia se dispara, pero con un defecto de especificación
+
+La regla pre-registrada de §9 dice: si `B1 < B0 − 1.5 pts` de CAGR, se shipea la
+simplificación (ranking no-predictivo, score display-only). **B1 dio −2.17 → la regla
+se dispara.**
+
+**Pero el resultado está partido entre métricas de una forma que el pre-registro no
+anticipó**, y corresponde decirlo en vez de elegir la métrica que convenga:
+
+| | CAGR | Sharpe | max DD |
+|---|---|---|---|
+| B0_neutral (alfabético) | **21.18%** | 1.06 | 21.6% |
+| B1_buy_score (hoy) | 19.01% | **1.16** | **15.5%** |
+
+Rankear por score **rinde menos pero con bastante menos riesgo**: 6,1 puntos menos de
+max DD y mejor Sharpe. La regla se escribió sobre una sola métrica asumiendo que las
+dos se moverían juntas. **Es el mismo defecto de especificación de familia que
+detectó la tarea 8** (allá: umbral en puntos acumulados sobre una cartera que
+compone; acá: regla de una métrica para un resultado de dos).
+
+Además, **PBO = 0.492** dice que la selección entre estos brazos está dominada por
+ruido: el *signo* del hallazgo está muy bien sostenido (la correlación −0.0259 con
+n=26.988 no es ruido), pero la *magnitud* en CAGR sale de una sola trayectoria de 5,5
+años y no está bien estimada.
+
+**Decisión: no se cambia el engine en esta tarea.** Cambiar el ranking vivo a
+alfabético mejoraría el CAGR de esta muestra y empeoraría el max DD en 6 puntos sobre
+una cuenta real. Un cambio de comportamiento vivo con las métricas partidas y el PBO
+en 0.49 no se shipea por inercia de una regla mal especificada — se documenta, se
+escala a Chapa con los números, y si se decide avanzar va con **pre-registro propio**
+que declare la métrica de riesgo **antes** de correr. Queda como **tarea 21** en el
+backlog.
+
+Lo que sí queda establecido con poder, y no depende de esa decisión: **el `buy_score`
+no tiene alpha de ranking y su top-20% rinde menos que su bottom-20% (n=26.988).**
+Cualquier tarea futura que quiera apoyarse en él tiene que citar esto primero.
+
+### 13.8 Limitaciones declaradas
+
+- **La ventana OOS (2021–2026) contiene una sola ventana de stress** (bear-2022): los
+  4 años de entrenamiento se comieron 2018Q4 y COVID-2020. El desglose por régimen de
+  esas dos ventanas sale en cero por construcción, no por falta de trades.
+- **Una sola trayectoria.** Sin bootstrap de trayectorias, los deltas de CAGR entre
+  brazos cargan varianza de camino (ver PBO 0.492).
+- **41 tickers grandes y líquidos sobrevivientes** — el sesgo de supervivencia del
+  universo E4, arrastrado por todos los harness del proyecto.
+- **La calibración isotónica colapsa la salida de M1 a 93 valores distintos** (sd
+  0.031, máximo exactamente 0.5000). Es *síntoma* de la falta de señal (la isotónica
+  aplana los tramos no monótonos), no causa: el ranking por probabilidad cruda sería
+  más fino pero ordena igual, porque la calibración es monótona.
+
+### 13.9 Qué queda shippeado (nada cableado a decisiones)
+
+- **`analysis/meta_labeling.py`** — etiquetado triple-barrera PIT sobre el close +
+  features pooled comparables entre tickers + momentum 12-1. Reusable por las tareas
+  11, 12 y 13, que necesitan exactamente este etiquetado para sus propios eventos.
+- **`analysis/meta_model.py`** — walk-forward pooled con **purge + embargo contados en
+  ruedas** y AUC por rangos. La pieza que hace que un backtest de ML sea creíble.
+- **`analysis/portfolio_sim.py`** — dos extensiones: **hook de ranking** entre
+  candidatos del mismo día y **no reabrir un ticker en cartera** (fidelidad al engine,
+  que faltaba). Las hereda cualquier tarea que use el simulador.
+- **`scripts/run_meta_label_t9.py`** — runner de los 4 brazos + gates de integridad +
+  **el brazo oráculo como validación del harness**, que conviene correr en toda tarea
+  futura antes de creerle a un resultado nulo.
+- **ARQ2 (serving offline / model registry) no se hace**: era la definición de done
+  **si M1 pasaba**. Sin modelo que shipear no hay nada que versionar.
+- 49 tests nuevos. Suite Windows **1391 passed**.

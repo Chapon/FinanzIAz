@@ -203,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
         costs=CostModel(), regime_of=regime_for_date,
+        # La Tarea 9 corrigió el simulador para que, como el engine, no reabra un
+        # ticker que ya está en cartera — y ese es su default nuevo. Acá se pinea
+        # el comportamiento viejo a propósito: R2 ya está cerrado y publicado
+        # (``docs/market_regime_gate_r2_2026-07-20.md``), así que este runner
+        # tiene que seguir reproduciendo esos números. El veredicto de R2 (NO-SHIP
+        # por 6.3 puntos de CAGR) no es remotamente sensible a esto.
+        allow_reentry_while_open=True,
     )
     results: dict[str, PortfolioResult] = {}
     for name, cfg in ARMS.items():

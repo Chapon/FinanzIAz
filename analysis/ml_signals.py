@@ -723,8 +723,11 @@ def _train_walkforward(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[st
         len(scores),
     )
     if val_std > WALKFORWARD_STD_WARN:
+        # ``%.1f`` y no ``%.0f``: la comparación usa el valor sin redondear, así
+        # que con val_std=8.4% el mensaje imprimía la desigualdad falsa
+        # "std 8% > 8%" y confundía el diagnóstico en el log.
         log.warning(
-            "XGBoost: unstable model — val_acc std %.0f%% > %.0f%% across folds; "
+            "XGBoost: unstable model — val_acc std %.1f%% > %.1f%% across folds; "
             "accuracy depends heavily on the validation window.",
             val_std * 100,
             WALKFORWARD_STD_WARN * 100,
