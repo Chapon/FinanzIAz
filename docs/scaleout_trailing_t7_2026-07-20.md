@@ -225,8 +225,131 @@ brazos es data mining):
 
 ## 8. Resultados
 
-_(a completar tras el run — nada escrito acá antes de correr)_
+Corrido el 2026-07-20 sobre **41 tickers × 10y**, señal `analyze()` PIT completa
+(92.783 evaluaciones precomputadas), **4025 entradas BUY** no solapadas
+(spacing 20 = cap 20). Todos los brazos comparten exactamente las mismas entradas
+(comparación pareada).
+
+| brazo | ret medio | **Δ pts** | IC95% (bootstrap pareado) | win% | payoff | DD ratio | días | PASS |
+|---|---|---|---|---|---|---|---|---|
+| B0 baseline | 0.54% | — | — | 46.2% | 1.56 | — | 7.5 | — |
+| **A₅₀ (primario)** | 0.61% | **+0.07** | [+0.032, +0.106] | 47.5% | 1.52 | 1.02 | 9.2 | **no** |
+| B trail 2.5 | 0.57% | +0.03 | [−0.012, +0.079] | 46.8% | 1.53 | 1.02 | 9.4 | no |
+| B trail 3.0 | 0.55% | +0.02 | [−0.036, +0.068] | 46.5% | 1.53 | 1.05 | 9.5 | no |
+| C_A4 (señal no vende) | 1.07% | **+0.54** | [+0.410, +0.666] | 49.7% | 1.55 | 1.12 | 13.0 | no |
+| A₃₃ | 0.63% | +0.09 | [+0.043, +0.143] | 47.6% | 1.52 | 1.03 | 9.2 | no |
+| A₆₇ | 0.58% | +0.05 | [+0.021, +0.070] | 47.2% | 1.53 | 1.01 | 9.2 | no |
+
+Robustez: **PBO (CSCV) = 0.000**, **DSR = 1.000** (SR 0.163 vs SR0 0.029, 6 intentos,
+n=4025). O sea: la *selección* del ganador es robusta — C_A4 gana in-sample en
+252/252 combinaciones. Lo que falla no es la robustez, es la **magnitud**.
+
+### 8.1 Curva dosis-respuesta: el SELL de señal destruye valor, monotónicamente
+
+El hallazgo limpio del run. Ordenando por cuánto se le obedece a la señal:
+
+| fracción vendida en el flip | 1.00 (B0) | 0.67 | 0.50 | 0.33 | 0.00 (C_A4) |
+|---|---|---|---|---|---|
+| Δ pts vs baseline | 0.00 | +0.046 | +0.069 | +0.092 | **+0.536** |
+
+**Monótono y sin excepciones: cuanto menos se le hace caso al SELL de señal, mejor
+el resultado.** Es exactamente lo que predice el gap A4 (*"hay dos sistemas de salida
+en conflicto y gana el pesimista"*) y es consistente con la evidencia previa
+(`sell_calibration` 2026-06-30: 50% up_after, mean fwd5 +2.94%). El efecto es
+estadísticamente sólido (p < 0.0001 en los extremos), no ruido.
+
+**Por qué el scale-out captura tan poco de eso:** la fracción **no cambia el timing
+de las salidas, solo el peso entre dos precios de salida**. Se ve en la mezcla de
+salidas — A₃₃/A₅₀/A₆₇ tienen rutas de salida *idénticas* (2053 `signal_partial+
+signal_full`, 505 `atr_stop`, 355 `atr_trail`, 337 `atr_tp`), solo cambian las
+cantidades. El techo del scale-out es el spread entre el precio del flip y el precio
+de salida del remanente, escalado por la fracción: chico por construcción. Todo el
+valor está en **no vender ante la señal**, no en vender menos.
+
+### 8.2 El efecto vive en bull_normal y se apaga en stress
+
+Desglose de C_A4, el único brazo con efecto no trivial:
+
+| régimen | n | Δ pts | IC95% | p(Δ≤0) |
+|---|---|---|---|---|
+| bull_normal | 3448 | **+0.618** | [+0.485, +0.757] | 0.0000 |
+| stress_2018q4 | 120 | +0.104 | [−0.716, +0.991] | 0.4254 |
+| stress_bear_2022 | 352 | **−0.231** | [−0.647, +0.197] | 0.8591 |
+| stress_covid_2020 | 105 | +0.886 | [−0.201, +2.103] | 0.0580 |
+
+El efecto es **indistinguible de cero en las tres ventanas de stress** y de signo
+negativo en bear-2022. El kill-criteria §6 lo prohíbe explícitamente.
+
+### 8.3 Ajuste por ocupación de slot (post-hoc, **no** pre-registrado)
+
+Métrica agregada **después** de ver los resultados — se declara como tal y **no
+participa del veredicto**, que ya se decide con los criterios pre-registrados. Es
+diagnóstica: explica *por qué* ni siquiera el mejor brazo ayudaría en la cuenta viva.
+
+El harness le da a cada entrada capital ilimitado. La cuenta viva tiene
+`max_positions=5`: retener más tiempo significa **entrar menos veces**. C_A4 sostiene
+las posiciones **13.0 días vs 7.5** del baseline (+73%). Normalizando el retorno por
+unidad de tiempo-capital:
+
+| brazo | Δ pts crudo | días | **Δ pts ajustado por slot** |
+|---|---|---|---|
+| A₅₀ | +0.069 | 9.2 | **−0.041** |
+| B trail 2.5 | +0.033 | 9.4 | **−0.082** |
+| B trail 3.0 | +0.016 | 9.5 | **−0.099** |
+| C_A4 | +0.536 | 13.0 | **+0.088** |
+| A₃₃ | +0.092 | 9.2 | **−0.022** |
+| A₆₇ | +0.046 | 9.2 | **−0.061** |
+
+**Los cinco brazos de scale-out pasan a negativo** y C_A4 se desploma de +0.536 a
++0.088. El poco upside que había se lo come el costo de oportunidad del slot.
 
 ## 9. Veredicto
 
-_(a completar: SHIP / NO-SHIP + por qué)_
+### **NO-SHIP — ningún brazo se cablea. `strategies.py` queda intacto.**
+
+El veredicto se apoya **solo en los criterios pre-registrados**, y falla en tres de
+ellos de forma independiente:
+
+1. **Magnitud (el criterio principal):** el umbral era **Δ ≥ +1.5 pts**. El brazo
+   primario A₅₀ dio **+0.07** (21× por debajo). El mejor brazo, C_A4, dio **+0.54**
+   (3× por debajo). Nada se acerca.
+2. **Dependencia de régimen:** el §6 exige que el signo no dependa de un solo
+   régimen. El efecto de C_A4 es enteramente `bull_normal`; en las tres ventanas de
+   stress es indistinguible de cero y **negativo en bear-2022**.
+3. **El sweep del trailing (research#2 §C1) no sobrevive:** 2.5× dio +0.033 y 3.0×
+   dio +0.016, **ambos con IC95% cruzando cero**, y ambos claramente negativos en
+   stress (−0.47 y −0.66 en 2018Q4). La hipótesis de que el trailing está
+   "parametrizado para day-trading" y que 2.5–3.0×ATR es lo canónico para swing
+   **no se verifica en estos datos**. Es el segundo NO-SHIP del eje de stops, después
+   de A1 — y por el mismo motivo: aflojar la salida ayuda en la subida y cobra caro
+   en la caída.
+
+Nótese que **PBO=0.000 y DSR=1.000 no salvan nada**: dicen que el ganador es
+consistente, no que el efecto sea grande. Es justamente la distinción que el
+kill-criteria pre-registrado existe para hacer cumplir — un efecto real de +0.5 pts
+que se apaga fuera de bull y que se evapora al pagar el slot no es una mejora
+shipeable, por más significativo que sea estadísticamente (n=4025 hace significativo
+casi cualquier cosa).
+
+### Lo que sí queda aprendido (y vale más que la feature)
+
+- **El SELL de señal destruye valor de forma monótona** (§8.1). No es un problema de
+  *cuánto* vender: es que la señal de salida de `analyze()` es peor que dejar actuar
+  a los niveles ATR. Esto apunta a la **tarea 9** (rediseño predictivo), no a la
+  política de salida: es el mismo síntoma que el `buy_score` sin alpha (ref A3),
+  ahora medido del lado de las ventas y con n=4025.
+- **El scale-out es estructuralmente incapaz** de capturar ese valor: no cambia el
+  timing, solo repondera entre dos precios (§8.1). Cualquier intento futuro por este
+  eje tiene el mismo techo.
+- **La idea C_A4 no está muerta, pero necesita su propio pre-registro** y un harness
+  que modele `max_positions` y la competencia por capital — sin eso, cualquier
+  variante que retenga más tiempo se ve artificialmente bien (§8.3). Si se retoma,
+  el kill-criteria tiene que estar en Δ **ajustado por slot**, no crudo.
+
+### Efectos colaterales que sí se conservan
+
+El código shipeado es todo enabler medible, nada cableado a decisiones:
+`AtrParams.trail_mult` (separa trailing de stop, default = comportamiento actual),
+`analysis/scaleout_replay.py`, `scripts/precompute_pit_signals.py` (el artefacto de
+señal PIT, ~3 h de CPU, **reusable por las tareas 8/9/11/12/13**) y
+`scripts/run_scaleout_replay_t7.py`.
