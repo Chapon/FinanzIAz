@@ -84,6 +84,17 @@ class AtrParams:
     tp_mult: float = 4.0
     trail_enabled: bool = True
     trail_min_excess_atrs: float = 1.0
+    # Múltiplo del **trailing** del remanente, independiente del stop duro
+    # (Tarea 7 / research#2 §C1: el canónico para swing es 2.5–3.0×ATR mientras
+    # que el stop inicial 2.0 quedó NO-SHIP en A1 y no se toca).
+    # ``None`` ⇒ usa ``stop_mult``, que es exactamente el comportamiento
+    # histórico: hasta la Tarea 7 un solo knob movía los dos niveles.
+    trail_mult: float | None = None
+
+    @property
+    def effective_trail_mult(self) -> float:
+        """Múltiplo que gobierna el trailing (cae a ``stop_mult`` si no se fijó)."""
+        return self.stop_mult if self.trail_mult is None else self.trail_mult
 
 
 @dataclass
@@ -159,7 +170,7 @@ def atr_exit(
     if stop_level > 0 and current_price <= stop_level:
         return "atr_stop"
 
-    trail_level = hwm - p.stop_mult * atr_value
+    trail_level = hwm - p.effective_trail_mult * atr_value
     if (
         p.trail_enabled
         and trail_level > 0
@@ -181,7 +192,7 @@ def _atr_trigger_level(reason: str, *, avg_cost: float, hwm: float, atr_value: f
     if reason == "atr_stop":
         return avg_cost - p.stop_mult * atr_value
     if reason == "atr_trail":
-        return hwm - p.stop_mult * atr_value
+        return hwm - p.effective_trail_mult * atr_value
     if reason == "atr_tp":
         return avg_cost + p.tp_mult * atr_value
     return None
