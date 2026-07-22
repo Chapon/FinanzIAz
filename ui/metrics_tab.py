@@ -129,6 +129,13 @@ def _pct(x: float | None, signed: bool = False) -> str:
     return (f"{x * 100:+.1f}%" if signed else f"{x * 100:.1f}%")
 
 
+def _ddmm(day: str | None) -> str:
+    """``YYYY-MM-DD`` → ``DD/MM`` (tarea 22, marcador de SPY desactualizado)."""
+    if not day or len(day) < 10:
+        return "?"
+    return f"{day[8:10]}/{day[5:7]}"
+
+
 class EffectivenessChart(QFrame):
     """P/L realizado acumulado + win-rate móvil, con marcadores de commits."""
 
@@ -573,7 +580,12 @@ class MetricsTab(QWidget):
             if exc["n"] else "—",
             "peor caída / mejor suba (mediana)", None)
         bm = m["benchmark"]
-        if bm["available"]:
+        if bm.get("stale"):
+            # tarea 22: SPY quedó atrás → no mostramos un vs_spy sesgado.
+            end = bm.get("spy_end_day")
+            sub = f"SPY desactualizado (hasta {_ddmm(end)})" if end else "SPY desactualizado"
+            self.cards["benchmark"].set_value("—", sub, None)
+        elif bm["available"]:
             self.cards["benchmark"].set_value(
                 _pct(bm["vs_spy"], signed=True),
                 f"cuenta {_pct(bm['account_return'], signed=True)} · "

@@ -307,6 +307,48 @@ def test_benchmark_unavailable_without_spy_cache():
     assert bm["available"] is False
     assert bm["account_return"] == pytest.approx(0.05)   # el retorno propio igual se reporta
     assert bm["spy_return"] is None
+    assert bm["stale"] is False
+
+
+# ── benchmark stale: SPY desactualizado (tarea 22, BENCH-STALE) ───────────────
+def test_benchmark_stale_bdays_helper():
+    # 07-10 (vie) → 07-21 (mar): 7 días hábiles atrás.
+    assert mp.benchmark_stale_bdays("2026-07-10", "2026-07-21") == 7
+    assert mp.benchmark_stale_bdays("2026-07-21", "2026-07-21") == 0   # al día
+    assert mp.benchmark_stale_bdays("2026-07-22", "2026-07-21") == -1  # adelante
+    # Tolera hora en la fecha y entradas inválidas/ausentes → 0 (no marca stale).
+    assert mp.benchmark_stale_bdays("2026-07-21T16:00:00", "2026-07-21") == 0
+    assert mp.benchmark_stale_bdays(None, "2026-07-21") == 0
+    assert mp.benchmark_stale_bdays("basura", "2026-07-21") == 0
+
+
+def test_benchmark_panel_marks_stale_when_spy_lags():
+    con = _make_db()
+    _snap(con, "2026-07-01 16:00:00", 50000.0)
+    _snap(con, "2026-07-21 16:00:00", 52500.0)   # equity hasta el 21/07
+    # SPY se congeló el 10/07 (el bug real): 7 días hábiles atrás > umbral (3).
+    _hist(con, "SPY", [("2026-07-01", 400.0), ("2026-07-10", 402.0)])
+    bm = mp.build_metrics(con, 1)["benchmark"]
+    assert bm["stale"] is True
+    assert bm["available"] is False
+    assert bm["vs_spy"] is None                          # NO se computa el número sesgado
+    assert bm["spy_return"] is None
+    assert bm["spy_end_day"] == "2026-07-10"
+    assert bm["account_return"] == pytest.approx(0.05)   # el retorno propio igual se reporta
+
+
+def test_benchmark_panel_not_stale_within_tolerance():
+    con = _make_db()
+    _snap(con, "2026-07-01 16:00:00", 50000.0)
+    _snap(con, "2026-07-21 16:00:00", 52500.0)
+    # SPY hasta el 17/07 (vie): solo 2 días hábiles atrás del 21/07 (lag normal).
+    _hist(con, "SPY", [("2026-07-01", 400.0), ("2026-07-17", 404.0)])
+    bm = mp.build_metrics(con, 1)["benchmark"]
+    assert bm["stale"] is False
+    assert bm["available"] is True
+    assert bm["spy_return"] == pytest.approx(0.01)        # 404/400 - 1
+    assert bm["vs_spy"] == pytest.approx(0.04)
+    assert bm["spy_end_day"] == "2026-07-17"
 
 
 # ── concentración del book (V2) ───────────────────────────────────────────────

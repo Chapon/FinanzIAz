@@ -113,6 +113,51 @@ def _default_history_provider(ticker: str) -> pd.DataFrame | None:
     return get_historical_data(ticker, period=_resolve_history_period())
 
 
+def _warm_up_history_cache(tickers: list[str]) -> None:
+    """Warm-up de la cache OHLCV en UNA descarga batch antes de los
+    ``history_provider`` per-ticker (estrategia, ATR exits, sigma).
+
+    ``get_historical_data_batch`` escribe cada ticker a la cache, así que esos
+    ``history_provider(ticker)`` pegan a cache fresca y no emiten un request (ni
+    un handshake de crumb) por ticker → muchos menos 401.
+
+    SPY entra al warm-up SOLO para cachear el benchmark de Métricas (V1); NO se
+    agrega a ``tickers``, así que no toca precios ni gates. Por eso mismo es el
+    **único símbolo sin re-fetch per-ticker**: si el batch lo saltea (throttle/
+    401), su fila vieja queda intacta y el benchmark se congela mientras la
+    equity avanza (tarea 22, BENCH-STALE). Fallback pata (a): cuando el batch no
+    devuelve SPY, se lo re-pide solo — un único request, y SPY ya es el canario
+    de NET1. Todo best-effort: cualquier fallo se loguea y no corta el scan.
+    """
+    if not tickers:
+        return
+    from config.logging_config import get_logger
+
+    from analysis.metrics_panel import BENCHMARK_TICKER
+
+    period = _resolve_history_period()
+    warm: dict | None = None
+    try:
+        from data.yahoo_finance import get_historical_data_batch
+
+        warm = get_historical_data_batch(
+            sorted(set(tickers) | {BENCHMARK_TICKER}), period=period
+        )
+    except Exception:
+        get_logger(__name__).exception(
+            "Batch history warm-up failed; falling back to per-ticker fetch"
+        )
+    # tarea 22 (a): si el batch salteó/falló SPY, darle su propio fallback
+    # per-ticker para que el benchmark no quede congelado en una fecha vieja.
+    if (warm or {}).get(BENCHMARK_TICKER) is None:
+        try:
+            from data.yahoo_finance import get_historical_data
+
+            get_historical_data(BENCHMARK_TICKER, period=period)
+        except Exception:
+            get_logger(__name__).exception("SPY benchmark fallback fetch failed")
+
+
 def _is_market_open_safe() -> bool:
     """Wrapper around data.yahoo_finance.is_market_open() that never raises."""
     try:
@@ -565,31 +610,12 @@ def run_scan(
 
         tickers = sorted(set(watchlist) | {p.ticker for p in positions})
 
-        # Warm-up de la cache OHLCV en UNA descarga por lotes antes de que las
-        # llamadas per-ticker de history_provider corran (estrategia, ATR exits,
-        # sigma). get_historical_data_batch escribe cada ticker a la cache SQLite,
-        # así que esos history_provider(ticker) pegan a cache fresca y no emiten
-        # un request (ni un handshake de crumb) por ticker → muchos menos 401.
-        # Best-effort: si falla, el provider per-ticker sigue andando. Solo con el
-        # provider por defecto — si se inyectó uno (tests), no tocar la red.
+        # Warm-up de la cache OHLCV (+ fallback per-ticker de SPY, tarea 22) en
+        # una sola descarga batch antes de las llamadas per-ticker. Best-effort:
+        # si falla, el provider per-ticker sigue andando. Solo con el provider por
+        # defecto — si se inyectó uno (tests), no tocar la red.
         if tickers and not history_was_injected:
-            try:
-                from data.yahoo_finance import get_historical_data_batch
-
-                from analysis.metrics_panel import BENCHMARK_TICKER
-
-                # SPY entra al warm-up SOLO para cachearlo (benchmark de Métricas,
-                # V1). NO se agrega a `tickers`, así que no toca precios ni gates.
-                get_historical_data_batch(
-                    sorted(set(tickers) | {BENCHMARK_TICKER}),
-                    period=_resolve_history_period(),
-                )
-            except Exception:
-                from config.logging_config import get_logger
-
-                get_logger(__name__).exception(
-                    "Batch history warm-up failed; falling back to per-ticker fetch"
-                )
+            _warm_up_history_cache(tickers)
 
         prices = prices_provider(tickers) if tickers else {}
 

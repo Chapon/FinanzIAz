@@ -16,7 +16,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6.QtWidgets")
 pytest.importorskip("matplotlib")
 
-from ui.paper.equity_chart import build_benchmark_overlay  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
+
+from ui.paper.equity_chart import (  # noqa: E402
+    build_benchmark_overlay,
+    overlay_is_stale,
+)
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    app = QApplication.instance() or QApplication([])
+    yield app
 
 
 @dataclass
@@ -48,3 +59,36 @@ def test_overlay_empty_without_data():
     snaps = [_Snap(datetime(2026, 1, 1, 16), 50000.0)]
     assert build_benchmark_overlay(snaps, None) == []
     assert build_benchmark_overlay(snaps, []) == []
+
+
+# ── staleness del benchmark (tarea 22, BENCH-STALE) ───────────────────────────
+def test_overlay_is_stale_when_spy_lags():
+    snaps = [_Snap(datetime(2026, 7, 1, 16), 50000.0),
+             _Snap(datetime(2026, 7, 21, 16), 52000.0)]
+    # SPY se congeló el 10/07: 7 días hábiles atrás del último snapshot (21/07).
+    spy_old = [("2026-07-01", 400.0), ("2026-07-10", 402.0)]
+    assert overlay_is_stale(snaps, spy_old) is True
+    # Dentro de tolerancia (17/07 = 2 días hábiles atrás) → no stale.
+    spy_fresh = [("2026-07-01", 400.0), ("2026-07-17", 404.0)]
+    assert overlay_is_stale(snaps, spy_fresh) is False
+
+
+def test_overlay_is_stale_false_without_data():
+    snaps = [_Snap(datetime(2026, 7, 21, 16), 52000.0)]
+    assert overlay_is_stale([], [("2026-07-10", 400.0)]) is False
+    assert overlay_is_stale(snaps, None) is False
+    assert overlay_is_stale(snaps, []) is False
+
+
+def test_chart_annotates_stale_benchmark(qapp):
+    from ui.paper.equity_chart import EquityCurveChart
+
+    chart = EquityCurveChart()
+    snaps = [_Snap(datetime(2026, 7, 1, 16), 50000.0),
+             _Snap(datetime(2026, 7, 21, 16), 52000.0)]
+    # stale: se suprime la línea y se anota "SPY desactualizado".
+    chart.set_data(snaps, benchmark=None, benchmark_stale=True)
+    texts = [t.get_text() for t in chart.ax.texts]
+    assert any("desactualizado" in t for t in texts)
+    assert chart.ax.get_legend() is None   # no se dibujó la línea SPY
+    chart.cleanup()

@@ -40,7 +40,8 @@ Schema del payload (``build_metrics``)::
       },
       "benchmark": {  # V1: retorno de la cuenta vs SPY sobre la misma ventana
         "available","ticker","start_day","end_day",
-        "account_return","spy_return","vs_spy"
+        "account_return","spy_return","vs_spy",
+        "stale","spy_end_day"   # tarea 22: SPY desactualizado → no se compara
       },
       "concentration": {  # V2: concentración del book vivo (display-only)
         "n","total_value","weights":[{"ticker","weight","market_value","sector",
@@ -81,6 +82,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 # Ventana del forward return (días hábiles aproximados por índice de barras 1d).
 FWD_SHORT = 5
 FWD_LONG = 20
@@ -90,6 +93,30 @@ CHURN_DAYS = 7
 # (auto_adjust=True) — sesgo documentado en el BACKLOG: los dividendos ya están
 # reinvertidos en el ajuste, así que la comparación es contra el retorno total.
 BENCHMARK_TICKER = "SPY"
+
+# Umbral de "SPY desactualizado" (tarea 22, BENCH-STALE). Si el último close de
+# SPY queda más de estos días hábiles atrás del último snapshot de equity, el
+# benchmark está stale: NO se compara (comparar la cuenta sobre la ventana
+# completa contra un SPY recortado sesga el vs_spy en silencio) ni se dibuja la
+# línea corta. Tolera el lag normal de 1-2 ruedas (la barra 1d de hoy recién
+# aparece tras el cierre, y fines de semana/feriados).
+BENCHMARK_STALE_BDAYS = 3
+
+
+def benchmark_stale_bdays(spy_last_day: str | None, ref_day: str | None) -> int:
+    """Días hábiles que el último close de SPY queda ATRÁS de ``ref_day``.
+
+    Positivo = SPY viejo respecto de ``ref_day``; ≤0 = al día o adelante.
+    Ambas fechas son ``YYYY-MM-DD`` (se ignora la parte de hora). Devuelve ``0``
+    ante fechas inválidas o ausentes — no se marca stale por un parseo fallido.
+    Pura y testeable (usa ``np.busday_count``, el idiom del repo).
+    """
+    if not spy_last_day or not ref_day:
+        return 0
+    try:
+        return int(np.busday_count(spy_last_day[:10], ref_day[:10]))
+    except (TypeError, ValueError):
+        return 0
 
 # Keywords que marcan commits que cambian la *lógica de trading* (para el overlay
 # del gráfico de efectividad). Se filtran del git log por subject.
@@ -755,7 +782,8 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     """
     empty = {"available": False, "ticker": BENCHMARK_TICKER,
              "start_day": None, "end_day": None,
-             "account_return": None, "spy_return": None, "vs_spy": None}
+             "account_return": None, "spy_return": None, "vs_spy": None,
+             "stale": False, "spy_end_day": None}
     try:
         rows = con.execute(
             "SELECT snapshot_at, total_equity FROM paper_equity_snapshots "
@@ -776,6 +804,14 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         return {**empty, "start_day": start_day, "end_day": end_day,
                 "account_return": account_return}
     spy = sorted(spy)
+    spy_end_day = spy[-1][0] if spy else None
+    # tarea 22: si el cache de SPY quedó > K días hábiles atrás del último
+    # snapshot, comparar la cuenta (ventana completa) contra un SPY recortado
+    # sesga el vs_spy en silencio → se marca stale y NO se computa el número.
+    if benchmark_stale_bdays(spy_end_day, end_day) > BENCHMARK_STALE_BDAYS:
+        return {**empty, "start_day": start_day, "end_day": end_day,
+                "account_return": account_return, "stale": True,
+                "spy_end_day": spy_end_day}
     p0 = _close_on_or_after(spy, start_day)
     p1 = _close_on_or_before(spy, end_day)
     spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
@@ -784,7 +820,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     return {"available": spy_return is not None, "ticker": BENCHMARK_TICKER,
             "start_day": start_day, "end_day": end_day,
             "account_return": account_return, "spy_return": spy_return,
-            "vs_spy": vs_spy}
+            "vs_spy": vs_spy, "stale": False, "spy_end_day": spy_end_day}
 
 
 # ── entrypoint ────────────────────────────────────────────────────────────────

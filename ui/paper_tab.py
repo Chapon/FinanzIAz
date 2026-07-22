@@ -1255,35 +1255,41 @@ class PaperTradingTab(QWidget):
         except Exception as e:
             log.warning("equity refresh failed: %s", e)
             snaps = []
-        self.equity_chart.set_data(snaps, benchmark=self._load_spy_overlay(snaps))
+        overlay, stale = self._load_spy_overlay(snaps)
+        self.equity_chart.set_data(snaps, benchmark=overlay, benchmark_stale=stale)
 
     @staticmethod
-    def _load_spy_overlay(snaps: list):
+    def _load_spy_overlay(snaps: list) -> tuple[list | None, bool]:
         """Serie SPY normalizada para overlayar en la curva de equity (V1).
 
         Best-effort/read-only: lee el cache diario de SPY (poblado por el warm-up
-        del scan) y lo alinea a la ventana de los snapshots. Devuelve ``None`` si
-        SPY todavía no está cacheado o algo falla — la curva se dibuja igual.
+        del scan) y lo alinea a la ventana de los snapshots. Devuelve
+        ``(overlay, stale)`` — ``overlay=None`` si SPY todavía no está cacheado o
+        algo falla (la curva se dibuja igual). ``stale=True`` (tarea 22) si el
+        cache de SPY quedó atrás: se suprime la línea corta y el chart anota
+        "SPY desactualizado" en vez de mostrar dato viejo como actual.
         """
         if not snaps:
-            return None
+            return None, False
         try:
             import sqlite3
             from pathlib import Path
 
             from analysis.metrics_panel import BENCHMARK_TICKER, load_close_series
             from database.models import DB_PATH
-            from ui.paper.equity_chart import build_benchmark_overlay
+            from ui.paper.equity_chart import build_benchmark_overlay, overlay_is_stale
 
             con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
             try:
                 spy = load_close_series(con, BENCHMARK_TICKER)
             finally:
                 con.close()
-            return build_benchmark_overlay(snaps, spy) or None
+            if overlay_is_stale(snaps, spy):
+                return None, True
+            return build_benchmark_overlay(snaps, spy) or None, False
         except Exception as e:
             log.warning("SPY overlay failed: %s", e)
-            return None
+            return None, False
 
     # ── Prices & KPIs ────────────────────────────────────────────────────────
 

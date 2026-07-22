@@ -127,3 +127,57 @@ def test_warmup_failure_is_swallowed(test_db, monkeypatch):
     )
 
     assert result is not None  # el scan no se cae por el warm-up
+
+
+# ── fallback per-ticker de SPY (tarea 22, BENCH-STALE, pata a) ────────────────
+# SPY entra al warm-up SOLO para el benchmark (V1) y NO a ``tickers``, así que es
+# el único símbolo sin re-fetch per-ticker. Si el batch lo saltea (throttle/401)
+# su fila queda stale y el benchmark se congela → se le da su propio fallback.
+def test_spy_fallback_fetched_when_batch_skips_it(monkeypatch):
+    import data.yahoo_finance as yfmod
+    from paper_trading import engine
+
+    singles: list[str] = []
+    monkeypatch.setattr(
+        yfmod, "get_historical_data_batch",
+        lambda tickers, **kw: {t.upper(): None for t in tickers},  # todo None (throttle)
+    )
+    monkeypatch.setattr(yfmod, "get_historical_data",
+                        lambda ticker, **kw: singles.append(ticker))
+
+    engine._warm_up_history_cache(["AAPL", "MSFT"])
+    assert singles == ["SPY"]  # sólo SPY recibe el re-fetch per-ticker
+
+
+def test_spy_fallback_skipped_when_batch_returns_it(monkeypatch):
+    import data.yahoo_finance as yfmod
+    from paper_trading import engine
+
+    singles: list[str] = []
+    monkeypatch.setattr(
+        yfmod, "get_historical_data_batch",
+        lambda tickers, **kw: {t.upper(): (None if t.upper() != "SPY" else object())
+                               for t in tickers},
+    )
+    monkeypatch.setattr(yfmod, "get_historical_data",
+                        lambda ticker, **kw: singles.append(ticker))
+
+    engine._warm_up_history_cache(["AAPL"])
+    assert singles == []  # SPY vino en el batch → un solo request, sin refetch
+
+
+def test_spy_fallback_fetched_when_batch_raises(monkeypatch):
+    import data.yahoo_finance as yfmod
+    from paper_trading import engine
+
+    singles: list[str] = []
+
+    def _boom(*a, **k):
+        raise RuntimeError("crumb storm")
+
+    monkeypatch.setattr(yfmod, "get_historical_data_batch", _boom)
+    monkeypatch.setattr(yfmod, "get_historical_data",
+                        lambda ticker, **kw: singles.append(ticker))
+
+    engine._warm_up_history_cache(["AAPL"])
+    assert singles == ["SPY"]  # aun con el batch caído, el benchmark recibe fallback

@@ -59,6 +59,26 @@ def build_benchmark_overlay(snapshots: list,
     return out
 
 
+def overlay_is_stale(snapshots: list,
+                     spy_pairs: list[tuple[str, float]] | None) -> bool:
+    """True si el último close de SPY quedó desactualizado vs el último snapshot.
+
+    Reusa el umbral/lógica de ``metrics_panel`` (tarea 22) para no dibujar la
+    línea corta como si fuera actual. Función pura (sin Qt). ``False`` ante datos
+    faltantes o fechas inválidas — en la duda, no se marca stale.
+    """
+    if not snapshots or not spy_pairs:
+        return False
+    from analysis.metrics_panel import BENCHMARK_STALE_BDAYS, benchmark_stale_bdays
+
+    try:
+        ref_day = snapshots[-1].snapshot_at.date().isoformat()
+    except (AttributeError, TypeError, ValueError):
+        return False
+    spy_last = max(d for d, _ in spy_pairs)
+    return benchmark_stale_bdays(spy_last, ref_day) > BENCHMARK_STALE_BDAYS
+
+
 class EquityCurveChart(QWidget):
     """
     Minimal line chart for the equity curve. Supports incremental updates
@@ -122,13 +142,17 @@ class EquityCurveChart(QWidget):
 
     # ── Public API ───────────────────────────────────────────────────────────
     def set_data(self, snapshots: list,
-                 benchmark: list[tuple[datetime, float]] | None = None) -> None:
+                 benchmark: list[tuple[datetime, float]] | None = None,
+                 benchmark_stale: bool = False) -> None:
         """Render the equity curve from a list of ``PaperEquitySnapshot``.
 
         ``benchmark`` (opcional, V1): línea SPY normalizada a la equity inicial,
         ``[(datetime, valor)]`` — se dibuja punteada para comparar el modelo vs
         el mercado. Cuando hay benchmark siempre se hace un full redraw (para
         redibujar la línea y su leyenda).
+
+        ``benchmark_stale`` (tarea 22): si el cache de SPY quedó atrás, en vez de
+        dibujar una línea corta que parece actual se anota "SPY desactualizado".
         """
         if not snapshots:
             if self._plotted_count > 0:
@@ -143,9 +167,10 @@ class EquityCurveChart(QWidget):
         ys = [float(s.total_equity) for s in snapshots]
 
         # Incremental update when appending to the same series; full redraw otherwise.
-        # Con benchmark forzamos full redraw (hay que redibujar la línea SPY).
+        # Con benchmark (o su marcador de stale) forzamos full redraw.
         same_series = (
             not benchmark
+            and not benchmark_stale
             and self._line is not None
             and self._plotted_count > 0
             and len(snapshots) >= self._plotted_count
@@ -155,14 +180,15 @@ class EquityCurveChart(QWidget):
         if same_series:
             self._incremental_update(xs, ys)
         else:
-            self._full_redraw(xs, ys, benchmark)
+            self._full_redraw(xs, ys, benchmark, benchmark_stale)
 
         self._plotted_count = len(snapshots)
         self._first_xs = xs[0]
 
     # ── Drawing internals ────────────────────────────────────────────────────
     def _full_redraw(self, xs: list, ys: list,
-                     benchmark: list[tuple[datetime, float]] | None = None) -> None:
+                     benchmark: list[tuple[datetime, float]] | None = None,
+                     benchmark_stale: bool = False) -> None:
         self.ax.clear()
         self._style_axes()
         (self._line,) = self.ax.plot(
@@ -184,7 +210,15 @@ class EquityCurveChart(QWidget):
                 alpha=0.7,
             )
         # Overlay SPY (V1): mismo eje $, normalizado a la equity inicial.
-        if benchmark:
+        # tarea 22: si SPY quedó desactualizado NO dibujamos la línea corta (que
+        # se leería como actual) — anotamos que el benchmark está stale.
+        if benchmark_stale:
+            self.ax.text(
+                0.01, 0.98, "SPY desactualizado",
+                transform=self.ax.transAxes, ha="left", va="top",
+                fontsize=8, color=PALETTE.get("text3", "#6B7280"),
+            )
+        elif benchmark:
             bx = [d for d, _ in benchmark]
             by = [v for _, v in benchmark]
             self.ax.plot(
