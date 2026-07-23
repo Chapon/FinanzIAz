@@ -103,13 +103,16 @@ def build_regime_series(spy_bars: list[Bar], *, window: int = SMA_WINDOW) -> Reg
 
 def make_entry_filter(
     series: RegimeSeries, *, mode: str, confirm_days: int = CONFIRM_DAYS_DEFAULT,
+    factor: float = 0.5,
 ):
     """Construye el ``entry_filter`` del simulador para un brazo pre-registrado.
 
-    Modos (§4 del pre-registro):
+    Modos (§4 del pre-registro de R2, ampliado por el bloque 10+20):
       * ``"off"``   — baseline: nunca filtra (factor 1.0 siempre).
       * ``"hard"``  — R2a: en risk-off no se abren BUYs (factor 0.0).
       * ``"half"``  — R2b: en risk-off los BUYs entran con medio tamaño (0.5).
+      * ``"scale"`` — R2b generalizado (bloque 20): en risk-off el tamaño se escala
+        por ``factor`` ∈ (0,1] — el sweep pre-registrado 0.25 / 0.50 / 0.75.
       * ``"confirm"`` — R2c: como ``hard`` pero exige ``confirm_days`` ruedas
         consecutivas bajo la SMA200.
 
@@ -122,6 +125,9 @@ def make_entry_filter(
         return lambda _ticker, date: 0.0 if series.is_risk_off(date) else 1.0
     if mode == "half":
         return lambda _ticker, date: 0.5 if series.is_risk_off(date) else 1.0
+    if mode == "scale":
+        f = float(factor)
+        return lambda _ticker, date: f if series.is_risk_off(date) else 1.0
     if mode == "confirm":
         return lambda _ticker, date: (
             0.0 if series.is_risk_off(date, confirm_days=confirm_days) else 1.0

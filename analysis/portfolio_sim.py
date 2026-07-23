@@ -71,6 +71,12 @@ EntryFilter = Callable[[str, str], float]
 # rank_score(ticker, date_iso10) -> conviccion; mayor entra primero.
 RankScore = Callable[[str, str], float]
 
+# size_weight(ticker, date_iso10) -> m ≥ 0, multiplicador de riesgo POR NOMBRE
+# sobre el slice equal-weight (bloque 10). Cuando se pasa, el tamaño deja de estar
+# capeado a 1.0 (un nombre de baja σ puede pesar más que el slice), pero se topa a
+# ``max_weight`` de la equity para que no concentre. None ⇒ comportamiento actual.
+SizeWeight = Callable[[str, str], float]
+
 
 @dataclass
 class Trade:
@@ -142,6 +148,8 @@ def simulate_portfolio(
     costs: CostModel = CostModel(),
     entry_filter: EntryFilter | None = None,
     rank_score: RankScore | None = None,
+    size_weight: SizeWeight | None = None,
+    max_weight: float = 0.25,
     allow_reentry_while_open: bool = False,
     regime_of: Callable[[str], str] | None = None,
 ) -> PortfolioResult:
@@ -162,8 +170,9 @@ def simulate_portfolio(
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
-    # posiciones abiertas: [(exit_date_iso10, proceeds, ticker)]
-    open_positions: list[tuple[str, float, str]] = []
+    # posiciones abiertas: [(exit_date_iso10, proceeds, ticker, entry_cost)]
+    # entry_cost se guarda para topar el sizing por nombre a max_weight de la equity.
+    open_positions: list[tuple[str, float, str, float]] = []
     # valor de la cartera por fecha, para la curva de equity
     realized_by_date: dict[str, float] = {}
     all_dates: set[str] = set()
@@ -171,13 +180,13 @@ def simulate_portfolio(
     def _release_until(date_iso10: str) -> None:
         """Cierra las posiciones cuya salida ya ocurrió antes de ``date_iso10``."""
         nonlocal cash
-        still: list[tuple[str, float, str]] = []
-        for exit_date, proceeds, tk in open_positions:
+        still: list[tuple[str, float, str, float]] = []
+        for exit_date, proceeds, tk, ec in open_positions:
             if exit_date < date_iso10:
                 cash += proceeds
                 realized_by_date[exit_date] = realized_by_date.get(exit_date, 0.0) + proceeds
             else:
-                still.append((exit_date, proceeds, tk))
+                still.append((exit_date, proceeds, tk, ec))
         open_positions[:] = still
 
     # Agrupadas por fecha: los candidatos de un mismo día compiten entre sí por el
@@ -205,12 +214,13 @@ def simulate_portfolio(
             bars = bars_by[ticker]
             res.n_offered += 1
 
-            if not allow_reentry_while_open and any(tk == ticker for _, _, tk in open_positions):
+            if not allow_reentry_while_open and any(tk == ticker for _, _, tk, _ in open_positions):
                 res.n_already_open += 1
                 continue
 
-            size_factor = 1.0 if entry_filter is None else float(entry_filter(ticker, entry_date))
-            if size_factor <= 0.0:
+            # g = factor de régimen (mercado); m = peso de riesgo (nombre).
+            g = 1.0 if entry_filter is None else float(entry_filter(ticker, entry_date))
+            if g <= 0.0:
                 res.n_filtered += 1
                 continue
 
@@ -219,8 +229,27 @@ def simulate_portfolio(
                 res.n_no_slot += 1
                 continue
 
-            notional = (cash / free_slots) * min(1.0, size_factor)
-            if notional <= 0 or not math.isfinite(notional) or notional > cash:
+            base = cash / free_slots
+            if size_weight is None:
+                # Comportamiento histórico (R2): el factor de régimen se capea a 1.0
+                # y no hay peso por nombre ni tope de concentración.
+                size_factor = g
+                notional = base * min(1.0, g)
+            else:
+                m = float(size_weight(ticker, entry_date))
+                if not math.isfinite(m) or m <= 0.0:
+                    m = 1.0  # sizing desconocido → equal-weight, nunca suprime
+                size_factor = m * g
+                notional = base * m * g
+                # Tope por nombre: nunca más de max_weight de la equity (cash + costo
+                # de lo abierto) — evita que una σ diminuta concentre la cartera.
+                equity_proxy = cash + sum(ec for _, _, _, ec in open_positions)
+                notional = min(notional, max_weight * equity_proxy)
+            # Se invierte lo que hay: si el target supera el cash disponible se
+            # recorta (no se rechaza — rechazar dejaría cash ocioso Y perdería la
+            # entrada). Para el path R2 esto es no-op (notional ≤ base ≤ cash).
+            notional = min(notional, cash)
+            if notional <= 0 or not math.isfinite(notional):
                 res.n_no_cash += 1
                 continue
 
@@ -236,7 +265,7 @@ def simulate_portfolio(
             cash -= cyc.entry_cost
             proceeds = cyc.total_proceeds
             exit_date = cyc.legs[-1].date if cyc.legs else entry_date
-            open_positions.append((exit_date, proceeds, ticker))
+            open_positions.append((exit_date, proceeds, ticker, cyc.entry_cost))
             all_dates.add(exit_date)
             res.n_taken += 1
             res.trades.append(Trade(
@@ -247,7 +276,7 @@ def simulate_portfolio(
             ))
 
     # cerrar todo lo que quede
-    for _, proceeds, _tk in open_positions:
+    for _, proceeds, _tk, _ec in open_positions:
         cash += proceeds
     open_positions.clear()
 
