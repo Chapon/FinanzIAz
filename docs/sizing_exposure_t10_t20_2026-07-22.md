@@ -66,7 +66,7 @@ Escalar las BUYs a fracción del tamaño en risk-off (SPY<SMA200, PIT D−1):
 - `analysis/market_regime.py` — modo `scale` en `make_entry_filter` (sweep del factor).
 - `scripts/run_sizing_exposure_t10_t20.py` + tests offline (`tests/test_sizing_exposure.py`).
 
-**Cableado a decisiones (Tarea 20, SHIP):** el escalado por régimen se cablea en el engine detrás de un flag, **default OFF** — la activación y el **factor** (f025 vs f050) son decisión de Chapa (toca el sizing de las BUYs vivas; mismo patrón que E1b, que shipeó PASS pero OFF-by-default). f025 domina en Sharpe y DD; f050 da el mejor CAGR y es el valor que R2 ya había testeado.
+**Cableado a decisiones (Tarea 20, SHIP) — HECHO + ACTIVO (decisión de Chapa 2026-07-22):** el escalado por régimen se cableó en `paper_trading/strategies.py` (`generate_trades_analyze_single`, tras el vol-overlay, justo antes de emitir): `_regime_size_factor(history_provider)` consulta SPY (cacheado por el warm-up, tarea 22), construye la serie de régimen y, si el **último close** de SPY está bajo su SMA200 (PIT), multiplica el notional de **cada BUY nueva** por el factor. **Solo toca BUYs nuevas** — nunca posiciones tenidas ni SELLs. Flags nuevos: `paper_regime_scale_enabled` (default **True**) y `paper_regime_scale_factor` (default **0.50** — el factor que eligió Chapa: mejor CAGR y el valor que R2 ya había testeado; f025 daba mejor Sharpe/DD pero se prefirió el punto medio del sweep). **Fail-open:** sin SPY o con < 200 barras, tamaño pleno (nunca frena una compra). La razón de la orden queda anotada `… · risk-off ×0.5` para el audit.
 
 ## Reproducir
 

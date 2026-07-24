@@ -209,6 +209,35 @@ SCHEMA: dict[str, SettingSpec] = {
             "the E1b universe liquidity floor."
         ),
     ),
+    # R2b (tarea 20) — escalado de exposición por régimen de mercado. Validado por
+    # harness (docs/sizing_exposure_t10_t20_2026-07-22.md): en risk-off escalar las
+    # BUYs a medio tamaño mejora Sharpe/CAGR y baja el max DD de cartera (a
+    # diferencia de suprimirlas, que destruye el compounding — R2a). ON por default
+    # (decisión de Chapa 2026-07-22, tras pasar el kill-criteria pre-registrado).
+    "paper_regime_scale_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "R2b (tarea 20). When True, each new BUY is scaled to "
+            "paper_regime_scale_factor of its size while the market is risk-off "
+            "(SPY below its 200-day SMA, evaluated point-in-time on the last "
+            "completed close). Held positions and SELLs are never touched. "
+            "Fail-open: full size when SPY history is unavailable or < 200 bars."
+        ),
+    ),
+    "paper_regime_scale_factor": SettingSpec(
+        (int, float),
+        0.5,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "R2b size multiplier for new BUYs in a risk-off market (see "
+            "paper_regime_scale_enabled). 0.50 = half size (validated value). "
+            "1.0 = no scaling. 0.0 = suppress BUYs entirely in risk-off — NOT "
+            "recommended: R2a measured that binary suppression destroys "
+            "compounding (−6.3 pts CAGR)."
+        ),
+    ),
     # E1b universe quality/liquidity screen (anti-MLTX). Filters BUY *candidates*
     # before they enter — never touches held positions. Master switch OFF by
     # default: turning it on changes which names can enter live, a trading

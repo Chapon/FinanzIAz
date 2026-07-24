@@ -327,6 +327,40 @@ def _screen_out_candidate(ticker: str, df: "pd.DataFrame", thresholds) -> bool:
         return False
 
 
+def _regime_size_factor(history_provider: HistoryProvider) -> float:
+    """Factor de tamaño para BUYs nuevas según el régimen de mercado (R2b, tarea 20).
+
+    En risk-off (SPY < SMA200, evaluado sobre el **último close completo** = PIT
+    D−1 respecto de la entrada) las BUYs entran a ``paper_regime_scale_factor`` del
+    tamaño; en risk-on, tamaño pleno (1.0). **Fail-open (1.0)** si el flag está off,
+    SPY no está disponible o faltan las 200 barras — nunca frena ni recorta una
+    compra por falta del dato de régimen. Solo se consulta cuando ya hay picks, así
+    que no agrega red a los scans sin BUYs (y SPY viene cacheado por el warm-up).
+    """
+    if not bool(settings.get("paper_regime_scale_enabled", True)):
+        return 1.0
+    try:
+        from analysis.market_regime import build_regime_series
+        from analysis.metrics_panel import BENCHMARK_TICKER
+
+        df = history_provider(BENCHMARK_TICKER)
+        if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+            return 1.0
+        closes = df["Close"].astype(float)
+        bars = [
+            (idx.strftime("%Y-%m-%d"), float(c), float(c), float(c), float(c))
+            for idx, c in closes.items()
+            if pd.notna(c)
+        ]
+        series = build_regime_series(bars)
+        if series.risk_off and series.risk_off[-1]:
+            f = float(settings.get("paper_regime_scale_factor", 0.5))
+            return min(1.0, max(0.0, f))
+    except Exception:
+        get_logger(__name__).exception("R2b regime factor falló — tamaño pleno")
+    return 1.0
+
+
 def generate_trades_analyze_single(
     account: PaperAccount,
     watchlist: list[str],
@@ -497,6 +531,15 @@ def generate_trades_analyze_single(
     dollars = _apply_vol_overlay_to_buys(
         dollars, picks, positions, forced_exits, prices, portfolio_value, history_provider, source
     )
+
+    # ── R2b (tarea 20): escalado de exposición por régimen de mercado ─────────
+    # En risk-off (SPY < SMA200, PIT sobre el último close) las BUYs nuevas entran
+    # a fracción del tamaño. Validado por harness (SHIP). Solo toca BUYs nuevas;
+    # nunca posiciones tenidas ni SELLs. Fail-open (factor 1.0) sin SPY.
+    regime_factor = _regime_size_factor(history_provider)
+    if regime_factor < 1.0:
+        dollars = {t: v * regime_factor for t, v in dollars.items()}
+        reason = f"{reason} · risk-off ×{regime_factor:g}"
 
     for t in picks:
         d = dollars.get(t, 0.0)

@@ -36,6 +36,13 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 | `paper_adv_cap_pct` | `0.0` (OFF) | Cap del notional de cada BUY como fracción del ADV$. 0.05 = máx 5% del ADV. Trimea (no bloquea). Opt-in. |
 | `paper_adv_lookback_days` | `20` | Sesiones para estimar el ADV$ (media de Close×Volume). Consultado por el ADV cap y por el piso de liquidez de E1b. |
 
+## Escalado de exposición por régimen (R2b, tarea 20) — ON
+Valida­do por harness (`docs/sizing_exposure_t10_t20_2026-07-22.md`, SHIP): en risk-off, escalar las BUYs nuevas a medio tamaño mejora Sharpe/CAGR y baja el max DD de cartera (a diferencia de suprimirlas, que destruye el compounding — R2a). Activado por decisión de Chapa 2026-07-22. Solo toca BUYs nuevas; nunca posiciones tenidas ni SELLs.
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `paper_regime_scale_enabled` | `True` (ON) | Cuando el mercado está risk-off (SPY < SMA200, PIT sobre el último close), cada BUY nueva entra a `paper_regime_scale_factor` del tamaño. Fail-open: tamaño pleno si no hay SPY o < 200 barras. |
+| `paper_regime_scale_factor` | `0.5` | Multiplicador de tamaño de las BUYs en risk-off. 0.50 = medio tamaño (valor validado). 1.0 = sin escalado. 0.0 = suprimir BUYs en risk-off (NO recomendado — R2a midió que destruye el compounding). |
+
 ## Screen de universo (E1b, anti-MLTX) — opt-in
 Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad fundamental **antes** de que entren. Validado 2026-07-02 contra la watchlist real (52 nombres): excluye MLTX sin sacar ningún nombre bueno (INTC/TEAM con pérdidas pero revenue real, ASML/TSM sin facts EDGAR → fail-open, todos conservados). Ver `docs/universe_screen_e1b_2026-07-02.md`.
 | Flag | Default | Qué hace |
