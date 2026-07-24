@@ -76,7 +76,11 @@ cuenta una vez aunque reporte varias líneas).
   solo es conocible cuando los filings son públicos; usar la fecha de la operación sería look-ahead.
 - **Período refractario:** tras un cluster aceptado en un ticker, se saltean los siguientes en ese ticker por
   `cap_days` (20) ruedas — evita re-disparo degenerado mientras corre el drift y espeja el `no reabrir
-  mientras está en cartera` del engine.
+  mientras está en cartera` del engine. **Dónde se aplica** (aclaración de implementación, no cambia el
+  criterio): el detector puro `build_cluster_events` deduplica de forma calendario-agnóstica —re-arma un
+  ticker solo cuando el conteo distinto dentro de la ventana **vuelve a caer por debajo de `C`** y re-cruza—;
+  el refractario de **20 ruedas** (que es "ruedas", i.e. días de trading) lo aplica el **harness** al mapear
+  eventos → entradas contra el calendario de precios, donde "rueda" está definida.
 - **Fail-safe:** requiere que exista la barra de entrada `i+1` y ≥ `warmup` barras previas para los exits;
   si no, no dispara (nunca mira el futuro, nunca rompe por falta de datos).
 
@@ -125,6 +129,23 @@ EOD 10y con la infra de cache existente (`get_historical_data_batch` → Parquet
 supervivencia (nombres que quebraron/salieron no están). Mitigación estructural: el **baseline random se
 sortea del MISMO universo** (§4), así el sesgo afecta a los dos brazos por igual y **se cancela en la
 comparación** ΔCAGR; el nivel absoluto de CAGR queda sobreestimado en ambos y no se lee como pronóstico.
+
+### 3.3 Gate de conteo mínimo pre-run (CONGELADO — decidido antes de correr)
+
+**Por qué:** los clusters de compras open-market de ≥3 insiders son **raros en large-caps** (los insiders de
+mega-caps reciben acciones por grants/opciones, no comprando a mercado), y la evidencia del insider-buying es
+más fuerte en small/mid caps. Por eso el S&P 500 podría quedar *event-starved* o ser el lugar donde la señal
+es más débil. Para que ese riesgo no se convierta en un **null ambiguo** ("¿falla la señal o falta poder?"),
+se congela un gate ANTES de correr:
+
+- Si el ingest del S&P 500 arroja **< 150 eventos de cluster del brazo primario** (`CLU_C3_W15`) en 10y —por
+  debajo del rango con el que T11b discriminó (340–660 entradas)—, **se PARA antes de correr el harness** y se
+  escala el universo a small/mid caps como follow-up documentado, en vez de quemar la corrida y publicar un
+  null sin poder.
+- Con **≥ 150 eventos**, se corre el harness completo y el veredicto (ship/no-ship) es válido.
+- En cualquier caso, el veredicto reporta el **N por bucket de régimen** (como T11b anotó sus n=10–20), para
+  que se vea si algún régimen cuelga de una muestra fina. La robustez de régimen (§6.5) sigue siendo un gate
+  duro, pero su lectura es transparente sobre el poder por bucket.
 
 ---
 
