@@ -29,6 +29,7 @@ Provides the following:
 from __future__ import annotations
 
 import hashlib
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -106,27 +107,84 @@ WALKFORWARD_STD_WARN = 0.08
 MIN_WALKFORWARD_ROWS = 250
 
 
+# ── Bounded LRU helpers (shared by the in-memory model caches) ───────────────
+# Eviction happens one entry at a time, at the *insertion* site. The previous
+# implementation cleared the whole cache from inside the key-building function,
+# which is what stopped these caches from ever surviving a scan (T24): a single
+# overflow threw away every warm model mid-scan, including the ones the other
+# account had just paid to train.
+
+
+def _lru_get(cache: "OrderedDict[str, object]", key: str, default=None):
+    """Read ``key``, marking it most-recently-used. ``default`` when absent."""
+    if not key or key not in cache:
+        return default
+    cache.move_to_end(key)
+    return cache[key]
+
+
+def _lru_put(cache: "OrderedDict[str, object]", key: str, value, max_entries: int) -> None:
+    """Store ``key`` and drop the least-recently-used entries over capacity."""
+    if not key:
+        return
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > max_entries:
+        cache.popitem(last=False)
+
+
 # ── XGBoost training-result cache (in-memory only) ───────────────────────────
-# Keyed by a hash of (close-tail, feature-cols, sample-count). Bounded so
-# long-running sessions don't accumulate models indefinitely. Values are
-# tuples of (model, val_acc, train_acc, val_std). ``val_acc`` is the mean
-# cross-fold validation accuracy and ``val_std`` its dispersion across the
-# walk-forward folds (0.0 when the single-split fallback path was used).
-_XGB_CACHE: dict[str, tuple] = {}
-_XGB_CACHE_MAX = 64
+# Keyed by a hash of (trainable close-tail, feature-cols, sample-count, last
+# trainable bar). Values are tuples of (model, val_acc, train_acc, val_std).
+# ``val_acc`` is the mean cross-fold validation accuracy and ``val_std`` its
+# dispersion across the walk-forward folds (0.0 when the single-split fallback
+# path was used).
+#
+# Capacity (T24): the cache is module-level and shared by every caller, so it
+# has to hold the union of what the scans touch or it thrashes. The live DB has
+# 131 distinct tickers across the two accounts (52+5 and 128+10), and a cached
+# entry measures ~633 KiB pickled → 192 entries ≈ 119 MiB, which covers the
+# whole scan universe plus headroom for the ad-hoc analyses of the Analysis and
+# Leads tabs. The old cap of 64 could not even hold one account's scan.
+_XGB_CACHE: "OrderedDict[str, tuple]" = OrderedDict()
+_XGB_CACHE_MAX = 192
 
 
 def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) -> str:
-    """Stable fingerprint for the training set + feature spec."""
-    if "Close" not in df.columns:
+    """Stable fingerprint of the *trainable* frame + feature spec.
+
+    Only the rows that survive the label ``dropna`` in
+    :func:`train_xgboost_signal` are hashed, i.e. everything up to
+    ``-PREDICTION_HORIZON``. The trailing rows carry no label — and the very
+    last one is the **partial bar of the open session**, whose Close ticks all
+    day and comes back different from every re-fetch — so folding them into the
+    key made it change on data the model never trains on, missing on every scan
+    while producing a byte-identical model (T24).
+
+    The fingerprint still moves when the training data genuinely changes: a new
+    daily bar shifts both ``n_samples`` and the trainable window (so the model
+    is retrained once per session, as intended), and a retroactive revision of
+    the history — a split or dividend adjustment — rewrites the closes hashed.
+
+    The digest covers the *whole* trainable series, not just its tail: the
+    previous 20-row tail could not see a correction further back, which would
+    have served a model trained on history that no longer exists. Measured at
+    ~30 µs for a 2y frame against ~373 ms for the walk-forward fit it guards,
+    so the stronger guarantee costs ~0.01% of what it saves.
+    """
+    if "Close" not in df.columns or len(df) <= PREDICTION_HORIZON:
         return ""
-    tail = df["Close"].tail(20).round(4).tolist()
-    payload = f"{tail}|{sorted(feature_cols)}|{n_samples}|{df.index[-1] if len(df) else ''}"
-    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-    # LRU-ish eviction: clear when over capacity.
-    if len(_XGB_CACHE) > _XGB_CACHE_MAX:
-        _XGB_CACHE.clear()
-    return h
+    trainable = df["Close"].iloc[:-PREDICTION_HORIZON]
+    if trainable.empty:
+        return ""
+    try:
+        closes = np.ascontiguousarray(trainable.to_numpy(dtype="float64")).round(4)
+    except (TypeError, ValueError):
+        # Non-numeric closes: better no caching than a key that can't tell two
+        # different training sets apart.
+        return ""
+    payload = f"{sorted(feature_cols)}|{n_samples}|{trainable.index[-1]}".encode("utf-8")
+    return hashlib.sha256(closes.tobytes() + payload).hexdigest()[:16]
 
 
 def clear_ml_cache() -> None:
@@ -829,11 +887,12 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         X_pred = latest_row[valid_cols].values.reshape(1, -1).astype(np.float32)
 
         # Reuse a previously trained model if the input fingerprint matches.
-        # We hash the (close-tail, feature-shape, latest-date) tuple so that
-        # repeated UI refreshes during the same trading session don't retrain
-        # the model from scratch on identical data.
+        # The fingerprint covers only the rows that actually train the model
+        # (see ``_xgb_cache_key``), so repeated scans and UI refreshes during
+        # the same session hit the cache instead of retraining on data that is
+        # identical everywhere the model looks.
         cache_key = _xgb_cache_key(df, valid_cols, len(combined))
-        cached = _XGB_CACHE.get(cache_key)
+        cached = _lru_get(_XGB_CACHE, cache_key)
         if cached is not None:
             model, val_acc, train_acc, val_std = cached
         else:
@@ -844,7 +903,7 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
             else:
                 model, val_acc, train_acc, val_std = _train_single_split(X_all, y_all, valid_cols)
 
-            _XGB_CACHE[cache_key] = (model, val_acc, train_acc, val_std)
+            _lru_put(_XGB_CACHE, cache_key, (model, val_acc, train_acc, val_std), _XGB_CACHE_MAX)
 
         # Predict probability of price going UP in the next 5 days. Works
         # identically against both raw XGBClassifier and CalibratedClassifierCV
@@ -1081,21 +1140,25 @@ STACKING_FEATURE_COLS = [
 # don't refit the whole XGB-OOF + HMM + logistic stack. Mirrors _XGB_CACHE.
 # A trained ``dict`` *and* a ``None`` outcome (e.g. too few rows) are both cached,
 # so the expensive feature build isn't repeated just to re-learn it's a no-go.
-_STACK_CACHE: dict[str, object] = {}
+_STACK_CACHE: "OrderedDict[str, object]" = OrderedDict()
 _STACK_CACHE_MAX = 64
 _STACK_MISS = object()  # sentinel: distinguishes "not cached" from "cached None"
 
 
 def _stack_cache_key(df: pd.DataFrame) -> str:
-    """Stable fingerprint of the training set for the stacking combiner cache."""
+    """Stable fingerprint of the training set for the stacking combiner cache.
+
+    Note (T24): unlike ``_xgb_cache_key`` this still hashes the live bar, so it
+    misses on every intraday re-fetch. Left as-is deliberately — the stacking
+    path is off in the live account (``stacking_enabled=False``, kill_only), so
+    it is not in the scan hot path and re-keying it was not pre-registered. Only
+    the eviction bug it shared with the XGB cache is fixed here.
+    """
     if "Close" not in df.columns or len(df) == 0:
         return ""
     tail = df["Close"].tail(20).round(4).tolist()
     payload = f"stack|{tail}|{len(df)}|{df.index[-1]}"
-    h = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-    if len(_STACK_CACHE) > _STACK_CACHE_MAX:
-        _STACK_CACHE.clear()
-    return h
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _signal_score(signal: str, strength: str) -> float:
@@ -1383,12 +1446,12 @@ def train_stacking_combiner(df: pd.DataFrame) -> dict | None:
         return None
     key = _stack_cache_key(df)
     if key:
-        cached = _STACK_CACHE.get(key, _STACK_MISS)
+        cached = _lru_get(_STACK_CACHE, key, _STACK_MISS)
         if cached is not _STACK_MISS:
             return cached  # type: ignore[return-value]
     combiner = _train_stacking_combiner_uncached(df)
     if key:
-        _STACK_CACHE[key] = combiner
+        _lru_put(_STACK_CACHE, key, combiner, _STACK_CACHE_MAX)
     return combiner
 
 
