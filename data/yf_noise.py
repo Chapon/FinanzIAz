@@ -31,6 +31,19 @@ escribir a la DB desde un handler de logging invita a reentrancia (un fallo de
 escritura loguea → vuelve a entrar al filtro). El consumidor —
 ``data.yahoo_finance.get_analyst_data``— lee el set *después* del fetch y recién
 ahí llama a ``_record_miss``, que ya sabe distinguir delisting de throttle (B3).
+
+Ampliación LOG-HYGIENE (tarea 25, pieza b)
+------------------------------------------
+``<TICKER>: Yahoo web request for share count failed`` sale del mismo logger a
+nivel **ERROR** (``yfinance/base.py``, dos sitios) y aparece pegado a los eventos
+de throttle — o sea, es **transitorio y ya manejado**: yfinance devuelve ``None``
+y el caller sigue sin el dato de shares. A nivel ERROR compite visualmente con
+fallos reales.
+
+Acá se **degrada a DEBUG en vez de descartarse**: el ERROR no es informativo pero
+el evento sí (correlaciona con el throttle), así que conviene que siga estando
+para diagnosticar, solo que fuera del nivel que uno mira cuando algo se rompe.
+Es la diferencia con los 404 de arriba, que no aportan nada y se tiran.
 """
 
 from __future__ import annotations
@@ -41,6 +54,8 @@ import threading
 
 _QUOTE_NOT_FOUND = re.compile(r"Quote not found for symbol:\s*([^\"'}\s]+)")
 _NO_FUNDAMENTALS = re.compile(r"No fundamentals data found for symbol:\s*([^\"'}\s]+)")
+# Tarea 25(b): transitorio y ya manejado por yfinance (devuelve None) → DEBUG.
+_SHARE_COUNT_FAILED = re.compile(r"Yahoo web request for share count failed")
 
 _lock = threading.Lock()
 _unknown_symbols: set[str] = set()
@@ -76,9 +91,10 @@ def reset_unknown_symbols() -> None:
 class QuoteSummary404Filter(logging.Filter):
     """Silencia los 404 esperables de ``quoteSummary`` y anota los símbolos muertos.
 
-    Devuelve ``False`` (descarta el record) solo para los dos patrones conocidos;
-    cualquier otro mensaje de yfinance pasa intacto — no queremos tapar errores
-    nuevos, que es justo lo que este filtro viene a destapar.
+    Descarta los dos patrones de 404 conocidos y **degrada a DEBUG** el fallo de
+    share count (tarea 25b). Cualquier otro mensaje de yfinance pasa intacto y
+    con su nivel original — no queremos tapar errores nuevos, que es justo lo que
+    este filtro viene a destapar.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -92,7 +108,16 @@ class QuoteSummary404Filter(logging.Filter):
             note_unknown_symbol(match.group(1))
             return False
 
-        return _NO_FUNDAMENTALS.search(message) is None
+        if _NO_FUNDAMENTALS.search(message):
+            return False
+
+        if _SHARE_COUNT_FAILED.search(message) and record.levelno > logging.DEBUG:
+            # Degradar, no descartar: el evento correlaciona con el throttle y
+            # sirve para diagnosticar, pero no es un fallo accionable.
+            record.levelno = logging.DEBUG
+            record.levelname = logging.getLevelName(logging.DEBUG)
+
+        return True
 
 
 def install(logger_name: str = "yfinance") -> bool:

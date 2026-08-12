@@ -136,11 +136,16 @@ def test_purge_gap_equals_prediction_horizon():
 def test_walkforward_runs_and_reports_mean_std(ohlcv_factory, caplog):
     """On a healthy ~600-row series the walk-forward path runs, logs
     ``val_acc=X% ± Y%``, caches a 4-element tuple, and the signal description
-    shows the ± dispersion."""
+    shows the ± dispersion.
+
+    El log per-ticker está en DEBUG desde la tarea 25a (era una línea INFO por
+    ticker entrenado, la mitad del volumen del log); el agregado sale una vez por
+    scan vía ``drain_training_summary``.
+    """
     clear_ml_cache()
     df = ohlcv_factory(rows=600, seed=7)
 
-    with caplog.at_level(logging.INFO, logger=ML_LOGGER):
+    with caplog.at_level(logging.DEBUG, logger=ML_LOGGER):
         result = train_xgboost_signal(df)
 
     assert result is not None

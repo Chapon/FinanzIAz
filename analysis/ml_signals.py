@@ -29,6 +29,7 @@ Provides the following:
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
@@ -100,7 +101,21 @@ N_WALKFORWARD_FOLDS = 5
 # (PREDICTION_HORIZON is defined further down; the gap is wired at call time.)
 # If the cross-fold std exceeds this, the model is flagged as unstable: the
 # val accuracy depends heavily on which slice of history it was measured on.
-WALKFORWARD_STD_WARN = 0.08
+#
+# Calibrado con la distribución REAL (tarea 25a): medido sobre los 134 frames
+# 2y/1d del cache vivo, el std entre folds tiene mediana **0.0760** y decil
+# superior **0.1105**. O sea que el 0.08 original estaba clavado *en la mediana*
+# y disparaba en 55/134 = **41% de los tickers de cada scan** — cientos de líneas
+# WARNING que no discriminaban nada (un umbral en la mediana, por construcción,
+# marca a la mitad de la población) y que enterraban los errores reales.
+# 0.12 cae en la cola (dispara en 6/134 = 4.5%), así que el warning vuelve a
+# significar "este ticker es un outlier de inestabilidad".
+#
+# Nota: la inestabilidad de fondo NO es un bug a arreglar — es inherente a una
+# señal sin alpha (tarea 9: AUC OOS 0.498; el val_acc medio de estos mismos 134
+# tickers da 0.5076, un coin flip). Por eso esto es higiene de log y no una
+# alerta de calidad del modelo.
+WALKFORWARD_STD_WARN = 0.12
 # Below this many labelled rows the folds become too small to be meaningful
 # (single-class train folds, ~30-row fits), so we fall back to the single
 # 80/20 split + isotonic calibration path from T02.
@@ -191,6 +206,45 @@ def clear_ml_cache() -> None:
     """Public helper to flush the cached XGBoost + stacking models (tests)."""
     _XGB_CACHE.clear()
     _STACK_CACHE.clear()
+
+
+# ── Telemetría de entrenamiento (tarea 25a) ──────────────────────────────────
+# El walk-forward logueaba una línea INFO por ticker entrenado. Con el cache
+# arreglado (tarea 24) eso ya bajó a 1×/día/ticker, pero el primer scan del día
+# seguía escupiendo ~131 líneas. Se acumulan acá y el engine emite **una** línea
+# resumen por scan, al estilo de la telemetría OPS1(c).
+#
+# El acumulador cuenta entrenamientos *desde el último drain*, así que un
+# análisis ad-hoc de la pestaña Analysis o de Leads entre dos scans se suma al
+# resumen del scan siguiente. Es telemetría de log, no contabilidad: preferible
+# a acoplar ml_signals con el ciclo de vida del scan.
+_training_lock = threading.Lock()
+_training_tally: dict[str, float] = {"n": 0, "val_acc_sum": 0.0, "unstable": 0}
+
+
+def _note_training(val_acc: float, val_std: float) -> None:
+    """Registra un entrenamiento walk-forward para el resumen por scan."""
+    with _training_lock:
+        _training_tally["n"] += 1
+        _training_tally["val_acc_sum"] += val_acc
+        if val_std > WALKFORWARD_STD_WARN:
+            _training_tally["unstable"] += 1
+
+
+def drain_training_summary() -> str | None:
+    """Devuelve el resumen de entrenamientos acumulados y resetea el contador.
+
+    ``None`` cuando no se entrenó nada — el caso normal a partir del segundo
+    scan del día, ahora que el cache sobrevive (tarea 24).
+    """
+    with _training_lock:
+        n = int(_training_tally["n"])
+        if n == 0:
+            return None
+        val_acc_mean = _training_tally["val_acc_sum"] / n
+        unstable = int(_training_tally["unstable"])
+        _training_tally.update({"n": 0, "val_acc_sum": 0.0, "unstable": 0})
+    return f"XGB entrenados={n} val_acc medio={val_acc_mean:.0%} inestables={unstable}"
 
 
 # ── Optional hmmlearn ─────────────────────────────────────────────────────────
@@ -774,12 +828,17 @@ def _train_walkforward(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[st
 
     val_acc = float(np.mean(scores))
     val_std = float(np.std(scores))
-    log.info(
+    # DEBUG y no INFO (tarea 25a): esta línea salía una vez por ticker entrenado
+    # y era la mitad del volumen del log. El dato agregado va en el resumen por
+    # scan (``drain_training_summary``); el detalle per-ticker queda para cuando
+    # se está diagnosticando un ticker puntual y se sube el nivel a DEBUG.
+    log.debug(
         "XGBoost walk-forward: val_acc=%.0f%% ± %.0f%% over %d folds.",
         val_acc * 100,
         val_std * 100,
         len(scores),
     )
+    _note_training(val_acc, val_std)
     if val_std > WALKFORWARD_STD_WARN:
         # ``%.1f`` y no ``%.0f``: la comparación usa el valor sin redondear, así
         # que con val_std=8.4% el mensaje imprimía la desigualdad falsa

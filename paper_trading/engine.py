@@ -551,6 +551,11 @@ class ScanResult:
     # the T12 Slack summary after the transaction closes. Captured at create/
     # fill time so the message is safe to compose outside the DB session.
     new_orders: list[OrderNotice] = field(default_factory=list)
+    # LOG-HYGIENE (tarea 25a) — resumen de los entrenamientos XGBoost de este
+    # scan, en una línea, en vez de dos líneas por ticker. ``None`` cuando no se
+    # entrenó nada, que es el caso normal a partir del 2º scan del día desde que
+    # el cache sobrevive (tarea 24).
+    ml_training: str | None = None
 
     def summary(self) -> str:
         base = (
@@ -562,6 +567,8 @@ class ScanResult:
         if self.scan_seconds > 0:
             phases = " ".join(f"{k} {v:.2f}s" for k, v in self.phase_seconds.items())
             base += f"  · {self.scan_seconds:.2f}s ({phases})"
+        if self.ml_training:
+            base += f"  · {self.ml_training}"
         return base
 
 
@@ -671,6 +678,16 @@ def run_scan(
 
         t_after_analyze = perf_counter()  # OPS1(c): fin de analyze (ATR exits + strategy)
 
+        # LOG-HYGIENE (tarea 25a): los entrenamientos XGBoost de la fase analyze
+        # se resumen en una línea. Best-effort — la telemetría de log nunca puede
+        # tumbar un scan.
+        try:
+            from analysis.ml_signals import drain_training_summary
+
+            ml_training = drain_training_summary()
+        except Exception:
+            ml_training = None
+
         result = ScanResult(
             account_id=account_id,
             scan_at=utcnow_naive(),
@@ -682,6 +699,7 @@ def run_scan(
             prices_missing=len(missing_tickers),
             equity_before=float(equity_before),
             warnings=list(scan_warnings),
+            ml_training=ml_training,
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
