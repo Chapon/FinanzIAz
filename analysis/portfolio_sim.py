@@ -152,6 +152,7 @@ def simulate_portfolio(
     max_weight: float = 0.25,
     allow_reentry_while_open: bool = False,
     regime_of: Callable[[str], str] | None = None,
+    time_stop_days: int | None = None,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -167,6 +168,9 @@ def simulate_portfolio(
 
     El resultado de cada posición se obtiene con ``replay_cycle`` — la misma
     maquinaria de salida ya validada — así el simulador no reimplementa exits.
+
+    ``time_stop_days`` (ENT1 brazo b, Tarea 13) se pasa tal cual a ``replay_cycle``:
+    ``None`` ⇒ sin time stop, que es el comportamiento de todas las tareas previas.
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
@@ -258,6 +262,7 @@ def simulate_portfolio(
                 params=so_params, atr_p=atr_p, cap_days=cap_days,
                 costs=costs, notional=notional,
                 regime="" if regime_of is None else regime_of(entry_date),
+                time_stop_days=time_stop_days,
             )
             if cyc is None:
                 continue

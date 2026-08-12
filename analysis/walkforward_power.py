@@ -769,6 +769,92 @@ def deflated_sharpe_ratio(
     )
 
 
+# ── Block-bootstrap pareado (Tarea 13 / ENT1 §5 C5) ──────────────────────────
+
+
+@dataclass
+class PairedBootstrapResult:
+    """Distribución bootstrapeada de ΔCAGR (candidato − baseline)."""
+
+    observed: float          # ΔCAGR puntual sobre la serie completa
+    mean: float              # media de los resamples
+    ci_low: float            # percentil 2.5
+    ci_high: float           # percentil 97.5
+    p_value: float           # fracción de resamples con Δ ≤ 0 (unilateral)
+    n_obs: int
+    block: int
+    n_resamples: int
+
+
+def _compound_cagr(rets: "np.ndarray", periods: int = 252) -> float:
+    """CAGR anualizado por composición de retornos diarios."""
+    if rets.size == 0:
+        return 0.0
+    growth = float(np.prod(1.0 + rets))
+    if growth <= 0:
+        return -1.0
+    return growth ** (periods / rets.size) - 1.0
+
+
+def paired_block_bootstrap(
+    base_rets: "list[float]",
+    cand_rets: "list[float]",
+    *,
+    block: int = 20,
+    n_resamples: int = 2000,
+    seed: int = 12345,
+    periods: int = 252,
+) -> PairedBootstrapResult:
+    """Bootstrap de bloques móviles **pareado** sobre Δ(retorno diario de equity).
+
+    Por qué éste y no PBO/CSCV (congelado en el pre-registro §5 C5): CSCV responde
+    *"¿el mejor de muchos candidatos generaliza?"*, que **no es la pregunta** cuando
+    se refina **una** regla contra su propio baseline — con pocos brazos colineales
+    es un estimador grueso, que es exactamente cómo murió T23 (``PBO=0.889``) y lo
+    que su veredicto dejó anotado como idea derivada.
+
+    Mecánica: las dos series entran **alineadas por fecha** (mismo largo T). Cada
+    resample arma una secuencia de índices concatenando bloques contiguos de
+    ``block`` días tomados al azar (bloques móviles: preservan autocorrelación y el
+    efecto cascada de path que T23 midió) y **aplica la misma secuencia a las dos
+    series** — de ahí lo pareado: el ruido de mercado común se cancela y lo que
+    queda es el efecto de la regla. Se compone el CAGR de cada una y se guarda la
+    diferencia.
+
+    El gate es ``ci_low > 0``: el percentil 2.5 del ΔCAGR bootstrapeado tiene que
+    seguir siendo positivo. Determinista por ``seed``.
+    """
+    a = np.asarray(base_rets, dtype=float)
+    b = np.asarray(cand_rets, dtype=float)
+    T = min(a.size, b.size)
+    block = max(1, min(int(block), T))
+    if T < 2 or n_resamples < 1:
+        return PairedBootstrapResult(0.0, 0.0, 0.0, 0.0, float("nan"), T, block, 0)
+    a, b = a[:T], b[:T]
+
+    observed = _compound_cagr(b, periods) - _compound_cagr(a, periods)
+    n_blocks = int(math.ceil(T / block))
+    max_start = T - block  # inclusive
+    rng = np.random.default_rng(seed)
+
+    deltas = np.empty(n_resamples, dtype=float)
+    for k in range(n_resamples):
+        starts = rng.integers(0, max_start + 1, size=n_blocks)
+        idx = (starts[:, None] + np.arange(block)[None, :]).ravel()[:T]
+        deltas[k] = _compound_cagr(b[idx], periods) - _compound_cagr(a[idx], periods)
+
+    return PairedBootstrapResult(
+        observed=observed,
+        mean=float(deltas.mean()),
+        ci_low=float(np.percentile(deltas, 2.5)),
+        ci_high=float(np.percentile(deltas, 97.5)),
+        p_value=float(np.mean(deltas <= 0.0)),
+        n_obs=T,
+        block=block,
+        n_resamples=n_resamples,
+    )
+
+
 # ── A1 con variantes de stop-mult: matriz de retornos por config ─────────────
 
 # Variantes del eje "cuán apretado es el stop/trail" para el PBO/DSR de A1.

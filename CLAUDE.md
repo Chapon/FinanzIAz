@@ -20,7 +20,7 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 
 ## Mapa rápido
 
-- `paper_trading/` — motor de decisiones (`engine.py` → `run_scan` con gates), cuentas, estrategias, costos. Cuenta activa: **"Sim Principal" (id=1)**, modo **kill_only**.
+- `paper_trading/` — motor de decisiones (`engine.py` → `run_scan` con gates), cuentas, estrategias, costos. **Cuenta activa: "Sim Segundo" (id=2)** — `auto`, `equal_weight`, `max_positions=10`. La **cuenta 1 ("Sim Principal") está pausada** (`is_active=0`) desde 2026-07-01: toda verificación en vivo va contra la 2. Flags de modelo en **kill_only** (hmm/stacking OFF).
 - `analysis/` — technical, metrics_panel, leads, impact_score, surprise_score, exit_replay.
 - `data/` — `yahoo_finance.py` (con cache + batch + retry), `news_sources.py`.
 - `database/models.py` + `paper_trading/models.py` — esquema SQLite (alembic).

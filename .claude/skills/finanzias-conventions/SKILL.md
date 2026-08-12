@@ -35,7 +35,7 @@ Features nuevas de scoring/valuación entran primero como **display-only**, NO c
 
 ## Arquitectura del motor (5+ gates)
 
-Núcleo de decisiones en `paper_trading/engine.py`, función `run_scan`. Cuenta activa: **"Sim Principal" (id=1)**. Modo **kill_only** (hmm_enabled=False, stacking_enabled=False; XGBoost y vol_overlay siempre ON).
+Núcleo de decisiones en `paper_trading/engine.py`, función `run_scan`. **Cuenta activa: "Sim Segundo" (id=2)** — `auto`, `equal_weight`, `max_positions=10`. La **cuenta 1 ("Sim Principal") está pausada** (`is_active=0`, último scan 2026-07-01): docs viejos la llaman "la cuenta activa" — confirmar contra `paper_accounts.is_active` antes de sacar conclusiones de comportamiento vivo. Modo **kill_only** (hmm_enabled=False, stacking_enabled=False; XGBoost y vol_overlay siempre ON).
 
 Gates en orden (ver comentarios en `engine.py`):
 - **Gate 1** — market hours.

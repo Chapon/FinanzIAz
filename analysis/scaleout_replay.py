@@ -158,6 +158,7 @@ def replay_cycle(
     notional: float = 10_000.0,
     scores: dict | None = None,
     regime: str = "",
+    time_stop_days: int | None = None,
 ) -> CycleResult | None:
     """Simula un ciclo desde ``entry_idx`` (entrada al close) bajo un brazo.
 
@@ -168,8 +169,14 @@ def replay_cycle(
       2. Si no disparó y hay un **flip a SELL** en la señal PIT (y pasa el Gate 2b),
          se vende la fracción; si ya se había vendido el parcial, el siguiente flip
          cierra el resto (no se vende una fracción de la fracción indefinidamente).
+      2b. **Time stop** (ENT1 brazo b, opcional): exactamente en la barra
+         ``time_stop_days`` desde la entrada, si liquidar al close no recupera el
+         costo de entrada (P/L ≤ 0 **neto de costos**) se cierra el remanente.
       3. Al ``cap_days`` se cierra lo que quede al close.
       4. Recién ahí se actualiza el HWM con el close del día.
+
+    ``time_stop_days=None`` (default) ⇒ el paso 2b no existe y el comportamiento es
+    idéntico al de T7/T23 — este parámetro no puede cambiar sus resultados.
 
     Devuelve ``None`` si no hay barras suficientes.
     """
@@ -237,6 +244,26 @@ def replay_cycle(
                 if remaining <= 1e-9:
                     res.daily_value.append((date_i, realized_cash))
                     break
+
+        # ── 2b. Time stop (ENT1 brazo b) ──────────────────────────────────────
+        # Chequeo de **una sola vez** en la barra N (no rolling): si a los N días
+        # la posición no avanzó, el slot se libera. La condición se evalúa sobre
+        # el P/L neto real —lo que quedaría si liquidara al close, contra lo que
+        # costó abrir— no sobre el precio, así los costos de las dos puntas
+        # cuentan igual que en el resto del harness.
+        if (
+            time_stop_days is not None
+            and remaining > 0
+            and (i - entry_idx) == time_stop_days
+        ):
+            net_if_closed = realized_cash + costs.sell_proceeds(remaining, close_i)
+            if net_if_closed <= entry_cost:
+                proceeds = costs.sell_proceeds(remaining, close_i)
+                res.legs.append(Leg(date_i, close_i, remaining, "time_stop", proceeds))
+                realized_cash += proceeds
+                remaining = 0.0
+                res.daily_value.append((date_i, realized_cash))
+                break
 
         # ── 3. Cap ────────────────────────────────────────────────────────────
         if i == last_idx and remaining > 0:
