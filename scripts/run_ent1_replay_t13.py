@@ -38,6 +38,11 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.entry_rules import apply_pullback  # noqa: E402
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
+from analysis.harness_config import (  # noqa: E402
+    LEGACY_MAX_POSITIONS,
+    LIVE_MAX_POSITIONS,
+    announce,
+)
 from analysis.meta_labeling import MAX_DAYS  # noqa: E402
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
@@ -315,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--period", default="10y")
     p.add_argument("--warmup", type=int, default=250)
     p.add_argument("--cap-days", type=int, default=CAP_DAYS)
-    p.add_argument("--max-positions", type=int, default=5)
+    p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--no-diagnose", action="store_true",
@@ -344,6 +349,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Progreso a stderr: con --json el stdout tiene que ser JSON puro y nada más.
     log = sys.stderr if args.json else sys.stdout
+    announce(args.max_positions, args.universe, len(bars_by),
+             verdict_max_positions=LEGACY_MAX_POSITIONS, file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(base_entries)}", file=log)
     for label, st in (("EMA20 ", pull_stats), ("negday", neg_stats)):
         print(f"Pullback {label} K={PULLBACK_WINDOW}: {st.n_waits} esperas → "

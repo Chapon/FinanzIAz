@@ -37,6 +37,11 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams  # noqa: E402
+from analysis.harness_config import (  # noqa: E402
+    LEGACY_MAX_POSITIONS,
+    LIVE_MAX_POSITIONS,
+    announce,
+)
 from analysis.market_regime import build_regime_series, make_entry_filter  # noqa: E402
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import (  # noqa: E402
@@ -189,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--warmup", type=int, default=250)
     p.add_argument("--spacing", type=int, default=20)
     p.add_argument("--cap-days", type=int, default=20)
-    p.add_argument("--max-positions", type=int, default=5)
+    p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -216,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     sigma_by = build_sigma_map(entries, bars_by)
     oracle_ret = precompute_oracle_returns(entries, bars_by, sigs_by)
+    announce(args.max_positions, args.universe, len(bars_by),
+             verdict_max_positions=LEGACY_MAX_POSITIONS)
     print(f"Tickers: {len(bars_by)} · entradas: {len(entries)} · "
           f"σ computables: {len(sigma_by)} · max_positions={args.max_positions} · "
           f"capital={args.capital:,.0f}\n")

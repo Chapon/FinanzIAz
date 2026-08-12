@@ -76,6 +76,11 @@ sys.path.insert(0, str(_HERE.parent))
 import numpy as np  # noqa: E402
 
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
+from analysis.harness_config import (  # noqa: E402
+    LEGACY_MAX_POSITIONS,
+    LIVE_MAX_POSITIONS,
+    announce,
+)
 from analysis.insider_cluster import (  # noqa: E402
     ClusterEvent,
     ClusterParams,
@@ -414,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--period", default="10y")
     p.add_argument("--warmup", type=int, default=250)
     p.add_argument("--cap-days", type=int, default=20)
-    p.add_argument("--max-positions", type=int, default=5)
+    p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--k-random", type=int, default=500)
     p.add_argument("--seed", type=int, default=12345)
@@ -444,6 +449,8 @@ def main(argv: list[str] | None = None) -> int:
     if not bars_by:
         print("Sin barras en Parquet: precargá el cache del universo primero.", file=sys.stderr)
         return 1
+    announce(args.max_positions, args.universe, len(bars_by),
+             verdict_max_positions=LEGACY_MAX_POSITIONS)
     print(f"Universo: {len(tickers)} tickers · con barras: {len(bars_by)} · "
           f"con transacciones: {sum(1 for t in bars_by if txs_by.get(t))}")
     print(f"Modo de exit: {args.signals_mode}"
