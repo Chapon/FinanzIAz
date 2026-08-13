@@ -40,7 +40,7 @@ Contrafactual (congelado en el doc §3)
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from analysis.exit_replay import (
@@ -54,6 +54,16 @@ from analysis.exit_replay import (
 
 # Señal PIT: {iso10: "BUY"|"SELL"|"HOLD"}. Fechas ausentes ⇒ sin señal ese día.
 SignalSeries = dict
+
+# ``stop_filter(bars, i) -> bool``: ¿se le permite al **stop duro** disparar en la
+# barra ``i``? Sirve para los brazos oráculo de la Tarea 26 (STOP-CAL), que gatean
+# el stop con información del futuro para validar la sensibilidad del harness.
+# ``None`` (default) ⇒ el stop dispara siempre que toque, o sea el comportamiento
+# de T7/T23/T13/T21 sin cambio alguno.
+StopFilter = Callable[[list[Bar], int], bool]
+
+# Múltiplo que pone el nivel del stop en negativo ⇒ el guard ``> 0`` lo apaga.
+_NO_STOP = 1e9
 
 
 @dataclass(frozen=True)
@@ -159,6 +169,7 @@ def replay_cycle(
     scores: dict | None = None,
     regime: str = "",
     time_stop_days: int | None = None,
+    stop_filter: StopFilter | None = None,
 ) -> CycleResult | None:
     """Simula un ciclo desde ``entry_idx`` (entrada al close) bajo un brazo.
 
@@ -177,6 +188,9 @@ def replay_cycle(
 
     ``time_stop_days=None`` (default) ⇒ el paso 2b no existe y el comportamiento es
     idéntico al de T7/T23 — este parámetro no puede cambiar sus resultados.
+
+    ``stop_filter=None`` (default) ⇒ ídem para el paso 1: el stop duro dispara
+    siempre que toque. Cuando se pasa, gatea **sólo** al ``atr_stop`` (Tarea 26).
 
     Devuelve ``None`` si no hay barras suficientes.
     """
@@ -211,14 +225,29 @@ def replay_cycle(
 
         # ── 1. Niveles ATR (siempre cierran el remanente entero) ──────────────
         fired = None
+        p_eff = atr_p
         if a is not None:
             fired = atr_exit(
                 current_price=close_i, avg_cost=avg_cost,
                 high_water_mark=hwm, atr_value=a, p=atr_p,
             )
+            if (fired == "atr_stop" and stop_filter is not None
+                    and not stop_filter(bars, i)):
+                # Stop suprimido en esta barra (brazos oráculo de la T26). Se
+                # re-evalúa la misma barra con el stop apagado y el trailing
+                # **pineado en su múltiplo efectivo**: sin ese pin, apagar el
+                # stop apagaría también al trail, que por default comparte
+                # múltiplo con él (espejo de ``gates.py``). Así el filtro toca
+                # una sola barrera, que es lo que el pre-registro congeló.
+                p_eff = replace(atr_p, stop_mult=_NO_STOP,
+                                trail_mult=atr_p.effective_trail_mult)
+                fired = atr_exit(
+                    current_price=close_i, avg_cost=avg_cost,
+                    high_water_mark=hwm, atr_value=a, p=p_eff,
+                )
         if fired is not None:
             level = _atr_trigger_level(fired, avg_cost=avg_cost, hwm=hwm,
-                                       atr_value=a, p=atr_p)
+                                       atr_value=a, p=p_eff)
             px = _exit_fill_price(fired, level, bars[i])
             proceeds = costs.sell_proceeds(remaining, px)
             res.legs.append(Leg(date_i, px, remaining, fired, proceeds))

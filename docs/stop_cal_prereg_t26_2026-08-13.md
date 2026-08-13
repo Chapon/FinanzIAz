@@ -13,6 +13,33 @@ intacto.
 
 ---
 
+## 0. ENMIENDA 2026-08-13 (antes de correr — sin ningún resultado a la vista)
+
+Al implementar el harness se detectó que **C6 estaba mal especificado** y era inaplicable tal como se
+escribió. Se corrige acá, **antes de la primera corrida**: el commit del pre-registro original
+(`be07991`) precede a todo código de harness, y esta enmienda precede a la corrida — el orden del
+historial de git es la prueba de que no se re-decidió nada mirando resultados (regla 2).
+
+**El defecto:** C6 pedía que *"al menos uno de los dos vecinos"* del candidato tuviera `ΔCAGR ≥ 0`.
+El baseline `S_2.0` es vecino de `S_1.5` y de `S_2.5`, y su `ΔCAGR` es **0 por construcción** → el
+criterio pasaba **gratis** para `S_2.5` y era **imposible** para `S_1.5` (su único otro lado no
+existía). O sea: no discriminaba nada en un caso y prohibía shipear en el otro.
+
+**La corrección, en dos partes:**
+
+1. **Se agrega el brazo `S_1.0`** al lado estricto, para que los dos lados del baseline tengan más de
+   un punto y la curva dosis-respuesta se pueda leer en las dos direcciones. Brazos de decisión pasan
+   a ser 7 (baseline + 6 candidatos).
+2. **C6 se reformula:** *al menos **un brazo candidato del mismo lado del baseline**, distinto del
+   candidato, tiene `ΔCAGR ≥ 0`.* Lados: **estricto** = {`S_1.0`, `S_1.5`}, **laxo** = {`S_2.5`,
+   `S_3.0`, `S_3.5`, `S_off`}. **El baseline no cuenta como vecino** (su Δ es 0 por definición).
+
+El **propósito** de C6 no cambia y es el que justificaba su existencia: que el ganador no sea un pico
+aislado de ruido, que es literalmente cómo el alfabético "ganó" en la T21. Ningún otro criterio,
+umbral, brazo o sanity se toca.
+
+---
+
 ## 1. Contexto y objetivo
 
 El engine cierra toda posición que caiga **`2.0 × ATR14`** por debajo del costo de entrada. Ese
@@ -94,10 +121,11 @@ trailing?) se responde con el brazo de diagnóstico D1 (§3), que **no es promov
 
 Lo único que varía entre brazos de decisión es `AtrParams.stop_mult`.
 
-**De decisión** (5 candidatos + baseline):
+**De decisión** (6 candidatos + baseline — `S_1.0` entra por la enmienda §0):
 
 | brazo | `stop_mult` | rol |
 |---|:--:|---|
+| `S_1.0` | 1.0 | lado estricto |
 | `S_1.5` | 1.5 | **más estricto** — posible sólo porque este harness re-simula desde el entry |
 | **`S_2.0` (BASELINE)** | 2.0 | el valor vivo — la referencia |
 | `S_2.5` | 2.5 | el que salió peor en la tabla de 2026-06-30, sin explicación |
@@ -148,7 +176,7 @@ cartera**, no en puntos acumulados por trade):
 
 1. **Contabilidad:** `|equity_curve[-1] − final_equity| / final_equity ≤ 1e-6` en todos los brazos.
 2. **Monotonía mecánica:** el `%` de salidas por `atr_stop` es **estrictamente decreciente** en
-   `stop_mult` a lo largo de `S_1.5 → S_2.0 → S_2.5 → S_3.0 → S_3.5`, y **=0** en `S_off`. Es una
+   `stop_mult` a lo largo de `S_1.0 → S_1.5 → S_2.0 → S_2.5 → S_3.0 → S_3.5`, y **=0** en `S_off`. Es una
    invariante de mecánica pura (un stop más lejos dispara menos), no una hipótesis sobre retornos: si
    falla, el harness está mal cableado.
 3. **El stop tiene población:** en el baseline, **≥5%** de las salidas son `atr_stop`. Es la lección
@@ -166,9 +194,9 @@ cartera**, no en puntos acumulados por trade):
 
 ## 6. Regla de decisión (CONGELADA)
 
-**Candidato** = el brazo con **mejor Sharpe anualizado** entre los 5 candidatos
-{`S_1.5`, `S_2.5`, `S_3.0`, `S_3.5`, `S_off`}. **Baseline** = `S_2.0`. Se **cambia el default sólo si
-pasa las seis**:
+**Candidato** = el brazo con **mejor Sharpe anualizado** entre los 6 candidatos
+{`S_1.0`, `S_1.5`, `S_2.5`, `S_3.0`, `S_3.5`, `S_off`}. **Baseline** = `S_2.0`. Se **cambia el default
+sólo si pasa las seis**:
 
 | # | Criterio | Umbral |
 |---|---|---|
@@ -177,7 +205,7 @@ pasa las seis**:
 | C3 | Anti-overfit: block-bootstrap pareado sobre Δ(retorno diario de equity), bloques 20d, 2000 resamples, `seed=12345` | **IC95% inferior > 0** |
 | C4 | Sharpe(cand) | ≥ Sharpe(base) − **0.05** |
 | C5 | **Robustez de régimen (prueba central):** Δ(ret medio por trade) en **cada uno** de los 4 regímenes | ≥ **−0.05 pts** |
-| C6 | **Coherencia dosis-respuesta:** el brazo **adyacente** al candidato en el orden de múltiplos (al menos uno de los dos vecinos) | ΔCAGR ≥ **0** |
+| C6 | **Coherencia dosis-respuesta (reformulado en §0):** al menos un brazo candidato **del mismo lado del baseline** (estricto {`S_1.0`,`S_1.5`} / laxo {`S_2.5`,`S_3.0`,`S_3.5`,`S_off`}), distinto del candidato — el baseline **no** cuenta | ΔCAGR ≥ **0** |
 
 **Justificación de los umbrales (se declara ahora, no después):**
 
@@ -194,11 +222,11 @@ pasa las seis**:
   sólo funciona en bull, es exactamente el error que mató a T11b (momentum roto en bear) y a T12
   (insider roto en bull). Un stop que se rompe en 2018Q4 / COVID / bear-2022 no shipea aunque el CAGR
   de 10 años sea mejor.
-- **C6 es nuevo y existe por la T21.** Con 5 candidatos sobre un eje monótono, el ganador puede ser un
+- **C6 es nuevo y existe por la T21.** Con 6 candidatos sobre un eje monótono, el ganador puede ser un
   pico de ruido —que es literalmente cómo el alfabético "ganó" en la T21 (+3.10 pp sobre la mediana de
-  las semillas aleatorias, por suerte)—. Exigir que un vecino acompañe convierte "el mejor de 5" en
-  "una región del parámetro que funciona". Es más informativo que un Bonferroni sobre brazos
-  colineales.
+  las semillas aleatorias, por suerte)—. Exigir que otro brazo del mismo lado acompañe convierte "el
+  mejor de 6" en "una región del parámetro que funciona". Es más informativo que un Bonferroni sobre
+  brazos colineales.
 - **Por qué C3 es bootstrap pareado y no PBO:** la T13 mostró que el PBO con pocos brazos colineales
   es grueso y la T27 midió que **además es inestable a la config** (0.889 → 0.317 en la T23 sin tocar
   un brazo). DSR/PBO se computan y se reportan como **descriptivos**, no como gate.
@@ -207,9 +235,9 @@ pasa las seis**:
 - Si **C1 pasa y C2 falla** (más CAGR comprado con drawdown) → **NO-SHIP**. El stop es un guardrail:
   su recalibración no puede justificarse subiendo el riesgo de cartera.
 - Si **C2 pasa y C1 falla** → **NO-SHIP** (no se cambia un default que no mejora el retorno).
-- Si el candidato es **`S_1.5`** (o sea, el stop óptimo es *más estricto*) y pasa las seis → **SHIP
-  igual**, y el informe tiene que decir explícitamente que **la evidencia viva apuntaba al revés** y
-  que la muestra de 53 días leyó mal el problema.
+- Si el candidato es **`S_1.0` o `S_1.5`** (o sea, el stop óptimo es *más estricto*) y pasa las seis →
+  **SHIP igual**, y el informe tiene que decir explícitamente que **la evidencia viva apuntaba al
+  revés** y que la muestra de 53 días leyó mal el problema.
 - Si **falla el §5.3** (el stop no tiene población en el harness) → **NO-SHIP por sin población**, con
   el mismo lenguaje que la T13(b): no es que el stop sea inocuo, es que este harness no lo ejercita y
   la pregunta queda sin responder por otra vía.

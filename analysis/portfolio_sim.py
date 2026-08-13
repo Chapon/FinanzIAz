@@ -62,7 +62,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from analysis.exit_replay import AtrParams, Bar, max_drawdown
-from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
+from analysis.scaleout_replay import CostModel, ScaleOutParams, StopFilter, replay_cycle
 
 # entry_filter(ticker, date_iso10) -> factor de tamaño en [0, 1].
 #   1.0 = entrada normal · 0.0 = entrada suprimida · 0.5 = medio tamaño.
@@ -153,6 +153,7 @@ def simulate_portfolio(
     allow_reentry_while_open: bool = False,
     regime_of: Callable[[str], str] | None = None,
     time_stop_days: int | None = None,
+    stop_filter: StopFilter | None = None,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -171,6 +172,8 @@ def simulate_portfolio(
 
     ``time_stop_days`` (ENT1 brazo b, Tarea 13) se pasa tal cual a ``replay_cycle``:
     ``None`` ⇒ sin time stop, que es el comportamiento de todas las tareas previas.
+    Ídem ``stop_filter`` (brazos oráculo de STOP-CAL, Tarea 26): ``None`` ⇒ el stop
+    duro dispara siempre que toque.
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
@@ -262,7 +265,7 @@ def simulate_portfolio(
                 params=so_params, atr_p=atr_p, cap_days=cap_days,
                 costs=costs, notional=notional,
                 regime="" if regime_of is None else regime_of(entry_date),
-                time_stop_days=time_stop_days,
+                time_stop_days=time_stop_days, stop_filter=stop_filter,
             )
             if cyc is None:
                 continue
