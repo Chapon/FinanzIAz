@@ -119,16 +119,27 @@ def load_bars_signals_scores(tickers, period: str, warmup: int):
     return bars_by, sigs_by, score_by, missing
 
 
-def load_risk_scores(tickers, period: str, warmup: int) -> dict[str, dict]:
-    """{ticker: {iso: risk_score}} — enabler del brazo B2. Vacío si falta el
-    precómputo (``scripts/precompute_pit_risk_score.py``)."""
+# El brazo B2 sólo es válido si el precómputo cubre **todo** el universo: con
+# cobertura parcial rankearía unos tickers por ``raw_prob`` y otros por ``score``,
+# o sea un brazo que no es ni uno ni otro. Ante duda, no existe.
+MIN_RISK_COVERAGE = 0.99
+
+
+def load_risk_scores(tickers, period: str, warmup: int) -> tuple[dict[str, dict], float]:
+    """({ticker: {iso: risk_score}}, cobertura). Devuelve ``({}, cob)`` si la
+    cobertura no alcanza — ver ``MIN_RISK_COVERAGE``."""
     out: dict[str, dict] = {}
     for t in tickers:
         blob = _load_risk(_risk_path(t, period, warmup))
+        if not (blob or {}).get("complete"):
+            continue
         rows = (blob or {}).get("risk") or {}
         if rows:
             out[t] = {d: v for d, v in rows.items() if v is not None}
-    return out
+    coverage = (len(out) / len(tickers)) if tickers else 0.0
+    if coverage < MIN_RISK_COVERAGE:
+        return {}, coverage
+    return out, coverage
 
 
 # ── Brazos ───────────────────────────────────────────────────────────────────
@@ -300,10 +311,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by), file=log)
-    risk_by = load_risk_scores(list(bars_by), args.period, args.warmup)
+    risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
-          f"risk_score PIT: {len(risk_by)} tickers"
-          + ("" if risk_by else "  (falta el precómputo → sin brazo B2)"), file=log)
+          f"risk_score PIT: {100*risk_cov:.0f}% de cobertura"
+          + ("" if risk_by else
+             f"  (< {100*MIN_RISK_COVERAGE:.0f}% → SIN brazo B2: con cobertura parcial "
+             "rankearía unos tickers por raw_prob y otros por score)"), file=log)
 
     common = dict(
         max_positions=args.max_positions, initial_capital=args.capital,

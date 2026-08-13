@@ -141,6 +141,52 @@ def test_b2_absent_without_the_precompute():
     assert DIAGNOSTIC_ARM not in arms
 
 
+def test_partial_risk_coverage_disables_b2(tmp_path, monkeypatch):
+    """Con cobertura parcial el brazo B2 rankearía unos tickers por ``raw_prob`` y
+    otros por ``score`` — un brazo que no es ni uno ni otro. Tiene que no existir."""
+    import scripts.run_ranking_t21 as mod
+
+    def fake_path(ticker, period, warmup):
+        return tmp_path / f"{ticker}.json"
+
+    def fake_load(path):
+        import json
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    monkeypatch.setattr(mod, "_risk_path", fake_path)
+    monkeypatch.setattr(mod, "_load_risk", fake_load)
+
+    import json
+    (tmp_path / "AAA.json").write_text(
+        json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
+
+    partial, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
+    assert partial == {} and cov == pytest.approx(1 / 3)
+
+    for t in ("BBB", "CCC"):
+        (tmp_path / f"{t}.json").write_text(
+            json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
+    full, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
+    assert set(full) == {"AAA", "BBB", "CCC"} and cov == 1.0
+
+
+def test_incomplete_artifact_does_not_count_as_coverage(tmp_path, monkeypatch):
+    """Un artefacto a medio escribir (``complete=False``) no cuenta: el precómputo
+    guarda parcial cada N fechas y leerlo daría un B2 con agujeros."""
+    import json
+
+    import scripts.run_ranking_t21 as mod
+
+    monkeypatch.setattr(mod, "_risk_path", lambda t, p, w: tmp_path / f"{t}.json")
+    monkeypatch.setattr(
+        mod, "_load_risk",
+        lambda path: json.loads(path.read_text(encoding="utf-8")) if path.exists() else {})
+    (tmp_path / "AAA.json").write_text(
+        json.dumps({"complete": False, "risk": {_d(1): 0.5}}), encoding="utf-8")
+    out, cov = mod.load_risk_scores(["AAA"], "10y", 250)
+    assert out == {} and cov == 0.0
+
+
 def test_oracle_and_anti_oracle_look_at_the_future():
     score_by, risk_by, realized = _fixtures()
     arms = build_rank_fns(score_by, risk_by, realized, n_random=0, seed=1)
