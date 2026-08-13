@@ -29,6 +29,7 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 - Todo runner llama a **`announce(args.max_positions, args.universe, len(bars_by))`** antes de simular: imprime la config y **nombra los desvíos**. El objetivo no es que todo coincida a la fuerza, sino que **coincida o que el desvío esté escrito** en el pre-registro.
 - Universo de la cuenta viva: **`data/harness_universe_live_acct2.txt`** (127 tickers), regenerable con `scripts/refresh_live_universe.py`. El de 41 (`harness_universe_41_10y.txt`) es el histórico de T7→T13.
 - **Desvío que sigue vivo y hay que declarar:** `data/pit_signals/` se generó con ventana **expandida** (250 → ~2.514 barras) mientras el engine le pasa a `analyze()` **504 barras fijas** (`paper_history_period="2y"`). Cambian train set del XGBoost, fit de GARCH, régimen y warm-up de SMA200. Regenerar cuesta horas; cuál ventana da mejor señal es **otra pregunta, con pre-registro propio**.
+- **Segundo desvío estructural (T32, lo destapó la T26):** `replay_cycle` decide **toda** salida ATR contra el **close diario**; el engine vivo la decide contra el **precio corriente intradía** (`get_bulk_prices`, scan ~15 min). O sea que una barra cuyo *mínimo* perforó el nivel pero cuyo *close* se recuperó **no dispara en el harness y sí en producción**. Ojo con la confusión fácil: `_exit_fill_price` modela el **fill** con open/low — lo que no está modelado es la **decisión**. Aplica a los cinco harness de salida (T7/T23/T13/T21/T26). **El sesgo es asimétrico y crece cuanto más ajustado el múltiplo**: el harness siempre sub-dispara, así que mide una barrera *confirmada al close*, más benigna que la viva. Corregirlo es la **26b**; hasta entonces, declararlo.
 - **Reproducir un veredicto publicado de T7→T13 requiere `--max-positions 5`** (el banner lo avisa solo).
 
 ## Patrón para una variante nueva
@@ -45,3 +46,12 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 - Cross-sectional ranking (T05): **KILLED**, +0.124 ΔSharpe < umbral +0.15 → ruido. Quedó como dead-code.
 - Exit-veto catalyst (T-CAT-6): flag OFF por razón **medida** (ΔP/L −0.25 < +1.5), no por ceguera.
 - min_holding 3d (T6.1): única variante pre-registrada que PASÓ (+3.18 pts, DD 0.92) → shipeada en T6.4.
+
+### Cómo NO construir un brazo oráculo (T26 — costó una corrida entera)
+
+El oráculo existe para probar que **el instrumento ve lo que se le pide medir**. La T26 lo especificó mal y la corrida quedó inválida con los 6 criterios pasados. Dos reglas que salen de ahí:
+
+1. **Un oráculo tiene que poder moverse en las DOS direcciones del eje.** El de la T26 sólo podía *suprimir* stops (saltearlos cuando el precio iba a rebotar), nunca *agregarlos*. Como en ese harness suprimir cuesta plata por sí solo, el brazo era **estructuralmente incapaz** de superar su umbral, por bien que eligiera. Si el oráculo sólo puede empujar hacia el lado que el eje penaliza, no está midiendo sensibilidad: está midiendo el costo de ese lado.
+2. **El umbral del oráculo va contra un control IGUALADO, no contra el baseline.** Medido en T26: suprimir al azar a la misma tasa costó **−4.20 pp**, y elegir bien valió **+2.33 pp de CAGR / −11.1 pp de maxDD**. Contra el baseline el oráculo "fallaba" (−1.87 pp); contra el control igualado se veía clarísimo que el harness **sí** distingue calidad. Un oráculo que cambia el *número* de eventos además de *cuáles* necesita su control con el mismo número.
+
+**Y la lección de lectura:** con ratio de selección alto (T26 midió **~55:1** — 143.096 candidatos BUY para 10 slots), una salida no compite contra la recuperación del propio nombre sino contra **el próximo candidato de la fila**. Toda métrica de "salimos antes de tiempo" (rebote post-salida, MFE no capturado) es engañosa si no se la pone contra el costo de oportunidad del slot.

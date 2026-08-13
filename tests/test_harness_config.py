@@ -4,8 +4,9 @@ Tests de ``analysis/harness_config`` y del universo vivo — Tarea 27 (HARNESS-C
 Todo offline: sin DB, sin red. Los tests del refresh usan una DB SQLite temporal.
 
 Cubre:
-  deviations / config_banner — los tres desvíos del §1 del análisis profundo:
-                               slots, tamaño de universo y ventana de analyze()
+  deviations / config_banner — los cuatro desvíos: slots, tamaño de universo y
+                               ventana de analyze() (T27) + el precio contra el que
+                               se deciden las barreras ATR (T32, lo destapó la T26)
   verdict_max_positions      — el aviso de reproducibilidad cuando el default nuevo
                                no reproduce el veredicto publicado
   announce                   — imprime y devuelve la config
@@ -44,6 +45,8 @@ PORTFOLIO_RUNNERS = [
     "run_insider_cluster_replay_t12.py",
     "run_tp_cal_replay_t23.py",
     "run_ent1_replay_t13.py",
+    "run_ranking_t21.py",
+    "run_stop_cal_replay_t26.py",
 ]
 
 
@@ -57,13 +60,15 @@ def test_legacy_config_declares_slots_and_universe():
     assert any("41 tickers" in d for d in devs)
 
 
-def test_live_config_only_declares_the_signal_window():
-    """Con la config viva no debería quedar más desvío que la ventana de
-    ``analyze()``, que es el que esta tarea declara en vez de corregir."""
+def test_live_config_only_declares_the_structural_deviations():
+    """Con la config viva quedan **dos** desvíos, los dos estructurales: la ventana
+    de ``analyze()`` (T27) y el precio de evaluación de las barreras (T32). Son los
+    que se declaran en vez de corregirse."""
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
     devs = deviations(cfg)
-    assert len(devs) == 1
-    assert "ventana de analyze()" in devs[0]
+    assert len(devs) == 2
+    assert any("ventana de analyze()" in d for d in devs)
+    assert any("barreras ATR" in d for d in devs)
 
 
 def test_signal_window_deviation_is_always_declared():
@@ -71,6 +76,29 @@ def test_signal_window_deviation_is_always_declared():
     difiere siempre y tiene que decirlo aunque todo lo demás coincida."""
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE + 50)
     assert any("ventana de analyze()" in d for d in deviations(cfg))
+
+
+def test_exit_eval_price_deviation_is_always_declared():
+    """T32 — el cuarto desvío: el harness decide las barreras ATR al **close** y el
+    engine vivo al **precio intradía**. Es estructural de ``replay_cycle``, así que
+    no depende de cómo se invoque al harness: se declara siempre."""
+    for cfg in (HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE),
+                HarnessConfig(LEGACY_MAX_POSITIONS, "y.txt", 41)):
+        devs = deviations(cfg)
+        assert any("barreras ATR" in d and "close diario" in d for d in devs)
+
+
+def test_exit_eval_deviation_distinguishes_fill_from_decision():
+    """La confusión que esta tarea existe para evitar: ``_exit_fill_price`` SÍ modela
+    el fill con el open/low. Lo que no está modelado es la **decisión**."""
+    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
+    dev = next(d for d in deviations(cfg) if "barreras ATR" in d)
+    assert "fill" in dev and "decisión" in dev
+
+
+def test_banner_lists_the_exit_eval_deviation():
+    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
+    assert "barreras ATR" in config_banner(cfg)
 
 
 def test_banner_names_the_live_account():

@@ -18,6 +18,12 @@ nombre) no dependen de cuántos slots hay. Sí se mueven las que dependen de
 finitos), T13(b) (su "sin población" sale de la tenencia del harness) y la 21
 (el ranking decide más cuanto peor es el ratio de selección).
 
+La T26 (STOP-CAL) sumó un **cuarto** desvío que la T27 no había nombrado: el
+**precio contra el que se deciden las barreras ATR** (close diario en el harness,
+intradía en el engine). A diferencia de los otros tres, éste no depende de cómo
+se invoque el harness —es estructural de ``replay_cycle``— y toca a los cinco
+harness de salida de la serie. Ver ``LIVE_EXIT_EVAL_DESC`` más abajo.
+
 Qué provee
 ----------
 Un solo lugar donde vive la config de la cuenta viva, para que un harness nuevo
@@ -66,6 +72,31 @@ LEGACY_UNIVERSE_FILE = "data/harness_universe_41_10y.txt"
 LIVE_HISTORY_BARS = 504
 PIT_WINDOW_DESC = "expandida (250 → ~2.514 barras)"
 
+# ── Precio de evaluación de las barreras — el desvío que destapó la T26 ──────
+# ``scaleout_replay.replay_cycle`` decide **toda** salida ATR contra el **close
+# diario** (``atr_exit(current_price=close_i, …)``): una barra cuyo *mínimo*
+# perforó el nivel pero cuyo *close* se recuperó **no dispara**. El engine vivo
+# decide contra el **precio corriente intradía** (``get_bulk_prices`` =
+# *"current prices"*, ``engine.py:627``) en cada scan (~15 min), así que esa
+# misma barra **sí** sale.
+#
+# Cuidado con la confusión fácil: ``_exit_fill_price`` **sí** modela el fill con
+# el open/low de la barra. Lo modelado es el **fill**, no la **decisión**.
+#
+# Afecta a los CINCO harness de salida de la serie (T7, T23, T13, T21, T26),
+# porque todos corren sobre ``replay_cycle``. No invalida sus veredictos —igual
+# que los slots de la T27— pero **sesga de forma asimétrica según la barrera**:
+# el harness sub-dispara siempre, y el sesgo crece cuanto más ajustado el
+# múltiplo. En el stop eso hace que mida un stop *confirmado al close*, más
+# benigno que el vivo (por eso el resultado de la T26 quedó ilegible); en el
+# take-profit implica que la T23 pudo haber **subestimado** el beneficio de
+# aflojar el TP.
+#
+# Corregirlo pide un modelo intradía honesto y es la tarea **26b**; acá sólo se
+# declara, que es lo que la T27 hizo con la ventana de ``analyze()``.
+LIVE_EXIT_EVAL_DESC = "precio corriente intradía (scan ~15 min)"
+PIT_EXIT_EVAL_DESC = "close diario"
+
 
 @dataclass(frozen=True)
 class HarnessConfig:
@@ -95,6 +126,12 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # actuales — se declara siempre, no es condicional.
     out.append(
         f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo"
+    )
+    # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
+    # ``replay_cycle``, así que no depende de cómo se llame al harness.
+    out.append(
+        f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} en vivo "
+        f"(el fill sí está modelado; la decisión no)"
     )
     return out
 
