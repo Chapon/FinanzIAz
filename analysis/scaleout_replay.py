@@ -149,6 +149,65 @@ class CycleResult:
         return len(self.daily_value) - 1 if self.daily_value else 0
 
 
+def _fired_barrier(bar: Bar, *, avg_cost: float, hwm: float, atr_value: float,
+                   p: AtrParams, eval_mode: str) -> str | None:
+    """Qué barrera ATR dispara en ``bar``, según **contra qué precio se decide**.
+
+    * ``"close"`` — contra el close, que es lo que hicieron T7/T23/T13/T21/T26.
+    * ``"touch"`` — contra los extremos: ``low`` para las barreras de abajo (stop y
+      trailing) y ``high`` para el take-profit.
+
+    **Empate dentro de la misma barra:** si el mínimo perforó el stop y el máximo
+    perforó el TP, gana el **stop**. El OHLC no dice cuál pasó primero, así que se
+    congela la convención **adversa** (pre-registro 26b §3). Evaluar primero contra
+    el ``low`` produce exactamente eso, y de paso preserva el orden interno del
+    engine (stop → trail → TP).
+    """
+    _, _open, high, low, close = bar
+    if eval_mode == "close":
+        return atr_exit(current_price=close, avg_cost=avg_cost,
+                        high_water_mark=hwm, atr_value=atr_value, p=p)
+
+    down = atr_exit(current_price=low, avg_cost=avg_cost,
+                    high_water_mark=hwm, atr_value=atr_value, p=p)
+    if down is not None:
+        return down
+    # Las barreras de abajo ya quedaron descartadas contra el ``low`` (y ``low`` es
+    # el precio más adverso de la barra), así que acá sólo puede aparecer el TP.
+    up = atr_exit(current_price=high, avg_cost=avg_cost,
+                  high_water_mark=hwm, atr_value=atr_value, p=p)
+    return up if up == "atr_tp" else None
+
+
+def _barrier_fill_price(bar: Bar, fired: str, level: float | None, *,
+                        eval_mode: str, fill_mode: str) -> float:
+    """A qué precio se llena la barrera que disparó en ``bar``.
+
+    ``fill_mode``:
+
+    * ``"resting"`` (default, legacy) — siempre el modelo gap/toque de
+      ``_exit_fill_price``: espejo de ``gates.model_exit_fill_price``, o sea una
+      **orden en reposo** en el nivel. Es lo que corrieron T7/T23/T13/T21/T26.
+    * ``"decision"`` — el fill es el precio que **tomó la decisión**: el nivel (o
+      el open si abrió con gap) cuando se decide al toque, y el **close** cuando
+      se decide al close.
+
+    **Por qué ``"resting"`` es incoherente en modo ``close`` (Tarea 26b):** una
+    orden en reposo en el nivel se habría ejecutado *intradía*, cuando el ``low``
+    lo tocó — que es la regla ``touch``, no la ``close``. No se puede tener la
+    orden en reposo y a la vez salir sólo cuando el close confirma: son reglas
+    mutuamente excluyentes. Como al disparar al close vale ``low ≤ close ≤ nivel``,
+    el fill legacy devuelve **siempre** el nivel, un precio mejor que el close y
+    tocado *antes* de existir la información que decidió — look-ahead.
+    Con ``"decision"`` el close-mode llena al close, que es además la convención
+    que el harness ya usa para todas las otras salidas decididas al close (flip de
+    señal y cap).
+    """
+    if fill_mode == "resting" or eval_mode == "touch":
+        return _exit_fill_price(fired, level, bar)
+    return bar[4]
+
+
 def _idx_of(bars: list[Bar], date_iso10: str) -> int:
     for i, b in enumerate(bars):
         if b[0] >= date_iso10:
@@ -170,6 +229,8 @@ def replay_cycle(
     regime: str = "",
     time_stop_days: int | None = None,
     stop_filter: StopFilter | None = None,
+    eval_mode: str = "close",
+    fill_mode: str = "resting",
 ) -> CycleResult | None:
     """Simula un ciclo desde ``entry_idx`` (entrada al close) bajo un brazo.
 
@@ -192,8 +253,31 @@ def replay_cycle(
     ``stop_filter=None`` (default) ⇒ ídem para el paso 1: el stop duro dispara
     siempre que toque. Cuando se pasa, gatea **sólo** al ``atr_stop`` (Tarea 26).
 
+    ``eval_mode`` (Tarea 26b) — **contra qué precio se decide** la barrera del paso 1:
+
+    * ``"close"`` (default) ⇒ dispara si el **close** cruzó el nivel. Es lo que
+      midieron T7/T23/T13/T21/T26, así que el default no cambia ningún resultado.
+    * ``"touch"`` ⇒ dispara si el **extremo** de la barra lo cruzó (``low`` para
+      stop/trailing, ``high`` para el TP). Es la cota superior de frecuencia de
+      disparo del engine vivo, que decide contra el precio corriente intradía.
+
+    Los dos **acotan** al engine (que samplea cada ~15 min), ninguno lo reproduce —
+    ver ``analysis/harness_config.py`` y el pre-registro de la 26b. El **fill** ya
+    era intradía en los dos modos (``_exit_fill_price``): lo que cambia acá es la
+    **decisión**, que es justamente el desvío que nadie había declarado.
+
+    ``fill_mode`` (Tarea 26b) — a **qué precio** se llena esa barrera; ver
+    ``_barrier_fill_price``. ``"resting"`` (default) ⇒ el modelo gap/toque de
+    siempre, o sea cero cambio para las tareas previas. ``"decision"`` ⇒ el precio
+    que tomó la decisión, que es el único coherente cuando se decide al close.
+
     Devuelve ``None`` si no hay barras suficientes.
     """
+    if eval_mode not in ("close", "touch"):
+        raise ValueError(f"eval_mode inválido: {eval_mode!r} (esperado 'close' o 'touch')")
+    if fill_mode not in ("resting", "decision"):
+        raise ValueError(
+            f"fill_mode inválido: {fill_mode!r} (esperado 'resting' o 'decision')")
     n = len(bars)
     if not bars or entry_idx >= n - 1:
         return None
@@ -227,10 +311,8 @@ def replay_cycle(
         fired = None
         p_eff = atr_p
         if a is not None:
-            fired = atr_exit(
-                current_price=close_i, avg_cost=avg_cost,
-                high_water_mark=hwm, atr_value=a, p=atr_p,
-            )
+            fired = _fired_barrier(bars[i], avg_cost=avg_cost, hwm=hwm,
+                                   atr_value=a, p=atr_p, eval_mode=eval_mode)
             if (fired == "atr_stop" and stop_filter is not None
                     and not stop_filter(bars, i)):
                 # Stop suprimido en esta barra (brazos oráculo de la T26). Se
@@ -241,14 +323,13 @@ def replay_cycle(
                 # una sola barrera, que es lo que el pre-registro congeló.
                 p_eff = replace(atr_p, stop_mult=_NO_STOP,
                                 trail_mult=atr_p.effective_trail_mult)
-                fired = atr_exit(
-                    current_price=close_i, avg_cost=avg_cost,
-                    high_water_mark=hwm, atr_value=a, p=p_eff,
-                )
+                fired = _fired_barrier(bars[i], avg_cost=avg_cost, hwm=hwm,
+                                       atr_value=a, p=p_eff, eval_mode=eval_mode)
         if fired is not None:
             level = _atr_trigger_level(fired, avg_cost=avg_cost, hwm=hwm,
                                        atr_value=a, p=p_eff)
-            px = _exit_fill_price(fired, level, bars[i])
+            px = _barrier_fill_price(bars[i], fired, level,
+                                     eval_mode=eval_mode, fill_mode=fill_mode)
             proceeds = costs.sell_proceeds(remaining, px)
             res.legs.append(Leg(date_i, px, remaining, fired, proceeds))
             realized_cash += proceeds
