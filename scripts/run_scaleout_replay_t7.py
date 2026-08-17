@@ -37,6 +37,11 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, Bar, max_drawdown  # noqa: E402
+from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
+    exit_rule_line,
+)
 from analysis.scaleout_replay import (  # noqa: E402
     CostModel,
     CycleResult,
@@ -137,7 +142,8 @@ def build_entries(bars_by: dict, sigs_by: dict, *, spacing: int, warmup: int):
     return out
 
 
-def run_arm(entries, bars_by, sigs_by, params, atr_p, *, cap_days, costs, notional):
+def run_arm(entries, bars_by, sigs_by, params, atr_p, *, cap_days, costs, notional,
+            fill_mode: str = HARNESS_FILL_MODE):
     """Corre un brazo sobre todas las entradas. Devuelve [CycleResult] alineado."""
     results: list[CycleResult] = []
     for ticker, idx in entries:
@@ -147,6 +153,7 @@ def run_arm(entries, bars_by, sigs_by, params, atr_p, *, cap_days, costs, notion
             params=params, atr_p=atr_p, cap_days=cap_days,
             costs=costs, notional=notional,
             regime=regime_for_date(bars[idx][0]),
+            fill_mode=fill_mode,
         )
         if res is None:
             continue
@@ -246,6 +253,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--notional", type=float, default=10_000.0)
     p.add_argument("--commission", type=float, default=0.001)
     p.add_argument("--slippage", type=float, default=0.0005)
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -270,12 +281,13 @@ def main(argv: list[str] | None = None) -> int:
     costs = CostModel(commission=args.commission, slippage=args.slippage)
     print(f"Tickers: {len(bars_by)} · entradas BUY point-in-time: {len(entries)} "
           f"(spacing {args.spacing}, cap {args.cap_days}d)")
+    print(exit_rule_line(fill_mode=args.fill_mode))
 
     per_arm: dict[str, list[CycleResult]] = {}
     for name, (params, atr_p) in ARMS.items():
         per_arm[name] = run_arm(entries, bars_by, sigs_by, params, atr_p,
                                 cap_days=args.cap_days, costs=costs,
-                                notional=args.notional)
+                                notional=args.notional, fill_mode=args.fill_mode)
 
     base = per_arm[BASELINE_ARM]
     summaries = [summarise(BASELINE_ARM, base, None)]
@@ -301,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by), "n_entries": len(entries),
         "spacing": args.spacing, "cap_days": args.cap_days,
+        "fill_mode": args.fill_mode,
         "costs": {"commission": args.commission, "slippage": args.slippage},
         "n_trials_dsr": N_TRIALS,
         "kill_criteria": {"min_delta_pts": KILL_MIN_DELTA_PTS,

@@ -77,6 +77,8 @@ import numpy as np  # noqa: E402
 
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
@@ -428,6 +430,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--signals-mode", choices=("analyze_flip", "atr_only"),
                    default="analyze_flip", help="modelo de exit (ver docstring)")
     p.add_argument("--force", action="store_true", help="ignora el gate de conteo mínimo")
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -450,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin barras en Parquet: precargá el cache del universo primero.", file=sys.stderr)
         return 1
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Universo: {len(tickers)} tickers · con barras: {len(bars_by)} · "
           f"con transacciones: {sum(1 for t in bars_by if txs_by.get(t))}")
     print(f"Modo de exit: {args.signals_mode}"
@@ -462,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
         costs=CostModel(), regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful
+        fill_mode=args.fill_mode,
     )
     run = make_runner(bars_by, sigs_by, common)
 
@@ -509,7 +516,8 @@ def main(argv: list[str] | None = None) -> int:
     # Oráculo: mejores entradas operables por retorno realizado (look-ahead).
     oracle_ret = precompute_oracle_returns(operable, bars_by, sigs_by,
                                            so_params=ScaleOutParams(), atr_p=AtrParams(),
-                                           cap_days=args.cap_days, costs=CostModel())
+                                           cap_days=args.cap_days, costs=CostModel(),
+                                           fill_mode=args.fill_mode)
     op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0]))) for ti in operable]
     op_scored = [(ti, r) for ti, r in op_scored if r is not None]
     op_scored.sort(key=lambda x: x[1], reverse=True)

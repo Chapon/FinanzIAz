@@ -35,6 +35,8 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
@@ -196,6 +198,7 @@ def precompute_realized(entries, bars_by, sigs_by, common) -> dict:
             bars, idx, sigs_by.get(ticker) or {},
             params=common["so_params"], atr_p=AtrParams(),
             cap_days=common["cap_days"], costs=common["costs"], notional=10_000.0,
+            fill_mode=common["fill_mode"],
         )
         if cyc is not None and cyc.entry_cost > 0:
             out[(ticker, bars[idx][0])] = cyc.total_proceeds / cyc.entry_cost - 1.0
@@ -290,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--random-arms", type=int, default=10)
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -310,7 +317,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by), file=log)
+    announce(args.max_positions, args.universe, len(bars_by),
+             fill_mode=args.fill_mode, file=log)
     risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
           f"risk_score PIT: {100*risk_cov:.0f}% de cobertura"
@@ -322,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
         regime_of=regime_for_date, allow_reentry_while_open=False,
+        fill_mode=args.fill_mode,
     )
     realized = precompute_realized(entries, bars_by, sigs_by, common)
     print(f"Retornos realizados para el oráculo: {len(realized)}\n", file=log)
@@ -382,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by), "n_entries": len(entries),
         "max_positions": args.max_positions, "cap_days": args.cap_days,
+        "fill_mode": args.fill_mode,
         "sanity": sanity, "verdict": verdict,
         "bootstrap": vars(boot),
         "random_cagr": {"n": len(rand_cagrs),

@@ -234,9 +234,13 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("Sin entradas BUY — nada que evaluar.", file=sys.stderr)
         return 1
-    announce(args.max_positions, args.universe, len(bars_by))
+    # El banner declara la regla del BASELINE (``touch``, la viva); la rejilla corre
+    # los dos modos, y eso lo dice la línea de abajo.
+    announce(args.max_positions, args.universe, len(bars_by),
+             eval_mode="touch", fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}")
-    print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM}")
+    print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM} "
+          f"· la rejilla corre los DOS modos de evaluación")
     print(f"fill_mode = {args.fill_mode}" + (
         "  <-- LEGACY: llena la barrera en el NIVEL aunque haya decidido al close "
         "(look-ahead, corrida invalidada)" if args.fill_mode == "resting" else

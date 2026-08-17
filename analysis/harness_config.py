@@ -24,6 +24,13 @@ intradía en el engine). A diferencia de los otros tres, éste no depende de có
 se invoque el harness —es estructural de ``replay_cycle``— y toca a los cinco
 harness de salida de la serie. Ver ``LIVE_EXIT_EVAL_DESC`` más abajo.
 
+La 26b destapó el **quinto**, que es de otra especie: los otros cuatro son
+diferencias *declarables* entre dos cosas defendibles, y éste era un **defecto**
+—look-ahead en el fill de la barrera decidida al close— que dio vuelta el
+hallazgo central de la T26. La Tarea 33 lo declara acá, invierte el default de
+``fill_mode`` a la variante honesta y re-lee los veredictos que corrieron con el
+legacy. Ver ``HARNESS_FILL_MODE`` más abajo.
+
 Qué provee
 ----------
 Un solo lugar donde vive la config de la cuenta viva, para que un harness nuevo
@@ -80,22 +87,46 @@ PIT_WINDOW_DESC = "expandida (250 → ~2.514 barras)"
 # *"current prices"*, ``engine.py:627``) en cada scan (~15 min), así que esa
 # misma barra **sí** sale.
 #
-# Cuidado con la confusión fácil: ``_exit_fill_price`` **sí** modela el fill con
-# el open/low de la barra. Lo modelado es el **fill**, no la **decisión**.
-#
 # Afecta a los CINCO harness de salida de la serie (T7, T23, T13, T21, T26),
 # porque todos corren sobre ``replay_cycle``. No invalida sus veredictos —igual
 # que los slots de la T27— pero **sesga de forma asimétrica según la barrera**:
 # el harness sub-dispara siempre, y el sesgo crece cuanto más ajustado el
 # múltiplo. En el stop eso hace que mida un stop *confirmado al close*, más
-# benigno que el vivo (por eso el resultado de la T26 quedó ilegible); en el
-# take-profit implica que la T23 pudo haber **subestimado** el beneficio de
-# aflojar el TP.
+# benigno que el vivo; en el take-profit implica que la T23 pudo haber
+# **subestimado** el beneficio de aflojar el TP.
 #
-# Corregirlo pide un modelo intradía honesto y es la tarea **26b**; acá sólo se
-# declara, que es lo que la T27 hizo con la ventana de ``analyze()``.
+# La 26b lo **cuantificó** en el múltiplo vivo y a 10 slots: el modo ``close``
+# mide **+3.39 pp de CAGR por encima** de la regla que el engine ejecuta.
+# Ninguno de los dos modos ES producción: ``close`` es la cota **inferior** de
+# frecuencia de disparo y ``touch`` la **superior**; el engine samplea c/15 min,
+# así que queda entre las dos y más cerca de ``touch``.
 LIVE_EXIT_EVAL_DESC = "precio corriente intradía (scan ~15 min)"
 PIT_EXIT_EVAL_DESC = "close diario"
+TOUCH_EXIT_EVAL_DESC = "toque intradía del extremo de la barra"
+
+# ── Fill de las barreras — el quinto desvío, lo destapó la 26b (Tarea 33) ────
+# La frase que este bloque reemplaza decía *"el fill sí está modelado; la decisión
+# no"*. **Era falsa en modo ``close``**, y esa media verdad tapó el defecto durante
+# cinco harness: ``replay_cycle`` decidía la barrera contra el close y la llenaba
+# en el **nivel** (``_exit_fill_price``, modelo de *orden en reposo*). Como al
+# disparar al close vale ``low ≤ close ≤ nivel``, el fill legacy devolvía
+# **siempre** el nivel — un precio mejor que el close y tocado *antes* de que
+# existiera la información que tomó la decisión. Eso es look-ahead, no una
+# convención discutible, y valía ``LOOKAHEAD_FILL_COST_DESC``.
+#
+# La Tarea 33 invirtió el default a ``"decision"``. Con el default honesto el
+# harness sigue **sin** coincidir con el engine, pero ahora por el lado
+# conservador: el engine llena con el modelo de orden en reposo
+# (``gates.model_exit_fill_price``, ``engine.py:427``) y el harness al close que
+# decidió. Bajo ``eval_mode="touch"`` los dos fill_mode coinciden **y coinciden
+# con el engine**: ahí el precio que decide *es* el nivel.
+HARNESS_FILL_MODE = "decision"
+LEGACY_FILL_MODE = "resting"
+LIVE_FILL_DESC = "modelo de orden en reposo en el nivel (gates.model_exit_fill_price)"
+LOOKAHEAD_FILL_COST_DESC = (
+    "+5.01 pp de CAGR al múltiplo vivo y +20.97 pp a 1.0×ATR, 10 slots "
+    "(docs/stop_price_t26b_2026-08-16.md §2)"
+)
 
 
 @dataclass(frozen=True)
@@ -108,6 +139,25 @@ class HarnessConfig:
     # Config con la que corrió el veredicto ya publicado de esa tarea, si lo hay.
     # Sirve para que el banner avise que un default nuevo no lo reproduce.
     verdict_max_positions: int | None = None
+    # Regla de salida simulada (Tareas 26b/33). Los defaults son los de
+    # ``replay_cycle``, así que un runner que no los pase declara lo que corre.
+    eval_mode: str = "close"
+    fill_mode: str = HARNESS_FILL_MODE
+
+
+def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE) -> str:
+    """Una línea que dice **qué regla de salida** se está simulando.
+
+    Se imprime siempre (aunque no hubiera desvíos) porque las dos mitades —contra
+    qué precio se decide la barrera y a qué precio se llena— son las que la serie
+    T7→T26 arrastró sin nombrar, y la segunda ni siquiera estaba en el banner.
+    Toma los modos sueltos (y no un ``HarnessConfig``) para que la use también el
+    T7, que corre con capital ilimitado y no tiene config de cartera.
+    """
+    decide = PIT_EXIT_EVAL_DESC if eval_mode == "close" else TOUCH_EXIT_EVAL_DESC
+    fill = ("al precio que tomó la decisión" if fill_mode == HARNESS_FILL_MODE
+            else "orden en reposo en el nivel (LEGACY)")
+    return f"Regla de salida simulada: barrera decidida al {decide} · fill {fill}"
 
 
 def deviations(cfg: HarnessConfig) -> list[str]:
@@ -128,11 +178,35 @@ def deviations(cfg: HarnessConfig) -> list[str]:
         f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo"
     )
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
-    # ``replay_cycle``, así que no depende de cómo se llame al harness.
-    out.append(
-        f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} en vivo "
-        f"(el fill sí está modelado; la decisión no)"
-    )
+    # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
+    # depende del brazo es de qué lado del engine cae el desvío.
+    if cfg.eval_mode == "close":
+        out.append(
+            f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} "
+            f"en vivo (cota INFERIOR de frecuencia de disparo: mide +3.39pp de CAGR "
+            f"de más que la regla viva, T26b §1)"
+        )
+    else:
+        out.append(
+            f"barreras ATR decididas al {TOUCH_EXIT_EVAL_DESC} vs "
+            f"{LIVE_EXIT_EVAL_DESC} en vivo (cota SUPERIOR de frecuencia de disparo)"
+        )
+    # Y el fill de esa barrera, que es el quinto desvío (T33). El caso legacy en
+    # modo ``close`` no es un desvío: es un defecto, y se anuncia como tal.
+    if cfg.fill_mode == LEGACY_FILL_MODE and cfg.eval_mode == "close":
+        out.append(
+            f"LOOK-AHEAD ACTIVO — la barrera se decide al {PIT_EXIT_EVAL_DESC} y se "
+            f"llena en el NIVEL: un precio mejor que el close y tocado ANTES de la "
+            f"información que decidió. Vale {LOOKAHEAD_FILL_COST_DESC}. "
+            f"Sólo para reproducir T7/T23/T13/T21/T26"
+        )
+    elif cfg.eval_mode == "close":
+        out.append(
+            f"fill de la barrera al close que la decidió vs {LIVE_FILL_DESC} en vivo "
+            f"(desvío conservador: el harness cobra el peor de los dos precios)"
+        )
+    # Bajo ``touch`` los dos fill_mode coinciden **y coinciden con el engine** (el
+    # precio que decide es el nivel), así que ahí no hay nada que declarar.
     return out
 
 
@@ -148,6 +222,7 @@ def config_banner(cfg: HarnessConfig) -> str:
         f"({cfg.n_tickers} tickers)",
         f"Cuenta viva de referencia: {LIVE_ACCOUNT_NAME} (id={LIVE_ACCOUNT_ID}, "
         f"{LIVE_MODE}, {LIVE_ALLOCATION_MODE}, {LIVE_MAX_POSITIONS} slots)",
+        exit_rule_line(cfg.eval_mode, cfg.fill_mode),
     ]
     devs = deviations(cfg)
     if devs:
@@ -171,6 +246,8 @@ def announce(
     n_tickers: int,
     *,
     verdict_max_positions: int | None = None,
+    eval_mode: str = "close",
+    fill_mode: str = HARNESS_FILL_MODE,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -183,6 +260,8 @@ def announce(
         universe_file=universe_file,
         n_tickers=n_tickers,
         verdict_max_positions=verdict_max_positions,
+        eval_mode=eval_mode,
+        fill_mode=fill_mode,
     )
     print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
     return cfg

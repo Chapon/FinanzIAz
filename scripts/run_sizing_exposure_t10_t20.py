@@ -38,6 +38,8 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
@@ -196,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -220,9 +226,10 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     sigma_by = build_sigma_map(entries, bars_by)
-    oracle_ret = precompute_oracle_returns(entries, bars_by, sigs_by)
+    oracle_ret = precompute_oracle_returns(entries, bars_by, sigs_by,
+                                           fill_mode=args.fill_mode)
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · entradas: {len(entries)} · "
           f"σ computables: {len(sigma_by)} · max_positions={args.max_positions} · "
           f"capital={args.capital:,.0f}\n")
@@ -232,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
         costs=CostModel(), regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful (tarea 9), §2 del pre-registro
+        fill_mode=args.fill_mode,
     )
 
     def build_arm(cfg: dict):

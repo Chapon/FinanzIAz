@@ -89,12 +89,17 @@ def precompute_oracle_returns(
     atr_p: AtrParams = AtrParams(),
     cap_days: int = 20,
     costs: CostModel = CostModel(),
+    fill_mode: str = "decision",
 ) -> dict[tuple[str, str], float]:
     """Retorno realizado del ciclo de cada entrada (mira el futuro) para el oráculo.
 
     Se replaya cada candidato con notional unitario y sin restricción de cartera —
     es un retorno por-nombre independiente de qué entra por slot. SOLO para el brazo
     de validación del harness (nunca se cablea).
+
+    ``fill_mode`` se pasa a ``replay_cycle`` para que el oráculo puntúe con **la
+    misma mecánica de fill** que los brazos que valida (Tarea 33): con el legacy,
+    el oráculo rankeaba por un retorno que ningún brazo podía cobrar.
     """
     out: dict[tuple[str, str], float] = {}
     for ticker, idx in entries:
@@ -105,6 +110,7 @@ def precompute_oracle_returns(
             bars, idx, sigs_by.get(ticker) or {},
             params=so_params, atr_p=atr_p, cap_days=cap_days,
             costs=costs, notional=10_000.0, regime="",
+            fill_mode=fill_mode,
         )
         if cyc is None or cyc.entry_cost <= 0:
             continue

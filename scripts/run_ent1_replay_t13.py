@@ -39,6 +39,8 @@ sys.path.insert(0, str(_HERE.parent))
 from analysis.entry_rules import apply_pullback  # noqa: E402
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
@@ -178,6 +180,7 @@ def timestop_population(res: PortfolioResult, bars_by, sigs_by, n_days: int,
             bars_by[t.ticker], i, sigs_by.get(t.ticker) or {},
             params=common["so_params"], atr_p=AtrParams(), cap_days=common["cap_days"],
             costs=common["costs"], notional=10_000.0, time_stop_days=n_days,
+            fill_mode=common["fill_mode"],
         )
         if cyc is not None and "time_stop" in cyc.exit_reasons:
             hits += 1
@@ -242,7 +245,8 @@ def pullback_counterfactual(entries, bars_by, sigs_by, common, *,
             blocked = r.resolved_idx
             cyc = replay_cycle(bars, idx, sig, params=common["so_params"],
                                atr_p=AtrParams(), cap_days=common["cap_days"],
-                               costs=common["costs"], notional=10_000.0)
+                               costs=common["costs"], notional=10_000.0,
+                               fill_mode=common["fill_mode"])
             if cyc is not None:
                 buckets[r.status].append(cyc.ret)
 
@@ -325,6 +329,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--no-diagnose", action="store_true",
                    help="saltea los diagnósticos que interpretan el veredicto")
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -350,7 +358,8 @@ def main(argv: list[str] | None = None) -> int:
     # Progreso a stderr: con --json el stdout tiene que ser JSON puro y nada más.
     log = sys.stderr if args.json else sys.stdout
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, file=log)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode,
+             file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(base_entries)}", file=log)
     for label, st in (("EMA20 ", pull_stats), ("negday", neg_stats)):
         print(f"Pullback {label} K={PULLBACK_WINDOW}: {st.n_waits} esperas → "
@@ -362,6 +371,7 @@ def main(argv: list[str] | None = None) -> int:
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
         regime_of=regime_for_date, allow_reentry_while_open=False,
+        fill_mode=args.fill_mode,
     )
 
     arm_spec: dict[str, tuple[list, int | None]] = {
@@ -454,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_tickers": len(bars_by), "n_entries": len(base_entries),
         "cap_days": args.cap_days, "max_positions": args.max_positions,
         "capital": args.capital, "time_stop_n": TIME_STOP_N,
+        "fill_mode": args.fill_mode,
         "pullback_window": PULLBACK_WINDOW,
         "pullback_stats": vars(pull_stats) | {"expired_share": pull_stats.expired_share},
         "negday_stats": vars(neg_stats) | {"expired_share": neg_stats.expired_share},

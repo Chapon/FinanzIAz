@@ -39,6 +39,8 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
@@ -272,6 +274,7 @@ def run_diagnostics(ds, oof, probs_by, bars_by, sigs_by, entries, common) -> dic
             bars_by[s.ticker], s.bar_idx, sigs_by.get(s.ticker) or {},
             params=common["so_params"], atr_p=common["atr_p"],
             cap_days=common["cap_days"], costs=common["costs"], notional=10_000.0,
+            fill_mode=common["fill_mode"],
         )
         if cyc is None:
             continue
@@ -338,6 +341,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--diagnostics", action="store_true",
                    help="oráculo (valida que el harness detecte rankings) + "
@@ -356,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · period={args.period} · warmup={args.warmup}")
 
     # 1 · Dataset pooled con la etiqueta triple-barrera.
@@ -396,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     common = dict(
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
-        costs=CostModel(), regime_of=regime_for_date,
+        costs=CostModel(), regime_of=regime_for_date, fill_mode=args.fill_mode,
     )
     results: dict[str, PortfolioResult] = {
         name: simulate_portfolio(entries, bars_by, sigs_by,

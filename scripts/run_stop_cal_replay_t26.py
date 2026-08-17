@@ -42,6 +42,8 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
@@ -344,6 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--diagnostics", action="store_true",
                    help="suma el control post-hoc de supresión aleatoria (no decide nada)")
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce la corrida publicada, cuyo "
+                        f"hallazgo central era ese look-ahead (Tareas 26b/33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -361,13 +367,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin entradas BUY — nada que evaluar.", file=sys.stderr)
         return 1
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}\n")
 
     common = dict(
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
         regime_of=regime_for_date, allow_reentry_while_open=False,
+        fill_mode=args.fill_mode,
     )
 
     arms = build_arms(diagnostics=args.diagnostics)
@@ -410,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_tickers": len(bars_by), "n_entries": len(entries),
         "max_positions": args.max_positions, "capital": args.capital,
         "cap_days": args.cap_days, "universe": args.universe,
+        "fill_mode": args.fill_mode,
         "dsr": (dsr.deflated_sharpe if dsr else None), "pbo": (pbo.pbo if pbo else None),
         "dsr_obs": T, "verdict": verdict, "sanity": sanity,
         "boot": {"observed": boot.observed, "ci_low": boot.ci_low,

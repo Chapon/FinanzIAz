@@ -185,12 +185,13 @@ def _barrier_fill_price(bar: Bar, fired: str, level: float | None, *,
 
     ``fill_mode``:
 
-    * ``"resting"`` (default, legacy) — siempre el modelo gap/toque de
-      ``_exit_fill_price``: espejo de ``gates.model_exit_fill_price``, o sea una
-      **orden en reposo** en el nivel. Es lo que corrieron T7/T23/T13/T21/T26.
-    * ``"decision"`` — el fill es el precio que **tomó la decisión**: el nivel (o
-      el open si abrió con gap) cuando se decide al toque, y el **close** cuando
-      se decide al close.
+    * ``"decision"`` (default desde la Tarea 33) — el fill es el precio que **tomó
+      la decisión**: el nivel (o el open si abrió con gap) cuando se decide al
+      toque, y el **close** cuando se decide al close.
+    * ``"resting"`` (legacy) — siempre el modelo gap/toque de ``_exit_fill_price``:
+      espejo de ``gates.model_exit_fill_price``, o sea una **orden en reposo** en
+      el nivel. Es lo que corrieron T7/T23/T13/T21/T26; se conserva para
+      reproducir esas corridas, no para escribir harness nuevos.
 
     **Por qué ``"resting"`` es incoherente en modo ``close`` (Tarea 26b):** una
     orden en reposo en el nivel se habría ejecutado *intradía*, cuando el ``low``
@@ -202,6 +203,11 @@ def _barrier_fill_price(bar: Bar, fired: str, level: float | None, *,
     Con ``"decision"`` el close-mode llena al close, que es además la convención
     que el harness ya usa para todas las otras salidas decididas al close (flip de
     señal y cap).
+
+    **Bajo ``eval_mode="touch"`` los dos modos coinciden** y no es una casualidad:
+    ahí el precio que decide *es* el nivel (o el open si la barra abrió con gap),
+    así que el modelo de orden en reposo y el precio de la decisión son el mismo
+    número. El flag sólo muerde en modo ``close``.
     """
     if fill_mode == "resting" or eval_mode == "touch":
         return _exit_fill_price(fired, level, bar)
@@ -230,7 +236,7 @@ def replay_cycle(
     time_stop_days: int | None = None,
     stop_filter: StopFilter | None = None,
     eval_mode: str = "close",
-    fill_mode: str = "resting",
+    fill_mode: str = "decision",
 ) -> CycleResult | None:
     """Simula un ciclo desde ``entry_idx`` (entrada al close) bajo un brazo.
 
@@ -262,14 +268,15 @@ def replay_cycle(
       disparo del engine vivo, que decide contra el precio corriente intradía.
 
     Los dos **acotan** al engine (que samplea cada ~15 min), ninguno lo reproduce —
-    ver ``analysis/harness_config.py`` y el pre-registro de la 26b. El **fill** ya
-    era intradía en los dos modos (``_exit_fill_price``): lo que cambia acá es la
-    **decisión**, que es justamente el desvío que nadie había declarado.
+    ver ``analysis/harness_config.py`` y el pre-registro de la 26b.
 
-    ``fill_mode`` (Tarea 26b) — a **qué precio** se llena esa barrera; ver
-    ``_barrier_fill_price``. ``"resting"`` (default) ⇒ el modelo gap/toque de
-    siempre, o sea cero cambio para las tareas previas. ``"decision"`` ⇒ el precio
-    que tomó la decisión, que es el único coherente cuando se decide al close.
+    ``fill_mode`` (Tarea 26b, **default invertido por la Tarea 33**) — a **qué
+    precio** se llena esa barrera; ver ``_barrier_fill_price``. ``"decision"``
+    (default) ⇒ el precio que tomó la decisión, el único coherente cuando se decide
+    al close. ``"resting"`` ⇒ el modelo gap/toque de siempre: en modo ``close`` es
+    **look-ahead** (llena en el nivel, mejor que el close y tocado antes de que
+    existiera la información que decidió) y por eso dejó de ser el default; se
+    conserva sólo para reproducir T7/T23/T13/T21/T26.
 
     Devuelve ``None`` si no hay barras suficientes.
     """

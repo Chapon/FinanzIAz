@@ -155,7 +155,7 @@ def simulate_portfolio(
     time_stop_days: int | None = None,
     stop_filter: StopFilter | None = None,
     eval_mode: str = "close",
-    fill_mode: str = "resting",
+    fill_mode: str = "decision",
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -177,9 +177,12 @@ def simulate_portfolio(
     Ídem ``stop_filter`` (brazos oráculo de STOP-CAL, Tarea 26): ``None`` ⇒ el stop
     duro dispara siempre que toque. Y ``eval_mode`` (STOP-PRICE, Tarea 26b):
     ``"close"`` ⇒ la barrera se decide contra el close, como en todas las tareas
-    previas; ``"touch"`` la decide contra los extremos de la barra. ``fill_mode``
-    (ídem 26b): ``"resting"`` ⇒ el fill gap/toque de siempre; ``"decision"`` ⇒ el
-    precio que tomó la decisión — ver ``scaleout_replay._barrier_fill_price``.
+    previas; ``"touch"`` la decide contra los extremos de la barra.
+
+    ``fill_mode`` (26b; **default invertido a ``"decision"`` por la Tarea 33**) ⇒ a
+    qué precio se llena esa barrera. El legacy ``"resting"`` es look-ahead en modo
+    ``close`` y sólo se conserva para reproducir T7/T23/T13/T21/T26 — ver
+    ``scaleout_replay._barrier_fill_price``.
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital

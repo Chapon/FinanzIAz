@@ -46,6 +46,8 @@ import numpy as np  # noqa: E402
 from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries  # noqa: E402
 from analysis.exit_replay import AtrParams, Bar  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    HARNESS_FILL_MODE,
+    LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
@@ -291,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--k-random", type=int, default=500, help="nº de carteras Monte Carlo")
     p.add_argument("--seed", type=int, default=12345)
+    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+                   default=HARNESS_FILL_MODE,
+                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+                        f"(look-ahead en el fill de la barrera — Tarea 33)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -309,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
         costs=CostModel(), regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful
+        fill_mode=args.fill_mode,
     )
     run = make_runner(bars_by, sigs_by, common)
 
@@ -320,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     prim = entries_by[PRIMARY_ARM]
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · entradas por brazo: "
           f"{ {n: len(e) for n, e in entries_by.items()} }")
     print(f"Brazo primario {PRIMARY_ARM}: {len(prim)} entradas\n")
@@ -352,7 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     # oráculo: las mejores entradas operables por retorno realizado (look-ahead)
     oracle_ret = precompute_oracle_returns(operable, bars_by, sigs_by,
                                            so_params=ScaleOutParams(), atr_p=AtrParams(),
-                                           cap_days=args.cap_days, costs=CostModel())
+                                           cap_days=args.cap_days, costs=CostModel(),
+                                           fill_mode=args.fill_mode)
     op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0])))
                  for ti in operable]
     op_scored = [(ti, r) for ti, r in op_scored if r is not None]
