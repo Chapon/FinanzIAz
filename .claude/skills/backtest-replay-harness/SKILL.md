@@ -56,3 +56,46 @@ El oráculo existe para probar que **el instrumento ve lo que se le pide medir**
 2. **El umbral del oráculo va contra un control IGUALADO, no contra el baseline.** Medido en T26: suprimir al azar a la misma tasa costó **−4.20 pp**, y elegir bien valió **+2.33 pp de CAGR / −11.1 pp de maxDD**. Contra el baseline el oráculo "fallaba" (−1.87 pp); contra el control igualado se veía clarísimo que el harness **sí** distingue calidad. Un oráculo que cambia el *número* de eventos además de *cuáles* necesita su control con el mismo número.
 
 **Y la lección de lectura:** con ratio de selección alto (T26 midió **~55:1** — 143.096 candidatos BUY para 10 slots), una salida no compite contra la recuperación del propio nombre sino contra **el próximo candidato de la fila**. Toda métrica de "salimos antes de tiempo" (rebote post-salida, MFE no capturado) es engañosa si no se la pone contra el costo de oportunidad del slot.
+
+## Brazos condicionados a régimen (decisión de Chapa, 2026-08-19)
+
+Un candidato **puede ser una política condicional** —opera en un régimen y se apaga o se
+achica en otro— y eso cuenta como candidato de primera clase, no como truco. Lo que **no** se
+hace nunca es sacar los períodos malos de la muestra de evaluación.
+
+**Por qué la distinción importa:** el criterio de robustez de régimen (C5 en la serie
+26b/34/37) exige signo estable en los cuatro regímenes con **una sola** regla incondicional.
+Eso mata por definición a toda estrategia buena en un régimen y mala en otro — y ahí murieron
+las tres tareas más prometedoras de la serie: **T26b** (−0.15 pts en 2018Q4), **T34** (−1.18
+pts), y sobre todo **T11b**, el **único brazo con alpha medido** (CAGR 12.89% vs 3.9% del azar,
+Sharpe 1.24) que pierde sólo en `bear_2022` y `2018Q4`. La respuesta correcta no es aflojar el
+umbral: es dejar que el candidato **sea** condicional.
+
+**La versión legítima ya está shipeada y activa:** **T20** escala exposición según régimen con
+un detector point-in-time (`analysis/market_regime.py`, SPY vs SMA200, `is_risk_off` busca la
+última fecha **estrictamente menor** ⇒ sin look-ahead) y mejora Sharpe, CAGR y maxDD **a la
+vez**. Es la única decisión de la serie cableada en la cuenta viva.
+
+**Reglas para pre-registrar un brazo condicional:**
+
+1. **El detector es parte del sistema, no del análisis.** Tiene que correr point-in-time con
+   datos que existían ese día, y evaluarse **adentro** del brazo. Un gate calibrado mirando el
+   resultado no es una política, es una etiqueta puesta después.
+2. **C5 se mide a nivel CARTERA por ventana de régimen, no por trade.** Un gate que deja de
+   operar en el bear tiene ~cero trades ahí, así que el Δ *por trade* es vacío y **pasaría el
+   criterio sin hacer nada**. Lo que decide es el **retorno de la cartera durante los días de
+   ese régimen**, con el cash contando como 0. Así "no operar" se premia si evita la caída y
+   se castiga si se pierde la recuperación.
+3. **Se reporta `n_trades` por régimen** junto al retorno, para que se vea si el brazo pasó
+   porque le fue bien o porque no jugó.
+4. **Preferir el mecanismo ya validado.** Si existe un overlay shipeado (hoy: el factor 0.50 de
+   T20), el candidato primario es el que lo reusa — no pide flag nuevo ni mecanismo nuevo, y su
+   validación no se paga dos veces. Las variantes nuevas (hard gate, `confirm_days`) van como
+   secundarias.
+5. **El gate paga su costo de selección.** Agregar un eje condicional agranda el espacio de
+   búsqueda: el brazo se pre-registra, no se retrofitea sobre un veredicto ya publicado.
+
+**Lo que NO es aceptable:** excluir 2008 / COVID / 2018Q4 / bear-2022 de la población para que
+los números salgan mejor. No mejora la capacidad predictiva — borra la evidencia de cuándo
+falla el sistema, y la cuenta llega al próximo stress sin haberlo medido. Si un brazo sólo
+funciona sacando los bears, el hallazgo **es** que tiene crash-risk.
