@@ -52,6 +52,7 @@ PORTFOLIO_RUNNERS = [
     "run_ent1_replay_t13.py",
     "run_ranking_t21.py",
     "run_stop_cal_replay_t26.py",
+    "run_stop_loosen_t34.py",
 ]
 
 # Todos los que corren sobre ``replay_cycle``, o sea los que heredaban el fill
@@ -74,15 +75,37 @@ def test_legacy_config_declares_slots_and_universe():
 
 
 def test_live_config_only_declares_the_structural_deviations():
-    """Con la config viva quedan **tres** desvíos, los tres estructurales: la ventana
-    de ``analyze()`` (T27), el precio de evaluación de las barreras (T32) y el precio
-    al que se llena esa barrera (T33). Son los que se declaran en vez de corregirse."""
+    """Con la config viva quedan **cuatro** desvíos estructurales: la ventana de
+    ``analyze()`` (T27), el precio de evaluación de las barreras (T32), el precio al
+    que se llena esa barrera (T33) y los gates de re-entrada (T34). Son los que se
+    declaran en vez de corregirse."""
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
     devs = deviations(cfg)
-    assert len(devs) == 3
+    assert len(devs) == 4
     assert any("ventana de analyze()" in d for d in devs)
     assert any("barreras ATR" in d for d in devs)
     assert any("fill de la barrera" in d for d in devs)
+    assert any("gates de re-entrada" in d for d in devs)
+
+
+def test_reentry_gates_deviation_is_declared_unless_modelled():
+    """T34 — el sexto desvío. ``portfolio_sim`` nunca modeló los gates de re-entrada
+    del engine, así que mientras no se los modele hay que decirlo, **con el número que
+    vale**: el defecto no es que existan, es que el harness los ignore en silencio."""
+    off = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
+    dev = next(d for d in deviations(off) if "gates de re-entrada" in d)
+    assert "Gate 5" in dev and "Gate 5b" in dev
+    assert "21,15%-36,36%" in dev          # el costo medido, no una vaguedad
+    assert "gates de re-entrada" in config_banner(off)
+
+
+def test_modelling_the_reentry_gates_removes_the_deviation():
+    """Con ``live_gates=True`` el harness deja de desviarse en ese eje, así que el
+    desvío **no** se anuncia — mismo patrón que ``fill_mode`` bajo ``touch``."""
+    on = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, live_gates=True)
+    devs = deviations(on)
+    assert not any("gates de re-entrada" in d for d in devs)
+    assert len(devs) == 3
 
 
 def test_signal_window_deviation_is_always_declared():

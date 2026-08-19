@@ -31,6 +31,13 @@ hallazgo central de la T26. La Tarea 33 lo declara acá, invierte el default de
 ``fill_mode`` a la variante honesta y re-lee los veredictos que corrieron con el
 legacy. Ver ``HARNESS_FILL_MODE`` más abajo.
 
+La T34 destapó el **sexto**, en la otra punta del ciclo: los **gates de re-entrada**.
+``portfolio_sim`` sólo rechaza un candidato si el ticker ya está abierto; el engine
+vivo además bloquea el re-BUY después de un ciclo perdedor reciente (Gate 5) o
+después de demasiados ciclos seguidos (Gate 5b). Medido: afecta al **21-36%** de las
+entradas tomadas, con **gradiente en el múltiplo del stop**, así que no es un nivel
+común y no se cancela solo en la comparación. Ver ``LIVE_WHIPSAW_LOOKBACK_DAYS``.
+
 Qué provee
 ----------
 Un solo lugar donde vive la config de la cuenta viva, para que un harness nuevo
@@ -128,6 +135,41 @@ LOOKAHEAD_FILL_COST_DESC = (
     "(docs/stop_price_t26b_2026-08-16.md §2)"
 )
 
+# ── Gates de re-entrada — el SEXTO desvío, lo destapó la T34 ─────────────────
+# ``portfolio_sim`` sólo rechaza una entrada si el ticker **ya está abierto**
+# (``allow_reentry_while_open=False``). El engine vivo tiene además dos gates que
+# miran **ciclos cerrados** y bloquean el re-BUY:
+#
+#   * **Gate 5 (anti-whipsaw, ``engine.py:993``)** — bloquea si el último ciclo
+#     cerrado del ticker dentro de ``LIVE_WHIPSAW_LOOKBACK_DAYS`` cerró con
+#     pérdida. Con ``paper_whipsaw_min_loss_pct=0.0`` —el valor vivo— **cualquier**
+#     pérdida bloquea: es el ajuste **más estricto**, no un no-op.
+#   * **Gate 5b (anti-churn, ``engine.py:1013``)** — bloquea si hay
+#     ``LIVE_CHURN_MAX_CYCLES`` o más ciclos cerrados dentro de
+#     ``LIVE_CHURN_LOOKBACK_DAYS``, agnóstico al P/L.
+#
+# **Por qué no es una nota al pie y por qué la T34 lo modela en vez de sólo
+# declararlo:** medido sobre la rejilla de múltiplos del stop, Gate 5 bloquearía
+# entre 21,15% y 36,36% de las entradas que el harness toma — y el share se mueve
+# **monótonamente con el múltiplo** (36,36% a 1.0×ATR, 21,15% sin stop). Por el
+# criterio que dejó la T33 —*"¿los brazos disparan barreras a tasas distintas?"*—
+# acá la tasa de stop varía por un factor de 7, así que el desvío **no es un nivel
+# común y no se cancela en la comparación**. Un stop ajustado cierra muchos ciclos
+# chicos en rojo y cada uno arma en vivo un cooldown de 7 días que el harness
+# ignora: le regala re-entradas a los brazos ajustados, y más cuanto más ajustado.
+LIVE_WHIPSAW_LOOKBACK_DAYS = 7
+LIVE_WHIPSAW_MIN_LOSS_PCT = 0.0
+LIVE_CHURN_LOOKBACK_DAYS = 10
+LIVE_CHURN_MAX_CYCLES = 3
+REENTRY_GATES_COST_DESC = (
+    "21,15%-36,36% de los trades que el harness toma SIN gates habrían sido "
+    "bloqueados en vivo, con gradiente monótono en el múltiplo del stop "
+    "(docs/stop_loosen_prereg_t34_2026-08-18.md §3). Ojo con la etiqueta: es el "
+    "TAMAÑO del desvío medido sobre el path sin gates, NO la tasa de bloqueo en "
+    "régimen del path ya gateado — el gate es auto-extintivo y ahí da 2,44% "
+    "(docs/stop_loosen_enmienda_t34_2026-08-18.md §1)"
+)
+
 
 @dataclass(frozen=True)
 class HarnessConfig:
@@ -143,6 +185,10 @@ class HarnessConfig:
     # ``replay_cycle``, así que un runner que no los pase declara lo que corre.
     eval_mode: str = "close"
     fill_mode: str = HARNESS_FILL_MODE
+    # Gates de re-entrada del engine modelados o no (Tarea 34). El default espeja
+    # el de ``portfolio_sim.simulate_portfolio``, así que un runner que no lo pase
+    # declara lo que realmente corre.
+    live_gates: bool = False
 
 
 def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE) -> str:
@@ -207,6 +253,16 @@ def deviations(cfg: HarnessConfig) -> list[str]:
         )
     # Bajo ``touch`` los dos fill_mode coinciden **y coinciden con el engine** (el
     # precio que decide es el nivel), así que ahí no hay nada que declarar.
+    # Y el sexto: los gates de re-entrada. Es estructural de ``portfolio_sim`` —el
+    # simulador nunca los tuvo— así que se declara siempre que no se los modele.
+    if not cfg.live_gates:
+        out.append(
+            f"NO se modelan los gates de re-entrada del engine — Gate 5 "
+            f"(anti-whipsaw: cualquier pérdida dentro de {LIVE_WHIPSAW_LOOKBACK_DAYS}d "
+            f"bloquea el re-BUY, umbral vivo {LIVE_WHIPSAW_MIN_LOSS_PCT:.1f}%) y Gate 5b "
+            f"(anti-churn: ≥{LIVE_CHURN_MAX_CYCLES} ciclos en {LIVE_CHURN_LOOKBACK_DAYS}d). "
+            f"Vale {REENTRY_GATES_COST_DESC}"
+        )
     return out
 
 
@@ -248,6 +304,7 @@ def announce(
     verdict_max_positions: int | None = None,
     eval_mode: str = "close",
     fill_mode: str = HARNESS_FILL_MODE,
+    live_gates: bool = False,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -262,6 +319,7 @@ def announce(
         verdict_max_positions=verdict_max_positions,
         eval_mode=eval_mode,
         fill_mode=fill_mode,
+        live_gates=live_gates,
     )
     print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
     return cfg

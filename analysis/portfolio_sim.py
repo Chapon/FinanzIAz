@@ -59,9 +59,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Callable
 
 from analysis.exit_replay import AtrParams, Bar, max_drawdown
+from analysis.harness_config import (
+    LIVE_CHURN_LOOKBACK_DAYS,
+    LIVE_CHURN_MAX_CYCLES,
+    LIVE_WHIPSAW_LOOKBACK_DAYS,
+    LIVE_WHIPSAW_MIN_LOSS_PCT,
+)
 from analysis.scaleout_replay import CostModel, ScaleOutParams, StopFilter, replay_cycle
 
 # entry_filter(ticker, date_iso10) -> factor de tamaño en [0, 1].
@@ -113,6 +120,8 @@ class PortfolioResult:
     n_filtered: int = 0       # rechazadas por el entry_filter (size 0)
     n_no_cash: int = 0        # rechazadas por falta de cash
     n_already_open: int = 0   # rechazadas por tener ya el ticker en cartera
+    n_gate5_blocked: int = 0  # rechazadas por Gate 5 vivo (anti-whipsaw), T34
+    n_gate5b_blocked: int = 0 # rechazadas por Gate 5b vivo (anti-churn), T34
 
     @property
     def total_return_pts(self) -> float:
@@ -156,6 +165,7 @@ def simulate_portfolio(
     stop_filter: StopFilter | None = None,
     eval_mode: str = "close",
     fill_mode: str = "decision",
+    live_gates: bool = False,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -183,6 +193,25 @@ def simulate_portfolio(
     qué precio se llena esa barrera. El legacy ``"resting"`` es look-ahead en modo
     ``close`` y sólo se conserva para reproducir T7/T23/T13/T21/T26 — ver
     ``scaleout_replay._barrier_fill_price``.
+
+    ``live_gates`` (**Tarea 34**, el *sexto* desvío) ⇒ modela los dos gates de
+    re-entrada del engine vivo, que este simulador no tenía:
+
+      * **Gate 5 (anti-whipsaw)** — si el **último** ciclo cerrado del ticker dentro
+        de ``LIVE_WHIPSAW_LOOKBACK_DAYS`` cerró con pérdida mayor al umbral, el
+        re-BUY se bloquea. Con el valor vivo (``0.0``) **cualquier** pérdida bloquea.
+      * **Gate 5b (anti-churn)** — ``LIVE_CHURN_MAX_CYCLES`` o más ciclos cerrados
+        dentro de ``LIVE_CHURN_LOOKBACK_DAYS`` bloquean, sin mirar el P/L.
+
+    Default **``False``** ⇒ cero cambio para todo lo publicado (T7, R2, T9, T10/T20,
+    T11b, T12, T23, T13, T21, T26, T26b), igual que hizo la 26b con ``eval_mode``.
+
+    **Sin look-ahead, por construcción:** el historial se alimenta desde
+    ``_release_until``, o sea **sólo** con ciclos cuya salida ocurrió *estrictamente
+    antes* de la fecha del candidato. Un ciclo que cierra el mismo día que la entrada
+    —o después— no puede bloquearla, aunque el simulador ya conozca su desenlace.
+    Y el candidato bloqueado hace ``continue``, así que **el slot se le ofrece al
+    siguiente**, igual que en vivo.
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
@@ -193,17 +222,76 @@ def simulate_portfolio(
     realized_by_date: dict[str, float] = {}
     all_dates: set[str] = set()
 
+    # Historial de ciclos CERRADOS por ticker: [(exit_date_iso10, ret)], en orden.
+    # Sólo lo alimenta ``_release_until``, y sólo con salidas estrictamente anteriores
+    # a la fecha que se está procesando ⇒ los gates del T34 no pueden ver el futuro.
+    closed_by_ticker: dict[str, list[tuple[str, float]]] = {}
+    _ord_cache: dict[str, int] = {}
+
+    def _ord(date_iso10: str) -> int:
+        """iso10 → día ordinal, cacheado (se llama millones de veces)."""
+        o = _ord_cache.get(date_iso10)
+        if o is None:
+            o = date.fromisoformat(date_iso10).toordinal()
+            _ord_cache[date_iso10] = o
+        return o
+
     def _release_until(date_iso10: str) -> None:
         """Cierra las posiciones cuya salida ya ocurrió antes de ``date_iso10``."""
         nonlocal cash
         still: list[tuple[str, float, str, float]] = []
+        closing: list[tuple[str, str, float]] = []
         for exit_date, proceeds, tk, ec in open_positions:
             if exit_date < date_iso10:
                 cash += proceeds
                 realized_by_date[exit_date] = realized_by_date.get(exit_date, 0.0) + proceeds
+                if live_gates:
+                    closing.append((exit_date, tk, (proceeds / ec - 1.0) if ec > 0 else 0.0))
             else:
                 still.append((exit_date, proceeds, tk, ec))
         open_positions[:] = still
+        # ``open_positions`` está en orden de APERTURA, no de salida. Con
+        # ``allow_reentry_while_open=True`` un ticker puede tener dos ciclos abiertos
+        # que cierran fuera de ese orden, y los dos gates leen el historial con
+        # ``reversed()`` asumiendo que el último elemento es el cierre **más
+        # reciente**. Ordenar acá mantiene esa invariante. (Entre llamadas ya es
+        # monótono: cada una libera exits ≥ los de la anterior.)
+        for exit_date, tk, ret in sorted(closing):
+            closed_by_ticker.setdefault(tk, []).append((exit_date, ret))
+
+    def _gate5_blocks(ticker: str, entry_date: str) -> bool:
+        """Gate 5 vivo (anti-whipsaw, ``engine.py:993``): el **último** ciclo cerrado
+        dentro de la ventana cerró con pérdida ⇒ bloquea el re-BUY.
+
+        Espeja la semántica del engine: si el último cierre del ticker quedó **fuera**
+        de la ventana, ``_last_closed_cycle_pnl_pct`` devuelve ``None`` y no bloquea —
+        o sea que mira el más reciente *dentro* de la ventana, no el más reciente a secas.
+        """
+        hist = closed_by_ticker.get(ticker)
+        if not hist:
+            return False
+        cutoff = _ord(entry_date) - LIVE_WHIPSAW_LOOKBACK_DAYS
+        for exit_date, ret in reversed(hist):
+            if _ord(exit_date) < cutoff:
+                return False
+            return ret * 100.0 < -LIVE_WHIPSAW_MIN_LOSS_PCT
+        return False
+
+    def _gate5b_blocks(ticker: str, entry_date: str) -> bool:
+        """Gate 5b vivo (anti-churn, ``engine.py:1013``): ``LIVE_CHURN_MAX_CYCLES`` o
+        más ciclos cerrados dentro de la ventana ⇒ bloquea, sin mirar el P/L."""
+        hist = closed_by_ticker.get(ticker)
+        if not hist:
+            return False
+        cutoff = _ord(entry_date) - LIVE_CHURN_LOOKBACK_DAYS
+        n = 0
+        for exit_date, _ in reversed(hist):
+            if _ord(exit_date) < cutoff:
+                break
+            n += 1
+            if n >= LIVE_CHURN_MAX_CYCLES:
+                return True
+        return False
 
     # Agrupadas por fecha: los candidatos de un mismo día compiten entre sí por el
     # slot, y el ranking es lo que resuelve esa competencia.
@@ -233,6 +321,16 @@ def simulate_portfolio(
             if not allow_reentry_while_open and any(tk == ticker for _, _, tk, _ in open_positions):
                 res.n_already_open += 1
                 continue
+
+            # Gates de re-entrada del engine vivo (T34). Como en producción, el
+            # candidato bloqueado se saltea y **el slot queda para el siguiente**.
+            if live_gates:
+                if _gate5_blocks(ticker, entry_date):
+                    res.n_gate5_blocked += 1
+                    continue
+                if _gate5b_blocks(ticker, entry_date):
+                    res.n_gate5b_blocked += 1
+                    continue
 
             # g = factor de régimen (mercado); m = peso de riesgo (nombre).
             g = 1.0 if entry_filter is None else float(entry_filter(ticker, entry_date))

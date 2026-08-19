@@ -11,6 +11,7 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 3. **Display antes que sizing.** Scoring/valuación nuevos entran como display-only, NO cableados a sizing ni gates, hasta backtestear. (`buy_score` no predice el fwd5 — auditoría 2026-06-17.)
 4. **`.bat` requieren CRLF** o `cmd.exe` los mata en silencio. Escribir con CRLF binario y verificar.
 5. **No escribir `finanzias.db` desde Linux/sandbox** — corrupción intermitente vía mounts. Leer copiando a /tmp primero. Backups en `backups/`.
+6. **Todo hallazgo se anota como tarea.** Cualquier defecto que aparezca durante un análisis, auditoría, backtest o review —bug, desvío harness↔engine, supuesto falso, número que no cierra— entra como **tarea en `docs/BACKLOG.md`** antes de cerrar lo que se estaba haciendo, aunque no sea el tema de la tarea en curso y aunque sea chico. Nada de arreglar en silencio ni de dejarlo sólo en un doc. Ver skill `hallazgo-a-backlog`.
 
 ## Cómo correr
 
