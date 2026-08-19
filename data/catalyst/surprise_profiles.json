@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-08-09T20:42:12.004176+00:00",
+    "built_at": "2026-08-17T00:14:17.695765+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -43,10 +43,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.063653,
-      "median_surprise": 0.064262,
-      "last_surprise": 0.063197,
-      "directional_score": 0.5509
+      "mean_surprise": 0.06018,
+      "median_surprise": 0.061279,
+      "last_surprise": 0.032448,
+      "directional_score": 0.5481
     },
     "AMD": {
       "ticker": "AMD",
@@ -133,10 +133,10 @@
       "n_quarters": 24,
       "beat_rate": 1.0,
       "miss_rate": 0.0,
-      "mean_surprise": 0.036325,
+      "mean_surprise": 0.034727,
       "median_surprise": 0.027964,
-      "last_surprise": 0.019231,
-      "directional_score": 0.6291
+      "last_surprise": 0.042735,
+      "directional_score": 0.6278
     },
     "F": {
       "ticker": "F",
@@ -300,13 +300,13 @@
     },
     "MLTX": {
       "ticker": "MLTX",
-      "n_quarters": 16,
-      "beat_rate": 0.5,
-      "miss_rate": 0.5,
-      "mean_surprise": 0.006299,
-      "median_surprise": -0.013171,
-      "last_surprise": -0.065217,
-      "directional_score": 0.005
+      "n_quarters": 17,
+      "beat_rate": 0.5294,
+      "miss_rate": 0.4706,
+      "mean_surprise": 0.00985,
+      "median_surprise": 0.021277,
+      "last_surprise": 0.066667,
+      "directional_score": 0.0432
     },
     "MO": {
       "ticker": "MO",
