@@ -265,6 +265,18 @@ def test_live_universe_file_exists_and_is_parseable():
     assert len(tickers) == len(set(tickers))
 
 
+def test_universe_file_with_bom_does_not_lose_the_first_ticker(tmp_path):
+    """Tarea 41. PowerShell 5.1 escribe UTF-8 **con BOM** por default, y con
+    ``encoding="utf-8"`` el BOM se pegaba al primer ticker (``\\ufeffABBV``), que
+    después no encontraba su artefacto PIT y **se caía del universo con un simple
+    AVISO** — un ticker menos en el harness, en silencio."""
+    from scripts.precompute_pit_signals import parse_universe_file
+
+    path = tmp_path / "uni.txt"
+    path.write_text("# comentario\nAAA\nBBB\n", encoding="utf-8-sig")
+    assert parse_universe_file(path) == ["AAA", "BBB"]
+
+
 # ── refresh_live_universe ────────────────────────────────────────────────────
 
 

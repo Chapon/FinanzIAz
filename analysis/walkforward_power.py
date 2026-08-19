@@ -79,6 +79,36 @@ def regime_for_date(date_iso10: str, regimes: list[Regime] = STRESS_REGIMES) -> 
     return BULL_NORMAL
 
 
+def regime_window_returns(
+    pairs: "list[tuple[str, float]]",
+    regimes: list[Regime] = STRESS_REGIMES,
+) -> dict[str, float]:
+    """Retorno **compuesto de la cartera** durante los días de cada régimen.
+
+    ``pairs`` son ``(fecha_iso10, retorno_diario_de_equity)`` — la serie de la
+    curva de equity, no de los trades. Los días sin posición abierta entran con
+    su retorno real (0 si la cartera está toda en cash), que es justamente el
+    punto.
+
+    **Por qué no se mide por trade** (regla congelada en el pre-registro de la
+    T38 §4 y reusada por la T39 C5): un brazo que deja de operar en el bear
+    tiene ~cero trades ahí, así que el Δ del retorno *por trade* es vacío y el
+    brazo **pasaría el criterio sin hacer nada**. A nivel cartera, "no operar"
+    se **premia** si evita la caída y se **castiga** si el costo es perderse la
+    recuperación.
+
+    Devuelve ``{nombre_de_régimen: retorno}`` con una entrada por régimen de
+    ``regimes`` más ``bull_normal``; los regímenes sin días en la muestra dan
+    ``0.0``.
+    """
+    growth: dict[str, float] = {BULL_NORMAL: 1.0}
+    for r in regimes:
+        growth[r.name] = 1.0
+    for date_iso10, ret in pairs:
+        growth[regime_for_date(date_iso10, regimes)] *= 1.0 + float(ret)
+    return {name: g - 1.0 for name, g in growth.items()}
+
+
 # ── Muestra de entrada sintética ─────────────────────────────────────────────
 
 

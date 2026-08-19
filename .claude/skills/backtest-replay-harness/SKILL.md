@@ -99,3 +99,51 @@ vez**. Es la única decisión de la serie cableada en la cuenta viva.
 los números salgan mejor. No mejora la capacidad predictiva — borra la evidencia de cuándo
 falla el sistema, y la cuenta llega al próximo stress sin haberlo medido. Si un brazo sólo
 funciona sacando los bears, el hallazgo **es** que tiene crash-risk.
+
+## Brazos que son una POLÍTICA ALEATORIA (T39 — RANK-NEUTRAL)
+
+Cuando el candidato no es una regla determinista sino **una política con azar adentro**
+(orden aleatorio rotado, desempate no persistente, muestreo), tres reglas que salieron de
+la T39:
+
+1. **La política es una distribución; se cablea una realización.** Se corren K semillas y
+   el criterio de retorno se lee sobre la **mediana**, pero hace falta además un criterio
+   sobre la **cola**: si sólo gana con algunas semillas, no hay política validada — hay una
+   apuesta, porque la semilla que va a producción se elige **a ciegas**. La T39 pidió que
+   ganaran **las K** y falló 15/20.
+2. **La semilla que se shipearía se declara en el pre-registro, antes de correr.** Elegir
+   después la que mejor rindió es seleccionar el ganador post-hoc con otro nombre.
+3. **El brazo tiene que ser una función pura de sus argumentos**, no del orden de las
+   llamadas (`analysis/rank_policy.py`: `blake2b` de `(semilla, fecha, ticker)`, con golden
+   value testeado). Si depende del orden de llamada, el objeto medido **no es
+   implementable en el engine** —que ve otro conjunto de candidatos cada scan— y no
+   sobrevive a un cambio de población. La T21 lo tenía así (tarea 40) y su medición se
+   sostuvo por casualidad: `portfolio_sim` pide la clave una vez por candidato del día.
+
+### El nulo tiene que estar pareado en PERSISTENCIA
+
+"Sin información" no es una sola cosa. Un orden **fijo** (alfabético, permutación fija) y
+uno **rotado** son igual de ignorantes y **no rinden igual**: la T39 midió que persistir el
+orden cuesta **1.21 pp de CAGR por sí solo**, porque concentra el book en el mismo
+subconjunto elección tras elección. Por eso el alfabético de la T21 no era un baseline
+neutro y su +3.10 pp era suerte de una realización de una familia ancha (7,6 pp).
+
+- Correr **las dos familias** (fija y rotada) acota al candidato sin depender del supuesto.
+- Y para saber **cuál punta aplica**, medir la autocorrelación de rango de la clave **al
+  horizonte de tenencia**, no a un día: el `buy_score` da ρ=0.59 a 1 rueda pero **0.16 a 8**
+  (su tenencia media), o sea que está mucho más cerca de la punta rotada. Extrapolar el
+  lag-1 como AR(1) habría dado 0.015 — el decaimiento real es más lento, así que **se mide,
+  no se asume** (`rank_autocorr(key, pool, lag=k)`).
+
+### Modelar los gates de re-entrada puede mover un HALLAZGO, no sólo la escala
+
+La T33 dejó el criterio *"¿los brazos disparan barreras a tasas distintas?"* — si no, el
+desvío es un nivel común y se cancela en la comparación. **Ese criterio no cubre los gates
+de re-entrada (`live_gates`, T34).** Los gates no cambian el nivel: cambian **quién entra**,
+y en un harness cuyo eje es *quién entra* eso es el eje mismo.
+
+Medido en la T39: con `touch` + `live_gates` el ranking vivo pasa de estar **por debajo de
+la banda entera** del azar (T21/T33) a caer **adentro** de la banda, y el déficit se achica
+de −3.23 a −1.80 pp. Mismo runner, misma población (el sanity de reproducción devuelve el
+1.97% publicado al dígito). **Antes de re-leer un veredicto de ranking o selección,
+`live_gates` no es opcional.**

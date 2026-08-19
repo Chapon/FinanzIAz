@@ -19,6 +19,22 @@ Qué hace (fiel al pre-registro)
    inestable a la config). DSR/PBO se reportan como descriptivos.
 
 Sin red, sin tocar ``finanzias.db``. No toca ``engine.py``/``strategies.py``.
+
+Enabler agregado por la **Tarea 39** (no mueve el veredicto publicado): ``--eval-mode``
+(regla del engine, 26b) y ``--live-gates`` (gates de re-entrada, T34). Los defaults
+son los de la corrida publicada — ``close`` y OFF—, así que reproducirla sigue siendo
+``--fill-mode resting`` y nada más.
+
+Limitación declarada de los brazos ``B0r_random`` (**tarea 40**, encontrada al auditar
+el instrumento para la T39): el valor de ranking sale de ``random.random()`` cacheado
+por par ``(ticker, fecha)``, así que **depende del orden en que el ``sorted()`` del día
+pide las claves**, no sólo de la semilla y el par. Es determinista y reproducible dentro
+de una corrida —``by_date`` se arma de ``entries``, idéntico entre brazos, y la clave se
+pide una vez por candidato del día—, por eso **la banda publicada de la T21 se sostiene**
+y se deja tal cual para poder reproducirla bit a bit. Pero **no es el objeto shipeable**:
+el engine ve otro conjunto de candidatos en cada scan. Todo harness nuevo usa
+``analysis.rank_policy.neutral_rank``, que es una función pura de
+``(semilla, fecha, ticker)``.
 """
 
 from __future__ import annotations
@@ -198,6 +214,7 @@ def precompute_realized(entries, bars_by, sigs_by, common) -> dict:
             bars, idx, sigs_by.get(ticker) or {},
             params=common["so_params"], atr_p=AtrParams(),
             cap_days=common["cap_days"], costs=common["costs"], notional=10_000.0,
+            eval_mode=common.get("eval_mode", "close"),
             fill_mode=common["fill_mode"],
         )
         if cyc is not None and cyc.entry_cost > 0:
@@ -297,6 +314,14 @@ def main(argv: list[str] | None = None) -> int:
                    default=HARNESS_FILL_MODE,
                    help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
                         f"(look-ahead en el fill de la barrera — Tarea 33)")
+    # Enabler de la Tarea 39: los dos desvíos que la T21 no modelaba. Defaults =
+    # los de la corrida publicada, así agregarlos no mueve su veredicto.
+    p.add_argument("--eval-mode", choices=("close", "touch"), default="close",
+                   help="'close' reproduce el veredicto publicado; 'touch' es la "
+                        "regla que ejecuta el engine (Tarea 26b)")
+    p.add_argument("--live-gates", action="store_true",
+                   help="modela los gates de re-entrada del engine vivo "
+                        "(Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)")
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -318,7 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
-             fill_mode=args.fill_mode, file=log)
+             eval_mode=args.eval_mode, fill_mode=args.fill_mode,
+             live_gates=args.live_gates, file=log)
     risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
           f"risk_score PIT: {100*risk_cov:.0f}% de cobertura"
@@ -330,7 +356,8 @@ def main(argv: list[str] | None = None) -> int:
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
         regime_of=regime_for_date, allow_reentry_while_open=False,
-        fill_mode=args.fill_mode,
+        eval_mode=args.eval_mode, fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
     )
     realized = precompute_realized(entries, bars_by, sigs_by, common)
     print(f"Retornos realizados para el oráculo: {len(realized)}\n", file=log)
@@ -391,7 +418,8 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by), "n_entries": len(entries),
         "max_positions": args.max_positions, "cap_days": args.cap_days,
-        "fill_mode": args.fill_mode,
+        "eval_mode": args.eval_mode, "fill_mode": args.fill_mode,
+        "live_gates": args.live_gates,
         "sanity": sanity, "verdict": verdict,
         "bootstrap": vars(boot),
         "random_cagr": {"n": len(rand_cagrs),

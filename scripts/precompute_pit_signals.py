@@ -138,9 +138,17 @@ def _save(path: Path, ticker: str, period: str, warmup: int,
 
 
 def parse_universe_file(path: Path) -> list[str]:
-    """Un ticker por línea; ``#`` introduce comentario. (Igual que E4.)"""
+    """Un ticker por línea; ``#`` introduce comentario. (Igual que E4.)
+
+    ``utf-8-sig`` y no ``utf-8``: PowerShell 5.1 —el shell de la máquina de
+    Chapa— escribe UTF-8 **con BOM** por default (``Out-File``,
+    ``Set-Content -Encoding utf8``), y con ``utf-8`` el BOM se pega al primer
+    ticker (``\\ufeffABBV``), que después no encuentra su artefacto PIT y **se cae
+    del universo con un simple AVISO**. Sin BOM el comportamiento es idéntico.
+    Tarea 41.
+    """
     tickers: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         if "#" in line:
             line = line.split("#", 1)[0]
         for tok in line.strip().split(","):
