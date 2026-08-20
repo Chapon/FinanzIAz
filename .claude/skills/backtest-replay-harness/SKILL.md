@@ -228,3 +228,58 @@ protegiendo nada — está generando rechazos al azar y disfrazándolos de halla
 Herramientas: `detectable_mean_effect`, `sign_stability`, `block_sign_stability`,
 `block_delta_sign_stability` (pareada) en `analysis/walkforward_power.py`;
 `scripts/run_regime_power_t46.py` corre las cuatro lecturas sobre las dos poblaciones.
+
+## Un smoke sobre universo chico NO predice el sanity del oráculo (T49)
+
+Un smoke con 25 tickers es la forma correcta de probar la **cañería** de un runner nuevo, y
+es **engañoso para cualquier umbral**. Medido en la 49, mismo brazo y mismo código:
+
+| universo | `ORACULO_PRIO` − baseline |
+|---|--:|
+| 25 tickers | **+2.50 pp** |
+| 127 tickers | **+51.35 pp** |
+
+**El mecanismo:** el poder de un oráculo escala con **la cantidad de candidatos por día**.
+"El mejor del día" es muchísimo mejor cuando el día trae 50 candidatos que cuando trae 8.
+Cualquier sanity de la forma *"el oráculo despega ≥ X pp"* mide, en un universo chico, algo
+que no tiene nada que ver con lo que va a medir en el grande.
+
+**Qué hacer:** usar el smoke para verificar que el runner corre, que la contabilidad cierra y
+que los brazos se distinguen — **nunca** para anticipar si un umbral pasa. Y si un sanity se
+va a leer contra un número, que el número **salga de la muestra** (un percentil de la banda del
+control) en vez de ser un `pp` elegido a mano: así el umbral escala solo con la población.
+
+*(En la 49 esto costó una enmienda al pre-registro que, medida sobre la población real,
+resultó innecesaria: el sanity original habría pasado. La enmienda mejoró el criterio pero no
+rescató nada, y el veredicto lo dice así.)*
+
+## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
+
+Cuando un brazo **elige un subconjunto** —qué stops saltear (T26), a qué candidatos darles el
+turno (T49)— la comparación contra el baseline mezcla dos cosas: **intervenir** y **elegir bien
+a quién**. El baseline no interviene nunca, así que no separa.
+
+El control correcto interviene **igual de seguido, en los mismos días, en la misma cantidad**, y
+elige **al azar**:
+
+- `analysis/rank_policy.rate_matched_priority(candidates_by_date, n_by_date, seed)` — el molde
+  reusable (clave **pura**: `neutral_rank(seed, fecha, ticker)`).
+- Se corre con **~20 semillas** y el gate va contra el **p95** de la banda, no contra un punto.
+- **Los oráculos también van igualados en tasa**, si no el sanity es trivial.
+
+Lo que esto compró en la 49: el descriptivo de la 45 decía **+4.21 pp** para *"priorizar el
+evento"*. Con el control puesto, el candidato quedó **adentro** de la banda del azar **y** por
+debajo del baseline — y encima se vio que a la tenencia del engine **intervenir a esa tasa
+cuesta ~2 pp elijas lo que elijas**. Sin el control, ese +4.21 pp se cableaba.
+
+## Un eje de config no declarado puede sostener un hallazgo entero (T45/T49/T50)
+
+`cap_days` valía **20** en la familia T11b/T38/T45 y **250** en la T21/T23/T26/T39, y **ningún
+pre-registro lo nombraba**. No era una diferencia de nivel: el **+4.21 pp** que la 45 publicó
+como su hallazgo principal **se da vuelta a −1.42 pp** con la tenencia del engine.
+
+Antes de congelar un pre-registro, listar **todos** los ejes de config del harness —slots,
+universo, `cap_days`, `eval_mode`, `fill_mode`, `live_gates`, overlay— y decir cuál se usa y
+por qué. Si un número se va a comparar contra el de otra tarea, los ejes tienen que coincidir o
+la diferencia tiene que estar escrita. Ver también la tarea 48 (la ventana `10y` es **rodante**,
+así que un número publicado tampoco dice contra qué **muestra** se midió).
