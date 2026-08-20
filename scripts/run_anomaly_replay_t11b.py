@@ -228,9 +228,18 @@ def loto_edge(run, entries: list[tuple[str, int]], random_median_cagr: float) ->
 def random_baseline(
     run, bars_by, count_by_month: dict[str, int],
     operable_by_month: dict[str, list[tuple[str, int]]], *, k_random: int, seed0: int,
+    regime_pts: dict[str, list[float]] | None = None,
 ) -> dict[str, list[float]]:
     """K carteras aleatorias que respetan la distribución mensual del brazo
-    primario. Devuelve las distribuciones de CAGR / Sharpe / maxDD."""
+    primario. Devuelve las distribuciones de CAGR / Sharpe / maxDD.
+
+    ``regime_pts`` (enabler de la **Tarea 45**, §9.1 de su pre-registro): si se
+    pasa un dict, se le acumulan los **retornos por trade en pts, por régimen**,
+    de las K carteras. Es el **control** contra el que la 45 mide su criterio de
+    régimen (C5′): comparar el nivel de una ventana de stress contra **cero** mide
+    el mercado, no la señal; contra el azar time-matched, mide la señal.
+    Default ``None`` ⇒ cero cambio para T11b y T38.
+    """
     dist: dict[str, list[float]] = {"cagr": [], "sharpe": [], "max_dd": []}
     for s in range(k_random):
         rng = random.Random(seed0 + s)
@@ -249,6 +258,9 @@ def random_baseline(
         sh = sharpe_annual(res.equity_curve)
         dist["sharpe"].append(sh if sh is not None else 0.0)
         dist["max_dd"].append(res.max_dd)
+        if regime_pts is not None:
+            for t in res.trades:
+                regime_pts.setdefault(t.regime, []).append(100.0 * t.ret)
     return dist
 
 

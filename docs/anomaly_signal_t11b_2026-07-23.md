@@ -47,6 +47,26 @@ Baseline random time-matched (K=500): **CAGR mediana 3.9% · p95 7.3% · Sharpe 
 > tareas **45** (qué queda de este veredicto) y **46** (el criterio §6.5 no tiene potencia con 10-60
 > trades por ventana).
 
+> **SEGUNDA NOTA DE CORRECCIÓN 2026-08-20 (Tarea 45, `docs/anom_profile_t45_2026-08-20.md`).** La 45
+> re-decidió este veredicto sobre la población viva con un criterio de régimen **que tiene potencia**
+> (tolerancia computada, gate sobre el agregado de stress y Δ **contra el control time-matched** en vez
+> de contra cero). Resultado: **el §6.5 PASA** — el Δ del agregado de stress es **+0.29 pts**
+> (IC95% [−0.95, +1.64], tolerancia computada 1.85) y la señal **le gana al azar en `bear_2022`
+> por +0.51 pts** y en `2018Q4` por +0.36. O sea que el mecanismo publicado más abajo —*"comprar una
+> ruptura al alza en un bear market es, sistemáticamente, una trampa alcista"*— **no tiene respaldo**:
+> medido contra un control que cancela el mercado, la señal está **por encima en tres de las cuatro
+> ventanas**. **El NO-SHIP igual queda en pie**, por dos criterios que no tienen nada que ver con
+> régimen: el **PBO sube de 0.476 a 0.659** (la elección del par `(k, m)` no generaliza — la misma
+> regla re-seleccionaría `A_k2.0_m2.0` por 0.02 de Sharpe), y la señal **no le aporta al engine**
+> cuando se la agrega al stream de candidatos por el mismo pipeline (ΔCAGR −0.27 pp, IC [−2.16,
+> +1.52]). Este veredicto **acertó el resultado y erró el motivo** — el mismo patrón que la 26b.
+> **Y deja un hallazgo mayor:** con prioridad en el desempate del día, la señal vale **+4.21 pp de
+> CAGR** (tarea 49; el número necesita un control igualado en tasa antes de creerse).
+>
+> **Ojo con los números publicados acá:** ya **no reproducen**. Los artefactos `10y` son una ventana
+> **rodante**; con los de hoy este mismo brazo da **12.77% / Sharpe 1.22 / 419 tomadas** en vez de
+> 12.89% / 1.24 / 420. Ver **tarea 48**.
+
 ## Por qué NO-SHIP (y por qué igual es un hallazgo)
 
 1. **La señal es real, no ruido.** El brazo de decisión da CAGR 12.89% / Sharpe 1.24 contra un baseline
