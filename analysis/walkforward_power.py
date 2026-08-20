@@ -461,6 +461,119 @@ def achieved_power_mean(d: float, n: int, *, alpha: float = 0.05) -> float:
     return float(1 - nd.cdf(z_a - ncp) + nd.cdf(-z_a - ncp))
 
 
+def detectable_mean_effect(sd: float, n: int, *, alpha: float = 0.05,
+                           power: float = 0.80) -> float:
+    """Efecto medio más chico detectable con ``n`` muestras de desvío ``sd``.
+
+    Es ``n_for_mean_effect`` dado vuelta, y en las unidades del dato (pts por
+    trade), que es como se leen los criterios de régimen de la serie. Sirve para
+    contestar *"¿el umbral de −0.05 pts que usó C5 es siquiera detectable con los
+    n que hay?"* — **Tarea 46**.
+    """
+    if n < 2 or sd <= 0:
+        return float("inf")
+    z = _z(1 - alpha / 2) + _z(power)
+    return float(abs(sd) * z / math.sqrt(n))
+
+
+def sign_stability(values: "list[float]", *, n_resamples: int = 2000,
+                   seed: int = 12345) -> dict:
+    """¿Sobrevive el **signo de la media** a remuestrear la propia muestra?
+
+    Bootstrap i.i.d. sobre ``values``. Devuelve la media observada, el IC95% y
+    ``p_same_sign``: la fracción de resamples cuya media conserva el signo de la
+    observada. **Es la lectura honesta de un criterio de signo**: si un criterio
+    exige *"signo positivo o neutro en cada régimen"* y ``p_same_sign`` ronda 0.5,
+    ese criterio está tirando una moneda (Tarea 46).
+    """
+    arr = np.asarray(values, dtype=float)
+    n = arr.size
+    if n < 2:
+        return {"n": int(n), "mean": (float(arr[0]) if n else None),
+                "ci_low": None, "ci_high": None, "p_same_sign": None}
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_resamples, n))
+    means = arr[idx].mean(axis=1)
+    obs = float(arr.mean())
+    same = float(np.mean(np.sign(means) == np.sign(obs))) if obs != 0 else 0.5
+    return {
+        "n": int(n), "mean": obs,
+        "ci_low": float(np.percentile(means, 2.5)),
+        "ci_high": float(np.percentile(means, 97.5)),
+        "p_same_sign": same,
+    }
+
+
+def block_sign_stability(rets: "list[float]", *, block: int = 20,
+                         n_resamples: int = 2000, seed: int = 12345) -> dict:
+    """Igual que ``sign_stability`` pero para una serie **diaria de cartera**.
+
+    Remuestrea bloques móviles contiguos (preserva autocorrelación y el efecto
+    cascada de path) y **compone** cada resample, porque el retorno de una ventana
+    de régimen es un producto, no un promedio. Es la versión de cartera del
+    criterio, que es la que la T38/T39 usan (``regime_window_returns``).
+    """
+    arr = np.asarray(rets, dtype=float)
+    T = arr.size
+    if T < 2:
+        return {"n": int(T), "ret": None, "ci_low": None, "ci_high": None,
+                "p_same_sign": None}
+    b = max(1, min(int(block), T))
+    n_blocks = math.ceil(T / b)
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, max(1, T - b + 1), size=(n_resamples, n_blocks))
+    offs = np.arange(b)
+    out = np.empty(n_resamples, dtype=float)
+    for i in range(n_resamples):
+        idx = (starts[i][:, None] + offs[None, :]).ravel()[:T]
+        out[i] = float(np.prod(1.0 + arr[idx]) - 1.0)
+    obs = float(np.prod(1.0 + arr) - 1.0)
+    same = float(np.mean(np.sign(out) == np.sign(obs))) if obs != 0 else 0.5
+    return {
+        "n": int(T), "ret": obs,
+        "ci_low": float(np.percentile(out, 2.5)),
+        "ci_high": float(np.percentile(out, 97.5)),
+        "p_same_sign": same,
+    }
+
+
+def block_delta_sign_stability(rets_a: "list[float]", rets_b: "list[float]", *,
+                               block: int = 20, n_resamples: int = 2000,
+                               seed: int = 12345) -> dict:
+    """Estabilidad del signo de **Δ(retorno de ventana)** entre dos brazos, pareado.
+
+    Es lo que un criterio de régimen realmente evalúa: no *"¿la cartera perdió en
+    el bear?"* —que habla del mercado— sino *"¿el candidato lo hizo mejor o peor
+    que el baseline **ahí**?"*. Se remuestrean **los mismos bloques** para las dos
+    series (de ahí lo pareado: el ruido de mercado común se cancela), se compone
+    cada brazo dentro de la ventana y se resta.
+    """
+    a = np.asarray(rets_a, dtype=float)
+    b = np.asarray(rets_b, dtype=float)
+    T = min(a.size, b.size)
+    if T < 2:
+        return {"n": int(T), "delta": None, "ci_low": None, "ci_high": None,
+                "p_same_sign": None}
+    a, b = a[:T], b[:T]
+    bl = max(1, min(int(block), T))
+    n_blocks = math.ceil(T / bl)
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, max(1, T - bl + 1), size=(n_resamples, n_blocks))
+    offs = np.arange(bl)
+    out = np.empty(n_resamples, dtype=float)
+    for i in range(n_resamples):
+        idx = (starts[i][:, None] + offs[None, :]).ravel()[:T]
+        out[i] = float(np.prod(1.0 + b[idx]) - np.prod(1.0 + a[idx]))
+    obs = float(np.prod(1.0 + b) - np.prod(1.0 + a))
+    same = float(np.mean(np.sign(out) == np.sign(obs))) if obs != 0 else 0.5
+    return {
+        "n": int(T), "delta": obs,
+        "ci_low": float(np.percentile(out, 2.5)),
+        "ci_high": float(np.percentile(out, 97.5)),
+        "p_same_sign": same,
+    }
+
+
 # ── Agregados por régimen (para el doc) ──────────────────────────────────────
 
 

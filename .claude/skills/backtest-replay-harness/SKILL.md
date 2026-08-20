@@ -191,3 +191,40 @@ leer todo criterio de régimen:
 distingue crash-risk de ruido de muestra, y una política condicional construida sobre
 ese perfil puede quedar apuntada **al régimen equivocado** — que es exactamente lo que
 le pasó al gate de la T38: en la config viva `bear_2022` es donde la señal **gana**.
+
+## El criterio de régimen: la tolerancia se COMPUTA, no se elige (T46)
+
+El criterio de robustez de régimen de la serie —C5 en 26b/34/37, §6.5 en T11b— usaba una
+tolerancia de **−0.05 pts por trade** por ventana. La T46 midió su potencia:
+
+- **La potencia para detectar ±0.05 pts es 5,0-5,3%** en las tres ventanas de stress de
+  las **dos** poblaciones. α es 5% ⇒ **potencia nula: rechaza al nivel del azar.**
+- El efecto detectable al 80% es **±0.95 a ±4.73 pts** según ventana y población
+  (`n` de 20 a 407). La tolerancia estaba **19-95× por debajo** de eso.
+- **Los cuatro rechazos que produjo** (26b −0.15 y −0.08; 34 −1.18; T11b −2.01) caen
+  todos **por debajo** de lo detectable en su propia muestra.
+- **El criterio no es inservible; el umbral sí.** Con efectos de −2,5 a −3 pts la
+  estabilidad de signo es 95-100%. Con décimas, 53-66% — una moneda apenas cargada.
+- **La versión de cartera tampoco rescata:** el Δ pareado por ventana da P(signo) 58-92%,
+  nunca cerca del 95%. Y ojo: el **nivel** de la ventana sí es estable, pero *"la cartera
+  perdió en el bear"* habla del **mercado**, no de la política.
+
+**Cómo se escribe un criterio de régimen a partir de ahora:**
+
+1. Calcular `detectable_mean_effect(σ, n)` de cada ventana **antes** de congelar, y
+   declarar la tolerancia **por encima** de ese número. Es una línea.
+2. El **gate** va sobre el **agregado de las tres ventanas de stress** (ahí hay `n`), y
+   falla sólo si el **IC95%** del Δ está **enteramente** del lado malo. Rechazar por el
+   punto estimado con el IC cruzando cero es lo que la serie venía haciendo.
+3. Las ventanas individuales son **descriptivo obligatorio** (con `n`, IC y P(signo) al
+   lado), nunca motivo de rechazo por sí solas.
+4. El peso de la decisión va a los criterios **con** potencia: bootstrap pareado sobre la
+   serie diaria completa (T≈2.280), maxDD, walk-forward.
+
+**Y la advertencia de fondo:** un criterio con potencia 5% **no es conservador**. Acepta y
+rechaza arbitrariamente. Un test que no puede detectar el efecto que dice vetar no está
+protegiendo nada — está generando rechazos al azar y disfrazándolos de hallazgo.
+
+Herramientas: `detectable_mean_effect`, `sign_stability`, `block_sign_stability`,
+`block_delta_sign_stability` (pareada) en `analysis/walkforward_power.py`;
+`scripts/run_regime_power_t46.py` corre las cuatro lecturas sobre las dos poblaciones.
