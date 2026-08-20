@@ -80,3 +80,42 @@ def fixed_rank(seed: int, ticker: str) -> float:
     alfabético de la T21 no era un baseline neutro.
     """
     return _u(seed, ticker)
+
+
+def rate_matched_priority(
+    candidates_by_date: "dict[str, list[str]]",
+    n_by_date: "dict[str, int]",
+    seed: int,
+) -> "set[tuple[str, str]]":
+    """Conjunto priorizado **igualado en tasa** — enabler de la **Tarea 49**.
+
+    Dado el conjunto de candidatos de cada fecha y **cuántas** prioridades lleva
+    esa fecha (``n_by_date``, que sale del brazo candidato), elige esas mismas
+    ``n`` por fecha **al azar** con ``neutral_rank(seed, fecha, ticker)`` y
+    devuelve los pares ``(ticker, fecha)`` priorizados.
+
+    Por qué existe: el descriptivo de la 45 midió que priorizar el candidato de
+    anomalía vale +4.21 pp de CAGR, y el propio veredicto declaró que ese número
+    está **confundido** con *"cualquier cosa menos el orden de siempre"*. La única
+    forma de atribuirlo al evento es compararlo contra priorizar **lo mismo, en
+    los mismos días, en la misma cantidad**, pero eligiendo al azar. Es la lección
+    de la T26 (*"el umbral va contra el control igualado en tasa, no contra el
+    baseline"*) aplicada al eje del turno.
+
+    **Pura** (T39 §5.7): el resultado depende sólo de ``(seed, fecha, ticker)`` y
+    del conjunto de candidatos del día — que es idéntico entre brazos porque sale
+    de las mismas ``entries``. No depende del orden de las llamadas ni del estado
+    de la cartera.
+    """
+    out: set[tuple[str, str]] = set()
+    for date_iso10, n in n_by_date.items():
+        if n <= 0:
+            continue
+        pool = candidates_by_date.get(date_iso10) or []
+        if not pool:
+            continue
+        # ``sorted`` sobre una clave pura ⇒ el desempate por ticker lo hace
+        # determinista incluso si dos hashes coincidieran.
+        ranked = sorted(pool, key=lambda t: (-neutral_rank(seed, date_iso10, t), t))
+        out.update((t, date_iso10) for t in ranked[:n])
+    return out
