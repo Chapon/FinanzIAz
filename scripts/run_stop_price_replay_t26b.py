@@ -218,6 +218,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--fill-mode", choices=("decision", "resting"), default="decision",
                    help="'resting' reproduce la corrida invalidada por look-ahead")
+    # Enabler de la Tarea 47 (§3 de su pre-registro). Default OFF = la corrida
+    # publicada. Acá NO es un nivel común: los dos brazos de decisión disparan stop
+    # a tasas muy distintas (19,9% vs 13,4%), así que la exposición a Gate 5 difiere.
+    p.add_argument("--live-gates", action="store_true",
+                   help="modela los gates de re-entrada del engine vivo "
+                        "(Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -237,7 +243,8 @@ def main(argv: list[str] | None = None) -> int:
     # El banner declara la regla del BASELINE (``touch``, la viva); la rejilla corre
     # los dos modos, y eso lo dice la línea de abajo.
     announce(args.max_positions, args.universe, len(bars_by),
-             eval_mode="touch", fill_mode=args.fill_mode)
+             eval_mode="touch", fill_mode=args.fill_mode,
+             live_gates=args.live_gates)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}")
     print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM} "
           f"· la rejilla corre los DOS modos de evaluación")
@@ -250,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         max_positions=args.max_positions, initial_capital=args.capital,
         cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
         regime_of=regime_for_date, allow_reentry_while_open=False,
+        live_gates=args.live_gates,
     )
     arms = build_arms(args.fill_mode)
     results = {n: simulate_portfolio(entries, bars_by, sigs_by, **kw, **common)
@@ -274,7 +282,8 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by), "n_entries": len(entries),
         "max_positions": args.max_positions, "cap_days": args.cap_days,
-        "universe": args.universe, "verdict": verdict, "sanity": sanity,
+        "universe": args.universe, "live_gates": args.live_gates,
+        "verdict": verdict, "sanity": sanity,
         "boot": {"observed": boot.observed, "ci_low": boot.ci_low,
                  "ci_high": boot.ci_high, "p_value": boot.p_value,
                  "block": boot.block, "n_resamples": boot.n_resamples},

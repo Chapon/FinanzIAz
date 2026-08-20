@@ -63,6 +63,18 @@ Los seis criterios congelados del §6, sobre `close_2.0` vs `touch_2.0`:
 `stress_bear_2022` (−0.08 pts), las dos afuera de la tolerancia de −0.05. La regla congelada es un
 **AND de los seis**, así que el resultado es NO-SHIP y **no se re-decide**.
 
+> **NOTA DE CORRECCIÓN 2026-08-19 (Tarea 47, `docs/stop_price_redecide_t47_2026-08-19.md`).** Este
+> rechazo **no se sostiene**, por dos motivos independientes. (1) **Potencia:** la tarea 46 midió que
+> en esta población el efecto detectable al 80% es **±1.72 pts** en `2018Q4` y **±0.97** en
+> `bear_2022`, así que −0.15 y −0.08 están **11 y 12 veces por debajo** de lo que la muestra resuelve,
+> y la potencia para detectar la propia tolerancia de ±0.05 es **5,1%** — o sea α. (2) **Signo:** al
+> modelar los gates de re-entrada del engine (T34), que acá **no** son un nivel común porque los dos
+> brazos disparan stop a tasas muy distintas (19,9% vs 13,4%), el Δ por régimen **se da vuelta**:
+> **+0.05** en `2018Q4` y **+0.12** en `bear_2022`. **El mecanismo que el párrafo de abajo propone
+> —que confirmar al close se paga en los tramos malos— queda sin respaldo.** El veredicto NO-SHIP se
+> mantiene, pero por **otros criterios**: con los gates puestos, C3 pasa de [+0.03, +6.30] a
+> **[−0.23, +8.51]** y a 5 slots el efecto se da vuelta (**−0.50 pp**). Ver la tarea 47.
+
 **Y el mecanismo de la falla es coherente con lo que la regla hace:** confirmar al close **retrasa**
 la salida, y el precio de ese retraso se paga justo donde las barras malas encadenan — en los
 regímenes de stress. En `bull_normal` (+0.15) el retraso se cobra, en 2018Q4 y 2022 se paga. Es
