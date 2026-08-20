@@ -89,6 +89,7 @@ def precompute_oracle_returns(
     atr_p: AtrParams = AtrParams(),
     cap_days: int = 20,
     costs: CostModel = CostModel(),
+    eval_mode: str = "close",
     fill_mode: str = "decision",
 ) -> dict[tuple[str, str], float]:
     """Retorno realizado del ciclo de cada entrada (mira el futuro) para el oráculo.
@@ -100,6 +101,12 @@ def precompute_oracle_returns(
     ``fill_mode`` se pasa a ``replay_cycle`` para que el oráculo puntúe con **la
     misma mecánica de fill** que los brazos que valida (Tarea 33): con el legacy,
     el oráculo rankeaba por un retorno que ningún brazo podía cobrar.
+
+    ``eval_mode`` va por el mismo motivo y se agregó por la **Tarea 38** (tarea 44):
+    la 26b sumó el eje ``close``/``touch`` a ``replay_cycle`` pero no llegó hasta acá,
+    así que un harness que corriera sus brazos en ``touch`` tenía el oráculo
+    puntuando al ``close`` — la misma mitad de defecto que arregló la T33, en el otro
+    eje. Default ``"close"``: preserva el comportamiento de todo lo publicado.
     """
     out: dict[tuple[str, str], float] = {}
     for ticker, idx in entries:
@@ -110,7 +117,7 @@ def precompute_oracle_returns(
             bars, idx, sigs_by.get(ticker) or {},
             params=so_params, atr_p=atr_p, cap_days=cap_days,
             costs=costs, notional=10_000.0, regime="",
-            fill_mode=fill_mode,
+            eval_mode=eval_mode, fill_mode=fill_mode,
         )
         if cyc is None or cyc.entry_cost <= 0:
             continue

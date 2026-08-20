@@ -147,3 +147,47 @@ la banda entera** del azar (T21/T33) a caer **adentro** de la banda, y el défic
 de −3.23 a −1.80 pp. Mismo runner, misma población (el sanity de reproducción devuelve el
 1.97% publicado al dígito). **Antes de re-leer un veredicto de ranking o selección,
 `live_gates` no es opcional.**
+
+## "El brazo muerde": cómo especificarlo cuando el brazo ESCALA (T38 — costó una corrida)
+
+El sanity de *"el candidato cambia algo"* se venía escribiendo como **≥10% de trades
+distintos** (26b, T34, T37, T39) y funcionó siempre — porque esos brazos **bloqueaban o
+cambiaban qué se toma**. La T38 lo copió para un brazo que **escala el tamaño** y la
+corrida salió **inválida** con el gate funcionando perfectamente:
+
+- El candidato `G_half` **nunca bloquea** (factor 0.5, no 0), así que toma **exactamente
+  los mismos tickets** que el baseline ⇒ `trade_diff ≡ 0` **por aritmética**, no por
+  resultado.
+- La segunda pata —*"o ≥10% del capital desplegado"*— tampoco lo ve, porque
+  `portfolio_sim` **redespliega el cash liberado** en la próxima entrada: achicar una
+  posición no baja el capital invertido a 10 años, lo **reasigna**. Medido: el gate
+  achicó el **11,4%** de las entradas y el agregado sólo se movió **7,9%**.
+
+**La regla:** para un brazo que escala, el sanity va sobre **la fracción de entradas (o
+de capital) que el brazo efectivamente tocó** — `size_factor < 1.0` en los trades del
+candidato—, no sobre el agregado ni sobre el solapamiento de tickets. Y en general:
+antes de congelar, preguntarse **si el brazo puede mover esa métrica por construcción**.
+Si la respuesta es no, el criterio no mide nada.
+
+**Y la parte incómoda:** en la T38 esto se anticipó **antes** de correr (quedó en el
+docstring del helper y en un test) y **la corrida se declaró inválida igual**, porque el
+criterio congelado manda. Anticiparlo sirve para escribir el descriptivo que explica el
+fallo, no para saltearlo.
+
+## El perfil de régimen puede ser una propiedad de la POBLACIÓN, no de la señal (T38)
+
+T11b cerró NO-SHIP porque su brazo *"fallaba sólo por régimen"* (`bear_2022` −2.01
+pts/trade). La T38 lo descompuso en cuatro configs y el resultado cambia cómo hay que
+leer todo criterio de régimen:
+
+- Cambiar **la regla de salida** (`eval_mode` + `fill_mode` + `live_gates`, los tres de
+  golpe) **no mueve el perfil**: baja el nivel, mantiene el signo de cada ventana.
+- Cambiar **la población** (41 → 127 tickers, 5 → 10 slots) **lo da vuelta**:
+  `bear_2022` pasa de −2.01 a **+0.46** y `covid_2020` de +1.71 a **−0.92**.
+- El porqué está en los `n`: con 41 tickers cada ventana de stress tenía **10-20
+  trades**. Triplicar la muestra da vuelta el signo en **dos de tres**.
+
+**Antes de leer un criterio de régimen, mirar `n` por ventana.** Con 10-60 trades no se
+distingue crash-risk de ruido de muestra, y una política condicional construida sobre
+ese perfil puede quedar apuntada **al régimen equivocado** — que es exactamente lo que
+le pasó al gate de la T38: en la config viva `bear_2022` es donde la señal **gana**.

@@ -25,6 +25,11 @@ Qué hace (fiel al pre-registro)
 6. Aplica el kill-criteria (§6). No cambia ningún flag vivo.
 
 Sin red y sin tocar ``finanzias.db``: lee Parquet + los JSON de señal.
+
+Enabler agregado por la **Tarea 38** (no mueve el veredicto publicado): ``--eval-mode``
+(regla del engine, 26b) y ``--live-gates`` (gates de re-entrada, T34). Los defaults son
+los de la corrida publicada — ``close`` y OFF —, así que reproducirla sigue siendo
+``--max-positions 5 --universe data/harness_universe_41_10y.txt --fill-mode resting``.
 """
 
 from __future__ import annotations
@@ -297,6 +302,15 @@ def main(argv: list[str] | None = None) -> int:
                    default=HARNESS_FILL_MODE,
                    help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
                         f"(look-ahead en el fill de la barrera — Tarea 33)")
+    # Enabler de la Tarea 38 (§4 de su pre-registro): los dos desvíos que la T11b
+    # no modelaba. Defaults = los de la corrida publicada, así agregarlos no mueve
+    # su veredicto.
+    p.add_argument("--eval-mode", choices=("close", "touch"), default="close",
+                   help="'close' reproduce el veredicto publicado; 'touch' es la "
+                        "regla que ejecuta el engine (Tarea 26b)")
+    p.add_argument("--live-gates", action="store_true",
+                   help="modela los gates de re-entrada del engine vivo "
+                        "(Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -315,7 +329,8 @@ def main(argv: list[str] | None = None) -> int:
         cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
         costs=CostModel(), regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful
-        fill_mode=args.fill_mode,
+        eval_mode=args.eval_mode, fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
     )
     run = make_runner(bars_by, sigs_by, common)
 
@@ -327,7 +342,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     prim = entries_by[PRIMARY_ARM]
     announce(args.max_positions, args.universe, len(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
+             verdict_max_positions=LEGACY_MAX_POSITIONS, eval_mode=args.eval_mode,
+             fill_mode=args.fill_mode, live_gates=args.live_gates)
     print(f"Tickers: {len(bars_by)} · entradas por brazo: "
           f"{ {n: len(e) for n, e in entries_by.items()} }")
     print(f"Brazo primario {PRIMARY_ARM}: {len(prim)} entradas\n")

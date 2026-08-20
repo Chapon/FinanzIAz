@@ -34,6 +34,19 @@ Baseline random time-matched (K=500): **CAGR mediana 3.9% · p95 7.3% · Sharpe 
 - **Régimen — ret medio por trade (pts):** bull_normal **+1.57** (n=380), covid_2020 **+1.71** (n=10),
   2018Q4 **−0.30** (n=10), **bear_2022 −2.01** (n=20). **Signo NO estable → falla §6.5.**
 
+> **NOTA DE CORRECCIÓN 2026-08-19 (Tarea 38, `docs/anom_regime_t38_2026-08-19.md` §2).** El perfil de
+> régimen de arriba —el motivo por el que esta tarea cerró NO-SHIP— **no replica al cambiar de
+> población, y es lo que más se mueve de todo el veredicto**. Con el universo vivo (127 tickers,
+> 10 slots) el mismo detector, con el mismo `k`/`m`, da `bear_2022` **+0.46** pts/trade (era −2.01) y
+> `covid_2020` **−0.92** (era +1.71); `2018Q4` empeora a −1.15. **Dos de las tres ventanas de stress
+> cambian de signo.** Y no es por modelar la regla del engine: cambiar sólo `eval_mode`/`fill_mode`/
+> `live_gates` deja el perfil intacto (bear −2.01 → −2.54) — es **la población**. El mecanismo está en
+> los `n`: acá cada ventana de stress tiene **10-20 trades**, allá 19-63. **Lo que sí sobrevive** es el
+> edge: en la config viva el brazo da 9.23% de CAGR contra un p95 del azar de 5.97%. O sea que la
+> afirmación *"la señal es real"* aguanta y la afirmación *"falla sólo por régimen"* **no**. Ver las
+> tareas **45** (qué queda de este veredicto) y **46** (el criterio §6.5 no tiene potencia con 10-60
+> trades por ventana).
+
 ## Por qué NO-SHIP (y por qué igual es un hallazgo)
 
 1. **La señal es real, no ruido.** El brazo de decisión da CAGR 12.89% / Sharpe 1.24 contra un baseline
