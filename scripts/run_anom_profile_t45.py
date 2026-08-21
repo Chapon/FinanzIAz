@@ -60,6 +60,10 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
+    REPRO_OK,
+    WINDOW_REFRESH_2026_08_09,
+    reproduction_check,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import cagr, precompute_oracle_returns, sharpe_annual  # noqa: E402
@@ -383,7 +387,7 @@ def _loto(run, entries, random_median_cagr: float) -> dict | None:
 
 
 def _repro_legacy(period: str, warmup: int, cap_days: int, capital: float,
-                  log) -> dict:
+                  log, current_window=None) -> dict:
     """§5.3(b): la config publicada de la T11b sobre los artefactos de HOY."""
     tickers = parse_universe_file(_HERE.parent / REPRO_LEGACY_UNIVERSE)
     bars_by, sigs_by, vol_by, _missing, _inc = load_bars_signals_volume(
@@ -402,13 +406,21 @@ def _repro_legacy(period: str, warmup: int, cap_days: int, capital: float,
         eval_mode="close", fill_mode=LEGACY_FILL_MODE, live_gates=False,
     )
     s = summarise(res)
-    ok = (abs(s["cagr"] - REPRO_LEGACY_CAGR) <= REPRO_TOL
-          and s["sharpe"] is not None
-          and abs(s["sharpe"] - REPRO_LEGACY_SHARPE) <= REPRO_SHARPE_TOL)
+    # Tarea 48 — tri-estado: la ventana de los artefactos es RODANTE, así que un
+    # desajuste puede venir de la cañería o de un refresh, y hay que distinguirlo.
+    state, reason = reproduction_check(
+        s["cagr"], REPRO_LEGACY_CAGR, tol=REPRO_TOL,
+        current=current_window, measured_on=WINDOW_REFRESH_2026_08_09)
+    sharpe_ok = (s["sharpe"] is not None
+                 and abs(s["sharpe"] - REPRO_LEGACY_SHARPE) <= REPRO_SHARPE_TOL)
+    ok = state == REPRO_OK and sharpe_ok
     print(f"Reproducción legacy (41t/5sl/resting/close): CAGR {100*s['cagr']:.2f}% "
           f"(esperado {100*REPRO_LEGACY_CAGR:.2f}%) · Sharpe {s['sharpe']:.2f} "
-          f"(esperado {REPRO_LEGACY_SHARPE:.2f}) · {'OK' if ok else 'FALLA'}", file=log)
-    return {"ran": True, "ok": ok, "cagr": s["cagr"], "sharpe": s["sharpe"],
+          f"(esperado {REPRO_LEGACY_SHARPE:.2f}) · {state}", file=log)
+    if state != REPRO_OK:
+        print(f"  → {reason}", file=log)
+    return {"ran": True, "ok": ok, "state": state, "reason": reason,
+            "cagr": s["cagr"], "sharpe": s["sharpe"],
             "n_entries": len(entries), "n_taken": s["n_taken"]}
 
 
@@ -445,7 +457,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos",
               file=sys.stderr)
 
-    announce(args.max_positions, args.universe, len(bars_by), eval_mode=EVAL_MODE,
+    announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by), eval_mode=EVAL_MODE,
              fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
 
     # ── Población A: el marco de la T11b ─────────────────────────────────────
@@ -585,15 +598,21 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     # ── Sanity + veredicto ───────────────────────────────────────────────────
+    window = artifact_window(bars_by)
+    live_state, live_reason = reproduction_check(
+        cand_sum["cagr"], REPRO_LIVE_CAGR, tol=REPRO_TOL,
+        current=window, measured_on=WINDOW_REFRESH_2026_08_09)
     repro: dict = {
         "live_cagr": cand_sum["cagr"],
-        "live_ok": abs(cand_sum["cagr"] - REPRO_LIVE_CAGR) <= REPRO_TOL,
-        "live_expected": REPRO_LIVE_CAGR,
+        "live_ok": live_state == REPRO_OK,
+        "live_state": live_state, "live_reason": live_reason,
+        "live_expected": REPRO_LIVE_CAGR, "window": str(window),
     }
     if args.no_repro_legacy:
         repro["legacy_ran"] = False
     else:
-        leg = _repro_legacy(args.period, args.warmup, args.cap_days, args.capital, log)
+        leg = _repro_legacy(args.period, args.warmup, args.cap_days, args.capital,
+                            log, current_window=window)
         repro["legacy_ran"] = bool(leg.get("ran"))
         repro["legacy_ok"] = bool(leg.get("ok"))
         repro["legacy"] = leg

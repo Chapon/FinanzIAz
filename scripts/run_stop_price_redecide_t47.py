@@ -43,6 +43,10 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
+    reproduction_check,
+    REPRO_OK,
+    WINDOW_REFRESH_2026_08_09,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
@@ -224,7 +228,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by), eval_mode="touch",
+    announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by), eval_mode="touch",
              fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}", file=log)
     print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM}\n",
@@ -295,11 +300,19 @@ def main(argv: list[str] | None = None) -> int:
     for n in (BASELINE_ARM, CANDIDATE_ARM):
         r = simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **repro_common)
         repro[n] = summarise(r)["cagr"]
-    repro_ok = all(abs(repro[n] - REPRO_EXPECTED[n]) <= REPRO_TOL for n in repro)
+    # Tarea 48: tri-estado consciente de la ventana rodante de los artefactos.
+    win = artifact_window(bars_by)
+    repro_checks = {n: reproduction_check(repro[n], REPRO_EXPECTED[n], tol=REPRO_TOL,
+                                          current=win,
+                                          measured_on=WINDOW_REFRESH_2026_08_09)
+                    for n in repro}
+    repro_ok = all(st == REPRO_OK for st, _ in repro_checks.values())
 
     sanity = evaluate_sanity(summaries, results)
     sanity["repro"] = repro
     sanity["repro_ok"] = repro_ok
+    sanity["repro_states"] = {n: st for n, (st, _) in repro_checks.items()}
+    sanity["repro_reasons"] = {n: why for n, (_, why) in repro_checks.items()}
     sanity["all_ok"] = bool(sanity["all_ok"] and repro_ok)
 
     verdict = evaluate(summaries, c5, boot, sens)
@@ -350,7 +363,8 @@ def _report(summaries, ctx, verdict, sanity, boot, c5):
     print(f"  [{'OK' if sanity['rule_bites'] else 'FALLA'}] la regla muerde: "
           f"{100*sanity['trade_diff_share']:.1f}% de trades distintos")
     rp = sanity["repro"]
-    print(f"  [{'OK' if sanity['repro_ok'] else 'FALLA'}] reproduce la 26b sin gates: "
+    print(f"  [{'/'.join(sorted(set(sanity.get('repro_states', {}).values()))) or 'FALLA'}]"
+          f" reproduce la 26b sin gates: "
           + " · ".join(f"{n} {100*v:.2f}% (esp. {100*REPRO_EXPECTED[n]:.2f}%)"
                        for n, v in rp.items()))
 

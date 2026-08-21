@@ -51,6 +51,7 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
@@ -363,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              eval_mode="touch", fill_mode=args.fill_mode, live_gates=True)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}")
     print(f"BASELINE = {BASELINE_ARM} (regla, múltiplo y gates vivos) · "

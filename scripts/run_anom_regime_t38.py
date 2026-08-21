@@ -49,6 +49,7 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
 )
 from analysis.market_regime import build_regime_series, make_entry_filter  # noqa: E402
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
@@ -263,7 +264,8 @@ def main(argv: list[str] | None = None) -> int:
         print("El detector no produjo entradas.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by), eval_mode=EVAL_MODE,
+    announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by), eval_mode=EVAL_MODE,
              fill_mode=HARNESS_FILL_MODE, live_gates=LIVE_GATES, file=log)
     print(f"Señal FIJA A_k{SIGNAL_K}_m{SIGNAL_M} (brazo de decisión de T11b) · "
           f"{len(entries)} entradas · {len(bars_by)} tickers", file=log)

@@ -31,11 +31,18 @@ from analysis.harness_config import (
     LIVE_ACCOUNT_ID,
     LIVE_MAX_POSITIONS,
     LIVE_WATCHLIST_SIZE,
+    REPRO_FAIL,
+    REPRO_INDETERMINATE,
+    REPRO_OK,
+    WINDOW_REFRESH_2026_08_09,
+    ArtifactWindow,
     HarnessConfig,
     announce,
+    artifact_window,
     config_banner,
     deviations,
     exit_rule_line,
+    reproduction_check,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -75,17 +82,18 @@ def test_legacy_config_declares_slots_and_universe():
 
 
 def test_live_config_only_declares_the_structural_deviations():
-    """Con la config viva quedan **cuatro** desvíos estructurales: la ventana de
+    """Con la config viva quedan **cinco** desvíos estructurales: la ventana de
     ``analyze()`` (T27), el precio de evaluación de las barreras (T32), el precio al
-    que se llena esa barrera (T33) y los gates de re-entrada (T34). Son los que se
-    declaran en vez de corregirse."""
+    que se llena esa barrera (T33), los gates de re-entrada (T34) y la ventana
+    RODANTE de los artefactos (T48). Son los que se declaran en vez de corregirse."""
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
     devs = deviations(cfg)
-    assert len(devs) == 4
+    assert len(devs) == 5
     assert any("ventana de analyze()" in d for d in devs)
     assert any("barreras ATR" in d for d in devs)
     assert any("fill de la barrera" in d for d in devs)
     assert any("gates de re-entrada" in d for d in devs)
+    assert any("artefactos" in d for d in devs)
 
 
 def test_reentry_gates_deviation_is_declared_unless_modelled():
@@ -105,7 +113,7 @@ def test_modelling_the_reentry_gates_removes_the_deviation():
     on = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, live_gates=True)
     devs = deviations(on)
     assert not any("gates de re-entrada" in d for d in devs)
-    assert len(devs) == 3
+    assert len(devs) == 4
 
 
 def test_signal_window_deviation_is_always_declared():
@@ -325,3 +333,78 @@ def test_pit_tickers_on_missing_dir_is_empty(tmp_path):
     from scripts.refresh_live_universe import pit_tickers
 
     assert pit_tickers(tmp_path / "nope") == set()
+
+
+# ── Tarea 48 — la ventana RODANTE de los artefactos (el séptimo desvío) ──────
+
+
+def test_the_artifact_window_deviation_is_declared_even_when_the_runner_omits_it():
+    """El desvío existe igual: si el runner no declara la ventana, el banner tiene que
+    decir **eso**, no callarse. Es la diferencia entre "no aplica" y "no se sabe"."""
+    sin = deviations(HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE))
+    dev = next(d for d in sin if "artefactos" in d)
+    assert "NO declara" in dev and "RODANTE" in dev
+
+    con = deviations(HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE,
+                                   window=ArtifactWindow("2016-07-11", "2026-08-07", 2514)))
+    dev2 = next(d for d in con if "artefactos" in d)
+    assert "2016-07-11..2026-08-07" in dev2 and "RODANTE" in dev2
+
+
+def test_artifact_window_is_computed_from_the_bars_without_io():
+    bars = {"A": [("2020-01-02", 1, 1, 1, 1), ("2020-01-03", 1, 1, 1, 1)],
+            "B": [("2019-12-31", 1, 1, 1, 1)]}
+    w = artifact_window(bars)
+    assert (w.start, w.end, w.n_bars) == ("2019-12-31", "2020-01-03", 2)
+    assert artifact_window({}) is None
+    assert artifact_window({"A": []}) is None
+
+
+_W_HOY = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
+_W_VIEJA = ArtifactWindow("2016-06-20", "2026-07-19", 2514)
+
+
+def test_reproduction_ok_when_the_number_reproduces():
+    st, _ = reproduction_check(0.1277, 0.1277, tol=0.0005, current=_W_HOY,
+                               measured_on=_W_HOY)
+    assert st == REPRO_OK
+
+
+def test_reproduction_fails_only_when_the_window_is_the_same():
+    """MISMA muestra + número distinto ⇒ cambió la cañería, que es lo que el sanity
+    existe para detectar. Ahí sí corresponde invalidar la corrida."""
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
+                                 measured_on=_W_HOY)
+    assert st == REPRO_FAIL
+    assert "cañería" in why
+
+
+def test_a_moved_window_is_indeterminate_not_a_failure():
+    """EL punto de la tarea 48: la T11b dejó de reproducir (12.89% → 12.77%) porque los
+    artefactos se refrescaron, no porque se rompiera nada. Con dos estados eso se
+    reportaba como FALLA ⇒ corrida INVÁLIDA: una máquina de invalidar corridas buenas
+    con el paso del calendario."""
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
+                                 measured_on=_W_VIEJA)
+    assert st == REPRO_INDETERMINATE
+    assert "la ventana se movió" in why and "tarea 48" in why
+
+
+def test_an_undeclared_reference_window_never_accuses_the_pipeline():
+    """Default conservador: sin saber sobre qué muestra se midió la referencia, no se
+    puede afirmar que cambió la cañería."""
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY)
+    assert st == REPRO_INDETERMINATE
+    assert "no declara sobre qué ventana" in why
+
+
+def test_a_missing_measurement_is_a_failure_not_an_indeterminate():
+    """Si el brazo de reproducción ni siquiera corrió, no hay nada que interpretar."""
+    st, _ = reproduction_check(None, 0.1289, tol=0.0005, current=_W_HOY,
+                               measured_on=_W_HOY)
+    assert st == REPRO_FAIL
+
+
+def test_the_anchor_constant_matches_the_measured_window():
+    """Las constantes de reproducción de los runners están ancladas a esta ventana."""
+    assert str(WINDOW_REFRESH_2026_08_09) == "2016-07-11..2026-08-07 (2514 barras)"

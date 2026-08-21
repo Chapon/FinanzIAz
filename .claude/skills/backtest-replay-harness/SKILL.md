@@ -283,3 +283,34 @@ universo, `cap_days`, `eval_mode`, `fill_mode`, `live_gates`, overlay— y decir
 por qué. Si un número se va a comparar contra el de otra tarea, los ejes tienen que coincidir o
 la diferencia tiene que estar escrita. Ver también la tarea 48 (la ventana `10y` es **rodante**,
 así que un número publicado tampoco dice contra qué **muestra** se midió).
+
+## Un número publicado no dice contra qué MUESTRA se midió (T48)
+
+Los artefactos (`data/parquet/*__10y__1d.parquet`, `data/pit_signals/`) guardan una ventana
+de 10 años **anclada al día del refresh**, no a una fecha fija: cuando se refrescan, **rueda**.
+Medido — la T11b re-corrida con su comando publicado, un mes después:
+
+| | publicado | hoy |
+|---|--:|--:|
+| CAGR | 12.89% | **12.77%** |
+| Sharpe | 1.24 | **1.22** |
+| tomadas | 420 | **419** |
+
+**Los nueve brazos perdieron 1-3 entradas.** No cambió el código: cambió la muestra.
+
+**Por qué importa para un pre-registro:** los sanity de reproducción de la serie usan
+tolerancias de ±0.05 pp, y la deriva de un mes es **2,4× eso**. Con dos estados
+(OK / FALLA) el paso del tiempo se reporta como *"cambió la cañería"* ⇒ **corrida
+INVÁLIDA**. Es una máquina de invalidar corridas buenas.
+
+**Qué hacer:**
+
+- `announce(..., window=artifact_window(bars_by))` — el banner declara la ventana efectiva.
+  Es el **séptimo desvío** y ya está cableado en los 16 runners de cartera.
+- Un sanity de reproducción se escribe con `harness_config.reproduction_check(...)`, que
+  devuelve **tres** estados: `OK`, `FALLA` (misma ventana ⇒ cañería) e `INDETERMINADO`
+  (la ventana se movió ⇒ **re-anclar la constante**, no buscar un bug). `INDETERMINADO`
+  sigue bloqueando el veredicto, pero con el diagnóstico correcto.
+- Toda constante de reproducción **declara sobre qué ventana se midió**
+  (`measured_on=WINDOW_REFRESH_2026_08_09`). Sin eso, un desajuste es `INDETERMINADO`:
+  **no se acusa a la cañería sin evidencia**.

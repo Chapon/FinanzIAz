@@ -51,6 +51,10 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
+    REPRO_OK,
+    WINDOW_REFRESH_2026_08_09,
+    reproduction_check,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.rank_policy import rate_matched_priority  # noqa: E402
@@ -320,7 +324,8 @@ def main(argv: list[str] | None = None) -> int:
     n_by_date = count_by_date(prio_keys)
     cands_by_date = candidates_by_date(entries, bars_by)
 
-    announce(args.max_positions, args.universe, len(bars_by), eval_mode=EVAL_MODE,
+    announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by), eval_mode=EVAL_MODE,
              fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
     print(f"Anomalía A_k{ANOM_K}_m{ANOM_M}: {len(anom_all)} entradas, de las cuales "
@@ -439,7 +444,7 @@ def main(argv: list[str] | None = None) -> int:
               f"E_merged_prio {100*r_merged['cagr']:.2f}% (esperado 7.92%) · "
               f"{'OK' if repro['t45_ok'] else 'FALLA'}", file=log)
         print(f"Reproducción T33 (close/sin gates): {100*t33['cagr']:.2f}% "
-              f"(esperado 1.97%) · {'OK' if repro['t33_ok'] else 'FALLA'}\n", file=log)
+              f"(esperado 1.97%) · {repro['t33_state']}\n", file=log)
 
     sanity = evaluate_sanity(summaries, controls, trade_diff, ctrl_diff_median, repro)
     verdict = evaluate(summaries[BASELINE_ARM], summaries[CANDIDATE_ARM], controls,

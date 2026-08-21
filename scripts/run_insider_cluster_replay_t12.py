@@ -82,6 +82,7 @@ from analysis.harness_config import (  # noqa: E402
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
+    artifact_window,
 )
 from analysis.insider_cluster import (  # noqa: E402
     ClusterEvent,
@@ -456,6 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin barras en Parquet: precargá el cache del universo primero.", file=sys.stderr)
         return 1
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Universo: {len(tickers)} tickers · con barras: {len(bars_by)} · "
           f"con transacciones: {sum(1 for t in bars_by if txs_by.get(t))}")

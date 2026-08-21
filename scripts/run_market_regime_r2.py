@@ -41,6 +41,7 @@ from analysis.harness_config import (  # noqa: E402
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
+    artifact_window,
 )
 from analysis.market_regime import build_regime_series, make_entry_filter  # noqa: E402
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
@@ -208,6 +209,7 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · entradas candidatas: {len(entries)} · "
           f"max_positions={args.max_positions} · capital={args.capital:,.0f}\n")

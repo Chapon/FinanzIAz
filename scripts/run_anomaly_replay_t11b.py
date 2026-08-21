@@ -56,6 +56,7 @@ from analysis.harness_config import (  # noqa: E402
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
+    artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import cagr, precompute_oracle_returns, sharpe_annual  # noqa: E402
@@ -354,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     prim = entries_by[PRIMARY_ARM]
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              verdict_max_positions=LEGACY_MAX_POSITIONS, eval_mode=args.eval_mode,
              fill_mode=args.fill_mode, live_gates=args.live_gates)
     print(f"Tickers: {len(bars_by)} · entradas por brazo: "

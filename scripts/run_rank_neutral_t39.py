@@ -40,6 +40,10 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
+    reproduction_check,
+    REPRO_OK,
+    WINDOW_REFRESH_2026_08_09,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.rank_policy import fixed_rank, neutral_rank  # noqa: E402
@@ -351,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              eval_mode=EVAL_MODE, fill_mode=HARNESS_FILL_MODE,
              live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
@@ -409,6 +414,11 @@ def main(argv: list[str] | None = None) -> int:
     repro = simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(),
                                rank_score=arms[BASELINE_ARM], **repro_common)
     repro_cagr = summarise(repro)["cagr"]
+    # Tarea 48: el chequeo sabe sobre qué VENTANA se midió su referencia, así que
+    # un refresh de artefactos ya no se reporta como "cambió la cañería".
+    repro_state, repro_reason = reproduction_check(
+        repro_cagr, SANITY_T33_CAGR, tol=SANITY_T33_TOL,
+        current=artifact_window(bars_by), measured_on=WINDOW_REFRESH_2026_08_09)
 
     # §5 — sanity del instrumento.
     diff_share = trade_overlap(results[BASELINE_ARM], results[rot_name(0)])
@@ -418,7 +428,9 @@ def main(argv: list[str] | None = None) -> int:
     sanity = {
         "accounting": all(summaries[n]["accounting_ok"] for n in results),
         "repro_cagr": repro_cagr,
-        "repro_ok": abs(repro_cagr - SANITY_T33_CAGR) <= SANITY_T33_TOL,
+        "repro_state": repro_state,
+        "repro_reason": repro_reason,
+        "repro_ok": repro_state == REPRO_OK,
         "oracle_edge": summaries[ORACLE_ARM]["cagr"] - summaries[BASELINE_ARM]["cagr"],
         "oracle_ok": (summaries[ORACLE_ARM]["cagr"]
                       >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
@@ -524,7 +536,7 @@ def _report(summaries, ctx, verdict, sanity, boot, rot_cagrs, fix_cagrs, dsr, pb
 
     print("\nSanity del instrumento (§5):")
     print(f"  [{'OK' if sanity['accounting'] else 'FALLA'}] contabilidad")
-    print(f"  [{'OK' if sanity['repro_ok'] else 'FALLA'}] reproduce la línea de la T33: "
+    print(f"  [{sanity.get('repro_state', 'FALLA')}] reproduce la línea de la T33: "
           f"{100*sanity['repro_cagr']:.2f}% (esperado {100*SANITY_T33_CAGR:.2f}% "
           f"± {100*SANITY_T33_TOL:.2f}pp)")
     print(f"  [{'OK' if sanity['oracle_ok'] else 'FALLA'}] el oráculo despega: "

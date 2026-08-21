@@ -56,6 +56,7 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
 from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
@@ -343,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              eval_mode=args.eval_mode, fill_mode=args.fill_mode,
              live_gates=args.live_gates, file=log)
     risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)

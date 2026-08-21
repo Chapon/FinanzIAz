@@ -171,6 +171,126 @@ REENTRY_GATES_COST_DESC = (
 )
 
 
+# ── Ventana de los artefactos — el SÉPTIMO desvío (Tarea 48) ────────────────
+# Los artefactos del harness (``data/parquet/*__10y__1d.parquet`` y
+# ``data/pit_signals/``) guardan una ventana de 10 años **anclada al día del
+# refresh**, no a una fecha fija. Cuando se refrescan, la ventana **rueda**: se
+# caen barras del principio y entran del final.
+#
+# **Por qué importa y no es una nota al pie:** ningún veredicto publicado es
+# reproducible dígito a dígito después de un refresh. Medido re-corriendo la T11b
+# con su comando publicado un mes después (artefactos refrescados el 2026-08-09):
+# ``A_k2.0_m1.5`` da **12.77%** contra los **12.89%** publicados, Sharpe 1.22 vs
+# 1.24, y **los nueve brazos perdieron entre 1 y 3 entradas**. No cambió el
+# detector ni el simulador: cambió la muestra.
+#
+# **Lo caro no es el 0.12 pp.** La serie adoptó (26b §5, 47 §5.4, 45 §5.3, 49 §5.2)
+# sanity de reproducción con tolerancias de ±0.05 pp, y la regla congelada dice que
+# un sanity fallado ⇒ **corrida INVÁLIDA**. Con la ventana rodante ese diseño
+# convierte **el paso del tiempo** en corridas inválidas: no distingue *"cambió la
+# cañería"* (que es lo que quiere detectar) de *"se movió la muestra"* (que no le
+# importa). Por eso el helper de abajo devuelve **tres** estados y no dos.
+#
+# **La decisión (Tarea 48): se acepta la ventana rodante y se la hace VISIBLE**, en
+# vez de anclarla. Anclarla —un ``--end-date`` fijo o un snapshot congelado— daría
+# reproducibilidad bit a bit al costo de que el harness deje de ver los datos que la
+# cuenta viva sigue acumulando, que es justamente lo que destraba las tareas
+# bloqueadas por datos (el Brazo A de la 11). La reproducibilidad se recupera por
+# el otro lado: **declarando la ventana efectiva de cada corrida** y haciendo que
+# los sanity de reproducción sepan contra qué muestra se midió su número.
+ARTIFACT_PERIOD = "10y"
+ARTIFACT_WINDOW_IS_ROLLING = True
+
+
+@dataclass(frozen=True)
+class ArtifactWindow:
+    """La ventana efectiva de barras con la que corrió un harness.
+
+    Se computa de las barras ya cargadas (pura, sin I/O): ``start`` es la fecha
+    más temprana y ``end`` la más tardía de todo el universo, y ``n_bars`` el
+    máximo de barras de un ticker. Dos corridas con la misma tripleta corrieron
+    sobre la misma muestra."""
+
+    start: str
+    end: str
+    n_bars: int
+
+    def __str__(self) -> str:
+        return f"{self.start}..{self.end} ({self.n_bars} barras)"
+
+
+def artifact_window(bars_by: "dict[str, list]") -> ArtifactWindow | None:
+    """Ventana efectiva de ``{ticker: [Bar]}`` — ``None`` si no hay barras.
+
+    ``Bar`` es una tupla cuyo primer elemento es la fecha ISO-10, así que esto no
+    depende de pandas ni toca el disco."""
+    starts: list[str] = []
+    ends: list[str] = []
+    n = 0
+    for bars in bars_by.values():
+        if not bars:
+            continue
+        starts.append(bars[0][0])
+        ends.append(bars[-1][0])
+        n = max(n, len(bars))
+    if not starts:
+        return None
+    return ArtifactWindow(start=min(starts), end=max(ends), n_bars=n)
+
+
+# Estados de ``reproduction_check``.
+REPRO_OK = "OK"
+REPRO_FAIL = "FALLA"
+REPRO_INDETERMINATE = "INDETERMINADO"
+
+
+def reproduction_check(
+    measured: float | None,
+    expected: float,
+    *,
+    tol: float,
+    current: ArtifactWindow | None = None,
+    measured_on: ArtifactWindow | str | None = None,
+) -> tuple[str, str]:
+    """Sanity de reproducción **consciente de la ventana** (Tarea 48).
+
+    Devuelve ``(estado, motivo)`` con tres estados posibles:
+
+    * ``REPRO_OK`` — el número reproduce dentro de ``tol``.
+    * ``REPRO_FAIL`` — no reproduce **y la ventana es la misma** con la que se
+      midió ``expected`` ⇒ cambió algo en la cañería, que es exactamente lo que el
+      sanity existe para detectar. La corrida es INVÁLIDA.
+    * ``REPRO_INDETERMINATE`` — no reproduce **y la ventana se movió** ⇒ el chequeo
+      **no puede distinguir** un cambio de cañería de un refresh de artefactos, así
+      que no afirma ninguna de las dos cosas. Quien corra tiene que re-medir la
+      referencia sobre la ventana nueva antes de sacar conclusiones.
+
+    ``measured_on`` es la ventana con la que se midió ``expected``. Si no se la
+    declara, un desajuste no puede atribuirse y también sale ``INDETERMINADO``:
+    **el default es no acusar a la cañería sin evidencia**.
+    """
+    if measured is None:
+        return REPRO_FAIL, "no se midió el brazo de reproducción"
+    if abs(measured - expected) <= tol:
+        return REPRO_OK, f"{measured:.4f} vs {expected:.4f} (tol {tol:.4f})"
+    same_window = (
+        measured_on is not None
+        and current is not None
+        and str(measured_on) == str(current)
+    )
+    detail = f"{measured:.4f} vs {expected:.4f} esperado (tol {tol:.4f})"
+    if same_window:
+        return REPRO_FAIL, f"{detail} — MISMA ventana ({current}) ⇒ cambió la cañería"
+    movida = (f"la ventana se movió ({measured_on} → {current})" if measured_on
+              else "la referencia no declara sobre qué ventana se midió")
+    return (
+        REPRO_INDETERMINATE,
+        f"{detail} — {movida}: el chequeo no distingue cañería de refresh de "
+        f"artefactos (tarea 48). Re-medí la referencia sobre la ventana actual "
+        f"({current}) antes de sacar conclusiones.",
+    )
+
+
 @dataclass(frozen=True)
 class HarnessConfig:
     """La config con la que efectivamente corre un harness."""
@@ -189,6 +309,9 @@ class HarnessConfig:
     # el de ``portfolio_sim.simulate_portfolio``, así que un runner que no lo pase
     # declara lo que realmente corre.
     live_gates: bool = False
+    # Ventana efectiva de los artefactos (Tarea 48). ``None`` ⇒ el runner no la
+    # declaró, y el banner lo dice en vez de callarse.
+    window: "ArtifactWindow | None" = None
 
 
 def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE) -> str:
@@ -255,6 +378,20 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # precio que decide es el nivel), así que ahí no hay nada que declarar.
     # Y el sexto: los gates de re-entrada. Es estructural de ``portfolio_sim`` —el
     # simulador nunca los tuvo— así que se declara siempre que no se los modele.
+    # Y el séptimo (Tarea 48): la ventana de los artefactos es RODANTE, así que
+    # todo número de esta corrida está atado a la muestra de hoy. Se declara
+    # siempre: cuando el runner no la pasa, el banner dice que no la declaró.
+    if cfg.window is not None:
+        out.append(
+            f"ventana de los artefactos {ARTIFACT_PERIOD} = {cfg.window} — es "
+            f"RODANTE (anclada al refresh, no a una fecha fija): estos números "
+            f"dejan de reproducir cuando se refresquen los parquet (tarea 48)"
+        )
+    else:
+        out.append(
+            "el runner NO declara la ventana efectiva de los artefactos — es "
+            "RODANTE, así que no se sabe contra qué muestra se midió (tarea 48)"
+        )
     if not cfg.live_gates:
         out.append(
             f"NO se modelan los gates de re-entrada del engine — Gate 5 "
@@ -305,6 +442,7 @@ def announce(
     eval_mode: str = "close",
     fill_mode: str = HARNESS_FILL_MODE,
     live_gates: bool = False,
+    window: "ArtifactWindow | None" = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -320,6 +458,17 @@ def announce(
         eval_mode=eval_mode,
         fill_mode=fill_mode,
         live_gates=live_gates,
+        window=window,
     )
     print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
     return cfg
+
+
+# La ventana con la que se midieron TODAS las constantes de reproducción que hoy
+# viven en los runners (T39 §5.2, 47 §5.4, 45 §5.3, 49 §5.2). Medida el 2026-08-20
+# sobre los dos universos —vivo y legacy— con ``artifact_window``; los parquet se
+# refrescaron el **2026-08-09**. Cuando se los refresque de nuevo, esta constante
+# deja de coincidir y los sanity de reproducción pasan a ``REPRO_INDETERMINATE``:
+# la acción correcta ahí es **re-anclar las constantes** (re-correr y re-publicar
+# el número con la ventana nueva), no buscar un bug de cañería.
+WINDOW_REFRESH_2026_08_09 = ArtifactWindow("2016-07-11", "2026-08-07", 2514)

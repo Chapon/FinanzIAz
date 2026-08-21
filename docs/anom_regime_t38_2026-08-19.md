@@ -70,6 +70,19 @@ Descomposición (mismo detector, mismo `k`/`m`, cuatro configs):
 (retorno medio **por trade** en pts, la misma métrica con la que T11b midió su fallo de régimen. La
 config **A reproduce el veredicto publicado dígito por dígito**.)
 
+> **NOTA DE CORRECCIÓN 2026-08-20 (Tarea 48, `docs/harness_window_t48_2026-08-20.md`).** La frase de
+> arriba —*"la config A reproduce el veredicto publicado dígito por dígito"*— **es falsa**, y la tabla
+> de acá al lado ya lo mostraba: la config A da **12.77%** de CAGR y `bull_normal` **+1.55 (n=379)**
+> contra los **12.89%** y **+1.57 (n=380)** que publicó la T11b. Lo que sí reproduce exacto es el
+> **perfil de las tres ventanas de stress** (−0.30 / +1.71 / −2.01), que es presumiblemente lo único
+> que se comparó al escribirla. **La causa no es un defecto del runner:** los artefactos `10y` son una
+> **ventana rodante** anclada al día del refresh, así que ningún veredicto publicado reproduce después
+> de uno — los nueve brazos perdieron entre 1 y 3 entradas. Ver **tarea 48**.
+>
+> **No mueve ninguna conclusión de esta corrida:** el hallazgo del §2 es que **la población** da vuelta
+> el perfil de régimen, y ese efecto (−2.01 → +0.46 en `bear_2022`) es dos órdenes de magnitud más
+> grande que la deriva de la ventana.
+
 **Lo que la tabla dice, leída por columnas:**
 
 - **Modelar la regla del engine casi no mueve el perfil.** A→B y C→D cambian `eval_mode`, `fill_mode`

@@ -44,6 +44,7 @@ from analysis.harness_config import (  # noqa: E402
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
     announce,
+    artifact_window,
 )
 from analysis.meta_labeling import build_dataset  # noqa: E402
 from analysis.meta_model import cross_sectional_percentile, walkforward_oof  # noqa: E402
@@ -363,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     announce(args.max_positions, args.universe, len(bars_by),
+             window=artifact_window(bars_by),
              verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
     print(f"Tickers: {len(bars_by)} · period={args.period} · warmup={args.warmup}")
 
