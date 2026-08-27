@@ -378,6 +378,10 @@ def _compute_atr_forced_exits(
     stop_mult = max(0.0, float(settings.get("atr_stop_mult", 2.0)))
     tp_mult = max(0.0, float(settings.get("atr_tp_mult", 4.0)))
     trail_enabled = bool(settings.get("atr_trail_enabled", True))
+    # T53 — las dos barreras desacopladas. Los defaults son el comportamiento
+    # histórico: trail_mult=0 ⇒ el trailing sigue al stop, hard stop prendido.
+    trail_mult = max(0.0, float(settings.get("atr_trail_mult", 0.0)))
+    hard_stop_enabled = bool(settings.get("atr_hard_stop_enabled", True))
 
     out: list = []
     for pos in positions:
@@ -402,6 +406,8 @@ def _compute_atr_forced_exits(
             stop_mult=stop_mult,
             tp_mult=tp_mult,
             trail_enabled=trail_enabled,
+            trail_mult=trail_mult,
+            hard_stop_enabled=hard_stop_enabled,
         )
         if reason is None:
             continue
@@ -478,6 +484,7 @@ def _buy_risk_note(ticker: str, entry_price: float, history_provider) -> str | N
         levels = entry_risk_levels(
             entry_price=float(entry_price), atr_value=float(atr),
             stop_mult=stop_mult, tp_mult=tp_mult,
+            hard_stop_enabled=bool(settings.get("atr_hard_stop_enabled", True)),
         )
         return format_entry_risk_note(levels)
     except Exception:

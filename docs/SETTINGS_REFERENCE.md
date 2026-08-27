@@ -66,6 +66,8 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 | `atr_stop_mult` | (ver código) | Múltiplo ATR para el stop. |
 | `atr_tp_mult` | (ver código) | Múltiplo ATR para el take-profit. |
 | `atr_trail_enabled` | `True` | Trailing stop. |
+| `atr_trail_mult` | `0.0` | **T53** — múltiplo ATR del *trailing*, desacoplado del stop duro. `0.0` = seguir a `atr_stop_mult` (acople histórico, sin cambio de comportamiento). Valor validado por la T37: `2.0`. |
+| `atr_hard_stop_enabled` | `True` | **T53** — sub-switch del *stop duro* desde la entrada. `False` = no dispara nunca, la única barrera de abajo es el trailing (candidato `soff_t2.0` de la T37). Se shipea en `True` (comportamiento histórico); prenderlo/apagarlo es decisión de Chapa (`docs/stop_value_t37_2026-08-27.md`). |
 
 ## Señal / overlays
 | Flag | Default | Qué hace |

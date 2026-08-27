@@ -342,7 +342,38 @@ SCHEMA: dict[str, SettingSpec] = {
         doc=(
             "Sub-switch for the trailing variant (only meaningful when "
             "`atr_stops_enabled=True`). SELL fires when "
-            "price ≤ high_water_mark_since_entry − atr_stop_mult × ATR."
+            "price ≤ high_water_mark_since_entry − atr_trail_mult × ATR "
+            "(o − atr_stop_mult × ATR si atr_trail_mult=0)."
+        ),
+    ),
+    # T53 — desacople de las dos barreras ATR (resultado de la Tarea 37).
+    # Los DOS defaults preservan el comportamiento histórico: quien no los
+    # setea no cambia nada. Prender el candidato validado (`soff_t2.0`) es
+    # setear `atr_hard_stop_enabled=False` + `atr_trail_mult=2.0`, y es
+    # decisión explícita de Chapa — ver docs/stop_value_t37_2026-08-27.md.
+    "atr_trail_mult": SettingSpec(
+        (int, float),
+        0.0,
+        min=0.0,
+        max=20.0,
+        doc=(
+            "Distancia del TRAILING desde el máximo (HWM), en unidades de ATR, "
+            "independiente del stop duro. **0.0 = seguir a `atr_stop_mult`** "
+            "(acople histórico: un solo múltiplo movía las dos barreras). "
+            "El valor validado por la T37 es 2.0."
+        ),
+    ),
+    "atr_hard_stop_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Sub-switch del STOP DURO desde el precio de entrada (only "
+            "meaningful when `atr_stops_enabled=True`). True = comportamiento "
+            "histórico. False = el stop duro no dispara nunca y la única "
+            "barrera de abajo es el trailing — es el candidato `soff_t2.0` "
+            "que la T37 midió en 9.17% de CAGR contra 2.01% de la config viva, "
+            "y se shipea APAGADO (o sea: este flag en True) porque C2 pasa por "
+            "0,03 pp y el OOS pierde en 2 de 5 folds."
         ),
     ),
     # Conviction × volatility sizing (T06 of the engine roadmap)

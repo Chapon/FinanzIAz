@@ -47,6 +47,26 @@ ATR_EXIT_REASONS: tuple[str, ...] = ("atr_stop", "atr_tp", "atr_trail")
 # trail collapses onto the stop-loss and would whipsaw on the first down tick.
 DEFAULT_TRAIL_MIN_EXCESS_ATRS = 1.0
 
+# Sentinela del setting ``atr_trail_mult`` (T53): 0.0 ⇒ el trailing SIGUE al
+# stop duro, que es el acople histórico (un solo knob movía las dos barreras).
+# Cualquier valor > 0 desacopla las dos. Misma semántica que el ``None`` de
+# ``analysis.exit_replay.AtrParams.trail_mult``, con el 0-es-off que usa el
+# resto del esquema de settings.
+TRAIL_MULT_FOLLOWS_STOP = 0.0
+
+
+def effective_trail_mult(stop_mult: float, trail_mult: float | None) -> float:
+    """Múltiplo que gobierna el trailing (T53).
+
+    Espejo exacto de ``analysis.exit_replay.AtrParams.effective_trail_mult``:
+    ``None`` (o el sentinela ``0.0``) ⇒ cae a ``stop_mult``, que es el
+    comportamiento histórico. Cualquier otro valor desacopla el trailing del
+    stop duro — el desacople que la Tarea 37 midió y esta tarea cabla.
+    """
+    if trail_mult is None or trail_mult <= TRAIL_MULT_FOLLOWS_STOP:
+        return float(stop_mult)
+    return float(trail_mult)
+
 
 def is_atr_forced_exit_reason(reason: str | None) -> bool:
     """True iff ``reason`` was produced by :func:`atr_exit_decision`.
@@ -69,6 +89,8 @@ def atr_exit_decision(
     tp_mult: float,
     trail_enabled: bool,
     trail_min_excess_atrs: float = DEFAULT_TRAIL_MIN_EXCESS_ATRS,
+    trail_mult: float | None = None,
+    hard_stop_enabled: bool = True,
 ) -> tuple[str | None, float | None]:
     """Decide whether an open position should be force-closed by the ATR gate.
 
@@ -85,6 +107,15 @@ def atr_exit_decision(
     without this, the trail duplicates the hard stop and noise-trips
     immediately after entry.
 
+    **T53 — las dos barreras están desacopladas.** ``trail_mult`` gobierna el
+    trailing y ``stop_mult`` el stop duro; ``trail_mult=None`` (el default)
+    hace que el trailing siga al stop, que es el comportamiento histórico y
+    deja a todos los callers existentes idénticos. ``hard_stop_enabled=False``
+    apaga el stop duro **sin tocar** ``stop_mult`` — es la forma en que el
+    engine expresa el candidato validado por la Tarea 37 (`soff_t2.0`), y es
+    equivalente dígito por dígito al ``stop_mult=1e9`` con que el harness
+    (``analysis.exit_replay``) corrió ese brazo.
+
     All numeric inputs are assumed to be positive floats. Returns
     ``(None, None)`` when any input is non-finite, ≤0, or otherwise
     degenerate; this matches the engine's defensive skip behaviour.
@@ -95,14 +126,17 @@ def atr_exit_decision(
         return None, None
     if stop_mult < 0 or tp_mult < 0:
         return None, None
+    if trail_mult is not None and (not np.isfinite(trail_mult) or trail_mult < 0):
+        return None, None
 
     hwm = float(high_water_mark) if high_water_mark is not None else float(avg_cost)
+    t_mult = effective_trail_mult(stop_mult, trail_mult)
 
     stop_level = avg_cost - stop_mult * atr_value
     tp_level = avg_cost + tp_mult * atr_value
-    trail_level = hwm - stop_mult * atr_value if trail_enabled else None
+    trail_level = hwm - t_mult * atr_value if trail_enabled else None
 
-    if stop_level > 0 and current_price <= stop_level:
+    if hard_stop_enabled and stop_level > 0 and current_price <= stop_level:
         reason = (
             f"atr_stop @ {current_price:.2f} ≤ {stop_level:.2f} "
             f"(entry {avg_cost:.2f} − {stop_mult:.1f}×ATR {atr_value:.2f})"
@@ -118,7 +152,7 @@ def atr_exit_decision(
     ):
         reason = (
             f"atr_trail @ {current_price:.2f} ≤ {trail_level:.2f} "
-            f"(peak {hwm:.2f} − {stop_mult:.1f}×ATR {atr_value:.2f})"
+            f"(peak {hwm:.2f} − {t_mult:.1f}×ATR {atr_value:.2f})"
         )
         return reason, trail_level
 
@@ -138,6 +172,7 @@ def entry_risk_levels(
     atr_value: float,
     stop_mult: float,
     tp_mult: float,
+    hard_stop_enabled: bool = True,
 ) -> dict | None:
     """Niveles de riesgo ex-ante de una entrada long (display-only, V2).
 
@@ -147,6 +182,15 @@ def entry_risk_levels(
     (reward/risk = ``tp_mult/stop_mult``) para que cada compra tenga un precio
     objetivo y un stop concretos (pedido de Chapa 2026-07-06).
 
+    **T53 — sin stop duro no hay R:R, y no se inventa uno.** Con
+    ``hard_stop_enabled=False`` la posición **no tiene barrera de abajo al
+    momento de entrar**: el trailing todavía no está armado (necesita que el
+    HWM supere ``entry + trail_min_excess_atrs×ATR``, ver
+    :func:`atr_exit_decision`), así que proyectar un "nivel de trailing" a la
+    entrada mostraría un stop que **no puede dispararse**. Se devuelven
+    ``stop=None`` y ``rr=None``, y el TP —que sí existe y no cambió— se
+    conserva. Display-only, no filtra (regla 3).
+
     NO filtra ni bloquea nada (regla 3): es solo el número mostrado. Devuelve
     ``None`` ante inputs degenerados (no-finitos, ≤0, multiplicadores inválidos).
     """
@@ -154,8 +198,16 @@ def entry_risk_levels(
         return None
     if entry_price <= 0 or atr_value <= 0 or stop_mult <= 0 or tp_mult < 0:
         return None
-    stop = entry_price - stop_mult * atr_value
     tp = entry_price + tp_mult * atr_value
+    if not hard_stop_enabled:
+        return {
+            "entry": float(entry_price),
+            "stop": None,
+            "tp": float(tp),
+            "rr": None,
+            "atr": float(atr_value),
+        }
+    stop = entry_price - stop_mult * atr_value
     risk = entry_price - stop      # = stop_mult × ATR
     reward = tp - entry_price      # = tp_mult × ATR
     rr = (reward / risk) if risk > 0 else None
@@ -172,12 +224,17 @@ def format_entry_risk_note(levels: dict | None) -> str | None:
     """Nota compacta y legible para ``PaperOrder.notes`` (V2).
 
     Ej.: ``"R:R 2.0 · stop $102.50 · TP $115.00"``. ``None`` si no hay niveles.
+    Sin stop duro (T53) el R:R queda indefinido y la nota lo dice en vez de
+    inventar un nivel: ``"R:R — · sin stop duro (trailing) · TP $115.00"``.
     """
     if not levels:
         return None
     rr = levels.get("rr")
     rr_txt = f"{rr:.1f}" if rr is not None else "—"
-    return f"R:R {rr_txt} · stop ${levels['stop']:.2f} · TP ${levels['tp']:.2f}"
+    stop = levels.get("stop")
+    if stop is None:
+        return f"R:R {rr_txt} · sin stop duro (trailing) · TP ${levels['tp']:.2f}"
+    return f"R:R {rr_txt} · stop ${stop:.2f} · TP ${levels['tp']:.2f}"
 
 
 def model_exit_fill_price(
@@ -537,6 +594,7 @@ __all__ = [
     "VolOverlayResult",
     "adv_capped_notional",
     "atr_exit_decision",
+    "effective_trail_mult",
     "compute_vol_overlay",
     "is_atr_forced_exit_reason",
     "is_vol_trim_reason",
