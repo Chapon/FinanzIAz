@@ -11,6 +11,7 @@ Offline puro: nada de red, disco ni ``finanzias.db``.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pytest
@@ -36,7 +37,7 @@ from scripts.run_stop_value_t37 import (
     grid_cells,
     is_shippable,
     regime_criterion,
-    ruin_damage_monotone,
+    ruin_dose_response,
     tail_stats,
 )
 
@@ -218,14 +219,23 @@ def test_c5_bis_escala_cuando_la_ventana_SI_resuelve_un_efecto_negativo():
 # ── el barrido de ruina ──────────────────────────────────────────────────────
 
 
-def _sweep(depth: float, pairs: list[tuple[float, float]], base=None):
+def _sweep(depth: float, pairs: list[tuple[float, float]], base=None,
+           seeds_by_rate=None):
+    """`pairs` = [(rate, dcagr_worst)]. `base` = {rate: base_cagr medio}.
+    `seeds_by_rate` = {rate: [base_cagr por semilla]} para el §7.5′."""
     out = {}
     for rate, dworst in pairs:
+        seeds = (seeds_by_rate or {}).get(rate)
+        if seeds is None:
+            seeds = [(base or {}).get(rate, 0.10)]
         out[f"d{depth:.2f}_r{rate:.4f}"] = {
             "rate": rate, "depth": depth, "shape": "gradual",
             "dcagr_worst": dworst, "dcagr_mean": dworst,
-            "base_cagr_mean": (base or {}).get(rate, 0.10),
-            "cand_cagr_mean": 0.0, "per_seed": [], "digests_ok": True,
+            "base_cagr_mean": sum(seeds) / len(seeds),
+            "cand_cagr_mean": 0.0, "digests_ok": True,
+            "per_seed": [{"seed": 1000 + i, "base_cagr": v, "cand_cagr": 0.0,
+                          "dcagr": dworst, "digest_ok": True}
+                         for i, v in enumerate(seeds)],
         }
     return out
 
@@ -247,22 +257,69 @@ def test_breakeven_none_si_aguanta_toda_la_rejilla():
     assert breakeven_rate(s, 0.50) is None
 
 
-def test_la_ruina_tiene_que_hacer_dano_y_ser_monotona():
-    ok = ruin_damage_monotone(_sweep(
-        0.50, [(0.0, 0.0), (0.026, 0.0), (0.10, 0.0)],
-        base={0.0: 0.10, 0.026: 0.07, 0.10: 0.04}), depth=0.50)
-    assert ok["monotone"] and ok["damage_pp"] == pytest.approx(0.06) and ok["passes"]
+# ── §7.5′ — dosis-respuesta con tolerancia computada (enmienda 2) ────────────
 
-    # No hace daño ⇒ la inyección está mal cableada y el test del §3 no mide nada.
-    sin_dano = ruin_damage_monotone(_sweep(
-        0.50, [(0.0, 0.0), (0.10, 0.0)], base={0.0: 0.10, 0.10: 0.0999}), depth=0.50)
-    assert sin_dano["monotone"] and not sin_dano["passes"]
 
-    # No monótona ⇒ tampoco pasa.
-    no_mono = ruin_damage_monotone(_sweep(
+def test_7_5_prima_pasa_con_dano_y_dosis_respuesta_limpia():
+    r = ruin_dose_response(_sweep(
         0.50, [(0.0, 0.0), (0.026, 0.0), (0.10, 0.0)],
-        base={0.0: 0.10, 0.026: 0.02, 0.10: 0.08}), depth=0.50)
-    assert not no_mono["monotone"] and not no_mono["passes"]
+        seeds_by_rate={0.0: [0.10], 0.026: [0.07, 0.07, 0.07],
+                       0.10: [0.04, 0.04, 0.04]}), depth=0.50)
+    assert r["damage_ok"] and r["dose_ok"] and r["passes"]
+    assert r["damage_pp"] == pytest.approx(0.06)
+
+
+def test_7_5_prima_no_falla_por_un_ascenso_DENTRO_del_ruido_de_semilla():
+    """El caso exacto que invalidó la primera corrida: +0.2 pp de ascenso dentro
+    de una banda de dispersión entre semillas de ~3 pp."""
+    r = ruin_dose_response(_sweep(
+        0.50, [(0.0, 0.0), (0.005, 0.0), (0.10, 0.0)],
+        seeds_by_rate={0.0: [0.02013],
+                       0.005: [0.00440, 0.03494, 0.02754],   # rango 3.05 pp
+                       0.10: [-0.03471, -0.06205, -0.02529]}), depth=0.50)
+    paso = r["steps"][0]
+    assert paso["delta"] > 0, "el ascenso está, y es el que hizo fallar la §7.5"
+    assert paso["tol"] > paso["delta"], "pero cae dentro del ruido del instrumento"
+    assert r["dose_ok"] and r["passes"]
+
+
+def test_7_5_prima_SI_falla_si_el_ascenso_SALE_de_la_banda():
+    """No es un sello de goma: un ascenso real sigue invalidando la corrida."""
+    r = ruin_dose_response(_sweep(
+        0.50, [(0.0, 0.0), (0.026, 0.0), (0.10, 0.0)],
+        seeds_by_rate={0.0: [0.02],
+                       0.026: [0.119, 0.120, 0.121],   # +10 pp, sd chico
+                       0.10: [-0.05, -0.05, -0.05]}), depth=0.50)
+    assert r["steps"][0]["ok"] is False
+    assert not r["dose_ok"] and not r["passes"]
+
+
+def test_7_5_prima_falla_si_la_ruina_no_hace_dano():
+    """Si inyectar ruina no lastima, la inyección está mal cableada."""
+    r = ruin_dose_response(_sweep(
+        0.50, [(0.0, 0.0), (0.10, 0.0)],
+        seeds_by_rate={0.0: [0.10], 0.10: [0.0999, 0.0999, 0.0999]}), depth=0.50)
+    assert r["dose_ok"] and not r["damage_ok"] and not r["passes"]
+
+
+def test_7_5_prima_reporta_la_tabla_por_semilla():
+    """§7.5′(c): el descriptivo por semilla es obligatorio."""
+    r = ruin_dose_response(_sweep(
+        0.50, [(0.0, 0.0), (0.026, 0.0), (0.10, 0.0)],
+        seeds_by_rate={0.0: [0.10], 0.026: [0.05, 0.07, 0.09],
+                       0.10: [0.01, 0.02, 0.03]}), depth=0.50)
+    assert [row["rate"] for row in r["by_seed"]] == [0.0, 0.026, 0.10]
+    assert r["by_seed"][1]["spread"] == pytest.approx(0.04)
+    assert len(r["by_seed"][1]["seeds"]) == 3
+
+
+def test_r_cero_es_determinista_y_no_rompe_la_tolerancia():
+    """`r=0` tiene n=1 y sd=0 por construcción: la tolerancia sale del otro lado."""
+    r = ruin_dose_response(_sweep(
+        0.50, [(0.0, 0.0), (0.026, 0.0)],
+        seeds_by_rate={0.0: [0.02], 0.026: [0.01, 0.02, 0.03]}), depth=0.50)
+    paso = r["steps"][0]
+    assert paso["tol"] > 0.0 and math.isfinite(paso["tol"])
 
 
 # ── cola (C6) ────────────────────────────────────────────────────────────────

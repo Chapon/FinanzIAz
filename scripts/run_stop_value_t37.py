@@ -561,17 +561,65 @@ def breakeven_rate(sweep: dict, depth: float) -> float | None:
     return None
 
 
-def ruin_damage_monotone(sweep: dict, depth: float = 0.50) -> dict:
-    """§7.5 — el CAGR del BASELINE tiene que caer (no crecer) al subir ``r``."""
-    pts = sorted(((v["rate"], v["base_cagr_mean"]) for v in sweep.values()
+def ruin_dose_response(sweep: dict, depth: float = 0.50) -> dict:
+    """§7.5′ (enmienda 2) — la inyección hace daño y muestra dosis-respuesta.
+
+    **(a) Daño** (sin cambios respecto del §7.5 congelado): el CAGR del baseline a
+    ``r=10%`` cae al menos 2.00 pp respecto de ``r=0``.
+
+    **(b) Dosis-respuesta con tolerancia COMPUTADA:** para cada par consecutivo de
+    la rejilla, ``base_cagr(r_{i+1}) ≤ base_cagr(r_i) + 2·SE``, con ``SE`` el error
+    estándar del Δ de las dos medias **sobre las semillas**.
+
+    Por qué la tolerancia no se elige: a tasas bajas hay 6-13 eventos en todo el
+    universo y el rango entre semillas de un mismo punto es de **3 a 5,4 pp**,
+    mientras el paso que la monotonía estricta exigía detectar es de **0,2 pp** —
+    19× por debajo de lo que la muestra resuelve. Un ascenso **dentro** del ruido
+    de semilla del propio instrumento no es una violación de dosis-respuesta; uno
+    que **sale** de esa banda sí lo es, y la corrida sigue siendo inválida.
+
+    ``r=0`` es determinista por construcción (``n=1``, ``sd=0``): en el par que lo
+    involucra la tolerancia sale enteramente del lado con semillas, que es lo
+    correcto — no se le puede pedir dispersión a un punto sin sorteo.
+    """
+    pts = sorted(((v["rate"], v) for v in sweep.values()
                   if abs(v["depth"] - depth) < 1e-12), key=lambda x: x[0])
-    monotone = all(b <= a + 1e-9 for (_, a), (_, b) in zip(pts, pts[1:]))
-    by_rate = {r: c for r, c in pts}
+    if not pts:
+        return {"steps": [], "dose_ok": False, "damage_pp": 0.0, "passes": False,
+                "by_seed": []}
+
+    def _stats(v) -> tuple[float, float, int]:
+        xs = [ps["base_cagr"] for ps in v["per_seed"]]
+        n = len(xs)
+        mean = statistics.fmean(xs) if xs else 0.0
+        sd = statistics.stdev(xs) if n > 1 else 0.0
+        return mean, sd, n
+
+    steps = []
+    dose_ok = True
+    for (r0, v0), (r1, v1) in zip(pts, pts[1:]):
+        m0, sd0, n0 = _stats(v0)
+        m1, sd1, n1 = _stats(v1)
+        se = math.sqrt((sd0 ** 2 / n0 if n0 else 0.0) + (sd1 ** 2 / n1 if n1 else 0.0))
+        tol = 2.0 * se
+        ok = m1 <= m0 + tol
+        dose_ok = dose_ok and ok
+        steps.append({"r_from": r0, "r_to": r1, "cagr_from": m0, "cagr_to": m1,
+                      "delta": m1 - m0, "tol": tol, "ok": ok})
+
+    by_rate = {r: _stats(v)[0] for r, v in pts}
     damage = by_rate.get(0.0, 0.0) - by_rate.get(SANITY_RUIN_HIGH_RATE, 0.0)
-    return {
-        "points": pts, "monotone": monotone, "damage_pp": damage,
-        "passes": bool(monotone and damage >= SANITY_RUIN_MIN_DAMAGE),
-    }
+    damage_ok = damage >= SANITY_RUIN_MIN_DAMAGE
+    by_seed = [{"rate": r,
+                "seeds": [ps["base_cagr"] for ps in v["per_seed"]],
+                "spread": (max(ps["base_cagr"] for ps in v["per_seed"])
+                           - min(ps["base_cagr"] for ps in v["per_seed"])
+                           if v["per_seed"] else 0.0)}
+               for r, v in pts]
+    return {"steps": steps, "dose_ok": dose_ok, "damage_pp": damage,
+            "damage_ok": damage_ok, "passes": bool(dose_ok and damage_ok),
+            "by_seed": by_seed,
+            "points": [(r, _stats(v)[0]) for r, v in pts]}
 
 
 # ── §7 — sanity ──────────────────────────────────────────────────────────────
@@ -742,7 +790,26 @@ def _run(argv: list[str] | None = None) -> int:
                       args.budget_seconds)
 
     tickers = parse_universe_file(_HERE.parent / args.universe)
-    bars_by, sigs_by, missing = load_bars_signals(tickers, args.period, args.warmup)
+    # Los artefactos PIT se releen en cada invocación y la corrida es reanudable,
+    # así que se memoiza la CARGA igual que las simulaciones. Mismo principio:
+    # la clave describe el cómputo entero, y no cambia ningún número.
+    # La clave incluye la marca de tiempo de los artefactos: si se refrescan los
+    # parquet o las señales PIT, el cache NO se reusa. Sin esto el cache
+    # sobreviviría a un cambio de muestra, que es el defecto de reproducibilidad
+    # que la tarea 48 desarmó para los veredictos (y la 52 para las anclas).
+    def _art_stamp() -> str:
+        out = []
+        for d in ("data/parquet", "data/pit_signals"):
+            root = _HERE.parent / d
+            newest = max((f.stat().st_mtime_ns for f in root.glob("*")
+                          if f.is_file()), default=0)
+            out.append(f"{d}:{newest}")
+        return "|".join(out)
+
+    _load_tag = (f"load|{args.universe}|{args.period}|w{args.warmup}"
+                 f"|t{len(tickers)}|{_art_stamp()}")
+    bars_by, sigs_by, missing = _CACHE.run(
+        _load_tag, lambda: load_bars_signals(tickers, args.period, args.warmup))
     if not bars_by:
         print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.",
               file=sys.stderr)
@@ -880,7 +947,8 @@ def _run(argv: list[str] | None = None) -> int:
     # 6. §3 — el barrido de ruina (C9) + la sensibilidad de forma.
     sweep: dict = {}
     sweep_gap: dict = {}
-    ruin_mono = {"points": [], "monotone": False, "damage_pp": 0.0, "passes": False}
+    ruin_mono = {"steps": [], "dose_ok": False, "damage_pp": 0.0,
+                 "damage_ok": False, "passes": False, "by_seed": [], "points": []}
     digests_ok = True
     if not args.no_ruin and cand_arm != BASELINE_ARM:
         print("  §3 — barrido de ruina (`gradual`, la que DECIDE) …",
@@ -888,7 +956,7 @@ def _run(argv: list[str] | None = None) -> int:
         sweep = ruin_sweep(entries, bars_by, sigs_by, common, cand_cell,
                            points=gradual_points(), shape="gradual",
                            n_seeds_used=args.ruin_seeds, tag=run_tag, log=log)
-        ruin_mono = ruin_damage_monotone(sweep, depth=0.50)
+        ruin_mono = ruin_dose_response(sweep, depth=0.50)
         digests_ok = all(v["digests_ok"] for v in sweep.values())
 
         print("  §3 — sensibilidad de FORMA (`gap`, NO decide) …", file=log, flush=True)
@@ -1071,6 +1139,19 @@ def _report(summaries: dict, tails: dict, ctx: dict) -> None:
             print(f"  → TASA DE RUINA DE BREAKEVEN: {be_txt}"
                   f"   (medida en el universo: "
                   f"{'2,60' if depth == 0.50 else '0,47'}%/año)")
+        rm = ctx["sanity"]["ruin_monotone"]
+        if rm.get("by_seed"):
+            print("\n  §7.5′(c) — el baseline por SEMILLA (descriptivo obligatorio):")
+            print(f"    {'tasa':<10}{'semillas (CAGR %)':<34}{'rango':>8}")
+            for row in rm["by_seed"]:
+                xs = " · ".join(f"{100*x:6.3f}" for x in row["seeds"]) or "—"
+                print(f"    {row['rate']:<10.2%}{xs:<34}{100*row['spread']:7.2f} pp")
+            print(f"\n    {'paso':<18}{'Δ':>9}{'tol (2·SE)':>12}")
+            for st in rm["steps"]:
+                mark = "" if st["ok"] else "   ← SALE DE LA BANDA"
+                print(f"    {st['r_from']:.2%}→{st['r_to']:.2%}".ljust(22)
+                      + f"{100*st['delta']:+8.2f}{100*st['tol']:11.2f}{mark}")
+
         print("\n  C9 (peor de las semillas ≥ 0):")
         for d in ctx["verdict"]["c9_detail"]:
             dv = ("—" if d["dcagr_worst"] is None
@@ -1089,9 +1170,9 @@ def _report(summaries: dict, tails: dict, ctx: dict) -> None:
          f"({100*s['oracle_vs_random_dd']:+.2f})", s["s2_dd"]),
         ("control mecánico: `off` no dispara su barrera", s["mechanical_ok"]),
         (f"el desacople muerde ≥10% ({s['trade_diff']:.1%})", s["s4_bite"]),
-        (f"la ruina hace daño y es monótona "
-         f"({100*s['ruin_monotone']['damage_pp']:.2f} pp a r=10%)",
-         s["ruin_monotone"]["passes"]),
+        (f"§7.5′ la ruina hace daño ({100*s['ruin_monotone']['damage_pp']:.2f} pp "
+         f"a r=10%, umbral 2.00) y muestra dosis-respuesta dentro del ruido de "
+         f"semilla", s["ruin_monotone"]["passes"]),
         ("la inyección es idéntica para todos los brazos (hash)",
          s["ruin_digests_ok"]),
     ]
