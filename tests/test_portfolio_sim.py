@@ -13,6 +13,12 @@ Cubre:
   invariante        — el filtro NUNCA cambia la salida de una posición abierta
   contadores        — offered / taken / filtered / no_slot cuadran
 
+Extensión de la Tarea 51 (EVENT-TIMESTOP):
+  cap_days_of       — el cap duro POR POSICIÓN, para preguntar si un tope corto
+                      sirve para todas o sólo para las que entraron con evento
+  cap vs time stop  — la distinción que la tarea 57 tuvo que declarar: el cap
+                      cierra ganadores, el ``time_stop_days`` de la T13 no
+
 Extensiones de la Tarea 9 (ver ``docs/meta_labeling_t9_2026-07-21.md`` §7):
   rank_score        — decide quién se queda con el slot escaso, dentro del día
   orden estable     — empates alfabéticos, sin depender del orden de llegada
@@ -302,3 +308,61 @@ def test_counters_add_up_with_the_new_rejection_reason():
     assert res.n_offered == 3
     assert (res.n_taken + res.n_filtered + res.n_no_slot
             + res.n_no_cash + res.n_already_open) == res.n_offered
+
+
+# ── cap_days_of — el cap duro POR POSICIÓN (Tarea 51, EVENT-TIMESTOP) ────────
+
+
+def test_cap_days_of_none_keeps_the_global_cap():
+    """El default no cambia el comportamiento de ningún harness previo."""
+    bars = _flat_bars(60)
+    base = _sim([("A", 5)], {"A": bars}, max_positions=5, cap_days=30)
+    same = _sim([("A", 5)], {"A": bars}, max_positions=5, cap_days=30,
+                cap_days_of=None)
+    assert base.trades[0].held_days == same.trades[0].held_days
+
+
+def test_cap_days_of_overrides_the_global_cap_per_position():
+    """El punto de la tarea 51: dos posiciones idénticas con topes distintos."""
+    bars = _flat_bars(60)
+    res = _sim([("A", 5), ("B", 5)], {"A": bars, "B": bars}, max_positions=5,
+               cap_days=30, cap_days_of=lambda t, d: 4 if t == "A" else 30)
+    held = {tr.ticker: tr.held_days for tr in res.trades}
+    assert held["A"] == 4 and held["B"] == 30
+    assert {tr.exit_reason for tr in res.trades} == {"cap_reached"}
+
+
+def test_cap_days_of_sees_the_entry_date_not_just_the_ticker():
+    """La clave del evento es ``(ticker, fecha)``: el mismo ticker entrando dos
+    veces puede llevar topes distintos."""
+    bars = _flat_bars(80)
+    res = _sim([("A", 5), ("A", 40)], {"A": bars}, max_positions=5, cap_days=30,
+               cap_days_of=lambda t, d: 3 if d == _d(5) else 12)
+    held = sorted(tr.held_days for tr in res.trades)
+    assert held == [3, 12]
+
+
+def test_a_nonsense_cap_falls_back_to_the_global_one():
+    """Un cap <1 (o no numérico) no puede cerrar una posición antes de abrirla:
+    se cae al global en vez de romper la corrida."""
+    bars = _flat_bars(60)
+    for bad in (0, -5, None, float("nan")):
+        res = _sim([("A", 5)], {"A": bars}, max_positions=5, cap_days=7,
+                   cap_days_of=lambda t, d, _b=bad: _b)
+        assert res.trades[0].held_days == 7, bad
+
+
+def test_the_hard_cap_closes_winners_too_unlike_the_time_stop():
+    """La distinción que la tarea 57 tuvo que declarar: el cap duro cierra al
+    llegar a N **aunque la posición vaya ganando**, y el ``time_stop_days`` de la
+    T13 no — dispara una sola vez y **sólo en pérdida**. Son dos reglas, y el
+    +4.21 pp que motiva la 51 vive en la primera."""
+    bars = _ramp_bars(60)                       # sube siempre: siempre ganadora
+    capped = _sim([("A", 5)], {"A": bars}, max_positions=5, cap_days=30,
+                  cap_days_of=lambda t, d: 6)
+    timed = _sim([("A", 5)], {"A": bars}, max_positions=5, cap_days=30,
+                 time_stop_days=6)
+    assert capped.trades[0].held_days == 6
+    assert capped.trades[0].exit_reason == "cap_reached"
+    assert timed.trades[0].held_days == 30      # el time stop NO la toca
+    assert timed.trades[0].exit_reason == "cap_reached"

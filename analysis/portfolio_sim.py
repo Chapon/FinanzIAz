@@ -84,6 +84,17 @@ RankScore = Callable[[str, str], float]
 # ``max_weight`` de la equity para que no concentre. None ⇒ comportamiento actual.
 SizeWeight = Callable[[str, str], float]
 
+# cap_days_of(ticker, date_iso10) -> tope de tenencia EN RUEDAS de esa posicion.
+# Enabler de la Tarea 51 (EVENT-TIMESTOP): permite que el tope dependa de la
+# posicion —p.ej. corto solo para las entradas que ademas son evento— sin tocar
+# `replay_cycle`, que ya recibe `cap_days` posicion por posicion. None => el
+# `cap_days` global de siempre, asi que ningun harness previo cambia.
+#
+# Ojo con la distincion que la tarea 57 tuvo que declarar: esto es el **cap duro**
+# (cierra a todos al llegar a N, ganadores incluidos), NO el `time_stop_days` de la
+# T13 (que dispara una sola vez en la barra N y solo si esta en perdida).
+CapDaysOf = Callable[[str, str], int]
+
 
 @dataclass
 class Trade:
@@ -162,6 +173,7 @@ def simulate_portfolio(
     allow_reentry_while_open: bool = False,
     regime_of: Callable[[str], str] | None = None,
     time_stop_days: int | None = None,
+    cap_days_of: CapDaysOf | None = None,
     stop_filter: StopFilter | None = None,
     eval_mode: str = "close",
     fill_mode: str = "decision",
@@ -184,6 +196,14 @@ def simulate_portfolio(
 
     ``time_stop_days`` (ENT1 brazo b, Tarea 13) se pasa tal cual a ``replay_cycle``:
     ``None`` ⇒ sin time stop, que es el comportamiento de todas las tareas previas.
+
+    ``cap_days_of`` (EVENT-TIMESTOP, Tarea 51) resuelve el **cap duro por posición**
+    a partir de ``(ticker, fecha_de_entrada)``; ``None`` ⇒ el ``cap_days`` global de
+    siempre. Es lo que permite preguntar si un tope de tenencia corto sirve para
+    **todas** las posiciones o **sólo** para las que entraron con un evento, sin que
+    el simulador tenga que saber qué es un evento. **No confundirlo con
+    ``time_stop_days``** (tarea 57): el cap cierra a todos al llegar a N —ganadores
+    incluidos— y el time stop dispara una sola vez y sólo en pérdida.
     Ídem ``stop_filter`` (brazos oráculo de STOP-CAL, Tarea 26): ``None`` ⇒ el stop
     duro dispara siempre que toque. Y ``eval_mode`` (STOP-PRICE, Tarea 26b):
     ``"close"`` ⇒ la barrera se decide contra el close, como en todas las tareas
@@ -367,9 +387,17 @@ def simulate_portfolio(
                 res.n_no_cash += 1
                 continue
 
+            # Tarea 51: el tope puede depender de la posicion. Un valor no finito
+            # o <= 0 seria un cap sin sentido, asi que se cae al global.
+            cap_i = cap_days
+            if cap_days_of is not None:
+                cand = cap_days_of(ticker, entry_date)
+                if isinstance(cand, (int, float)) and cand >= 1:
+                    cap_i = int(cand)
+
             cyc = replay_cycle(
                 bars, idx, sigs_by.get(ticker) or {},
-                params=so_params, atr_p=atr_p, cap_days=cap_days,
+                params=so_params, atr_p=atr_p, cap_days=cap_i,
                 costs=costs, notional=notional,
                 regime="" if regime_of is None else regime_of(entry_date),
                 time_stop_days=time_stop_days, stop_filter=stop_filter,
