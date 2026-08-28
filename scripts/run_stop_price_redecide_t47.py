@@ -46,6 +46,7 @@ from analysis.harness_config import (  # noqa: E402
     artifact_window,
     reproduction_check,
     REPRO_OK,
+    POPULATION_LIVE_ACCT2,
     WINDOW_REFRESH_2026_08_09,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
@@ -228,9 +229,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by), eval_mode="touch",
-             fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
+    cfg = announce(args.max_positions, args.universe, len(bars_by),
+                   window=artifact_window(bars_by), eval_mode="touch",
+                   fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}", file=log)
     print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM}\n",
           file=log)
@@ -300,11 +301,15 @@ def main(argv: list[str] | None = None) -> int:
     for n in (BASELINE_ARM, CANDIDATE_ARM):
         r = simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **repro_common)
         repro[n] = summarise(r)["cagr"]
-    # Tarea 48: tri-estado consciente de la ventana rodante de los artefactos.
+    # Tarea 48: consciente de la ventana rodante de los artefactos. Tarea 52:
+    # y de la población — las anclas de la 26b se midieron sobre el universo vivo.
     win = artifact_window(bars_by)
+    pop = cfg.population(len(entries))
     repro_checks = {n: reproduction_check(repro[n], REPRO_EXPECTED[n], tol=REPRO_TOL,
                                           current=win,
-                                          measured_on=WINDOW_REFRESH_2026_08_09)
+                                          measured_on=WINDOW_REFRESH_2026_08_09,
+                                          population=pop,
+                                          measured_over=POPULATION_LIVE_ACCT2)
                     for n in repro}
     repro_ok = all(st == REPRO_OK for st, _ in repro_checks.values())
 

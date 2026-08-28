@@ -53,6 +53,7 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
     REPRO_OK,
+    POPULATION_LIVE_ACCT2,
     WINDOW_REFRESH_2026_08_09,
     reproduction_check,
 )
@@ -324,9 +325,9 @@ def main(argv: list[str] | None = None) -> int:
     n_by_date = count_by_date(prio_keys)
     cands_by_date = candidates_by_date(entries, bars_by)
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by), eval_mode=EVAL_MODE,
-             fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
+    cfg = announce(args.max_positions, args.universe, len(bars_by),
+                   window=artifact_window(bars_by), eval_mode=EVAL_MODE,
+                   fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
     print(f"Anomalía A_k{ANOM_K}_m{ANOM_M}: {len(anom_all)} entradas, de las cuales "
           f"**{len(anom_in_pool)}** ya son candidatas del engine "
@@ -432,19 +433,41 @@ def main(argv: list[str] | None = None) -> int:
             **_common(args.max_positions, args.capital, CAP_DAYS,
                       eval_mode="close", live_gates=False),
             rank_score=b1))
+        # Tareas 48 y 52 — las tres anclas pasan por el helper multi-estado en vez
+        # de por un `abs() <= tol` de dos estados: la ventana de los artefactos es
+        # RODANTE y la población puede no ser la de las anclas, y ninguna de las
+        # dos cosas es evidencia de que cambió la cañería.
+        checks = {
+            "t45_analyze": (r_analyze["cagr"], SANITY_T45_ANALYZE),
+            "t45_merged_prio": (r_merged["cagr"], SANITY_T45_MERGED_PRIO),
+            "t33": (t33["cagr"], SANITY_T33_CAGR),
+        }
+        states = {k: reproduction_check(
+            got, exp, tol=SANITY_TOL, current=artifact_window(bars_by),
+            measured_on=WINDOW_REFRESH_2026_08_09,
+            population=cfg.population(len(entries)),
+            measured_over=POPULATION_LIVE_ACCT2) for k, (got, exp) in checks.items()}
         repro = {
             "t45_analyze": r_analyze["cagr"], "t45_merged_prio": r_merged["cagr"],
-            "t45_ok": (abs(r_analyze["cagr"] - SANITY_T45_ANALYZE) <= SANITY_TOL
-                       and abs(r_merged["cagr"] - SANITY_T45_MERGED_PRIO) <= SANITY_TOL),
+            "t45_ok": all(states[k][0] == REPRO_OK
+                          for k in ("t45_analyze", "t45_merged_prio")),
+            "t45_state": " / ".join(states[k][0]
+                                    for k in ("t45_analyze", "t45_merged_prio")),
             "t33_cagr": t33["cagr"],
-            "t33_ok": abs(t33["cagr"] - SANITY_T33_CAGR) <= SANITY_TOL,
+            "t33_ok": states["t33"][0] == REPRO_OK,
+            "t33_state": states["t33"][0],
+            "reasons": {k: why for k, (_, why) in states.items()},
         }
         print(f"Reproducción 45 (cap_days=20, pool unido, prioridad binaria): "
               f"E_analyze {100*r_analyze['cagr']:.2f}% (esperado 3.71%) · "
               f"E_merged_prio {100*r_merged['cagr']:.2f}% (esperado 7.92%) · "
-              f"{'OK' if repro['t45_ok'] else 'FALLA'}", file=log)
+              f"{repro['t45_state']}", file=log)
         print(f"Reproducción T33 (close/sin gates): {100*t33['cagr']:.2f}% "
-              f"(esperado 1.97%) · {repro['t33_state']}\n", file=log)
+              f"(esperado 1.97%) · {repro['t33_state']}", file=log)
+        for k, (st, why) in states.items():
+            if st != REPRO_OK:
+                print(f"  → {k}: {why}", file=log)
+        print("", file=log)
 
     sanity = evaluate_sanity(summaries, controls, trade_diff, ctrl_diff_median, repro)
     verdict = evaluate(summaries[BASELINE_ARM], summaries[CANDIDATE_ARM], controls,

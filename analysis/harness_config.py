@@ -198,6 +198,14 @@ REENTRY_GATES_COST_DESC = (
 # bloqueadas por datos (el Brazo A de la 11). La reproducibilidad se recupera por
 # el otro lado: **declarando la ventana efectiva de cada corrida** y haciendo que
 # los sanity de reproducción sepan contra qué muestra se midió su número.
+#
+# **La 52 completó el otro eje.** "Contra qué muestra" son dos cosas —*cuándo* y
+# *sobre qué*— y la 48 sólo cubrió la primera: el smoke de la 37 corrió sobre el
+# universo legacy con la ventana de siempre y los tres chequeos dictaminaron
+# ``FALLA — MISMA ventana ⇒ cambió la cañería`` sin que hubiera cambiado una línea.
+# El mismo error de categoría, por el otro eje, y con la misma consecuencia: una
+# máquina de invalidar corridas buenas. Por eso el helper también toma la
+# **población** y devuelve un cuarto estado, ``REPRO_NA``.
 ARTIFACT_PERIOD = "10y"
 ARTIFACT_WINDOW_IS_ROLLING = True
 
@@ -238,10 +246,73 @@ def artifact_window(bars_by: "dict[str, list]") -> ArtifactWindow | None:
     return ArtifactWindow(start=min(starts), end=max(ends), n_bars=n)
 
 
+@dataclass(frozen=True)
+class ArtifactPopulation:
+    """La **muestra** sobre la que corrió un harness — **Tarea 52 (REPRO-POP)**.
+
+    La ventana dice *cuándo*; la población dice *sobre qué*. Dos corridas pueden
+    compartir la ventana al día y aun así medir cosas distintas porque una corrió
+    sobre 127 tickers y la otra sobre 41: ahí un desajuste **no** es evidencia de
+    que cambió la cañería, y tratarlo como tal invalida corridas buenas (que es el
+    defecto de la 48 por el otro eje).
+
+    ``n_entries`` es opcional: las anclas compartidas declaran universo y tickers
+    (que no dependen de la config del runner) y cada corrida declara además sus
+    entradas, que sí dependen de ``cap_days``, gates y demás.
+    """
+
+    universe_file: str
+    n_tickers: int
+    n_entries: int | None = None
+
+    def __str__(self) -> str:
+        entradas = f", {self.n_entries} entradas" if self.n_entries is not None else ""
+        return f"{self.universe_file} ({self.n_tickers} tickers{entradas})"
+
+    def same_universe_as(self, other: "ArtifactPopulation") -> bool:
+        """¿Las dos corridas miraron el **mismo conjunto de tickers**?
+
+        Es el eje categórico: si difiere, el ancla se midió sobre otra cosa y no
+        hay nada que reproducir (``REPRO_NA``)."""
+        return (self.universe_file == other.universe_file
+                and self.n_tickers == other.n_tickers)
+
+    def matches(self, other: "ArtifactPopulation") -> bool:
+        """Misma muestra: mismo universo y —cuando **las dos** lo declaran— mismas
+        entradas. Si una de las dos no declara ``n_entries``, no se lo compara: no
+        se puede acusar por un dato que nadie publicó."""
+        if not self.same_universe_as(other):
+            return False
+        if self.n_entries is None or other.n_entries is None:
+            return True
+        return self.n_entries == other.n_entries
+
+
+def artifact_population(
+    universe_file: str,
+    bars_by: "dict[str, list] | None" = None,
+    *,
+    n_tickers: int | None = None,
+    n_entries: int | None = None,
+) -> ArtifactPopulation:
+    """Población de una corrida — pura, sin I/O.
+
+    ``n_tickers`` sale de ``bars_by`` si no se lo pasa explícito (los tickers que
+    efectivamente cargaron, que es lo que ``announce()`` ya imprime, y no los que
+    el archivo de universo pretendía)."""
+    if n_tickers is None:
+        n_tickers = len(bars_by or {})
+    return ArtifactPopulation(universe_file, n_tickers, n_entries)
+
+
 # Estados de ``reproduction_check``.
 REPRO_OK = "OK"
 REPRO_FAIL = "FALLA"
 REPRO_INDETERMINATE = "INDETERMINADO"
+# Cuarto estado (Tarea 52): el ancla se midió sobre **otra población**, así que el
+# chequeo no aplica. NO cuenta como OK — una corrida cuyo sanity de reproducción
+# no aplica no reprodujo nada y no puede dictar veredicto por ese lado.
+REPRO_NA = "NO APLICA"
 
 
 def reproduction_check(
@@ -251,24 +322,42 @@ def reproduction_check(
     tol: float,
     current: ArtifactWindow | None = None,
     measured_on: ArtifactWindow | str | None = None,
+    population: ArtifactPopulation | None = None,
+    measured_over: ArtifactPopulation | None = None,
 ) -> tuple[str, str]:
-    """Sanity de reproducción **consciente de la ventana** (Tarea 48).
+    """Sanity de reproducción consciente de la **ventana** (T48) y de la
+    **población** (T52).
 
-    Devuelve ``(estado, motivo)`` con tres estados posibles:
+    Devuelve ``(estado, motivo)`` con cuatro estados posibles:
 
     * ``REPRO_OK`` — el número reproduce dentro de ``tol``.
-    * ``REPRO_FAIL`` — no reproduce **y la ventana es la misma** con la que se
-      midió ``expected`` ⇒ cambió algo en la cañería, que es exactamente lo que el
+    * ``REPRO_NA`` — el ancla se midió sobre **otro universo** ⇒ no hay nada que
+      reproducir. No cuenta como OK, pero tampoco acusa a nadie.
+    * ``REPRO_FAIL`` — no reproduce **y la muestra es la misma** —misma ventana y
+      misma población— ⇒ cambió algo en la cañería, que es exactamente lo que el
       sanity existe para detectar. La corrida es INVÁLIDA.
-    * ``REPRO_INDETERMINATE`` — no reproduce **y la ventana se movió** ⇒ el chequeo
-      **no puede distinguir** un cambio de cañería de un refresh de artefactos, así
-      que no afirma ninguna de las dos cosas. Quien corra tiene que re-medir la
-      referencia sobre la ventana nueva antes de sacar conclusiones.
+    * ``REPRO_INDETERMINATE`` — no reproduce **y la muestra se movió, o no se sabe
+      cuál era** ⇒ el chequeo **no puede distinguir** un cambio de cañería de un
+      refresh de artefactos o de un cambio de muestra, así que no afirma ninguna de
+      las dos cosas. Quien corra tiene que re-medir la referencia sobre la muestra
+      nueva antes de sacar conclusiones.
 
-    ``measured_on`` es la ventana con la que se midió ``expected``. Si no se la
-    declara, un desajuste no puede atribuirse y también sale ``INDETERMINADO``:
-    **el default es no acusar a la cañería sin evidencia**.
+    ``measured_on`` es la ventana y ``measured_over`` la población con las que se
+    midió ``expected``; ``current`` y ``population`` son las de esta corrida. Si
+    alguna de las dos referencias no se declara, un desajuste no puede atribuirse y
+    sale ``INDETERMINADO``: **el default es no acusar a la cañería sin evidencia**,
+    y para acusar hacen falta los dos ejes (una corrida sobre otro universo tiene
+    la misma ventana que ésta, y aun así no dice nada de la cañería).
     """
+    # El eje categórico va primero: si el ancla se midió sobre otro universo, no
+    # hay desajuste que interpretar — ni siquiera un brazo que no corrió.
+    if (population is not None and measured_over is not None
+            and not population.same_universe_as(measured_over)):
+        return REPRO_NA, (
+            f"la referencia se midió sobre {measured_over}; esta corrida usa "
+            f"{population}. El ancla no aplica (tarea 52): re-medila sobre esta "
+            f"población si querés un sanity de reproducción acá."
+        )
     if measured is None:
         return REPRO_FAIL, "no se midió el brazo de reproducción"
     if abs(measured - expected) <= tol:
@@ -278,16 +367,36 @@ def reproduction_check(
         and current is not None
         and str(measured_on) == str(current)
     )
+    same_population = (
+        population is not None
+        and measured_over is not None
+        and population.matches(measured_over)
+    )
     detail = f"{measured:.4f} vs {expected:.4f} esperado (tol {tol:.4f})"
-    if same_window:
-        return REPRO_FAIL, f"{detail} — MISMA ventana ({current}) ⇒ cambió la cañería"
-    movida = (f"la ventana se movió ({measured_on} → {current})" if measured_on
-              else "la referencia no declara sobre qué ventana se midió")
+    if same_window and same_population:
+        return REPRO_FAIL, (
+            f"{detail} — MISMA muestra (ventana {current} · población "
+            f"{population}) ⇒ cambió la cañería"
+        )
+    if not same_window:
+        movida = (f"la ventana se movió ({measured_on} → {current})" if measured_on
+                  else "la referencia no declara sobre qué ventana se midió")
+        return (
+            REPRO_INDETERMINATE,
+            f"{detail} — {movida}: el chequeo no distingue cañería de refresh de "
+            f"artefactos (tarea 48). Re-medí la referencia sobre la ventana actual "
+            f"({current}) antes de sacar conclusiones.",
+        )
+    cambio = (
+        f"cambió la muestra dentro del universo ({measured_over} → {population})"
+        if measured_over is not None and population is not None
+        else "la referencia no declara sobre qué población se midió"
+    )
     return (
         REPRO_INDETERMINATE,
-        f"{detail} — {movida}: el chequeo no distingue cañería de refresh de "
-        f"artefactos (tarea 48). Re-medí la referencia sobre la ventana actual "
-        f"({current}) antes de sacar conclusiones.",
+        f"{detail} — MISMA ventana ({current}) pero {cambio}: el chequeo no "
+        f"distingue cañería de cambio de muestra (tarea 52). Re-medí la referencia "
+        f"sobre esta población antes de sacar conclusiones.",
     )
 
 
@@ -312,6 +421,13 @@ class HarnessConfig:
     # Ventana efectiva de los artefactos (Tarea 48). ``None`` ⇒ el runner no la
     # declaró, y el banner lo dice en vez de callarse.
     window: "ArtifactWindow | None" = None
+
+    def population(self, n_entries: int | None = None) -> ArtifactPopulation:
+        """La población de esta corrida (Tarea 52), para el sanity de reproducción.
+
+        Sale de lo que el banner ya declara —universo y tickers cargados— más las
+        entradas, que el runner recién conoce después de armarlas."""
+        return ArtifactPopulation(self.universe_file, self.n_tickers, n_entries)
 
 
 def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE) -> str:
@@ -472,3 +588,17 @@ def announce(
 # la acción correcta ahí es **re-anclar las constantes** (re-correr y re-publicar
 # el número con la ventana nueva), no buscar un bug de cañería.
 WINDOW_REFRESH_2026_08_09 = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
+
+# Las POBLACIONES sobre las que se midieron esas mismas constantes (Tarea 52). La
+# ventana sola no alcanza para acusar a la cañería: el smoke de la 37 corrió sobre
+# el universo legacy con la ventana de siempre y los tres chequeos salieron `FALLA`
+# — misma ventana, otra muestra. Cada ancla declara ahora también su universo, y un
+# desajuste sobre otro universo sale `REPRO_NA` en vez de invalidar la corrida.
+#
+# No declaran ``n_entries`` a propósito: las entradas dependen de la config del
+# runner (``cap_days``, gates, filtros del brazo), así que compararlas contra un
+# número compartido acusaría por un desvío de config y no de muestra. Cada corrida
+# declara las suyas —``cfg.population(len(entries))``— y el helper sólo las compara
+# cuando las dos puntas las publican.
+POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 127)
+POPULATION_LEGACY_41 = ArtifactPopulation(LEGACY_UNIVERSE_FILE, 41)

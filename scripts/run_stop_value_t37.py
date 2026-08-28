@@ -28,7 +28,7 @@ Qué agrega sobre la T34
 3. **C5′** (enmienda): la tolerancia de régimen **se computa**, el gate va sobre el
    agregado de stress con IC, y las ventanas individuales no pueden bloquear. Más
    **C5′-bis**: una ventana que resuelve un efecto negativo **sube la vara de C9**.
-4. **Sanity de reproducción tri-estado** (tarea 48) contra tres celdas que la T34
+4. **Sanity de reproducción multi-estado** (tareas 48 y 52) contra tres celdas que la T34
    ya publicó con esta misma config.
 
 Sin red, sin tocar ``finanzias.db``. No toca ``engine.py``.
@@ -54,6 +54,7 @@ from analysis.exit_replay import AtrParams, max_drawdown  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    POPULATION_LIVE_ACCT2,
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
     announce,
@@ -140,7 +141,7 @@ SANITY_ORACLE_VS_RANDOM_CAGR = 0.0150
 SANITY_ORACLE_VS_RANDOM_DD = 0.0500
 SANITY_MIN_TRADE_DIFF = 0.10     # §7.4 — el desacople muerde
 
-# §7.7 (enmienda §4) — reproducción tri-estado contra tres celdas de la T34.
+# §7.7 (enmienda §4) — reproducción multi-estado contra tres celdas de la T34.
 REPRO_EXPECTED: dict[str, float] = {}     # se llena en _repro_targets()
 REPRO_TOL = 0.0005
 
@@ -829,8 +830,9 @@ def _run(argv: list[str] | None = None) -> int:
     run_tag = (f"{window}|u{args.universe}|n{len(bars_by)}|e{len(entries)}"
                f"|mp{args.max_positions}|cap{args.cap_days}|cap${args.capital:.2f}"
                f"|{EVAL_MODE}|{FILL_MODE}|g{int(LIVE_GATES)}")
-    announce(args.max_positions, args.universe, len(bars_by), window=window,
-             eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
+    cfg = announce(args.max_positions, args.universe, len(bars_by), window=window,
+                   eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES,
+                   file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
           f"ticker-años: {ticker_years(bars_by):.0f}", file=log)
     print(f"Rejilla 2-D: stop {[_m(s) for s in STOP_MULTS]} × "
@@ -856,24 +858,19 @@ def _run(argv: list[str] | None = None) -> int:
     summaries = {n: summarise(r) for n, r in results.items()}
     tails = {n: tail_stats(r) for n, r in results.items()}
 
-    # §7.7 — reproducción tri-estado contra las tres celdas de la T34.
+    # §7.7 — reproducción multi-estado contra las tres celdas de la T34.
     #
-    # `reproduction_check` es consciente de la VENTANA pero no de la POBLACIÓN,
-    # así que sobre otro universo acusaría "cambió la cañería" por algo que no es
-    # la cañería — el mismo error de categoría que la tarea 48 arregló para el
-    # calendario. Acá se lo evita en el único lugar donde se puede: la referencia
-    # se midió sobre el universo vivo, así que fuera de él el chequeo NO APLICA
-    # (y la corrida ya es smoke por el §4).
-    if wrong_universe:
-        repro = {n: ("NO APLICA",
-                     f"las anclas de la T34 se midieron sobre {LIVE_UNIVERSE_FILE}; "
-                     f"esta corrida usa {args.universe}")
-                 for n in _repro_targets()}
-    else:
-        repro = {n: reproduction_check(summaries[n]["cagr"], exp, tol=REPRO_TOL,
-                                       current=window,
-                                       measured_on=WINDOW_REFRESH_2026_08_09)
-                 for n, exp in _repro_targets().items()}
+    # El parche local que esta corrida traía —marcar NO APLICA a mano cuando el
+    # universo no era el vivo— lo hace ahora el helper compartido (tarea 52): las
+    # anclas de la T34 declaran su población y un desajuste sobre otro universo
+    # sale `REPRO_NA` en vez de acusar a la cañería.
+    pop = cfg.population(len(entries))
+    repro = {n: reproduction_check(summaries[n]["cagr"], exp, tol=REPRO_TOL,
+                                   current=window,
+                                   measured_on=WINDOW_REFRESH_2026_08_09,
+                                   population=pop,
+                                   measured_over=POPULATION_LIVE_ACCT2)
+             for n, exp in _repro_targets().items()}
 
     # 2. §6 — walk-forward de la selección.
     if args.no_walkforward:
@@ -1178,7 +1175,7 @@ def _report(summaries: dict, tails: dict, ctx: dict) -> None:
     ]
     for label, ok in rows:
         print(f"  [{'OK ' if ok else 'FALLA'}] {label}")
-    print("\n  §7.7 — reproducción tri-estado contra la T34 (tarea 48):")
+    print("\n  §7.7 — reproducción multi-estado contra la T34 (tareas 48/52):")
     for n, st in s["repro_states"].items():
         print(f"    [{st:<13}] {n:<14} {s['repro_reasons'][n]}")
 

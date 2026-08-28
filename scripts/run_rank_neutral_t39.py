@@ -43,6 +43,7 @@ from analysis.harness_config import (  # noqa: E402
     artifact_window,
     reproduction_check,
     REPRO_OK,
+    POPULATION_LIVE_ACCT2,
     WINDOW_REFRESH_2026_08_09,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
@@ -354,10 +355,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             eval_mode=EVAL_MODE, fill_mode=HARNESS_FILL_MODE,
-             live_gates=LIVE_GATES, file=log)
+    cfg = announce(args.max_positions, args.universe, len(bars_by),
+                   window=artifact_window(bars_by),
+                   eval_mode=EVAL_MODE, fill_mode=HARNESS_FILL_MODE,
+                   live_gates=LIVE_GATES, file=log)
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
           f"semillas por familia: {args.seeds}\n", file=log)
 
@@ -416,9 +417,11 @@ def main(argv: list[str] | None = None) -> int:
     repro_cagr = summarise(repro)["cagr"]
     # Tarea 48: el chequeo sabe sobre qué VENTANA se midió su referencia, así que
     # un refresh de artefactos ya no se reporta como "cambió la cañería".
+    # Tarea 52: y sobre qué POBLACIÓN, así que correrlo sobre otro universo tampoco.
     repro_state, repro_reason = reproduction_check(
         repro_cagr, SANITY_T33_CAGR, tol=SANITY_T33_TOL,
-        current=artifact_window(bars_by), measured_on=WINDOW_REFRESH_2026_08_09)
+        current=artifact_window(bars_by), measured_on=WINDOW_REFRESH_2026_08_09,
+        population=cfg.population(len(entries)), measured_over=POPULATION_LIVE_ACCT2)
 
     # §5 — sanity del instrumento.
     diff_share = trade_overlap(results[BASELINE_ARM], results[rot_name(0)])

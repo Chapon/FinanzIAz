@@ -284,7 +284,11 @@ por qué. Si un número se va a comparar contra el de otra tarea, los ejes tiene
 la diferencia tiene que estar escrita. Ver también la tarea 48 (la ventana `10y` es **rodante**,
 así que un número publicado tampoco dice contra qué **muestra** se midió).
 
-## Un número publicado no dice contra qué MUESTRA se midió (T48)
+## Un número publicado no dice contra qué MUESTRA se midió (T48 + T52)
+
+**«Muestra» son DOS ejes: *cuándo* (la ventana) y *sobre qué* (la población).** La T48 cubrió
+el primero, la T52 el segundo. Para acusar a la cañería hay que declarar **los dos**.
+
 
 Los artefactos (`data/parquet/*__10y__1d.parquet`, `data/pit_signals/`) guardan una ventana
 de 10 años **anclada al día del refresh**, no a una fecha fija: cuando se refrescan, **rueda**.
@@ -308,9 +312,17 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
 - `announce(..., window=artifact_window(bars_by))` — el banner declara la ventana efectiva.
   Es el **séptimo desvío** y ya está cableado en los 16 runners de cartera.
 - Un sanity de reproducción se escribe con `harness_config.reproduction_check(...)`, que
-  devuelve **tres** estados: `OK`, `FALLA` (misma ventana ⇒ cañería) e `INDETERMINADO`
-  (la ventana se movió ⇒ **re-anclar la constante**, no buscar un bug). `INDETERMINADO`
-  sigue bloqueando el veredicto, pero con el diagnóstico correcto.
-- Toda constante de reproducción **declara sobre qué ventana se midió**
-  (`measured_on=WINDOW_REFRESH_2026_08_09`). Sin eso, un desajuste es `INDETERMINADO`:
-  **no se acusa a la cañería sin evidencia**.
+  devuelve **cuatro** estados: `OK`, `NO APLICA` (el ancla se midió sobre **otro universo**
+  ⇒ no hay nada que reproducir; **no cuenta como OK**), `FALLA` (misma ventana **y** misma
+  población ⇒ cañería ⇒ corrida INVÁLIDA) e `INDETERMINADO` (la muestra se movió, o no se
+  sabe cuál era ⇒ **re-anclar la constante**, no buscar un bug). `INDETERMINADO` sigue
+  bloqueando el veredicto, pero con el diagnóstico correcto.
+- Toda constante de reproducción **declara sobre qué ventana y sobre qué población se midió**
+  (`measured_on=WINDOW_REFRESH_2026_08_09`, `measured_over=POPULATION_LIVE_ACCT2`). Sin las
+  dos, un desajuste es `INDETERMINADO`: **no se acusa a la cañería sin evidencia**. La
+  población de la corrida sale de `cfg.population(len(entries))` — `announce()` devuelve el
+  `cfg`, así que es una línea.
+- **El caso que motivó la T52:** el smoke de la 37 corrió sobre el universo legacy (41
+  tickers) contra anclas medidas sobre el vivo (127) **con la misma ventana**, y los tres
+  chequeos salieron `FALLA — MISMA ventana ⇒ cambió la cañería`. No había cambiado una línea.
+  Antes de escribir un sanity nuevo: preguntarse si el ancla se midió sobre **esta** muestra.

@@ -54,6 +54,7 @@ sys.path.insert(0, str(_HERE.parent))
 from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries  # noqa: E402
 from analysis.exit_replay import AtrParams  # noqa: E402
 from analysis.harness_config import (  # noqa: E402
+    ArtifactPopulation,
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -61,6 +62,8 @@ from analysis.harness_config import (  # noqa: E402
     LIVE_UNIVERSE_FILE,
     announce,
     artifact_window,
+    POPULATION_LEGACY_41,
+    POPULATION_LIVE_ACCT2,
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
     reproduction_check,
@@ -406,11 +409,16 @@ def _repro_legacy(period: str, warmup: int, cap_days: int, capital: float,
         eval_mode="close", fill_mode=LEGACY_FILL_MODE, live_gates=False,
     )
     s = summarise(res)
-    # Tarea 48 — tri-estado: la ventana de los artefactos es RODANTE, así que un
+    # Tarea 48 — multi-estado: la ventana de los artefactos es RODANTE, así que un
     # desajuste puede venir de la cañería o de un refresh, y hay que distinguirlo.
+    # Tarea 52 — este brazo corre sobre el universo LEGACY a propósito (es la config
+    # publicada de la T11b), así que su ancla declara esa población y no la viva.
     state, reason = reproduction_check(
         s["cagr"], REPRO_LEGACY_CAGR, tol=REPRO_TOL,
-        current=current_window, measured_on=WINDOW_REFRESH_2026_08_09)
+        current=current_window, measured_on=WINDOW_REFRESH_2026_08_09,
+        population=ArtifactPopulation(REPRO_LEGACY_UNIVERSE, len(bars_by),
+                                      len(entries)),
+        measured_over=POPULATION_LEGACY_41)
     sharpe_ok = (s["sharpe"] is not None
                  and abs(s["sharpe"] - REPRO_LEGACY_SHARPE) <= REPRO_SHARPE_TOL)
     ok = state == REPRO_OK and sharpe_ok
@@ -457,9 +465,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos",
               file=sys.stderr)
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by), eval_mode=EVAL_MODE,
-             fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
+    cfg = announce(args.max_positions, args.universe, len(bars_by),
+                   window=artifact_window(bars_by), eval_mode=EVAL_MODE,
+                   fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
 
     # ── Población A: el marco de la T11b ─────────────────────────────────────
     entries_by = {
@@ -601,7 +609,9 @@ def main(argv: list[str] | None = None) -> int:
     window = artifact_window(bars_by)
     live_state, live_reason = reproduction_check(
         cand_sum["cagr"], REPRO_LIVE_CAGR, tol=REPRO_TOL,
-        current=window, measured_on=WINDOW_REFRESH_2026_08_09)
+        current=window, measured_on=WINDOW_REFRESH_2026_08_09,
+        population=cfg.population(len(cand_entries)),
+        measured_over=POPULATION_LIVE_ACCT2)
     repro: dict = {
         "live_cagr": cand_sum["cagr"],
         "live_ok": live_state == REPRO_OK,

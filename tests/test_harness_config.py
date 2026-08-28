@@ -11,9 +11,13 @@ Cubre:
   verdict_max_positions      — el aviso de reproducibilidad cuando el default nuevo
                                no reproduce el veredicto publicado
   announce                   — imprime y devuelve la config
+  reproduction_check         — los cuatro estados: la ventana rodante de los
+                               artefactos (T48) y la población sobre la que se midió
+                               el ancla (T52), que son los dos ejes de "misma muestra"
   defaults de los runners    — regresión: ningún harness vuelve a heredar en
                                silencio los 5 slots de la cuenta pausada ni el fill
-                               look-ahead de la barrera decidida al close
+                               look-ahead de la barrera decidida al close, y ningún
+                               ancla de reproducción vuelve a ser ciega a la muestra
   refresh_live_universe      — filtra la watchlist por artefacto PIT disponible
 """
 
@@ -31,13 +35,18 @@ from analysis.harness_config import (
     LIVE_ACCOUNT_ID,
     LIVE_MAX_POSITIONS,
     LIVE_WATCHLIST_SIZE,
+    POPULATION_LEGACY_41,
+    POPULATION_LIVE_ACCT2,
     REPRO_FAIL,
     REPRO_INDETERMINATE,
+    REPRO_NA,
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
+    ArtifactPopulation,
     ArtifactWindow,
     HarnessConfig,
     announce,
+    artifact_population,
     artifact_window,
     config_banner,
     deviations,
@@ -68,6 +77,16 @@ PORTFOLIO_RUNNERS = [
 REPLAY_RUNNERS = PORTFOLIO_RUNNERS + [
     "run_scaleout_replay_t7.py",
     "run_stop_price_replay_t26b.py",
+]
+
+# Los runners que anclan un sanity de reproducción contra un número publicado, o
+# sea los que la tarea 52 barrió para que declaren también su POBLACIÓN.
+REPRO_ANCHOR_RUNNERS = [
+    "run_stop_value_t37.py",
+    "run_rank_neutral_t39.py",
+    "run_anom_profile_t45.py",
+    "run_stop_price_redecide_t47.py",
+    "run_prio_event_t49.py",
 ]
 
 
@@ -362,6 +381,9 @@ def test_artifact_window_is_computed_from_the_bars_without_io():
 
 _W_HOY = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
 _W_VIEJA = ArtifactWindow("2016-06-20", "2026-07-19", 2514)
+_LIVE_U = "data/harness_universe_live_acct2.txt"
+_P_VIVO = ArtifactPopulation(_LIVE_U, 127)
+_P_LEGACY = ArtifactPopulation("data/harness_universe_41_10y.txt", 41)
 
 
 def test_reproduction_ok_when_the_number_reproduces():
@@ -370,11 +392,13 @@ def test_reproduction_ok_when_the_number_reproduces():
     assert st == REPRO_OK
 
 
-def test_reproduction_fails_only_when_the_window_is_the_same():
+def test_reproduction_fails_only_when_the_whole_sample_is_the_same():
     """MISMA muestra + número distinto ⇒ cambió la cañería, que es lo que el sanity
-    existe para detectar. Ahí sí corresponde invalidar la corrida."""
+    existe para detectar. Ahí sí corresponde invalidar la corrida. Desde la tarea 52
+    "misma muestra" son **los dos ejes**: misma ventana y misma población."""
     st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_HOY)
+                                 measured_on=_W_HOY,
+                                 population=_P_VIVO, measured_over=_P_VIVO)
     assert st == REPRO_FAIL
     assert "cañería" in why
 
@@ -408,3 +432,107 @@ def test_a_missing_measurement_is_a_failure_not_an_indeterminate():
 def test_the_anchor_constant_matches_the_measured_window():
     """Las constantes de reproducción de los runners están ancladas a esta ventana."""
     assert str(WINDOW_REFRESH_2026_08_09) == "2016-07-11..2026-08-07 (2514 barras)"
+
+
+# ── Población (Tarea 52 — REPRO-POP) ─────────────────────────────────────────
+
+
+def test_artifact_population_counts_the_tickers_that_loaded():
+    """La población sale de las barras que **cargaron**, no de lo que el archivo de
+    universo pretendía — que es lo mismo que el banner ya declara."""
+    pop = artifact_population("u.txt", {"A": [1], "B": [2]}, n_entries=7)
+    assert (pop.universe_file, pop.n_tickers, pop.n_entries) == ("u.txt", 2, 7)
+    assert str(pop) == "u.txt (2 tickers, 7 entradas)"
+    assert str(artifact_population("u.txt", n_tickers=41)) == "u.txt (41 tickers)"
+
+
+def test_entries_are_compared_only_when_both_sides_declare_them():
+    """Las anclas compartidas no declaran ``n_entries`` (dependen de la config del
+    runner), así que compararlas contra las de la corrida acusaría por un desvío de
+    config y no de muestra."""
+    ancla = ArtifactPopulation("u.txt", 127)
+    assert ancla.matches(ArtifactPopulation("u.txt", 127, 3210))
+    assert ArtifactPopulation("u.txt", 127, 3210).matches(ancla)
+    assert not ArtifactPopulation("u.txt", 127, 3210).matches(
+        ArtifactPopulation("u.txt", 127, 2999))
+
+
+def test_another_universe_is_not_applicable_not_a_failure():
+    """EL punto de la tarea 52: el smoke de la 37 corrió sobre el universo legacy
+    (41 tickers) contra anclas medidas sobre el vivo (127) **con la misma ventana**,
+    y los tres chequeos salieron `FALLA — MISMA ventana ⇒ cambió la cañería`. No
+    había cambiado ninguna línea de la cañería: cambió la muestra. Un `FALLA`
+    invalida la corrida entera, así que el defecto puede matar una corrida buena."""
+    st, why = reproduction_check(0.0693, 0.0201, tol=0.0005, current=_W_HOY,
+                                 measured_on=_W_HOY,
+                                 population=_P_LEGACY, measured_over=_P_VIVO)
+    assert st == REPRO_NA
+    assert "cañería" not in why and "tarea 52" in why
+
+
+def test_not_applicable_wins_over_a_number_that_happens_to_match():
+    """Sobre otra población el ancla no aplica, y que el número coincida es
+    coincidencia: sigue sin haber reproducción que reportar."""
+    st, _ = reproduction_check(0.0201, 0.0201, tol=0.0005, current=_W_HOY,
+                               measured_on=_W_HOY,
+                               population=_P_LEGACY, measured_over=_P_VIVO)
+    assert st == REPRO_NA
+
+
+def test_not_applicable_does_not_count_as_ok():
+    """El estado nuevo no es un pase libre: los runners leen ``== REPRO_OK``, así que
+    una corrida cuyo sanity no aplica no reprodujo nada y no puede dictar veredicto
+    por ese lado (es lo que el parche local de la 37 hacía a mano)."""
+    assert REPRO_NA != REPRO_OK
+
+
+def test_a_sample_change_inside_the_same_universe_is_indeterminate():
+    """Mismo universo pero otras entradas: no es otra población —el ancla sigue
+    aplicando— pero tampoco es la misma muestra, así que no alcanza para acusar."""
+    st, why = reproduction_check(
+        0.1277, 0.1289, tol=0.0005, current=_W_HOY, measured_on=_W_HOY,
+        population=ArtifactPopulation(_LIVE_U, 127, 3210),
+        measured_over=ArtifactPopulation(_LIVE_U, 127, 2999))
+    assert st == REPRO_INDETERMINATE
+    assert "cambió la muestra dentro del universo" in why
+
+
+def test_an_undeclared_population_never_accuses_the_pipeline():
+    """Mismo default conservador que la ventana: para acusar hacen falta los dos
+    ejes declarados. Antes de la 52 esto salía `FALLA`."""
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
+                                 measured_on=_W_HOY)
+    assert st == REPRO_INDETERMINATE
+    assert "no declara sobre qué población" in why
+
+
+def test_a_moved_window_is_reported_as_the_window_even_with_populations():
+    """Cuando se mueven los dos ejes manda la ventana: es la explicación más barata
+    (un refresh de artefactos) y la que trae la instrucción de re-anclar."""
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
+                                 measured_on=_W_VIEJA,
+                                 population=_P_VIVO, measured_over=_P_VIVO)
+    assert st == REPRO_INDETERMINATE
+    assert "la ventana se movió" in why
+
+
+def test_the_anchor_populations_match_the_universe_files_on_disk():
+    """Las anclas de los runners se midieron sobre estos universos. Si alguien
+    refresca uno, esto falla: la acción correcta es **re-anclar las constantes**
+    (re-correr y re-publicar el número), no cambiar el conteo a mano."""
+    from scripts.precompute_pit_signals import parse_universe_file
+
+    for pop in (POPULATION_LIVE_ACCT2, POPULATION_LEGACY_41):
+        tickers = parse_universe_file(_REPO / pop.universe_file)
+        assert len(tickers) == pop.n_tickers, pop.universe_file
+        assert pop.n_entries is None
+
+
+@pytest.mark.parametrize("script", REPRO_ANCHOR_RUNNERS)
+def test_a_runner_with_live_anchors_declares_its_population(script):
+    """Regresión del barrido de la 52: un runner que ancla contra un número
+    publicado tiene que declarar **sobre qué población** se midió ese número. Sin
+    ``measured_over`` el chequeo vuelve a ser ciego a la muestra."""
+    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
+    assert txt.count("reproduction_check(") == txt.count("measured_over="), script
+    assert txt.count("reproduction_check(") == txt.count("population="), script
