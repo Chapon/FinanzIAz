@@ -253,6 +253,45 @@ control) en vez de ser un `pp` elegido a mano: así el umbral escala solo con la
 resultó innecesaria: el sanity original habría pasado. La enmienda mejoró el criterio pero no
 rescató nada, y el veredicto lo dice así.)*
 
+## Antes de barrer un parámetro de SALIDA, medí la POBLACIÓN que toca (T13 → T51)
+
+Un tope de tenencia, un time stop, una barrera nueva: todos se pre-registran con una grilla, y
+la grilla **tiene que salir de la distribución de tenencia**, medida **antes** de congelar. En la
+cuenta viva (127 tickers, 10 slots) esa distribución es:
+
+media **8,0** ruedas · p50 **7** · p75 **11** · p90 **16** · p95 **19** · p99 **25** · **máx 37**
+
+| tope N | trades tocados (de 2.509) |
+|--:|--:|
+| 10 | 809 (**32%**) |
+| 15 | 324 (**13%**) |
+| 20 | 98 (3,9%) |
+| 30 | **6** (0,24%) |
+| 40 y 60 | **0** (0,00%) |
+
+En la T51 **un tercio de la grilla pre-registrada era inerte**: los brazos de 40 y 60 ruedas dan
+`Δ = 0.0000` porque son **literalmente el mismo brazo** que el baseline. Y lo que cierra las
+posiciones es el flip de señal (**48,5%**) más las barreras ATR (**51,2%**); el `cap_days=250` del
+harness dispara en el **0,36%**.
+
+**Tres reglas que salen de ahí:**
+
+1. **Correr la distribución de tenencia del baseline ANTES de elegir la grilla.** Un brazo que no
+   toca ningún trade no es "no significativo": es el baseline con otro nombre, y ocupa un lugar en
+   la grilla, en el walk-forward y en el costo de multiplicidad.
+2. **Un acuerdo perfecto de walk-forward no es evidencia si la regla casi no se ejecuta.** En la
+   T51 el walk-forward eligió `N=30` en **5/5 folds** — sobre **seis trades**. Fuera de muestra el
+   procedimiento dio **el mismo dígito** que el baseline (1.89% vs 1.89%). **Mirar la población
+   antes que el acuerdo.**
+3. **Reusar el sanity de población de la T13** (`≥5%` de los trades alcanzados por la regla). Un
+   brazo por debajo se reporta **«sin población» — sin poder, NO refutado**. Confundir las dos
+   cosas es lo que hizo que el enunciado de la T51 casi descartara la tarea (tarea 57).
+
+**Y el corolario del oráculo:** a una tasa de intervención muy baja, el oráculo con **presciencia
+perfecta pierde contra el baseline** (T51: 2.93% vs 3.23%). Cuando el techo de la intervención está
+por debajo del piso, el resultado del candidato **no es interpretable a esa tasa** — es el caso
+extremo de la lección de la 49 de acá arriba.
+
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 
 Cuando un brazo **elige un subconjunto** —qué stops saltear (T26), a qué candidatos darles el

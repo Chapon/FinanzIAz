@@ -241,7 +241,7 @@ def test_no_population_is_not_a_no_ship():
     población el brazo está SIN PODER, y decir «no funciona» es leer al revés lo
     que la T13 publicó."""
     out = outcome_of({"ship": False}, {"ship": False},
-                     {"b_ok": False, "a_ok": False})
+                     {"b_ok": False, "a_ok": False}, sanity_valid=True)
     assert "SIN POBLACIÓN" in out and "no refutado" in out
     assert "NO-SHIP" not in out
 
@@ -249,16 +249,47 @@ def test_no_population_is_not_a_no_ship():
 def test_shipping_a_warns_about_the_wiring_cost():
     """§7: el detector no corre en el engine vivo, así que un SHIP de A no es
     cableable sin construir esa cañería."""
-    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK)
+    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK,
+                     sanity_valid=True)
     assert "SHIP A" in out and "cañería" in out
 
 
 def test_shipping_b_says_it_was_the_tenure_not_the_event():
-    out = outcome_of({"ship": False, "c1_dcagr": True}, {"ship": True}, _POP_OK)
+    out = outcome_of({"ship": False, "c1_dcagr": True}, {"ship": True}, _POP_OK,
+                     sanity_valid=True)
     assert "SHIP B" in out and "no era el evento" in out.lower()
 
 
 def test_both_failing_c1_refutes_the_hypothesis_with_power():
     out = outcome_of({"ship": False, "c1_dcagr": False, "c6_dose": True},
-                     {"ship": False, "c1_dcagr": False, "c6_dose": True}, _POP_OK)
+                     {"ship": False, "c1_dcagr": False, "c6_dose": True}, _POP_OK,
+                     sanity_valid=True)
     assert "refutada CON PODER" in out
+
+def test_a_failed_sanity_invalidates_the_run_over_every_criterion():
+    """§5: si falla un sanity la corrida es INVÁLIDA y **no hay veredicto** — aunque
+    los dos candidatos pasen todo. Es el molde de la 45/47/49, que este runner no
+    tenía: sin la guarda, un SHIP podía publicarse sobre una corrida caída."""
+    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK,
+                     sanity_valid=False)
+    assert "CORRIDA INVÁLIDA" in out
+    assert "SHIP" not in out
+
+
+def test_invalid_without_population_names_the_cause():
+    """Cuando la invalidez viene de que no hay a quién capar, el diagnóstico lo dice:
+    mandar a buscar un bug en la cañería sería el error que la 48 y la 52 arreglaron
+    por los otros dos ejes."""
+    out = outcome_of({"ship": False}, {"ship": False},
+                     {"b_ok": False, "a_ok": False}, sanity_valid=False)
+    assert "CORRIDA INVÁLIDA" in out and "§5.2" in out
+
+
+def test_outcome_of_requires_declaring_the_sanity():
+    """El keyword es obligatorio: un llamador no puede publicar prosa de veredicto
+    sin declarar si la corrida se sostiene."""
+    import pytest
+
+    with pytest.raises(TypeError):
+        outcome_of({"ship": True}, {"ship": True}, _POP_OK)
+

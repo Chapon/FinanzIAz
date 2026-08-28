@@ -306,8 +306,23 @@ def evaluate_a(base: dict, cand: dict, b_cand: dict, controls: list[dict],
             "c8_regime": c8_ok, "c9_beats_uncond": c9, "ship": ship}
 
 
-def outcome_of(a: dict, b: dict, pop: dict) -> str:
-    """La prosa del §6, resuelta ex ante para cada desenlace."""
+def outcome_of(a: dict, b: dict, pop: dict, *, sanity_valid: bool) -> str:
+    """La prosa del §6, resuelta ex ante para cada desenlace.
+
+    ``sanity_valid`` es **keyword obligatorio** a propósito: el §5 dice que si falla
+    un sanity la corrida es INVÁLIDA y **no hay veredicto**, así que un llamador que
+    se lo olvide no puede publicar un SHIP sobre una corrida que no se sostiene — el
+    molde de la 45, la 47 y la 49, que este runner no tenía.
+    """
+    if not sanity_valid:
+        # Sin población la invalidez no es un misterio de cañería: el oráculo del cap
+        # y las semillas del control se quedan sin sobre qué moverse. Decirlo evita
+        # mandar a buscar un bug donde lo que falta es el objeto de la regla.
+        why = ("" if (pop["b_ok"] or pop["a_ok"]) else
+               " La causa está a la vista en el §5.2: sin población, ni el oráculo "
+               "del cap ni las semillas del control tienen a quién capar.")
+        return ("CORRIDA INVÁLIDA — falló un sanity del §5. No hay veredicto y no se "
+                "re-especifica nada (precedente T26)." + why)
     if not pop["b_ok"] and not pop["a_ok"]:
         return ("SIN POBLACIÓN — menos del 5% de los trades del baseline llega al "
                 "tope. El brazo está SIN PODER, no refutado (mismo diagnóstico que "
@@ -691,7 +706,10 @@ def main(argv: list[str] | None = None) -> int:
         vb["ship"] = False
     if not pop["a_ok"]:
         va["ship"] = False
-    outcome = outcome_of(va, vb, pop)
+    # §5: un sanity caído invalida la corrida entera, y eso manda sobre los criterios.
+    if not sanity["valid"]:
+        vb["ship"] = va["ship"] = False
+    outcome = outcome_of(va, vb, pop, sanity_valid=sanity["valid"])
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -812,6 +830,7 @@ def _report(ctx: dict) -> None:
     print("\n  §6 — CANDIDATO A (tope condicionado al evento):")
     _crit(ctx["verdict_a"])
 
+    print(f"\n  corrida {'VÁLIDA' if sn['valid'] else 'INVÁLIDA'}")
     print(f"\n  VEREDICTO: {ctx['outcome']}")
     print("=" * 78)
 
