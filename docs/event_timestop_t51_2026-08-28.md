@@ -176,3 +176,25 @@ sin población.
      **pierde** contra el baseline: el techo de la intervención está por debajo del piso. Es la
      familia de la lección de la 49 (*el poder del oráculo escala con la tasa de la intervención*),
      ahora con el caso extremo.
+
+---
+
+## 7. Hallazgos anotados como tarea (regla 6)
+
+- **58 — `GRIDPOP`** (abierta): la grilla se congeló sin mirar la distribución de tenencia, así que
+  un tercio de ella era inerte y el walk-forward "acordó" 5/5 sobre seis trades. Es el §2 y el §4.1
+  de este documento. Se le sumó un matiz: el Δ **negativo** del tramo con población se publicó **sin
+  intervalo** —el bootstrap del pre-registro corre sólo en el `N*`—, así que *"donde hay población el
+  tope cuesta"* es evidencia descriptiva, **todavía no un NO-SHIP con poder**.
+- **59 — `HARNESS-CONCURRENT`** (abierta): al retomar esta tarea, la corrida cortada de la sesión
+  anterior **seguía viva** y las dos escribieron el mismo `--cache-dir` y los mismos
+  `docs/_t51_run.*`. `SimCache` usa un `.tmp` de **nombre fijo por tag**, así que dos procesos
+  simultáneos sobre el mismo tag pueden publicar un pickle mezclado, y nada lo detecta después. Se
+  descartó el cache (`.cache/t51_dirty_20260828`) y se re-corrió de cero con **un solo proceso**: la
+  corrida limpia dio **idéntica campo por campo**, así que este veredicto **no está contaminado**.
+- **60 — `T51-VALIDGUARD`** (cerrada al encontrarla): `outcome_of` no consultaba `sanity["valid"]`,
+  así que podía imprimir un `SHIP` sobre una corrida que el §5 declara INVÁLIDA — la guarda que sí
+  tienen los runners de la 45, la 47 y la 49. Ahora `sanity_valid` es **keyword obligatorio**, con
+  tres tests. **Por eso el título de este documento dice INVÁLIDA y no sólo «sin población»**: el
+  runner lo imprime. La re-corrida con el parche salió `122 reusadas · 0 nuevas` — no movió un
+  número.
