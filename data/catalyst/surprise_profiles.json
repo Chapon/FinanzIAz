@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-08-17T00:14:17.695765+00:00",
+    "built_at": "2026-08-27T14:50:32.715101+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -73,10 +73,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0417,
-      "mean_surprise": 0.088635,
+      "mean_surprise": 0.088305,
       "median_surprise": 0.074737,
-      "last_surprise": 0.098551,
-      "directional_score": 0.5959
+      "last_surprise": 0.090647,
+      "directional_score": 0.5956
     },
     "AVGO": {
       "ticker": "AVGO",
@@ -125,7 +125,7 @@
       "miss_rate": 0.0417,
       "mean_surprise": 0.18284,
       "median_surprise": 0.128182,
-      "last_surprise": 0.239617,
+      "last_surprise": 0.5,
       "directional_score": 0.6963
     },
     "CSCO": {
@@ -183,10 +183,10 @@
       "n_quarters": 24,
       "beat_rate": 0.8333,
       "miss_rate": 0.1667,
-      "mean_surprise": 0.03899,
+      "mean_surprise": 0.037304,
       "median_surprise": 0.015674,
-      "last_surprise": 0.005865,
-      "directional_score": 0.4312
+      "last_surprise": 0.040169,
+      "directional_score": 0.4298
     },
     "IBM": {
       "ticker": "IBM",
@@ -213,10 +213,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.125,
-      "mean_surprise": 0.16094,
+      "mean_surprise": 0.145214,
       "median_surprise": 0.101678,
-      "last_surprise": 0.018298,
-      "directional_score": 0.5788
+      "last_surprise": 0.122563,
+      "directional_score": 0.5662
     },
     "KLAC": {
       "ticker": "KLAC",
@@ -253,10 +253,10 @@
       "n_quarters": 24,
       "beat_rate": 1.0,
       "miss_rate": 0.0,
-      "mean_surprise": 0.06195,
+      "mean_surprise": 0.052427,
       "median_surprise": 0.037288,
-      "last_surprise": 0.020202,
-      "directional_score": 0.6496
+      "last_surprise": 0.042654,
+      "directional_score": 0.6419
     },
     "LRCX": {
       "ticker": "LRCX",
@@ -371,12 +371,12 @@
     "NVDA": {
       "ticker": "NVDA",
       "n_quarters": 24,
-      "beat_rate": 0.8333,
+      "beat_rate": 0.875,
       "miss_rate": 0.0417,
-      "mean_surprise": 0.084221,
+      "mean_surprise": 0.086813,
       "median_surprise": 0.08,
-      "last_surprise": 0.056497,
-      "directional_score": 0.5424
+      "last_surprise": 0.062201,
+      "directional_score": 0.5695
     },
     "ON": {
       "ticker": "ON",
@@ -443,10 +443,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.125,
-      "mean_surprise": 0.139478,
+      "mean_surprise": 0.133815,
       "median_surprise": 0.086749,
-      "last_surprise": 0.16763,
-      "directional_score": 0.5616
+      "last_surprise": 0.364103,
+      "directional_score": 0.5571
     },
     "SBUX": {
       "ticker": "SBUX",
@@ -475,18 +475,18 @@
       "miss_rate": 0.25,
       "mean_surprise": 0.097719,
       "median_surprise": 0.100766,
-      "last_surprise": 0.171233,
+      "last_surprise": 0.5,
       "directional_score": 0.3782
     },
     "TJX": {
       "ticker": "TJX",
       "n_quarters": 24,
-      "beat_rate": 0.8333,
-      "miss_rate": 0.125,
-      "mean_surprise": 0.064696,
-      "median_surprise": 0.060124,
-      "last_surprise": 0.166667,
-      "directional_score": 0.4768
+      "beat_rate": 0.875,
+      "miss_rate": 0.0833,
+      "mean_surprise": 0.086674,
+      "median_surprise": 0.069694,
+      "last_surprise": 0.142857,
+      "directional_score": 0.5443
     },
     "TSLA": {
       "ticker": "TSLA",
@@ -511,22 +511,22 @@
     "TXN": {
       "ticker": "TXN",
       "n_quarters": 24,
-      "beat_rate": 0.875,
-      "miss_rate": 0.125,
-      "mean_surprise": 0.097023,
+      "beat_rate": 0.8333,
+      "miss_rate": 0.1667,
+      "mean_surprise": 0.096661,
       "median_surprise": 0.080884,
       "last_surprise": 0.103093,
-      "directional_score": 0.5276
+      "directional_score": 0.4773
     },
     "WMT": {
       "ticker": "WMT",
       "n_quarters": 24,
       "beat_rate": 0.7917,
       "miss_rate": 0.125,
-      "mean_surprise": 0.070528,
+      "mean_surprise": 0.065455,
       "median_surprise": 0.06095,
-      "last_surprise": 0.0,
-      "directional_score": 0.4564
+      "last_surprise": 0.094595,
+      "directional_score": 0.4524
     }
   }
 }
