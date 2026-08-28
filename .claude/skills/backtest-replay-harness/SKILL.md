@@ -292,6 +292,22 @@ perfecta pierde contra el baseline** (T51: 2.93% vs 3.23%). Cuando el techo de l
 por debajo del piso, el resultado del candidato **no es interpretable a esa tasa** — es el caso
 extremo de la lección de la 49 de acá arriba.
 
+**El instrumento, para que no dependa de acordarse (T58):**
+
+```python
+from analysis.harness_config import announce_grid
+
+# apenas hay baseline, ANTES de correr los brazos y el walk-forward
+grid_pop = announce_grid([t.held_days for t in base_res.trades], GRID_N, file=log)
+grid_pop.viable   # los valores con población: los que el walk-forward debería recorrer
+```
+
+Imprime la distribución (media/p25/p50/p75/p90/p95/p99/máx) y, por cada valor de la grilla, cuántos
+trades toca — marcando **INERTE** (0 trades: es el baseline con otro nombre) y **sin población**
+(bajo el 5% de la T13). Es el par de `announce()`: aquél declara la **config** antes de simular,
+éste declara la **muestra de la grilla** antes de elegir el brazo. Sólo imprime: no filtra la grilla
+sola, porque sacar brazos después de congelar el pre-registro sería re-especificar.
+
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 
 Cuando un brazo **elige un subconjunto** —qué stops saltear (T26), a qué candidatos darles el

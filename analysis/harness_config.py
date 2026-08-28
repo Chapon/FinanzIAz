@@ -51,7 +51,10 @@ Es lógica pura (stdlib): sin red, sin DB. Los valores se refrescan con
 
 from __future__ import annotations
 
+import math
+import statistics
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TextIO
 
@@ -578,6 +581,196 @@ def announce(
     )
     print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
     return cfg
+
+
+# ── Población de la grilla — Tarea 58 (GRIDPOP) ──────────────────────────────
+#
+# La 51 congeló una grilla de topes de tenencia sin haber medido nunca cuántos
+# trades de la cuenta viva llegan a esos valores, y **un tercio de la grilla era
+# inerte**: los brazos de 40 y 60 ruedas daban ``Δ = 0.0000`` porque ningún trade
+# pasa de **37**. Un brazo así no es "no significativo": es **el baseline con otro
+# nombre**, y ocupa lugar en la grilla, en el walk-forward y en el costo de
+# multiplicidad. Lo más caro fue lo otro: el walk-forward eligió ``N=30`` con
+# acuerdo **5/5 folds** sobre **seis trades de 2.509**, y fuera de muestra devolvió
+# el mismo dígito que el baseline. **Un acuerdo perfecto no es evidencia si la
+# regla casi no se ejecuta** (``docs/event_timestop_t51_2026-08-28.md`` §2 y §4.1).
+#
+# El umbral es el de la **T13**, reusado tal cual: por debajo del 5% de los trades
+# alcanzados el brazo se reporta **«sin población» — sin poder, NO refutado**.
+GRID_MIN_POPULATION = 0.05
+
+
+def _nearest_rank(ordenados: "Sequence[float]", q: float) -> float:
+    """Percentil por *nearest-rank*: sin numpy y sin interpolar entre trades.
+
+    Interpolar inventaría una tenencia que ningún trade tuvo, y acá el número se
+    usa para decidir qué valores de la grilla tienen población."""
+    idx = math.ceil(q * len(ordenados)) - 1
+    return ordenados[min(max(idx, 0), len(ordenados) - 1)]
+
+
+def _fmt_value(v: float) -> str:
+    return f"{int(v)}" if float(v).is_integer() else f"{v:.2f}"
+
+
+@dataclass(frozen=True)
+class GridArm:
+    """Un valor de la grilla y **a cuántos trades del baseline llegaría a tocar**."""
+
+    value: float
+    n_hit: int
+    share: float
+    min_share: float = GRID_MIN_POPULATION
+
+    @property
+    def inert(self) -> bool:
+        """No toca **ningún** trade ⇒ no es un brazo, es el baseline renombrado."""
+        return self.n_hit == 0
+
+    @property
+    def underpowered(self) -> bool:
+        """Toca algo, pero menos que el umbral de la T13 ⇒ **«sin población»**.
+
+        Se distingue de ``inert`` a propósito: un brazo inerte hay que **sacarlo**
+        de la grilla; uno sin población se puede medir, pero su resultado no se
+        puede leer como refutación."""
+        return not self.inert and self.share < self.min_share
+
+    @property
+    def viable(self) -> bool:
+        return not self.inert and not self.underpowered
+
+
+@dataclass(frozen=True)
+class GridPopulation:
+    """La distribución que **tendría que haberse mirado antes** de congelar la grilla.
+
+    ``arms`` va en el orden en que se pasó la grilla. La regla de *tocar* es
+    monótona: un brazo con umbral ``v`` alcanza a los trades cuya medida es
+    ``>= v`` — que es exactamente lo que hace un cap duro de tenencia."""
+
+    n_trades: int
+    mean: float
+    p25: float
+    p50: float
+    p75: float
+    p90: float
+    p95: float
+    p99: float
+    maximum: float
+    arms: tuple[GridArm, ...]
+    label: str = "tenencia (ruedas)"
+
+    @property
+    def inert(self) -> tuple[GridArm, ...]:
+        return tuple(a for a in self.arms if a.inert)
+
+    @property
+    def underpowered(self) -> tuple[GridArm, ...]:
+        return tuple(a for a in self.arms if a.underpowered)
+
+    @property
+    def viable(self) -> tuple[float, ...]:
+        """Los valores que **sí** se pueden medir — los que debería recorrer el
+        walk-forward, para que el acuerdo entre folds signifique algo."""
+        return tuple(a.value for a in self.arms if a.viable)
+
+    def warnings(self) -> list[str]:
+        """Los avisos que el banner grita. Vacío ⇒ toda la grilla tiene población."""
+        out: list[str] = []
+        if self.inert:
+            vals = ", ".join(_fmt_value(a.value) for a in self.inert)
+            out.append(f"AVISO: {len(self.inert)} brazo(s) INERTE(s) ({vals}) — no tocan "
+                       f"ningún trade: son el baseline con otro nombre. Sacarlos de la "
+                       f"grilla (T58).")
+        if self.underpowered:
+            vals = ", ".join(_fmt_value(a.value) for a in self.underpowered)
+            out.append(f"AVISO: {len(self.underpowered)} brazo(s) SIN POBLACIÓN ({vals}) — "
+                       f"por debajo del {100 * GRID_MIN_POPULATION:.0f}% de la T13: un "
+                       f"resultado ahí es *sin poder, NO refutado*.")
+        if not self.viable:
+            out.append("AVISO: NINGÚN valor de la grilla tiene población — la pregunta no se "
+                       "puede medir sobre esta cartera, y un veredicto sería sobre ruido.")
+        return out
+
+    def lines(self) -> list[str]:
+        out = [f"Población de la grilla — {self.label} sobre {self.n_trades} trades "
+               f"del baseline:",
+               f"  media {self.mean:.1f} · p25 {_fmt_value(self.p25)} · "
+               f"p50 {_fmt_value(self.p50)} · p75 {_fmt_value(self.p75)} · "
+               f"p90 {_fmt_value(self.p90)} · p95 {_fmt_value(self.p95)} · "
+               f"p99 {_fmt_value(self.p99)} · MÁX {_fmt_value(self.maximum)}",
+               f"  {'valor':>8} {'trades':>8} {'población':>11}"]
+        for a in self.arms:
+            nota = ""
+            if a.inert:
+                nota = "  <- INERTE: es el baseline con otro nombre"
+            elif a.underpowered:
+                nota = f"  <- sin población (<{100 * a.min_share:.0f}%)"
+            out.append(f"  {_fmt_value(a.value):>8} {a.n_hit:>8} "
+                       f"{100 * a.share:>10.2f}%{nota}")
+        out.extend("  " + w for w in self.warnings())
+        return out
+
+    def __str__(self) -> str:
+        return "\n".join(self.lines())
+
+
+def grid_population(
+    per_trade: "Iterable[float]",
+    grid: "Iterable[float]",
+    *,
+    label: str = "tenencia (ruedas)",
+    min_share: float = GRID_MIN_POPULATION,
+) -> GridPopulation:
+    """La población de cada valor de la grilla, sobre la cartera del **baseline**.
+
+    ``per_trade`` es la medida por trade contra la que se compara la grilla — para
+    un tope de tenencia, ``[t.held_days for t in base_res.trades]``. Es pura: no
+    importa ``portfolio_sim`` ni toca el disco.
+    """
+    medidas = sorted(float(x) for x in per_trade)
+    if not medidas:
+        raise ValueError("sin trades: no hay población de grilla que medir")
+    n = len(medidas)
+    arms = []
+    for v in grid:
+        hit = sum(1 for m in medidas if m >= v)
+        arms.append(GridArm(value=v, n_hit=hit, share=hit / n, min_share=min_share))
+    return GridPopulation(
+        n_trades=n,
+        mean=statistics.fmean(medidas),
+        p25=_nearest_rank(medidas, 0.25),
+        p50=_nearest_rank(medidas, 0.50),
+        p75=_nearest_rank(medidas, 0.75),
+        p90=_nearest_rank(medidas, 0.90),
+        p95=_nearest_rank(medidas, 0.95),
+        p99=_nearest_rank(medidas, 0.99),
+        maximum=medidas[-1],
+        arms=tuple(arms),
+        label=label,
+    )
+
+
+def announce_grid(
+    per_trade: "Iterable[float]",
+    grid: "Iterable[float]",
+    *,
+    label: str = "tenencia (ruedas)",
+    min_share: float = GRID_MIN_POPULATION,
+    file: TextIO | None = None,
+) -> GridPopulation:
+    """Mide la población de la grilla, **la imprime** y la devuelve.
+
+    Es el par de ``announce()`` para el segundo momento del harness: aquél declara
+    la config **antes** de simular, éste declara la muestra de la grilla apenas hay
+    baseline y **antes** de correr los brazos y el walk-forward. Se imprime aunque
+    esté todo bien: el precedente de la 48 y la 52 es que la muestra se declara
+    siempre, no sólo cuando hay un problema.
+    """
+    pop = grid_population(per_trade, grid, label=label, min_share=min_share)
+    print("\n".join(pop.lines()) + "\n", file=file if file is not None else sys.stdout)
+    return pop
 
 
 # La ventana con la que se midieron TODAS las constantes de reproducción que hoy

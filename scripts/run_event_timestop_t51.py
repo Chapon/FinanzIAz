@@ -48,6 +48,7 @@ from analysis.harness_config import (  # noqa: E402
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
     announce,
+    announce_grid,
     artifact_window,
     reproduction_check,
 )
@@ -538,6 +539,14 @@ def main(argv: list[str] | None = None) -> int:
     results: dict[str, PortfolioResult] = {}
     results[BASELINE_ARM] = _sim(f"grid|{BASELINE_ARM}", entries, bars_by, sigs_by,
                                  **common)
+    # T58 (GRIDPOP): la población de la grilla se declara **acá**, apenas hay
+    # baseline y ANTES de correr los brazos y el walk-forward. Esta corrida es la
+    # que destapó por qué: dos de los seis valores no tocan ningún trade, y el
+    # walk-forward igual eligió uno que toca seis. Sólo imprime — no filtra la
+    # grilla ni cambia un número: cambiar los brazos sería re-especificar el
+    # pre-registro congelado.
+    grid_pop = announce_grid([t.held_days for t in results[BASELINE_ARM].trades],
+                             GRID_N, file=log)
     caps_uncond = {n: cap_for_all(n) for n in GRID_N}
     caps_event = {n: cap_for_keys(event_keys, n) for n in GRID_N}
     for n in GRID_N:
@@ -718,6 +727,14 @@ def main(argv: list[str] | None = None) -> int:
         "population": str(pop_run), "n_entries": len(entries),
         "n_event_keys": len(event_keys),
         "grid_n": list(GRID_N), "base_cap": BASE_CAP,
+        "grid_population": {
+            "n_trades": grid_pop.n_trades, "mean": grid_pop.mean,
+            "p50": grid_pop.p50, "p95": grid_pop.p95, "max": grid_pop.maximum,
+            "arms": [{"value": a.value, "n_hit": a.n_hit, "share": a.share,
+                      "inert": a.inert, "underpowered": a.underpowered}
+                     for a in grid_pop.arms],
+            "viable": list(grid_pop.viable), "warnings": grid_pop.warnings(),
+        },
         "arm_uncond": arm_u, "arm_event": arm_e,
         "wf_uncond": wf_u, "wf_event": wf_e,
         "summaries": summaries, "controls": ctrl_names,

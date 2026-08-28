@@ -19,6 +19,10 @@ Cubre:
                                look-ahead de la barrera decidida al close, y ningún
                                ancla de reproducción vuelve a ser ciega a la muestra
   refresh_live_universe      — filtra la watchlist por artefacto PIT disponible
+  grid_population            — la población de cada valor de la grilla (T58): brazos
+                               INERTES (el baseline con otro nombre) vs brazos «sin
+                               población» (<5%, el umbral de la T13), que no son lo
+                               mismo y no piden lo mismo
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from analysis.harness_config import (
+    GRID_MIN_POPULATION,
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -46,11 +51,13 @@ from analysis.harness_config import (
     ArtifactWindow,
     HarnessConfig,
     announce,
+    announce_grid,
     artifact_population,
     artifact_window,
     config_banner,
     deviations,
     exit_rule_line,
+    grid_population,
     reproduction_check,
 )
 
@@ -536,3 +543,109 @@ def test_a_runner_with_live_anchors_declares_its_population(script):
     txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
     assert txt.count("reproduction_check(") == txt.count("measured_over="), script
     assert txt.count("reproduction_check(") == txt.count("population="), script
+
+
+# ── Tarea 58 (GRIDPOP) — la población de la grilla ───────────────────────────
+#
+# La 51 congeló seis valores de tope sin mirar la distribución de tenencia y dos
+# de ellos no tocaban ningún trade. Estos tests fijan la distinción que la tarea
+# existe para hacer visible: **inerte** (sacarlo de la grilla) no es lo mismo que
+# **sin población** (medible, pero su resultado no refuta nada).
+
+
+def _tenencias(**cuantos: int) -> list[int]:
+    """``_tenencias(**{"3": 900})`` ⇒ 900 trades que duraron 3 ruedas."""
+    out: list[int] = []
+    for ruedas, n in cuantos.items():
+        out.extend([int(ruedas.lstrip("d"))] * n)
+    return out
+
+
+def test_an_arm_touches_the_trades_that_reach_it():
+    """La regla de *tocar* es ``medida >= valor``: es lo que hace un cap duro."""
+    pop = grid_population([1, 5, 5, 10, 20], [5, 10])
+    a5, a10 = pop.arms
+    assert (a5.value, a5.n_hit) == (5, 4)
+    assert (a10.value, a10.n_hit) == (10, 2)
+    assert a5.share == 4 / 5
+
+
+def test_an_arm_nobody_reaches_is_inert_not_insignificant():
+    """El hallazgo de la 51: `N=40` sobre una cartera cuya tenencia máxima es 37
+    da `Δ = 0.0000` porque **es el baseline con otro nombre**. Tiene que salir
+    marcado como INERTE, no como "no significativo"."""
+    pop = grid_population(_tenencias(d3=900, d17=220, d37=3), [10, 40])
+    diez, cuarenta = pop.arms
+    assert not diez.inert and cuarenta.inert
+    assert cuarenta.n_hit == 0
+    assert pop.viable == (10,)
+    assert any("INERTE" in w for w in pop.warnings())
+
+
+def test_underpowered_is_not_inert_and_asks_for_something_different():
+    """Un brazo por debajo del 5% de la T13 **se puede medir** — lo que no se
+    puede es leer su resultado como refutación (*sin poder, NO refutado*)."""
+    pop = grid_population(_tenencias(d3=990, d30=10), [30])
+    arm = pop.arms[0]
+    assert arm.n_hit == 10 and arm.share == 0.01
+    assert arm.underpowered and not arm.inert and not arm.viable
+    assert any("SIN POBLACIÓN" in w and "NO refutado" in w for w in pop.warnings())
+
+
+def test_the_threshold_is_the_one_the_T13_and_the_51_used():
+    """Pin de consistencia: si alguien mueve el umbral en un runner y no acá (o al
+    revés), dos partes del mismo sanity dirían cosas distintas."""
+    from scripts.run_event_timestop_t51 import SANITY_MIN_POPULATION
+
+    assert GRID_MIN_POPULATION == SANITY_MIN_POPULATION == 0.05
+
+
+def test_percentiles_are_nearest_rank_over_real_trades():
+    """Sin interpolar: un percentil tiene que ser una tenencia que **algún trade
+    tuvo**, porque de ahí sale qué valores de grilla tienen población."""
+    pop = grid_population(list(range(1, 11)), [5])
+    assert (pop.p25, pop.p50, pop.p75) == (3, 5, 8)
+    assert (pop.p90, pop.p99, pop.maximum) == (9, 10, 10)
+    assert pop.mean == 5.5
+
+
+def test_a_grid_with_population_says_nothing():
+    """El banner se imprime siempre, pero **grita** sólo cuando hay algo que
+    declarar: una grilla entera con población no tiene avisos."""
+    pop = grid_population(_tenencias(d3=500, d20=500), [3, 10, 20])
+    assert pop.warnings() == []
+    assert pop.viable == (3, 10, 20)
+
+
+def test_a_grid_that_is_entirely_dead_says_so_once_more():
+    """El caso extremo, que es el de la 51 leído en su peor forma: si **ningún**
+    valor tiene población, el problema no es el brazo elegido — es la pregunta."""
+    pop = grid_population(_tenencias(d3=1000), [10, 20, 40])
+    assert pop.viable == ()
+    assert any("NINGÚN valor" in w for w in pop.warnings())
+
+
+def test_announce_grid_prints_the_table_and_returns_it(capsys):
+    """El par de ``announce()``: aquél declara la config antes de simular, éste
+    declara la muestra de la grilla apenas hay baseline."""
+    pop = announce_grid(_tenencias(d3=900, d17=100), [10, 40], file=None)
+    out = capsys.readouterr().out
+    assert "Población de la grilla" in out and "1000 trades" in out
+    assert "INERTE" in out
+    assert pop.n_trades == 1000 and pop.maximum == 17
+
+
+def test_an_empty_portfolio_is_an_error_not_an_empty_table():
+    """Sin trades no hay población que medir, y devolver una tabla vacía dejaría
+    pasar un barrido sobre la nada."""
+    with pytest.raises(ValueError):
+        grid_population([], [10])
+
+
+def test_the_grid_runner_declares_its_grid_population():
+    """Regresión del cableado de la 58: el runner que barre una grilla de topes
+    tiene que **declararla**, igual que declara ventana (48) y población (52). Sin
+    esto el instrumento existe pero no lo llama nadie, que es exactamente cómo la
+    51 llegó a correr dos brazos inertes."""
+    txt = (_REPO / "scripts" / "run_event_timestop_t51.py").read_text(encoding="utf-8")
+    assert "announce_grid(" in txt
