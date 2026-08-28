@@ -101,3 +101,5 @@ scripts/dump_mara_5y.py
 ANALISIS_FINANZIAS.md
 HALLAZGOS_POR_ARCHIVO.md
 EJEMPLOS_REFACTOR.md
+.cache/
+docs/_t51_run.*
