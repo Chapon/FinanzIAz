@@ -49,7 +49,14 @@ def generate_portfolio_excel(
     wb = openpyxl.Workbook()
 
     # ── Sheet 1: Summary ─────────────────────────────────────────────────────
+    # `wb.active` está tipada Optional porque un Workbook sin hojas devuelve None;
+    # uno recién construido siempre tiene la activa. Se estrecha con un error
+    # explícito en vez de un `assert` (que `-O` borra): el resultado es el mismo
+    # que hoy —si fuera None, la línea siguiente reventaría con AttributeError—
+    # pero dicho, y le saca 21 errores a mypy de un solo punto.
     ws = wb.active
+    if ws is None:  # pragma: no cover — openpyxl no llega acá con un Workbook nuevo
+        raise RuntimeError("openpyxl devolvió un Workbook sin hoja activa")
     ws.title = "Portafolio"
     ws.sheet_view.showGridLines = False
 
@@ -259,9 +266,13 @@ def generate_portfolio_excel(
             if txs:
                 wt = wb.create_sheet("Transacciones")
                 wt.sheet_view.showGridLines = False
-                for col in range(1, 8):
-                    for row in range(1, len(txs) + 50):
-                        wt.cell(row, col).fill = _fill(C_BG)
+                # `row_i`/`col_i` y no `row`/`col`: más arriba, en esta misma
+                # función, `row` es la TUPLA de celdas que devuelve `iter_rows`.
+                # Reusar el nombre para un índice entero es lo que hacía chillar a
+                # mypy, y de paso confunde al leerlo.
+                for col_i in range(1, 8):
+                    for row_i in range(1, len(txs) + 50):
+                        wt.cell(row_i, col_i).fill = _fill(C_BG)
 
                 tx_headers = ["Fecha", "Ticker", "Tipo", "Cantidad", "Precio", "Comisión", "Total"]
                 for ci, h in enumerate(tx_headers, 1):
