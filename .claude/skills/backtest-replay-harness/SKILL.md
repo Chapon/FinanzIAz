@@ -42,6 +42,20 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 5. Escribir resultados en el doc, incluyendo el veredicto (ship / no-ship) y por qué.
 6. Tests offline del harness (ver `tests/` por convención de naming).
 
+### Una corrida por `--cache-dir` — ya lo impone el código (T59)
+
+`SimCache` toma un **lock de archivo exclusivo** sobre el `--cache-dir` al construirse, así que dos corridas sobre el mismo cache **no pueden arrancar juntas**: la segunda muere con código 2 y nombra pid y host de la primera. Cualquier runner que use `SimCache` lo hereda — no hay que llamarlo a mano.
+
+```
+*** ABORTA — El cache-dir .cache/t54 ya lo esta usando pid 16680 en Chapon-PC, desde … ***
+```
+
+Si aparece eso: **no borres el lock**. Es del sistema operativo, se suelta solo cuando el otro proceso termina (o muere), así que no existen locks rancios. Chequeá si esa corrida sigue viva (`Get-Process python`); si es una que quedó colgada, matala. Si querés correr algo en paralelo a propósito, usá **otro** `--cache-dir`.
+
+**De dónde salió:** cerrando la T51, una corrida cortada seguía viva cuando se lanzó la nueva; las dos escribieron el mismo cache y el mismo artefacto. Ahí se descartó el cache y se re-corrió con un proceso solo (dio idéntico, así que ese veredicto no quedó contaminado). Lo caro es que **nada lo detecta después**: el `.tmp` tenía nombre fijo por tag, y un pickle mezclado se lee como un `PortfolioResult` cualquiera y entra a un veredicto sin dejar rastro.
+
+**Lo que el lock NO cubre, dicho:** el `docs/_tNN_run.json` sale de una redirección del shell, así que el runner no conoce esa ruta. En la práctica alcanza —dos corridas de la misma tarea comparten `--cache-dir` por convención y el lock las separa antes de que ninguna escriba—, y una corrida **sin** `--cache-dir` no memoiza, o sea que no hay pickle que corromper: lo peor que queda es un JSON entrelazado, que se ve roto a simple vista. Esa es la asimetría que importa — **corrupción silenciosa vs error visible**.
+
 ## Lecciones registradas
 
 - Cross-sectional ranking (T05): **KILLED**, +0.124 ΔSharpe < umbral +0.15 → ruido. Quedó como dead-code.
