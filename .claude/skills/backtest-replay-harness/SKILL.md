@@ -48,12 +48,17 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 - Exit-veto catalyst (T-CAT-6): flag OFF por razón **medida** (ΔP/L −0.25 < +1.5), no por ceguera.
 - min_holding 3d (T6.1): única variante pre-registrada que PASÓ (+3.18 pts, DD 0.92) → shipeada en T6.4.
 
-### Cómo NO construir un brazo oráculo (T26 — costó una corrida entera)
+### Cómo NO construir un brazo oráculo (T26 y T54 — costó dos corridas enteras)
 
-El oráculo existe para probar que **el instrumento ve lo que se le pide medir**. La T26 lo especificó mal y la corrida quedó inválida con los 6 criterios pasados. Dos reglas que salen de ahí:
+El oráculo existe para probar que **el instrumento ve lo que se le pide medir**. La T26 lo especificó mal y la corrida quedó inválida con los 6 criterios pasados. Tres reglas que salen de ahí:
 
 1. **Un oráculo tiene que poder moverse en las DOS direcciones del eje.** El de la T26 sólo podía *suprimir* stops (saltearlos cuando el precio iba a rebotar), nunca *agregarlos*. Como en ese harness suprimir cuesta plata por sí solo, el brazo era **estructuralmente incapaz** de superar su umbral, por bien que eligiera. Si el oráculo sólo puede empujar hacia el lado que el eje penaliza, no está midiendo sensibilidad: está midiendo el costo de ese lado.
 2. **El umbral del oráculo va contra un control IGUALADO, no contra el baseline.** Medido en T26: suprimir al azar a la misma tasa costó **−4.20 pp**, y elegir bien valió **+2.33 pp de CAGR / −11.1 pp de maxDD**. Contra el baseline el oráculo "fallaba" (−1.87 pp); contra el control igualado se veía clarísimo que el harness **sí** distingue calidad. Un oráculo que cambia el *número* de eventos además de *cuáles* necesita su control con el mismo número.
+3. **El oráculo tiene que elegir DENTRO de la población que el brazo puede tocar (T54).** El de la 54 elegía, con presciencia perfecta, entre **todos** los candidatos del día. Pero un umbral sólo mueve a los trades cuyo excedente cae en el intervalo que corre — y como el excedente **es el techo del retorno**, "los que mejor terminan" son casi exactamente **"los inmunes al umbral"**. Resultado: el anti-oráculo salió **igual al baseline dígito por dígito** (mismas 2520 posiciones), o sea que no cambió una sola salida. Un oráculo que no puede moverse no acota nada. La construcción correcta es sobre la **población diferencial**: `k*` a la mitad peor (oráculo) y a la mitad mejor (anti-oráculo), ordenadas por el retorno realizado del baseline e igualadas en tasa por construcción.
+
+**El síntoma, para reconocerlo en el smoke:** un brazo de sanity que reproduce el baseline **al dígito** (mismo CAGR, mismas posiciones tomadas, misma tenencia) no es ruido ni un empate — es que **no hizo nada**. Ese brazo hay que rediseñarlo *antes* de la corrida completa, no leerlo después.
+
+**Y el criterio conserva su filo aunque el oráculo esté bien puesto (T54).** Si aun eligiendo con información perfecta *dentro de la población afectable* los dos oráculos no se separan, la corrida es **INVÁLIDA** y no hay veredicto — pero el hallazgo que se publica es que **ese knob no es explotable ni con presciencia perfecta**. Declararlo **antes** de correr es lo que impide que suene a racionalización. Segundo síntoma, del mismo caso: **si el candidato SUPERA a su propio oráculo, no está midiendo el mecanismo que dice medir** (T54: `k1.50` 10.73% contra 9.87% del oráculo — el +1.56 pp venía de la cascada de slots, no de la barrera).
 
 **Y la lección de lectura:** con ratio de selección alto (T26 midió **~55:1** — 143.096 candidatos BUY para 10 slots), una salida no compite contra la recuperación del propio nombre sino contra **el próximo candidato de la fila**. Toda métrica de "salimos antes de tiempo" (rebote post-salida, MFE no capturado) es engañosa si no se la pone contra el costo de oportunidad del slot.
 
@@ -307,6 +312,18 @@ trades toca — marcando **INERTE** (0 trades: es el baseline con otro nombre) y
 (bajo el 5% de la T13). Es el par de `announce()`: aquél declara la **config** antes de simular,
 éste declara la **muestra de la grilla** antes de elegir el brazo. Sólo imprime: no filtra la grilla
 sola, porque sacar brazos después de congelar el pre-registro sería re-especificar.
+
+**Y su límite, medido (T54 — tarea 62 abierta): cruzar el umbral NO es cambiar de comportamiento.**
+La población que mide `grid_population` es una **cota superior**, y puede estar muy por encima de la
+efectiva. En la 54, sobre la misma corrida: **336** trades cambian de estado de armado del trailing
+(17,98% — pasa el ≥5% con holgura) y **25** cambian de fecha o de motivo de salida. **Trece veces
+menos.** Un trailing armado que nunca dispara deja la salida idéntica, y la misma forma aparece en
+cualquier barrera condicional (el TP que no se toca, el stop que no se perfora, el cap al que otra
+salida se adelanta). O sea que un brazo puede pasar el sanity **con holgura** y no tener población
+efectiva ninguna — y su Δ chico se leería como *"el mecanismo no sirve"* cuando lo que pasa es que
+**casi no se ejecutó**. Al leer un Δ chico, contar también **las salidas que cambian** (`changed_exits`
+en `scripts/run_trail_arm_t54.py`). Ojo con el orden: eso **exige haber corrido el brazo**, así que
+es un chequeo **post-corrida** y no puede usarse para fijar la grilla antes de congelar.
 
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 
