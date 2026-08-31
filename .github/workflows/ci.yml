@@ -109,6 +109,26 @@ jobs:
         # QT_QPA_PLATFORM=offscreen: some test modules import PyQt6 at
         # collection time; without a virtual framebuffer the xcb platform
         # plugin aborts the process on headless Ubuntu (pytest exit code 3).
+        #
+        # El tail del output se emite como ``::error::`` cuando el paso falla, y
+        # eso no es cosmético: los LOGS de Actions piden autenticación, así que un
+        # job que sólo deja "Process completed with exit code 3" es indiagnosticable
+        # para quien no tenga token. La API de anotaciones sí responde sin token, y
+        # ``::error::`` escribe ahí. Tarea 65.
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -ra -m "not network"
+        run: |
+          # `set +e` es obligatorio: Actions corre los `run` con `bash -e`, así que
+          # sin esto el paso aborta en el fallo de pytest y la anotación —que es
+          # justo lo que se quiere leer— nunca se emite. `pipefail` hace que $?
+          # sea el código de pytest y no el de `tee`.
+          set +e
+          set -o pipefail
+          pytest -ra -m "not network" 2>&1 | tee pytest-output.txt
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            msg=$(tail -c 3500 pytest-output.txt \
+              | python3 -c 'import sys;print(sys.stdin.read().replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+            echo "::error title=pytest salió con $code::$msg"
+          fi
+          exit $code
