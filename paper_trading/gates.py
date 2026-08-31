@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TypeGuard
 
 import numpy as np
 import pandas as pd
@@ -271,7 +272,9 @@ def model_exit_fill_price(
     if not np.isfinite(lvl) or lvl <= 0:
         return cur
 
-    def _ok(x: float | None) -> bool:
+    def _ok(x: float | None) -> TypeGuard[float]:
+        # TypeGuard y no bool: la funcion YA comprueba el None, pero con `bool` el
+        # checker no puede saberlo y pedia un `float(...)` defensivo en cada uso.
         return x is not None and np.isfinite(x) and x > 0
 
     is_tp = str(reason).startswith("atr_tp")
@@ -506,9 +509,13 @@ def compute_vol_overlay(
         return VolOverlayResult(factor=1.0, sigma=None, scaled_weights=dict(combined_weights))
 
     if apply_fn is None:
-        from analysis.portfolio_risk import apply_portfolio_vol_overlay as apply_fn
+        from analysis.portfolio_risk import apply_portfolio_vol_overlay
 
-    scaled, sigma, factor = apply_fn(combined_weights, returns_df, vol_target_annual)
+        fn = apply_portfolio_vol_overlay
+    else:
+        fn = apply_fn
+
+    scaled, sigma, factor = fn(combined_weights, returns_df, vol_target_annual)
     return VolOverlayResult(
         factor=float(factor),
         sigma=(float(sigma) if sigma is not None else None),

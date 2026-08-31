@@ -721,11 +721,14 @@ def generate_trades_portfolio_engine(
     # Drift: any active position deviates from target by > drift_threshold.
     drift_trigger = False
     for t, w_target in target_weights.items():
-        p = held_tickers.get(t)
-        px = prices.get(t)
-        if p is None or px is None:
+        # `pos_t`/`px_t` y no `p`/`px`: esos dos nombres ya existen en esta funcion
+        # con tipo no-Optional, y aca vienen de un `.get()`. Separarlos es lo mismo
+        # que se hizo con `row`, `cand` y `raw` en otros archivos.
+        pos_t = held_tickers.get(t)
+        px_t = prices.get(t)
+        if pos_t is None or px_t is None:
             continue
-        actual_w = (p.shares * px) / portfolio_val
+        actual_w = (pos_t.shares * px_t) / portfolio_val
         if w_target <= 0:
             if actual_w > account.drift_threshold:
                 drift_trigger = True
@@ -759,13 +762,13 @@ def generate_trades_portfolio_engine(
     # ── Emit rebalance trades ────────────────────────────────────────────────
     all_tickers = set(target_dollars.keys()) | set(held_tickers.keys())
     for t in sorted(all_tickers):
-        px = prices.get(t)
-        if px is None or not np.isfinite(px) or px <= 0:
+        px_t = prices.get(t)
+        if px_t is None or not np.isfinite(px_t) or px_t <= 0:
             continue
         current = 0.0
-        p = held_tickers.get(t)
-        if p is not None:
-            current = p.shares * px
+        pos_t = held_tickers.get(t)
+        if pos_t is not None:
+            current = pos_t.shares * px_t
         target = float(target_dollars.get(t, 0.0))
         diff = target - current
         if abs(diff) < 1e-2:  # under 1¢ — ignore
@@ -788,7 +791,7 @@ def generate_trades_portfolio_engine(
             )
         else:
             # SELL — convert dollar deficit to shares for clarity
-            sell_shares = min(p.shares if p else 0.0, (-diff) / px)
+            sell_shares = min(pos_t.shares if pos_t else 0.0, (-diff) / px_t)
             if sell_shares <= 1e-9:
                 continue
             trades.append(

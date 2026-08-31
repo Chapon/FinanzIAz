@@ -26,6 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -119,6 +120,9 @@ def _price_out_of_band(ticker: str, price: float | None, side: str | None = None
 
     from config.logging_config import get_logger
 
+    # Llegado aca `is_price_out_of_band` devolvio True, y eso exige que los dos
+    # sean no-None (si falta cualquiera, hace fail-open y no llega).
+    assert price is not None and ref is not None
     entrando = str(side or "").upper() == "BUY"
     get_logger(__name__).error(
         "%s: %.4f fuera de banda vs el histórico (%.4f), pero la referencia NO es confiable — %s. %s",
@@ -372,10 +376,13 @@ from paper_trading.gates import (
     signal_sell_min_age_block,
 )
 
+if TYPE_CHECKING:  # import solo para tipos: en runtime crearia un ciclo
+    from analysis.impact_score import CatalystSignal
+
 # Provider for the T-CAT-4 exit-veto: (ticker, scan_at) -> CatalystSignal | None.
 # Injected and default None so the default trading path never builds the
 # (expensive) reaction table; the veto is also gated behind a default-OFF flag.
-CatalystSignalProvider = Callable[[str, datetime], "object | None"]
+CatalystSignalProvider = Callable[[str, datetime], "CatalystSignal | None"]
 
 
 def _is_atr_forced_exit(reason: str | None) -> bool:
@@ -641,7 +648,9 @@ def run_scan(
     t_scan_start = perf_counter()  # OPS1(c): timing por fase
 
     with session_scope() as session:
-        acct: PaperAccount = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
+        # `.first()` devuelve Optional y la linea de abajo ya lo contempla: la
+        # anotacion estricta era una promesa que el codigo no hacia.
+        acct: PaperAccount | None = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None or not acct.is_active:
             return None
         account_name = acct.name
@@ -1173,25 +1182,28 @@ def run_scan(
                     "— fill rechazado por sanity (posible cotización corrupta)."
                 )
                 continue
-            order = _fill_trade(session, acct, trade, price=fill_px, notes=buy_note)
-            if order is None:
+            # `filled` y no `order`: unas lineas mas arriba `order` es la orden
+            # PENDIENTE recien creada (no-Optional) y aca es el resultado del fill,
+            # que puede ser None. Dos cosas distintas con el mismo nombre.
+            filled = _fill_trade(session, acct, trade, price=fill_px, notes=buy_note)
+            if filled is None:
                 result.skipped += 1
                 result.warnings.append(f"{trade.ticker}: fill rechazado (cash o shares insuficientes).")
             else:
                 result.filled += 1
-                result.filled_orders.append(order.id)
+                result.filled_orders.append(filled.id)
                 # T12: capture a session-detached snapshot for the Slack summary.
                 result.new_orders.append(
                     OrderNotice(
                         account_name=account_name,
-                        ticker=order.ticker,
-                        side=order.side,
+                        ticker=filled.ticker,
+                        side=filled.side,
                         status="filled",
-                        shares=order.fill_shares,
-                        price=order.fill_price,
-                        dollars=order.fill_value,
-                        reason=order.reason,
-                        signal_score=order.signal_score,
+                        shares=filled.fill_shares,
+                        price=filled.fill_price,
+                        dollars=filled.fill_value,
+                        reason=filled.reason,
+                        signal_score=filled.signal_score,
                     )
                 )
 
