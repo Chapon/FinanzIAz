@@ -73,7 +73,7 @@ from scripts.run_event_timestop_t51 import (  # noqa: E402
 from scripts.run_rank_neutral_t39 import aligned_daily  # noqa: E402
 from scripts.run_ranking_t21 import summarise, trade_overlap  # noqa: E402
 from scripts.run_stop_cal_replay_t26 import NO_STOP  # noqa: E402
-from scripts.run_stop_value_t37 import SimCache  # noqa: E402
+from scripts.run_stop_value_t37 import CacheDirBusy, SimCache  # noqa: E402
 from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals  # noqa: E402
 
 # ── Config congelada (§3) ────────────────────────────────────────────────────
@@ -433,8 +433,15 @@ def main(argv: list[str] | None = None) -> int:
                  or args.no_sensitivity)
 
     global _CACHE
-    _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None,
-                      args.budget_seconds)
+    try:
+        _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None,
+                          args.budget_seconds)
+    except CacheDirBusy as exc:
+        # Tarea 59: morir temprano y con el culpable nombrado. Seguir seria
+        # mezclarse con la otra corrida en el cache y en el artefacto, y eso
+        # despues no se detecta.
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 2
 
     tickers = parse_universe_file(_HERE.parent / args.universe)
     bars_by, sigs_by, _missing = load_bars_signals(tickers, args.period, args.warmup)

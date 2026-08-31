@@ -51,11 +51,16 @@ Es lógica pura (stdlib): sin red, sin DB. Los valores se refrescan con
 
 from __future__ import annotations
 
+import json
 import math
+import os
+import socket
 import statistics
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TextIO
 
 # ── Cuenta viva (verificado 2026-08-12 contra paper_accounts) ────────────────
@@ -795,3 +800,145 @@ WINDOW_REFRESH_2026_08_09 = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
 # cuando las dos puntas las publican.
 POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 127)
 POPULATION_LEGACY_41 = ArtifactPopulation(LEGACY_UNIVERSE_FILE, 41)
+
+
+# ── Un solo dueño por cache-dir — Tarea 59 (HARNESS-CONCURRENT) ──────────────
+#
+# Cerrando la 51 pasó esto, en vivo: la corrida cortada de una sesion anterior
+# seguia viva cuando se lanzo la nueva. Las dos escribieron el mismo cache-dir y
+# el mismo artefacto de salida — el log quedo entrelazado (dos writers con
+# offsets propios sobre un archivo truncado) y el JSON final lo escribieron las
+# dos. Se descarto ese cache y se re-corrio con un solo proceso; la corrida
+# limpia dio identica campo por campo, asi que aquel veredicto no quedo
+# contaminado. Pero eso fue **conducta**, no defensa.
+#
+# Lo caro es que **nada lo detecta despues**: un `.pkl` mezclado se lee como un
+# `PortfolioResult` cualquiera y entra a un veredicto sin dejar rastro. Un
+# harness que memoiza no puede depender de que el operador se acuerde de mirar si
+# hay otro proceso vivo.
+#
+# La primitiva es un **lock de archivo exclusivo**, no un PID guardado: si el
+# dueño se muere —o lo matan a mitad de corrida— el sistema operativo suelta el
+# lock solo, asi que no hay locks rancios que limpiar a mano. El PID se guarda
+# aparte y **sólo para el mensaje de error**: sirve para nombrar al culpable, no
+# para decidir.
+
+
+class CacheDirBusy(RuntimeError):
+    """Otro proceso vivo ya es dueño de este ``--cache-dir``."""
+
+
+_LOCK_FILE = ".harness.lock"
+_OWNER_FILE = ".harness.owner"
+
+# Locks tomados por ESTE proceso: {ruta resuelta: file object}. Cumple dos
+# funciones — mantiene vivo el descriptor (si se lo lleva el GC, el sistema
+# operativo suelta el lock) y vuelve idempotente un segundo pedido del mismo
+# proceso sobre el mismo dir, que si no chocaria contra si mismo.
+_held_locks: dict[str, object] = {}
+
+
+def _lock_exclusive(fh) -> bool:
+    """Toma un lock exclusivo NO bloqueante sobre ``fh``. False si esta tomado."""
+    try:
+        import fcntl
+    except ImportError:
+        import msvcrt
+
+        try:
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _read_owner(cache_dir: Path) -> dict:
+    """Datos del dueño actual, o ``{}``. Se lee sin lock: es sólo para el mensaje."""
+    try:
+        return json.loads((cache_dir / _OWNER_FILE).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def describe_owner(cache_dir: "str | Path") -> str:
+    """Frase humana con quién es dueño del cache-dir (para el error y el log)."""
+    info = _read_owner(Path(cache_dir))
+    if not info:
+        return "otro proceso (sin datos de dueño)"
+    return "pid {pid} en {host}, desde {desde} — {cmd}".format(
+        pid=info.get("pid", "?"),
+        host=info.get("host", "?"),
+        desde=info.get("desde", "?"),
+        cmd=info.get("cmd", "?"),
+    )
+
+
+def lock_cache_dir(cache_dir: "str | Path") -> Path:
+    """Toma el cache-dir para este proceso, o levanta ``CacheDirBusy``.
+
+    Se suelta solo: el descriptor vive lo que vive el proceso y el sistema
+    operativo libera el lock al terminar, **incluso si la corrida se cae o la
+    matan**. Por eso no hay que limpiar nada a mano y no existen locks rancios.
+
+    Idempotente dentro del mismo proceso: pedir dos veces el mismo dir devuelve
+    el mismo lock en vez de chocar contra uno mismo.
+    """
+    d = Path(cache_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    key = str(d.resolve())
+    if key in _held_locks:
+        return d
+
+    fh = open(d / _LOCK_FILE, "a+b")
+    try:
+        fh.seek(0, os.SEEK_END)
+        if fh.tell() == 0:
+            fh.write(b"\0")
+            fh.flush()
+        if not _lock_exclusive(fh):
+            fh.close()
+            raise CacheDirBusy(
+                "El cache-dir {dir} ya lo esta usando {quien}. Dos corridas sobre "
+                "el mismo cache se pisan el `.tmp` y el artefacto, y un pickle "
+                "mezclado se lee despues como un resultado cualquiera. Usar otro "
+                "--cache-dir, o esperar a que la otra corrida termine.".format(
+                    dir=d, quien=describe_owner(d)
+                )
+            )
+    except CacheDirBusy:
+        raise
+    except OSError as exc:  # disco lleno, permisos, FS sin locks…
+        # Fail-open declarado: no poder tomar el lock no puede impedir correr un
+        # harness. Se avisa fuerte y se sigue — al reves seria un guard nuevo que
+        # rompe corridas buenas, que es el defecto que la 52 tuvo que desarmar.
+        print(
+            f"AVISO: no se pudo tomar el lock de {d} ({exc}). Se sigue sin "
+            "proteccion de concurrencia: verificar a mano que no haya otra "
+            "corrida viva sobre este cache-dir.",
+            file=sys.stderr,
+        )
+        return d
+
+    _held_locks[key] = fh
+    try:
+        (d / _OWNER_FILE).write_text(
+            json.dumps(
+                {
+                    "pid": os.getpid(),
+                    "host": socket.gethostname(),
+                    "desde": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "cmd": " ".join(sys.argv[:3]),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass  # el dueño es el lock, no el archivo: esto es sólo para el mensaje
+    return d

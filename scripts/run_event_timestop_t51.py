@@ -80,6 +80,7 @@ from scripts.run_ranking_t21 import (  # noqa: E402
 from scripts.run_regime_power_t46 import _summarise_samples  # noqa: E402
 from scripts.run_stop_value_t37 import (  # noqa: E402
     BudgetExhausted,
+    CacheDirBusy,
     SimCache,
     _prev_day,
     entries_between,
@@ -485,8 +486,15 @@ def main(argv: list[str] | None = None) -> int:
                  or args.no_sensitivity or args.seeds != CONTROL_SEEDS)
 
     global _CACHE
-    _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None,
-                      args.budget_seconds)
+    try:
+        _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None,
+                          args.budget_seconds)
+    except CacheDirBusy as exc:
+        # Tarea 59: morir temprano y con el culpable nombrado. Seguir seria
+        # mezclarse con la otra corrida en el cache y en el artefacto, y eso
+        # despues no se detecta.
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 2
 
     tickers = parse_universe_file(_HERE.parent / args.universe)
     bars_by, sigs_by, vol_by, missing, incomplete = load_bars_signals_volume(

@@ -37,13 +37,16 @@ Sin red, sin tocar ``finanzias.db``. No toca ``engine.py``.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
+import os
 import pickle
 import statistics
 import sys
 import time
+import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -57,8 +60,10 @@ from analysis.harness_config import (  # noqa: E402
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
+    CacheDirBusy,
     announce,
     artifact_window,
+    lock_cache_dir,
     reproduction_check,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
@@ -174,14 +179,42 @@ class BudgetExhausted(Exception):
     """Se acabó el presupuesto de esta invocación. Volver a correr para seguir."""
 
 
+def _tmp_for(f: Path) -> Path:
+    """Temporal **único por proceso y por llamada** para publicar ``f``.
+
+    Era ``f.with_suffix(".tmp")`` —nombre fijo por tag— y ahí estaba el punto
+    filoso de la tarea 59: dos procesos que calculan el mismo tag escriben el
+    mismo archivo y el ``replace`` publica lo que quede, sin que nada lo detecte
+    después. Mismo patrón que ``parquet_cache.write``.
+    """
+    return f.with_name(f"{f.name}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+
+
 class SimCache:
+    """Memoización de simulaciones por tag, reanudable entre invocaciones.
+
+    Tarea 59 (HARNESS-CONCURRENT): dos corridas sobre el mismo ``--cache-dir`` se
+    pisaban en silencio y podían publicar un pickle mezclado que después se lee
+    como un ``PortfolioResult`` cualquiera. Dos defensas, y las dos viven acá
+    porque acá pasan **los tres** runners de la serie — que la protección no
+    dependa de que quien escriba el próximo se acuerde:
+
+    * **El cache-dir tiene un solo dueño.** ``lock_cache_dir`` toma un lock de
+      archivo exclusivo en el constructor; si hay otra corrida viva, esta muere
+      temprano y con el culpable nombrado, en vez de mezclarse con ella.
+    * **El temporal es único por proceso.** El ``.tmp`` de nombre fijo era el
+      punto filoso: dos procesos con el mismo tag escribían el mismo archivo y el
+      ``replace`` publicaba lo que quedara. Mismo patrón que
+      ``parquet_cache.write``.
+    """
+
     def __init__(self, path: Path | None, budget_s: float | None):
         self.path = path
         self.deadline = (time.monotonic() + budget_s) if budget_s else None
         self.hits = 0
         self.misses = 0
         if self.path:
-            self.path.mkdir(parents=True, exist_ok=True)
+            lock_cache_dir(self.path)
 
     def _file(self, tag: str) -> Path | None:
         if not self.path:
@@ -199,9 +232,14 @@ class SimCache:
         res = fn()
         self.misses += 1
         if f is not None:
-            tmp = f.with_suffix(".tmp")
-            tmp.write_bytes(pickle.dumps(res))
-            tmp.replace(f)
+            tmp = _tmp_for(f)
+            try:
+                tmp.write_bytes(pickle.dumps(res))
+                tmp.replace(f)
+            finally:
+                if tmp.exists():
+                    with contextlib.suppress(OSError):
+                        tmp.unlink()
         return res
 
 
@@ -1011,6 +1049,12 @@ def main(argv: list[str] | None = None) -> int:
     """
     try:
         return _run(argv)
+    except CacheDirBusy as exc:
+        # Tarea 59: morir temprano y con el culpable nombrado. Seguir seria
+        # mezclarse con la otra corrida en el cache y en el artefacto, y eso
+        # despues no se detecta.
+        print(f"\n*** ABORTA — {exc} ***", file=sys.stderr)
+        return 2
     except BudgetExhausted as exc:
         print(f"\n*** PRESUPUESTO AGOTADO — faltaba: {exc} ***", file=sys.stderr)
         print(f"    cache: {_CACHE.hits} reusadas · {_CACHE.misses} nuevas en "
