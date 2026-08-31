@@ -58,7 +58,7 @@ dict precomputado y el filtro como callable, así los tests corren offline.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Callable
 
@@ -94,6 +94,18 @@ SizeWeight = Callable[[str, str], float]
 # (cierra a todos al llegar a N, ganadores incluidos), NO el `time_stop_days` de la
 # T13 (que dispara una sola vez en la barra N y solo si esta en perdida).
 CapDaysOf = Callable[[str, str], int]
+
+# trail_min_excess_of(ticker, date_iso10) -> umbral de ARMADO del trailing (en
+# ATRs) de esa posicion. Enabler de la Tarea 54 (TRAIL-ARM): el trailing esta
+# suprimido hasta que el HWM supere `entry + umbral x ATR`, y esta tarea pregunta
+# si ese umbral (1.0 en vivo) esta bien puesto. Que dependa de la posicion es lo
+# que permite el CONTROL igualado en tasa: bajarlo solo para un subconjunto
+# aleatorio, a la misma frecuencia que el candidato. None => el `atr_p` global de
+# siempre, asi que ningun harness previo cambia.
+#
+# Ojo: aca **0.0 es un valor valido** (trailing siempre armado), a diferencia del
+# `cap_days_of`, donde 0 no tiene sentido y se cae al global.
+TrailMinExcessOf = Callable[[str, str], float]
 
 
 @dataclass
@@ -174,6 +186,7 @@ def simulate_portfolio(
     regime_of: Callable[[str], str] | None = None,
     time_stop_days: int | None = None,
     cap_days_of: CapDaysOf | None = None,
+    trail_min_excess_of: TrailMinExcessOf | None = None,
     stop_filter: StopFilter | None = None,
     eval_mode: str = "close",
     fill_mode: str = "decision",
@@ -204,6 +217,14 @@ def simulate_portfolio(
     el simulador tenga que saber qué es un evento. **No confundirlo con
     ``time_stop_days``** (tarea 57): el cap cierra a todos al llegar a N —ganadores
     incluidos— y el time stop dispara una sola vez y sólo en pérdida.
+    ``trail_min_excess_of`` (TRAIL-ARM, Tarea 54) resuelve el **umbral de armado
+    del trailing por posición**, en ATRs sobre la entrada; ``None`` ⇒ el
+    ``atr_p.trail_min_excess_atrs`` global. Es lo que permite el **control igualado
+    en tasa**: bajarle el umbral a un subconjunto aleatorio de posiciones, a la
+    misma frecuencia que el candidato, sin que el simulador sepa qué es un
+    control. **``0.0`` es válido** (trailing siempre armado) — a diferencia del
+    ``cap_days_of``, donde un 0 no tiene sentido y se cae al global.
+
     Ídem ``stop_filter`` (brazos oráculo de STOP-CAL, Tarea 26): ``None`` ⇒ el stop
     duro dispara siempre que toque. Y ``eval_mode`` (STOP-PRICE, Tarea 26b):
     ``"close"`` ⇒ la barrera se decide contra el close, como en todas las tareas
@@ -395,9 +416,21 @@ def simulate_portfolio(
                 if isinstance(cand, (int, float)) and cand >= 1:
                     cap_i = int(cand)
 
+            # Tarea 54: el umbral de ARMADO del trailing puede depender de la
+            # posicion. Un valor no finito o negativo no es un umbral, asi que se
+            # cae al global; **0.0 si es valido** (trailing armado desde la
+            # entrada), que es justo el brazo extremo de la grilla.
+            atr_i = atr_p
+            if trail_min_excess_of is not None:
+                cand = trail_min_excess_of(ticker, entry_date)
+                if (isinstance(cand, (int, float)) and not isinstance(cand, bool)
+                        and math.isfinite(cand) and cand >= 0):
+                    if float(cand) != atr_p.trail_min_excess_atrs:
+                        atr_i = replace(atr_p, trail_min_excess_atrs=float(cand))
+
             cyc = replay_cycle(
                 bars, idx, sigs_by.get(ticker) or {},
-                params=so_params, atr_p=atr_p, cap_days=cap_i,
+                params=so_params, atr_p=atr_i, cap_days=cap_i,
                 costs=costs, notional=notional,
                 regime="" if regime_of is None else regime_of(entry_date),
                 time_stop_days=time_stop_days, stop_filter=stop_filter,

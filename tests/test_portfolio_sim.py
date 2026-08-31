@@ -14,6 +14,9 @@ Cubre:
   contadores        — offered / taken / filtered / no_slot cuadran
 
 Extensión de la Tarea 51 (EVENT-TIMESTOP):
+  trail_min_excess_of — el umbral de ARMADO del trailing POR POSICIÓN (T54), que
+                      es lo que permite el control igualado en tasa; y que 0.0 es
+                      un valor válido, no un "sin valor"
   cap_days_of       — el cap duro POR POSICIÓN, para preguntar si un tope corto
                       sirve para todas o sólo para las que entraron con evento
   cap vs time stop  — la distinción que la tarea 57 tuvo que declarar: el cap
@@ -366,3 +369,98 @@ def test_the_hard_cap_closes_winners_too_unlike_the_time_stop():
     assert capped.trades[0].exit_reason == "cap_reached"
     assert timed.trades[0].held_days == 30      # el time stop NO la toca
     assert timed.trades[0].exit_reason == "cap_reached"
+
+
+# ── trail_min_excess_of — el umbral de ARMADO por posición (Tarea 54) ────────
+#
+# El trailing está suprimido hasta que el HWM supere ``entry + umbral×ATR``
+# (``gates.py:151``, ``exit_replay.py:178``). La 54 pregunta si el 1.0 que corre
+# en vivo está bien puesto, y para eso necesita bajárselo **a un subconjunto**:
+# es el control igualado en tasa, el criterio que hizo concluyente a la 49.
+
+
+def _rise_then_fall(n: int = 60, *, peak_at: int = 20, up: float = 0.6):
+    """Sube ``up`` por barra hasta ``peak_at`` y después baja: el HWM queda
+    definido y el trailing puede dispararse en la bajada."""
+    out = []
+    px = 100.0
+    for i in range(n):
+        px += up if i <= peak_at else -up
+        out.append((_d(i), px, px + 0.5, px - 0.5, px))
+    return out
+
+
+def test_trail_min_excess_of_none_keeps_the_global_threshold():
+    """El default no cambia el comportamiento de ningún harness previo."""
+    bars = _rise_then_fall()
+    base = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60)
+    same = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60,
+                trail_min_excess_of=None)
+    assert base.trades[0].held_days == same.trades[0].held_days
+    assert base.trades[0].exit_reason == same.trades[0].exit_reason
+
+
+def test_zero_is_a_valid_threshold_not_a_missing_one():
+    """La diferencia con ``cap_days_of``, y el error natural al copiar su guarda:
+    un umbral de **0.0** significa *trailing armado desde la entrada*, que es el
+    brazo extremo de la grilla del §2 — no un valor sin sentido que deba caerse al
+    global."""
+    bars = _rise_then_fall()
+    alto = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60,
+                atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_mult=2.0,
+                                trail_min_excess_atrs=20.0))
+    cero = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60,
+                atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_mult=2.0,
+                                trail_min_excess_atrs=20.0),
+                trail_min_excess_of=lambda t, d: 0.0)
+    # Con el umbral alto el trailing nunca se arma; con 0.0 sí, así que la
+    # posición tiene que cerrar antes y por otro motivo.
+    assert cero.trades[0].held_days < alto.trades[0].held_days
+    assert "atr_trail" in cero.trades[0].exit_reason
+
+
+def test_the_threshold_can_differ_between_two_identical_positions():
+    """El punto del enabler: dos posiciones iguales con umbrales distintos, que es
+    como se construye el control igualado en tasa."""
+    bars = _rise_then_fall()
+    res = _sim([("A", 2), ("B", 2)], {"A": bars, "B": bars}, max_positions=5,
+               cap_days=60,
+               atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_mult=2.0,
+                               trail_min_excess_atrs=20.0),
+               trail_min_excess_of=lambda t, d: 0.0 if t == "A" else 20.0)
+    held = {tr.ticker: tr.held_days for tr in res.trades}
+    assert held["A"] < held["B"]
+
+
+def test_it_sees_the_entry_date_not_just_the_ticker():
+    """La clave del control es ``(ticker, fecha)``: el mismo ticker entrando dos
+    veces puede llevar umbrales distintos."""
+    seen: list[tuple[str, str]] = []
+
+    def _of(t, d):
+        seen.append((t, d))
+        return 9.0
+
+    bars = _rise_then_fall(80)
+    # cap corto: la primera posicion cierra y el mismo ticker puede volver a entrar
+    _sim([("A", 2), ("A", 45)], {"A": bars}, max_positions=5, cap_days=10,
+         trail_min_excess_of=_of)
+    assert len(seen) == 2 and {t for t, _ in seen} == {"A"}
+    assert len({d for _, d in seen}) == 2
+
+
+def test_a_nonsense_threshold_falls_back_to_the_global_one():
+    """Un umbral negativo o no numérico no es un umbral: se cae al global en vez
+    de romper la corrida (y ``True`` no cuenta como 1.0 — un bool acá es un bug
+    del llamador, no una intención)."""
+    bars = _rise_then_fall()
+    ref = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60,
+               atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_mult=2.0,
+                               trail_min_excess_atrs=20.0))
+    for bad in (-1.0, None, float("nan"), float("inf"), True):
+        res = _sim([("A", 2)], {"A": bars}, max_positions=5, cap_days=60,
+                   atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_mult=2.0,
+                                   trail_min_excess_atrs=20.0),
+                   trail_min_excess_of=lambda t, d, _b=bad: _b)
+        assert res.trades[0].held_days == ref.trades[0].held_days, bad
+        assert res.trades[0].exit_reason == ref.trades[0].exit_reason, bad
