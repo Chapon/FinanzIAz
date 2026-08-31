@@ -58,9 +58,9 @@ dict precomputado y el filtro como callable, así los tests corren offline.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Callable
 
 from analysis.exit_replay import AtrParams, Bar, max_drawdown
 from analysis.harness_config import (
@@ -424,9 +424,9 @@ def simulate_portfolio(
             if trail_min_excess_of is not None:
                 cand = trail_min_excess_of(ticker, entry_date)
                 if (isinstance(cand, (int, float)) and not isinstance(cand, bool)
-                        and math.isfinite(cand) and cand >= 0):
-                    if float(cand) != atr_p.trail_min_excess_atrs:
-                        atr_i = replace(atr_p, trail_min_excess_atrs=float(cand))
+                        and math.isfinite(cand) and cand >= 0
+                        and float(cand) != atr_p.trail_min_excess_atrs):
+                    atr_i = replace(atr_p, trail_min_excess_atrs=float(cand))
 
             cyc = replay_cycle(
                 bars, idx, sigs_by.get(ticker) or {},

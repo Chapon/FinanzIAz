@@ -51,6 +51,7 @@ Es lógica pura (stdlib): sin red, sin DB. Los valores se refrescan con
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -235,7 +236,7 @@ class ArtifactWindow:
         return f"{self.start}..{self.end} ({self.n_bars} barras)"
 
 
-def artifact_window(bars_by: "dict[str, list]") -> ArtifactWindow | None:
+def artifact_window(bars_by: dict[str, list]) -> ArtifactWindow | None:
     """Ventana efectiva de ``{ticker: [Bar]}`` — ``None`` si no hay barras.
 
     ``Bar`` es una tupla cuyo primer elemento es la fecha ISO-10, así que esto no
@@ -277,7 +278,7 @@ class ArtifactPopulation:
         entradas = f", {self.n_entries} entradas" if self.n_entries is not None else ""
         return f"{self.universe_file} ({self.n_tickers} tickers{entradas})"
 
-    def same_universe_as(self, other: "ArtifactPopulation") -> bool:
+    def same_universe_as(self, other: ArtifactPopulation) -> bool:
         """¿Las dos corridas miraron el **mismo conjunto de tickers**?
 
         Es el eje categórico: si difiere, el ancla se midió sobre otra cosa y no
@@ -285,7 +286,7 @@ class ArtifactPopulation:
         return (self.universe_file == other.universe_file
                 and self.n_tickers == other.n_tickers)
 
-    def matches(self, other: "ArtifactPopulation") -> bool:
+    def matches(self, other: ArtifactPopulation) -> bool:
         """Misma muestra: mismo universo y —cuando **las dos** lo declaran— mismas
         entradas. Si una de las dos no declara ``n_entries``, no se lo compara: no
         se puede acusar por un dato que nadie publicó."""
@@ -298,7 +299,7 @@ class ArtifactPopulation:
 
 def artifact_population(
     universe_file: str,
-    bars_by: "dict[str, list] | None" = None,
+    bars_by: dict[str, list] | None = None,
     *,
     n_tickers: int | None = None,
     n_entries: int | None = None,
@@ -428,7 +429,7 @@ class HarnessConfig:
     live_gates: bool = False
     # Ventana efectiva de los artefactos (Tarea 48). ``None`` ⇒ el runner no la
     # declaró, y el banner lo dice en vez de callarse.
-    window: "ArtifactWindow | None" = None
+    window: ArtifactWindow | None = None
 
     def population(self, n_entries: int | None = None) -> ArtifactPopulation:
         """La población de esta corrida (Tarea 52), para el sanity de reproducción.
@@ -566,7 +567,7 @@ def announce(
     eval_mode: str = "close",
     fill_mode: str = HARNESS_FILL_MODE,
     live_gates: bool = False,
-    window: "ArtifactWindow | None" = None,
+    window: ArtifactWindow | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -605,7 +606,7 @@ def announce(
 GRID_MIN_POPULATION = 0.05
 
 
-def _nearest_rank(ordenados: "Sequence[float]", q: float) -> float:
+def _nearest_rank(ordenados: Sequence[float], q: float) -> float:
     """Percentil por *nearest-rank*: sin numpy y sin interpolar entre trades.
 
     Interpolar inventaría una tenencia que ningún trade tuvo, y acá el número se
@@ -722,8 +723,8 @@ class GridPopulation:
 
 
 def grid_population(
-    per_trade: "Iterable[float]",
-    grid: "Iterable[float]",
+    per_trade: Iterable[float],
+    grid: Iterable[float],
     *,
     label: str = "tenencia (ruedas)",
     min_share: float = GRID_MIN_POPULATION,
@@ -758,8 +759,8 @@ def grid_population(
 
 
 def announce_grid(
-    per_trade: "Iterable[float]",
-    grid: "Iterable[float]",
+    per_trade: Iterable[float],
+    grid: Iterable[float],
     *,
     label: str = "tenencia (ruedas)",
     min_share: float = GRID_MIN_POPULATION,
@@ -866,7 +867,7 @@ def _read_owner(cache_dir: Path) -> dict:
         return {}
 
 
-def describe_owner(cache_dir: "str | Path") -> str:
+def describe_owner(cache_dir: str | Path) -> str:
     """Frase humana con quién es dueño del cache-dir (para el error y el log)."""
     info = _read_owner(Path(cache_dir))
     if not info:
@@ -879,7 +880,7 @@ def describe_owner(cache_dir: "str | Path") -> str:
     )
 
 
-def lock_cache_dir(cache_dir: "str | Path") -> Path:
+def lock_cache_dir(cache_dir: str | Path) -> Path:
     """Toma el cache-dir para este proceso, o levanta ``CacheDirBusy``.
 
     Se suelta solo: el descriptor vive lo que vive el proceso y el sistema
@@ -895,7 +896,10 @@ def lock_cache_dir(cache_dir: "str | Path") -> Path:
     if key in _held_locks:
         return d
 
-    fh = open(d / _LOCK_FILE, "a+b")
+    # Sin context manager a propósito: el descriptor tiene que SOBREVIVIR a esta
+    # función, porque es lo que mantiene el lock. Un `with` lo cerraría al salir y
+    # soltaría el cache-dir — exactamente lo contrario de lo que la tarea 59 hace.
+    fh = open(d / _LOCK_FILE, "a+b")  # noqa: SIM115
     try:
         fh.seek(0, os.SEEK_END)
         if fh.tell() == 0:
@@ -904,12 +908,10 @@ def lock_cache_dir(cache_dir: "str | Path") -> Path:
         if not _lock_exclusive(fh):
             fh.close()
             raise CacheDirBusy(
-                "El cache-dir {dir} ya lo esta usando {quien}. Dos corridas sobre "
+                f"El cache-dir {d} ya lo esta usando {describe_owner(d)}. Dos corridas sobre "
                 "el mismo cache se pisan el `.tmp` y el artefacto, y un pickle "
                 "mezclado se lee despues como un resultado cualquiera. Usar otro "
-                "--cache-dir, o esperar a que la otra corrida termine.".format(
-                    dir=d, quien=describe_owner(d)
-                )
+                "--cache-dir, o esperar a que la otra corrida termine."
             )
     except CacheDirBusy:
         raise
@@ -926,7 +928,9 @@ def lock_cache_dir(cache_dir: "str | Path") -> Path:
         return d
 
     _held_locks[key] = fh
-    try:
+    # El dueño es el LOCK, no este archivo: si no se puede escribir, el cache-dir
+    # sigue tomado igual y lo único que se pierde es el nombre en el mensaje.
+    with contextlib.suppress(OSError):
         (d / _OWNER_FILE).write_text(
             json.dumps(
                 {
@@ -939,6 +943,4 @@ def lock_cache_dir(cache_dir: "str | Path") -> Path:
             ),
             encoding="utf-8",
         )
-    except OSError:
-        pass  # el dueño es el lock, no el archivo: esto es sólo para el mensaje
     return d

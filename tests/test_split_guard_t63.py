@@ -29,7 +29,6 @@ import pytest
 
 from data import yahoo_finance as yfm
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -60,8 +59,7 @@ def _seed(ticker: str, closes: list[tuple[str, float]], period: str) -> None:
 
 
 def _info(ticker: str, price: float) -> dict:
-    return {"ticker": ticker.upper(), "price": price, "change_pct": None,
-            "volume": None, "market_cap": None}
+    return {"ticker": ticker.upper(), "price": price, "change_pct": None, "volume": None, "market_cap": None}
 
 
 @pytest.fixture(autouse=True)
@@ -264,9 +262,7 @@ def test_a_phantom_split_unblocks_but_does_NOT_invalidate_the_cache(monkeypatch)
     assert yfm.reference_close("AVB") == pytest.approx(68.14)  # intacto
 
 
-def test_the_streak_escalates_to_error_instead_of_repeating_the_warning(
-    no_split, caplog
-):
+def test_the_streak_escalates_to_error_instead_of_repeating_the_warning(no_split, caplog):
     """927 WARNINGs idénticos no distinguen «pasó una vez» de «hace 4 días»."""
     _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
 
@@ -394,9 +390,7 @@ def test_the_engine_guard_reuses_what_the_fetch_already_learned(monkeypatch):
     monkeypatch.setattr(
         yfm,
         "_run_with_timeout",
-        lambda fn, **kw: pd.Series(
-            [2.793], index=pd.DatetimeIndex([pd.Timestamp.now(tz="UTC")])
-        ),
+        lambda fn, **kw: pd.Series([2.793], index=pd.DatetimeIndex([pd.Timestamp.now(tz="UTC")])),
     )
     yfm.recent_split_factor("AVB")  # el fetch lo consulta y lo memoiza
 
@@ -451,10 +445,12 @@ def test_all_1d_returns_every_period_newest_first(tmp_path):
         idx = pd.to_datetime(["2026-08-24"])
         old = pd.DataFrame({"Close": [187.55]}, index=idx)
         new = pd.DataFrame({"Close": [68.14]}, index=idx)
-        parquet_cache.write("AVB", "10y", "1d", old,
-                            fetched_at=pd.Timestamp("2026-08-09", tz="UTC").to_pydatetime())
-        parquet_cache.write("AVB", "2y", "1d", new,
-                            fetched_at=pd.Timestamp("2026-08-31", tz="UTC").to_pydatetime())
+        parquet_cache.write(
+            "AVB", "10y", "1d", old, fetched_at=pd.Timestamp("2026-08-09", tz="UTC").to_pydatetime()
+        )
+        parquet_cache.write(
+            "AVB", "2y", "1d", new, fetched_at=pd.Timestamp("2026-08-31", tz="UTC").to_pydatetime()
+        )
 
         frames = parquet_cache.all_1d("AVB")
         assert len(frames) == 2

@@ -42,8 +42,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
@@ -55,26 +55,26 @@ from analysis.harness_config import (  # noqa: E402
     artifact_window,
     reproduction_check,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import (
     paired_block_bootstrap,
     regime_for_date,
 )
-from scripts.measure_trail_arm_t54 import trade_excess_atrs  # noqa: E402
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_event_timestop_t51 import (  # noqa: E402
+from scripts.measure_trail_arm_t54 import trade_excess_atrs
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_event_timestop_t51 import (
     _prev_day,
     dose_response,
     entries_between,
     regime_pooled,
 )
-from scripts.run_rank_neutral_t39 import aligned_daily  # noqa: E402
-from scripts.run_ranking_t21 import summarise, trade_overlap  # noqa: E402
-from scripts.run_stop_cal_replay_t26 import NO_STOP  # noqa: E402
-from scripts.run_stop_value_t37 import CacheDirBusy, SimCache  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals  # noqa: E402
+from scripts.run_rank_neutral_t39 import aligned_daily
+from scripts.run_ranking_t21 import summarise, trade_overlap
+from scripts.run_stop_cal_replay_t26 import NO_STOP
+from scripts.run_stop_value_t37 import CacheDirBusy, SimCache
+from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals
 
 # ── Config congelada (§3) ────────────────────────────────────────────────────
 
@@ -484,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {'k':>6} {'cambian':>9} {'población':>11}", file=log)
     for k in GRID_K:
         marca = "" if diff_share[k] >= SANITY_MIN_POPULATION else "  <- sin población"
-        print(f"  {k:>6.2f} {int(round(diff_share[k] * len(excess))):>9} "
+        print(f"  {k:>6.2f} {round(diff_share[k] * len(excess)):>9} "
               f"{100 * diff_share[k]:>10.2f}%{marca}", file=log)
     print("", file=log)
 

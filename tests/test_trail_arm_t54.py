@@ -113,7 +113,7 @@ def test_the_share_is_over_all_trades_not_over_the_affected_ones():
 
 # ── El runner (§5 y §6) ──────────────────────────────────────────────────────
 
-from scripts.run_trail_arm_t54 import (  # noqa: E402
+from scripts.run_trail_arm_t54 import (
     BASE_K,
     changed_exits,
     differential_keys,
