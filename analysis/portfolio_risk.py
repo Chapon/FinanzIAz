@@ -167,7 +167,8 @@ def book_concentration(
         sec_map[x["sector"]] += x["weight"]
     sectors = sorted(
         ({"sector": s, "weight": w} for s, w in sec_map.items()),
-        key=lambda x: -float(x["weight"]),  # el dict es heterogeneo; el peso ya es float
+        # El dict es heterogeneo (str + float); el peso ya es float en runtime.
+        key=lambda x: -float(x["weight"]),  # type: ignore[arg-type]
     )
 
     total_upnl = sum(x["unrealized_pnl"] for x in enriched)

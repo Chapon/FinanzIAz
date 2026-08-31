@@ -27,6 +27,7 @@ from __future__ import annotations
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -282,7 +283,10 @@ def _fit_garch_forecast_uncached(
             return None
 
         # Conditional σ series is in %-per-day (matches the input scale)
-        cond_vol_daily = float(res.conditional_volatility.iloc[-1])
+        # `conditional_volatility` sale de arch, que no trae stubs consistentes:
+        # a veces es Series (con .iloc) y a veces ndarray. En runtime es Series.
+        cond_vol: Any = res.conditional_volatility
+        cond_vol_daily = float(cond_vol.iloc[-1])
         if not np.isfinite(cond_vol_daily) or cond_vol_daily <= 0:
             log.debug("GARCH conditional vol non-finite/non-positive (%s)", cond_vol_daily)
             return None

@@ -269,7 +269,7 @@ def imminent_catalyst(
         direction = int(prof.direction)
         # conviction from the track record; keep the reaction magnitude as a floor
         # so a known catalyst still carries weight even with a mild surprise edge.
-        magnitude = max(float(score.magnitude), abs(float(profile.directional_score)))
+        magnitude = max(float(score.magnitude), abs(float(prof.directional_score)))
         basis = "surprise"
         sig_score = direction * magnitude * float(score.confidence_weight)
     else:

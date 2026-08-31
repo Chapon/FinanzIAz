@@ -539,7 +539,10 @@ def detect_market_regime_hmm(df: pd.DataFrame) -> MarketContext | None:
         return None
 
     try:
-        model, order = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
+        fit = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
+        if fit is None:  # el fit puede fallar; hoy caia en el except de abajo
+            return None
+        model, order = fit
         bear_idx = order[0]
         lat_idx = order[1]
         bull_idx = order[-1]
@@ -1049,7 +1052,10 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> Tec
         return None
 
     try:
-        model, order = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
+        fit = _fit_gaussian_hmm(X, n_states=HMM_N_STATES)
+        if fit is None:  # el fit puede fallar; hoy caia en el except de abajo
+            return None
+        model, order = fit
         bear_idx = order[0]
         lat_idx = order[1]
         bull_idx = order[-1]
@@ -1402,7 +1408,10 @@ def _hmm_bullish_series(df: pd.DataFrame) -> pd.Series:
     if len(X) < HMM_MIN_ROWS:
         return pd.Series(0.5, index=close.index)
     try:
-        model, order = _fit_gaussian_hmm(X.values.astype(np.float64), n_states=HMM_N_STATES)
+        fit = _fit_gaussian_hmm(X.values.astype(np.float64), n_states=HMM_N_STATES)
+        if fit is None:  # el fit puede fallar; hoy caia en el except de abajo
+            return pd.Series(0.5, index=close.index)
+        model, order = fit
         bull_idx, lat_idx = order[-1], order[1]
         post = model.predict_proba(X.values.astype(np.float64))
         bullish = post[:, bull_idx] + 0.5 * post[:, lat_idx]
@@ -1514,7 +1523,7 @@ def train_stacking_combiner(df: pd.DataFrame) -> dict | None:
     if key:
         cached = _lru_get(_STACK_CACHE, key, _STACK_MISS)
         if cached is not _STACK_MISS:
-            return cached  # type: ignore[return-value]
+            return cached
     combiner = _train_stacking_combiner_uncached(df)
     if key:
         _lru_put(_STACK_CACHE, key, combiner, _STACK_CACHE_MAX)

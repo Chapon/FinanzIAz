@@ -48,7 +48,7 @@ Everything is long-only, no shorting, no leverage, no options.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -286,7 +286,10 @@ def _compute_target_weights(
     vols: dict[str, float],
     mode: AllocationMode,
     *,
-    probs: dict[str, float | None] | None = None,
+    # `Mapping` y no `dict`: los dict son invariantes en el tipo del valor, asi
+    # que un dict[str, float] no encaja en dict[str, float | None] aunque cada
+    # valor sirva. Mapping es covariante y expresa lo que la funcion necesita.
+    probs: Mapping[str, float | None] | None = None,
     kelly_fraction: float = DEFAULT_KELLY_FRACTION,
     vol_target_annual: float = DEFAULT_VOL_TARGET_ANNUAL,
     max_weight: float = DEFAULT_MAX_POSITION_WEIGHT,

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import pandas as pd
 
@@ -22,6 +22,19 @@ from config.settings_manager import settings as _settings_singleton
 from paper_trading.gates import (
     compute_vol_overlay as _gate_compute_vol_overlay,
 )
+
+
+class VolOverlayPolicy(Protocol):
+    """Lo único que el runner le pide a la política de overlay inyectada.
+
+    Reemplaza a ``RegimeFeaturePolicy``, un nombre que la anotación citaba y que
+    **no existe en el proyecto** — nunca falló porque `from __future__ import
+    annotations` no la evalúa, así que era documentación que mentía. Misma familia
+    que el `list[_Trade]` de `tests/test_harness.py`.
+    """
+
+    def effective(self, regime: str) -> dict: ...
+
 
 from .config import ExperimentConfig
 from .metrics import ComputedMetrics, compute_metrics
@@ -62,7 +75,7 @@ class HarnessRunner:
         max_positions: int | None = None,
         verbose: bool = False,
         regime_series: pd.Series | None = None,
-        vol_overlay_policy: RegimeFeaturePolicy | None = None,  # noqa: F821
+        vol_overlay_policy: VolOverlayPolicy | None = None,
     ):
         self.data = data
         self.tickers = tickers
@@ -136,24 +149,28 @@ class HarnessRunner:
         return metrics
 
     def _build_vol_overlay(self):
-        regime_aware = self.regime_series is not None and self.vol_overlay_policy is not None
+        # Locales y no `self.…` dentro del closure: el predicado es EL MISMO, pero
+        # así la comprobación de None se ve desde adentro (mypy no puede arrastrar
+        # una narrowing a través de un bool intermedio).
+        series = self.regime_series
+        policy = self.vol_overlay_policy
 
         def overlay_fn(target_weights, returns_by_ticker):
-            if regime_aware:
+            if series is not None and policy is not None:
                 current_ts = None
                 for s in returns_by_ticker.values():
                     if s is not None and not s.empty and (current_ts is None or s.index.max() > current_ts):
                         current_ts = s.index.max()
                 if current_ts is None:
                     return 1.0
-                matches = self.regime_series.index <= current_ts
+                matches = series.index <= current_ts
                 if not matches.any():
                     from analysis.regime_detector import REGIME_WARMUP
 
                     regime_at_bar = REGIME_WARMUP
                 else:
-                    regime_at_bar = str(self.regime_series.loc[matches].iloc[-1])
-                effective = self.vol_overlay_policy.effective(regime_at_bar)
+                    regime_at_bar = str(series.loc[matches].iloc[-1])
+                effective = policy.effective(regime_at_bar)
                 if not bool(effective.get("vol_overlay_enabled", True)):
                     return 1.0
             else:

@@ -57,6 +57,11 @@ SURPRISE_CAP: float = 0.50  # clip a single quarter's surprise to ±50% (outlier
 EarningsRow = tuple[str | None, "float | None", "float | None"]
 EarningsLoader = Callable[[str], "Sequence[EarningsRow] | None"]
 
+# El loader de PERFILES es otra cosa que el de filas de earnings, y hasta ahora
+# `make_surprise_loader` se anunciaba con el alias equivocado: devuelve un
+# perfil, no una secuencia de filas. Su propio docstring ya lo decia.
+SurpriseLoader = Callable[[str], "SurpriseProfile | None"]
+
 
 @dataclass(frozen=True)
 class SurpriseProfile:
@@ -86,20 +91,22 @@ class SurpriseProfile:
         return 1 if self.directional_score > 0 else -1
 
 
-_NEUTRAL_TEMPLATE = dict(
-    n_quarters=0,
-    beat_rate=0.0,
-    miss_rate=0.0,
-    mean_surprise=0.0,
-    median_surprise=0.0,
-    last_surprise=0.0,
-    directional_score=0.0,
-)
+# Los campos neutros, explicitos. Antes era un dict desempaquetado con `**`, que
+# mypy no puede casar contra la firma porque mezcla int y float; y como se usaba en
+# un solo lugar, el dict intermedio no compraba nada.
 
 
 def _neutral(ticker: str) -> SurpriseProfile:
-    # `_NEUTRAL_TEMPLATE` mezcla int y float, asi que el ** no encaja en dict[str, float].
-    return SurpriseProfile(ticker=ticker, **_NEUTRAL_TEMPLATE)
+    return SurpriseProfile(
+        ticker=ticker,
+        n_quarters=0,
+        beat_rate=0.0,
+        miss_rate=0.0,
+        mean_surprise=0.0,
+        median_surprise=0.0,
+        last_surprise=0.0,
+        directional_score=0.0,
+    )
 
 
 def _to_float(x) -> float | None:
@@ -224,7 +231,7 @@ def _directional_score(n: int, beat_rate: float, miss_rate: float, mean_s: float
 
 def make_surprise_loader(
     profiles: dict[str, dict] | dict[str, SurpriseProfile] | None,
-) -> EarningsLoader:
+) -> SurpriseLoader:
     """Build a ``ticker -> SurpriseProfile | None`` callable from a prebuilt map.
 
     Accepts either a map of ``SurpriseProfile`` or of plain dicts (e.g. the JSON

@@ -613,7 +613,10 @@ def _sell_calibration_panel(con: sqlite3.Connection, orders: list[dict]) -> dict
         t = o["ticker"]
         if t not in series_cache:
             series_cache[t] = load_close_series(con, t)
-        r5 = forward_return(series_cache[t], _day(o["filled_at"]), FWD_SHORT)
+        dia = _day(o["filled_at"])
+        if dia is None:  # sin fecha de fill no hay ventana forward
+            continue
+        r5 = forward_return(series_cache[t], dia, FWD_SHORT)
         if r5 is not None:
             regret.append(r5)
     up = [r for r in regret if r > 0]
