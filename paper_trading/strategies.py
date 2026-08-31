@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -192,7 +191,7 @@ def _vol_overlay_trim_sells(
     portfolio_value: float,
     history_provider: HistoryProvider,
     source: str,
-) -> list["TargetTrade"]:
+) -> list[TargetTrade]:
     """Emit partial-SELL trims so an over-σ *held* book returns toward target (T09).
 
     Companion to :func:`_apply_vol_overlay_to_buys`, which only shrinks new buys.
@@ -288,7 +287,7 @@ def _universe_thresholds():
     return UniverseThresholds.from_settings()
 
 
-def _screen_out_candidate(ticker: str, df: "pd.DataFrame", thresholds) -> bool:
+def _screen_out_candidate(ticker: str, df: pd.DataFrame, thresholds) -> bool:
     """True → drop this BUY candidate (E1b). Logs the reason. Never raises.
 
     Liquidity (ADV$, from the already-fetched history) is checked first so an
@@ -303,9 +302,7 @@ def _screen_out_candidate(ticker: str, df: "pd.DataFrame", thresholds) -> bool:
         lookback = int(settings.get("paper_adv_lookback_days"))
         adv = recent_adv_dollars(df, lookback_days=lookback)
         liquidity_excluded = (
-            thresholds.min_adv_dollars > 0
-            and adv is not None
-            and adv < thresholds.min_adv_dollars
+            thresholds.min_adv_dollars > 0 and adv is not None and adv < thresholds.min_adv_dollars
         )
         facts = None
         if thresholds.fundamentals_enabled and not liquidity_excluded:
@@ -413,12 +410,9 @@ def generate_trades_analyze_single(
     # so an over-volatile book is de-risked even on scans with no new entries.
     # Opt-in via ``vol_overlay_trim_enabled`` (default off → no behavior change).
     trim_pv = float(
-        account.cash
-        + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
+        account.cash + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
     )
-    trades.extend(
-        _vol_overlay_trim_sells(positions, forced_exits, prices, trim_pv, history_provider, source)
-    )
+    trades.extend(_vol_overlay_trim_sells(positions, forced_exits, prices, trim_pv, history_provider, source))
 
     # Candidates for BUY — ranked by conviction. We also stash each candidate's
     # realised vol and calibrated probability so the vol-target / Kelly sizing
@@ -458,6 +452,7 @@ def generate_trades_analyze_single(
     # (sort by absolute strength) exactly.
     if ranked and bool(settings.get("cross_sectional_enabled", False)):
         from analysis.ranking import blended_scores
+
         lookback = max(2, int(settings.get("cross_sectional_lookback", 120)))
         weight = float(settings.get("cross_sectional_weight", 0.5))
         weight = min(1.0, max(0.0, weight))
@@ -496,8 +491,7 @@ def generate_trades_analyze_single(
     # up with a {ticker: dollars} map, which the T10 portfolio-vol overlay can
     # then scale down as one book before the trades are emitted.
     portfolio_value = float(
-        account.cash
-        + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
+        account.cash + sum(p.shares * (prices.get(p.ticker, p.avg_cost) or p.avg_cost) for p in positions)
     )
     if account.allocation_mode in _VOL_SIZED_MODES:
         mode = AllocationMode(account.allocation_mode)
@@ -635,21 +629,19 @@ def generate_trades_portfolio_engine(
     still_held = [t for t in held_tickers if t not in forced_exits]
     free_slots = max(0, account.max_positions - len(still_held))
     candidate_pool = [
-        t for t in watchlist
-        if signals.get(t) == "BUY" and t not in still_held and t not in forced_exits
+        t for t in watchlist if signals.get(t) == "BUY" and t not in still_held and t not in forced_exits
     ]
     # Sprint 4 / T05 — blend absolute strength with cross-sectional momentum
     # percentile when the toggle is on; toggle OFF preserves the legacy sort key.
     rank_key = strengths
     if candidate_pool and bool(settings.get("cross_sectional_enabled", False)):
         from analysis.ranking import blended_scores
+
         lookback = max(2, int(settings.get("cross_sectional_lookback", 120)))
         weight = float(settings.get("cross_sectional_weight", 0.5))
         weight = min(1.0, max(0.0, weight))
         closes_at_bar = {
-            t: dfs[t]["Close"].astype(float)
-            for t in universe
-            if t in dfs and "Close" in dfs[t].columns
+            t: dfs[t]["Close"].astype(float) for t in universe if t in dfs and "Close" in dfs[t].columns
         }
         rank_key = blended_scores(
             {t: strengths.get(t, 0.0) for t in candidate_pool},

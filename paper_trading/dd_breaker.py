@@ -78,9 +78,7 @@ def compute_drawdown_state(
     cutoff = now - timedelta(days=max(0, window_days))
 
     in_window = [
-        (at, float(eq))
-        for (at, eq) in snapshots
-        if at is not None and eq is not None and at >= cutoff
+        (at, float(eq)) for (at, eq) in snapshots if at is not None and eq is not None and at >= cutoff
     ]
 
     # Peak = highest equity in the window; current equity is also a candidate so
@@ -118,9 +116,7 @@ def format_breaker_warning(state: DrawdownState) -> str:
     Only meaningful when ``state.triggered``; the caller decides whether to show
     it. Kept here so the gate and the UI phrase it identically.
     """
-    peak_txt = (
-        f" (peak {state.peak_at:%Y-%m-%d})" if state.peak_at is not None else ""
-    )
+    peak_txt = f" (peak {state.peak_at:%Y-%m-%d})" if state.peak_at is not None else ""
     return (
         f"Circuit breaker de drawdown ARMADO: caída {state.drawdown_pct * 100:.1f}% "
         f"desde el peak de {state.window_days}d{peak_txt} "

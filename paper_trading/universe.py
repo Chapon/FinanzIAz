@@ -61,7 +61,7 @@ class UniverseThresholds:
     revenue_floor: float = 10_000_000.0
 
     @classmethod
-    def from_settings(cls) -> "UniverseThresholds":
+    def from_settings(cls) -> UniverseThresholds:
         from config.settings_manager import settings
 
         return cls(
@@ -131,20 +131,21 @@ def screen_candidate(
     Order: liquidity first (cheap, no network), then fundamentals. The first
     failing leg wins the reason.
     """
-    if thresholds.min_adv_dollars > 0 and adv_dollars is not None:
-        if adv_dollars < thresholds.min_adv_dollars:
-            return UniverseVerdict(
-                ticker=ticker,
-                included=False,
-                reason=REASON_ADV,
-                detail=f"ADV$ {adv_dollars:,.0f} < piso {thresholds.min_adv_dollars:,.0f}",
-            )
+    if (
+        thresholds.min_adv_dollars > 0
+        and adv_dollars is not None
+        and adv_dollars < thresholds.min_adv_dollars
+    ):
+        return UniverseVerdict(
+            ticker=ticker,
+            included=False,
+            reason=REASON_ADV,
+            detail=f"ADV$ {adv_dollars:,.0f} < piso {thresholds.min_adv_dollars:,.0f}",
+        )
     if thresholds.fundamentals_enabled:
         detail = _fragile_fundamentals(facts, thresholds)
         if detail is not None:
-            return UniverseVerdict(
-                ticker=ticker, included=False, reason=REASON_FRAGILE, detail=detail
-            )
+            return UniverseVerdict(ticker=ticker, included=False, reason=REASON_FRAGILE, detail=detail)
     return UniverseVerdict(ticker=ticker, included=True)
 
 

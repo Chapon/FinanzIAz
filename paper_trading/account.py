@@ -9,8 +9,6 @@ callers don't have to worry about SQLAlchemy session lifecycle.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from config.errors import ValidationError
 from database.models import session_scope, utcnow_naive
 from paper_trading.models import (

@@ -312,22 +312,22 @@ class PaperScheduler(QObject):
         self._started: bool = False
 
         # T-CAT-5a weekly surprise-profile rebuild (in-app, single worker).
-        self._surprise_worker: "SurpriseBuildWorker | None" = None
+        self._surprise_worker: SurpriseBuildWorker | None = None
 
         # Daily catalyst refresh (in-app, single worker, once per calendar day).
-        self._catalyst_worker: "CatalystRefreshWorker | None" = None
+        self._catalyst_worker: CatalystRefreshWorker | None = None
         self._last_catalyst_refresh: date | None = None
 
         # Hourly harvest-only refresh durante RTH (tarea 10) — solo con la app
         # abierta, por decisión de Chapa 2026-07-07 (Windows corre únicamente
         # el pipeline completo de las 15:00).
-        self._hourly_harvest_worker: "CatalystHarvestWorker | None" = None
+        self._hourly_harvest_worker: CatalystHarvestWorker | None = None
         self._last_hourly_harvest: datetime | None = None
 
         # Daily dashboard refresh (trigger 7) — in-app, single worker. "Ambos"
         # (Chapa 2026-07-12): 1×/día al abrir (gate por fecha) + tras cada scan
         # de la cuenta del dashboard. Reemplaza la tarea del Task Scheduler.
-        self._dashboard_worker: "DashboardRefreshWorker | None" = None
+        self._dashboard_worker: DashboardRefreshWorker | None = None
         self._last_dashboard_refresh: date | None = None
 
         # Heartbeat: per-account timestamps of the most recent scan so the
@@ -565,8 +565,12 @@ class PaperScheduler(QObject):
         # Stamp only on success so a failed run retries on the next daily tick.
         try:
             settings.set("surprise_last_build", utcnow_naive().isoformat())
-            log.info("surprise rebuild done: %s (%s/%s usable quarters≥min)",
-                     res.get("out"), res.get("n_usable"), res.get("n_tickers"))
+            log.info(
+                "surprise rebuild done: %s (%s/%s usable quarters≥min)",
+                res.get("out"),
+                res.get("n_usable"),
+                res.get("n_tickers"),
+            )
         except Exception:
             log.exception("stamping surprise_last_build failed")
 
@@ -622,7 +626,8 @@ class PaperScheduler(QObject):
     def _on_catalyst_completed(self, res) -> None:
         log.info(
             "daily catalyst refresh done: harvest_rc=%s classify_rc=%s",
-            res.get("harvest_rc"), res.get("classify_rc"),
+            res.get("harvest_rc"),
+            res.get("classify_rc"),
         )
         self.catalyst_refresh_completed.emit(res)
 
@@ -654,12 +659,9 @@ class PaperScheduler(QObject):
             last=self._last_hourly_harvest,
             interval_min=int(settings.get("catalyst_hourly_harvest_minutes", 60)),
             hourly_worker_running=(
-                self._hourly_harvest_worker is not None
-                and self._hourly_harvest_worker.isRunning()
+                self._hourly_harvest_worker is not None and self._hourly_harvest_worker.isRunning()
             ),
-            daily_worker_running=(
-                self._catalyst_worker is not None and self._catalyst_worker.isRunning()
-            ),
+            daily_worker_running=(self._catalyst_worker is not None and self._catalyst_worker.isRunning()),
             market_open=_is_market_open_now(),
         ):
             return
@@ -728,8 +730,9 @@ class PaperScheduler(QObject):
 
     def _on_dashboard_completed(self, res) -> None:
         if isinstance(res, dict) and res.get("ok"):
-            log.info("dashboard refresh done: %s posiciones · %s",
-                     res.get("positions"), res.get("generated_at"))
+            log.info(
+                "dashboard refresh done: %s posiciones · %s", res.get("positions"), res.get("generated_at")
+            )
         else:
             reason = res.get("reason") if isinstance(res, dict) else res
             log.debug("dashboard refresh sin cambios: %s", reason)

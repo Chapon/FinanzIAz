@@ -31,7 +31,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -208,8 +207,8 @@ def entry_risk_levels(
             "atr": float(atr_value),
         }
     stop = entry_price - stop_mult * atr_value
-    risk = entry_price - stop      # = stop_mult × ATR
-    reward = tp - entry_price      # = tp_mult × ATR
+    risk = entry_price - stop  # = stop_mult × ATR
+    reward = tp - entry_price  # = tp_mult × ATR
     rr = (reward / risk) if risk > 0 else None
     return {
         "entry": float(entry_price),
@@ -318,6 +317,7 @@ def is_within_earnings_blackout(
 @dataclass(frozen=True)
 class CorrelationSkip:
     """One candidate rejected by :func:`select_uncorrelated_picks`."""
+
     ticker: str
     avg_correlation: float
 
@@ -332,7 +332,7 @@ def select_uncorrelated_picks(
     returns_provider: ReturnsProvider,
     threshold: float,
     *,
-    mean_corr_fn: Callable[["pd.Series", list["pd.Series"]], float | None] | None = None,
+    mean_corr_fn: Callable[[pd.Series, list[pd.Series]], float | None] | None = None,
 ) -> tuple[list[str], list[CorrelationSkip]]:
     """VESTIGIAL after Sprint 3 (2026-05-29) — see ``docs/sprint2_kill_criteria.md``.
 
@@ -373,6 +373,7 @@ def select_uncorrelated_picks(
 
     if mean_corr_fn is None:
         from analysis.portfolio_risk import mean_correlation as _mc
+
         mean_corr_fn = _mc
 
     accepted: list[str] = []
@@ -385,10 +386,7 @@ def select_uncorrelated_picks(
         if cand_ret is None or cand_ret.empty or not compare_to:
             accepted.append(t)
             continue
-        held_rets = [
-            r for h in compare_to
-            if (r := returns_provider(h)) is not None and not r.empty
-        ]
+        held_rets = [r for h in compare_to if (r := returns_provider(h)) is not None and not r.empty]
         avg = mean_corr_fn(cand_ret, held_rets) if held_rets else None
         if avg is not None and avg > threshold:
             skipped.append(CorrelationSkip(ticker=t, avg_correlation=float(avg)))
@@ -431,7 +429,7 @@ def signal_sell_min_age_block(
     *,
     reason: str | None,
     signal_score: float | None,
-    opened_at: "datetime | None",
+    opened_at: datetime | None,
     scan_at: datetime,
     min_age_bdays: int,
     bypass_score: float,
@@ -476,6 +474,7 @@ class VolOverlayResult:
     """Outcome of :func:`compute_vol_overlay`. ``factor < 1.0`` means the
     overlay engaged and the caller should multiply the picks' dollar map by it.
     ``sigma`` is the annualised σ of the combined (held + picks) book."""
+
     factor: float
     sigma: float | None
     scaled_weights: dict[str, float]
@@ -483,7 +482,7 @@ class VolOverlayResult:
 
 def compute_vol_overlay(
     combined_weights: dict[str, float],
-    returns_df: "pd.DataFrame | None",
+    returns_df: pd.DataFrame | None,
     vol_target_annual: float,
     *,
     apply_fn: Callable | None = None,
@@ -524,7 +523,7 @@ DEFAULT_ADV_LOOKBACK_DAYS = 20
 
 
 def recent_adv_dollars(
-    history: "pd.DataFrame | None",
+    history: pd.DataFrame | None,
     lookback_days: int = DEFAULT_ADV_LOOKBACK_DAYS,
 ) -> float | None:
     """Average daily *dollar* volume over the last ``lookback_days`` sessions.
@@ -586,16 +585,16 @@ def adv_capped_notional(
 
 __all__ = [
     "ATR_EXIT_REASONS",
-    "CorrelationSkip",
     "DEFAULT_ADV_LOOKBACK_DAYS",
     "DEFAULT_TRAIL_MIN_EXCESS_ATRS",
-    "ReturnsProvider",
     "VOL_TRIM_REASON_PREFIX",
+    "CorrelationSkip",
+    "ReturnsProvider",
     "VolOverlayResult",
     "adv_capped_notional",
     "atr_exit_decision",
-    "effective_trail_mult",
     "compute_vol_overlay",
+    "effective_trail_mult",
     "is_atr_forced_exit_reason",
     "is_vol_trim_reason",
     "is_within_earnings_blackout",

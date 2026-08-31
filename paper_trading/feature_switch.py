@@ -33,8 +33,8 @@ needs it (harness vol_overlay_fn hook, production settings, etc.).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Mapping, Optional
 
 from analysis.regime_detector import (
     REGIME_BEAR,
@@ -119,8 +119,7 @@ def policy_from_attribution_2026_06_01() -> RegimeFeaturePolicy:
 # ── Helpers for consumers ───────────────────────────────────────────────────
 
 
-def is_vol_overlay_active_at(regime: str,
-                             policy: Optional[RegimeFeaturePolicy] = None) -> bool:
+def is_vol_overlay_active_at(regime: str, policy: RegimeFeaturePolicy | None = None) -> bool:
     """Convenience accessor — equivalent to ``policy.effective(regime)['vol_overlay_enabled']``
     but with a default policy that lets callers skip the import boilerplate.
 
@@ -141,7 +140,5 @@ def validate_policy_coverage(policy: RegimeFeaturePolicy) -> list[str]:
         effective = policy.effective(regime)
         for toggle in SWITCHABLE_TOGGLES:
             if toggle not in effective:
-                warnings.append(
-                    f"policy does not assign {toggle!r} in régime {regime!r}"
-                )
+                warnings.append(f"policy does not assign {toggle!r} in régime {regime!r}")
     return warnings

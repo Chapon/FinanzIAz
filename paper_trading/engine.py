@@ -30,22 +30,22 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
+from analysis.portfolio_risk import annualized_portfolio_vol, returns_frame
 from config.settings_manager import settings
 from database.models import session_scope, utcnow_naive
-from paper_trading.account import record_equity_snapshot
-from paper_trading.models import (
-    PaperAccount,
-    PaperOrder,
-    PaperPosition,
-    PaperWatchlistItem,
-)
-from analysis.portfolio_risk import annualized_portfolio_vol, returns_frame
 from integrations.slack import (
     OrderNotice,
     SlackNotifier,
     default_notifier,
     format_scan_summary,
     select_notifiable,
+)
+from paper_trading.account import record_equity_snapshot
+from paper_trading.models import (
+    PaperAccount,
+    PaperOrder,
+    PaperPosition,
+    PaperWatchlistItem,
 )
 from paper_trading.strategies import (
     HistoryProvider,
@@ -121,15 +121,13 @@ def _price_out_of_band(ticker: str, price: float | None, side: str | None = None
 
     entrando = str(side or "").upper() == "BUY"
     get_logger(__name__).error(
-        "%s: %.4f fuera de banda vs el histórico (%.4f), pero la referencia NO es "
-        "confiable — %s. %s",
+        "%s: %.4f fuera de banda vs el histórico (%.4f), pero la referencia NO es confiable — %s. %s",
         ticker.upper(),
         float(price),
         float(ref),
         reason,
         (
-            "La ENTRADA se bloquea igual: el ATR y las barreras salen del mismo "
-            "histórico en duda."
+            "La ENTRADA se bloquea igual: el ATR y las barreras salen del mismo histórico en duda."
             if entrando
             else "El fill NO se bloquea: con una referencia dudosa este guard "
             "trabaría también la SELL y dejaría la posición sin salida."
@@ -175,22 +173,17 @@ def _warm_up_history_cache(tickers: list[str]) -> None:
     """
     if not tickers:
         return
-    from config.logging_config import get_logger
-
     from analysis.metrics_panel import BENCHMARK_TICKER
+    from config.logging_config import get_logger
 
     period = _resolve_history_period()
     warm: dict | None = None
     try:
         from data.yahoo_finance import get_historical_data_batch
 
-        warm = get_historical_data_batch(
-            sorted(set(tickers) | {BENCHMARK_TICKER}), period=period
-        )
+        warm = get_historical_data_batch(sorted(set(tickers) | {BENCHMARK_TICKER}), period=period)
     except Exception:
-        get_logger(__name__).exception(
-            "Batch history warm-up failed; falling back to per-ticker fetch"
-        )
+        get_logger(__name__).exception("Batch history warm-up failed; falling back to per-ticker fetch")
     # tarea 22 (a): si el batch salteó/falló SPY, darle su propio fallback
     # per-ticker para que el benchmark no quede congelado en una fecha vieja.
     if (warm or {}).get(BENCHMARK_TICKER) is None:
@@ -366,8 +359,9 @@ def _closed_cycles_count(
 # Re-exported for backward compatibility with callers that import
 # ``ATR_EXIT_REASONS`` from this module. Authoritative source is
 # ``paper_trading.gates``.
-from paper_trading.gates import (  # noqa: E402
-    ATR_EXIT_REASONS,
+from analysis.impact_score import exit_veto_block
+from paper_trading.gates import (
+    ATR_EXIT_REASONS,  # noqa: F401 — re-export retrocompatible, ver el comentario de arriba
     adv_capped_notional,
     atr_exit_decision,
     is_atr_forced_exit_reason,
@@ -377,7 +371,6 @@ from paper_trading.gates import (  # noqa: E402
     recent_adv_dollars,
     signal_sell_min_age_block,
 )
-from analysis.impact_score import exit_veto_block  # noqa: E402  (T-CAT-4 Gate 2c)
 
 # Provider for the T-CAT-4 exit-veto: (ticker, scan_at) -> CatalystSignal | None.
 # Injected and default None so the default trading path never builds the
@@ -526,8 +519,10 @@ def _buy_risk_note(ticker: str, entry_price: float, history_provider) -> str | N
         if atr is None or not np.isfinite(atr) or atr <= 0:
             return None
         levels = entry_risk_levels(
-            entry_price=float(entry_price), atr_value=float(atr),
-            stop_mult=stop_mult, tp_mult=tp_mult,
+            entry_price=float(entry_price),
+            atr_value=float(atr),
+            stop_mult=stop_mult,
+            tp_mult=tp_mult,
             hard_stop_enabled=bool(settings.get("atr_hard_stop_enabled", True)),
         )
         return format_entry_risk_note(levels)
@@ -812,9 +807,9 @@ def run_scan(
 
         # Memoize OHLCV history within this scan (used by the T10 ADV cap below).
         # Fail-open: a provider that raises yields None and the cap is skipped.
-        _history_seen: dict[str, "pd.DataFrame | None"] = {}
+        _history_seen: dict[str, pd.DataFrame | None] = {}
 
-        def _history_for(ticker: str) -> "pd.DataFrame | None":
+        def _history_for(ticker: str) -> pd.DataFrame | None:
             if ticker not in _history_seen:
                 try:
                     _history_seen[ticker] = history_provider(ticker)
@@ -847,9 +842,12 @@ def run_scan(
             for _t in trades:
                 if _t.side == "BUY":
                     _history_for(_t.ticker)  # Gate 3b (ADV cap) + nota R:R
-                if earnings_blackout_days > 0 and not _is_atr_forced_exit(_t.reason):
-                    if _t.side == "BUY" or earnings_block_sells:
-                        _earnings_date_for(_t.ticker)
+                if (
+                    earnings_blackout_days > 0
+                    and not _is_atr_forced_exit(_t.reason)
+                    and (_t.side == "BUY" or earnings_block_sells)
+                ):
+                    _earnings_date_for(_t.ticker)
 
         # In manual mode, remember which (ticker, side) pairs already have a
         # pending order so we don't duplicate the same intent on every scan.
@@ -889,8 +887,7 @@ def run_scan(
             o.status = "expired"
             o.decided_at = utcnow_naive()
             o.notes = (
-                (o.notes or "")
-                + "\n[scan] salida de riesgo cancelada: el precio se recuperó, "
+                (o.notes or "") + "\n[scan] salida de riesgo cancelada: el precio se recuperó, "
                 "el gatillo ya no aplica."
             ).strip()
             existing_pending.discard((o.ticker, o.side))
@@ -1019,9 +1016,7 @@ def run_scan(
             # unknown ADV (thin/missing history) leaves the order untouched.
             if trade.side == "BUY" and adv_cap_pct > 0 and trade.target_dollars:
                 adv = recent_adv_dollars(_history_for(trade.ticker), adv_lookback_days)
-                capped, was_capped = adv_capped_notional(
-                    float(trade.target_dollars), adv, adv_cap_pct
-                )
+                capped, was_capped = adv_capped_notional(float(trade.target_dollars), adv, adv_cap_pct)
                 if was_capped:
                     result.warnings.append(
                         f"{trade.ticker} BUY recortado por ADV: "
@@ -1061,9 +1056,7 @@ def run_scan(
             # days starting with a winner and sailed through. The cooldown
             # expires on its own as old cycles fall out of the window.
             if trade.side == "BUY" and churn_max_cycles > 0 and churn_lookback_days > 0:
-                n_cycles = _closed_cycles_count(
-                    session, acct.id, trade.ticker, churn_lookback_days
-                )
+                n_cycles = _closed_cycles_count(session, acct.id, trade.ticker, churn_lookback_days)
                 if n_cycles >= churn_max_cycles:
                     result.skipped += 1
                     result.warnings.append(
@@ -1088,7 +1081,9 @@ def run_scan(
                 should_check = trade.side == "BUY" or earnings_block_sells
                 if should_check:
                     edt = _earnings_date_for(trade.ticker)
-                    if edt is not None and _earnings_blackout_hit(edt, result.scan_at, earnings_blackout_days):
+                    if edt is not None and _earnings_blackout_hit(
+                        edt, result.scan_at, earnings_blackout_days
+                    ):
                         result.skipped += 1
                         result.warnings.append(
                             f"{trade.ticker} {trade.side} bloqueado: earnings el "
@@ -1161,9 +1156,11 @@ def run_scan(
             # El slippage se aplica encima igual. Se valida igual que haya precio
             # de mercado para el ticker (px) antes de operar.
             fill_px = px
-            if trade.fill_price_override is not None and np.isfinite(
-                trade.fill_price_override
-            ) and trade.fill_price_override > 0:
+            if (
+                trade.fill_price_override is not None
+                and np.isfinite(trade.fill_price_override)
+                and trade.fill_price_override > 0
+            ):
                 fill_px = float(trade.fill_price_override)
             # Guard de sanity (E5): no fillar sobre un precio de escala corrupta
             # (~10× tipo KLAC) aunque haya esquivado el guard del fetch. Preferimos
@@ -1422,14 +1419,11 @@ def approve_order(
             # pending para reintentar tras aprobar la(s) SELL(s). _fill_trade ya
             # topa el budget en acct.cash al precio de aprobación → nunca sobre-
             # apalanca. reconcile_account la barre igual si nunca se financia.
-            if order.side == "BUY" and _has_pending_sells(
-                session, acct.id, exclude_order_id=order.id
-            ):
+            if order.side == "BUY" and _has_pending_sells(session, acct.id, exclude_order_id=order.id):
                 order.status = "pending"
                 order.decided_at = None
                 order.notes = (
-                    (order.notes or "")
-                    + "\n[approve] sin liquidez suficiente; queda pendiente — "
+                    (order.notes or "") + "\n[approve] sin liquidez suficiente; queda pendiente — "
                     "aprobá primero la(s) SELL(s) pendiente(s) para liberar cash."
                 ).strip()
             else:
@@ -1809,9 +1803,7 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
                 # mano en el broker, y dejarlo caer en silencio es peligroso.
                 # Siguen pendientes (y re-avisando) hasta que se ejecuten o se
                 # rechacen. Los BUY y los SELL de señal sí expiran normal.
-                if o.side == "SELL" and (
-                    _is_atr_forced_exit(o.reason) or is_vol_trim_reason(o.reason)
-                ):
+                if o.side == "SELL" and (_is_atr_forced_exit(o.reason) or is_vol_trim_reason(o.reason)):
                     continue
                 o.status = "expired"
                 o.decided_at = utcnow_naive()
@@ -1831,9 +1823,7 @@ def reconcile_account(account_id: int, *, expire_pending_after_hours: int = 24) 
             for o in limbo:
                 o.status = "expired"
                 o.decided_at = utcnow_naive()
-                o.notes = (
-                    (o.notes or "") + "\n[reconcile] approved-limbo (pre-T7.2), expired."
-                ).strip()
+                o.notes = ((o.notes or "") + "\n[reconcile] approved-limbo (pre-T7.2), expired.").strip()
                 expired += 1
         if expired:
             from config.logging_config import get_logger
