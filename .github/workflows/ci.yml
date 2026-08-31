@@ -96,7 +96,13 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          python -m pip install --upgrade pip
+          # `setuptools` va en el upgrade a propósito. NO es una dependencia
+          # declarada del proyecto —no está en ningún requirements—: es la que
+          # trae el entorno del runner, y `pip-audit` audita el entorno entero.
+          # Con la 79.0.1 que venía preinstalada, `--strict` fallaba por
+          # PYSEC-2026-3447 (fix en 83.0.0), o sea que el rojo del job no era una
+          # CVE del código sino del andamio. Tarea 65.
+          python -m pip install --upgrade pip setuptools
           pip install pip-audit
           pip install -r requirements.txt
           pip-audit --strict 2>&1 | tee audit-output.txt
