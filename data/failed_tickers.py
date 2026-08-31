@@ -174,11 +174,7 @@ def record_success(ticker: str) -> None:
             # tickers en paralelo eso eran ~52 write-locks innecesarios que
             # alimentaban "database is locked" + agotamiento del pool. El SELECT
             # es concurrente bajo WAL y no toma el lock de escritura.
-            exists = (
-                session.query(FailedTicker.id)
-                .filter(FailedTicker.ticker == symbol)
-                .first()
-            )
+            exists = session.query(FailedTicker.id).filter(FailedTicker.ticker == symbol).first()
             if exists is None:
                 return
             session.query(FailedTicker).filter(FailedTicker.ticker == symbol).delete()

@@ -172,9 +172,7 @@ def write(
         log.exception("Parquet cache write failed for %s", ticker.upper())
 
 
-def read(
-    ticker: str, period: str, interval: str, ttl_hours: float | None
-) -> pd.DataFrame | None:
+def read(ticker: str, period: str, interval: str, ttl_hours: float | None) -> pd.DataFrame | None:
     """Frame cacheado fresco para ``(ticker, period, interval)`` o ``None``.
 
     Respeta el TTL igual que el backend SQLite: si ``fetched_at`` es más viejo que

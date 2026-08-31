@@ -148,7 +148,11 @@ def parse_yf_news_item(ticker: str, raw: dict) -> NewsItem | None:
         title = c.get("title")
         if not title:
             return None
-        url = (c.get("canonicalUrl") or {}).get("url") if isinstance(c.get("canonicalUrl"), dict) else c.get("link")
+        url = (
+            (c.get("canonicalUrl") or {}).get("url")
+            if isinstance(c.get("canonicalUrl"), dict)
+            else c.get("link")
+        )
         published = _parse_iso(c.get("pubDate") or c.get("displayTime"))
         return NewsItem(
             ticker=ticker.upper(),
@@ -488,7 +492,7 @@ def collect_finnhub_news(
         if not _warned_no_finnhub_key:
             log.info(
                 "FINNHUB_API_KEY not set — Finnhub source skipped. Get a free key "
-                "at finnhub.io and set it (setx FINNHUB_API_KEY \"…\" on Windows)."
+                'at finnhub.io and set it (setx FINNHUB_API_KEY "…" on Windows).'
             )
             _warned_no_finnhub_key = True
         return []
@@ -675,9 +679,7 @@ def _sec_session():
             )
             _warned_default_ua = True
     s = requests.Session()
-    s.headers.update(
-        {"User-Agent": ua, "Accept": "application/json", "Accept-Encoding": "gzip, deflate"}
-    )
+    s.headers.update({"User-Agent": ua, "Accept": "application/json", "Accept-Encoding": "gzip, deflate"})
     return s
 
 

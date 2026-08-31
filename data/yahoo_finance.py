@@ -195,11 +195,11 @@ def _is_transient(exc: BaseException) -> bool:
 # cada 60s (lo que prolongaba el propio throttle). El logging de WARNING vive acá
 # (transiciones); los checks repetidos con el breaker abierto son debug.
 _throttle_lock = threading.Lock()
-_throttle_until = 0.0     # time.monotonic() hasta cuando el cooldown está vigente
-_throttle_level = 0       # nivel de escalada (0 = breaker cerrado)
-_throttle_since = 0.0     # time.monotonic() del inicio del incidente actual
+_throttle_until = 0.0  # time.monotonic() hasta cuando el cooldown está vigente
+_throttle_level = 0  # nivel de escalada (0 = breaker cerrado)
+_throttle_since = 0.0  # time.monotonic() del inicio del incidente actual
 _throttle_probing = False  # un thread está pagando el probe canario
-_outage_notified = False   # ya se avisó (Slack) de este incidente (NET1 pieza 3c)
+_outage_notified = False  # ya se avisó (Slack) de este incidente (NET1 pieza 3c)
 
 
 def _throttle_cooldown_for(level: int) -> float:
@@ -241,7 +241,9 @@ def _note_throttle() -> None:
         log.warning(
             "Throttle de Yahoo persiste — breaker escalado a nivel %d "
             "(cooldown %.0fs, %.0f min de incidente)",
-            level, cooldown, elapsed / 60.0,
+            level,
+            cooldown,
+            elapsed / 60.0,
         )
     if notify_outage:  # fuera del lock (NET1 pieza 3c)
         _maybe_notify_outage("open", minutes=elapsed / 60.0, level=level)
@@ -690,9 +692,7 @@ def recent_split_factor(
         if splits is not None and len(splits) > 0:
             cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=lookback_days)
             idx = pd.to_datetime(splits.index, utc=True, errors="coerce")
-            recent = pd.to_numeric(
-                pd.Series(splits.values, index=idx), errors="coerce"
-            ).dropna()
+            recent = pd.to_numeric(pd.Series(splits.values, index=idx), errors="coerce").dropna()
             recent = recent[(recent.index >= cutoff) & (recent > 0)]
             if not recent.empty:
                 factor = float(recent.prod())
@@ -737,11 +737,7 @@ def scale_is_disputed(price: float | None, ticker: str, band: float | None = Non
     if price is None:
         return False
     try:
-        refs = [
-            c
-            for c in (_last_close(df) for df in _read_all_1d_frames(ticker.upper()))
-            if c is not None
-        ]
+        refs = [c for c in (_last_close(df) for df in _read_all_1d_frames(ticker.upper())) if c is not None]
     except Exception:
         log.exception("scale_is_disputed failed for %s", ticker)
         return False
@@ -831,10 +827,7 @@ def unreliable_reference(
     if price is None or reference is None:
         return None
     if scale_is_disputed(price, ticker):
-        return (
-            "los frames 1d cacheados no coinciden sobre este precio "
-            "(escala en disputa entre períodos)"
-        )
+        return "los frames 1d cacheados no coinciden sobre este precio (escala en disputa entre períodos)"
     ticker_upper = ticker.upper()
     factor = recent_split_factor(ticker_upper, allow_network=allow_network)
     if not split_explains(price, reference, factor):
@@ -853,9 +846,7 @@ def unreliable_reference(
     )
 
 
-def is_price_out_of_band(
-    price: float | None, reference: float | None, band: float | None = None
-) -> bool:
+def is_price_out_of_band(price: float | None, reference: float | None, band: float | None = None) -> bool:
     """True si ``price`` difiere de ``reference`` por más de ``band`` (fracción).
 
     Fail-open: si falta el precio, la referencia o la banda está en 0, devuelve
@@ -894,9 +885,7 @@ def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
     px, rf = float(price), float(ref)
     args = (ticker_upper, px, rf, abs(px / rf - 1.0) * 100, _price_sanity_band() * 100)
 
-    reason = unreliable_reference(
-        ticker_upper, px, rf, allow_network=(n >= _ESCALATE_AFTER)
-    )
+    reason = unreliable_reference(ticker_upper, px, rf, allow_network=(n >= _ESCALATE_AFTER))
     if reason is not None:
         if not _already_announced(ticker_upper, "unreliable"):
             log.error(
@@ -1094,9 +1083,11 @@ def _read_company_info_cache(ticker_upper: str) -> dict | None:
             )
             if row is None:
                 return None
-            return {"name": row.name or ticker_upper,
-                    "sector": row.sector or "N/A",
-                    "industry": row.industry or "N/A"}
+            return {
+                "name": row.name or ticker_upper,
+                "sector": row.sector or "N/A",
+                "industry": row.industry or "N/A",
+            }
     except Exception:
         return None
 
@@ -1107,15 +1098,15 @@ def _write_company_info_cache(ticker_upper: str, info: dict) -> None:
         return
     try:
         with session_scope() as session:
-            session.query(CompanyInfoCache).filter(
-                CompanyInfoCache.ticker == ticker_upper
-            ).delete()
-            session.add(CompanyInfoCache(
-                ticker=ticker_upper,
-                name=info.get("name"),
-                sector=info.get("sector"),
-                industry=info.get("industry"),
-            ))
+            session.query(CompanyInfoCache).filter(CompanyInfoCache.ticker == ticker_upper).delete()
+            session.add(
+                CompanyInfoCache(
+                    ticker=ticker_upper,
+                    name=info.get("name"),
+                    sector=info.get("sector"),
+                    industry=info.get("industry"),
+                )
+            )
     except Exception:
         log.debug("company_info cache write failed for %s", ticker_upper, exc_info=True)
 
@@ -1162,9 +1153,7 @@ def get_company_info(ticker: str) -> dict:
 _DEFAULT_BATCH_SIZE = 20
 
 
-def _sqlite_read_historical_cache(
-    ticker_upper: str, period: str, interval: str
-) -> pd.DataFrame | None:
+def _sqlite_read_historical_cache(ticker_upper: str, period: str, interval: str) -> pd.DataFrame | None:
     """Lectura del cache OHLCV desde SQLite (backend legacy)."""
     try:
         with session_scope() as session:
@@ -1187,9 +1176,7 @@ def _sqlite_read_historical_cache(
     return None
 
 
-def _parquet_read_historical_cache(
-    ticker_upper: str, period: str, interval: str
-) -> pd.DataFrame | None:
+def _parquet_read_historical_cache(ticker_upper: str, period: str, interval: str) -> pd.DataFrame | None:
     """Lectura del cache OHLCV desde Parquet (backend ARQ1). Mismo TTL."""
     try:
         from data import parquet_cache
@@ -1200,9 +1187,7 @@ def _parquet_read_historical_cache(
         return None
 
 
-def _read_historical_cache(
-    ticker_upper: str, period: str, interval: str
-) -> pd.DataFrame | None:
+def _read_historical_cache(ticker_upper: str, period: str, interval: str) -> pd.DataFrame | None:
     """Devuelve el frame cacheado fresco para (ticker, period, interval) o None.
 
     Puerta única de lectura compartida por la versión single y la batch. Despacha
@@ -1221,9 +1206,7 @@ def _read_historical_cache(
     return _sqlite_read_historical_cache(ticker_upper, period, interval)
 
 
-def _sqlite_write_historical_cache(
-    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
-) -> None:
+def _sqlite_write_historical_cache(ticker_upper: str, period: str, interval: str, df: pd.DataFrame) -> None:
     """Reemplaza la entrada de cache en SQLite (backend legacy)."""
     try:
         with session_scope() as session:
@@ -1244,9 +1227,7 @@ def _sqlite_write_historical_cache(
         log.exception("Historical cache write failed for %s", ticker_upper)
 
 
-def _parquet_write_historical_cache(
-    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
-) -> None:
+def _parquet_write_historical_cache(ticker_upper: str, period: str, interval: str, df: pd.DataFrame) -> None:
     """Reemplaza la entrada de cache en Parquet (backend ARQ1)."""
     try:
         from data import parquet_cache
@@ -1256,9 +1237,7 @@ def _parquet_write_historical_cache(
         log.exception("Parquet historical cache write failed for %s", ticker_upper)
 
 
-def _write_historical_cache(
-    ticker_upper: str, period: str, interval: str, df: pd.DataFrame
-) -> None:
+def _write_historical_cache(ticker_upper: str, period: str, interval: str, df: pd.DataFrame) -> None:
     """Reemplaza la entrada de cache para (ticker, period, interval).
 
     Despacha al backend activo (ARQ1); en 'dual' escribe a ambos (SQLite +
@@ -1401,9 +1380,7 @@ def _slice_ticker(batch_df: pd.DataFrame | None, ticker_upper: str) -> pd.DataFr
         return None
 
 
-def _download_batch(
-    chunk: list[str], period: str, interval: str
-) -> pd.DataFrame | None:
+def _download_batch(chunk: list[str], period: str, interval: str) -> pd.DataFrame | None:
     """Una sola descarga yf.download para todo ``chunk`` (un crumb compartido)."""
 
     def _do_download() -> pd.DataFrame | None:
@@ -1710,9 +1687,7 @@ def _is_sqlite_locked(exc: BaseException) -> bool:
     return "database is locked" in str(exc).lower()
 
 
-def _write_earnings_cache(
-    ticker_upper: str, earnings_dt: "datetime | None", *, attempts: int = 3
-) -> None:
+def _write_earnings_cache(ticker_upper: str, earnings_dt: "datetime | None", *, attempts: int = 3) -> None:
     """Upsert in-place la fila de earnings_cache de un ticker, tolerando el lock.
 
     OPS1(b): reemplaza el delete+insert por un update de la fila más reciente
@@ -1733,9 +1708,7 @@ def _write_earnings_cache(
                     .first()
                 )
                 if row is None:
-                    session.add(
-                        EarningsCache(ticker=ticker_upper, earnings_date=earnings_dt)
-                    )
+                    session.add(EarningsCache(ticker=ticker_upper, earnings_date=earnings_dt))
                 else:
                     row.earnings_date = earnings_dt
                     row.fetched_at = utcnow_naive()
@@ -1916,7 +1889,9 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     # liberar el lote. Los misses quedan transitorios (no se envenena el failing set).
     if not _should_attempt_fetch():
         for t in cache_misses:
-            record_transient(t, "Breaker de throttle abierto — batch de precios salteado", "price", override=True)
+            record_transient(
+                t, "Breaker de throttle abierto — batch de precios salteado", "price", override=True
+            )
         return results
 
     # 2. Parallel live fetches — pure network I/O, no DB locks
@@ -2065,9 +2040,7 @@ def _analyst_cache_write_db(ticker_upper: str, payload: dict) -> None:
 
     try:
         with session_scope() as session:
-            session.query(AnalystDataCache).filter(
-                AnalystDataCache.ticker == ticker_upper
-            ).delete()
+            session.query(AnalystDataCache).filter(AnalystDataCache.ticker == ticker_upper).delete()
             session.add(
                 AnalystDataCache(
                     ticker=ticker_upper,

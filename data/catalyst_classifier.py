@@ -20,8 +20,8 @@ classifier is a pure function of (title, content, source).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from config.logging_config import get_logger
 from data.catalyst_taxonomy import (
@@ -56,9 +56,9 @@ class Classification:
 Backend = Callable[[str, "str | None", str, "str | None"], Classification]
 
 # Confidence tiers
-_CONF_SEC_ITEM = 0.90   # structured 8-K item code → event_type
-_CONF_KEYWORD = 0.60    # headline keyword cue
-_CONF_NONE = 0.20       # no cue → other/neutral
+_CONF_SEC_ITEM = 0.90  # structured 8-K item code → event_type
+_CONF_KEYWORD = 0.60  # headline keyword cue
+_CONF_NONE = 0.20  # no cue → other/neutral
 
 # OPS1(a): dirección numérica del sentiment categórico. El heurístico no mide
 # magnitud, así que usa media escala (±0.5); el LLM devuelve su propio score fino.
@@ -93,7 +93,7 @@ def _classify_sec(content: str | None) -> tuple[str, str, float] | None:
     mapped = [(ITEM_CODE_EVENT[c], c) for c in codes if c in ITEM_CODE_EVENT]
     if not mapped:
         return None
-    event, code = min(mapped, key=lambda pair: event_priority(pair[0]))
+    event, _code = min(mapped, key=lambda pair: event_priority(pair[0]))
     # sentiment: explicit per-item override if any of the codes is unambiguous
     sentiment = "neutral"
     for _evt, c in mapped:
@@ -196,7 +196,7 @@ _LLM_SYSTEM = (
     'these keys: "event_type" (one of the allowed types), "sentiment" '
     '("positive"|"neutral"|"negative"), "confidence" (0..1), "sentiment_score" '
     "(-1..1, how positive or negative the news is FOR THE GIVEN TICKER: -1 very "
-    "negative, 0 neutral, +1 very positive), \"relevance\" (0..1, how much the "
+    'negative, 0 neutral, +1 very positive), "relevance" (0..1, how much the '
     "headline is actually about and material to the GIVEN ticker: 0 = only "
     "mentions it in passing or is about another company, 1 = squarely about it). "
     "Allowed event_type values: %s. Pick the single most material event for the "

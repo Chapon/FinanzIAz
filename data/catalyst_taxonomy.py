@@ -22,23 +22,23 @@ import re
 # Ordered by materiality: when several cues match, the classifier keeps the
 # earliest one in this list. Keep ``other`` last as the catch-all.
 EVENT_TYPES: tuple[str, ...] = (
-    "earnings_results",     # quarterly/annual results, EPS/revenue prints
-    "guidance_raise",       # forward guidance raised / above-consensus outlook
-    "guidance_cut",         # forward guidance lowered / warning
-    "mna",                  # merger, acquisition, takeover, change of control
-    "clinical_fda",         # drug trial, FDA decision, approval/rejection
-    "legal_regulatory",     # lawsuit, investigation, fine, delisting, restatement
-    "executive_change",     # CEO/CFO/director departure or appointment
-    "analyst_rating",       # upgrade / downgrade / initiation / price target
-    "product_launch",       # new product, launch, unveiling
-    "partnership_contract", # contract win, partnership, material agreement
-    "capital_return",       # buyback, dividend, stock split
-    "financing_offering",   # debt/equity offering, capital raise, loan
-    "insider_activity",     # insider buy/sell, 10b5-1
-    "restructuring",        # layoffs, impairment, exit/disposal, bankruptcy
-    "macro_sector",         # macro/sector-wide news hitting the name
-    "stock_movement",       # generic price-move / technical commentary (low signal)
-    "other",                # everything else
+    "earnings_results",  # quarterly/annual results, EPS/revenue prints
+    "guidance_raise",  # forward guidance raised / above-consensus outlook
+    "guidance_cut",  # forward guidance lowered / warning
+    "mna",  # merger, acquisition, takeover, change of control
+    "clinical_fda",  # drug trial, FDA decision, approval/rejection
+    "legal_regulatory",  # lawsuit, investigation, fine, delisting, restatement
+    "executive_change",  # CEO/CFO/director departure or appointment
+    "analyst_rating",  # upgrade / downgrade / initiation / price target
+    "product_launch",  # new product, launch, unveiling
+    "partnership_contract",  # contract win, partnership, material agreement
+    "capital_return",  # buyback, dividend, stock split
+    "financing_offering",  # debt/equity offering, capital raise, loan
+    "insider_activity",  # insider buy/sell, 10b5-1
+    "restructuring",  # layoffs, impairment, exit/disposal, bankruptcy
+    "macro_sector",  # macro/sector-wide news hitting the name
+    "stock_movement",  # generic price-move / technical commentary (low signal)
+    "other",  # everything else
 )
 EVENT_TYPE_SET = frozenset(EVENT_TYPES)
 
@@ -50,26 +50,26 @@ SENTIMENT_SET = frozenset(SENTIMENTS)
 # https://www.sec.gov/fast-answers/answersform8khtm.html
 ITEM_CODE_EVENT: dict[str, str] = {
     "1.01": "partnership_contract",  # entry into a material definitive agreement
-    "1.02": "restructuring",         # termination of a material agreement
-    "1.03": "restructuring",         # bankruptcy or receivership
-    "2.01": "mna",                   # completion of acquisition/disposition
-    "2.02": "earnings_results",      # results of operations & financial condition
-    "2.03": "financing_offering",    # creation of a direct financial obligation
-    "2.04": "financing_offering",    # triggering events accelerating an obligation
-    "2.05": "restructuring",         # costs associated with exit/disposal
-    "2.06": "restructuring",         # material impairments
-    "3.01": "legal_regulatory",      # notice of delisting
-    "3.02": "financing_offering",    # unregistered sales of equity
-    "3.03": "other",                 # modification to security holder rights
-    "4.01": "other",                 # change in certifying accountant
-    "4.02": "legal_regulatory",      # non-reliance on prior financials (restatement)
-    "5.01": "mna",                   # changes in control of registrant
-    "5.02": "executive_change",      # departure/election of directors or officers
-    "5.03": "other",                 # amendments to articles/bylaws
-    "5.07": "other",                 # submission of matters to a shareholder vote
-    "7.01": "other",                 # Regulation FD disclosure
-    "8.01": "other",                 # other events
-    "9.01": "other",                 # financial statements & exhibits
+    "1.02": "restructuring",  # termination of a material agreement
+    "1.03": "restructuring",  # bankruptcy or receivership
+    "2.01": "mna",  # completion of acquisition/disposition
+    "2.02": "earnings_results",  # results of operations & financial condition
+    "2.03": "financing_offering",  # creation of a direct financial obligation
+    "2.04": "financing_offering",  # triggering events accelerating an obligation
+    "2.05": "restructuring",  # costs associated with exit/disposal
+    "2.06": "restructuring",  # material impairments
+    "3.01": "legal_regulatory",  # notice of delisting
+    "3.02": "financing_offering",  # unregistered sales of equity
+    "3.03": "other",  # modification to security holder rights
+    "4.01": "other",  # change in certifying accountant
+    "4.02": "legal_regulatory",  # non-reliance on prior financials (restatement)
+    "5.01": "mna",  # changes in control of registrant
+    "5.02": "executive_change",  # departure/election of directors or officers
+    "5.03": "other",  # amendments to articles/bylaws
+    "5.07": "other",  # submission of matters to a shareholder vote
+    "7.01": "other",  # Regulation FD disclosure
+    "8.01": "other",  # other events
+    "9.01": "other",  # financial statements & exhibits
 }
 
 # Item codes whose sentiment is unambiguous from the filing type alone. Anything
@@ -111,51 +111,280 @@ def event_priority(event_type: str) -> int:
 # Each (event_type, [phrases]) — matched case-insensitively as word-ish
 # substrings. Checked in EVENT_TYPES (materiality) order; first hit wins.
 EVENT_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("earnings_results", ["earnings", "q1 results", "q2 results", "q3 results", "q4 results",
-                          "quarterly results", "reports eps", "beats on revenue", "misses on revenue",
-                          "tops estimates", "misses estimates", "reports earnings"]),
-    ("guidance_raise", ["raises guidance", "raises outlook", "boosts forecast", "lifts guidance",
-                        "raises full-year", "above consensus", "raises fy"]),
-    ("guidance_cut", ["cuts guidance", "lowers guidance", "slashes outlook", "warns on",
-                     "profit warning", "cuts forecast", "lowers outlook", "guidance cut"]),
-    ("mna", ["to acquire", "acquires", "acquisition of", "merger", "to merge with",
-            "agrees to buy", "takeover", "buyout", "agrees to acquire", "in talks to buy"]),
-    ("clinical_fda", ["fda", "phase 1", "phase 2", "phase 3", "clinical trial", "trial data",
-                     "drug approval", "fda approval", "therapy", "endpoint met", "topline data"]),
-    ("legal_regulatory", ["lawsuit", "sues", "investigation", "probe", "subpoena", "antitrust",
-                        "sec charges", "delisting", "restatement", "recall", "settlement"]),
-    ("executive_change", ["new ceo", "new cfo", "ceo steps down", "cfo steps down", "resigns",
-                        "appoints", "names new", "to retire", "ceo departure", "ceo shift"]),
-    ("analyst_rating", ["upgrade", "upgraded", "downgrade", "downgraded", "initiates coverage",
-                      "price target", "target on", "raises target", "lowers target",
-                      "raised to buy", "cut to sell", "buy rating", "sell rating",
-                      "overweight", "underweight"]),
+    (
+        "earnings_results",
+        [
+            "earnings",
+            "q1 results",
+            "q2 results",
+            "q3 results",
+            "q4 results",
+            "quarterly results",
+            "reports eps",
+            "beats on revenue",
+            "misses on revenue",
+            "tops estimates",
+            "misses estimates",
+            "reports earnings",
+        ],
+    ),
+    (
+        "guidance_raise",
+        [
+            "raises guidance",
+            "raises outlook",
+            "boosts forecast",
+            "lifts guidance",
+            "raises full-year",
+            "above consensus",
+            "raises fy",
+        ],
+    ),
+    (
+        "guidance_cut",
+        [
+            "cuts guidance",
+            "lowers guidance",
+            "slashes outlook",
+            "warns on",
+            "profit warning",
+            "cuts forecast",
+            "lowers outlook",
+            "guidance cut",
+        ],
+    ),
+    (
+        "mna",
+        [
+            "to acquire",
+            "acquires",
+            "acquisition of",
+            "merger",
+            "to merge with",
+            "agrees to buy",
+            "takeover",
+            "buyout",
+            "agrees to acquire",
+            "in talks to buy",
+        ],
+    ),
+    (
+        "clinical_fda",
+        [
+            "fda",
+            "phase 1",
+            "phase 2",
+            "phase 3",
+            "clinical trial",
+            "trial data",
+            "drug approval",
+            "fda approval",
+            "therapy",
+            "endpoint met",
+            "topline data",
+        ],
+    ),
+    (
+        "legal_regulatory",
+        [
+            "lawsuit",
+            "sues",
+            "investigation",
+            "probe",
+            "subpoena",
+            "antitrust",
+            "sec charges",
+            "delisting",
+            "restatement",
+            "recall",
+            "settlement",
+        ],
+    ),
+    (
+        "executive_change",
+        [
+            "new ceo",
+            "new cfo",
+            "ceo steps down",
+            "cfo steps down",
+            "resigns",
+            "appoints",
+            "names new",
+            "to retire",
+            "ceo departure",
+            "ceo shift",
+        ],
+    ),
+    (
+        "analyst_rating",
+        [
+            "upgrade",
+            "upgraded",
+            "downgrade",
+            "downgraded",
+            "initiates coverage",
+            "price target",
+            "target on",
+            "raises target",
+            "lowers target",
+            "raised to buy",
+            "cut to sell",
+            "buy rating",
+            "sell rating",
+            "overweight",
+            "underweight",
+        ],
+    ),
     ("product_launch", ["launches", "unveils", "introduces", "new product", "rolls out", "debut"]),
-    ("partnership_contract", ["partnership", "wins contract", "awarded contract", "signs deal",
-                           "signs agreement", "agreement with", "deal with", "collaborat"]),
-    ("capital_return", ["buyback", "share repurchase", "dividend hike", "raises dividend",
-                     "stock split", "special dividend"]),
-    ("financing_offering", ["stock offering", "share offering", "public offering", "debt offering",
-                         "secondary offering", "convertible notes", "private placement",
-                         "files to sell", "capital raise", "raises capital"]),
-    ("insider_activity", ["insider buying", "insider selling", "insiders sold", "insiders bought",
-                       "ceo buys", "ceo sells", "10b5-1", "form 4"]),
-    ("restructuring", ["layoffs", "cuts jobs", "restructuring", "impairment", "writedown",
-                    "bankruptcy", "chapter 11", "shuts down"]),
-    ("macro_sector", ["fed", "inflation", "tariff", "interest rate", "sector update", "market selloff",
-                   "sector bloodbath", "jobs report", "rate hike", "rate cut"]),
-    ("stock_movement", ["soars", "plunges", "tumbles", "slumps", "spikes", "plummeted",
-                     "stock pops", "stock popped", "nosedive", "nosediving"]),
+    (
+        "partnership_contract",
+        [
+            "partnership",
+            "wins contract",
+            "awarded contract",
+            "signs deal",
+            "signs agreement",
+            "agreement with",
+            "deal with",
+            "collaborat",
+        ],
+    ),
+    (
+        "capital_return",
+        [
+            "buyback",
+            "share repurchase",
+            "dividend hike",
+            "raises dividend",
+            "stock split",
+            "special dividend",
+        ],
+    ),
+    (
+        "financing_offering",
+        [
+            "stock offering",
+            "share offering",
+            "public offering",
+            "debt offering",
+            "secondary offering",
+            "convertible notes",
+            "private placement",
+            "files to sell",
+            "capital raise",
+            "raises capital",
+        ],
+    ),
+    (
+        "insider_activity",
+        [
+            "insider buying",
+            "insider selling",
+            "insiders sold",
+            "insiders bought",
+            "ceo buys",
+            "ceo sells",
+            "10b5-1",
+            "form 4",
+        ],
+    ),
+    (
+        "restructuring",
+        [
+            "layoffs",
+            "cuts jobs",
+            "restructuring",
+            "impairment",
+            "writedown",
+            "bankruptcy",
+            "chapter 11",
+            "shuts down",
+        ],
+    ),
+    (
+        "macro_sector",
+        [
+            "fed",
+            "inflation",
+            "tariff",
+            "interest rate",
+            "sector update",
+            "market selloff",
+            "sector bloodbath",
+            "jobs report",
+            "rate hike",
+            "rate cut",
+        ],
+    ),
+    (
+        "stock_movement",
+        [
+            "soars",
+            "plunges",
+            "tumbles",
+            "slumps",
+            "spikes",
+            "plummeted",
+            "stock pops",
+            "stock popped",
+            "nosedive",
+            "nosediving",
+        ],
+    ),
 ]
 
 SENTIMENT_KEYWORDS: dict[str, list[str]] = {
-    "positive": ["beat", "beats", "tops", "surge", "soars", "jumps", "rallies", "spikes",
-                "wins", "raises", "boosts", "approval", "approves", "upgrade", "record",
-                "strong", "exceeds", "popped", "gains", "rises", "buyback", "dividend hike"],
-    "negative": ["miss", "misses", "plunge", "plummet", "tumbles", "slumps", "falls", "drops",
-                "lawsuit", "sues", "downgrade", "cuts", "slashes", "warning", "warns", "recall",
-                "delay", "bankruptcy", "probe", "investigation", "layoffs", "impairment",
-                "weak", "disappoints", "halts"],
+    "positive": [
+        "beat",
+        "beats",
+        "tops",
+        "surge",
+        "soars",
+        "jumps",
+        "rallies",
+        "spikes",
+        "wins",
+        "raises",
+        "boosts",
+        "approval",
+        "approves",
+        "upgrade",
+        "record",
+        "strong",
+        "exceeds",
+        "popped",
+        "gains",
+        "rises",
+        "buyback",
+        "dividend hike",
+    ],
+    "negative": [
+        "miss",
+        "misses",
+        "plunge",
+        "plummet",
+        "tumbles",
+        "slumps",
+        "falls",
+        "drops",
+        "lawsuit",
+        "sues",
+        "downgrade",
+        "cuts",
+        "slashes",
+        "warning",
+        "warns",
+        "recall",
+        "delay",
+        "bankruptcy",
+        "probe",
+        "investigation",
+        "layoffs",
+        "impairment",
+        "weak",
+        "disappoints",
+        "halts",
+    ],
 }
 
 _WORD_RE = re.compile(r"\s+")
@@ -185,7 +414,7 @@ def extract_item_codes(content: str | None) -> list[str]:
 # internal spaces match any run of whitespace.
 
 
-def _compile_phrase(phrase: str) -> "re.Pattern[str]":
+def _compile_phrase(phrase: str) -> re.Pattern[str]:
     parts = [re.escape(w) for w in phrase.split()]
     return re.compile(r"\b" + r"\s+".join(parts) + r"\b")
 

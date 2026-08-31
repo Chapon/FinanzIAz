@@ -239,9 +239,9 @@ def clear_facts_cache() -> None:
 
 
 __all__ = [
-    "FundamentalFacts",
     "NET_INCOME_CONCEPT",
     "REVENUE_CONCEPTS",
+    "FundamentalFacts",
     "clear_facts_cache",
     "fetch_company_facts",
     "get_fundamental_facts",
