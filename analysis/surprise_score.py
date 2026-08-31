@@ -98,6 +98,7 @@ _NEUTRAL_TEMPLATE = dict(
 
 
 def _neutral(ticker: str) -> SurpriseProfile:
+    # `_NEUTRAL_TEMPLATE` mezcla int y float, asi que el ** no encaja en dict[str, float].
     return SurpriseProfile(ticker=ticker, **_NEUTRAL_TEMPLATE)
 
 

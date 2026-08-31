@@ -101,6 +101,8 @@ def detect_anomalies(
         if not (_finite_pos(c_i) and _finite_pos(c_prev)):
             continue
         # (1) salto de precio positivo >= k·ATR
+        if a is None:  # sin ATR no hay umbral que comparar
+            continue
         if (c_i - c_prev) < params.k * a:
             continue
         # (2) volumen anómalo vs ADV20 (ventana estrictamente anterior a i)

@@ -30,6 +30,7 @@ import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 
@@ -264,7 +265,8 @@ def imminent_catalyst(
             profile = None
 
     if profile is not None and getattr(profile, "is_usable", False) and getattr(profile, "direction", 0) != 0:
-        direction = int(profile.direction)
+        prof: Any = profile  # el loader es inyectable y no declara tipo
+        direction = int(prof.direction)
         # conviction from the track record; keep the reaction magnitude as a floor
         # so a known catalyst still carries weight even with a mild surprise edge.
         magnitude = max(float(score.magnitude), abs(float(profile.directional_score)))

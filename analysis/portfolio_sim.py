@@ -425,15 +425,19 @@ def simulate_portfolio(
             # entrada), que es justo el brazo extremo de la grilla.
             atr_i = atr_p
             if trail_min_excess_of is not None:
-                cand = trail_min_excess_of(ticker, entry_date)
+                # `cand_thr` y no `cand`: unas lineas mas arriba `cand` es el cap
+                # de tenencia (int, tarea 51) y aca es el umbral de armado (float,
+                # tarea 54). Reusar el nombre para dos tipos distintos en la misma
+                # funcion es la misma trampa que `row` en el reporte de Excel.
+                cand_thr = trail_min_excess_of(ticker, entry_date)
                 if (
-                    isinstance(cand, (int, float))
-                    and not isinstance(cand, bool)
-                    and math.isfinite(cand)
-                    and cand >= 0
-                    and float(cand) != atr_p.trail_min_excess_atrs
+                    isinstance(cand_thr, (int, float))
+                    and not isinstance(cand_thr, bool)
+                    and math.isfinite(cand_thr)
+                    and cand_thr >= 0
+                    and float(cand_thr) != atr_p.trail_min_excess_atrs
                 ):
-                    atr_i = replace(atr_p, trail_min_excess_atrs=float(cand))
+                    atr_i = replace(atr_p, trail_min_excess_atrs=float(cand_thr))
 
             cyc = replay_cycle(
                 bars,

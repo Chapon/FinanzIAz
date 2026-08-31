@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -130,7 +130,13 @@ MIN_WALKFORWARD_ROWS = 250
 # account had just paid to train.
 
 
-def _lru_get(cache: OrderedDict[str, object], key: str, default=None):
+# Los helpers LRU son genericos en el tipo del VALOR: los dict son invariantes,
+# asi que un OrderedDict[str, tuple] no encaja en un parametro pedido como
+# OrderedDict[str, object] aunque tuple sea un object.
+_V = TypeVar("_V")
+
+
+def _lru_get(cache: OrderedDict[str, _V], key: str, default=None):
     """Read ``key``, marking it most-recently-used. ``default`` when absent."""
     if not key or key not in cache:
         return default
@@ -138,7 +144,7 @@ def _lru_get(cache: OrderedDict[str, object], key: str, default=None):
     return cache[key]
 
 
-def _lru_put(cache: OrderedDict[str, object], key: str, value, max_entries: int) -> None:
+def _lru_put(cache: OrderedDict[str, _V], key: str, value: _V, max_entries: int) -> None:
     """Store ``key`` and drop the least-recently-used entries over capacity."""
     if not key:
         return
@@ -476,7 +482,7 @@ def _hmm_observation_matrix(df: pd.DataFrame) -> np.ndarray | None:
     return (Xv - mu) / sd
 
 
-def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> object | None:
+def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> tuple[Any, list[int]] | None:
     """
     Fit a Gaussian HMM and return (model, state_order), where state_order
     lists state indices sorted ascending by mean log-return.

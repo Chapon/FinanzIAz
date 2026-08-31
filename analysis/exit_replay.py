@@ -190,9 +190,17 @@ def atr_exit(
 
 
 def _atr_trigger_level(
-    reason: str, *, avg_cost: float, hwm: float, atr_value: float, p: AtrParams
+    reason: str, *, avg_cost: float, hwm: float, atr_value: float | None, p: AtrParams
 ) -> float | None:
-    """Nivel-gatillo que corresponde a un ``reason`` ATR, para modelar el fill."""
+    """Nivel-gatillo que corresponde a un ``reason`` ATR, para modelar el fill.
+
+    ``atr_value`` acepta None porque es el ATR de la barra, que puede faltar. Hoy
+    no llega: esta función se invoca sólo cuando ya disparó una razón ATR, y sin
+    ATR ninguna puede disparar. Declararlo en la firma en vez de estrechar los
+    cuatro call sites deja dicho el invariante en un solo lugar.
+    """
+    if atr_value is None:
+        return None
     if reason == "atr_stop":
         return avg_cost - p.stop_mult * atr_value
     if reason == "atr_trail":

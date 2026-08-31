@@ -259,7 +259,7 @@ def _fit_garch_forecast_uncached(
         model = arch_model(
             returns,
             mean="Zero",
-            vol="Garch",
+            vol="GARCH",
             p=1,
             q=1,
             dist="normal",

@@ -62,7 +62,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 # ── Cuenta viva (verificado 2026-08-12 contra paper_accounts) ────────────────
 LIVE_ACCOUNT_ID = 2
@@ -839,19 +839,28 @@ _held_locks: dict[str, object] = {}
 
 def _lock_exclusive(fh) -> bool:
     """Toma un lock exclusivo NO bloqueante sobre ``fh``. False si esta tomado."""
+    # Los módulos se aliasan a `Any` a propósito: typeshed marca `fcntl` como
+    # exclusivo de Unix y `msvcrt` de Windows, así que mypy sólo ve los atributos
+    # del sistema donde corre y en el otro los reporta como inexistentes. Un
+    # `# type: ignore` sería peor: con `warn_unused_ignores` quedaría marcado como
+    # sobrante en LA OTRA plataforma, o sea que el archivo no podría estar limpio
+    # en las dos a la vez.
     try:
         import fcntl
+
+        unix: Any = fcntl
     except ImportError:
         import msvcrt
 
+        win: Any = msvcrt
         try:
             fh.seek(0)
-            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            win.locking(fh.fileno(), win.LK_NBLCK, 1)
             return True
         except OSError:
             return False
     try:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        unix.flock(fh.fileno(), unix.LOCK_EX | unix.LOCK_NB)
         return True
     except OSError:
         return False

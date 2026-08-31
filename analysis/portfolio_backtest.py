@@ -319,7 +319,7 @@ def _compute_target_weights(
         probs = probs or {}
         known = [vols[t] for t in active_tickers if vols.get(t, 0.0) > 0]
         fallback = float(np.median(known)) if known else _VOL_FALLBACK
-        raw: dict[str, float] = {}
+        raw_w: dict[str, float] = {}
         for t in active_tickers:
             p = probs.get(t)
             if p is None or not np.isfinite(p):
@@ -331,8 +331,8 @@ def _compute_target_weights(
             edge = 2.0 * float(p) - 1.0
             w = kelly_fraction * (edge / variance)
             if w > 0:  # drop non-positive edge (long-only)
-                raw[t] = w
-        return _cap_and_scale(raw, max_weight)
+                raw_w[t] = w
+        return _cap_and_scale(raw_w, max_weight)
 
     if mode == AllocationMode.EQUAL_WEIGHT:
         w = 1.0 / len(active_tickers)
