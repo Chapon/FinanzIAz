@@ -364,7 +364,7 @@ def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) ->
     """
     out: list[NewsItem] = []
     try:
-        import feedparser  # type: ignore
+        import feedparser
     except Exception:
         log.info("feedparser not installed — RSS source skipped for %s", ticker)
         return out

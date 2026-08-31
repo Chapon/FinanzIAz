@@ -172,9 +172,12 @@ class MarketDataService:
 
         try:
             result = yf.get_current_price(ticker)
+            # `.get()` devuelve Any|None y `_record` pide bool. El `bool(...)`
+            # es explicito y no cambia la semantica: el valor ya se estaba usando
+            # como verdad en el `and`.
             self._record(
-                price_hit=result is not None and result.get("from_cache"),
-                price_miss=result is not None and not result.get("from_cache"),
+                price_hit=bool(result is not None and result.get("from_cache")),
+                price_miss=bool(result is not None and not result.get("from_cache")),
             )
             return result
         except Exception as exc:

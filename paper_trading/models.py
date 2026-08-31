@@ -26,7 +26,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -36,7 +35,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.models import Base, utcnow_naive
 
@@ -61,38 +60,38 @@ class PaperAccount(Base):
 
     __tablename__ = "paper_accounts"
 
-    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = Column(String(100), nullable=False, unique=True)
-    description: Mapped[str | None] = Column(Text, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Strategy & execution
-    strategy: Mapped[str] = Column(String(30), nullable=False, default="analyze_single")
-    mode: Mapped[str] = Column(String(10), nullable=False, default="auto")
-    allocation_mode: Mapped[str] = Column(String(30), nullable=False, default="equal_weight")
-    max_positions: Mapped[int] = Column(Integer, nullable=False, default=5)
-    fixed_amount: Mapped[float] = Column(Float, nullable=False, default=5_000.0)
+    strategy: Mapped[str] = mapped_column(String(30), nullable=False, default="analyze_single")
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="auto")
+    allocation_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="equal_weight")
+    max_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    fixed_amount: Mapped[float] = mapped_column(Float, nullable=False, default=5_000.0)
 
     # Capital & costs
-    initial_capital: Mapped[float] = Column(Float, nullable=False, default=50_000.0)
-    cash: Mapped[float] = Column(Float, nullable=False, default=50_000.0)
-    commission: Mapped[float] = Column(Float, nullable=False, default=0.001)  # 0.10 %
-    slippage: Mapped[float] = Column(Float, nullable=False, default=0.0005)  # 0.05 %
+    initial_capital: Mapped[float] = mapped_column(Float, nullable=False, default=50_000.0)
+    cash: Mapped[float] = mapped_column(Float, nullable=False, default=50_000.0)
+    commission: Mapped[float] = mapped_column(Float, nullable=False, default=0.001)  # 0.10 %
+    slippage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0005)  # 0.05 %
 
     # Rebalance policy
-    drift_threshold: Mapped[float] = Column(Float, nullable=False, default=0.25)
-    monthly_rebalance: Mapped[bool] = Column(Boolean, nullable=False, default=True)
-    last_monthly_rebalance: Mapped[datetime | None] = Column(DateTime, nullable=True)
+    drift_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.25)
+    monthly_rebalance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_monthly_rebalance: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Lifecycle
-    is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
-    last_scan_at: Mapped[datetime | None] = Column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Notifications (T12). Per-account opt-out for Slack: when False, run_scan
     # skips the Slack summary for this account even if the global master switch
     # (slack_notifications_enabled) is on. Nullable for legacy rows; the engine
     # treats NULL as True (notify) so existing accounts keep notifying.
-    slack_notify: Mapped[bool | None] = Column(Boolean, nullable=True, default=True)
+    slack_notify: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
 
     # Relationships
     watchlist = relationship("PaperWatchlistItem", back_populates="account", cascade="all, delete-orphan")
@@ -116,10 +115,10 @@ class PaperWatchlistItem(Base):
         Index("ix_paper_watchlist_account", "account_id"),
     )
 
-    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
-    ticker: Mapped[str] = Column(String(20), nullable=False)
-    added_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    added_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
 
     account = relationship("PaperAccount", back_populates="watchlist")
 
@@ -137,18 +136,18 @@ class PaperPosition(Base):
         Index("ix_paper_positions_account", "account_id"),
     )
 
-    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
-    ticker: Mapped[str] = Column(String(20), nullable=False)
-    shares: Mapped[float] = Column(Float, nullable=False, default=0.0)
-    avg_cost: Mapped[float] = Column(Float, nullable=False, default=0.0)  # VWAP incl. fees/slippage
-    opened_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
-    updated_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
-    entry_reason: Mapped[str | None] = Column(String(100), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    shares: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    avg_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # VWAP incl. fees/slippage
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
+    entry_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Highest live price seen since the position was opened (or partially
     # added to). Powers the ATR trailing-stop gate. NULL on legacy rows and
     # on freshly-created positions until the first scan updates it.
-    high_water_mark: Mapped[float | None] = Column(Float, nullable=True)
+    high_water_mark: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     account = relationship("PaperAccount", back_populates="positions")
 
@@ -179,34 +178,38 @@ class PaperOrder(Base):
         Index("ix_paper_orders_ticker_filled", "ticker", "filled_at"),
     )
 
-    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
-    ticker: Mapped[str] = Column(String(20), nullable=False)
-    side: Mapped[str] = Column(String(4), nullable=False)  # "BUY" | "SELL"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)  # "BUY" | "SELL"
 
     # Intent
-    target_shares: Mapped[float | None] = Column(Float, nullable=True)  # approx; SELL may use all shares
-    target_dollars: Mapped[float | None] = Column(Float, nullable=True)
-    reason: Mapped[str | None] = Column(String(200), nullable=True)  # "signal", "drift", "monthly", ...
-    source: Mapped[str | None] = Column(String(30), nullable=True)  # strategy name that generated it
+    target_shares: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # approx; SELL may use all shares
+    target_dollars: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )  # "signal", "drift", "monthly", ...
+    source: Mapped[str | None] = mapped_column(String(30), nullable=True)  # strategy name that generated it
     # Conviction score in [0,1] produced by the strategy. Nullable for legacy
     # rows and for synthetic orders (e.g. drift/monthly rebalances) that don't
     # have a model probability behind them. Used by analytics + future gates.
-    signal_score: Mapped[float | None] = Column(Float, nullable=True)
+    signal_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Status flow
-    status: Mapped[str] = Column(String(20), nullable=False, default="pending")
-    created_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
-    decided_at: Mapped[datetime | None] = Column(DateTime, nullable=True)  # approved / rejected
-    filled_at: Mapped[datetime | None] = Column(DateTime, nullable=True)  # actually executed
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # approved / rejected
+    filled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # actually executed
 
     # Fill details (null if not filled)
-    fill_price: Mapped[float | None] = Column(Float, nullable=True)
-    fill_shares: Mapped[float | None] = Column(Float, nullable=True)
-    commission_paid: Mapped[float | None] = Column(Float, nullable=True)
-    slippage_cost: Mapped[float | None] = Column(Float, nullable=True)
+    fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fill_shares: Mapped[float | None] = mapped_column(Float, nullable=True)
+    commission_paid: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slippage_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    notes: Mapped[str | None] = Column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     account = relationship("PaperAccount", back_populates="orders")
 
@@ -226,16 +229,16 @@ class PaperEquitySnapshot(Base):
     __tablename__ = "paper_equity_snapshots"
     __table_args__ = (Index("ix_paper_equity_account_at", "account_id", "snapshot_at"),)
 
-    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = Column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
-    snapshot_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
-    cash: Mapped[float] = Column(Float, nullable=False)
-    positions_value: Mapped[float] = Column(Float, nullable=False)
-    total_equity: Mapped[float] = Column(Float, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    snapshot_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    cash: Mapped[float] = mapped_column(Float, nullable=False)
+    positions_value: Mapped[float] = mapped_column(Float, nullable=False)
+    total_equity: Mapped[float] = mapped_column(Float, nullable=False)
     # Estimated annualised book volatility at snapshot time (T10). Nullable:
     # NULL when the overlay is disabled or there isn't enough history to
     # estimate σ. Powers monitoring of how close the book runs to its vol target.
-    portfolio_sigma: Mapped[float | None] = Column(Float, nullable=True)
+    portfolio_sigma: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     account = relationship("PaperAccount", back_populates="snapshots")
 

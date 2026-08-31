@@ -125,13 +125,16 @@ def heuristic_classify(
                 return Classification(event, sentiment, conf, "heuristic", ss, rel)
 
         text = normalize(title)
-        event = match_event(text)
+        # `matched` y no `event`: en la rama SEC de arriba `event` ya es un `str`
+        # que sale del tuple, y `match_event` devuelve `str | None`. Reusar el
+        # nombre para dos tipos distintos es lo que confundia al lector y a mypy.
+        matched = match_event(text)
         sentiment = score_sentiment(text)
-        conf = _CONF_NONE if event is None else _CONF_KEYWORD
+        conf = _CONF_NONE if matched is None else _CONF_KEYWORD
         ss, rel = _heuristic_numeric(sentiment, conf)
-        if event is None:
+        if matched is None:
             return Classification("other", sentiment, conf, "heuristic", ss, rel)
-        return Classification(event, sentiment, conf, "heuristic", ss, rel)
+        return Classification(matched, sentiment, conf, "heuristic", ss, rel)
     except Exception:
         log.exception("heuristic_classify failed for %r", title)
         return Classification("other", "neutral", _CONF_NONE, "heuristic")
@@ -242,7 +245,7 @@ def make_llm_backend(client=None, model: str = "claude-haiku-4-5-20251001") -> B
         nonlocal client
         try:
             if client is None:
-                import anthropic  # type: ignore
+                import anthropic
 
                 client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
             user = (

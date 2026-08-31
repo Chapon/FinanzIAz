@@ -103,7 +103,10 @@ class _TimeoutHTTPAdapter(HTTPAdapter):
         self._default_timeout = timeout
         super().__init__(*args, **kwargs)
 
-    def send(self, request, **kwargs):
+    # La firma de `requests` enumera diez parametros; acá sólo se intercepta el
+    # timeout y se delega, así que `**kwargs` es lo correcto y reproducirla sería
+    # duplicarla para que mypy quede contento.
+    def send(self, request, **kwargs):  # type: ignore[override]
         if kwargs.get("timeout") is None:
             kwargs["timeout"] = self._default_timeout
         return super().send(request, **kwargs)
@@ -881,6 +884,10 @@ def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
         _clear_out_of_band_streak(ticker_upper)
         return info
 
+    # `is_price_out_of_band` devolvio True, y eso ya exige que los dos sean
+    # no-None (fail-open si falta cualquiera). El assert-libre queda explicito
+    # para que el tipo lo diga y no dependa de leer la otra funcion.
+    assert price is not None and ref is not None
     n, since = _note_out_of_band(ticker_upper)
     px, rf = float(price), float(ref)
     args = (ticker_upper, px, rf, abs(px / rf - 1.0) * 100, _price_sanity_band() * 100)
@@ -1858,8 +1865,16 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
                 )
                 # Keep only the latest entry per ticker
                 cached_map: dict[str, PriceCache] = {}
+
+                # `fetched_at` es nullable: una fila sin sello se toma como la
+                # MAS VIEJA (no pisa a una con sello), que es lo conservador. Antes
+                # la comparacion con None hubiera reventado con TypeError.
+                def _sello(r: PriceCache) -> datetime:
+                    return r.fetched_at or datetime.min
+
                 for row in cached_rows:
-                    if row.ticker not in cached_map or row.fetched_at > cached_map[row.ticker].fetched_at:
+                    prev = cached_map.get(row.ticker)
+                    if prev is None or _sello(row) > _sello(prev):
                         cached_map[row.ticker] = row
 
                 for ticker in tickers_upper:
@@ -2070,7 +2085,7 @@ def _bucket_recommendations(df: pd.DataFrame | None) -> list[dict]:
     for i, row in df.iterrows():
         try:
             period = str(row["period"]) if has_period else f"-{i}m" if i > 0 else "0m"
-            entry = {"period": period}
+            entry: dict[str, object] = {"period": period}
             total = 0
             for b in buckets:
                 v = int(row[b]) if b in row and pd.notna(row[b]) else 0
@@ -2169,7 +2184,7 @@ def get_analyst_data(ticker: str) -> dict:
             log.exception("Analyst data fetch failed for %s", ticker_upper)
         return out
 
-    result = _run_with_timeout(
+    result: dict | None = _run_with_timeout(
         _do_fetch,
         timeout=HARD_TIMEOUT_SECONDS,
         default={"recommendations": [], "price_targets": None},
