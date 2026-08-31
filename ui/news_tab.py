@@ -66,10 +66,12 @@ SENTIMENT_COLORS = {"positive": "#4ade80", "negative": "#fb7185", "neutral": "#9
 COLUMNS: list[tuple[str, str]] = [
     ("Fecha", "Fecha que declara la fuente (— si la fuente no la trae)."),
     ("Ticker", "Símbolo al que la noticia fue asociada por el harvester."),
-    ("Impacto",
-     "Impact Score heurístico (T-CAT-4): dirección × magnitud × confianza.\n"
-     "Signo = dirección esperada del precio; |valor| = convicción.\n"
-     "Sin historial de reacción usa priors por categoría — orientativo, no señal."),
+    (
+        "Impacto",
+        "Impact Score heurístico (T-CAT-4): dirección × magnitud × confianza.\n"
+        "Signo = dirección esperada del precio; |valor| = convicción.\n"
+        "Sin historial de reacción usa priors por categoría — orientativo, no señal.",
+    ),
     ("Categoría", "Una de las 17 categorías de la taxonomía catalyst (T-CAT-2)."),
     ("Sentimiento", "Clasificado por qwen local o heurística, desde la óptica del ticker."),
     ("Conf", "Confianza del clasificador (0-1). 0.90 = item-code SEC estructurado."),
@@ -105,7 +107,7 @@ class NewsDigestWorker(BaseWorker):
       ``briefing_ready(str)``           — cuando el briefing está listo (LLM o fallback).
     """
 
-    rows_ready = pyqtSignal(object)   # list[DigestItem]
+    rows_ready = pyqtSignal(object)  # list[DigestItem]
     briefing_ready = pyqtSignal(str)
 
     def __init__(self, days: int, use_llm: bool, parent=None):
@@ -289,8 +291,7 @@ class NewsTab(QWidget):
             self.briefing_card.setVisible(True)
         else:
             self.status_lbl.setText(
-                "Sin noticias en la ventana. ¿Corrió el harvest diario? "
-                "Probá ampliar la ventana de días."
+                "Sin noticias en la ventana. ¿Corrió el harvest diario? Probá ampliar la ventana de días."
             )
 
     def _on_briefing_ready(self, text: str):
@@ -311,14 +312,8 @@ class NewsTab(QWidget):
 
         for r_idx, it in enumerate(items):
             when = it.published_at.strftime("%m-%d %H:%M") if it.published_at else "—"
-            impact_color = (
-                "#4ade80" if it.impact > 0 else ("#fb7185" if it.impact < 0 else None)
-            )
-            conf = (
-                f"{it.classifier_confidence:.2f}"
-                if it.classifier_confidence is not None
-                else "—"
-            )
+            impact_color = "#4ade80" if it.impact > 0 else ("#fb7185" if it.impact < 0 else None)
+            conf = f"{it.classifier_confidence:.2f}" if it.classifier_confidence is not None else "—"
             cells = [
                 (when, None),
                 (it.ticker, None),
@@ -338,9 +333,7 @@ class NewsTab(QWidget):
                 if color:
                     item.setForeground(QColor(color))
                 if c_idx in (2, 5):
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 if c_idx == 7:
                     item.setToolTip(it.title + (f"\n{it.url}" if it.url else ""))
                     # guardamos la URL en la celda del titular para el doble click

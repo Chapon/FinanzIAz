@@ -115,9 +115,7 @@ class WelcomeCard(QFrame):
                 f"{sign}{pl_pct:.2f}%",
                 color=PALETTE["positive"] if ok else PALETTE["red"],
             )
-            self.status_rows["alerts"].set_status(
-                "Sin disparar" if n_alerts == 0 else f"{n_alerts} activas"
-            )
+            self.status_rows["alerts"].set_status("Sin disparar" if n_alerts == 0 else f"{n_alerts} activas")
 
 
 class PlatformSettingsCard(QFrame):

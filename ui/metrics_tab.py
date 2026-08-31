@@ -12,6 +12,7 @@ Muestra, sin tocar el hot-path de trading (solo lectura):
 El cálculo vive en ``analysis.metrics_panel`` (módulo puro); acá solo se arma la
 UI y se corre el cálculo en un worker para no bloquear el hilo de Qt.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -98,8 +99,7 @@ class MetricsWorker(BaseWorker):
             con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
             try:
                 rows = con.execute(
-                    "SELECT DISTINCT ticker FROM paper_positions "
-                    "WHERE account_id=? AND shares>0",
+                    "SELECT DISTINCT ticker FROM paper_positions WHERE account_id=? AND shares>0",
                     (self.account_id,),
                 ).fetchall()
             finally:
@@ -126,7 +126,7 @@ def _money(x: float | None) -> str:
 def _pct(x: float | None, signed: bool = False) -> str:
     if x is None:
         return "—"
-    return (f"{x * 100:+.1f}%" if signed else f"{x * 100:.1f}%")
+    return f"{x * 100:+.1f}%" if signed else f"{x * 100:.1f}%"
 
 
 def _ddmm(day: str | None) -> str:
@@ -163,8 +163,15 @@ class EffectivenessChart(QFrame):
         ax = self.figure.add_subplot(111)
         ax.set_facecolor(CHART_STYLE["axes.facecolor"])
         if not timeline:
-            ax.text(0.5, 0.5, "Sin round-trips cerrados todavía",
-                    ha="center", va="center", color=PALETTE["text3"], transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "Sin round-trips cerrados todavía",
+                ha="center",
+                va="center",
+                color=PALETTE["text3"],
+                transform=ax.transAxes,
+            )
             self.canvas.draw()
             return
         days = [mdates.datestr2num(p["day"]) for p in timeline if p["day"]]
@@ -258,65 +265,114 @@ class MetricsTab(QWidget):
         grid = QGridLayout()
         grid.setSpacing(14)
         defs = [
-            ("pnl", "P/L REALIZADO", "spike",
-             "Ganancia/pérdida total ya realizada de los round-trips cerrados "
-             "(compras emparejadas con sus ventas por FIFO), neta de comisión y "
-             "slippage. No incluye las posiciones todavía abiertas.\n"
-             "'Sin peor nombre' = el mismo total excluyendo el ticker que más perdió, "
-             "para ver cuánto pesa un solo nombre tóxico."),
-            ("winrate", "WIN RATE", "area",
-             "Porcentaje de round-trips cerrados con ganancia (P/L > 0). "
-             "NO es el veredicto de efectividad: para un sistema asimétrico un "
-             "win-rate < 50% es viable si el payoff ratio > 1. Mirá payoff, "
-             "expectancy y profit factor para juzgar el sistema."),
-            ("pf", "PROFIT FACTOR", "bar",
-             "Ganancia bruta de los trades ganadores dividida por la pérdida bruta de "
-             "los perdedores. Mayor a 1 significa que el sistema gana plata; 2 = ganás "
-             "el doble de lo que perdés."),
-            ("expectancy", "EXPECTANCY / TRADE", "area",
-             "Ganancia promedio esperable por cada round-trip cerrado "
-             "(P/L total ÷ cantidad de trades)."),
-            ("payoff", "PAYOFF RATIO", "bar",
-             "Ganancia media de los ganadores ÷ |pérdida media| de los perdedores "
-             "(avg_win / |avg_loss|). Para un sistema asimétrico es el verdadero "
-             "veredicto: con payoff > 1 un win-rate < 50% igual puede ser rentable."),
-            ("exworst", "P/L SIN PEOR NOMBRE", "spike",
-             "P/L realizado total excluyendo el ticker que más perdió. Muestra "
-             "cuánto pesa un solo nombre tóxico sobre el resultado."),
-            ("goodbad", "COMPRAS BUENAS / MALAS", "bar",
-             "Cantidad de compras buenas (round-trip cerrado con P/L > 0) frente a las "
-             "malas (P/L ≤ 0)."),
-            ("sellquality", "VENTAS BUENAS / MALAS", "bar",
-             "Calidad de la SALIDA por forward-return: venta BUENA = el precio NO "
-             "subió en los 5 días hábiles siguientes (evitó una caída / preservó "
-             "ganancia, fwd5 ≤ 0); venta MALA = siguió subiendo (vendiste temprano, "
-             "'regret', fwd5 > 0). Convención INVERTIDA respecto de las compras."),
-            ("timing", "TIMING BUENO (fwd5>0)", "area",
-             "Porcentaje de compras cuyo precio SUBIÓ en los 5 días hábiles siguientes "
-             "al BUY (forward return a 5 días > 0). Mide la calidad de la ENTRADA, "
-             "aunque la posición siga abierta y todavía no se haya vendido."),
-            ("costs", "FRICCIÓN TOTAL", "bar",
-             "Comisión + slippage pagados en TODAS las órdenes ejecutadas (compras "
-             "y ventas, incluidas las compras de posiciones aún abiertas). El "
-             "subtítulo muestra qué fracción del P/L bruto realizado se comió el "
-             "costo de operar. Distinto de los costos de round-trip (solo cerrados)."),
-            ("expired", "BUYS NO LLENADOS", "spike",
-             "Órdenes de compra que expiraron sin llegar a ejecutarse "
-             "(la cuenta opera en modo manual)."),
-            ("excursion", "MAE / MFE MEDIANA", "bar",
-             "Excursión intradía típica por round-trip (mediana). MAE = peor caída "
-             "no realizada que la posición aguantó (fondo); MFE = mejor suba no "
-             "realizada que llegó a estar disponible (techo). Calculada sobre "
-             "High/Low diarios entre la compra y la venta — es lo que ve un "
-             "stop/target intradía. Alimenta la calibración de stops/targets con "
-             "TODOS los trades cerrados, no solo los pocos exits ATR."),
-            ("benchmark", "VS SPY (PERÍODO)", "area",
-             "Retorno de la cuenta MENOS el retorno de SPY sobre la misma ventana "
-             "(del primer al último snapshot de equity). Es el alpha del período: "
-             "positivo = la cuenta le ganó al mercado; negativo = un índice pasivo "
-             "hubiera rendido más. Separa por fin sistema de mercado. SPY = "
-             "total-return implícito del cache (auto_adjust). '—' si falta el "
-             "cache de SPY o hay menos de 2 snapshots."),
+            (
+                "pnl",
+                "P/L REALIZADO",
+                "spike",
+                "Ganancia/pérdida total ya realizada de los round-trips cerrados "
+                "(compras emparejadas con sus ventas por FIFO), neta de comisión y "
+                "slippage. No incluye las posiciones todavía abiertas.\n"
+                "'Sin peor nombre' = el mismo total excluyendo el ticker que más perdió, "
+                "para ver cuánto pesa un solo nombre tóxico.",
+            ),
+            (
+                "winrate",
+                "WIN RATE",
+                "area",
+                "Porcentaje de round-trips cerrados con ganancia (P/L > 0). "
+                "NO es el veredicto de efectividad: para un sistema asimétrico un "
+                "win-rate < 50% es viable si el payoff ratio > 1. Mirá payoff, "
+                "expectancy y profit factor para juzgar el sistema.",
+            ),
+            (
+                "pf",
+                "PROFIT FACTOR",
+                "bar",
+                "Ganancia bruta de los trades ganadores dividida por la pérdida bruta de "
+                "los perdedores. Mayor a 1 significa que el sistema gana plata; 2 = ganás "
+                "el doble de lo que perdés.",
+            ),
+            (
+                "expectancy",
+                "EXPECTANCY / TRADE",
+                "area",
+                "Ganancia promedio esperable por cada round-trip cerrado (P/L total ÷ cantidad de trades).",
+            ),
+            (
+                "payoff",
+                "PAYOFF RATIO",
+                "bar",
+                "Ganancia media de los ganadores ÷ |pérdida media| de los perdedores "
+                "(avg_win / |avg_loss|). Para un sistema asimétrico es el verdadero "
+                "veredicto: con payoff > 1 un win-rate < 50% igual puede ser rentable.",
+            ),
+            (
+                "exworst",
+                "P/L SIN PEOR NOMBRE",
+                "spike",
+                "P/L realizado total excluyendo el ticker que más perdió. Muestra "
+                "cuánto pesa un solo nombre tóxico sobre el resultado.",
+            ),
+            (
+                "goodbad",
+                "COMPRAS BUENAS / MALAS",
+                "bar",
+                "Cantidad de compras buenas (round-trip cerrado con P/L > 0) frente a las malas (P/L ≤ 0).",
+            ),
+            (
+                "sellquality",
+                "VENTAS BUENAS / MALAS",
+                "bar",
+                "Calidad de la SALIDA por forward-return: venta BUENA = el precio NO "
+                "subió en los 5 días hábiles siguientes (evitó una caída / preservó "
+                "ganancia, fwd5 ≤ 0); venta MALA = siguió subiendo (vendiste temprano, "
+                "'regret', fwd5 > 0). Convención INVERTIDA respecto de las compras.",
+            ),
+            (
+                "timing",
+                "TIMING BUENO (fwd5>0)",
+                "area",
+                "Porcentaje de compras cuyo precio SUBIÓ en los 5 días hábiles siguientes "
+                "al BUY (forward return a 5 días > 0). Mide la calidad de la ENTRADA, "
+                "aunque la posición siga abierta y todavía no se haya vendido.",
+            ),
+            (
+                "costs",
+                "FRICCIÓN TOTAL",
+                "bar",
+                "Comisión + slippage pagados en TODAS las órdenes ejecutadas (compras "
+                "y ventas, incluidas las compras de posiciones aún abiertas). El "
+                "subtítulo muestra qué fracción del P/L bruto realizado se comió el "
+                "costo de operar. Distinto de los costos de round-trip (solo cerrados).",
+            ),
+            (
+                "expired",
+                "BUYS NO LLENADOS",
+                "spike",
+                "Órdenes de compra que expiraron sin llegar a ejecutarse (la cuenta opera en modo manual).",
+            ),
+            (
+                "excursion",
+                "MAE / MFE MEDIANA",
+                "bar",
+                "Excursión intradía típica por round-trip (mediana). MAE = peor caída "
+                "no realizada que la posición aguantó (fondo); MFE = mejor suba no "
+                "realizada que llegó a estar disponible (techo). Calculada sobre "
+                "High/Low diarios entre la compra y la venta — es lo que ve un "
+                "stop/target intradía. Alimenta la calibración de stops/targets con "
+                "TODOS los trades cerrados, no solo los pocos exits ATR.",
+            ),
+            (
+                "benchmark",
+                "VS SPY (PERÍODO)",
+                "area",
+                "Retorno de la cuenta MENOS el retorno de SPY sobre la misma ventana "
+                "(del primer al último snapshot de equity). Es el alpha del período: "
+                "positivo = la cuenta le ganó al mercado; negativo = un índice pasivo "
+                "hubiera rendido más. Separa por fin sistema de mercado. SPY = "
+                "total-return implícito del cache (auto_adjust). '—' si falta el "
+                "cache de SPY o hay menos de 2 snapshots.",
+            ),
         ]
         for i, (key, title, kind, tip) in enumerate(defs):
             card = KpiCard(title, "—", "", kind=kind)
@@ -343,42 +399,58 @@ class MetricsTab(QWidget):
             "Mix de salidas (P/L por tipo)",
             ["Tipo", "n", "P/L total", "P/L prom."],
             section_tip="Cómo rinde cada tipo de salida. signal_sell = el modelo decidió "
-                        "vender; atr_stop = stop de pérdida por ATR; atr_trail = trailing "
-                        "stop que sigue al máximo; atr_tp = take-profit.",
-            col_tips=["Tipo de salida que cerró el trade", "Cantidad de round-trips",
-                      "P/L total realizado de ese tipo", "P/L promedio por trade de ese tipo"],
-            fixed_height=_TABLE_HEIGHT)
+            "vender; atr_stop = stop de pérdida por ATR; atr_trail = trailing "
+            "stop que sigue al máximo; atr_tp = take-profit.",
+            col_tips=[
+                "Tipo de salida que cerró el trade",
+                "Cantidad de round-trips",
+                "P/L total realizado de ese tipo",
+                "P/L promedio por trade de ese tipo",
+            ],
+            fixed_height=_TABLE_HEIGHT,
+        )
         self.ticker_table = self._make_table(
             "P/L por ticker (peores primero)",
             ["Ticker", "n", "P/L"],
             section_tip="P/L realizado acumulado por nombre, peores arriba. Sirve para "
-                        "detectar si un solo ticker domina las pérdidas.",
+            "detectar si un solo ticker domina las pérdidas.",
             col_tips=["Símbolo", "Cantidad de round-trips cerrados", "P/L realizado acumulado"],
-            fixed_height=_TABLE_HEIGHT)
+            fixed_height=_TABLE_HEIGHT,
+        )
         self.rt_table = self._make_table(
             "Round-trips realizados (compra buena = P/L > 0)",
             ["Ticker", "Compra", "Venta", "Hold", "Salida", "P/L", "P/L %", "MAE", "MFE"],
             section_tip="Cada operación cerrada (BUY emparejado con su SELL por FIFO), "
-                        "de la más reciente a la más vieja. MAE/MFE = peor caída / mejor "
-                        "suba no realizada intradía mientras la posición estuvo abierta.",
-            col_tips=["Símbolo", "Fecha de compra", "Fecha de venta",
-                      "Días de tenencia entre compra y venta",
-                      "Tipo de salida que cerró el trade",
-                      "Ganancia/pérdida neta de costos", "Ganancia/pérdida en porcentaje",
-                      "MAE — peor pérdida no realizada que la posición aguantó (min Low ÷ entrada − 1)",
-                      "MFE — mejor ganancia no realizada disponible (max High ÷ entrada − 1)"],
-            fixed_height=_TABLE_HEIGHT)
+            "de la más reciente a la más vieja. MAE/MFE = peor caída / mejor "
+            "suba no realizada intradía mientras la posición estuvo abierta.",
+            col_tips=[
+                "Símbolo",
+                "Fecha de compra",
+                "Fecha de venta",
+                "Días de tenencia entre compra y venta",
+                "Tipo de salida que cerró el trade",
+                "Ganancia/pérdida neta de costos",
+                "Ganancia/pérdida en porcentaje",
+                "MAE — peor pérdida no realizada que la posición aguantó (min Low ÷ entrada − 1)",
+                "MFE — mejor ganancia no realizada disponible (max High ÷ entrada − 1)",
+            ],
+            fixed_height=_TABLE_HEIGHT,
+        )
         self.timing_table = self._make_table(
             "Timing de compras (forward return tras el BUY)",
             ["Ticker", "Fecha", "Score", "fwd5", "fwd20"],
             section_tip="Calidad de la ENTRADA de cada compra: cuánto se movió el precio "
-                        "después del BUY. Comparar Score con fwd5 muestra si la señal "
-                        "predice el movimiento de corto plazo.",
-            col_tips=["Símbolo", "Fecha de la compra",
-                      "Signal score del modelo al comprar (0-1, mayor = más convicción)",
-                      "Retorno del precio 5 días hábiles después del BUY",
-                      "Retorno del precio 20 días hábiles después del BUY"],
-            fixed_height=_TABLE_HEIGHT)
+            "después del BUY. Comparar Score con fwd5 muestra si la señal "
+            "predice el movimiento de corto plazo.",
+            col_tips=[
+                "Símbolo",
+                "Fecha de la compra",
+                "Signal score del modelo al comprar (0-1, mayor = más convicción)",
+                "Retorno del precio 5 días hábiles después del BUY",
+                "Retorno del precio 20 días hábiles después del BUY",
+            ],
+            fixed_height=_TABLE_HEIGHT,
+        )
         for t in (self.exit_table, self.ticker_table, self.rt_table, self.timing_table):
             row.addWidget(t["frame"], 1)
         self.root.addLayout(row)
@@ -388,16 +460,20 @@ class MetricsTab(QWidget):
             "Timing de ventas (forward return tras el SELL)",
             ["Ticker", "Fecha", "Score", "Salida", "fwd5", "fwd20"],
             section_tip="Calidad de la SALIDA: cuánto se movió el precio DESPUÉS del "
-                        "SELL. Venta buena = el precio no subió (fwd5 ≤ 0, verde); mala = "
-                        "siguió subiendo (fwd5 > 0, rojo, 'regret'). Color INVERTIDO "
-                        "respecto de las compras. Un atr_stop con regret igual hizo su "
-                        "trabajo (protección de capital), no es señal para apagar stops.",
-            col_tips=["Símbolo", "Fecha de la venta",
-                      "Signal score del modelo al vender",
-                      "Tipo de salida (signal_sell / atr_stop / atr_trail / atr_tp)",
-                      "Retorno del precio 5 días hábiles tras el SELL (negativo = venta buena)",
-                      "Retorno del precio 20 días hábiles tras el SELL"],
-            fixed_height=_TABLE_HEIGHT)
+            "SELL. Venta buena = el precio no subió (fwd5 ≤ 0, verde); mala = "
+            "siguió subiendo (fwd5 > 0, rojo, 'regret'). Color INVERTIDO "
+            "respecto de las compras. Un atr_stop con regret igual hizo su "
+            "trabajo (protección de capital), no es señal para apagar stops.",
+            col_tips=[
+                "Símbolo",
+                "Fecha de la venta",
+                "Signal score del modelo al vender",
+                "Tipo de salida (signal_sell / atr_stop / atr_trail / atr_tp)",
+                "Retorno del precio 5 días hábiles tras el SELL (negativo = venta buena)",
+                "Retorno del precio 20 días hábiles tras el SELL",
+            ],
+            fixed_height=_TABLE_HEIGHT,
+        )
         row2 = QHBoxLayout()
         row2.setSpacing(14)
         row2.addWidget(self.sell_timing_table["frame"], 1)
@@ -407,34 +483,45 @@ class MetricsTab(QWidget):
         self.concentration_summary = QLabel("—")
         self.concentration_summary.setWordWrap(True)
         self.concentration_summary.setStyleSheet(
-            f"color: {PALETTE['text2']}; font-size: 12px; font-weight: 600;")
+            f"color: {PALETTE['text2']}; font-size: 12px; font-weight: 600;"
+        )
         self.concentration_summary.setToolTip(
             "Resumen de concentración del book VIVO (posiciones abiertas): nombre más "
             "pesado, 'nombres efectivos' (1/HHI — cuántos nombres equivalentes hay "
             "realmente), correlación media par-a-par (cerca de 1.0 = un solo trade con "
-            "N tickers), y P/L no realizado excluyendo el mejor / peor nombre.")
+            "N tickers), y P/L no realizado excluyendo el mejor / peor nombre."
+        )
         self.root.addWidget(self.concentration_summary)
         self.concentration_table = self._make_table(
             "Concentración del book (peso, sector, P/L no realizado)",
             ["Ticker", "Peso %", "Sector", "Valor", "P/L no real."],
             section_tip="Cuánto pesa cada nombre en el book VIVO (posiciones abiertas), "
-                        "marcado al último precio cacheado. De un vistazo se ve si un solo "
-                        "ticker domina la cartera (MU llegó a 46.6%, AAPL 33.3% sin que nada "
-                        "lo mostrara). Display-only: no filtra ni bloquea (regla 3).",
-            col_tips=["Símbolo", "Peso del nombre sobre el valor total del book (rojo ≥ 30%)",
-                      "Sector (yfinance cacheado; 'Sin dato' si no se pudo obtener)",
-                      "Market value de la posición (shares × último precio)",
-                      "P/L no realizado de la posición (mark − avg_cost)"],
-            fixed_height=_TABLE_HEIGHT)
+            "marcado al último precio cacheado. De un vistazo se ve si un solo "
+            "ticker domina la cartera (MU llegó a 46.6%, AAPL 33.3% sin que nada "
+            "lo mostrara). Display-only: no filtra ni bloquea (regla 3).",
+            col_tips=[
+                "Símbolo",
+                "Peso del nombre sobre el valor total del book (rojo ≥ 30%)",
+                "Sector (yfinance cacheado; 'Sin dato' si no se pudo obtener)",
+                "Market value de la posición (shares × último precio)",
+                "P/L no realizado de la posición (mark − avg_cost)",
+            ],
+            fixed_height=_TABLE_HEIGHT,
+        )
         row3 = QHBoxLayout()
         row3.setSpacing(14)
         row3.addWidget(self.concentration_table["frame"], 1)
         self.root.addLayout(row3)
 
-    def _make_table(self, title: str, headers: list[str], *,
-                    section_tip: str | None = None,
-                    col_tips: list[str] | None = None,
-                    fixed_height: int | None = None) -> dict:
+    def _make_table(
+        self,
+        title: str,
+        headers: list[str],
+        *,
+        section_tip: str | None = None,
+        col_tips: list[str] | None = None,
+        fixed_height: int | None = None,
+    ) -> dict:
         frame = QFrame()
         frame.setObjectName("card")
         lay = QVBoxLayout(frame)
@@ -506,6 +593,7 @@ class MetricsTab(QWidget):
     # ── refresh lifecycle (patrón NewsTab) ────────────────────────────────────
     def maybe_refresh(self):
         import time
+
         if self._loaded_at is None or (time.time() - self._loaded_at) > _STALE_SECONDS:
             self.refresh()
 
@@ -528,6 +616,7 @@ class MetricsTab(QWidget):
 
     def _on_result(self, m: dict):
         import time
+
         self._loaded_at = time.time()
         r = m["realized"]
         t = m["timing"]
@@ -537,48 +626,56 @@ class MetricsTab(QWidget):
             f"generado {m['generated_at'][:19].replace('T', ' ')}"
         )
         # KPI cards
-        self.cards["pnl"].set_value(_money(r["total_pnl"]),
-                                    f"sin peor nombre: {_money(r['pnl_ex_worst'])}",
-                                    r["total_pnl"] > 0)
+        self.cards["pnl"].set_value(
+            _money(r["total_pnl"]), f"sin peor nombre: {_money(r['pnl_ex_worst'])}", r["total_pnl"] > 0
+        )
         # Win-rate reencuadrado: NO es el veredicto de efectividad (color neutro),
         # el titular real es el payoff ratio (sistema asimétrico).
-        self.cards["winrate"].set_value(_pct(r["win_rate"]),
-                                        "no es el veredicto — mirá payoff", None)
+        self.cards["winrate"].set_value(_pct(r["win_rate"]), "no es el veredicto — mirá payoff", None)
         pf = r["profit_factor"]
-        self.cards["pf"].set_value(f"{pf:.2f}" if pf else "—",
-                                   "ganancia/pérdida bruta", (pf or 0) >= 1.0)
-        self.cards["expectancy"].set_value(_money(r["expectancy"]),
-                                           f"avg win {_money(r['avg_win'])}", r["expectancy"] > 0)
+        self.cards["pf"].set_value(f"{pf:.2f}" if pf else "—", "ganancia/pérdida bruta", (pf or 0) >= 1.0)
+        self.cards["expectancy"].set_value(
+            _money(r["expectancy"]), f"avg win {_money(r['avg_win'])}", r["expectancy"] > 0
+        )
         payoff = r["payoff_ratio"]
-        self.cards["payoff"].set_value(f"{payoff:.2f}×" if payoff else "—",
-                                       "avg win / |avg loss|", (payoff or 0) >= 1.0)
+        self.cards["payoff"].set_value(
+            f"{payoff:.2f}×" if payoff else "—", "avg win / |avg loss|", (payoff or 0) >= 1.0
+        )
         self.cards["exworst"].set_value(
             _money(r["pnl_ex_worst"]),
             f"peor: {r['worst_ticker']['ticker']}" if r["worst_ticker"] else "",
-            r["pnl_ex_worst"] > 0)
-        self.cards["goodbad"].set_value(f"{r['n_wins']} / {r['n_losses']}",
-                                        "buenas / malas", r["n_wins"] >= r["n_losses"])
+            r["pnl_ex_worst"] > 0,
+        )
+        self.cards["goodbad"].set_value(
+            f"{r['n_wins']} / {r['n_losses']}", "buenas / malas", r["n_wins"] >= r["n_losses"]
+        )
         st = m["sell_timing"]
         self.cards["sellquality"].set_value(
             f"{st['good5']} / {st['n5'] - st['good5']}",
             f"mean fwd5 {_pct(st['mean5'], signed=True)} (regret)",
-            st["good5_pct"] >= 0.5)
-        self.cards["timing"].set_value(_pct(t["good5_pct"]),
-                                       f"mean fwd5 {_pct(t['mean5'], signed=True)}",
-                                       t["good5_pct"] >= 0.5)
+            st["good5_pct"] >= 0.5,
+        )
+        self.cards["timing"].set_value(
+            _pct(t["good5_pct"]), f"mean fwd5 {_pct(t['mean5'], signed=True)}", t["good5_pct"] >= 0.5
+        )
         fr = m["friction"]
         pct = fr["pct_of_gross"]
         self.cards["costs"].set_value(
             _money(fr["friction"]),
             f"{_pct(pct)} del P/L bruto" if pct is not None else "comisión + slippage (todas)",
-            False)
-        self.cards["expired"].set_value(str(m["expired_buys"]["n"]),
-                                        "órdenes expiradas", m["expired_buys"]["n"] == 0)
+            False,
+        )
+        self.cards["expired"].set_value(
+            str(m["expired_buys"]["n"]), "órdenes expiradas", m["expired_buys"]["n"] == 0
+        )
         exc = r["excursion"]
         self.cards["excursion"].set_value(
             f"{_pct(exc['median_mae'], signed=True)} / {_pct(exc['median_mfe'], signed=True)}"
-            if exc["n"] else "—",
-            "peor caída / mejor suba (mediana)", None)
+            if exc["n"]
+            else "—",
+            "peor caída / mejor suba (mediana)",
+            None,
+        )
         bm = m["benchmark"]
         if bm.get("stale"):
             # tarea 22: SPY quedó atrás → no mostramos un vs_spy sesgado.
@@ -590,7 +687,8 @@ class MetricsTab(QWidget):
                 _pct(bm["vs_spy"], signed=True),
                 f"cuenta {_pct(bm['account_return'], signed=True)} · "
                 f"SPY {_pct(bm['spy_return'], signed=True)}",
-                (bm["vs_spy"] or 0) > 0)
+                (bm["vs_spy"] or 0) > 0,
+            )
         else:
             self.cards["benchmark"].set_value("—", "sin cache de SPY todavía", None)
         # ── sparklines ──
@@ -601,13 +699,19 @@ class MetricsTab(QWidget):
         cum = [p["cum_pnl"] for p in timeline]
         wr_series = [p["rolling_win_rate"] * 100 for p in timeline]
         # P/L por trade en orden cronológico de venta (para goodbad: +/- por trade).
-        rts_ordered = sorted(r["round_trips"], key=lambda x: (x["sell_day"] or ""))
+        rts_ordered = sorted(r["round_trips"], key=lambda x: x["sell_day"] or "")
         pnl_seq = [x["pnl"] for x in rts_ordered]
         # fwd5 por compra (timing), en orden y salteando los None.
-        fwd5_seq = [b["fwd5"] * 100 for b in sorted(t["per_buy"], key=lambda x: (x["day"] or ""))
-                    if b["fwd5"] is not None]
-        sell_fwd5_seq = [s["fwd5"] * 100 for s in sorted(st["per_sell"], key=lambda x: (x["day"] or ""))
-                         if s["fwd5"] is not None]
+        fwd5_seq = [
+            b["fwd5"] * 100
+            for b in sorted(t["per_buy"], key=lambda x: x["day"] or "")
+            if b["fwd5"] is not None
+        ]
+        sell_fwd5_seq = [
+            s["fwd5"] * 100
+            for s in sorted(st["per_sell"], key=lambda x: x["day"] or "")
+            if s["fwd5"] is not None
+        ]
 
         def _spark(key: str, series: list[float]):
             card = self.cards[key]
@@ -693,7 +797,7 @@ class MetricsTab(QWidget):
 
     def _fill_rt_table(self, rts: list[dict]):
         tbl = self.rt_table["table"]
-        ordered = sorted(rts, key=lambda r: (r["sell_day"] or ""), reverse=True)
+        ordered = sorted(rts, key=lambda r: r["sell_day"] or "", reverse=True)
         tbl.setRowCount(len(ordered))
         for i, r in enumerate(ordered):
             tbl.setItem(i, 0, self._cell(r["ticker"]))
@@ -706,15 +810,29 @@ class MetricsTab(QWidget):
             mae = r.get("mae")
             mfe = r.get("mfe")
             # MAE siempre en rojo (caída), MFE siempre en verde (suba disponible).
-            tbl.setItem(i, 7, self._cell(_pct(mae, signed=True) if mae is not None else "—",
-                                         False if mae is not None else None, True))
-            tbl.setItem(i, 8, self._cell(_pct(mfe, signed=True) if mfe is not None else "—",
-                                         True if mfe is not None else None, True))
+            tbl.setItem(
+                i,
+                7,
+                self._cell(
+                    _pct(mae, signed=True) if mae is not None else "—",
+                    False if mae is not None else None,
+                    True,
+                ),
+            )
+            tbl.setItem(
+                i,
+                8,
+                self._cell(
+                    _pct(mfe, signed=True) if mfe is not None else "—",
+                    True if mfe is not None else None,
+                    True,
+                ),
+            )
         self._autosize(tbl)
 
     def _fill_timing_table(self, per_buy: list[dict]):
         tbl = self.timing_table["table"]
-        ordered = sorted(per_buy, key=lambda r: (r["day"] or ""), reverse=True)
+        ordered = sorted(per_buy, key=lambda r: r["day"] or "", reverse=True)
         tbl.setRowCount(len(ordered))
         for i, r in enumerate(ordered):
             sc = r["score"]
@@ -723,10 +841,24 @@ class MetricsTab(QWidget):
             tbl.setItem(i, 2, self._cell(f"{sc:.2f}" if sc is not None else "—", align_right=True))
             f5 = r["fwd5"]
             f20 = r["fwd20"]
-            tbl.setItem(i, 3, self._cell(_pct(f5, signed=True) if f5 is not None else "—",
-                                         (f5 > 0) if f5 is not None else None, True))
-            tbl.setItem(i, 4, self._cell(_pct(f20, signed=True) if f20 is not None else "—",
-                                         (f20 > 0) if f20 is not None else None, True))
+            tbl.setItem(
+                i,
+                3,
+                self._cell(
+                    _pct(f5, signed=True) if f5 is not None else "—",
+                    (f5 > 0) if f5 is not None else None,
+                    True,
+                ),
+            )
+            tbl.setItem(
+                i,
+                4,
+                self._cell(
+                    _pct(f20, signed=True) if f20 is not None else "—",
+                    (f20 > 0) if f20 is not None else None,
+                    True,
+                ),
+            )
         self._autosize(tbl)
 
     def _fill_concentration(self, cc: dict):
@@ -755,7 +887,7 @@ class MetricsTab(QWidget):
         weights = cc["weights"]
         tbl.setRowCount(len(weights))
         for i, w in enumerate(weights):
-            hot = w["weight"] >= 0.30   # nombre sobre-concentrado → rojo
+            hot = w["weight"] >= 0.30  # nombre sobre-concentrado → rojo
             tbl.setItem(i, 0, self._cell(w["ticker"]))
             tbl.setItem(i, 1, self._cell(_pct(w["weight"]), False if hot else None, True))
             tbl.setItem(i, 2, self._cell(w.get("sector") or "Sin dato"))
@@ -768,7 +900,7 @@ class MetricsTab(QWidget):
         # Mirror de _fill_timing_table pero con la convención de color INVERTIDA:
         # verde cuando fwd5 ≤ 0 (venta buena) y rojo cuando fwd5 > 0 (regret).
         tbl = self.sell_timing_table["table"]
-        ordered = sorted(per_sell, key=lambda r: (r["day"] or ""), reverse=True)
+        ordered = sorted(per_sell, key=lambda r: r["day"] or "", reverse=True)
         tbl.setRowCount(len(ordered))
         for i, r in enumerate(ordered):
             sc = r["score"]
@@ -778,8 +910,22 @@ class MetricsTab(QWidget):
             tbl.setItem(i, 3, self._cell(r["exit_kind"]))
             f5 = r["fwd5"]
             f20 = r["fwd20"]
-            tbl.setItem(i, 4, self._cell(_pct(f5, signed=True) if f5 is not None else "—",
-                                         (f5 <= 0) if f5 is not None else None, True))
-            tbl.setItem(i, 5, self._cell(_pct(f20, signed=True) if f20 is not None else "—",
-                                         (f20 <= 0) if f20 is not None else None, True))
+            tbl.setItem(
+                i,
+                4,
+                self._cell(
+                    _pct(f5, signed=True) if f5 is not None else "—",
+                    (f5 <= 0) if f5 is not None else None,
+                    True,
+                ),
+            )
+            tbl.setItem(
+                i,
+                5,
+                self._cell(
+                    _pct(f20, signed=True) if f20 is not None else "—",
+                    (f20 <= 0) if f20 is not None else None,
+                    True,
+                ),
+            )
         self._autosize(tbl)

@@ -3,8 +3,6 @@ CSV import dialog for FinanzIAs.
 Shows a preview table of parsed rows and lets the user confirm before saving.
 """
 
-from datetime import datetime
-
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont
 from PyQt6.QtWidgets import (

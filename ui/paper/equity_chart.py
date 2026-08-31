@@ -22,9 +22,9 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from ui.styles import CHART_STYLE, PALETTE
 
 
-def build_benchmark_overlay(snapshots: list,
-                            spy_pairs: list[tuple[str, float]] | None
-                            ) -> list[tuple[datetime, float]]:
+def build_benchmark_overlay(
+    snapshots: list, spy_pairs: list[tuple[str, float]] | None
+) -> list[tuple[datetime, float]]:
     """Normaliza SPY a la equity inicial sobre la ventana de los snapshots (V1).
 
     ``snapshots``: ``PaperEquitySnapshot`` ascendentes (``.snapshot_at``,
@@ -59,8 +59,7 @@ def build_benchmark_overlay(snapshots: list,
     return out
 
 
-def overlay_is_stale(snapshots: list,
-                     spy_pairs: list[tuple[str, float]] | None) -> bool:
+def overlay_is_stale(snapshots: list, spy_pairs: list[tuple[str, float]] | None) -> bool:
     """True si el último close de SPY quedó desactualizado vs el último snapshot.
 
     Reusa el umbral/lógica de ``metrics_panel`` (tarea 22) para no dibujar la
@@ -141,9 +140,12 @@ class EquityCurveChart(QWidget):
         self.canvas.draw()
 
     # ── Public API ───────────────────────────────────────────────────────────
-    def set_data(self, snapshots: list,
-                 benchmark: list[tuple[datetime, float]] | None = None,
-                 benchmark_stale: bool = False) -> None:
+    def set_data(
+        self,
+        snapshots: list,
+        benchmark: list[tuple[datetime, float]] | None = None,
+        benchmark_stale: bool = False,
+    ) -> None:
         """Render the equity curve from a list of ``PaperEquitySnapshot``.
 
         ``benchmark`` (opcional, V1): línea SPY normalizada a la equity inicial,
@@ -186,14 +188,16 @@ class EquityCurveChart(QWidget):
         self._first_xs = xs[0]
 
     # ── Drawing internals ────────────────────────────────────────────────────
-    def _full_redraw(self, xs: list, ys: list,
-                     benchmark: list[tuple[datetime, float]] | None = None,
-                     benchmark_stale: bool = False) -> None:
+    def _full_redraw(
+        self,
+        xs: list,
+        ys: list,
+        benchmark: list[tuple[datetime, float]] | None = None,
+        benchmark_stale: bool = False,
+    ) -> None:
         self.ax.clear()
         self._style_axes()
-        (self._line,) = self.ax.plot(
-            xs, ys, color=PALETTE["accent"], linewidth=1.8, label="Equity"
-        )
+        (self._line,) = self.ax.plot(xs, ys, color=PALETTE["accent"], linewidth=1.8, label="Equity")
         self._fill = self.ax.fill_between(
             xs,
             ys,
@@ -214,17 +218,25 @@ class EquityCurveChart(QWidget):
         # se leería como actual) — anotamos que el benchmark está stale.
         if benchmark_stale:
             self.ax.text(
-                0.01, 0.98, "SPY desactualizado",
-                transform=self.ax.transAxes, ha="left", va="top",
-                fontsize=8, color=PALETTE.get("text3", "#6B7280"),
+                0.01,
+                0.98,
+                "SPY desactualizado",
+                transform=self.ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=8,
+                color=PALETTE.get("text3", "#6B7280"),
             )
         elif benchmark:
             bx = [d for d, _ in benchmark]
             by = [v for _, v in benchmark]
             self.ax.plot(
-                bx, by,
+                bx,
+                by,
                 color=PALETTE.get("text2", "#9AA4B2"),
-                linewidth=1.2, linestyle="--", alpha=0.9,
+                linewidth=1.2,
+                linestyle="--",
+                alpha=0.9,
                 label="SPY (normalizado)",
             )
             self.ax.legend(loc="upper left", fontsize=8, frameon=False)

@@ -37,12 +37,12 @@ from ui.styles import CHART_STYLE, PALETTE
 
 # Pastel triad for categorical charts (cyan / orange / soft-red), then extras.
 CATEGORICAL_COLORS = [
-    PALETTE["accent"],   # cyan
-    PALETTE["orange"],   # orange
-    PALETTE["red"],      # soft red
-    PALETTE["purple"],   # violet
-    PALETTE["blue"],     # blue
-    PALETTE["yellow"],   # amber
+    PALETTE["accent"],  # cyan
+    PALETTE["orange"],  # orange
+    PALETTE["red"],  # soft red
+    PALETTE["purple"],  # violet
+    PALETTE["blue"],  # blue
+    PALETTE["yellow"],  # amber
     PALETTE["positive"],  # green
 ]
 
@@ -118,9 +118,14 @@ class AreaChartHero(QWidget):
         self.ax.clear()
         self._style_axes()
         self.ax.text(
-            0.5, 0.5, "Sin datos de equity todavía.",
-            transform=self.ax.transAxes, color=PALETTE["text3"],
-            ha="center", va="center", fontsize=11,
+            0.5,
+            0.5,
+            "Sin datos de equity todavía.",
+            transform=self.ax.transAxes,
+            color=PALETTE["text3"],
+            ha="center",
+            va="center",
+            fontsize=11,
         )
         self.ax.set_xticks([])
         self.ax.set_yticks([])
@@ -323,9 +328,14 @@ class DonutChart(QFrame):
         self.ax.clear()
         self.ax.axis("off")
         self.ax.text(
-            0.5, 0.5, "Sin posiciones abiertas.",
-            transform=self.ax.transAxes, color=PALETTE["text3"],
-            ha="center", va="center", fontsize=10,
+            0.5,
+            0.5,
+            "Sin posiciones abiertas.",
+            transform=self.ax.transAxes,
+            color=PALETTE["text3"],
+            ha="center",
+            va="center",
+            fontsize=10,
         )
         self.canvas.draw()
         self._clear_legend()
@@ -342,7 +352,7 @@ class DonutChart(QFrame):
         if len(data) > self._max_legend:
             head = data[: self._max_legend - 1]
             rest = sum(v for _, v in data[self._max_legend - 1 :])
-            data = head + [("Resto", rest)]
+            data = [*head, ("Resto", rest)]
 
         labels = [d[0] for d in data]
         values = [d[1] for d in data]
@@ -363,7 +373,10 @@ class DonutChart(QFrame):
 
         # Legend rows
         self._clear_legend()
-        for label, value, color in zip(labels, values, colors):
+        # strict=True: las tres listas salen de `data` cinco líneas más arriba, así
+        # que tienen el mismo largo por construcción. Si alguna vez dejan de tenerlo
+        # es un bug, y es mejor que grite acá que dibujar una leyenda incompleta.
+        for label, value, color in zip(labels, values, colors, strict=True):
             pct = (value / total * 100.0) if total else 0.0
             row = QWidget()
             rl = QHBoxLayout(row)

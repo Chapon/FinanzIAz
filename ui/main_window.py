@@ -27,8 +27,8 @@ from ui.analysis_tab import AnalysisTab
 from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
 from ui.leads_tab import LeadsTab
-from ui.news_tab import NewsTab
 from ui.metrics_tab import MetricsTab
+from ui.news_tab import NewsTab
 from ui.paper_tab import PaperTradingTab
 from ui.portfolio_tab import PortfolioTab
 from ui.reports_tab import ReportsTab
@@ -348,15 +348,15 @@ class MainWindow(QMainWindow):
     # ── Daily catalyst refresh callbacks ──────────────────────────────────────
 
     def _on_catalyst_refresh_started(self):
-        self.status_bar.showMessage(
-            "Noticias: actualizando harvest + clasificación del día…", 8_000
-        )
+        self.status_bar.showMessage("Noticias: actualizando harvest + clasificación del día…", 8_000)
 
     def _on_catalyst_refresh_completed(self, res):
         h, c = res.get("harvest_rc"), res.get("classify_rc")
-        ok = (h == 0 and c == 0)
-        msg = "Noticias del día actualizadas." if ok else (
-            f"Noticias: refresh terminó con avisos (harvest={h}, classify={c}) — ver log."
+        ok = h == 0 and c == 0
+        msg = (
+            "Noticias del día actualizadas."
+            if ok
+            else (f"Noticias: refresh terminó con avisos (harvest={h}, classify={c}) — ver log.")
         )
         self.status_bar.showMessage(msg, 10_000)
         # Refrescar la pestaña si está a la vista; si no, invalidar para que

@@ -375,8 +375,17 @@ class PaperTradingTab(QWidget):
         pen_l.addWidget(self._header_with_count("Órdenes pendientes", attr="_pending_header"))
         self.pending_table = QTableWidget(0, 9)
         self.pending_table.setHorizontalHeaderLabels(
-            ["Fecha", "Side", "Ticker", "Shares", "Target $", "Comisión est.", "Motivo",
-             "R:R / niveles", "Acciones"]
+            [
+                "Fecha",
+                "Side",
+                "Ticker",
+                "Shares",
+                "Target $",
+                "Comisión est.",
+                "Motivo",
+                "R:R / niveles",
+                "Acciones",
+            ]
         )
         self._apply_table_style(self.pending_table, row_height=52)
         # "Acciones" is the stretch-last column, so it soaks up the leftover
@@ -384,8 +393,8 @@ class PaperTradingTab(QWidget):
         # other columns can collapse to their (now word-wrapped) headers
         # instead of all being forced to a wide floor.
         self.pending_table.horizontalHeader().setMinimumSectionSize(46)
-        self.pending_table.setColumnWidth(7, 150)   # R:R / niveles (V2)
-        self.pending_table.setColumnWidth(8, 240)   # Acciones
+        self.pending_table.setColumnWidth(7, 150)  # R:R / niveles (V2)
+        self.pending_table.setColumnWidth(8, 240)  # Acciones
         # Tooltip on hover over Ticker column (col 2)
         install_ticker_tooltips(self.pending_table, 2)
         self.pending_table.setMinimumHeight(_TABLE_MIN_H)
@@ -474,9 +483,7 @@ class PaperTradingTab(QWidget):
                 item.setText("\n".join(words))
                 item.setToolTip(" ".join(words))
             max_lines = max(max_lines, len(words) or 1)
-        header.setDefaultAlignment(
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
-        )
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom)
         line_h = header.fontMetrics().height()
         # Add the QSS section vertical padding (~10px top + 10px bottom) plus a
         # small margin so no line gets clipped.
@@ -615,9 +622,7 @@ class PaperTradingTab(QWidget):
                 box.setWindowTitle("Pausar cuenta")
                 box.setTextFormat(Qt.TextFormat.RichText)
                 box.setText(body)
-                box.setStandardButtons(
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
+                box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 box.setDefaultButton(QMessageBox.StandardButton.No)  # safer default
                 if box.exec() != QMessageBox.StandardButton.Yes:
                     return
@@ -1105,8 +1110,12 @@ class PaperTradingTab(QWidget):
             return
         if not ok:
             QMessageBox.warning(self, "Aprobar", "La orden ya no está pendiente.")
-        elif ok.status == "pending":
+        elif ok.status == "pending":  # noqa: SIM102
             # T7.2: bloqueada por re-gate (market hours / earnings blackout).
+            # El if queda anidado a propósito: `_offer_gate_override` abre un
+            # diálogo modal, y meter un efecto de lado dentro de la condición de
+            # un `elif` —en el path de APROBACIÓN de una orden— se lee peor de lo
+            # que ahorra. Mismo criterio con el que el repo ya ignora SIM108.
             if self._offer_gate_override(ok):
                 try:
                     approve_order(order_id, override_gates=True)

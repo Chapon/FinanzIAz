@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import date
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -44,10 +44,10 @@ from PyQt6.QtWidgets import (
 # → naranja → rojo. Manteniéndolos sólidos sin transparencia para legibilidad
 # sobre el fondo de card oscuro.
 BUCKET_COLORS = {
-    "strongBuy": "#0b5d2a",   # verde muy oscuro
-    "buy": "#7cd992",         # verde claro (mucho más contraste vs strongBuy)
-    "hold": "#fbbc04",        # amarillo (Google usa gris claro pero amarillo legibiliza mejor sobre dark)
-    "sell": "#ff7043",        # naranja
+    "strongBuy": "#0b5d2a",  # verde muy oscuro
+    "buy": "#7cd992",  # verde claro (mucho más contraste vs strongBuy)
+    "hold": "#fbbc04",  # amarillo (Google usa gris claro pero amarillo legibiliza mejor sobre dark)
+    "sell": "#ff7043",  # naranja
     "strongSell": "#ea4335",  # rojo
 }
 BUCKET_LABELS_ES = {
@@ -59,8 +59,7 @@ BUCKET_LABELS_ES = {
 }
 BUCKET_ORDER = ["strongBuy", "buy", "hold", "sell", "strongSell"]
 
-MONTH_NAMES_ES = ["ene", "feb", "mar", "abr", "may", "jun",
-                  "jul", "ago", "sep", "oct", "nov", "dic"]
+MONTH_NAMES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 
 def _period_to_month_label(period: str, today: date | None = None) -> str:
@@ -88,10 +87,10 @@ class StackedBar(QWidget):
         self.setMinimumHeight(20)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def sizeHint(self) -> QSize:  # noqa: N802
+    def sizeHint(self) -> QSize:
         return QSize(200, 20)
 
-    def paintEvent(self, _event):  # noqa: N802
+    def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         rect = self.rect()
@@ -108,6 +107,7 @@ class StackedBar(QWidget):
         # Clip a la pill para que los segmentos rectos queden redondeados en los bordes.
         path = p.clipRegion()
         from PyQt6.QtGui import QPainterPath
+
         clip_path = QPainterPath()
         clip_path.addRoundedRect(float(rect.x()), float(rect.y()), float(w), float(h), radius, radius)
         p.setClipPath(clip_path)
@@ -283,8 +283,7 @@ class RecommendationsCard(QFrame):
                 c = bucket.get(b, 0)
                 if c > 0:
                     tooltip_parts.append(
-                        f"<span style='color:{BUCKET_COLORS[b]}'>●</span> "
-                        f"{BUCKET_LABELS_ES[b]}: <b>{c}</b>"
+                        f"<span style='color:{BUCKET_COLORS[b]}'>●</span> {BUCKET_LABELS_ES[b]}: <b>{c}</b>"
                     )
             row.setToolTip("<br>".join(tooltip_parts))
 
@@ -340,8 +339,7 @@ class RecommendationsCard(QFrame):
                 txt += f" <span style='color:{color}'>({sign}{pct:.1f}%)</span>"
             return txt
 
-        for key, label in [("mean", "Promedio"), ("median", "Mediana"),
-                           ("low", "Mín"), ("high", "Máx")]:
+        for key, label in [("mean", "Promedio"), ("median", "Mediana"), ("low", "Mín"), ("high", "Máx")]:
             piece = _fmt_with_pct(label, t.get(key))
             if piece:
                 parts.append(piece)

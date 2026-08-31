@@ -54,38 +54,42 @@ VERDICT_COLORS = {
 # El ancho se calcula dinámicamente por contenido — no se hardcodea.
 COLUMNS: list[tuple[str, str]] = [
     ("Ticker", "Símbolo bursátil (ej. AAPL, MSFT)."),
-    ("Veredicto",
-     "Etiqueta agregada derivada del score:\n"
-     "  ≥ +1.5 → Compra fuerte\n"
-     "  ≥ +0.5 → Compra\n"
-     "  ≥ −0.5 → Mantener\n"
-     "  ≥ −1.5 → Venta\n"
-     "  <  −1.5 → Venta fuerte"),
-    ("Score",
-     "Promedio ponderado del consensus del mes actual:\n"
-     "  Strong Buy = +2 · Buy = +1 · Hold = 0 · Sell = −1 · Strong Sell = −2.\n"
-     "Rango teórico [−2, +2]. Cuanto más alto, mayor convicción alcista."),
-    ("# Analistas",
-     "Cantidad total de analistas que cubrieron el ticker en el mes actual.\n"
-     "Cobertura baja (< 5) suele ser ruidosa — usá el filtro de mínimo."),
-    ("% Compra fuerte",
-     "Porcentaje de analistas con recomendación Strong Buy en el mes actual."),
-    ("% Compra",
-     "Porcentaje de analistas con recomendación Buy en el mes actual."),
-    ("% Mantener",
-     "Porcentaje de analistas con recomendación Hold en el mes actual."),
-    ("% Venta",
-     "Porcentaje de analistas con recomendación Sell en el mes actual."),
-    ("% Venta fuerte",
-     "Porcentaje de analistas con recomendación Strong Sell en el mes actual."),
-    ("Precio actual",
-     "Último precio reportado por Yahoo (puede tener delay de hasta 15 min)."),
-    ("Target medio",
-     "Promedio de los price targets publicados por los analistas.\n"
-     "Yahoo expone también low/high/median — acá usamos solo el mean."),
-    ("Upside %",
-     "Variación implícita: (Target medio / Precio actual − 1) × 100.\n"
-     "Verde si el target está por encima del precio, rojo si está por debajo."),
+    (
+        "Veredicto",
+        "Etiqueta agregada derivada del score:\n"
+        "  ≥ +1.5 → Compra fuerte\n"
+        "  ≥ +0.5 → Compra\n"
+        "  ≥ −0.5 → Mantener\n"
+        "  ≥ −1.5 → Venta\n"
+        "  <  −1.5 → Venta fuerte",
+    ),
+    (
+        "Score",
+        "Promedio ponderado del consensus del mes actual:\n"
+        "  Strong Buy = +2 · Buy = +1 · Hold = 0 · Sell = −1 · Strong Sell = −2.\n"
+        "Rango teórico [−2, +2]. Cuanto más alto, mayor convicción alcista.",
+    ),
+    (
+        "# Analistas",
+        "Cantidad total de analistas que cubrieron el ticker en el mes actual.\n"
+        "Cobertura baja (< 5) suele ser ruidosa — usá el filtro de mínimo.",
+    ),
+    ("% Compra fuerte", "Porcentaje de analistas con recomendación Strong Buy en el mes actual."),
+    ("% Compra", "Porcentaje de analistas con recomendación Buy en el mes actual."),
+    ("% Mantener", "Porcentaje de analistas con recomendación Hold en el mes actual."),
+    ("% Venta", "Porcentaje de analistas con recomendación Sell en el mes actual."),
+    ("% Venta fuerte", "Porcentaje de analistas con recomendación Strong Sell en el mes actual."),
+    ("Precio actual", "Último precio reportado por Yahoo (puede tener delay de hasta 15 min)."),
+    (
+        "Target medio",
+        "Promedio de los price targets publicados por los analistas.\n"
+        "Yahoo expone también low/high/median — acá usamos solo el mean.",
+    ),
+    (
+        "Upside %",
+        "Variación implícita: (Target medio / Precio actual − 1) × 100.\n"
+        "Verde si el target está por encima del precio, rojo si está por debajo.",
+    ),
 ]
 
 
@@ -137,7 +141,9 @@ class LeadsTab(QWidget):
         self.analysts_input = QSpinBox()
         self.analysts_input.setRange(1, 50)
         self.analysts_input.setValue(5)
-        self.analysts_input.setToolTip("Mínimo de analistas que cubren el ticker (filtra small caps con poca cobertura).")
+        self.analysts_input.setToolTip(
+            "Mínimo de analistas que cubren el ticker (filtra small caps con poca cobertura)."
+        )
         self.analysts_input.valueChanged.connect(self._apply_filters)
         header.addWidget(self.analysts_input)
 

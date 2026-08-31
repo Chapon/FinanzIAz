@@ -44,8 +44,11 @@ class LeadsScanWorker(BaseWorker):
         # requests 404 por ticker muerto en cada scan — presión de throttle gratis.
         tickers, skipped = filter_skippable(self.tickers)
         if skipped:
-            log.info("Leads: %d tickers salteados por el failing set: %s",
-                     len(skipped), ", ".join(sorted(skipped)[:10]))
+            log.info(
+                "Leads: %d tickers salteados por el failing set: %s",
+                len(skipped),
+                ", ".join(sorted(skipped)[:10]),
+            )
 
         total = len(tickers)
         if total == 0:
