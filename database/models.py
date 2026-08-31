@@ -37,6 +37,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
+    Mapped,
     relationship,
     scoped_session,
     sessionmaker,
@@ -122,11 +123,11 @@ class Portfolio(Base):
 
     __tablename__ = "portfolios"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False, unique=True)
-    description = Column(Text, nullable=True)
-    currency = Column(String(10), default="USD")
-    created_at = Column(DateTime, default=utcnow_naive)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = Column(String(100), nullable=False, unique=True)
+    description: Mapped[str | None] = Column(Text, nullable=True)
+    currency: Mapped[str | None] = Column(String(10), default="USD")
+    created_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
 
     positions = relationship("Position", back_populates="portfolio", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="portfolio", cascade="all, delete-orphan")
@@ -141,19 +142,21 @@ class Position(Base):
     __tablename__ = "positions"
     __table_args__ = (Index("ix_positions_portfolio_ticker", "portfolio_id", "ticker"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    company_name = Column(String(200), nullable=True)
-    quantity = Column(Float, nullable=False)
-    avg_buy_price = Column(Float, nullable=False)
-    currency = Column(String(10), default="USD")
-    sector = Column(String(100), nullable=True)
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive)
-    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    company_name: Mapped[str | None] = Column(String(200), nullable=True)
+    quantity: Mapped[float] = Column(Float, nullable=False)
+    avg_buy_price: Mapped[float] = Column(Float, nullable=False)
+    currency: Mapped[str | None] = Column(String(10), default="USD")
+    sector: Mapped[str | None] = Column(String(100), nullable=True)
+    notes: Mapped[str | None] = Column(Text, nullable=True)
+    created_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
+    updated_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
-    purchase_date = Column(DateTime, nullable=True)  # actual date the shares were bought
+    purchase_date: Mapped[datetime | None] = Column(
+        DateTime, nullable=True
+    )  # actual date the shares were bought
 
     portfolio = relationship("Portfolio", back_populates="positions")
     transactions = relationship("Transaction", back_populates="position", cascade="all, delete-orphan")
@@ -172,14 +175,14 @@ class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (Index("ix_transactions_position_date", "position_id", "date"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    position_id = Column(Integer, ForeignKey("positions.id"), nullable=False, index=True)
-    transaction_type = Column(String(10), nullable=False)  # "BUY" or "SELL"
-    quantity = Column(Float, nullable=False)
-    price = Column(Float, nullable=False)
-    fees = Column(Float, default=0.0)
-    date = Column(DateTime, default=utcnow_naive, index=True)
-    notes = Column(Text, nullable=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    position_id: Mapped[int] = Column(Integer, ForeignKey("positions.id"), nullable=False, index=True)
+    transaction_type: Mapped[str] = Column(String(10), nullable=False)  # "BUY" or "SELL"
+    quantity: Mapped[float] = Column(Float, nullable=False)
+    price: Mapped[float] = Column(Float, nullable=False)
+    fees: Mapped[float | None] = Column(Float, default=0.0)
+    date: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, index=True)
+    notes: Mapped[str | None] = Column(Text, nullable=True)
 
     position = relationship("Position", back_populates="transactions")
 
@@ -201,18 +204,18 @@ class Alert(Base):
         Index("ix_alerts_ticker_active", "ticker", "is_active"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    alert_type = Column(String(20), nullable=False)  # "ABOVE" | "BELOW"
-    target_value = Column(Float, nullable=False)
-    is_active = Column(Boolean, default=True, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = Column(Integer, ForeignKey("portfolios.id"), nullable=False, index=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    alert_type: Mapped[str] = Column(String(20), nullable=False)  # "ABOVE" | "BELOW"
+    target_value: Mapped[float] = Column(Float, nullable=False)
+    is_active: Mapped[bool | None] = Column(Boolean, default=True, index=True)
     # ALRT1: estado "pausada" separado de is_active (que ya significa "disparada"
     # cuando es False). Una alerta pausada no se evalúa en check_alerts.
-    is_paused = Column(Boolean, nullable=False, default=False, server_default=text("0"))
-    triggered_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive)
-    message = Column(Text, nullable=True)
+    is_paused: Mapped[bool] = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    triggered_at: Mapped[datetime | None] = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
+    message: Mapped[str | None] = Column(Text, nullable=True)
 
     portfolio = relationship("Portfolio", back_populates="alerts")
 
@@ -229,13 +232,13 @@ class PriceCache(Base):
         Index("ix_price_cache_ticker_fetched", "ticker", "fetched_at"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    price = Column(Float, nullable=False)
-    change_pct = Column(Float, nullable=True)
-    volume = Column(Float, nullable=True)
-    market_cap = Column(Float, nullable=True)
-    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    price: Mapped[float] = Column(Float, nullable=False)
+    change_pct: Mapped[float | None] = Column(Float, nullable=True)
+    volume: Mapped[float | None] = Column(Float, nullable=True)
+    market_cap: Mapped[float | None] = Column(Float, nullable=True)
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, index=True)
 
     def __repr__(self):
         return f"<PriceCache({self.ticker} @ {self.price})>"
@@ -250,11 +253,11 @@ class DividendCache(Base):
     __tablename__ = "dividend_cache"
     __table_args__ = (Index("ix_dividend_cache_ticker_since", "ticker", "since_date"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    since_date = Column(DateTime, nullable=False)  # purchase date of position
-    total_per_share = Column(Float, nullable=False, default=0.0)  # cumulative $/share
-    fetched_at = Column(DateTime, default=utcnow_naive)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    since_date: Mapped[datetime] = Column(DateTime, nullable=False)  # purchase date of position
+    total_per_share: Mapped[float] = Column(Float, nullable=False, default=0.0)  # cumulative $/share
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f"<DividendCache({self.ticker} ${self.total_per_share}/share since {self.since_date.date()})>"
@@ -269,12 +272,12 @@ class HistoricalDataCache(Base):
     __tablename__ = "historical_data_cache"
     __table_args__ = (Index("ix_hist_cache_key", "ticker", "period", "interval"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False)
-    period = Column(String(10), nullable=False)  # e.g. "1y", "6mo"
-    interval = Column(String(10), nullable=False)  # e.g. "1d", "1h"
-    data_json = Column(Text, nullable=False)  # DataFrame serialized via to_json(orient="split")
-    fetched_at = Column(DateTime, default=utcnow_naive)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False)
+    period: Mapped[str] = Column(String(10), nullable=False)  # e.g. "1y", "6mo"
+    interval: Mapped[str] = Column(String(10), nullable=False)  # e.g. "1d", "1h"
+    data_json: Mapped[str] = Column(Text, nullable=False)  # DataFrame serialized via to_json(orient="split")
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f"<HistoricalDataCache({self.ticker} {self.period}/{self.interval} @ {self.fetched_at})>"
@@ -294,10 +297,12 @@ class EarningsCache(Base):
     __tablename__ = "earnings_cache"
     __table_args__ = (Index("ix_earnings_cache_ticker_fetched", "ticker", "fetched_at"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    earnings_date = Column(DateTime, nullable=True)  # next upcoming earnings; NULL = unknown/none
-    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    earnings_date: Mapped[datetime | None] = Column(
+        DateTime, nullable=True
+    )  # next upcoming earnings; NULL = unknown/none
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, index=True)
 
     def __repr__(self):
         when = self.earnings_date.date() if self.earnings_date else "none"
@@ -321,10 +326,10 @@ class AnalystDataCache(Base):
     __tablename__ = "analyst_data_cache"
     __table_args__ = (Index("ix_analyst_cache_ticker_fetched", "ticker", "fetched_at"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    data_json = Column(Text, nullable=False)  # JSON-serialized dict de get_analyst_data
-    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    data_json: Mapped[str] = Column(Text, nullable=False)  # JSON-serialized dict de get_analyst_data
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, index=True)
 
     def __repr__(self):
         return f"<AnalystDataCache({self.ticker} @ {self.fetched_at})>"
@@ -346,12 +351,12 @@ class CompanyInfoCache(Base):
 
     __tablename__ = "company_info_cache"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, unique=True, index=True)
-    name = Column(String(200), nullable=True)
-    sector = Column(String(100), nullable=True)
-    industry = Column(String(120), nullable=True)
-    fetched_at = Column(DateTime, default=utcnow_naive, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, unique=True, index=True)
+    name: Mapped[str] = Column(String(200), nullable=True)
+    sector: Mapped[str | None] = Column(String(100), nullable=True)
+    industry: Mapped[str | None] = Column(String(120), nullable=True)
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive, index=True)
 
     def __repr__(self):
         return f"<CompanyInfoCache({self.ticker} sector={self.sector} @ {self.fetched_at})>"
@@ -383,30 +388,32 @@ class NewsEvent(Base):
         Index("ix_news_unclassified", "event_type"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    title = Column(Text, nullable=False)
-    content = Column(Text, nullable=True)  # summary o cuerpo si la fuente lo provee
-    source = Column(String(50), nullable=False)  # "yfinance", "sec_8k", "pr_rss", ...
-    url = Column(Text, nullable=True)
-    published_at = Column(DateTime, nullable=True)  # timestamp que declara la fuente
-    fetched_at = Column(DateTime, default=utcnow_naive, index=True)  # cuándo LO VIMOS
-    content_hash = Column(String(40), nullable=False)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    title: Mapped[str] = Column(Text, nullable=False)
+    content: Mapped[str | None] = Column(Text, nullable=True)  # summary o cuerpo si la fuente lo provee
+    source: Mapped[str] = Column(String(50), nullable=False)  # "yfinance", "sec_8k", "pr_rss", ...
+    url: Mapped[str | None] = Column(Text, nullable=True)
+    published_at: Mapped[datetime | None] = Column(DateTime, nullable=True)  # timestamp que declara la fuente
+    fetched_at: Mapped[datetime | None] = Column(
+        DateTime, default=utcnow_naive, index=True
+    )  # cuándo LO VIMOS
+    content_hash: Mapped[str] = Column(String(40), nullable=False)
 
     # Rellenados por T-CAT-2. NULL = sin clasificar todavía.
-    event_type = Column(String(40), nullable=True)
-    sentiment = Column(String(12), nullable=True)  # positive / neutral / negative
-    classifier_confidence = Column(Float, nullable=True)
-    classified_at = Column(DateTime, nullable=True)
+    event_type: Mapped[str | None] = Column(String(40), nullable=True)
+    sentiment: Mapped[str | None] = Column(String(12), nullable=True)  # positive / neutral / negative
+    classifier_confidence: Mapped[float | None] = Column(Float, nullable=True)
+    classified_at: Mapped[datetime | None] = Column(DateTime, nullable=True)
     # Backend que produjo el label ("heuristic" / "ollama" / "llm" / "fallback").
     # T7.4: habilita QA por backend y detectar corridas con Ollama caído a posteriori.
-    classified_by = Column(String(20), nullable=True)
+    classified_by: Mapped[str | None] = Column(String(20), nullable=True)
     # OPS1(a): polaridad numérica point-in-time (misma llamada del classify, costo
     # marginal ~cero). sentiment_score ∈ [-1,+1], relevance ∈ [0,1]. NULL = fila
     # clasificada antes de OPS1. NO entra a ninguna decisión (regla 3): es
     # acumulación de dato point-in-time para el meta-modelo (tarea 9).
-    sentiment_score = Column(Float, nullable=True)
-    relevance = Column(Float, nullable=True)
+    sentiment_score: Mapped[float | None] = Column(Float, nullable=True)
+    relevance: Mapped[float | None] = Column(Float, nullable=True)
 
     def __repr__(self):
         return f"<NewsEvent({self.ticker} [{self.source}] {self.title[:40]!r})>"
@@ -429,14 +436,16 @@ class AnalystEstimateSnapshot(Base):
     __tablename__ = "analyst_estimate_snapshots"
     __table_args__ = (Index("ix_est_ticker_metric_date", "ticker", "metric", "snapshot_date"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, index=True)
-    metric = Column(String(24), nullable=False)  # "eps", "revenue", "rec_mean", "price_target"
-    period_label = Column(String(16), nullable=True)  # "0q","+1q","0y","+1y" o "2026-09"
-    consensus_value = Column(Float, nullable=True)
-    num_analysts = Column(Integer, nullable=True)
-    snapshot_date = Column(DateTime, default=utcnow_naive, index=True)  # día de observación (medianoche)
-    fetched_at = Column(DateTime, default=utcnow_naive)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, index=True)
+    metric: Mapped[str] = Column(String(24), nullable=False)  # "eps", "revenue", "rec_mean", "price_target"
+    period_label: Mapped[str | None] = Column(String(16), nullable=True)  # "0q","+1q","0y","+1y" o "2026-09"
+    consensus_value: Mapped[float | None] = Column(Float, nullable=True)
+    num_analysts: Mapped[int | None] = Column(Integer, nullable=True)
+    snapshot_date: Mapped[datetime | None] = Column(
+        DateTime, default=utcnow_naive, index=True
+    )  # día de observación (medianoche)
+    fetched_at: Mapped[datetime | None] = Column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         d = self.snapshot_date.date() if self.snapshot_date else "?"
@@ -466,14 +475,18 @@ class FailedTicker(Base):
     # already exists"), which is exactly what broke the in-memory test DB
     # when both index definitions tried to run.
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(20), nullable=False, unique=True, index=True)
-    last_error = Column(Text, nullable=True)
-    last_operation = Column(String(50), nullable=True)  # "price", "historical", "info", "validate"
-    fail_count = Column(Integer, default=1, nullable=False)
-    first_failed_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    last_failed_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
-    status = Column(String(20), default="failing", nullable=False, index=True)
+    id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = Column(String(20), nullable=False, unique=True, index=True)
+    last_error: Mapped[str | None] = Column(Text, nullable=True)
+    last_operation: Mapped[str | None] = Column(
+        String(50), nullable=True
+    )  # "price", "historical", "info", "validate"
+    fail_count: Mapped[int] = Column(Integer, default=1, nullable=False)
+    first_failed_at: Mapped[datetime] = Column(DateTime, default=utcnow_naive, nullable=False)
+    last_failed_at: Mapped[datetime] = Column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+    )
+    status: Mapped[str] = Column(String(20), default="failing", nullable=False, index=True)
 
     def __repr__(self):
         return f"<FailedTicker({self.ticker} status={self.status} count={self.fail_count})>"
