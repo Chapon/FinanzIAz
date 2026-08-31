@@ -12,10 +12,10 @@ from datetime import datetime
 
 from data.catalyst_classifier import (
     Classification,
+    _parse_llm_json,
     classify,
     heuristic_classify,
     make_llm_backend,
-    _parse_llm_json,
 )
 from data.catalyst_taxonomy import (
     EVENT_TYPES,
@@ -25,14 +25,13 @@ from data.catalyst_taxonomy import (
 from database.models import NewsEvent, session_scope
 from scripts.classify_catalysts import classify_events, sample_for_review
 
-
 # ── taxonomy ─────────────────────────────────────────────────────────────────
 
 
 def test_taxonomy_has_17_event_types():
     assert len(EVENT_TYPES) == 17
     assert len(set(EVENT_TYPES)) == 17
-    assert "other" == EVENT_TYPES[-1]
+    assert EVENT_TYPES[-1] == "other"
 
 
 def test_every_item_code_maps_into_taxonomy():
@@ -49,8 +48,9 @@ def test_extract_item_codes():
 
 
 def test_sec_8k_results_is_earnings_high_confidence():
-    c = heuristic_classify("AAPL 8-K: Results of Operations and Financial Condition",
-                           "Items: 2.02, 9.01", "sec_8k")
+    c = heuristic_classify(
+        "AAPL 8-K: Results of Operations and Financial Condition", "Items: 2.02, 9.01", "sec_8k"
+    )
     assert c.event_type == "earnings_results"
     assert c.confidence >= 0.9
 
@@ -119,7 +119,9 @@ def test_analyst_target_headline_is_rating_not_mna():
 
 
 def test_layoffs_is_restructuring():
-    assert heuristic_classify("Company announces major layoffs", None, "yfinance").event_type == "restructuring"
+    assert (
+        heuristic_classify("Company announces major layoffs", None, "yfinance").event_type == "restructuring"
+    )
 
 
 def test_insiders_sold_is_insider_activity():

@@ -16,15 +16,6 @@ What's pinned down:
 
 from __future__ import annotations
 
-import pytest
-
-from paper_trading.feature_switch import (
-    SWITCHABLE_TOGGLES,
-    RegimeFeaturePolicy,
-    is_vol_overlay_active_at,
-    policy_from_attribution_2026_06_01,
-    validate_policy_coverage,
-)
 from analysis.regime_detector import (
     REGIME_BEAR,
     REGIME_BULL_QUIET,
@@ -32,7 +23,12 @@ from analysis.regime_detector import (
     REGIME_LATERAL,
     REGIME_WARMUP,
 )
-
+from paper_trading.feature_switch import (
+    RegimeFeaturePolicy,
+    is_vol_overlay_active_at,
+    policy_from_attribution_2026_06_01,
+    validate_policy_coverage,
+)
 
 # ── Default policy (the headline contract) ──────────────────────────────────
 
@@ -160,8 +156,11 @@ class TestValidatePolicyCoverage:
         # default lacks a SWITCHABLE_TOGGLE; per_regime doesn't provide it
         # → every régime lacks it → 4 warnings, one per régime.
         p = RegimeFeaturePolicy(
-            default={"hmm_enabled": False, "stacking_enabled": False,
-                     "xgb_signal_enabled": True},  # missing vol_overlay_enabled
+            default={
+                "hmm_enabled": False,
+                "stacking_enabled": False,
+                "xgb_signal_enabled": True,
+            },  # missing vol_overlay_enabled
             per_regime={},
         )
         warnings = validate_policy_coverage(p)
@@ -171,8 +170,7 @@ class TestValidatePolicyCoverage:
     def test_per_regime_completion_silences_warning(self):
         # Same gap as above, but every régime fills it in.
         p = RegimeFeaturePolicy(
-            default={"hmm_enabled": False, "stacking_enabled": False,
-                     "xgb_signal_enabled": True},
+            default={"hmm_enabled": False, "stacking_enabled": False, "xgb_signal_enabled": True},
             per_regime={
                 REGIME_BULL_QUIET: {"vol_overlay_enabled": True},
                 REGIME_BULL_VOLATILE: {"vol_overlay_enabled": False},

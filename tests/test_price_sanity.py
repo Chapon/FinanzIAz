@@ -13,14 +13,12 @@ Tres capas de defensa:
 
 from __future__ import annotations
 
-import json
 import sqlite3
 
 import pandas as pd
 import pytest
 
 from data import yahoo_finance as yfm
-
 
 # ── Helpers de seeding ────────────────────────────────────────────────────────
 
@@ -106,17 +104,15 @@ def _fake_fetch(prices: dict[str, float]):
         px = prices.get(ticker.upper())
         if px is None:
             return None
-        return {"ticker": ticker.upper(), "price": px, "change_pct": None,
-                "volume": None, "market_cap": None}
+        return {"ticker": ticker.upper(), "price": px, "change_pct": None, "volume": None, "market_cap": None}
+
     return _inner
 
 
 def test_get_bulk_prices_rejects_out_of_band(monkeypatch, caplog):
     _seed_history("KLAC", [("2026-05-29", 194.0)])
     _seed_history("AAPL", [("2026-05-29", 200.0)])
-    monkeypatch.setattr(
-        yfm, "_fetch_ticker_info", _fake_fetch({"KLAC": 1942.70, "AAPL": 205.0})
-    )
+    monkeypatch.setattr(yfm, "_fetch_ticker_info", _fake_fetch({"KLAC": 1942.70, "AAPL": 205.0}))
     import logging
 
     with caplog.at_level(logging.WARNING, logger="data.yahoo_finance"):
@@ -199,7 +195,7 @@ def _cache_frame(closes: list[tuple[str, float]]) -> str:
 def test_audit_finds_klac_and_ignores_clean(tmp_path):
     from scripts import audit_price_contamination as audit
 
-    db, con = _build_audit_db(tmp_path)
+    _db, con = _build_audit_db(tmp_path)
     con.execute("INSERT INTO paper_accounts VALUES (1, 7202.22)")
     # KLAC round-trip corrupto (~10×) + un AAPL sano.
     con.executemany(
@@ -228,10 +224,10 @@ def test_audit_finds_klac_and_ignores_clean(tmp_path):
 def test_audit_net_cash_effect_matches_realized_pnl():
     from scripts import audit_price_contamination as audit
 
-    buy = audit.ContamOrder(73, 1, "KLAC", "BUY", 1942.700865, 2.0, 0.35607,
-                            "2026-06-01", "", 194.0, 9.0)
-    sell = audit.ContamOrder(77, 1, "KLAC", "SELL", 1987.8305875, 2.0, 0.466925,
-                             "2026-06-05", "", 192.92, 9.3)
+    buy = audit.ContamOrder(73, 1, "KLAC", "BUY", 1942.700865, 2.0, 0.35607, "2026-06-01", "", 194.0, 9.0)
+    sell = audit.ContamOrder(
+        77, 1, "KLAC", "SELL", 1987.8305875, 2.0, 0.466925, "2026-06-05", "", 192.92, 9.3
+    )
     # neto = proceeds − cost = P/L realizado inflado (~+$89.44).
     assert audit._net_cash_effect([buy, sell]) == pytest.approx(89.44, abs=0.05)
 
@@ -239,7 +235,7 @@ def test_audit_net_cash_effect_matches_realized_pnl():
 def test_audit_apply_void_reverts_cash_and_marks_orders(tmp_path):
     from scripts import audit_price_contamination as audit
 
-    db, con = _build_audit_db(tmp_path)
+    _db, con = _build_audit_db(tmp_path)
     con.execute("INSERT INTO paper_accounts VALUES (1, 7202.22)")
     con.executemany(
         "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -251,7 +247,9 @@ def test_audit_apply_void_reverts_cash_and_marks_orders(tmp_path):
     con.commit()
     orders = [
         audit.ContamOrder(73, 1, "KLAC", "BUY", 1942.700865, 2.0, 0.35607, "2026-06-01", "buy", 194.0, 9.0),
-        audit.ContamOrder(77, 1, "KLAC", "SELL", 1987.8305875, 2.0, 0.466925, "2026-06-05", "atr", 192.92, 9.3),
+        audit.ContamOrder(
+            77, 1, "KLAC", "SELL", 1987.8305875, 2.0, 0.466925, "2026-06-05", "atr", 192.92, 9.3
+        ),
     ]
     voided, skipped = audit.apply_void(con, orders)
     con.commit()
@@ -267,7 +265,7 @@ def test_audit_apply_void_reverts_cash_and_marks_orders(tmp_path):
 def test_audit_apply_void_skips_open_position(tmp_path):
     from scripts import audit_price_contamination as audit
 
-    db, con = _build_audit_db(tmp_path)
+    _db, con = _build_audit_db(tmp_path)
     con.execute("INSERT INTO paper_accounts VALUES (1, 5000.0)")
     con.execute("INSERT INTO paper_positions VALUES (1, 1, 'MLTX', 10.0)")
     con.execute(

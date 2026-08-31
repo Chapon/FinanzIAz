@@ -51,12 +51,22 @@ def _setup_manual_account(*, cash: float):
             )
         )
         sell = PaperOrder(
-            account_id=a.id, ticker="XOM", side="SELL", target_shares=50.0,
-            target_dollars=None, status="pending", reason="analyze SELL (0.30)",
+            account_id=a.id,
+            ticker="XOM",
+            side="SELL",
+            target_shares=50.0,
+            target_dollars=None,
+            status="pending",
+            reason="analyze SELL (0.30)",
         )
         buy = PaperOrder(
-            account_id=a.id, ticker="NVDA", side="BUY", target_shares=None,
-            target_dollars=5_000.0, status="pending", reason="analyze BUY (0.72)",
+            account_id=a.id,
+            ticker="NVDA",
+            side="BUY",
+            target_shares=None,
+            target_dollars=5_000.0,
+            status="pending",
+            reason="analyze BUY (0.72)",
         )
         s.add(sell)
         s.add(buy)
@@ -67,7 +77,7 @@ def _setup_manual_account(*, cash: float):
 def test_buy_before_sell_stays_pending_not_expired(test_db):
     """Aprobar la BUY primero, sin cash, NO la expira: queda pending esperando
     la SELL (cash insuficiente ni para 1 acción)."""
-    acct_id, sell_id, buy_id = _setup_manual_account(cash=50.0)  # < 1 acción NVDA
+    acct_id, _sell_id, buy_id = _setup_manual_account(cash=50.0)  # < 1 acción NVDA
 
     out = approve_order(buy_id, prices_provider=_prices, earnings_provider=_no_earnings)
     assert out is not None
@@ -113,7 +123,7 @@ def test_chained_flow_sell_then_buy_both_fill(test_db):
 def test_buy_without_pending_sell_expires(test_db):
     """Sin SELL pendiente que la financie, una BUY sub-financiada SÍ expira
     (no hay liquidez por venir → no tiene sentido dejarla colgada)."""
-    acct_id, sell_id, buy_id = _setup_manual_account(cash=50.0)
+    _acct_id, sell_id, buy_id = _setup_manual_account(cash=50.0)
     # Rechazamos/eliminamos la SELL pendiente para que no haya financiamiento.
     with session_scope() as s:
         sell = s.query(PaperOrder).filter(PaperOrder.id == sell_id).first()
@@ -128,7 +138,7 @@ def test_buy_without_pending_sell_expires(test_db):
 def test_funded_buy_still_fills_directly(test_db):
     """Contraprueba: si hay cash de sobra, la BUY se llena directo (el encadenado
     no interfiere con el camino normal)."""
-    acct_id, sell_id, buy_id = _setup_manual_account(cash=10_000.0)
+    _acct_id, _sell_id, buy_id = _setup_manual_account(cash=10_000.0)
     out = approve_order(buy_id, prices_provider=_prices, earnings_provider=_no_earnings)
     assert out is not None and out.status == "filled"
     assert out.fill_shares is not None and out.fill_shares >= 1

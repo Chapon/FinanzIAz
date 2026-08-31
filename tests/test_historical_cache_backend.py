@@ -85,9 +85,7 @@ def test_parity_sqlite_vs_parquet_end_to_end(monkeypatch):
     from_parquet = yfm._read_historical_cache("MSFT", "6mo", "1d")
 
     assert from_sqlite is not None and from_parquet is not None
-    assert_frame_equal(
-        from_parquet, from_sqlite, check_dtype=False, check_names=False, check_freq=False
-    )
+    assert_frame_equal(from_parquet, from_sqlite, check_dtype=False, check_names=False, check_freq=False)
 
 
 # ── reference_close por backend ──────────────────────────────────────────────

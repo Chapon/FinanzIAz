@@ -27,7 +27,6 @@ from scripts.run_insider_cluster_replay_t12 import (
     make_rank_score,
 )
 
-
 # ── Builders sintéticos ──────────────────────────────────────────────────────
 
 
@@ -48,18 +47,19 @@ def _bars(dates: list[str], price: float = 100.0):
 
 
 def _ev(ticker: str, event_date: str, dollars: float = 1000.0, n_ins: int = 3):
-    return ClusterEvent(ticker=ticker, event_date=event_date, n_insiders=n_ins,
-                        total_dollars=dollars, has_officer=False)
+    return ClusterEvent(
+        ticker=ticker, event_date=event_date, n_insiders=n_ins, total_dollars=dollars, has_officer=False
+    )
 
 
 # ── events_to_entries ────────────────────────────────────────────────────────
 
 
 def test_entry_is_next_bar_after_event_on_trading_day():
-    dates = _weekday_dates("2022-01-03", 300)   # lun 03-ene
-    ev = _ev("ABC", dates[260])                 # evento en una barra concreta
+    dates = _weekday_dates("2022-01-03", 300)  # lun 03-ene
+    ev = _ev("ABC", dates[260])  # evento en una barra concreta
     out = events_to_entries([ev], dates, warmup=250, cap_days=20)
-    assert out == [(261, 1000.0)]               # scan=260 → entry=261
+    assert out == [(261, 1000.0)]  # scan=260 → entry=261
 
 
 def test_event_on_weekend_maps_to_first_bar_on_or_after():
@@ -75,14 +75,14 @@ def test_event_on_weekend_maps_to_first_bar_on_or_after():
 
 def test_refractory_blocks_second_event_within_20_rows():
     dates = _weekday_dates("2022-01-03", 320)
-    evs = [_ev("ABC", dates[260]), _ev("ABC", dates[265])]   # 5 ruedas después
+    evs = [_ev("ABC", dates[260]), _ev("ABC", dates[265])]  # 5 ruedas después
     out = events_to_entries(evs, dates, warmup=250, cap_days=20)
-    assert out == [(261, 1000.0)]                            # el 2do cae en refractario
+    assert out == [(261, 1000.0)]  # el 2do cae en refractario
 
 
 def test_refractory_allows_event_after_20_rows():
     dates = _weekday_dates("2022-01-03", 340)
-    evs = [_ev("ABC", dates[260]), _ev("ABC", dates[285])]   # 25 ruedas → ambos
+    evs = [_ev("ABC", dates[260]), _ev("ABC", dates[285])]  # 25 ruedas → ambos
     out = events_to_entries(evs, dates, warmup=250, cap_days=20)
     assert out == [(261, 1000.0), (286, 1000.0)]
 
@@ -90,7 +90,7 @@ def test_refractory_allows_event_after_20_rows():
 def test_entry_before_warmup_is_dropped():
     dates = _weekday_dates("2022-01-03", 300)
     out = events_to_entries([_ev("ABC", dates[10])], dates, warmup=250, cap_days=20)
-    assert out == []                                         # entry=11 < warmup+1
+    assert out == []  # entry=11 < warmup+1
 
 
 def test_event_needs_a_bar_after_entry():
@@ -111,8 +111,7 @@ def test_event_after_last_bar_is_dropped():
 
 def test_dollars_carried_through_for_ranking():
     dates = _weekday_dates("2022-01-03", 300)
-    out = events_to_entries([_ev("ABC", dates[260], dollars=54321.0)], dates,
-                            warmup=250, cap_days=20)
+    out = events_to_entries([_ev("ABC", dates[260], dollars=54321.0)], dates, warmup=250, cap_days=20)
     assert out == [(261, 54321.0)]
 
 
@@ -122,9 +121,18 @@ def test_dollars_carried_through_for_ranking():
 def _cluster_txs(ticker: str, dates: tuple[str, str, str], dollars_each=(1000, 1000, 1000)):
     """3 insiders distintos comprando → un cluster (C=3/W=15 default)."""
     return [
-        InsiderTx(issuer_ticker=ticker, filing_date=d, owner_cik=str(i + 1),
-                  trans_code="P", acq_disp="A", shares=dollars_each[i] / 10.0, price=10.0,
-                  accession=f"{ticker}-{i}", is_officer=False, is_director=False)
+        InsiderTx(
+            issuer_ticker=ticker,
+            filing_date=d,
+            owner_cik=str(i + 1),
+            trans_code="P",
+            acq_disp="A",
+            shares=dollars_each[i] / 10.0,
+            price=10.0,
+            accession=f"{ticker}-{i}",
+            is_officer=False,
+            is_director=False,
+        )
         for i, d in enumerate(dates)
     ]
 
@@ -135,8 +143,7 @@ def test_build_arm_entries_joins_and_ranks():
     trio = (dates[258], dates[259], dates[260])
     txs_by = {"ABC": _cluster_txs("ABC", trio, dollars_each=(1000, 2000, 3000))}
     bars_by = {"ABC": _bars(dates)}
-    entries, rank = build_arm_entries(txs_by, bars_by, ClusterParams(),
-                                      warmup=250, cap_days=20)
+    entries, rank = build_arm_entries(txs_by, bars_by, ClusterParams(), warmup=250, cap_days=20)
     assert entries == [("ABC", 261)]
     # total_dollars = suma de las 3 compras en la ventana = 6000, indexado por
     # (ticker, fecha_de_entrada).
@@ -148,20 +155,25 @@ def test_dollar_ranking_wins_the_only_slot():
     dates = _weekday_dates("2022-01-03", 300)
     trio = (dates[258], dates[259], dates[260])
     txs_by = {
-        "LOWDOL": _cluster_txs("LOWDOL", trio, dollars_each=(100, 100, 100)),    # 300
+        "LOWDOL": _cluster_txs("LOWDOL", trio, dollars_each=(100, 100, 100)),  # 300
         "HIGHDOL": _cluster_txs("HIGHDOL", trio, dollars_each=(9000, 9000, 9000)),  # 27000
     }
     bars_by = {"LOWDOL": _bars(dates, 100.0), "HIGHDOL": _bars(dates, 50.0)}
-    entries, rank = build_arm_entries(txs_by, bars_by, ClusterParams(),
-                                      warmup=250, cap_days=20)
+    entries, rank = build_arm_entries(txs_by, bars_by, ClusterParams(), warmup=250, cap_days=20)
     # Ambos entran el mismo día (261) → compiten por el único slot.
     assert sorted(entries) == [("HIGHDOL", 261), ("LOWDOL", 261)]
-    res = simulate_portfolio(entries, bars_by, {"LOWDOL": {}, "HIGHDOL": {}},
-                             max_positions=1, initial_capital=50_000.0,
-                             cap_days=20, costs=CostModel(),
-                             rank_score=make_rank_score(rank))
+    res = simulate_portfolio(
+        entries,
+        bars_by,
+        {"LOWDOL": {}, "HIGHDOL": {}},
+        max_positions=1,
+        initial_capital=50_000.0,
+        cap_days=20,
+        costs=CostModel(),
+        rank_score=make_rank_score(rank),
+    )
     assert res.n_taken == 1
-    assert res.trades[0].ticker == "HIGHDOL"   # el de mayor monto se queda el slot
+    assert res.trades[0].ticker == "HIGHDOL"  # el de mayor monto se queda el slot
 
 
 # ── gate de conteo mínimo (§3.3) ─────────────────────────────────────────────
@@ -169,7 +181,7 @@ def test_dollar_ranking_wins_the_only_slot():
 
 def test_gate_blocks_below_minimum():
     assert gate_blocks(100, 150, force=False) is True
-    assert gate_blocks(150, 150, force=False) is False   # ≥ min pasa
+    assert gate_blocks(150, 150, force=False) is False  # ≥ min pasa
     assert gate_blocks(200, 150, force=False) is False
 
 

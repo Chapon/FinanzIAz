@@ -26,11 +26,11 @@ alembic = pytest.importorskip("alembic")
 
 import os
 
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 import paper_trading.models  # noqa: F401  — registra tablas paper en Base.metadata
+from alembic import command
 from database import models as db_models
 from database.models import Base
 
@@ -69,7 +69,9 @@ def _schema_snapshot(engine) -> dict:
             continue
         cols = {c["name"] for c in insp.get_columns(t)}
         idxs = {
-            i["name"] for i in insp.get_indexes(t) if i["name"] and not i["name"].startswith("sqlite_autoindex")
+            i["name"]
+            for i in insp.get_indexes(t)
+            if i["name"] and not i["name"].startswith("sqlite_autoindex")
         }
         snap[t] = (cols, idxs)
     return snap

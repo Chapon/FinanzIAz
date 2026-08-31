@@ -81,7 +81,7 @@ class TestGate6EarningsBlackout:
         assert _approval_gate_block(_order(), _no_earnings) is None
 
     def test_buy_far_earnings_passes(self):
-        far = lambda _t: utcnow_naive() + timedelta(days=30)  # noqa: E731
+        far = lambda _t: utcnow_naive() + timedelta(days=30)
         assert _approval_gate_block(_order(), far) is None
 
     def test_sell_passes_by_default(self):

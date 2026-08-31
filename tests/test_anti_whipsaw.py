@@ -9,7 +9,7 @@ before blocking; the default 0.0 blocks any loss.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from config.settings_manager import settings
 from database.models import session_scope, utcnow_naive

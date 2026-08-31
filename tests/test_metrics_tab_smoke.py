@@ -5,6 +5,7 @@ desajustes entre las claves del payload y las cards/columnas de la UI (p.ej. las
 cards nuevas ``excursion``/``benchmark`` y la card de fricción). No asserta píxeles.
 Se saltea si PyQt6 no está disponible (imagen headless sin runtime Qt).
 """
+
 from __future__ import annotations
 
 import json
@@ -18,10 +19,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6.QtWidgets")
 pytest.importorskip("matplotlib")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication
 
-from analysis import metrics_panel as mp  # noqa: E402
-from ui.metrics_tab import MetricsTab  # noqa: E402
+from analysis import metrics_panel as mp
+from ui.metrics_tab import MetricsTab
 
 
 @pytest.fixture(scope="module")
@@ -56,37 +57,55 @@ def _payload_with_data() -> dict:
     )
     # Posición abierta (para el panel de concentración) + su sector cacheado.
     con.execute("INSERT INTO paper_positions VALUES (9,1,'BBB',100,50.0)")
-    con.execute("INSERT INTO company_info_cache (ticker,sector,fetched_at) "
-                "VALUES ('BBB','Technology','2026-01-10')")
+    con.execute(
+        "INSERT INTO company_info_cache (ticker,sector,fetched_at) VALUES ('BBB','Technology','2026-01-10')"
+    )
     bbb = {
         "columns": ["Open", "High", "Low", "Close", "Volume"],
         "index": ["2026-01-07T00:00:00.000", "2026-01-08T00:00:00.000"],
         "data": [[58, 60, 55, 58, 1000], [62, 64, 60, 62, 1000]],
     }
-    con.execute("INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
-                "VALUES ('BBB','2y','1d',?,?)", (json.dumps(bbb), "2026-01-10"))
-    con.execute("INSERT INTO paper_orders VALUES (1,1,'AAA','BUY',100.0,10,1.0,0.5,0.8,"
-                "'analyze BUY','filled','2026-01-01 10:00:00')")
-    con.execute("INSERT INTO paper_orders VALUES (2,1,'AAA','SELL',120.0,10,1.0,0.5,0.3,"
-                "'analyze SELL (0.30)','filled','2026-01-08 10:00:00')")
+    con.execute(
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+        "VALUES ('BBB','2y','1d',?,?)",
+        (json.dumps(bbb), "2026-01-10"),
+    )
+    con.execute(
+        "INSERT INTO paper_orders VALUES (1,1,'AAA','BUY',100.0,10,1.0,0.5,0.8,"
+        "'analyze BUY','filled','2026-01-01 10:00:00')"
+    )
+    con.execute(
+        "INSERT INTO paper_orders VALUES (2,1,'AAA','SELL',120.0,10,1.0,0.5,0.3,"
+        "'analyze SELL (0.30)','filled','2026-01-08 10:00:00')"
+    )
     payload = {
         "columns": ["Open", "High", "Low", "Close", "Volume"],
         "index": [f"2026-01-0{i}T00:00:00.000" for i in (1, 2, 5, 6, 7, 8)],
         "data": [[c, c + 3, c - 2, c, 1000] for c in (100, 105, 110, 115, 118, 120)],
     }
-    con.execute("INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
-                "VALUES ('AAA','2y','1d',?,?)", (json.dumps(payload), "2026-01-10"))
+    con.execute(
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+        "VALUES ('AAA','2y','1d',?,?)",
+        (json.dumps(payload), "2026-01-10"),
+    )
     spy = {
         "columns": ["Open", "High", "Low", "Close", "Volume"],
         "index": ["2026-01-01T00:00:00.000", "2026-01-08T00:00:00.000"],
         "data": [[400, 400, 400, 400, 1000], [408, 408, 408, 408, 1000]],
     }
-    con.execute("INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
-                "VALUES ('SPY','2y','1d',?,?)", (json.dumps(spy), "2026-01-10"))
-    con.execute("INSERT INTO paper_equity_snapshots (account_id,snapshot_at,cash,positions_value,"
-                "total_equity,portfolio_sigma) VALUES (1,'2026-01-01 16:00:00',0,0,50000,NULL)")
-    con.execute("INSERT INTO paper_equity_snapshots (account_id,snapshot_at,cash,positions_value,"
-                "total_equity,portfolio_sigma) VALUES (1,'2026-01-08 16:00:00',0,0,52000,NULL)")
+    con.execute(
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
+        "VALUES ('SPY','2y','1d',?,?)",
+        (json.dumps(spy), "2026-01-10"),
+    )
+    con.execute(
+        "INSERT INTO paper_equity_snapshots (account_id,snapshot_at,cash,positions_value,"
+        "total_equity,portfolio_sigma) VALUES (1,'2026-01-01 16:00:00',0,0,50000,NULL)"
+    )
+    con.execute(
+        "INSERT INTO paper_equity_snapshots (account_id,snapshot_at,cash,positions_value,"
+        "total_equity,portfolio_sigma) VALUES (1,'2026-01-08 16:00:00',0,0,52000,NULL)"
+    )
     m = mp.build_metrics(con, 1)
     m["commit_markers"] = []
     return m
@@ -113,10 +132,14 @@ def test_metrics_tab_renders_empty_payload(qapp):
         "side TEXT, fill_price REAL, fill_shares REAL, commission_paid REAL, "
         "slippage_cost REAL, signal_score REAL, reason TEXT, status TEXT, filled_at TEXT)"
     )
-    con.execute("CREATE TABLE paper_positions (id INTEGER PRIMARY KEY, account_id INT, "
-                "ticker TEXT, shares REAL, avg_cost REAL)")
-    con.execute("CREATE TABLE historical_data_cache (id INTEGER PRIMARY KEY, ticker TEXT, "
-                "period TEXT, interval TEXT, data_json TEXT, fetched_at TEXT)")
+    con.execute(
+        "CREATE TABLE paper_positions (id INTEGER PRIMARY KEY, account_id INT, "
+        "ticker TEXT, shares REAL, avg_cost REAL)"
+    )
+    con.execute(
+        "CREATE TABLE historical_data_cache (id INTEGER PRIMARY KEY, ticker TEXT, "
+        "period TEXT, interval TEXT, data_json TEXT, fetched_at TEXT)"
+    )
     m = mp.build_metrics(con, 1)
     m["commit_markers"] = []
     tab = MetricsTab(account_id=1)

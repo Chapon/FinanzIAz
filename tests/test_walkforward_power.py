@@ -17,8 +17,9 @@ import pytest
 from analysis.exit_replay import AtrParams
 from analysis.walkforward_power import (
     A1_VARIANTS,
-    CPCVSplit,
     EntrySample,
+    _merge_intervals,
+    _skew_kurt,
     achieved_power_mean,
     build_entry_grid,
     cohens_d_paired,
@@ -39,8 +40,6 @@ from analysis.walkforward_power import (
     replay_stop_vs_nostop,
     sample_universe,
     stop_stats_by_regime,
-    _merge_intervals,
-    _skew_kurt,
 )
 
 
@@ -59,16 +58,19 @@ def bars_with_closes(closes, tr: float = 2.0, start: int = 0):
 
 
 class TestRegime:
-    @pytest.mark.parametrize("date,expected", [
-        ("2018-11-15", "stress_2018q4"),
-        ("2020-03-20", "stress_covid_2020"),
-        ("2022-06-01", "stress_bear_2022"),
-        ("2019-07-01", "bull_normal"),
-        ("2018-09-30", "bull_normal"),   # justo antes de 2018Q4
-        ("2018-10-01", "stress_2018q4"),  # borde inclusive
-        ("2022-10-31", "stress_bear_2022"),
-        ("2022-11-01", "bull_normal"),   # justo después del bear 2022
-    ])
+    @pytest.mark.parametrize(
+        "date,expected",
+        [
+            ("2018-11-15", "stress_2018q4"),
+            ("2020-03-20", "stress_covid_2020"),
+            ("2022-06-01", "stress_bear_2022"),
+            ("2019-07-01", "bull_normal"),
+            ("2018-09-30", "bull_normal"),  # justo antes de 2018Q4
+            ("2018-10-01", "stress_2018q4"),  # borde inclusive
+            ("2022-10-31", "stress_bear_2022"),
+            ("2022-11-01", "bull_normal"),  # justo después del bear 2022
+        ],
+    )
     def test_tag_por_fecha(self, date, expected):
         assert regime_for_date(date) == expected
 
@@ -86,16 +88,14 @@ class TestEntryGrid:
     def test_fwd_returns(self):
         closes = [100.0 + i for i in range(60)]  # crece de a 1
         bars = bars_with_closes(closes)
-        entries = build_entry_grid(bars, "AAA", spacing=20, warmup=0,
-                                   fwd_short=5, fwd_long=20)
+        entries = build_entry_grid(bars, "AAA", spacing=20, warmup=0, fwd_short=5, fwd_long=20)
         e0 = entries[0]  # idx 0, entry 100
         assert e0.fwd5 == pytest.approx(105 / 100 - 1)
         assert e0.fwd20 == pytest.approx(120 / 100 - 1)
 
     def test_fwd_none_al_final(self):
         bars = bars_with_closes([100.0] * 40)
-        entries = build_entry_grid(bars, "AAA", spacing=10, warmup=0,
-                                   fwd_short=5, fwd_long=20)
+        entries = build_entry_grid(bars, "AAA", spacing=10, warmup=0, fwd_short=5, fwd_long=20)
         last = entries[-1]  # idx 30 → fwd20 sale de rango (30+20=50 ≥ 40)
         assert last.entry_idx == 30
         assert last.fwd5 == pytest.approx(0.0)  # 35 dentro de rango, flat
@@ -104,8 +104,7 @@ class TestEntryGrid:
     def test_label_end(self):
         # label_end = fecha fwd_long barras después de la entrada; None si se sale
         bars = bars_with_closes([100.0] * 40)
-        entries = build_entry_grid(bars, "AAA", spacing=10, warmup=0,
-                                   fwd_short=5, fwd_long=20)
+        entries = build_entry_grid(bars, "AAA", spacing=10, warmup=0, fwd_short=5, fwd_long=20)
         e0 = entries[0]  # idx 0 → label_end en idx 20
         assert e0.label_end == bars[20][0]
         last = entries[-1]  # idx 30 → 30+20=50 fuera de rango
@@ -122,8 +121,7 @@ class TestEntryGrid:
         assert entries[1].regime == "bull_normal"
 
     def test_sample_universe_concatena(self):
-        data = {"AAA": bars_with_closes([100.0] * 60),
-                "BBB": bars_with_closes([50.0] * 60)}
+        data = {"AAA": bars_with_closes([100.0] * 60), "BBB": bars_with_closes([50.0] * 60)}
         entries = sample_universe(data, spacing=20, warmup=0, fwd_long=20)
         tickers = {e.ticker for e in entries}
         assert tickers == {"AAA", "BBB"}
@@ -148,8 +146,8 @@ class TestReplayFromEntry:
         closes[25] = 90.0
         bars = bars_with_closes(closes)
         res = replay_from_entry(
-            bars, 20, cap_days=10,
-            atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False))
+            bars, 20, cap_days=10, atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False)
+        )
         exit_idx, price, reason = res
         assert reason == "cap_reached"
         assert exit_idx == 30  # 20 + 10
@@ -170,7 +168,7 @@ class TestReplayFromEntry:
     def test_replay_stop_vs_nostop_delta(self):
         # precio que sigue subiendo tras un dip → sacar stops ayuda (Δ>0)
         closes = [100.0] * 40
-        closes[25] = 95.0     # dip que gatilla el stop baseline
+        closes[25] = 95.0  # dip que gatilla el stop baseline
         for i in range(26, 40):
             closes[i] = 110.0  # rebote fuerte
         bars = bars_with_closes(closes)
@@ -204,8 +202,10 @@ class TestCorrelation:
 
     def _scored(self, rows):
         # rows: list de (score, fwd5)
-        return [EntrySample("T", _d(i), i, 100.0, "bull_normal", f, None, score=s)
-                for i, (s, f) in enumerate(rows)]
+        return [
+            EntrySample("T", _d(i), i, 100.0, "bull_normal", f, None, score=s)
+            for i, (s, f) in enumerate(rows)
+        ]
 
     def test_pooled_ignora_none(self):
         rows = [(0.5, 0.01), (0.6, 0.02), (0.7, 0.03), (None, 0.04), (0.8, None)]
@@ -218,17 +218,27 @@ class TestCorrelation:
         entries = []
         for date_i in (10, 40):
             for k in range(5):
-                entries.append(EntrySample(
-                    f"T{k}", _d(date_i), date_i, 100.0, "bull_normal",
-                    fwd5=0.01 * k, fwd20=None, score=0.1 * k))
+                entries.append(
+                    EntrySample(
+                        f"T{k}",
+                        _d(date_i),
+                        date_i,
+                        100.0,
+                        "bull_normal",
+                        fwd5=0.01 * k,
+                        fwd20=None,
+                        score=0.1 * k,
+                    )
+                )
         ic = cross_sectional_ic(entries, horizon="fwd5", min_names=5)
         assert ic.n_dates == 2
         assert ic.mean_ic == pytest.approx(1.0)
 
     def test_ic_filtra_fechas_chicas(self):
-        entries = [EntrySample(f"T{k}", _d(10), 10, 100.0, "bull_normal",
-                               fwd5=0.01 * k, fwd20=None, score=0.1 * k)
-                   for k in range(3)]  # solo 3 nombres < min_names
+        entries = [
+            EntrySample(f"T{k}", _d(10), 10, 100.0, "bull_normal", fwd5=0.01 * k, fwd20=None, score=0.1 * k)
+            for k in range(3)
+        ]  # solo 3 nombres < min_names
         ic = cross_sectional_ic(entries, horizon="fwd5", min_names=5)
         assert ic.n_dates == 0
         assert ic.mean_ic is None
@@ -347,8 +357,7 @@ class TestCPCVSplits:
     def test_purga_saca_solapes(self):
         # INVARIANTE central: ningún train solapa (con embargo) a ningún test
         intervals = self._intervals(12, step=3, label=5)
-        ords = [(date.fromisoformat(s).toordinal(),
-                 date.fromisoformat(e).toordinal()) for s, e in intervals]
+        ords = [(date.fromisoformat(s).toordinal(), date.fromisoformat(e).toordinal()) for s, e in intervals]
         embargo = 5
         for sp in cpcv_splits(intervals, n_groups=4, k_test=1, embargo_days=embargo):
             test_spans = [(ords[i][0], ords[i][1] + embargo) for i in sp.test_idx]
@@ -368,8 +377,7 @@ class TestCPCVSplits:
         assert cpcv_splits(self._intervals(2), n_groups=6, k_test=2) == []
 
     def test_entry_intervals_usa_label_end(self):
-        e = EntrySample("T", "2021-03-01", 5, 100.0, "bull_normal", 0.0, 0.0,
-                        label_end="2021-03-20")
+        e = EntrySample("T", "2021-03-01", 5, 100.0, "bull_normal", 0.0, 0.0, label_end="2021-03-20")
         assert entry_intervals([e]) == [("2021-03-01", "2021-03-20")]
         # sin label_end degrada a punto
         e2 = EntrySample("T", "2021-03-01", 5, 100.0, "bull_normal", 0.0, 0.0)
@@ -379,8 +387,8 @@ class TestCPCVSplits:
 class TestCPCVEffect:
     def _outcome(self, ticker, date_iso, delta, regime="bull_normal"):
         from analysis.walkforward_power import StopReplayOutcome
-        e = EntrySample(ticker, date_iso, 5, 100.0, regime, 0.0, 0.0,
-                        label_end=_iso(date_iso, 20))
+
+        e = EntrySample(ticker, date_iso, 5, 100.0, regime, 0.0, 0.0, label_end=_iso(date_iso, 20))
         # ret_no_stops - ret_with_stops = delta
         return StopReplayOutcome(e, 0.0, delta, "cap_reached", 5)
 
@@ -425,8 +433,9 @@ class TestPBO:
         assert math.isnan(res.pbo)
 
     def test_pbo_en_rango(self):
-        res = pbo_cscv({"a": [0.1 * i for i in range(20)],
-                        "b": [0.2 * (20 - i) for i in range(20)]}, n_splits=6)
+        res = pbo_cscv(
+            {"a": [0.1 * i for i in range(20)], "b": [0.2 * (20 - i) for i in range(20)]}, n_splits=6
+        )
         assert 0.0 <= res.pbo <= 1.0
 
 
@@ -443,7 +452,8 @@ class TestDSR:
     def test_mas_intentos_baja_el_dsr(self):
         pocos = deflated_sharpe_ratio([0.20, 0.10], n_obs=250, selected=0.20)
         muchos = deflated_sharpe_ratio(
-            [0.20, 0.10, 0.15, 0.12, 0.18, 0.08, 0.14, 0.16], n_obs=250, selected=0.20)
+            [0.20, 0.10, 0.15, 0.12, 0.18, 0.08, 0.14, 0.16], n_obs=250, selected=0.20
+        )
         # más variantes probadas → mayor umbral esperado → menor DSR
         assert muchos.expected_max_sharpe > pocos.expected_max_sharpe
         assert muchos.deflated_sharpe < pocos.deflated_sharpe
@@ -460,7 +470,7 @@ class TestDSR:
 
 class TestSkewKurt:
     def test_simetrico_skew_cero(self):
-        s, k = _skew_kurt([-2, -1, 0, 1, 2] * 4)
+        s, _k = _skew_kurt([-2, -1, 0, 1, 2] * 4)
         assert s == pytest.approx(0.0, abs=1e-9)
 
     def test_constante_default(self):
@@ -478,8 +488,7 @@ class TestPerEntryReturnsByConfig:
             closes[i] = 110.0
         bars = bars_with_closes(closes)
         entries = build_entry_grid(bars, "AAA", spacing=100, warmup=20, fwd_long=5)
-        used, cols = per_entry_returns_by_config(entries, lambda t: bars, A1_VARIANTS,
-                                                 cap_days=15)
+        used, cols = per_entry_returns_by_config(entries, lambda t: bars, A1_VARIANTS, cap_days=15)
         assert set(cols.keys()) == set(A1_VARIANTS.keys())
         # todas las columnas del mismo largo que las entradas usadas
         assert all(len(v) == len(used) for v in cols.values())

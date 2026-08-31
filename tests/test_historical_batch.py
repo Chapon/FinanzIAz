@@ -16,7 +16,6 @@ import pytest
 
 from data import yahoo_finance as yf_mod
 
-
 # ── fixtures: aislar de red, cache, QA y limiter ────────────────────────────
 
 
@@ -36,15 +35,18 @@ def _isolate(monkeypatch):
     monkeypatch.setattr(yf_mod, "_write_historical_cache", lambda *_a, **_k: None)
     recorded = {"fail": [], "success": [], "transient": []}
     monkeypatch.setattr(
-        yf_mod, "record_failure",
+        yf_mod,
+        "record_failure",
         lambda t, *a, **k: recorded["fail"].append(t.upper()),
     )
     monkeypatch.setattr(
-        yf_mod, "record_success",
+        yf_mod,
+        "record_success",
         lambda t, *a, **k: recorded["success"].append(t.upper()),
     )
     monkeypatch.setattr(
-        yf_mod, "record_transient",
+        yf_mod,
+        "record_transient",
         lambda t, *a, **k: recorded["transient"].append(t.upper()),
     )
     return recorded
@@ -102,7 +104,8 @@ def _multiindex_batch(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
 def test_cache_hits_skip_download(monkeypatch):
     cached = _ohlcv()
     monkeypatch.setattr(
-        yf_mod, "_read_historical_cache",
+        yf_mod,
+        "_read_historical_cache",
         lambda t, p, i: cached if t == "AAPL" else None,
     )
     calls = {"chunks": []}
@@ -128,7 +131,8 @@ def test_multiindex_split_per_ticker(monkeypatch):
     monkeypatch.setattr(yf_mod, "_read_historical_cache", lambda *a: None)
     frames = {"AAPL": _ohlcv(base=100), "MSFT": _ohlcv(base=200)}
     monkeypatch.setattr(
-        yf_mod, "_download_batch",
+        yf_mod,
+        "_download_batch",
         lambda chunk, p, i: _multiindex_batch(frames),
     )
 
@@ -151,7 +155,8 @@ def test_partial_failure_isolated(monkeypatch, _isolate):
     nan_frame = _ohlcv().astype("float64")
     nan_frame[:] = float("nan")
     monkeypatch.setattr(
-        yf_mod, "_download_batch",
+        yf_mod,
+        "_download_batch",
         lambda chunk, p, i: _multiindex_batch({"AAPL": good, "ZZZZ": nan_frame}),
     )
 
@@ -172,7 +177,8 @@ def test_single_miss_flat_columns(monkeypatch):
     monkeypatch.setattr(yf_mod, "_read_historical_cache", lambda *a: None)
     # Un solo símbolo → yf.download devuelve columnas planas (sin nivel ticker).
     monkeypatch.setattr(
-        yf_mod, "_download_batch",
+        yf_mod,
+        "_download_batch",
         lambda chunk, p, i: _ohlcv(base=50),
     )
 

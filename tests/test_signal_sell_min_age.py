@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
 from paper_trading.gates import signal_sell_min_age_block
 
 THU = datetime(2026, 6, 4, 15, 30)
@@ -62,8 +60,7 @@ class TestBypasses:
 
     def test_low_score_executes_directly(self):
         # convicción alta de venta (score < bypass) no espera
-        assert _block(scan_at=MON, signal_score=0.20,
-                      reason="analyze SELL (0.20)") is None
+        assert _block(scan_at=MON, signal_score=0.20, reason="analyze SELL (0.20)") is None
 
     def test_score_exactly_at_bypass_waits(self):
         assert _block(scan_at=MON, signal_score=0.25) is not None
@@ -76,16 +73,13 @@ class TestBypasses:
         assert _block(scan_at=MON, signal_score=None) is None
 
     def test_atr_reason_passes(self):
-        assert _block(scan_at=MON, reason="atr_stop @ 90.00 ≤ 92.00",
-                      signal_score=1.0) is None
+        assert _block(scan_at=MON, reason="atr_stop @ 90.00 ≤ 92.00", signal_score=1.0) is None
 
     def test_atr_trail_reason_passes(self):
-        assert _block(scan_at=MON, reason="atr_trail @ 95.0 ≤ 96.0",
-                      signal_score=1.0) is None
+        assert _block(scan_at=MON, reason="atr_trail @ 95.0 ≤ 96.0", signal_score=1.0) is None
 
     def test_vol_trim_reason_passes(self):
-        assert _block(scan_at=MON, reason="vol_trim σ 0.32 > target 0.25",
-                      signal_score=1.0) is None
+        assert _block(scan_at=MON, reason="vol_trim σ 0.32 > target 0.25", signal_score=1.0) is None
 
     def test_no_position_opened_at_passes(self):
         assert _block(scan_at=MON, opened_at=None) is None
@@ -93,8 +87,7 @@ class TestBypasses:
 
 class TestMessage:
     def test_message_carries_context(self):
-        msg = _block(scan_at=MON, signal_score=0.42,
-                     reason="analyze SELL (0.42)")
+        msg = _block(scan_at=MON, signal_score=0.42, reason="analyze SELL (0.42)")
         assert "0.42" in msg and "min 3" in msg and "bypass 0.25" in msg
 
 
@@ -123,19 +116,30 @@ def _engine_setup(test_db, monkeypatch, *, score: float, opened_days_ago: int):
 
     a = create_account(name="T64", initial_capital=10_000.0)
     with session_scope() as s:
-        s.add(PaperPosition(
-            account_id=a.id, ticker="AAPL", shares=10.0, avg_cost=100.0,
-            opened_at=utcnow_naive() - timedelta(days=opened_days_ago),
-            high_water_mark=100.0,
-        ))
+        s.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="AAPL",
+                shares=10.0,
+                avg_cost=100.0,
+                opened_at=utcnow_naive() - timedelta(days=opened_days_ago),
+                high_water_mark=100.0,
+            )
+        )
         s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
 
     def strat(account, watchlist, positions, prices, history_provider):
-        return [TargetTrade(
-            ticker="AAPL", side="SELL", target_shares=10.0, target_dollars=None,
-            reason=f"analyze SELL ({score:.2f})", source="analyze_single",
-            signal_score=score,
-        )]
+        return [
+            TargetTrade(
+                ticker="AAPL",
+                side="SELL",
+                target_shares=10.0,
+                target_dollars=None,
+                reason=f"analyze SELL ({score:.2f})",
+                source="analyze_single",
+                signal_score=score,
+            )
+        ]
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: strat)
     return engine.run_scan(

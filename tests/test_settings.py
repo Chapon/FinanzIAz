@@ -93,8 +93,7 @@ def test_feature_toggles_sprint1_persist(tmp_path, monkeypatch):
     (correlation_gate_enabled was removed in Sprint 3 — see
     docs/sprint2_kill_criteria.md.)"""
     s = _new_manager(tmp_path, monkeypatch)
-    toggles = ["hmm_enabled", "stacking_enabled", "xgb_signal_enabled",
-               "vol_overlay_enabled"]
+    toggles = ["hmm_enabled", "stacking_enabled", "xgb_signal_enabled", "vol_overlay_enabled"]
 
     # All default to True
     for toggle in toggles:

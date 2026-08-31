@@ -65,18 +65,19 @@ def _cycle(bars, atr_p, **kw):
 
 
 def test_default_eval_mode_reproduce_el_comportamiento_previo():
-    bars = _bars(_flat() + [(99.0, 94.0, 99.5), (97.0, 96.0, 98.0), (95.0, 94.0, 96.0)])
+    bars = _bars([*_flat(), (99.0, 94.0, 99.5), (97.0, 96.0, 98.0), (95.0, 94.0, 96.0)])
     a = AtrParams(stop_mult=2.0)
     sin_kw = _cycle(bars, a)
     con_close = _cycle(bars, a, eval_mode="close")
     assert sin_kw.exit_reasons == con_close.exit_reasons
     assert sin_kw.ret == con_close.ret
-    assert [(l.date, l.price, l.reason) for l in sin_kw.legs] == \
-           [(l.date, l.price, l.reason) for l in con_close.legs]
+    assert [(l.date, l.price, l.reason) for l in sin_kw.legs] == [
+        (l.date, l.price, l.reason) for l in con_close.legs
+    ]
 
 
 def test_eval_mode_invalido_falla_ruidoso():
-    bars = _bars(_flat() + [(99.0, 98.0, 100.0)])
+    bars = _bars([*_flat(), (99.0, 98.0, 100.0)])
     with pytest.raises(ValueError, match="eval_mode"):
         _cycle(bars, AtrParams(), eval_mode="intraday")
 
@@ -90,27 +91,29 @@ def test_dominancia_todo_disparo_al_close_implica_disparo_al_toque(mult):
     extremo. Es mecánica pura: si esto falla, el modo está mal cableado."""
     p = AtrParams(stop_mult=mult)
     casos = [
-        (100.0, 95.0, 101.0), (100.0, 99.0, 100.5), (94.0, 93.0, 95.0),
-        (112.0, 111.0, 113.0), (105.0, 96.0, 115.0), (98.0, 90.0, 120.0),
+        (100.0, 95.0, 101.0),
+        (100.0, 99.0, 100.5),
+        (94.0, 93.0, 95.0),
+        (112.0, 111.0, 113.0),
+        (105.0, 96.0, 115.0),
+        (98.0, 90.0, 120.0),
     ]
     for close, low, high in casos:
         bar = ("2021-06-01", close, high, low, close)
-        al_close = _fired_barrier(bar, avg_cost=100.15, hwm=106.0, atr_value=2.0,
-                                  p=p, eval_mode="close")
-        al_toque = _fired_barrier(bar, avg_cost=100.15, hwm=106.0, atr_value=2.0,
-                                  p=p, eval_mode="touch")
+        al_close = _fired_barrier(bar, avg_cost=100.15, hwm=106.0, atr_value=2.0, p=p, eval_mode="close")
+        al_toque = _fired_barrier(bar, avg_cost=100.15, hwm=106.0, atr_value=2.0, p=p, eval_mode="touch")
         if al_close is not None:
             assert al_toque is not None, (close, low, high, mult)
 
 
 def test_el_toque_dispara_donde_el_close_no():
     """El caso que motiva toda la tarea: el mínimo perforó y el close se recuperó."""
-    bar = ("2021-06-01", 100.0, 101.0, 95.0, 100.0)   # low 95 < stop, close 100 no
+    bar = ("2021-06-01", 100.0, 101.0, 95.0, 100.0)  # low 95 < stop, close 100 no
     p = AtrParams(stop_mult=2.0)
-    assert _fired_barrier(bar, avg_cost=100.15, hwm=100.15, atr_value=2.0,
-                          p=p, eval_mode="close") is None
-    assert _fired_barrier(bar, avg_cost=100.15, hwm=100.15, atr_value=2.0,
-                          p=p, eval_mode="touch") == "atr_stop"
+    assert _fired_barrier(bar, avg_cost=100.15, hwm=100.15, atr_value=2.0, p=p, eval_mode="close") is None
+    assert (
+        _fired_barrier(bar, avg_cost=100.15, hwm=100.15, atr_value=2.0, p=p, eval_mode="touch") == "atr_stop"
+    )
 
 
 # ── 3. El empate declarado (§3) ──────────────────────────────────────────────
@@ -121,18 +124,22 @@ def test_empate_stop_vs_tp_en_la_misma_barra_gana_el_stop():
     fue primero, y el pre-registro congeló la convención **adversa**."""
     # avg_cost 100, ATR 2 ⇒ stop 96 (mult 2.0), TP 108 (mult 4.0)
     bar = ("2021-06-01", 100.0, 110.0, 95.0, 100.0)
-    fired = _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0,
-                           p=AtrParams(stop_mult=2.0, tp_mult=4.0), eval_mode="touch")
+    fired = _fired_barrier(
+        bar,
+        avg_cost=100.0,
+        hwm=100.0,
+        atr_value=2.0,
+        p=AtrParams(stop_mult=2.0, tp_mult=4.0),
+        eval_mode="touch",
+    )
     assert fired == "atr_stop"
 
 
 def test_el_tp_al_toque_dispara_con_el_maximo():
-    bar = ("2021-06-01", 100.0, 110.0, 99.0, 100.0)   # high 110 ≥ TP 108, close no
+    bar = ("2021-06-01", 100.0, 110.0, 99.0, 100.0)  # high 110 ≥ TP 108, close no
     p = AtrParams(stop_mult=2.0, tp_mult=4.0)
-    assert _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0,
-                          p=p, eval_mode="close") is None
-    assert _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0,
-                          p=p, eval_mode="touch") == "atr_tp"
+    assert _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0, p=p, eval_mode="close") is None
+    assert _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0, p=p, eval_mode="touch") == "atr_tp"
 
 
 def test_touch_sale_mas_temprano_en_un_dip_que_cierra_arriba():
@@ -155,19 +162,16 @@ def test_touch_sale_mas_temprano_en_un_dip_que_cierra_arriba():
 
 def test_resting_es_el_default_y_no_toca_las_tareas_previas():
     """Regresión dura: el default no puede mover T7/T23/T13/T21/T26."""
-    bar = ("2021-06-01", 100.0, 101.0, 94.0, 95.0)   # close 95 < nivel 96
-    sin_kw = _barrier_fill_price(bar, "atr_stop", 96.0,
-                                 eval_mode="close", fill_mode="resting")
-    assert sin_kw == 96.0                            # el nivel, como siempre
+    bar = ("2021-06-01", 100.0, 101.0, 94.0, 95.0)  # close 95 < nivel 96
+    sin_kw = _barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="close", fill_mode="resting")
+    assert sin_kw == 96.0  # el nivel, como siempre
 
 
 def test_al_close_el_fill_decision_es_el_close_no_el_nivel():
     """El corazón de la corrección: se decidió con el close, se vende a ese close."""
     bar = ("2021-06-01", 100.0, 101.0, 94.0, 95.0)
-    assert _barrier_fill_price(bar, "atr_stop", 96.0,
-                               eval_mode="close", fill_mode="resting") == 96.0
-    assert _barrier_fill_price(bar, "atr_stop", 96.0,
-                               eval_mode="close", fill_mode="decision") == 95.0
+    assert _barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="close", fill_mode="resting") == 96.0
+    assert _barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="close", fill_mode="decision") == 95.0
 
 
 def test_el_fill_al_nivel_es_siempre_mejor_que_el_close_cuando_dispara_al_close():
@@ -175,29 +179,27 @@ def test_el_fill_al_nivel_es_siempre_mejor_que_el_close_cuando_dispara_al_close(
     p = AtrParams(stop_mult=2.0)
     for close, low, high in [(95.0, 90.0, 101.0), (88.0, 85.0, 99.0), (96.0, 96.0, 97.0)]:
         bar = ("2021-06-01", 100.0, high, low, close)
-        fired = _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0,
-                               p=p, eval_mode="close")
+        fired = _fired_barrier(bar, avg_cost=100.0, hwm=100.0, atr_value=2.0, p=p, eval_mode="close")
         if fired != "atr_stop":
             continue
-        legacy = _barrier_fill_price(bar, fired, 96.0, eval_mode="close",
-                                     fill_mode="resting")
-        honesto = _barrier_fill_price(bar, fired, 96.0, eval_mode="close",
-                                      fill_mode="decision")
+        legacy = _barrier_fill_price(bar, fired, 96.0, eval_mode="close", fill_mode="resting")
+        honesto = _barrier_fill_price(bar, fired, 96.0, eval_mode="close", fill_mode="decision")
         assert legacy >= honesto, (close, low, high)
 
 
 def test_al_toque_los_dos_fill_modes_coinciden():
     """En ``touch`` la orden en reposo SÍ es coherente: ``decision`` no cambia nada."""
-    for bar in [("2021-06-01", 100.0, 101.0, 94.0, 100.0),      # toque intradía
-                ("2021-06-01", 93.0, 97.0, 92.0, 95.0)]:        # gap-open bajo el nivel
-        assert (_barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="touch",
-                                    fill_mode="resting")
-                == _barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="touch",
-                                       fill_mode="decision"))
+    for bar in [
+        ("2021-06-01", 100.0, 101.0, 94.0, 100.0),  # toque intradía
+        ("2021-06-01", 93.0, 97.0, 92.0, 95.0),
+    ]:  # gap-open bajo el nivel
+        assert _barrier_fill_price(
+            bar, "atr_stop", 96.0, eval_mode="touch", fill_mode="resting"
+        ) == _barrier_fill_price(bar, "atr_stop", 96.0, eval_mode="touch", fill_mode="decision")
 
 
 def test_fill_mode_invalido_falla_ruidoso():
-    bars = _bars(_flat() + [(99.0, 98.0, 100.0)])
+    bars = _bars([*_flat(), (99.0, 98.0, 100.0)])
     with pytest.raises(ValueError, match="fill_mode"):
         _cycle(bars, AtrParams(), fill_mode="level")
 
@@ -210,13 +212,13 @@ def test_el_ciclo_completo_cobra_menos_con_el_fill_honesto():
     close 100.0 con costos ⇒ ``avg_cost`` 100.15, ATR 2.0 ⇒ stop en **96.15**.
     """
     bars = _bars(_flat())
-    bars.append(("2021-01-26", 99.0, 99.5, 92.0, 93.0))   # open>nivel, close<nivel
+    bars.append(("2021-01-26", 99.0, 99.5, 92.0, 93.0))  # open>nivel, close<nivel
     a = AtrParams(stop_mult=2.0)
     legacy = _cycle(bars, a, eval_mode="close", fill_mode="resting")
     honesto = _cycle(bars, a, eval_mode="close", fill_mode="decision")
-    assert legacy.exit_reasons == honesto.exit_reasons     # mismo disparo
+    assert legacy.exit_reasons == honesto.exit_reasons  # mismo disparo
     assert honesto.legs[-1].price < legacy.legs[-1].price  # peor precio
-    assert honesto.ret < legacy.ret                        # y se cobra
+    assert honesto.ret < legacy.ret  # y se cobra
 
 
 # ── 4. La rejilla y la regla de decisión (§6) ────────────────────────────────
@@ -229,10 +231,10 @@ def test_build_arms_arma_la_rejilla_completa_mas_sanity():
             assert arms[arm_name(mode, m)]["eval_mode"] == mode
             assert arms[arm_name(mode, m)]["atr_p"].stop_mult == m
     assert BASELINE_ARM in arms and CANDIDATE_ARM in arms
-    assert arms[BASELINE_ARM]["eval_mode"] == "touch"      # la regla viva
+    assert arms[BASELINE_ARM]["eval_mode"] == "touch"  # la regla viva
     assert arms[CANDIDATE_ARM]["eval_mode"] == "close"
     assert "stop_filter" in arms["ORACULO_STOP"]
-    assert arms["ORACULO_STOP"]["eval_mode"] == "touch"    # sanity donde se decide
+    assert arms["ORACULO_STOP"]["eval_mode"] == "touch"  # sanity donde se decide
 
 
 def test_build_arms_usa_el_fill_honesto_en_TODOS_los_brazos():
@@ -245,14 +247,23 @@ def test_build_arms_usa_el_fill_honesto_en_TODOS_los_brazos():
 
 
 def _summ(cagr, sharpe, max_dd, stop_share=0.20):
-    return {"cagr": cagr, "sharpe": sharpe, "max_dd": max_dd, "p5_trade": -0.07,
-            "accounting_ok": True, "n_taken": 100, "n_offered": 200, "exposure": 0.6,
-            "stop_share": stop_share, "exit_mix": {"atr_stop": stop_share},
-            "total_return_pts": 0.0}
+    return {
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_dd": max_dd,
+        "p5_trade": -0.07,
+        "accounting_ok": True,
+        "n_taken": 100,
+        "n_offered": 200,
+        "exposure": 0.6,
+        "stop_share": stop_share,
+        "exit_mix": {"atr_stop": stop_share},
+        "total_return_pts": 0.0,
+    }
 
 
 def _reg(vals):
-    return {name: {"n": 20, "mean_ret_pts": v} for name, v in zip(_REG_NAMES, vals)}
+    return {name: {"n": 20, "mean_ret_pts": v} for name, v in zip(_REG_NAMES, vals, strict=True)}
 
 
 class _Boot:
@@ -264,15 +275,20 @@ class _Boot:
 def _case(**over):
     """Caso donde TODO pasa: close ≥ touch en 4 de 5 múltiplos."""
     s = {}
-    for m, (t, c) in zip(MULTS, [(0.20, 0.21), (0.16, 0.17), (0.12, 0.14),
-                                 (0.09, 0.10), (0.08, 0.075)]):
+    for m, (t, c) in zip(
+        MULTS,
+        [(0.20, 0.21), (0.16, 0.17), (0.12, 0.14), (0.09, 0.10), (0.08, 0.075)],
+        strict=True,
+    ):
         s[arm_name("touch", m)] = _summ(t, 0.70, 0.36)
         s[arm_name("close", m)] = _summ(c, 0.78, 0.36)
     s["ORACULO_STOP"] = _summ(0.16, 0.90, 0.28)
     s["AZAR_MISMA_TASA"] = _summ(0.13, 0.60, 0.40)
     s.update(over.get("summaries", {}))
-    regimes = {BASELINE_ARM: _reg([0.20, -0.30, 0.90, -0.10]),
-               CANDIDATE_ARM: _reg([0.24, -0.28, 0.95, -0.09])}
+    regimes = {
+        BASELINE_ARM: _reg([0.20, -0.30, 0.90, -0.10]),
+        CANDIDATE_ARM: _reg([0.24, -0.28, 0.95, -0.09]),
+    }
     regimes.update(over.get("regimes", {}))
     return s, regimes
 

@@ -3,6 +3,7 @@ run_scan cancela un aviso de salida ATR pendiente cuando el precio se recupera
 y el gatillo ya no aplica (la posición sigue abierta). Si el precio sigue
 gatillando, el aviso se mantiene.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -34,18 +35,28 @@ def _setup_stop_pending(mode: str = "manual"):
     settings.set("atr_stops_enabled", True)
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
-    settings.set("atr_tp_mult", 50.0)        # TP no dispara (50×ATR=50 → TP@150, fuera de alcance; máx permitido)
+    settings.set("atr_tp_mult", 50.0)  # TP no dispara (50×ATR=50 → TP@150, fuera de alcance; máx permitido)
     settings.set("atr_trail_enabled", False)  # aislar el hard stop
     a = create_account(name="RiskExit", initial_capital=10_000.0, mode=mode)
     with session_scope() as session:
-        session.add(PaperPosition(
-            account_id=a.id, ticker="KO", shares=10.0, avg_cost=100.0,
-            high_water_mark=100.0, opened_at=utcnow_naive(),
-        ))
+        session.add(
+            PaperPosition(
+                account_id=a.id,
+                ticker="KO",
+                shares=10.0,
+                avg_cost=100.0,
+                high_water_mark=100.0,
+                opened_at=utcnow_naive(),
+            )
+        )
         order = PaperOrder(
-            account_id=a.id, ticker="KO", side="SELL", target_shares=10.0,
+            account_id=a.id,
+            ticker="KO",
+            side="SELL",
+            target_shares=10.0,
             reason="atr_stop @ 98.00 ≤ 98.00 (entry 100.00 − 2.0×ATR 1.00)",
-            source="atr_stop_gate", status="pending",
+            source="atr_stop_gate",
+            status="pending",
         )
         session.add(order)
         session.flush()

@@ -22,10 +22,18 @@ def _bars(closes: list[float], tr: float = 2.0) -> list:
 
 def _risk_event(**kw) -> SellEvent:
     defaults = dict(
-        order_id=1, ticker="AAA", sell_date=_d(10), sell_price=90.0,
-        reason="atr_stop @ 90 ≤ 92 (entry 100 − 2.0×ATR 4)", signal_score=1.0,
-        shares=10.0, avg_cost=100.0, entry_date=_d(3), entry_price=100.0,
-        sell_commission=1.0, sell_slippage=1.0,
+        order_id=1,
+        ticker="AAA",
+        sell_date=_d(10),
+        sell_price=90.0,
+        reason="atr_stop @ 90 ≤ 92 (entry 100 − 2.0×ATR 4)",
+        signal_score=1.0,
+        shares=10.0,
+        avg_cost=100.0,
+        entry_date=_d(3),
+        entry_price=100.0,
+        sell_commission=1.0,
+        sell_slippage=1.0,
     )
     defaults.update(kw)
     return SellEvent(**defaults)

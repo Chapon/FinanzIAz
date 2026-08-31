@@ -32,15 +32,19 @@ def _d(i: int) -> str:
 
 def _rising_bars(n: int, start: float = 100.0, step: float = 1.0) -> list:
     """Serie monótona creciente → toda entrada long cierra en ganancia."""
-    return [(_d(i), start + step * i, start + step * i, start + step * i,
-             start + step * i) for i in range(n)]
+    return [(_d(i), start + step * i, start + step * i, start + step * i, start + step * i) for i in range(n)]
 
 
 def _common(**kw):
     base = dict(
-        max_positions=5, initial_capital=50_000.0, cap_days=10,
-        atr_p=NO_ATR, so_params=ScaleOutParams(), costs=NO_COST,
-        regime_of=regime_for_date, allow_reentry_while_open=False,
+        max_positions=5,
+        initial_capital=50_000.0,
+        cap_days=10,
+        atr_p=NO_ATR,
+        so_params=ScaleOutParams(),
+        costs=NO_COST,
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
     )
     base.update(kw)
     return base
@@ -119,5 +123,5 @@ def test_loto_edge_drops_top_contributor():
     out = loto_edge(run, entries, random_median_cagr=-1.0)
     assert out is not None
     assert out["dropped"] == "AAA"
-    assert out["cagr_without"] == 0.0        # sin entradas no hay curva
-    assert out["survives"] is True           # 0.0 > -1.0
+    assert out["cagr_without"] == 0.0  # sin entradas no hay curva
+    assert out["survives"] is True  # 0.0 > -1.0

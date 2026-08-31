@@ -42,8 +42,7 @@ def _bars(n: int, start_price: float = 100.0, drift: float = 0.0005) -> list[Bar
 
 
 def _universe(n_tickers: int = 6, n_bars: int = 600) -> dict[str, list[Bar]]:
-    return {f"T{i:02d}": _bars(n_bars, start_price=50.0 + 10 * i)
-            for i in range(n_tickers)}
+    return {f"T{i:02d}": _bars(n_bars, start_price=50.0 + 10 * i) for i in range(n_tickers)}
 
 
 # ── rate=0 ⇒ IDENTIDAD (no equivalencia) ─────────────────────────────────────
@@ -93,7 +92,7 @@ def test_el_sorteo_no_depende_del_orden_ni_del_tamano_del_universo():
     """El RNG se deriva del NOMBRE, así que un ticker recibe su evento aunque el
     universo cambie de tamaño o de orden de iteración."""
     big = _universe(n_tickers=8, n_bars=900)
-    small = {k: big[k] for k in ("T03", "T01")}     # subconjunto, orden invertido
+    small = {k: big[k] for k in ("T03", "T01")}  # subconjunto, orden invertido
     kw = dict(rate=0.08, depth=0.50, seed=BASE_SEED)
     out_big, ev_big = inject_ruin(big, **kw)
     out_small, ev_small = inject_ruin(small, **kw)
@@ -142,8 +141,7 @@ def test_gradual_llega_a_menos_d_exactamente_en_20_ruedas(depth: float):
     bars = _bars(400)
     uni = {"AAA": bars}
     # rate=100%/año durante 400 barras: dispara casi seguro y temprano.
-    out, events = inject_ruin(uni, rate=1.0, depth=depth, shape="gradual",
-                              seed=BASE_SEED)
+    out, events = inject_ruin(uni, rate=1.0, depth=depth, shape="gradual", seed=BASE_SEED)
     assert len(events) == 1
     ev = events[0]
     assert ev.span == SHAPE_SPANS["gradual"] == 20
@@ -158,8 +156,7 @@ def test_gradual_llega_a_menos_d_exactamente_en_20_ruedas(depth: float):
 
 def test_gradual_es_monotona_y_log_lineal():
     bars = _bars(400)
-    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50,
-                              shape="gradual", seed=BASE_SEED)
+    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50, shape="gradual", seed=BASE_SEED)
     ev = events[0]
     if not ev.completes:
         pytest.skip("evento sin espacio para la caída completa")
@@ -173,8 +170,7 @@ def test_gradual_es_monotona_y_log_lineal():
 
 def test_gap_cae_en_una_sola_rueda():
     bars = _bars(400)
-    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50, shape="gap",
-                              seed=BASE_SEED)
+    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50, shape="gap", seed=BASE_SEED)
     ev = events[0]
     assert ev.span == SHAPE_SPANS["gap"] == 1
     if not ev.completes:
@@ -187,8 +183,7 @@ def test_gap_cae_en_una_sola_rueda():
 
 def test_despues_del_span_la_serie_queda_plana():
     bars = _bars(500)
-    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50,
-                              shape="gradual", seed=BASE_SEED)
+    out, events = inject_ruin({"AAA": bars}, rate=1.0, depth=0.50, shape="gradual", seed=BASE_SEED)
     ev = events[0]
     if ev.n_bars_after <= ev.span + 3:
         pytest.skip("evento sin cola para verificar el plano")
@@ -264,13 +259,16 @@ def test_digest_detecta_un_solo_float_movido():
 # ── validación de argumentos ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("kw", [
-    {"shape": "instantanea"},
-    {"depth": 0.0},
-    {"depth": 1.0},
-    {"depth": 1.5},
-    {"rate": -0.01},
-])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"shape": "instantanea"},
+        {"depth": 0.0},
+        {"depth": 1.0},
+        {"depth": 1.5},
+        {"rate": -0.01},
+    ],
+)
 def test_argumentos_invalidos(kw: dict):
     uni = _universe(n_tickers=2, n_bars=60)
     base = dict(rate=0.026, depth=0.50, shape="gradual", seed=BASE_SEED)

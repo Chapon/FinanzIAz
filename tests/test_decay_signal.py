@@ -19,16 +19,16 @@ Cubre:
 from __future__ import annotations
 
 import json
-import math
 import sqlite3
 from datetime import datetime, timedelta
 
 import pytest
 
+from scripts.baseline_metrics import AccountSnapshot, Fill
+
 # dashboard_data importa desde scripts.baseline_metrics, así que aseguramos que
 # el path del repo esté en sys.path antes de importar.
 from scripts.dashboard_data import _decay_signal, _monthly_perf
-from scripts.baseline_metrics import AccountSnapshot, Fill
 
 
 def _con_with_cache(spy_closes: list[tuple[str, float]] | None = None) -> sqlite3.Connection:
@@ -54,6 +54,7 @@ def _con_with_cache(spy_closes: list[tuple[str, float]] | None = None) -> sqlite
 
 # ── Helpers para construir monthly dicts sintéticos ──────────────────────────
 
+
 def _month(month_str: str, sharpe: float | None, period_return: float = 0.0) -> dict:
     return {
         "month": month_str,
@@ -71,8 +72,8 @@ def _month(month_str: str, sharpe: float | None, period_return: float = 0.0) -> 
 
 # ── _decay_signal ─────────────────────────────────────────────────────────────
 
-class TestDecaySignal:
 
+class TestDecaySignal:
     def test_insufficient_data_empty(self):
         result = _decay_signal([])
         assert result["status"] == "insufficient_data"
@@ -203,17 +204,20 @@ class TestDecaySignal:
 
 # ── _monthly_perf ─────────────────────────────────────────────────────────────
 
+
 def _make_snapshots(n_days: int, start_equity: float = 50_000.0) -> list[AccountSnapshot]:
     base = datetime(2026, 4, 1, 12, 0, 0)
     snaps = []
     equity = start_equity
     for i in range(n_days):
-        snaps.append(AccountSnapshot(
-            snapshot_at=base + timedelta(days=i),
-            total_equity=equity + i * 10.0,
-            cash=5_000.0,
-            positions_value=equity + i * 10.0 - 5_000.0,
-        ))
+        snaps.append(
+            AccountSnapshot(
+                snapshot_at=base + timedelta(days=i),
+                total_equity=equity + i * 10.0,
+                cash=5_000.0,
+                positions_value=equity + i * 10.0 - 5_000.0,
+            )
+        )
     return snaps
 
 
@@ -223,31 +227,34 @@ def _make_fills(n: int = 4) -> list[Fill]:
     base_buy = datetime(2026, 4, 5, 10, 0, 0)
     base_sell = datetime(2026, 5, 5, 10, 0, 0)
     for i in range(n):
-        fills.append(Fill(
-            order_id=i * 2,
-            ticker=f"TKR{i}",
-            side="BUY",
-            shares=10.0,
-            price=100.0 + i,
-            commission=0.1,
-            slippage=0.05,
-            filled_at=base_buy + timedelta(days=i),
-        ))
-        fills.append(Fill(
-            order_id=i * 2 + 1,
-            ticker=f"TKR{i}",
-            side="SELL",
-            shares=10.0,
-            price=110.0 + i,
-            commission=0.1,
-            slippage=0.05,
-            filled_at=base_sell + timedelta(days=i),
-        ))
+        fills.append(
+            Fill(
+                order_id=i * 2,
+                ticker=f"TKR{i}",
+                side="BUY",
+                shares=10.0,
+                price=100.0 + i,
+                commission=0.1,
+                slippage=0.05,
+                filled_at=base_buy + timedelta(days=i),
+            )
+        )
+        fills.append(
+            Fill(
+                order_id=i * 2 + 1,
+                ticker=f"TKR{i}",
+                side="SELL",
+                shares=10.0,
+                price=110.0 + i,
+                commission=0.1,
+                slippage=0.05,
+                filled_at=base_sell + timedelta(days=i),
+            )
+        )
     return fills
 
 
 class TestMonthlyPerf:
-
     def test_returns_list(self):
         snaps = _make_snapshots(60)
         fills = _make_fills(4)
@@ -260,8 +267,16 @@ class TestMonthlyPerf:
         result = _monthly_perf(_con_with_cache(), snaps, fills)
         assert len(result) > 0
         row = result[0]
-        for key in ("month", "n_trading_days", "period_return", "sharpe_annual",
-                    "max_drawdown", "n_round_trips", "spy_return", "vs_spy"):
+        for key in (
+            "month",
+            "n_trading_days",
+            "period_return",
+            "sharpe_annual",
+            "max_drawdown",
+            "n_round_trips",
+            "spy_return",
+            "vs_spy",
+        ):
             assert key in row, f"Missing key: {key}"
 
     def test_ordered_chronologically(self):
@@ -279,8 +294,14 @@ class TestMonthlyPerf:
         # V1: con SPY cacheado, cada mes reporta spy_return y vs_spy.
         snaps = _make_snapshots(60)  # abril y mayo 2026
         fills = _make_fills(2)
-        con = _con_with_cache([("2026-04-01", 400.0), ("2026-04-30", 408.0),   # abril +2%
-                               ("2026-05-01", 408.0), ("2026-05-30", 408.0)])  # mayo 0%
+        con = _con_with_cache(
+            [
+                ("2026-04-01", 400.0),
+                ("2026-04-30", 408.0),  # abril +2%
+                ("2026-05-01", 408.0),
+                ("2026-05-30", 408.0),
+            ]
+        )  # mayo 0%
         result = _monthly_perf(con, snaps, fills)
         by_month = {r["month"]: r for r in result}
         assert by_month["2026-04"]["spy_return"] == pytest.approx(0.02)

@@ -31,6 +31,7 @@ _FIXTURE_HTML = """
 
 # ── (a) User-Agent ───────────────────────────────────────────────────────────
 
+
 def test_fetch_sends_browser_user_agent(monkeypatch):
     """Sin UA de browser Wikipedia devuelve 403 — el header no es opcional."""
     seen = {}
@@ -60,6 +61,7 @@ def test_fetch_sends_browser_user_agent(monkeypatch):
 
 def test_fetch_falls_back_when_http_fails(monkeypatch):
     """Un error de red no se propaga: devuelve None y el caller usa el fallback."""
+
     def _boom(*a, **kw):
         raise RuntimeError("HTTP Error 403: Forbidden")
 
@@ -101,6 +103,7 @@ def test_fetch_parses_fixture_html(monkeypatch):
 
 def test_missing_html_parser_is_not_fatal(monkeypatch):
     """Sin lxml el fetch se degrada al fallback con un warning, no con un traceback."""
+
     class _Resp:
         text = _FIXTURE_HTML
 
@@ -119,6 +122,7 @@ def test_missing_html_parser_is_not_fatal(monkeypatch):
 
 
 # ── normalize_symbols (puro, sin parser de HTML) ─────────────────────────────
+
 
 def test_normalize_symbols_converts_dots_to_dashes():
     assert normalize_symbols(["BRK.B", "BF.B"]) == ["BRK-B", "BF-B"]
@@ -159,8 +163,20 @@ def test_normalize_symbols_survives_none_values():
 
 # Confirmados sin barras contra Yahoo el 2026-07-20 (adquisiciones y renames).
 DEAD_SYMBOLS = (
-    "ANSS", "CTLT", "CMA", "CTRA", "DAY", "DFS", "FI",
-    "HOLX", "HES", "IPG", "JNPR", "MMC", "PARA", "WBA",
+    "ANSS",
+    "CTLT",
+    "CMA",
+    "CTRA",
+    "DAY",
+    "DFS",
+    "FI",
+    "HOLX",
+    "HES",
+    "IPG",
+    "JNPR",
+    "MMC",
+    "PARA",
+    "WBA",
 )
 
 
@@ -189,6 +205,7 @@ def test_alive_tickers_that_404_are_kept():
 
 # ── (c) Filtro de ruido de yfinance ──────────────────────────────────────────
 
+
 def _record(msg: str) -> logging.LogRecord:
     return logging.LogRecord("yfinance", logging.ERROR, __file__, 1, msg, None, None)
 
@@ -203,8 +220,10 @@ def _clean_unknown_symbols():
 def test_quote_not_found_is_silenced_and_recorded():
     """'Quote not found' = símbolo inexistente: se descarta del log y se anota."""
     filt = yf_noise.QuoteSummary404Filter()
-    msg = ('HTTP Error 404: {"quoteSummary":{"result":null,"error":'
-           '{"code":"Not Found","description":"Quote not found for symbol: ANSS"}}}')
+    msg = (
+        'HTTP Error 404: {"quoteSummary":{"result":null,"error":'
+        '{"code":"Not Found","description":"Quote not found for symbol: ANSS"}}}'
+    )
 
     assert filt.filter(_record(msg)) is False
     assert yf_noise.is_unknown_symbol("ANSS")
@@ -213,8 +232,10 @@ def test_quote_not_found_is_silenced_and_recorded():
 def test_no_fundamentals_is_silenced_but_not_recorded():
     """'No fundamentals data' = el símbolo existe, falta ese módulo (FOX/LOW)."""
     filt = yf_noise.QuoteSummary404Filter()
-    msg = ('HTTP Error 404: {"quoteSummary":{"result":null,"error":'
-           '{"code":"Not Found","description":"No fundamentals data found for symbol: LOW"}}}')
+    msg = (
+        'HTTP Error 404: {"quoteSummary":{"result":null,"error":'
+        '{"code":"Not Found","description":"No fundamentals data found for symbol: LOW"}}}'
+    )
 
     assert filt.filter(_record(msg)) is False
     assert not yf_noise.is_unknown_symbol("LOW"), "LOW cotiza: no puede quedar marcado como muerto"
@@ -240,7 +261,7 @@ def test_install_is_idempotent(monkeypatch):
     logger = logging.getLogger("yfinance-test-univ1")
     before = len(logger.filters)
 
-    assert yf_noise.install("yfinance-test-univ1") is True   # primera: instala
+    assert yf_noise.install("yfinance-test-univ1") is True  # primera: instala
     assert yf_noise.install("yfinance-test-univ1") is False  # segunda: no-op
 
     assert len(logger.filters) - before == 1

@@ -35,7 +35,6 @@ from scripts.dashboard_data import (
     _post_sell_panel,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -70,15 +69,18 @@ def _split_json(dates: list[date], closes: list[float], multiindex: bool = False
     cols = ["Close", "High", "Low", "Open", "Volume"]
     if multiindex:
         cols = [[c, "TEST"] for c in cols]
-    return json.dumps({
-        "columns": cols,
-        "index": [f"{d.isoformat()}T00:00:00.000" for d in dates],
-        "data": [[c, c * 1.01, c * 0.99, c, 1000] for c in closes],
-    })
+    return json.dumps(
+        {
+            "columns": cols,
+            "index": [f"{d.isoformat()}T00:00:00.000" for d in dates],
+            "data": [[c, c * 1.01, c * 0.99, c, 1000] for c in closes],
+        }
+    )
 
 
-def _insert_cache(con, ticker, dates, closes, fetched_at="2026-06-09 00:00:00",
-                  interval="1d", multiindex=False):
+def _insert_cache(
+    con, ticker, dates, closes, fetched_at="2026-06-09 00:00:00", interval="1d", multiindex=False
+):
     con.execute(
         "INSERT INTO historical_data_cache (ticker, period, interval, data_json, fetched_at) "
         "VALUES (?, '1y', ?, ?, ?)",
@@ -86,8 +88,17 @@ def _insert_cache(con, ticker, dates, closes, fetched_at="2026-06-09 00:00:00",
     )
 
 
-def _insert_sell(con, account_id, ticker, filled_at, fill_price=100.0,
-                 reason="signal", score=0.30, side="SELL", status="filled"):
+def _insert_sell(
+    con,
+    account_id,
+    ticker,
+    filled_at,
+    fill_price=100.0,
+    reason="signal",
+    score=0.30,
+    side="SELL",
+    status="filled",
+):
     con.execute(
         "INSERT INTO paper_orders (account_id, ticker, side, status, fill_price, "
         "filled_at, reason, signal_score) VALUES (?,?,?,?,?,?,?,?)",
@@ -162,7 +173,7 @@ class TestLoadCloseSeries:
 
 
 class TestFwdReturn:
-    PAIRS = [(d.isoformat(), c) for d, c in zip(DATES, CLOSES)]
+    PAIRS = [(d.isoformat(), c) for d, c in zip(DATES, CLOSES, strict=True)]
 
     def test_exact_5d(self):
         # base = close del día 0 (100), exit = close del día 5 (105)
@@ -209,9 +220,9 @@ class TestPostSellPanel:
         con = self._setup()
         d0 = DATES[0].isoformat()
         _insert_sell(con, 1, "AAA", f"{d0} 15:30:00")
-        _insert_sell(con, 1, "AAA", f"{d0} 15:30:00", side="BUY")       # no
+        _insert_sell(con, 1, "AAA", f"{d0} 15:30:00", side="BUY")  # no
         _insert_sell(con, 1, "AAA", f"{d0} 15:30:00", status="expired")  # no
-        _insert_sell(con, 2, "AAA", f"{d0} 15:30:00")                    # otra cuenta
+        _insert_sell(con, 2, "AAA", f"{d0} 15:30:00")  # otra cuenta
         panel = _post_sell_panel(con, 1)
         assert panel["summary"]["n_sells"] == 1
 
@@ -245,9 +256,7 @@ class TestPostSellPanel:
         abril = panel["monthly"][0]
         assert abril["n_sells"] == 2 and abril["n_fwd5"] == 2
         assert abril["pct_positive_fwd5"] == 1.0
-        assert abril["median_fwd5"] == pytest.approx(
-            (0.05 + (110.0 / 105.0 - 1.0)) / 2.0
-        )
+        assert abril["median_fwd5"] == pytest.approx((0.05 + (110.0 / 105.0 - 1.0)) / 2.0)
         mayo = panel["monthly"][1]
         assert mayo["n_sells"] == 1
         assert mayo["median_fwd5"] == pytest.approx(125.0 / 120.0 - 1.0)

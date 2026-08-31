@@ -3,6 +3,7 @@
 Solo ejercita las funciones puras: clasificación near-earnings, resumen y
 contrafactual. Las fechas de earnings se inyectan a mano.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -29,8 +30,8 @@ def _rt(ticker, buy_day, pnl, pnl_pct, shares=10.0, buy_price=100.0):
 
 def test_is_near_earnings_dentro_y_fuera():
     earnings = [date(2026, 5, 10)]
-    assert is_near_earnings(date(2026, 5, 11), earnings, 2) is True   # +1 día
-    assert is_near_earnings(date(2026, 5, 8), earnings, 2) is True    # −2 días
+    assert is_near_earnings(date(2026, 5, 11), earnings, 2) is True  # +1 día
+    assert is_near_earnings(date(2026, 5, 8), earnings, 2) is True  # −2 días
     assert is_near_earnings(date(2026, 5, 14), earnings, 2) is False  # +4 días
     assert is_near_earnings(None, earnings, 2) is False
     assert is_near_earnings(date(2026, 5, 10), [], 2) is False
@@ -43,9 +44,9 @@ def test_is_near_earnings_acepta_strings():
 
 def test_classify_separa_por_ticker():
     rts = [
-        _rt("AAPL", date(2026, 5, 11), 5.0, 0.05),    # near (earnings 5-10)
-        _rt("AAPL", date(2026, 6, 1), -3.0, -0.03),   # far
-        _rt("KO", date(2026, 5, 11), 2.0, 0.02),      # far (KO sin earnings cerca)
+        _rt("AAPL", date(2026, 5, 11), 5.0, 0.05),  # near (earnings 5-10)
+        _rt("AAPL", date(2026, 6, 1), -3.0, -0.03),  # far
+        _rt("KO", date(2026, 5, 11), 2.0, 0.02),  # far (KO sin earnings cerca)
     ]
     earnings = {"AAPL": [date(2026, 5, 10)], "KO": [date(2026, 1, 1)]}
     near, far = classify_round_trips(rts, earnings, 2)
@@ -69,8 +70,8 @@ def test_counterfactual_near_perdedor_blackout_ayuda():
     cf = counterfactual_delta(near, far)
     assert cf["real_near_pnl"] == -20.0
     assert cf["proxy_ret_pct"] == 0.05
-    assert cf["cf_pnl"] == 100 * 0.05          # 5.0
-    assert cf["delta"] == 5.0 - (-20.0)        # +25 → blackout ayuda
+    assert cf["cf_pnl"] == 100 * 0.05  # 5.0
+    assert cf["delta"] == 5.0 - (-20.0)  # +25 → blackout ayuda
     assert cf["delta"] > 0
 
 

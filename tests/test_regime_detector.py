@@ -36,7 +36,6 @@ from analysis.regime_detector import (
     regime_run_lengths,
 )
 
-
 # ── Synthetic data builders ─────────────────────────────────────────────────
 
 
@@ -52,16 +51,16 @@ def _make_df(returns: np.ndarray, start: str = "2024-01-02") -> pd.DataFrame:
     )
 
 
-def _quiet_bull(n: int, daily_return: float = 0.0015, daily_vol: float = 0.006,
-                seed: int = 0) -> np.ndarray:
+def _quiet_bull(n: int, daily_return: float = 0.0015, daily_vol: float = 0.006, seed: int = 0) -> np.ndarray:
     """Daily drift ~38% annual, vol ~9.5% annual → Sharpe ~ 4 (well above +0.5
     threshold), vol below 0.18 → should classify as bull_quiet."""
     rng = np.random.default_rng(seed)
     return rng.normal(loc=daily_return, scale=daily_vol, size=n)
 
 
-def _volatile_bull(n: int, daily_return: float = 0.005, daily_vol: float = 0.025,
-                   seed: int = 1) -> np.ndarray:
+def _volatile_bull(
+    n: int, daily_return: float = 0.005, daily_vol: float = 0.025, seed: int = 1
+) -> np.ndarray:
     """Strong drift to keep annualised Sharpe well above the +1.0 threshold even
     with 60-bar window noise (std ≈ 2.05). Vol annualised ≈ 40% (well above
     0.18) → bull_volatile."""
@@ -69,17 +68,16 @@ def _volatile_bull(n: int, daily_return: float = 0.005, daily_vol: float = 0.025
     return rng.normal(loc=daily_return, scale=daily_vol, size=n)
 
 
-def _bear(n: int, daily_return: float = -0.005, daily_vol: float = 0.020,
-          seed: int = 2) -> np.ndarray:
+def _bear(n: int, daily_return: float = -0.005, daily_vol: float = 0.020, seed: int = 2) -> np.ndarray:
     """Strong negative drift; annualised Sharpe ≈ −4 (well below −1.0
     threshold)."""
     rng = np.random.default_rng(seed)
     return rng.normal(loc=daily_return, scale=daily_vol, size=n)
 
 
-def _lateral_mean_reverting(n: int, amplitude: float = 0.01,
-                            period: int = 30, noise_vol: float = 0.003,
-                            seed: int = 3) -> np.ndarray:
+def _lateral_mean_reverting(
+    n: int, amplitude: float = 0.01, period: int = 30, noise_vol: float = 0.003, seed: int = 3
+) -> np.ndarray:
     """Sinusoidal returns + small noise: deterministically lateral.
 
     Pure i.i.d. or AR(1) zero-drift returns still produce 60-bar rolling
@@ -110,8 +108,7 @@ class TestQuadrants:
         # After warm-up, the bulk of the series should be bull_quiet.
         non_warm = out["regime"][out["regime"] != REGIME_WARMUP]
         assert (non_warm == REGIME_BULL_QUIET).mean() > 0.6, (
-            f"Expected mostly bull_quiet, got distribution: "
-            f"{non_warm.value_counts(normalize=True).to_dict()}"
+            f"Expected mostly bull_quiet, got distribution: {non_warm.value_counts(normalize=True).to_dict()}"
         )
 
     @pytest.mark.parametrize("seed", range(5))
@@ -130,8 +127,7 @@ class TestQuadrants:
         out = detect_regime_series(df)
         non_warm = out["regime"][out["regime"] != REGIME_WARMUP]
         assert (non_warm == REGIME_BEAR).mean() > 0.6, (
-            f"Expected mostly bear, got: "
-            f"{non_warm.value_counts(normalize=True).to_dict()}"
+            f"Expected mostly bear, got: {non_warm.value_counts(normalize=True).to_dict()}"
         )
 
     @pytest.mark.parametrize("seed", range(5))
@@ -142,8 +138,7 @@ class TestQuadrants:
         # Mean reversion suppresses rolling Sharpe near zero. We expect the
         # majority of bars to fall in the ±1.0 deadband.
         assert (non_warm == REGIME_LATERAL).mean() > 0.5, (
-            f"Expected mostly lateral, got: "
-            f"{non_warm.value_counts(normalize=True).to_dict()}"
+            f"Expected mostly lateral, got: {non_warm.value_counts(normalize=True).to_dict()}"
         )
 
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from analysis.harness import ExperimentConfig, HarnessRunner
 from analysis.harness.metrics import ComputedMetrics, compute_metrics
@@ -53,10 +52,11 @@ def _mock_trade(
 
 class MockBacktestResult:
     """Mock backtest result for testing."""
+
     def __init__(
         self,
         equity_curve: list[float],
-        trades: list[_Trade],
+        trades: list[PortfolioTrade],
         turnover: float = 0.0,
     ):
         self.equity_curve = np.array(equity_curve)
@@ -84,12 +84,14 @@ def test_experiment_config_ablation_variants():
     assert len(variants) == 4
 
     for variant in variants:
-        enabled_count = sum([
-            variant.hmm_enabled,
-            variant.stacking_enabled,
-            variant.xgb_signal_enabled,
-            variant.vol_overlay_enabled,
-        ])
+        enabled_count = sum(
+            [
+                variant.hmm_enabled,
+                variant.stacking_enabled,
+                variant.xgb_signal_enabled,
+                variant.vol_overlay_enabled,
+            ]
+        )
         assert enabled_count == 3, f"Variant {variant.name} should have 3/4 features"
 
 
@@ -183,7 +185,7 @@ def test_compute_metrics_win_rate():
     trades = [
         _mock_trade(pnl=100.0),  # win
         _mock_trade(pnl=-50.0),  # loss
-        _mock_trade(pnl=75.0),   # win
+        _mock_trade(pnl=75.0),  # win
         _mock_trade(pnl=-25.0),  # loss
         _mock_trade(pnl=200.0),  # win
     ]

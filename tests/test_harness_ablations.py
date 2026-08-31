@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -32,13 +32,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from analysis.backtest import signal_from_analyze_stacked
 from analysis.harness import ExperimentConfig, HarnessRunner
 from analysis.portfolio_backtest import (
     AllocationMode,
     portfolio_backtest,
 )
-from analysis.backtest import signal_from_analyze_stacked
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -227,10 +226,11 @@ def test_runner_vol_overlay_ablation_diverges(synthetic_universe):
         step=5,
         verbose=False,
     )
-    signal_fn = lambda df: "BUY"  # noqa: E731
+    signal_fn = lambda df: "BUY"
 
     # Force a very tight vol target so the overlay engages aggressively
     from config.settings_manager import settings as _real
+
     original_get = _real.get
 
     def patched_get(key, fallback=None):

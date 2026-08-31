@@ -45,7 +45,7 @@ import pytest
 pytest.importorskip("xgboost")
 pytest.importorskip("sklearn.calibration")
 
-from analysis.ml_signals import (  # noqa: E402
+from analysis.ml_signals import (
     _XGB_CACHE,
     _XGB_CACHE_MAX,
     PREDICTION_HORIZON,

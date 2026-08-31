@@ -17,8 +17,6 @@ import pytest
 
 from paper_trading.gates import (
     ATR_EXIT_REASONS,
-    CorrelationSkip,
-    VolOverlayResult,
     adv_capped_notional,
     atr_exit_decision,
     compute_vol_overlay,
@@ -29,7 +27,6 @@ from paper_trading.gates import (
     recent_adv_dollars,
     select_uncorrelated_picks,
 )
-
 
 # ── is_atr_forced_exit_reason ──────────────────────────────────────────────────
 
@@ -63,8 +60,13 @@ class TestIsAtrForcedExitReason:
 class TestAtrExitDecision:
     def test_stop_fires_when_price_below_stop_level(self):
         reason, level = atr_exit_decision(
-            current_price=89.0, avg_cost=100.0, high_water_mark=110.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=89.0,
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is not None
         assert reason.startswith("atr_stop")
@@ -73,16 +75,26 @@ class TestAtrExitDecision:
     def test_no_exit_inside_band(self):
         # price=105 mid-band: stop=90, trail=100 (hwm 110 - 2*5), tp=120. No fire.
         reason, level = atr_exit_decision(
-            current_price=105.0, avg_cost=100.0, high_water_mark=110.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=105.0,
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None
         assert level is None
 
     def test_take_profit_fires(self):
         reason, level = atr_exit_decision(
-            current_price=121.0, avg_cost=100.0, high_water_mark=121.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=121.0,
+            avg_cost=100.0,
+            high_water_mark=121.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is not None
         assert reason.startswith("atr_tp")
@@ -90,8 +102,13 @@ class TestAtrExitDecision:
 
     def test_trail_fires_when_price_below_peak_band(self):
         reason, level = atr_exit_decision(
-            current_price=109.0, avg_cost=100.0, high_water_mark=120.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=109.0,
+            avg_cost=100.0,
+            high_water_mark=120.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is not None
         assert reason.startswith("atr_trail")
@@ -99,59 +116,99 @@ class TestAtrExitDecision:
 
     def test_trail_suppressed_when_hwm_too_close_to_entry(self):
         reason, level = atr_exit_decision(
-            current_price=95.0, avg_cost=100.0, high_water_mark=104.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=95.0,
+            avg_cost=100.0,
+            high_water_mark=104.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None
         assert level is None
 
     def test_trail_disabled_only_stop_and_tp(self):
         reason, level = atr_exit_decision(
-            current_price=109.0, avg_cost=100.0, high_water_mark=120.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=False,
+            current_price=109.0,
+            avg_cost=100.0,
+            high_water_mark=120.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=False,
         )
         assert reason is None
         assert level is None
 
     def test_stop_wins_over_trail_when_both_eligible(self):
         reason, _ = atr_exit_decision(
-            current_price=89.0, avg_cost=100.0, high_water_mark=120.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=89.0,
+            avg_cost=100.0,
+            high_water_mark=120.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is not None and reason.startswith("atr_stop")
 
     def test_no_hwm_uses_avg_cost_as_baseline(self):
         reason, _ = atr_exit_decision(
-            current_price=95.0, avg_cost=100.0, high_water_mark=None,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=95.0,
+            avg_cost=100.0,
+            high_water_mark=None,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None
 
     def test_non_finite_inputs_return_none(self):
         reason, level = atr_exit_decision(
-            current_price=float("nan"), avg_cost=100.0, high_water_mark=110.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=float("nan"),
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None and level is None
 
     def test_zero_price_returns_none(self):
         reason, _ = atr_exit_decision(
-            current_price=0.0, avg_cost=100.0, high_water_mark=110.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=0.0,
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None
 
     def test_zero_atr_returns_none(self):
         reason, _ = atr_exit_decision(
-            current_price=80.0, avg_cost=100.0, high_water_mark=110.0,
-            atr_value=0.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=80.0,
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=0.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is None
 
     def test_reason_format_carries_diagnostic(self):
         reason, _ = atr_exit_decision(
-            current_price=80.0, avg_cost=100.0, high_water_mark=110.0,
-            atr_value=5.0, stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=80.0,
+            avg_cost=100.0,
+            high_water_mark=110.0,
+            atr_value=5.0,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert "@" in reason
         assert "ATR" in reason
@@ -163,9 +220,9 @@ class TestAtrExitDecision:
 class TestEntryRiskLevels:
     def test_levels_and_rr(self):
         lv = entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=2.0, tp_mult=4.0)
-        assert lv["stop"] == pytest.approx(94.0)   # 100 − 2×3
-        assert lv["tp"] == pytest.approx(112.0)     # 100 + 4×3
-        assert lv["rr"] == pytest.approx(2.0)       # tp_mult/stop_mult
+        assert lv["stop"] == pytest.approx(94.0)  # 100 − 2×3
+        assert lv["tp"] == pytest.approx(112.0)  # 100 + 4×3
+        assert lv["rr"] == pytest.approx(2.0)  # tp_mult/stop_mult
         assert lv["atr"] == pytest.approx(3.0)
 
     def test_rr_independent_of_price_and_atr(self):
@@ -178,8 +235,7 @@ class TestEntryRiskLevels:
         assert entry_risk_levels(entry_price=0.0, atr_value=3.0, stop_mult=2.0, tp_mult=4.0) is None
         assert entry_risk_levels(entry_price=100.0, atr_value=0.0, stop_mult=2.0, tp_mult=4.0) is None
         assert entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=0.0, tp_mult=4.0) is None
-        assert entry_risk_levels(entry_price=float("nan"), atr_value=3.0,
-                                 stop_mult=2.0, tp_mult=4.0) is None
+        assert entry_risk_levels(entry_price=float("nan"), atr_value=3.0, stop_mult=2.0, tp_mult=4.0) is None
 
     def test_zero_tp_mult_allowed_rr_zero(self):
         lv = entry_risk_levels(entry_price=100.0, atr_value=3.0, stop_mult=2.0, tp_mult=0.0)
@@ -209,29 +265,54 @@ class TestIsWithinEarningsBlackout:
         assert is_within_earnings_blackout(datetime(2026, 5, 27), datetime(2026, 5, 26), -1) is False
 
     def test_inside_window_before_earnings(self):
-        assert is_within_earnings_blackout(
-            datetime(2026, 5, 28), datetime(2026, 5, 26, 15, 30), 3,
-        ) is True
+        assert (
+            is_within_earnings_blackout(
+                datetime(2026, 5, 28),
+                datetime(2026, 5, 26, 15, 30),
+                3,
+            )
+            is True
+        )
 
     def test_inside_window_after_earnings(self):
-        assert is_within_earnings_blackout(
-            datetime(2026, 5, 24), datetime(2026, 5, 26), 3,
-        ) is True
+        assert (
+            is_within_earnings_blackout(
+                datetime(2026, 5, 24),
+                datetime(2026, 5, 26),
+                3,
+            )
+            is True
+        )
 
     def test_outside_window(self):
-        assert is_within_earnings_blackout(
-            datetime(2026, 5, 31), datetime(2026, 5, 26), 3,
-        ) is False
+        assert (
+            is_within_earnings_blackout(
+                datetime(2026, 5, 31),
+                datetime(2026, 5, 26),
+                3,
+            )
+            is False
+        )
 
     def test_at_boundary_inclusive(self):
-        assert is_within_earnings_blackout(
-            datetime(2026, 5, 29), datetime(2026, 5, 26), 3,
-        ) is True
+        assert (
+            is_within_earnings_blackout(
+                datetime(2026, 5, 29),
+                datetime(2026, 5, 26),
+                3,
+            )
+            is True
+        )
 
     def test_same_day_intraday_time_ignored(self):
-        assert is_within_earnings_blackout(
-            datetime(2026, 5, 26, 8, 0), datetime(2026, 5, 26, 16, 30), 1,
-        ) is True
+        assert (
+            is_within_earnings_blackout(
+                datetime(2026, 5, 26, 8, 0),
+                datetime(2026, 5, 26, 16, 30),
+                1,
+            )
+            is True
+        )
 
 
 # ── select_uncorrelated_picks ──────────────────────────────────────────────────
@@ -245,20 +326,32 @@ def _ret(seed: int, n: int = 60) -> pd.Series:
 class TestSelectUncorrelatedPicks:
     def test_zero_free_slots_returns_empty(self):
         accepted, skipped = select_uncorrelated_picks(
-            ["AAPL", "MSFT"], [], 0, lambda t: None, threshold=0.5,
+            ["AAPL", "MSFT"],
+            [],
+            0,
+            lambda t: None,
+            threshold=0.5,
         )
         assert accepted == [] and skipped == []
 
     def test_threshold_one_disables_gate(self):
         accepted, skipped = select_uncorrelated_picks(
-            ["AAPL", "MSFT", "NVDA"], ["GOOGL"], 2, lambda t: None, threshold=1.0,
+            ["AAPL", "MSFT", "NVDA"],
+            ["GOOGL"],
+            2,
+            lambda t: None,
+            threshold=1.0,
         )
         assert accepted == ["AAPL", "MSFT"]
         assert skipped == []
 
     def test_missing_returns_always_accepted(self):
         accepted, skipped = select_uncorrelated_picks(
-            ["AAPL", "MSFT"], ["GOOGL"], 2, lambda t: None, threshold=0.3,
+            ["AAPL", "MSFT"],
+            ["GOOGL"],
+            2,
+            lambda t: None,
+            threshold=0.3,
         )
         assert accepted == ["AAPL", "MSFT"]
         assert skipped == []
@@ -266,7 +359,9 @@ class TestSelectUncorrelatedPicks:
     def test_skips_when_correlation_exceeds_threshold(self):
         rets = {t: _ret(i) for i, t in enumerate(["AAPL", "MSFT", "GOOGL"])}
         accepted, skipped = select_uncorrelated_picks(
-            ["AAPL", "MSFT"], ["GOOGL"], 2,
+            ["AAPL", "MSFT"],
+            ["GOOGL"],
+            2,
             returns_provider=lambda t: rets.get(t),
             threshold=0.5,
             mean_corr_fn=lambda c, h: 0.9,
@@ -278,7 +373,9 @@ class TestSelectUncorrelatedPicks:
     def test_accepts_below_threshold(self):
         rets = {t: _ret(i) for i, t in enumerate(["AAPL", "MSFT", "GOOGL"])}
         accepted, skipped = select_uncorrelated_picks(
-            ["AAPL", "MSFT"], ["GOOGL"], 2,
+            ["AAPL", "MSFT"],
+            ["GOOGL"],
+            2,
             returns_provider=lambda t: rets.get(t),
             threshold=0.5,
             mean_corr_fn=lambda c, h: 0.2,
@@ -295,7 +392,9 @@ class TestSelectUncorrelatedPicks:
             return 0.1
 
         accepted, _ = select_uncorrelated_picks(
-            ["AAPL", "MSFT"], [], 2,
+            ["AAPL", "MSFT"],
+            [],
+            2,
             returns_provider=lambda t: rets.get(t),
             threshold=0.5,
             mean_corr_fn=mean_corr,
@@ -306,7 +405,9 @@ class TestSelectUncorrelatedPicks:
     def test_partial_fill_respects_slot_cap(self):
         rets = {t: _ret(i) for i, t in enumerate(["AAPL", "MSFT", "NVDA", "TSLA"])}
         accepted, _ = select_uncorrelated_picks(
-            ["AAPL", "MSFT", "NVDA", "TSLA"], [], 2,
+            ["AAPL", "MSFT", "NVDA", "TSLA"],
+            [],
+            2,
             returns_provider=lambda t: rets.get(t),
             threshold=0.5,
             mean_corr_fn=lambda c, h: 0.1,
@@ -340,7 +441,10 @@ class TestComputeVolOverlay:
             return dict(w), 0.10, 1.0
 
         result = compute_vol_overlay(
-            {"AAPL": 0.5, "MSFT": 0.5}, None, vol_target_annual=0.20, apply_fn=apply_fn,
+            {"AAPL": 0.5, "MSFT": 0.5},
+            None,
+            vol_target_annual=0.20,
+            apply_fn=apply_fn,
         )
         assert result.factor == 1.0
         assert result.sigma == 0.10
@@ -351,7 +455,10 @@ class TestComputeVolOverlay:
             return scaled, 0.30, 0.667
 
         result = compute_vol_overlay(
-            {"AAPL": 0.5, "MSFT": 0.5}, None, vol_target_annual=0.20, apply_fn=apply_fn,
+            {"AAPL": 0.5, "MSFT": 0.5},
+            None,
+            vol_target_annual=0.20,
+            apply_fn=apply_fn,
         )
         assert result.factor == pytest.approx(0.667)
         assert result.sigma == pytest.approx(0.30)
@@ -362,7 +469,10 @@ class TestComputeVolOverlay:
             return dict(w), None, 1.0
 
         result = compute_vol_overlay(
-            {"AAPL": 0.5}, None, vol_target_annual=0.20, apply_fn=apply_fn,
+            {"AAPL": 0.5},
+            None,
+            vol_target_annual=0.20,
+            apply_fn=apply_fn,
         )
         assert result.factor == 1.0
         assert result.sigma is None
@@ -449,7 +559,7 @@ class TestAdvCappedNotional:
         assert adv_capped_notional(0.0, 1_000_000.0, 0.05) == (0.0, False)
 
     def test_failopen_when_notional_nonfinite(self):
-        out, capped = adv_capped_notional(float("inf"), 1_000_000.0, 0.05)
+        _out, capped = adv_capped_notional(float("inf"), 1_000_000.0, 0.05)
         assert capped is False
 
     def test_order_under_ceiling_unchanged(self):

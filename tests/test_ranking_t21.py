@@ -78,10 +78,10 @@ def test_split_case_is_resolved_ex_ante_as_option_a():
 
 def test_maxdd_tolerance_is_three_points():
     base = _sum(dd=0.20)
-    assert evaluate({BASELINE_ARM: base,
-                     CANDIDATE_ARM: _sum(cagr=0.11, dd=0.229)}, _Boot(0.002))["c2_maxdd"]
-    assert not evaluate({BASELINE_ARM: base,
-                         CANDIDATE_ARM: _sum(cagr=0.11, dd=0.231)}, _Boot(0.002))["c2_maxdd"]
+    assert evaluate({BASELINE_ARM: base, CANDIDATE_ARM: _sum(cagr=0.11, dd=0.229)}, _Boot(0.002))["c2_maxdd"]
+    assert not evaluate({BASELINE_ARM: base, CANDIDATE_ARM: _sum(cagr=0.11, dd=0.231)}, _Boot(0.002))[
+        "c2_maxdd"
+    ]
 
 
 def test_no_ship_when_cagr_does_not_improve():
@@ -120,7 +120,7 @@ def test_b1_ranks_by_score_and_b0_is_uninformed():
     arms = build_rank_fns(score_by, risk_by, realized, n_random=0, seed=1)
     b1 = arms[BASELINE_ARM]
     assert b1("BBB", _d(1)) > b1("AAA", _d(1))
-    assert arms[CANDIDATE_ARM] is None      # None ⇒ alfabético en portfolio_sim
+    assert arms[CANDIDATE_ARM] is None  # None ⇒ alfabético en portfolio_sim
 
 
 def test_b2_undoes_the_vol_penalty_and_can_flip_the_order():
@@ -151,21 +151,23 @@ def test_partial_risk_coverage_disables_b2(tmp_path, monkeypatch):
 
     def fake_load(path):
         import json
+
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
     monkeypatch.setattr(mod, "_risk_path", fake_path)
     monkeypatch.setattr(mod, "_load_risk", fake_load)
 
     import json
-    (tmp_path / "AAA.json").write_text(
-        json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
+
+    (tmp_path / "AAA.json").write_text(json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
 
     partial, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
     assert partial == {} and cov == pytest.approx(1 / 3)
 
     for t in ("BBB", "CCC"):
         (tmp_path / f"{t}.json").write_text(
-            json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
+            json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8"
+        )
     full, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
     assert set(full) == {"AAA", "BBB", "CCC"} and cov == 1.0
 
@@ -179,10 +181,11 @@ def test_incomplete_artifact_does_not_count_as_coverage(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "_risk_path", lambda t, p, w: tmp_path / f"{t}.json")
     monkeypatch.setattr(
-        mod, "_load_risk",
-        lambda path: json.loads(path.read_text(encoding="utf-8")) if path.exists() else {})
+        mod, "_load_risk", lambda path: json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    )
     (tmp_path / "AAA.json").write_text(
-        json.dumps({"complete": False, "risk": {_d(1): 0.5}}), encoding="utf-8")
+        json.dumps({"complete": False, "risk": {_d(1): 0.5}}), encoding="utf-8"
+    )
     out, cov = mod.load_risk_scores(["AAA"], "10y", 250)
     assert out == {} and cov == 0.0
 
@@ -191,7 +194,7 @@ def test_oracle_and_anti_oracle_look_at_the_future():
     score_by, risk_by, realized = _fixtures()
     arms = build_rank_fns(score_by, risk_by, realized, n_random=0, seed=1)
     o, a = arms[ORACLE_ARM], arms[ANTI_ORACLE_ARM]
-    assert o("AAA", _d(1)) > o("BBB", _d(1))       # AAA rindió más
+    assert o("AAA", _d(1)) > o("BBB", _d(1))  # AAA rindió más
     assert a("AAA", _d(1)) < a("BBB", _d(1))
 
 
@@ -200,8 +203,8 @@ def test_random_arms_are_deterministic_and_stable_within_a_run():
     a1 = build_rank_fns(score_by, risk_by, realized, n_random=3, seed=7)
     a2 = build_rank_fns(score_by, risk_by, realized, n_random=3, seed=7)
     f1, f2 = a1["B0r_random_0"], a2["B0r_random_0"]
-    assert f1("AAA", _d(1)) == f2("AAA", _d(1))     # reproducible por semilla
-    assert f1("AAA", _d(1)) == f1("AAA", _d(1))     # estable dentro del brazo
+    assert f1("AAA", _d(1)) == f2("AAA", _d(1))  # reproducible por semilla
+    assert f1("AAA", _d(1)) == f1("AAA", _d(1))  # estable dentro del brazo
     assert a1["B0r_random_1"]("AAA", _d(1)) != f1("AAA", _d(1))
 
 
@@ -239,15 +242,24 @@ def test_ranking_decides_who_enters_when_slots_are_scarce():
     bars_by = {"AAA": _ramp(30, 100.0, 0.1), "BBB": _ramp(30, 100.0, 0.1)}
     sigs_by = {"AAA": {}, "BBB": {}}
     entries = [("AAA", 1), ("BBB", 1)]
-    common = dict(max_positions=1, initial_capital=10_000.0, cap_days=20,
-                  so_params=ScaleOutParams(), costs=CostModel(),
-                  allow_reentry_while_open=False)
+    common = dict(
+        max_positions=1,
+        initial_capital=10_000.0,
+        cap_days=20,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        allow_reentry_while_open=False,
+    )
 
-    prefer_bbb = simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(),
-                                    rank_score=lambda t, d: 1.0 if t == "BBB" else 0.0,
-                                    **common)
-    alphabetical = simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(),
-                                      rank_score=None, **common)
+    prefer_bbb = simulate_portfolio(
+        entries,
+        bars_by,
+        sigs_by,
+        atr_p=AtrParams(),
+        rank_score=lambda t, d: 1.0 if t == "BBB" else 0.0,
+        **common,
+    )
+    alphabetical = simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(), rank_score=None, **common)
     assert [t.ticker for t in prefer_bbb.trades] == ["BBB"]
     assert [t.ticker for t in alphabetical.trades] == ["AAA"]
     assert trade_overlap(prefer_bbb, alphabetical) == 1.0

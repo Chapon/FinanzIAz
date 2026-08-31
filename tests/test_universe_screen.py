@@ -27,7 +27,9 @@ def _facts(net_income=(), revenue_latest=None, ticker="T"):
 
 
 def _thr(**kw) -> UniverseThresholds:
-    base = dict(min_adv_dollars=0.0, fundamentals_enabled=True, min_negative_years=2, revenue_floor=10_000_000.0)
+    base = dict(
+        min_adv_dollars=0.0, fundamentals_enabled=True, min_negative_years=2, revenue_floor=10_000_000.0
+    )
     base.update(kw)
     return UniverseThresholds(**base)
 
@@ -36,12 +38,16 @@ def _thr(**kw) -> UniverseThresholds:
 
 
 def test_adv_floor_excludes_illiquid():
-    v = screen_candidate("ILLQ", adv_dollars=1_000_000, facts=None, thresholds=_thr(min_adv_dollars=5_000_000))
+    v = screen_candidate(
+        "ILLQ", adv_dollars=1_000_000, facts=None, thresholds=_thr(min_adv_dollars=5_000_000)
+    )
     assert v.excluded and v.reason == REASON_ADV
 
 
 def test_adv_floor_keeps_liquid():
-    v = screen_candidate("LIQ", adv_dollars=50_000_000, facts=None, thresholds=_thr(min_adv_dollars=5_000_000))
+    v = screen_candidate(
+        "LIQ", adv_dollars=50_000_000, facts=None, thresholds=_thr(min_adv_dollars=5_000_000)
+    )
     assert v.included
 
 

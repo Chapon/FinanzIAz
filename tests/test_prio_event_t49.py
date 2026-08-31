@@ -81,7 +81,7 @@ def test_control_seeds_pick_different_sets():
 
 def test_control_takes_the_top_of_the_pure_key():
     n = {"2020-01-02": 1}
-    (t, d), = rate_matched_priority(_CANDS, n, 123)
+    ((t, d),) = rate_matched_priority(_CANDS, n, 123)
     best = max(_CANDS["2020-01-02"], key=lambda x: neutral_rank(123, "2020-01-02", x))
     assert (t, d) == (best, "2020-01-02")
 
@@ -94,21 +94,20 @@ def test_control_survives_days_without_pool_or_with_zero():
 def test_control_never_asks_for_more_than_the_pool_has():
     n = {"2020-01-03": 99}
     keys = rate_matched_priority(_CANDS, n, 1)
-    assert len(keys) == 2      # el pool de ese día tiene 2
+    assert len(keys) == 2  # el pool de ese día tiene 2
 
 
 # ── La re-ordenación pura ────────────────────────────────────────────────────
 
 
-_BARS = {t: [(f"2020-01-{d:02d}", 1.0, 1.0, 1.0, 1.0) for d in range(1, 8)]
-         for t in ("AAA", "BBB", "CCC")}
+_BARS = {t: [(f"2020-01-{d:02d}", 1.0, 1.0, 1.0, 1.0) for d in range(1, 8)] for t in ("AAA", "BBB", "CCC")}
 
 
 def test_candidate_cannot_prioritise_outside_the_engine_pool():
     """La corrección al descriptivo de la 45: allá el pool era la UNIÓN, así que el
     brazo mezclaba 'prioriza' con 'agrega candidatos nuevos'."""
     pool = [("AAA", 1), ("BBB", 2)]
-    anom = [("AAA", 1), ("CCC", 3)]      # CCC no está en el pool del engine
+    anom = [("AAA", 1), ("CCC", 3)]  # CCC no está en el pool del engine
     assert restrict_to_pool(anom, pool) == [("AAA", 1)]
 
 
@@ -122,15 +121,13 @@ def test_candidates_by_date_and_keys_are_consistent():
     entries = [("AAA", 1), ("BBB", 1), ("CCC", 3)]
     cbd = candidates_by_date(entries, _BARS)
     assert cbd["2020-01-02"] == ["AAA", "BBB"]
-    assert keys_of(entries, _BARS) == {("AAA", "2020-01-02"), ("BBB", "2020-01-02"),
-                                       ("CCC", "2020-01-04")}
+    assert keys_of(entries, _BARS) == {("AAA", "2020-01-02"), ("BBB", "2020-01-02"), ("CCC", "2020-01-04")}
 
 
 # ── La clave de orden ────────────────────────────────────────────────────────
 
 
-_SCORES = {"AAA": {"2020-01-02": 0.10}, "BBB": {"2020-01-02": 0.90},
-           "CCC": {"2020-01-02": 0.50}}
+_SCORES = {"AAA": {"2020-01-02": 0.10}, "BBB": {"2020-01-02": 0.90}, "CCC": {"2020-01-02": 0.50}}
 
 
 def test_priority_dominates_the_score():
@@ -145,8 +142,8 @@ def test_the_score_still_orders_inside_each_group():
     """El fondo sigue siendo el `buy_score` vivo: la tarea cambia quién va primero,
     no la clave de todos."""
     rank = make_prio({("AAA", "2020-01-02"), ("CCC", "2020-01-02")}, _SCORES)
-    assert rank("CCC", "2020-01-02") > rank("AAA", "2020-01-02")   # priorizados
-    assert rank("BBB", "2020-01-02") > 0.0                          # el resto
+    assert rank("CCC", "2020-01-02") > rank("AAA", "2020-01-02")  # priorizados
+    assert rank("BBB", "2020-01-02") > 0.0  # el resto
 
 
 def test_unknown_score_falls_back_to_zero_not_to_a_crash():
@@ -161,8 +158,12 @@ def test_oracles_are_rate_matched_too():
     """Si el oráculo pudiera priorizar más que el candidato, el sanity §5.4 sería
     trivial y no diría nada del instrumento."""
     n = {"2020-01-02": 2}
-    realized = {("AAA", "2020-01-02"): 0.5, ("BBB", "2020-01-02"): -0.3,
-                ("CCC", "2020-01-02"): 0.1, ("DDD", "2020-01-02"): -0.9}
+    realized = {
+        ("AAA", "2020-01-02"): 0.5,
+        ("BBB", "2020-01-02"): -0.3,
+        ("CCC", "2020-01-02"): 0.1,
+        ("DDD", "2020-01-02"): -0.9,
+    }
     best = oracle_prio_keys(_CANDS, n, realized, best=True)
     worst = oracle_prio_keys(_CANDS, n, realized, best=False)
     assert count_by_date(best) == n and count_by_date(worst) == n
@@ -181,24 +182,45 @@ class _Boot:
 
 
 def _sum(cagr=0.10, sharpe=0.6, dd=0.40):
-    return {"cagr": cagr, "sharpe": sharpe, "max_dd": dd, "accounting_ok": True,
-            "n_taken": 2800, "n_offered": 143096, "mean_held_days": 30.0}
+    return {
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_dd": dd,
+        "accounting_ok": True,
+        "n_taken": 2800,
+        "n_offered": 143096,
+        "mean_held_days": 30.0,
+    }
 
 
-_C6_OK = {"passes": True, "tolerance_pts": 1.85, "material_pts": 1.00,
-          "detectable_pts": 1.85, "pooled_delta_pts": 0.3, "pooled_ci_high": 1.4,
-          "pooled_ci_low": -0.9, "windows": {}}
-_CONTROLS = [_sum(cagr=0.02 + 0.001 * k) for k in range(20)]   # p95 ~0.039
+_C6_OK = {
+    "passes": True,
+    "tolerance_pts": 1.85,
+    "material_pts": 1.00,
+    "detectable_pts": 1.85,
+    "pooled_delta_pts": 0.3,
+    "pooled_ci_high": 1.4,
+    "pooled_ci_low": -0.9,
+    "windows": {},
+}
+_CONTROLS = [_sum(cagr=0.02 + 0.001 * k) for k in range(20)]  # p95 ~0.039
 _SENS_OK = {"c1": True, "c2": True}
 
 
 def _ev(**over):
-    kw = dict(base=_sum(cagr=0.037), cand=_sum(cagr=0.079), controls=_CONTROLS,
-              boot_base=_Boot(0.002), boot_ctrl=_Boot(0.001), c6=_C6_OK,
-              sens=_SENS_OK)
+    kw = dict(
+        base=_sum(cagr=0.037),
+        cand=_sum(cagr=0.079),
+        controls=_CONTROLS,
+        boot_base=_Boot(0.002),
+        boot_ctrl=_Boot(0.001),
+        c6=_C6_OK,
+        sens=_SENS_OK,
+    )
     kw.update(over)
-    return evaluate(kw["base"], kw["cand"], kw["controls"], kw["boot_base"],
-                    kw["boot_ctrl"], kw["c6"], kw["sens"])
+    return evaluate(
+        kw["base"], kw["cand"], kw["controls"], kw["boot_base"], kw["boot_ctrl"], kw["c6"], kw["sens"]
+    )
 
 
 def test_ships_when_all_seven_pass():
@@ -234,7 +256,7 @@ def test_no_ship_by_c6_regime():
 
 
 def test_each_remaining_criterion_can_block_on_its_own():
-    assert _ev(cand=_sum(cagr=0.0419))["c1_dcagr"] is False       # < +0.50pp
+    assert _ev(cand=_sum(cagr=0.0419))["c1_dcagr"] is False  # < +0.50pp
     assert _ev(cand=_sum(cagr=0.079, dd=0.4301))["c3_maxdd"] is False
     assert _ev(boot_base=_Boot(-0.001))["c4_boot_base"] is False
     assert _ev(boot_ctrl=_Boot(-0.001))["c5_boot_control"] is False
@@ -261,8 +283,12 @@ def test_an_empty_control_band_is_never_a_pass():
 
 
 def _summaries(oracle=0.15, anti=0.01, base=0.037):
-    s = {BASELINE_ARM: _sum(cagr=base), CANDIDATE_ARM: _sum(cagr=0.079),
-         ORACLE_ARM: _sum(cagr=oracle), ANTI_ORACLE_ARM: _sum(cagr=anti)}
+    s = {
+        BASELINE_ARM: _sum(cagr=base),
+        CANDIDATE_ARM: _sum(cagr=0.079),
+        ORACLE_ARM: _sum(cagr=oracle),
+        ANTI_ORACLE_ARM: _sum(cagr=anti),
+    }
     for k in range(20):
         s[control_name(k)] = _CONTROLS[k]
     return s
@@ -290,8 +316,7 @@ def test_the_oracle_sanity_is_read_against_the_control_band_not_the_baseline():
     del azar SI valida el instrumento. Es el caso que el pre-registro original
     invalidaba de mas (medido en el smoke: +2.50 pp sobre el baseline y muy arriba
     del p95 del control)."""
-    sa = evaluate_sanity(_summaries(oracle=0.055, base=0.037), _CONTROLS,
-                         0.35, 0.30, _REPRO_OK)
+    sa = evaluate_sanity(_summaries(oracle=0.055, base=0.037), _CONTROLS, 0.35, 0.30, _REPRO_OK)
     assert sa["checks"]["oracle_sees_good_turns"] is True and sa["valid"] is True
 
 

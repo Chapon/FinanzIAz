@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from analysis.impact_score import imminent_catalyst
 from analysis.surprise_score import (
     DEFAULT_BUILD_INTERVAL_DAYS,
     MIN_QUARTERS,
@@ -22,8 +23,6 @@ from analysis.surprise_score import (
     make_surprise_loader,
     surprise_pct,
 )
-from analysis.impact_score import imminent_catalyst
-
 
 # ── surprise_pct ──────────────────────────────────────────────────────────────
 
@@ -104,7 +103,7 @@ def test_empty_or_none_rows_neutral_and_failsoft():
 
 
 def test_rows_with_unreported_quarters_are_excluded():
-    rows = _rows([0.05, 0.05, 0.05, 0.05]) + [("2026-q1", 1.0, None)]
+    rows = [*_rows([0.05, 0.05, 0.05, 0.05]), ("2026-q1", 1.0, None)]
     prof = build_surprise_profile("A", rows)
     assert prof.n_quarters == 4
 
@@ -140,11 +139,14 @@ def _earnings_loader(_ticker):
 def test_surprise_profile_overrides_neutral_reaction():
     # No reaction table → reaction direction is neutral (0). A usable positive
     # surprise profile must flip the signal to +1 so the veto can fire.
-    loader = make_surprise_loader({
-        "MRVL": build_surprise_profile("MRVL", _rows([0.05, 0.08, 0.06, 0.10, 0.07])),
-    })
+    loader = make_surprise_loader(
+        {
+            "MRVL": build_surprise_profile("MRVL", _rows([0.05, 0.08, 0.06, 0.10, 0.07])),
+        }
+    )
     sig = imminent_catalyst(
-        "MRVL", ASOF,
+        "MRVL",
+        ASOF,
         reaction_table=None,
         earnings_loader=_earnings_loader,
         surprise_loader=loader,
@@ -156,11 +158,14 @@ def test_surprise_profile_overrides_neutral_reaction():
 
 
 def test_negative_surprise_profile_yields_negative_direction():
-    loader = make_surprise_loader({
-        "WMT": build_surprise_profile("WMT", _rows([-0.04, -0.06, -0.05, -0.03, -0.07])),
-    })
+    loader = make_surprise_loader(
+        {
+            "WMT": build_surprise_profile("WMT", _rows([-0.04, -0.06, -0.05, -0.03, -0.07])),
+        }
+    )
     sig = imminent_catalyst(
-        "WMT", ASOF,
+        "WMT",
+        ASOF,
         reaction_table=None,
         earnings_loader=_earnings_loader,
         surprise_loader=loader,
@@ -172,7 +177,8 @@ def test_negative_surprise_profile_yields_negative_direction():
 
 def test_no_surprise_loader_keeps_reaction_basis():
     sig = imminent_catalyst(
-        "MRVL", ASOF,
+        "MRVL",
+        ASOF,
         reaction_table=None,
         earnings_loader=_earnings_loader,
         surprise_loader=None,
@@ -183,11 +189,14 @@ def test_no_surprise_loader_keeps_reaction_basis():
 
 
 def test_unusable_profile_falls_back_to_reaction():
-    loader = make_surprise_loader({
-        "XYZ": build_surprise_profile("XYZ", _rows([0.05, 0.05])),  # too few quarters
-    })
+    loader = make_surprise_loader(
+        {
+            "XYZ": build_surprise_profile("XYZ", _rows([0.05, 0.05])),  # too few quarters
+        }
+    )
     sig = imminent_catalyst(
-        "XYZ", ASOF,
+        "XYZ",
+        ASOF,
         reaction_table=None,
         earnings_loader=_earnings_loader,
         surprise_loader=loader,
@@ -201,7 +210,8 @@ def test_surprise_loader_failsoft_on_raise():
         raise RuntimeError("loader down")
 
     sig = imminent_catalyst(
-        "MRVL", ASOF,
+        "MRVL",
+        ASOF,
         reaction_table=None,
         earnings_loader=_earnings_loader,
         surprise_loader=_boom,

@@ -6,8 +6,6 @@ Pure-function module: no DB, no settings, no engine.
 
 from __future__ import annotations
 
-import math
-
 import pandas as pd
 import pytest
 
@@ -17,7 +15,6 @@ from analysis.ranking import (
     combine_score,
     momentum_percentile,
 )
-
 
 # ── momentum_percentile ──────────────────────────────────────────────────────
 
@@ -42,8 +39,8 @@ class TestMomentumPercentile:
         """Higher return ⇒ higher percentile. With 3 tickers, ranks are 0.0, 0.5, 1.0."""
         closes = {
             "WINNER": pd.Series([100, 100, 100, 100, 110]),  # +10%
-            "MID":    pd.Series([100, 100, 100, 100, 105]),  # +5%
-            "LOSER":  pd.Series([100, 100, 100, 100, 95]),   # -5%
+            "MID": pd.Series([100, 100, 100, 100, 105]),  # +5%
+            "LOSER": pd.Series([100, 100, 100, 100, 95]),  # -5%
         }
         out = momentum_percentile(closes, lookback=4)
         assert out["LOSER"] == pytest.approx(0.0)
@@ -67,8 +64,8 @@ class TestMomentumPercentile:
         """Tickers with fewer than lookback+1 closes get NEUTRAL_PERCENTILE."""
         closes = {
             "FULL_A": pd.Series([100, 101, 102, 103, 110]),  # +10%
-            "FULL_B": pd.Series([100, 100, 100, 100, 95]),   # -5%
-            "SHORT":  pd.Series([100, 101]),                 # 2 bars < 5 needed
+            "FULL_B": pd.Series([100, 100, 100, 100, 95]),  # -5%
+            "SHORT": pd.Series([100, 101]),  # 2 bars < 5 needed
         }
         out = momentum_percentile(closes, lookback=4)
         assert out["SHORT"] == NEUTRAL_PERCENTILE
@@ -77,9 +74,9 @@ class TestMomentumPercentile:
 
     def test_nan_close_is_neutral(self):
         closes = {
-            "GOOD":    pd.Series([100, 100, 100, 100, 110]),
-            "BAD":     pd.Series([100, 100, 100, 100, 95]),
-            "NAN":     pd.Series([100, 100, float("nan"), 100, 100]),
+            "GOOD": pd.Series([100, 100, 100, 100, 110]),
+            "BAD": pd.Series([100, 100, 100, 100, 95]),
+            "NAN": pd.Series([100, 100, float("nan"), 100, 100]),
         }
         out = momentum_percentile(closes, lookback=4)
         assert out["NAN"] == NEUTRAL_PERCENTILE
@@ -90,9 +87,9 @@ class TestMomentumPercentile:
     def test_zero_or_negative_start_is_neutral(self):
         """Division by zero / negative price would corrupt the return."""
         closes = {
-            "ZERO":  pd.Series([0, 100, 100, 100, 110]),
-            "NEG":   pd.Series([-1, 100, 100, 100, 110]),
-            "OK":    pd.Series([100, 100, 100, 100, 95]),
+            "ZERO": pd.Series([0, 100, 100, 100, 110]),
+            "NEG": pd.Series([-1, 100, 100, 100, 110]),
+            "OK": pd.Series([100, 100, 100, 100, 95]),
         }
         out = momentum_percentile(closes, lookback=4)
         assert out["ZERO"] == NEUTRAL_PERCENTILE
@@ -112,7 +109,7 @@ class TestMomentumPercentile:
         """Older history beyond lookback+1 must not influence the return."""
         # Inject a huge spike early that should be ignored.
         a = pd.Series([1, 999, 999, 100, 100, 100, 100, 110])  # last-5 ret: +10%
-        b = pd.Series([1, 1, 1, 100, 100, 100, 100, 95])       # last-5 ret: -5%
+        b = pd.Series([1, 1, 1, 100, 100, 100, 100, 95])  # last-5 ret: -5%
         out = momentum_percentile({"A": a, "B": b}, lookback=4)
         assert out["A"] == pytest.approx(1.0)
         assert out["B"] == pytest.approx(0.0)
@@ -172,7 +169,7 @@ class TestBlendedScores:
         strengths = {"WINNER": 0.1, "LOSER": 0.99}  # absolute disagrees with momentum
         closes = {
             "WINNER": pd.Series([100, 100, 100, 100, 110]),
-            "LOSER":  pd.Series([100, 100, 100, 100, 95]),
+            "LOSER": pd.Series([100, 100, 100, 100, 95]),
         }
         out = blended_scores(strengths, closes, lookback=4, weight=1.0)
         # weight=1.0 ⇒ output is pure cross-sectional percentile
@@ -183,8 +180,8 @@ class TestBlendedScores:
         """When momentum aligns with strength, the blended ranking matches."""
         strengths = {"BEST": 0.9, "MID": 0.6, "WORST": 0.2}
         closes = {
-            "BEST":  pd.Series([100, 100, 100, 100, 120]),
-            "MID":   pd.Series([100, 100, 100, 100, 105]),
+            "BEST": pd.Series([100, 100, 100, 100, 120]),
+            "MID": pd.Series([100, 100, 100, 100, 105]),
             "WORST": pd.Series([100, 100, 100, 100, 90]),
         }
         out = blended_scores(strengths, closes, lookback=4, weight=0.5)

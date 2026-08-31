@@ -27,7 +27,6 @@ from analysis.scaleout_replay import (
     replay_cycle,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -71,8 +70,7 @@ def test_trail_mult_overrides_only_the_trail():
 def test_wider_trail_does_not_fire_where_narrow_one_does():
     """Mismo escenario: trail 2.0 dispara, trail 3.0 aguanta."""
     # HWM 120, avg_cost 100, ATR 5 → trail@2.0 = 110 ; trail@3.0 = 105
-    common = dict(current_price=108.0, avg_cost=100.0, high_water_mark=120.0,
-                  atr_value=5.0)
+    common = dict(current_price=108.0, avg_cost=100.0, high_water_mark=120.0, atr_value=5.0)
     assert atr_exit(**common, p=AtrParams(stop_mult=2.0)) == "atr_trail"
     assert atr_exit(**common, p=AtrParams(stop_mult=2.0, trail_mult=3.0)) is None
 
@@ -96,9 +94,12 @@ def test_baseline_signal_sell_closes_everything():
     # flip a SELL en el día 10 (índice 9), ya pasada la histéresis
     signals = {_d(10): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=1.0),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     assert res is not None
     assert len(res.legs) == 1
@@ -110,9 +111,12 @@ def test_scaleout_sells_only_the_fraction_and_keeps_the_rest():
     bars = flat_bars(30)
     signals = {_d(10): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.5),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     assert res is not None
     assert res.legs[0].reason == "signal_partial"
@@ -127,9 +131,12 @@ def test_second_flip_closes_the_remnant():
     bars = flat_bars(30)
     signals = {_d(10): "SELL", _d(12): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.5),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     assert [l.reason for l in res.legs] == ["signal_partial", "signal_full"]
     assert res.legs[1].date == _d(12)
@@ -144,9 +151,12 @@ def test_premature_signal_sell_is_deferred():
     bars = flat_bars(30)
     signals = {_d(2): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.5, min_age_bdays=3),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     assert [l.reason for l in res.legs] == ["cap_reached"]
 
@@ -156,9 +166,12 @@ def test_low_score_bypasses_hysteresis():
     bars = flat_bars(30)
     signals = {_d(2): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.5, min_age_bdays=3, bypass_score=0.25),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
         scores={_d(2): 0.10},
     )
     assert res.legs[0].reason == "signal_partial"
@@ -179,7 +192,7 @@ def test_hwm_not_reset_by_scaleout():
     una rampa larga sale por ``atr_tp`` apenas el ATR queda disponible (índice 14) y
     el escenario no llega a probar nada.
     """
-    up = ramp_bars(30, start=100.0, step=1.0, tr=2.0)     # 100 → 129
+    up = ramp_bars(30, start=100.0, step=1.0, tr=2.0)  # 100 → 129
     down = []
     for k in range(10):
         c = 129.0 - (k + 1) * 3.0
@@ -187,9 +200,13 @@ def test_hwm_not_reset_by_scaleout():
     bars = up + down
     signals = {_d(30): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.5),
-        atr_p=AtrParams(tp_mult=1e9), costs=NO_COST, cap_days=39,
+        atr_p=AtrParams(tp_mult=1e9),
+        costs=NO_COST,
+        cap_days=39,
     )
     assert res.legs[0].reason == "signal_partial"
     assert res.legs[-1].reason == "atr_trail", (
@@ -207,9 +224,12 @@ def test_a4_signal_never_sells_levels_rule():
     bars = flat_bars(30)
     signals = {_d(10): "SELL", _d(12): "SELL", _d(15): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.0),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     # ningún tramo por señal: solo el cap (o un nivel, si hubiera disparado)
     assert [l.reason for l in res.legs] == ["cap_reached"]
@@ -221,9 +241,12 @@ def test_a4_levels_still_close_the_whole_position():
     bars = ramp_bars(40, start=100.0, step=1.0, tr=2.0)
     signals = {_d(20): "SELL"}
     res = replay_cycle(
-        bars, 0, signals,
+        bars,
+        0,
+        signals,
         params=ScaleOutParams(sell_fraction=0.0),
-        atr_p=AtrParams(), costs=NO_COST,
+        atr_p=AtrParams(),
+        costs=NO_COST,
     )
     assert len(res.legs) == 1
     assert res.legs[0].reason == "atr_tp"
@@ -235,18 +258,23 @@ def test_a4_levels_still_close_the_whole_position():
 
 def test_cap_closes_position():
     bars = flat_bars(60)
-    res = replay_cycle(bars, 0, {}, params=ScaleOutParams(),
-                       atr_p=AtrParams(), costs=NO_COST, cap_days=20)
+    res = replay_cycle(bars, 0, {}, params=ScaleOutParams(), atr_p=AtrParams(), costs=NO_COST, cap_days=20)
     assert res.legs[-1].reason == "cap_reached"
     assert res.legs[-1].date == _d(21)
 
 
 def test_mfe_and_mae_tracked():
     bars = ramp_bars(15, start=100.0, step=1.0, tr=1.0)
-    res = replay_cycle(bars, 0, {}, params=ScaleOutParams(),
-                       atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False),
-                       costs=NO_COST, cap_days=10)
-    assert res.mfe > 0.09          # subió ~10%
+    res = replay_cycle(
+        bars,
+        0,
+        {},
+        params=ScaleOutParams(),
+        atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False),
+        costs=NO_COST,
+        cap_days=10,
+    )
+    assert res.mfe > 0.09  # subió ~10%
     assert res.mae == pytest.approx(0.0)
 
 
@@ -259,9 +287,14 @@ def test_returns_none_without_enough_bars():
 def test_signal_on_a_date_without_bar_is_ignored():
     """Una señal en una fecha que no es barra (feriado, dato faltante) no hace nada."""
     bars = flat_bars(30)
-    res = replay_cycle(bars, 0, {"2026-03-10T00:00": "SELL", "1999-01-01": "SELL"},
-                       params=ScaleOutParams(sell_fraction=0.5),
-                       atr_p=AtrParams(), costs=NO_COST)
+    res = replay_cycle(
+        bars,
+        0,
+        {"2026-03-10T00:00": "SELL", "1999-01-01": "SELL"},
+        params=ScaleOutParams(sell_fraction=0.5),
+        atr_p=AtrParams(),
+        costs=NO_COST,
+    )
     assert [l.reason for l in res.legs] == ["cap_reached"]
 
 
@@ -276,11 +309,13 @@ def test_proportional_costs_do_not_penalise_splitting_the_exit():
     bars = flat_bars(30)
     signals = {_d(10): "SELL"}
     costs = CostModel(commission=0.001, slippage=0.0005)
-    base = replay_cycle(bars, 0, signals, params=ScaleOutParams(sell_fraction=1.0),
-                        atr_p=AtrParams(), costs=costs)
-    scaled = replay_cycle(bars, 0, signals, params=ScaleOutParams(sell_fraction=0.5),
-                          atr_p=AtrParams(), costs=costs)
+    base = replay_cycle(
+        bars, 0, signals, params=ScaleOutParams(sell_fraction=1.0), atr_p=AtrParams(), costs=costs
+    )
+    scaled = replay_cycle(
+        bars, 0, signals, params=ScaleOutParams(sell_fraction=0.5), atr_p=AtrParams(), costs=costs
+    )
     assert len(base.legs) == 1
-    assert len(scaled.legs) == 2          # efectivamente son dos fills
+    assert len(scaled.legs) == 2  # efectivamente son dos fills
     # ...y aun así, con precio plano, el retorno es idéntico
     assert scaled.ret == pytest.approx(base.ret)

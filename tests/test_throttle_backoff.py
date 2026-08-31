@@ -93,7 +93,7 @@ def test_gate_level0_allows_without_probe(monkeypatch):
 
 
 def test_gate_cooldown_active_failfast_no_probe(monkeypatch):
-    clock = _patch_clock(monkeypatch)
+    _clock = _patch_clock(monkeypatch)
     yfm._note_throttle()  # cooldown vigente
     calls = {"n": 0}
 
@@ -197,7 +197,7 @@ def test_throttle_state_snapshot(monkeypatch):
 
 
 def test_bulk_prices_gate_skips_network_when_throttled(test_db, monkeypatch):
-    clock = _patch_clock(monkeypatch)
+    _clock = _patch_clock(monkeypatch)
     yfm._note_throttle()  # cooldown vigente → gate debe fail-fast
 
     calls = {"n": 0}

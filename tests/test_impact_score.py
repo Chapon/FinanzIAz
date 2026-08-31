@@ -10,19 +10,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from analysis.catalyst_reaction import forward_return
 from analysis.impact_score import (
-    CatalystSignal,
     EVENT_PRIORS,
+    CatalystSignal,
     exit_veto_block,
     imminent_catalyst,
     score_event,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,15 +60,17 @@ def test_direction_falls_back_to_sentiment_without_history():
 
 
 def test_magnitude_saturates_large_moves():
-    big = score_event("NVDA", "earnings_results", "positive", 1.0,
-                      reaction_table=_reaction_table(mean=0.50, count=20))
-    assert big.magnitude < 1.0          # tanh never reaches 1
-    assert big.magnitude > 0.9          # but a 50% move is near the ceiling
+    big = score_event(
+        "NVDA", "earnings_results", "positive", 1.0, reaction_table=_reaction_table(mean=0.50, count=20)
+    )
+    assert big.magnitude < 1.0  # tanh never reaches 1
+    assert big.magnitude > 0.9  # but a 50% move is near the ceiling
 
 
 def test_magnitude_small_move_is_small():
-    tiny = score_event("NVDA", "earnings_results", "positive", 1.0,
-                       reaction_table=_reaction_table(mean=0.001, count=20))
+    tiny = score_event(
+        "NVDA", "earnings_results", "positive", 1.0, reaction_table=_reaction_table(mean=0.001, count=20)
+    )
     assert tiny.magnitude < 0.05
 
 
@@ -85,12 +85,14 @@ def test_prior_used_when_count_zero():
 
 
 def test_low_sample_reduces_confidence_weight():
-    low = score_event("NVDA", "earnings_results", "positive", 1.0,
-                      reaction_table=_reaction_table(mean=0.04, count=2))
-    high = score_event("NVDA", "earnings_results", "positive", 1.0,
-                       reaction_table=_reaction_table(mean=0.04, count=20))
+    low = score_event(
+        "NVDA", "earnings_results", "positive", 1.0, reaction_table=_reaction_table(mean=0.04, count=2)
+    )
+    high = score_event(
+        "NVDA", "earnings_results", "positive", 1.0, reaction_table=_reaction_table(mean=0.04, count=20)
+    )
     assert low.confidence_weight < high.confidence_weight
-    assert low.confidence_weight >= 0.4   # floor respected
+    assert low.confidence_weight >= 0.4  # floor respected
 
 
 # ── relevance ─────────────────────────────────────────────────────────────────
@@ -98,12 +100,24 @@ def test_low_sample_reduces_confidence_weight():
 
 def test_relevance_boosts_large_dollar_events():
     table = _reaction_table(mean=0.04, count=20)
-    with_rel = score_event("NVDA", "partnership_contract", "positive", 0.9,
-                           reaction_table=table, headline="NVDA wins $5 billion contract",
-                           market_cap=10e9)
-    no_rel = score_event("NVDA", "partnership_contract", "positive", 0.9,
-                         reaction_table=table, headline="NVDA wins a contract",
-                         market_cap=10e9)
+    with_rel = score_event(
+        "NVDA",
+        "partnership_contract",
+        "positive",
+        0.9,
+        reaction_table=table,
+        headline="NVDA wins $5 billion contract",
+        market_cap=10e9,
+    )
+    no_rel = score_event(
+        "NVDA",
+        "partnership_contract",
+        "positive",
+        0.9,
+        reaction_table=table,
+        headline="NVDA wins a contract",
+        market_cap=10e9,
+    )
     assert with_rel.relevance_weight > no_rel.relevance_weight
     assert no_rel.relevance_weight == pytest.approx(1.0)
     assert with_rel.relevance_weight > 1.3
@@ -121,7 +135,7 @@ def test_fail_soft_inputs_do_not_raise():
 
 def test_off_taxonomy_event_uses_default_prior():
     s = score_event("ABC", "not_a_real_type", "positive", 0.5, reaction_table=None)
-    assert s.magnitude == pytest.approx(0.10)   # _PRIOR_DEFAULT
+    assert s.magnitude == pytest.approx(0.10)  # _PRIOR_DEFAULT
 
 
 # ── M2: forward_return entry="next_open" ──────────────────────────────────────
@@ -168,15 +182,20 @@ def test_forward_return_next_open_missing_open_column():
 def _earnings_loader(date):
     def _load(ticker):
         return date
+
     return _load
 
 
 def test_imminent_catalyst_positive_within_window():
     table = _reaction_table(mean=0.04, count=20)
     asof = datetime(2026, 6, 11)
-    sig = imminent_catalyst("NVDA", asof, reaction_table=table,
-                            earnings_loader=_earnings_loader(datetime(2026, 6, 12)),
-                            horizon_bdays=3)
+    sig = imminent_catalyst(
+        "NVDA",
+        asof,
+        reaction_table=table,
+        earnings_loader=_earnings_loader(datetime(2026, 6, 12)),
+        horizon_bdays=3,
+    )
     assert sig is not None
     assert sig.kind == "earnings"
     assert sig.expected_direction == 1
@@ -187,32 +206,47 @@ def test_imminent_catalyst_positive_within_window():
 def test_imminent_catalyst_outside_window_returns_none():
     table = _reaction_table(mean=0.04, count=20)
     asof = datetime(2026, 6, 11)
-    sig = imminent_catalyst("NVDA", asof, reaction_table=table,
-                            earnings_loader=_earnings_loader(datetime(2026, 6, 30)),
-                            horizon_bdays=3)
+    sig = imminent_catalyst(
+        "NVDA",
+        asof,
+        reaction_table=table,
+        earnings_loader=_earnings_loader(datetime(2026, 6, 30)),
+        horizon_bdays=3,
+    )
     assert sig is None
 
 
 def test_imminent_catalyst_no_history_direction_zero():
     asof = datetime(2026, 6, 11)
-    sig = imminent_catalyst("ZZZ", asof, reaction_table=None,
-                            earnings_loader=_earnings_loader(datetime(2026, 6, 12)),
-                            horizon_bdays=3)
+    sig = imminent_catalyst(
+        "ZZZ",
+        asof,
+        reaction_table=None,
+        earnings_loader=_earnings_loader(datetime(2026, 6, 12)),
+        horizon_bdays=3,
+    )
     assert sig is not None
-    assert sig.expected_direction == 0   # no upside evidence → won't veto
+    assert sig.expected_direction == 0  # no upside evidence → won't veto
 
 
 def test_imminent_catalyst_no_earnings_returns_none():
-    sig = imminent_catalyst("NVDA", datetime(2026, 6, 11), reaction_table=None,
-                            earnings_loader=_earnings_loader(None), horizon_bdays=3)
+    sig = imminent_catalyst(
+        "NVDA",
+        datetime(2026, 6, 11),
+        reaction_table=None,
+        earnings_loader=_earnings_loader(None),
+        horizon_bdays=3,
+    )
     assert sig is None
 
 
 def test_imminent_catalyst_loader_raises_is_fail_soft():
     def _boom(ticker):
         raise RuntimeError("calendar down")
-    sig = imminent_catalyst("NVDA", datetime(2026, 6, 11), reaction_table=None,
-                            earnings_loader=_boom, horizon_bdays=3)
+
+    sig = imminent_catalyst(
+        "NVDA", datetime(2026, 6, 11), reaction_table=None, earnings_loader=_boom, horizon_bdays=3
+    )
     assert sig is None
 
 

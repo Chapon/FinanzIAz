@@ -1,4 +1,5 @@
 """Tests para el fill realista de exit_replay (mirror stdlib de model_exit_fill_price)."""
+
 from __future__ import annotations
 
 import pytest
@@ -10,13 +11,17 @@ from analysis.exit_replay import AtrParams, _atr_trigger_level, _exit_fill_price
 def test_trigger_level_stop():
     p = AtrParams(stop_mult=2.0)
     # stop = avg_cost - stop_mult*atr = 100 - 2*5 = 90
-    assert _atr_trigger_level("atr_stop", avg_cost=100.0, hwm=120.0, atr_value=5.0, p=p) == pytest.approx(90.0)
+    assert _atr_trigger_level("atr_stop", avg_cost=100.0, hwm=120.0, atr_value=5.0, p=p) == pytest.approx(
+        90.0
+    )
 
 
 def test_trigger_level_trail_uses_hwm():
     p = AtrParams(stop_mult=2.0)
     # trail = hwm - stop_mult*atr = 120 - 10 = 110
-    assert _atr_trigger_level("atr_trail", avg_cost=100.0, hwm=120.0, atr_value=5.0, p=p) == pytest.approx(110.0)
+    assert _atr_trigger_level("atr_trail", avg_cost=100.0, hwm=120.0, atr_value=5.0, p=p) == pytest.approx(
+        110.0
+    )
 
 
 def test_trigger_level_tp():

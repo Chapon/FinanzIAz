@@ -108,11 +108,12 @@ class TestParidadConElHarness:
         del dominio de precios; el engine lo apaga con un switch, sin tocar
         `atr_stop_mult` (que sigue valiendo para el R:R y para volver atrás).
         """
-        gate = _gate_reason(
-            price, hwm, stop_mult=2.0, trail_mult=2.0, hard_stop_enabled=False
-        )
+        gate = _gate_reason(price, hwm, stop_mult=2.0, trail_mult=2.0, hard_stop_enabled=False)
         replay = atr_exit(
-            current_price=price, avg_cost=ENTRY, high_water_mark=hwm, atr_value=ATR,
+            current_price=price,
+            avg_cost=ENTRY,
+            high_water_mark=hwm,
+            atr_value=ATR,
             p=AtrParams(stop_mult=1e9, trail_mult=2.0),
         )
         assert gate == replay
@@ -122,7 +123,10 @@ class TestParidadConElHarness:
         """El default (`trail_mult=None`) reproduce el acople histórico."""
         gate = _gate_reason(price, hwm, stop_mult=2.0)
         replay = atr_exit(
-            current_price=price, avg_cost=ENTRY, high_water_mark=hwm, atr_value=ATR,
+            current_price=price,
+            avg_cost=ENTRY,
+            high_water_mark=hwm,
+            atr_value=ATR,
             p=AtrParams(stop_mult=2.0, trail_mult=None),
         )
         assert gate == replay
@@ -132,7 +136,10 @@ class TestParidadConElHarness:
         """Stop en 2.0 y trailing en 3.0: la celda `s2.0_t3.0` de la rejilla."""
         gate = _gate_reason(price, hwm, stop_mult=2.0, trail_mult=3.0)
         replay = atr_exit(
-            current_price=price, avg_cost=ENTRY, high_water_mark=hwm, atr_value=ATR,
+            current_price=price,
+            avg_cost=ENTRY,
+            high_water_mark=hwm,
+            atr_value=ATR,
             p=AtrParams(stop_mult=2.0, trail_mult=3.0),
         )
         assert gate == replay
@@ -142,7 +149,10 @@ class TestParidadConElHarness:
         pasaría los tres tests de arriba sin probar nada."""
         vistos = {
             atr_exit(
-                current_price=p, avg_cost=ENTRY, high_water_mark=h, atr_value=ATR,
+                current_price=p,
+                avg_cost=ENTRY,
+                high_water_mark=h,
+                atr_value=ATR,
                 p=AtrParams(stop_mult=2.0, trail_mult=2.0),
             )
             for p, h in _PARITY_GRID
@@ -168,9 +178,10 @@ class TestEffectiveTrailMult:
         """Misma semántica que ``AtrParams.effective_trail_mult`` — es el
         contrato que sostiene los tests de paridad."""
         for stop, trail in [(2.0, None), (2.0, 3.0), (4.0, 2.0), (2.0, 2.0)]:
-            assert effective_trail_mult(stop, trail) == AtrParams(
-                stop_mult=stop, trail_mult=trail
-            ).effective_trail_mult
+            assert (
+                effective_trail_mult(stop, trail)
+                == AtrParams(stop_mult=stop, trail_mult=trail).effective_trail_mult
+            )
 
 
 # ── 3. Semántica del gate ─────────────────────────────────────────────────────
@@ -181,15 +192,26 @@ class TestGateHardStopSwitch:
         """Precio muy por debajo del nivel del stop y el gate no vende: el
         HWM está en la entrada, así que el trailing tampoco está armado."""
         reason, level = atr_exit_decision(
-            current_price=60.0, avg_cost=ENTRY, high_water_mark=ENTRY, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, hard_stop_enabled=False,
+            current_price=60.0,
+            avg_cost=ENTRY,
+            high_water_mark=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            hard_stop_enabled=False,
         )
         assert reason is None and level is None
 
     def test_hard_stop_on_es_el_default(self):
         reason, level = atr_exit_decision(
-            current_price=60.0, avg_cost=ENTRY, high_water_mark=ENTRY, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=60.0,
+            avg_cost=ENTRY,
+            high_water_mark=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert reason is not None and reason.startswith("atr_stop")
         assert level == 90.0
@@ -197,17 +219,29 @@ class TestGateHardStopSwitch:
     def test_sin_stop_duro_el_trailing_sigue_vivo(self):
         """La barrera que queda. HWM=120 (armado), trail 2.0 → nivel 110."""
         reason, level = atr_exit_decision(
-            current_price=109.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
-            trail_mult=2.0, hard_stop_enabled=False,
+            current_price=109.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=2.0,
+            hard_stop_enabled=False,
         )
         assert reason is not None and reason.startswith("atr_trail")
         assert level == 110.0
 
     def test_sin_stop_duro_el_take_profit_sigue_vivo(self):
         reason, level = atr_exit_decision(
-            current_price=121.0, avg_cost=ENTRY, high_water_mark=121.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, hard_stop_enabled=False,
+            current_price=121.0,
+            avg_cost=ENTRY,
+            high_water_mark=121.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            hard_stop_enabled=False,
         )
         assert reason is not None and reason.startswith("atr_tp")
         assert level == 120.0
@@ -216,8 +250,13 @@ class TestGateHardStopSwitch:
         """`atr_stop_mult` sigue siendo el número que gobierna el nivel cuando
         el switch vuelve a True — apagar no es re-calibrar."""
         kw = dict(
-            current_price=89.0, avg_cost=ENTRY, high_water_mark=ENTRY, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=89.0,
+            avg_cost=ENTRY,
+            high_water_mark=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert atr_exit_decision(**kw, hard_stop_enabled=False)[0] is None
         assert atr_exit_decision(**kw, hard_stop_enabled=True)[1] == 90.0
@@ -227,8 +266,14 @@ class TestGateTrailMult:
     def test_trail_mult_mueve_el_nivel_sin_mover_el_stop(self):
         """Trailing en 3.0 con stop en 2.0: nivel = 120 − 3×5 = 105."""
         reason, level = atr_exit_decision(
-            current_price=104.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, trail_mult=3.0,
+            current_price=104.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=3.0,
         )
         assert reason is not None and reason.startswith("atr_trail")
         assert level == 105.0
@@ -237,12 +282,23 @@ class TestGateTrailMult:
         """Precio 109: con el trailing acoplado (2.0) el nivel es 110 y vende;
         con el trailing en 3.0 el nivel es 105 y aguanta. Es el desacople."""
         acoplado, _ = atr_exit_decision(
-            current_price=109.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=109.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         desacoplado, _ = atr_exit_decision(
-            current_price=109.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, trail_mult=3.0,
+            current_price=109.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=3.0,
         )
         assert acoplado is not None and acoplado.startswith("atr_trail")
         assert desacoplado is None
@@ -251,8 +307,14 @@ class TestGateTrailMult:
         """El texto va al ``PaperOrder.reason`` y es lo que Chapa lee en la UI:
         con el trailing desacoplado tiene que decir 3.0, no el 2.0 del stop."""
         reason, _ = atr_exit_decision(
-            current_price=104.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, trail_mult=3.0,
+            current_price=104.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=3.0,
         )
         assert reason is not None
         assert "3.0×ATR" in reason
@@ -260,12 +322,23 @@ class TestGateTrailMult:
 
     def test_trail_mult_cero_es_el_comportamiento_historico(self):
         con_cero, lvl_cero = atr_exit_decision(
-            current_price=109.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, trail_mult=0.0,
+            current_price=109.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=0.0,
         )
         sin_knob, lvl_sin = atr_exit_decision(
-            current_price=109.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True,
+            current_price=109.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
         )
         assert (con_cero, lvl_cero) == (sin_knob, lvl_sin)
 
@@ -274,15 +347,27 @@ class TestGateTrailMult:
         """Un múltiplo inválido no vende: mismo criterio defensivo que el
         resto de los inputs del gate."""
         assert atr_exit_decision(
-            current_price=60.0, avg_cost=ENTRY, high_water_mark=140.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=True, trail_mult=bad,
+            current_price=60.0,
+            avg_cost=ENTRY,
+            high_water_mark=140.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=True,
+            trail_mult=bad,
         ) == (None, None)
 
     def test_trail_disabled_gana_sobre_trail_mult(self):
         """El switch del trailing manda: setear el múltiplo no lo reactiva."""
         reason, _ = atr_exit_decision(
-            current_price=104.0, avg_cost=ENTRY, high_water_mark=120.0, atr_value=ATR,
-            stop_mult=2.0, tp_mult=4.0, trail_enabled=False, trail_mult=3.0,
+            current_price=104.0,
+            avg_cost=ENTRY,
+            high_water_mark=120.0,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
+            trail_enabled=False,
+            trail_mult=3.0,
         )
         assert reason is None
 
@@ -296,7 +381,10 @@ class TestEntryRiskLevelsSinStopDuro:
         trailing **no está armado** (necesita HWM > entry + 1×ATR), así que ese
         nivel sería un stop que no puede dispararse."""
         lv = entry_risk_levels(
-            entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+            entry_price=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
             hard_stop_enabled=False,
         )
         assert lv is not None
@@ -306,7 +394,10 @@ class TestEntryRiskLevelsSinStopDuro:
     def test_el_tp_y_el_atr_sobreviven(self):
         """La barrera de arriba no cambió (T23 la dejó en 4.0)."""
         lv = entry_risk_levels(
-            entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+            entry_price=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
             hard_stop_enabled=False,
         )
         assert lv["tp"] == pytest.approx(120.0)
@@ -315,11 +406,17 @@ class TestEntryRiskLevelsSinStopDuro:
 
     def test_default_no_cambia_nada(self):
         con = entry_risk_levels(
-            entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+            entry_price=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
             hard_stop_enabled=True,
         )
         sin_knob = entry_risk_levels(
-            entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+            entry_price=ENTRY,
+            atr_value=ATR,
+            stop_mult=2.0,
+            tp_mult=4.0,
         )
         assert con == sin_knob
         assert con["stop"] == pytest.approx(90.0)
@@ -328,7 +425,10 @@ class TestEntryRiskLevelsSinStopDuro:
     def test_la_nota_lo_dice_en_vez_de_inventar_un_nivel(self):
         nota = format_entry_risk_note(
             entry_risk_levels(
-                entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+                entry_price=ENTRY,
+                atr_value=ATR,
+                stop_mult=2.0,
+                tp_mult=4.0,
                 hard_stop_enabled=False,
             )
         )
@@ -340,7 +440,10 @@ class TestEntryRiskLevelsSinStopDuro:
     def test_la_nota_clasica_no_cambia(self):
         nota = format_entry_risk_note(
             entry_risk_levels(
-                entry_price=ENTRY, atr_value=ATR, stop_mult=2.0, tp_mult=4.0,
+                entry_price=ENTRY,
+                atr_value=ATR,
+                stop_mult=2.0,
+                tp_mult=4.0,
             )
         )
         assert nota == "R:R 2.0 · stop $90.00 · TP $120.00"
@@ -378,19 +481,18 @@ class TestSettingsSchema:
 
 def _pos(account_id: int, ticker: str, hwm: float) -> PaperPosition:
     return PaperPosition(
-        account_id=account_id, ticker=ticker, shares=10.0,
-        avg_cost=ENTRY, high_water_mark=hwm,
+        account_id=account_id,
+        ticker=ticker,
+        shares=10.0,
+        avg_cost=ENTRY,
+        high_water_mark=hwm,
     )
 
 
 def _exits(account_id: int, price: float, df):
     with session_scope() as s:
-        positions = (
-            s.query(PaperPosition).filter(PaperPosition.account_id == account_id).all()
-        )
-        return _compute_atr_forced_exits(
-            positions, prices={"AAPL": price}, history_provider=lambda _t: df
-        )
+        positions = s.query(PaperPosition).filter(PaperPosition.account_id == account_id).all()
+        return _compute_atr_forced_exits(positions, prices={"AAPL": price}, history_provider=lambda _t: df)
 
 
 class TestEngineWiring:

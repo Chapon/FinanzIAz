@@ -119,7 +119,8 @@ def test_leads_worker_skips_failing_tickers(monkeypatch):
     queried = []
 
     monkeypatch.setattr(
-        leads_worker, "filter_skippable",
+        leads_worker,
+        "filter_skippable",
         lambda tickers: ([t for t in tickers if t != "ANSS"], ["ANSS"]),
     )
 

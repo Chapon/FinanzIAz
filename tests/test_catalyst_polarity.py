@@ -21,7 +21,6 @@ from data.catalyst_classifier import (
 from database.models import NewsEvent, session_scope
 from scripts.classify_catalysts import classify_events
 
-
 # ── Heurístico: dirección categórica a media escala + relevancia=confianza ────
 
 
@@ -46,9 +45,7 @@ def test_heuristic_neutral_no_cue_is_zero_low_relevance():
 
 
 def test_heuristic_sec_relevance_tracks_confidence():
-    c = heuristic_classify(
-        "AAPL 8-K: Results of Operations", "Items: 2.02", "sec_8k", "AAPL"
-    )
+    c = heuristic_classify("AAPL 8-K: Results of Operations", "Items: 2.02", "sec_8k", "AAPL")
     assert c.confidence >= 0.9
     assert c.relevance == c.confidence  # item-code estructurado → alta relevancia
     assert -1.0 <= c.sentiment_score <= 1.0
@@ -59,8 +56,7 @@ def test_heuristic_sec_relevance_tracks_confidence():
 
 def test_parse_llm_json_extracts_numeric_fields():
     c = _parse_llm_json(
-        '{"event_type":"mna","sentiment":"negative","confidence":0.7,'
-        '"sentiment_score":-0.8,"relevance":0.92}'
+        '{"event_type":"mna","sentiment":"negative","confidence":0.7,"sentiment_score":-0.8,"relevance":0.92}'
     )
     assert c.sentiment_score == -0.8
     assert c.relevance == 0.92

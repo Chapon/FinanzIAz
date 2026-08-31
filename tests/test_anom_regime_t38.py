@@ -34,7 +34,6 @@ from analysis.risk_sizing import precompute_oracle_returns
 from analysis.scaleout_replay import CostModel, ScaleOutParams
 from analysis.walkforward_power import BULL_NORMAL
 from scripts.run_anom_regime_t38 import (
-    BASELINE_ARM,
     C2_STRICT_REGIMES,
     CANDIDATE_ARM,
     GATE_ARMS,
@@ -66,21 +65,24 @@ def _sum(cagr=0.10, sharpe=1.0, dd=0.20):
 _RB = {"sharpe_p95": 0.60, "cagr_p95": 0.05}
 _GOOD_SENS = {"c1_sign": True, "c2_bear": True}
 # El baseline sangra en los dos regímenes malos; el candidato los mejora.
-_REG_BASE = {BULL_NORMAL: 0.50, "stress_2018q4": -0.10,
-             "stress_covid_2020": 0.05, "stress_bear_2022": -0.20}
-_REG_CAND = {BULL_NORMAL: 0.50, "stress_2018q4": -0.04,
-             "stress_covid_2020": 0.05, "stress_bear_2022": -0.05}
+_REG_BASE = {BULL_NORMAL: 0.50, "stress_2018q4": -0.10, "stress_covid_2020": 0.05, "stress_bear_2022": -0.20}
+_REG_CAND = {BULL_NORMAL: 0.50, "stress_2018q4": -0.04, "stress_covid_2020": 0.05, "stress_bear_2022": -0.05}
 
 
 _UNSET = object()
 
 
-def _ev(base=None, cand=None, reg_base=None, reg_cand=None, boot=None,
-        pbo=0.30, sens=_UNSET):
-    return evaluate(base or _sum(), cand or _sum(cagr=0.12),
-                    reg_base or _REG_BASE, reg_cand or _REG_CAND,
-                    boot or _Boot(0.001), _RB, pbo,
-                    _GOOD_SENS if sens is _UNSET else sens)
+def _ev(base=None, cand=None, reg_base=None, reg_cand=None, boot=None, pbo=0.30, sens=_UNSET):
+    return evaluate(
+        base or _sum(),
+        cand or _sum(cagr=0.12),
+        reg_base or _REG_BASE,
+        reg_cand or _REG_CAND,
+        boot or _Boot(0.001),
+        _RB,
+        pbo,
+        _GOOD_SENS if sens is _UNSET else sens,
+    )
 
 
 def test_ships_when_all_seven_pass():
@@ -92,14 +94,14 @@ def test_ships_when_all_seven_pass():
 def test_c1_only_requires_not_costing_return():
     """El gate no existe para agregar retorno, existe para sacar el crash-risk.
     Empatar en CAGR alcanza; perder aunque sea un poco, no."""
-    assert _ev(cand=_sum(cagr=0.10))["c1_cagr"] is True      # empate exacto
+    assert _ev(cand=_sum(cagr=0.10))["c1_cagr"] is True  # empate exacto
     assert _ev(cand=_sum(cagr=0.0999))["c1_cagr"] is False
 
 
 def test_c2_is_the_criterion_that_does_the_work():
     """Si el gate no arregla el bear, no sirve para nada: ése era el ÚNICO motivo
     por el que T11b no shipeó."""
-    reg_cand = dict(_REG_CAND, stress_bear_2022=-0.20)      # igual que el baseline
+    reg_cand = dict(_REG_CAND, stress_bear_2022=-0.20)  # igual que el baseline
     v = _ev(reg_cand=reg_cand)
     assert v["c1_cagr"] is True
     assert v["c2_strict"] is False and v["c2_regime"] is False
@@ -110,7 +112,7 @@ def test_c2_is_the_criterion_that_does_the_work():
 def test_c2_strict_covers_both_bad_regimes():
     for r in C2_STRICT_REGIMES:
         reg_cand = dict(_REG_CAND)
-        reg_cand[r] = _REG_BASE[r]                          # sin mejora estricta
+        reg_cand[r] = _REG_BASE[r]  # sin mejora estricta
         assert _ev(reg_cand=reg_cand)["c2_strict"] is False
 
 
@@ -136,9 +138,8 @@ def test_maxdd_cannot_worsen():
 
 
 def test_sharpe_must_beat_both_the_baseline_and_the_random_p95():
-    assert _ev(cand=_sum(cagr=0.12, sharpe=0.99))["c4_sharpe"] is False   # < baseline
-    assert _ev(base=_sum(sharpe=0.50),
-               cand=_sum(cagr=0.12, sharpe=0.55))["c4_sharpe"] is False   # < p95 azar
+    assert _ev(cand=_sum(cagr=0.12, sharpe=0.99))["c4_sharpe"] is False  # < baseline
+    assert _ev(base=_sum(sharpe=0.50), cand=_sum(cagr=0.12, sharpe=0.55))["c4_sharpe"] is False  # < p95 azar
 
 
 def test_bootstrap_floor_allows_a_small_negative():
@@ -151,7 +152,7 @@ def test_pbo_and_sensitivity_gates():
     assert _ev(pbo=0.51)["c6_pbo"] is False
     assert _ev(pbo=None)["c6_pbo"] is False
     assert _ev(sens={"c1_sign": True, "c2_bear": False})["c7_sensitivity"] is False
-    assert _ev(sens=None)["c7_sensitivity"] is False        # sin corrida NO pasa
+    assert _ev(sens=None)["c7_sensitivity"] is False  # sin corrida NO pasa
 
 
 def test_broken_accounting_never_ships():
@@ -164,8 +165,7 @@ def test_broken_accounting_never_ships():
 
 
 class _T:
-    def __init__(self, ticker, entry_date, invested, regime=BULL_NORMAL,
-                 size_factor=1.0):
+    def __init__(self, ticker, entry_date, invested, regime=BULL_NORMAL, size_factor=1.0):
         self.ticker = ticker
         self.entry_date = entry_date
         self.invested = invested
@@ -196,12 +196,11 @@ def test_scaled_share_is_descriptive_and_sees_what_the_criterion_misses():
     de correr.)"""
     base = _Res([_T("AAA", _d(1), 1000.0), _T("BBB", _d(2), 1000.0)])
     # Mismo capital total, pero la mitad entró achicada.
-    cand = _Res([_T("AAA", _d(1), 500.0, size_factor=0.5),
-                 _T("BBB", _d(2), 1500.0)])
+    cand = _Res([_T("AAA", _d(1), 500.0, size_factor=0.5), _T("BBB", _d(2), 1500.0)])
     b = gate_bites(base, cand)
-    assert b["ok"] is False                       # el criterio congelado no lo ve…
+    assert b["ok"] is False  # el criterio congelado no lo ve…
     assert b["capital_diff"] == pytest.approx(0.0)
-    assert b["scaled_trade_share"] == pytest.approx(0.5)   # …el descriptivo sí
+    assert b["scaled_trade_share"] == pytest.approx(0.5)  # …el descriptivo sí
     assert b["scaled_capital_share"] == pytest.approx(0.25)
 
 
@@ -235,13 +234,14 @@ def test_regime_detector_does_not_look_at_the_current_bar_or_later():
     closes = [100.0] * 200 + [50.0] * 5
     series = build_regime_series(_spy(closes))
     caida = _d(200)
-    assert series.is_risk_off(caida) is False       # la barra de D no cuenta
-    assert series.is_risk_off(_d(201)) is True      # al día siguiente sí
+    assert series.is_risk_off(caida) is False  # la barra de D no cuenta
+    assert series.is_risk_off(_d(201)) is True  # al día siguiente sí
 
     # Y truncar el futuro no cambia ninguna respuesta anterior.
     corta = build_regime_series(_spy(closes[:202]))
-    assert [corta.is_risk_off(_d(i)) for i in range(1, 202)] == \
-           [series.is_risk_off(_d(i)) for i in range(1, 202)]
+    assert [corta.is_risk_off(_d(i)) for i in range(1, 202)] == [
+        series.is_risk_off(_d(i)) for i in range(1, 202)
+    ]
 
 
 def test_regime_detector_fails_open_without_history():
@@ -271,9 +271,17 @@ def test_entry_filter_is_never_consulted_to_exit():
         return 1.0
 
     res = simulate_portfolio(
-        [("AAA", 5)], bars_by, {"AAA": {}}, max_positions=1, initial_capital=10_000.0,
-        cap_days=10, atr_p=AtrParams(), so_params=ScaleOutParams(), costs=CostModel(),
-        entry_filter=spy_filter, allow_reentry_while_open=False,
+        [("AAA", 5)],
+        bars_by,
+        {"AAA": {}},
+        max_positions=1,
+        initial_capital=10_000.0,
+        cap_days=10,
+        atr_p=AtrParams(),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        entry_filter=spy_filter,
+        allow_reentry_while_open=False,
     )
     assert res.n_taken == 1
     assert seen == [bars_by["AAA"][5][0]]
@@ -283,9 +291,17 @@ def test_hard_gate_suppresses_entries_but_the_cycle_still_exits():
     """Un gate que devuelve 0.0 no toma la posición; no puede dejarla colgada."""
     bars_by = {"AAA": _bars(40, 100.0, 1.0)}
     res = simulate_portfolio(
-        [("AAA", 5)], bars_by, {"AAA": {}}, max_positions=1, initial_capital=10_000.0,
-        cap_days=10, atr_p=AtrParams(), so_params=ScaleOutParams(), costs=CostModel(),
-        entry_filter=lambda _t, _d: 0.0, allow_reentry_while_open=False,
+        [("AAA", 5)],
+        bars_by,
+        {"AAA": {}},
+        max_positions=1,
+        initial_capital=10_000.0,
+        cap_days=10,
+        atr_p=AtrParams(),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        entry_filter=lambda _t, _d: 0.0,
+        allow_reentry_while_open=False,
     )
     assert res.n_taken == 0 and res.trades == []
 
@@ -295,9 +311,9 @@ def test_make_entry_filter_covers_every_arm_of_the_prereg():
     shipeado — el candidato primario no pide mecanismo nuevo."""
     series = build_regime_series(_spy([100.0] * 200 + [50.0] * 5))
     for name, cfg in GATE_ARMS.items():
-        filt = make_entry_filter(series, mode=cfg["mode"],
-                                 confirm_days=cfg.get("confirm_days", 5),
-                                 factor=cfg.get("factor", 0.5))
+        filt = make_entry_filter(
+            series, mode=cfg["mode"], confirm_days=cfg.get("confirm_days", 5), factor=cfg.get("factor", 0.5)
+        )
         assert 0.0 <= filt("AAA", _d(203)) <= 1.0, name
     # Y el primario es exactamente el overlay de T20: 0.50 en risk-off, 1.0 fuera.
     half = make_entry_filter(series, mode=GATE_ARMS[CANDIDATE_ARM]["mode"])
@@ -315,14 +331,11 @@ def test_oracle_scores_with_the_same_eval_mode_as_the_arms():
     # Barra que perfora el stop por el mínimo y se recupera al close: es
     # exactamente el caso en que las dos reglas difieren.
     bars = [(_d(i), 100.0, 101.0, 99.0, 100.0) for i in range(40)]
-    bars[22] = (_d(22), 100.0, 101.0, 60.0, 100.0)   # perfora por el mínimo, cierra arriba
+    bars[22] = (_d(22), 100.0, 101.0, 60.0, 100.0)  # perfora por el mínimo, cierra arriba
     bars_by = {"AAA": bars}
-    kw = dict(atr_p=AtrParams(), so_params=ScaleOutParams(), cap_days=15,
-              costs=CostModel())
-    al_close = precompute_oracle_returns([("AAA", 20)], bars_by, {"AAA": {}},
-                                         eval_mode="close", **kw)
-    al_toque = precompute_oracle_returns([("AAA", 20)], bars_by, {"AAA": {}},
-                                         eval_mode="touch", **kw)
+    kw = dict(atr_p=AtrParams(), so_params=ScaleOutParams(), cap_days=15, costs=CostModel())
+    al_close = precompute_oracle_returns([("AAA", 20)], bars_by, {"AAA": {}}, eval_mode="close", **kw)
+    al_toque = precompute_oracle_returns([("AAA", 20)], bars_by, {"AAA": {}}, eval_mode="touch", **kw)
     assert al_close != al_toque
     # Default = "close": preserva el comportamiento de todo lo ya publicado.
     assert precompute_oracle_returns([("AAA", 20)], bars_by, {"AAA": {}}, **kw) == al_close

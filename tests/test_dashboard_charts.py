@@ -20,9 +20,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6.QtWidgets")
 pytest.importorskip("matplotlib")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication
 
-from ui.dashboard_charts import AreaChartHero, DonutChart, KpiCard  # noqa: E402
+from ui.dashboard_charts import AreaChartHero, DonutChart, KpiCard
 
 
 @pytest.fixture(scope="module")
@@ -46,9 +46,9 @@ def _curve(n: int = 30) -> list[_Snap]:
 
 def test_area_chart_hero_handles_data_and_empty(qapp):
     chart = AreaChartHero()
-    chart.set_data(_curve())       # normal series → gradient path
-    chart.set_data([])             # empty → "sin datos" path, must not raise
-    chart.set_data(_curve(1))      # single point → fallback fill path
+    chart.set_data(_curve())  # normal series → gradient path
+    chart.set_data([])  # empty → "sin datos" path, must not raise
+    chart.set_data(_curve(1))  # single point → fallback fill path
     chart.cleanup()
 
 
@@ -57,7 +57,7 @@ def test_kpi_card_value_and_sparklines(qapp):
         card = KpiCard("TEST", kind=kind)
         card.set_value("$50,000", delta="+2.5%", delta_positive=True)
         card.set_series([1, 2, 3, 2, 4, 5])
-        card.set_series([])        # empty series must not raise
+        card.set_series([])  # empty series must not raise
         card.set_value("0", delta="", delta_positive=None)
 
 
@@ -66,6 +66,6 @@ def test_donut_chart_allocation_and_long_tail(qapp):
     donut.set_data([("AAPL", 4280), ("MSFT", 3110), ("NVDA", 900)])
     # More than max_legend entries → collapses tail into "Resto"
     donut.set_data([(f"T{i}", 100 - i) for i in range(10)])
-    donut.set_data([])             # empty → "sin posiciones" path
-    donut.set_data([("X", 0.0)])   # all-zero filtered out → empty path
+    donut.set_data([])  # empty → "sin posiciones" path
+    donut.set_data([("X", 0.0)])  # all-zero filtered out → empty path
     donut.cleanup()

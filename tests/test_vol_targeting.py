@@ -112,13 +112,13 @@ def test_overlay_disabled_when_target_non_positive():
     scaled, sigma, factor = apply_portfolio_vol_overlay({"A": 1.0}, df, 0.0)
     assert factor == 1.0 and sigma is None
     assert scaled == {"A": 1.0}
-    scaled2, sigma2, factor2 = apply_portfolio_vol_overlay({"A": 1.0}, df, None)
+    _scaled2, sigma2, factor2 = apply_portfolio_vol_overlay({"A": 1.0}, df, None)
     assert factor2 == 1.0 and sigma2 is None
 
 
 def test_overlay_no_estimate_does_not_scale():
     """Empty returns → σ unknown → leave weights as-is."""
-    scaled, sigma, factor = apply_portfolio_vol_overlay({"A": 1.0}, pd.DataFrame(), 0.12)
+    scaled, _sigma, factor = apply_portfolio_vol_overlay({"A": 1.0}, pd.DataFrame(), 0.12)
     assert factor == 1.0
     assert scaled == {"A": 1.0}
 
@@ -128,7 +128,7 @@ def test_overlay_no_estimate_does_not_scale():
 
 def test_returns_frame_drops_tickers_without_history():
     book = {"A": _close_with_sigma(0.2), "B": _close_with_sigma(0.3)}
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     df = returns_frame(["A", "B", "MISSING"], hp)
     assert set(df.columns) == {"A", "B"}
     assert not df.empty
@@ -183,7 +183,7 @@ def test_analyze_single_overlay_shrinks_high_vol_buys(monkeypatch):
 
     _patch_analyze(monkeypatch, {"HV": ("BUY", 0.60)})
     book = {"HV": _close_with_sigma(0.40)}  # very high vol → big scale-down
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {"HV": float(book["HV"]["Close"].iloc[-1])}
 
     def run():
@@ -211,7 +211,7 @@ def test_analyze_single_overlay_keeps_low_vol_buys(monkeypatch):
 
     _patch_analyze(monkeypatch, {"LV": ("BUY", 0.60)})
     book = {"LV": _close_with_sigma(0.08)}  # below target → untouched
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {"LV": float(book["LV"]["Close"].iloc[-1])}
 
     def run():
@@ -238,7 +238,7 @@ def test_portfolio_engine_overlay_shrinks_high_vol_book(monkeypatch):
 
     _patch_analyze(monkeypatch, {"HV": ("BUY", 0.70)})
     book = {"HV": _close_with_sigma(0.40)}
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {"HV": float(book["HV"]["Close"].iloc[-1])}
 
     def run():

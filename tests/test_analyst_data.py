@@ -11,7 +11,6 @@ Cubre:
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from data.yahoo_finance import (
     _analyst_cache,
@@ -181,8 +180,7 @@ def test_get_analyst_data_cache_hit(mock_yfinance, monkeypatch):
 
     fake_ticker = mock_yfinance.Ticker.return_value
     fake_ticker.recommendations = pd.DataFrame(
-        {"period": ["0m"], "strongBuy": [5], "buy": [3],
-         "hold": [2], "sell": [0], "strongSell": [0]}
+        {"period": ["0m"], "strongBuy": [5], "buy": [3], "hold": [2], "sell": [0], "strongSell": [0]}
     )
     fake_ticker.analyst_price_targets = None
 
@@ -211,11 +209,15 @@ def test_get_analyst_data_persists_to_db(test_db, mock_yfinance, monkeypatch):
 
     fake_ticker = mock_yfinance.Ticker.return_value
     fake_ticker.recommendations = pd.DataFrame(
-        {"period": ["0m"], "strongBuy": [10], "buy": [5],
-         "hold": [2], "sell": [0], "strongSell": [0]}
+        {"period": ["0m"], "strongBuy": [10], "buy": [5], "hold": [2], "sell": [0], "strongSell": [0]}
     )
-    fake_ticker.analyst_price_targets = {"current": 100.0, "mean": 120.0,
-                                          "median": 115.0, "low": 80.0, "high": 150.0}
+    fake_ticker.analyst_price_targets = {
+        "current": 100.0,
+        "mean": 120.0,
+        "median": 115.0,
+        "low": 80.0,
+        "high": 150.0,
+    }
 
     out = get_analyst_data("AAPL")
 
@@ -238,8 +240,7 @@ def test_get_analyst_data_db_survives_restart(test_db, mock_yfinance, monkeypatc
 
     fake_ticker = mock_yfinance.Ticker.return_value
     fake_ticker.recommendations = pd.DataFrame(
-        {"period": ["0m"], "strongBuy": [10], "buy": [5],
-         "hold": [2], "sell": [0], "strongSell": [0]}
+        {"period": ["0m"], "strongBuy": [10], "buy": [5], "hold": [2], "sell": [0], "strongSell": [0]}
     )
     fake_ticker.analyst_price_targets = None
 
@@ -273,18 +274,20 @@ def test_get_analyst_data_db_expired_triggers_refetch(test_db, mock_yfinance, mo
     # Usamos datetime naive (sin tz) para matchear el formato que usa
     # ``utcnow_naive()`` en el modelo — comparar tz-aware vs naive tira error.
     from datetime import timezone
+
     stale = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
     with session_scope() as s:
-        s.add(AnalystDataCache(
-            ticker="GOOGL",
-            data_json='{"recommendations": [], "price_targets": null}',
-            fetched_at=stale,
-        ))
+        s.add(
+            AnalystDataCache(
+                ticker="GOOGL",
+                data_json='{"recommendations": [], "price_targets": null}',
+                fetched_at=stale,
+            )
+        )
 
     fake_ticker = mock_yfinance.Ticker.return_value
     fake_ticker.recommendations = pd.DataFrame(
-        {"period": ["0m"], "strongBuy": [99], "buy": [0],
-         "hold": [0], "sell": [0], "strongSell": [0]}
+        {"period": ["0m"], "strongBuy": [99], "buy": [0], "hold": [0], "sell": [0], "strongSell": [0]}
     )
     fake_ticker.analyst_price_targets = None
 

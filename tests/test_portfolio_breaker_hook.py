@@ -3,6 +3,7 @@
 El hook suprime SOLO las entradas nuevas cuando devuelve True; None o un hook
 que siempre devuelve False deben reproducir el comportamiento legacy exacto.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -52,9 +53,7 @@ _KW = dict(
 def test_breaker_none_matches_always_false():
     """None y un hook que nunca arma dan resultados idénticos (legacy)."""
     r_none = portfolio_backtest(_always_buy, data=_data(), breaker_fn=None, **_KW)
-    r_false = portfolio_backtest(
-        _always_buy, data=_data(), breaker_fn=lambda *_: False, **_KW
-    )
+    r_false = portfolio_backtest(_always_buy, data=_data(), breaker_fn=lambda *_: False, **_KW)
     assert r_none is not None and r_false is not None
     assert r_none.final_equity == r_false.final_equity
     assert r_none.n_trades == r_false.n_trades
@@ -64,9 +63,7 @@ def test_breaker_none_matches_always_false():
 
 def test_breaker_always_on_suppresses_all_entries():
     """Con el breaker siempre armado no se abre ninguna posición nueva."""
-    r_on = portfolio_backtest(
-        _always_buy, data=_data(), breaker_fn=lambda *_: True, **_KW
-    )
+    r_on = portfolio_backtest(_always_buy, data=_data(), breaker_fn=lambda *_: True, **_KW)
     r_off = portfolio_backtest(_always_buy, data=_data(), breaker_fn=None, **_KW)
     assert r_off.n_slot_fills > 0  # sanity: sin breaker sí entra
     assert r_on.n_slot_fills == 0

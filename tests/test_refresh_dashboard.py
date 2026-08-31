@@ -28,7 +28,8 @@ def fake_targets(tmp_path, monkeypatch):
     artifact = tmp_path / "index.html"
     artifact.write_text(ARTIFACT_HTML, encoding="utf-8")
     monkeypatch.setattr(
-        rd, "build_payload",
+        rd,
+        "build_payload",
         lambda db_path, account_id: {
             "positions": [1, 2, 3],
             "generated_at": "2026-07-12T10:00:00",
@@ -64,8 +65,8 @@ def test_refresh_injects_data_line(fake_targets):
     assert res["generated_at"] == "2026-07-12T10:00:00"
 
     html = artifact.read_text(encoding="utf-8")
-    assert '"positions": [1, 2, 3]' in html          # snapshot nuevo inyectado
-    assert '{"old": true}' not in html               # la línea vieja se reemplazó
+    assert '"positions": [1, 2, 3]' in html  # snapshot nuevo inyectado
+    assert '{"old": true}' not in html  # la línea vieja se reemplazó
     # Snapshot de respaldo escrito al lado del repo (tmp en el test).
     assert (Path(res["artifact"])).exists()
     assert (db.parent / "dashboard_snapshot.json").exists()

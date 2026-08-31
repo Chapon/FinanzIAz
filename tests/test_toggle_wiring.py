@@ -81,8 +81,10 @@ def test_hmm_enabled_default_calls_hmm():
     from analysis import technical
 
     df = _make_df()
-    with patch("analysis.ml_signals.detect_market_regime_hmm", return_value=None) as m_regime, \
-         patch("analysis.ml_signals.train_hmm_signal", return_value=None) as m_signal:
+    with (
+        patch("analysis.ml_signals.detect_market_regime_hmm", return_value=None) as m_regime,
+        patch("analysis.ml_signals.train_hmm_signal", return_value=None) as m_signal,
+    ):
         technical.analyze("TEST", df, enable_xgboost=True)
         assert m_regime.called, "HMM regime detector must be called when hmm_enabled=True"
         assert m_signal.called, "HMM forward signal must be called when hmm_enabled=True"
@@ -93,10 +95,12 @@ def test_hmm_enabled_off_skips_hmm():
     from analysis import technical
 
     df = _make_df()
-    with _toggle_settings({"hmm_enabled": False}), \
-         patch("analysis.ml_signals.detect_market_regime_hmm", return_value=None) as m_regime, \
-         patch("analysis.ml_signals.train_hmm_signal", return_value=None) as m_signal, \
-         patch("analysis.ml_signals.detect_market_regime", return_value=None) as m_rule:
+    with (
+        _toggle_settings({"hmm_enabled": False}),
+        patch("analysis.ml_signals.detect_market_regime_hmm", return_value=None) as m_regime,
+        patch("analysis.ml_signals.train_hmm_signal", return_value=None) as m_signal,
+        patch("analysis.ml_signals.detect_market_regime", return_value=None) as m_rule,
+    ):
         technical.analyze("TEST", df, enable_xgboost=True)
         assert not m_regime.called, "HMM regime detector must NOT be called when hmm_enabled=False"
         assert not m_signal.called, "HMM forward signal must NOT be called when hmm_enabled=False"
@@ -123,8 +127,10 @@ def test_xgb_signal_enabled_off_skips_xgb():
     from analysis import technical
 
     df = _make_df()
-    with _toggle_settings({"xgb_signal_enabled": False}), \
-         patch("analysis.ml_signals.train_xgboost_signal", return_value=None) as m_xgb:
+    with (
+        _toggle_settings({"xgb_signal_enabled": False}),
+        patch("analysis.ml_signals.train_xgboost_signal", return_value=None) as m_xgb,
+    ):
         technical.analyze("TEST", df, enable_xgboost=True)
         assert not m_xgb.called, "XGBoost must NOT be trained when xgb_signal_enabled=False"
 
@@ -151,8 +157,10 @@ def test_stacking_enabled_off_returns_heuristic():
     from analysis import technical
 
     df = _make_df()
-    with _toggle_settings({"stacking_enabled": False}), \
-         patch("analysis.ml_signals.train_stacking_combiner", return_value=None) as m_stack:
+    with (
+        _toggle_settings({"stacking_enabled": False}),
+        patch("analysis.ml_signals.train_stacking_combiner", return_value=None) as m_stack,
+    ):
         result = technical.analyze_stacked("TEST", df, enable_xgboost=True)
         assert result is not None
         assert not m_stack.called, "Stacking must NOT be attempted when stacking_enabled=False"

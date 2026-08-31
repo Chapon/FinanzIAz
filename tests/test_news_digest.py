@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from analysis.news_digest import (
     DigestItem,
     _Row,
@@ -85,10 +83,22 @@ def test_rank_unclassified_rows_sink_but_dont_crash():
 
 def test_rank_dedups_same_ticker_title_keeps_best():
     rows = [
-        _row(id=1, title="NVDA beats estimates", source="yahoo_rss",
-             event_type="stock_movement", sentiment="positive", conf=0.5),
-        _row(id=2, title="NVDA beats  estimates", source="sec_8k",
-             event_type="earnings_results", sentiment="positive", conf=0.9),
+        _row(
+            id=1,
+            title="NVDA beats estimates",
+            source="yahoo_rss",
+            event_type="stock_movement",
+            sentiment="positive",
+            conf=0.5,
+        ),
+        _row(
+            id=2,
+            title="NVDA beats  estimates",
+            source="sec_8k",
+            event_type="earnings_results",
+            sentiment="positive",
+            conf=0.9,
+        ),
     ]
     ranked = rank_news(rows)
     assert len(ranked) == 1
@@ -97,10 +107,7 @@ def test_rank_dedups_same_ticker_title_keeps_best():
 
 def test_rank_top_n_and_empty():
     assert rank_news([]) == []
-    rows = [
-        _row(id=i, title=f"t{i}", event_type="mna", sentiment="positive", conf=0.9)
-        for i in range(10)
-    ]
+    rows = [_row(id=i, title=f"t{i}", event_type="mna", sentiment="positive", conf=0.9) for i in range(10)]
     assert len(rank_news(rows, top_n=3)) == 3
 
 
@@ -143,9 +150,15 @@ def test_classify_missing_then_rank_gives_nonzero_impact():
 
 def _items(n=2):
     rows = [
-        _row(id=i, ticker=f"TK{i}", title=f"titular {i}",
-             event_type="mna", sentiment="positive", conf=0.9,
-             published_at=datetime(2026, 6, 12, 9, 0))
+        _row(
+            id=i,
+            ticker=f"TK{i}",
+            title=f"titular {i}",
+            event_type="mna",
+            sentiment="positive",
+            conf=0.9,
+            published_at=datetime(2026, 6, 12, 9, 0),
+        )
         for i in range(n)
     ]
     return rank_news(rows)

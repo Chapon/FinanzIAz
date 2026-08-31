@@ -10,8 +10,8 @@ from analysis.leads import (
 )
 from data.ticker_universe import get_sp500_fallback, get_sp500_tickers
 
-
 # ── compute_lead_score ────────────────────────────────────────────────────────
+
 
 def _make_analyst(buckets: dict, price=None, mean_target=None) -> dict:
     """Helper: arma la estructura que devuelve get_analyst_data."""
@@ -25,9 +25,9 @@ def _make_analyst(buckets: dict, price=None, mean_target=None) -> dict:
             {"period": "0m", **buckets, "total": total},
         ],
         "price_targets": (
-            {"current": price, "mean": mean_target, "median": None,
-             "low": None, "high": None}
-            if (price is not None or mean_target is not None) else None
+            {"current": price, "mean": mean_target, "median": None, "low": None, "high": None}
+            if (price is not None or mean_target is not None)
+            else None
         ),
     }
 
@@ -66,10 +66,26 @@ def test_compute_score_no_data_returns_none():
     assert compute_lead_score({"recommendations": [], "price_targets": None}, "ZZZ") is None
     assert compute_lead_score(None, "ZZZ") is None
     # Total 0 → None (no aporta info)
-    assert compute_lead_score({"recommendations": [{"period": "0m", "strongBuy": 0,
-                                                    "buy": 0, "hold": 0, "sell": 0,
-                                                    "strongSell": 0, "total": 0}],
-                               "price_targets": None}, "X") is None
+    assert (
+        compute_lead_score(
+            {
+                "recommendations": [
+                    {
+                        "period": "0m",
+                        "strongBuy": 0,
+                        "buy": 0,
+                        "hold": 0,
+                        "sell": 0,
+                        "strongSell": 0,
+                        "total": 0,
+                    }
+                ],
+                "price_targets": None,
+            },
+            "X",
+        )
+        is None
+    )
 
 
 def test_upside_calculation():
@@ -99,11 +115,21 @@ def test_bucket_weights_constants_sane():
 
 # ── filter_leads ──────────────────────────────────────────────────────────────
 
+
 def _row(ticker: str, score: float, analysts: int) -> LeadRow:
     return LeadRow(
-        ticker=ticker, score=score, total_analysts=analysts,
-        pct_strong_buy=0, pct_buy=0, pct_hold=0, pct_sell=0, pct_strong_sell=0,
-        verdict="X", price=None, mean_target=None, upside_pct=None,
+        ticker=ticker,
+        score=score,
+        total_analysts=analysts,
+        pct_strong_buy=0,
+        pct_buy=0,
+        pct_hold=0,
+        pct_sell=0,
+        pct_strong_sell=0,
+        verdict="X",
+        price=None,
+        mean_target=None,
+        upside_pct=None,
     )
 
 
@@ -133,6 +159,7 @@ def test_filter_leads_empty_input():
 
 
 # ── ticker_universe ───────────────────────────────────────────────────────────
+
 
 def test_sp500_fallback_has_expected_size():
     """El fallback hardcoded debe tener al menos 400 tickers (margen vs 503 reales)."""
@@ -165,6 +192,7 @@ def test_get_sp500_tickers_works_without_network(monkeypatch):
     """Si Wikipedia falla, get_sp500_tickers debe devolver el fallback sin tirar."""
     # Limpiar cache para forzar el fetch
     from data import ticker_universe
+
     ticker_universe._cache.clear()
 
     monkeypatch.setattr(
@@ -179,13 +207,14 @@ def test_get_sp500_tickers_works_without_network(monkeypatch):
 def test_get_sp500_tickers_caches(monkeypatch):
     """Segunda llamada no debe re-disparar fetch."""
     from data import ticker_universe
+
     ticker_universe._cache.clear()
 
     call_count = {"n": 0}
 
     def _fake_fetch():
         call_count["n"] += 1
-        return ["FAKE1", "FAKE2"] + list(get_sp500_fallback())
+        return ["FAKE1", "FAKE2", *list(get_sp500_fallback())]
 
     monkeypatch.setattr("data.ticker_universe._fetch_sp500_from_wikipedia", _fake_fetch)
 

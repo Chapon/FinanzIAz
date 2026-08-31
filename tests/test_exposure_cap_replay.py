@@ -13,8 +13,7 @@ from scripts.run_exposure_cap_replay import replay_exposure_cap, summarize
 
 
 def _o(ticker, side, price, shares, when):
-    return {"ticker": ticker, "side": side, "fill_price": price,
-            "fill_shares": shares, "filled_at": when}
+    return {"ticker": ticker, "side": side, "fill_price": price, "fill_shares": shares, "filled_at": when}
 
 
 def test_no_cap_is_identity():
@@ -69,16 +68,28 @@ def test_fifo_two_lots_scaled_independently():
 
 def test_summarize_aggregates_worst_and_big_winners():
     res = {
-        "actual_pnl": {"MLTX": -2000.0, "MU": 1000.0, "TSLA": 500.0,
-                       "AAPL": 500.0, "TJX": 500.0, "XYZ": 100.0},
-        "capped_pnl": {"MLTX": -1000.0, "MU": 800.0, "TSLA": 500.0,
-                       "AAPL": 400.0, "TJX": 500.0, "XYZ": 100.0},
+        "actual_pnl": {
+            "MLTX": -2000.0,
+            "MU": 1000.0,
+            "TSLA": 500.0,
+            "AAPL": 500.0,
+            "TJX": 500.0,
+            "XYZ": 100.0,
+        },
+        "capped_pnl": {
+            "MLTX": -1000.0,
+            "MU": 800.0,
+            "TSLA": 500.0,
+            "AAPL": 400.0,
+            "TJX": 500.0,
+            "XYZ": 100.0,
+        },
         "max_pct": {},
     }
     s = summarize(res)
     assert s["worst_actual"] == pytest.approx(-2000.0)
     assert s["worst_reduction"] == pytest.approx(0.5)  # -2000 → -1000
-    assert s["big_actual"] == pytest.approx(2500.0)   # 1000+500+500+500
-    assert s["big_capped"] == pytest.approx(2200.0)   # 800+500+400+500
+    assert s["big_actual"] == pytest.approx(2500.0)  # 1000+500+500+500
+    assert s["big_capped"] == pytest.approx(2200.0)  # 800+500+400+500
     assert s["big_retained"] == pytest.approx(2200.0 / 2500.0)
     assert s["delta_total"] == pytest.approx(s["total_capped"] - s["total_actual"])

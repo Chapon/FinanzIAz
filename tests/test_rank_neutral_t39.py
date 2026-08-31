@@ -74,16 +74,15 @@ def test_neutral_rank_is_pure_and_independent_of_call_order():
 def test_neutral_rank_is_stable_across_runs():
     """Golden value: si cambia, cambia **lo que se shipearía**. ``hash()`` de Python
     está randomizado por proceso y daría un orden distinto en cada scan."""
-    assert neutral_rank(12345, "2026-08-19", "AAPL") == pytest.approx(
-        0.9932980858800138, abs=1e-15)
+    assert neutral_rank(12345, "2026-08-19", "AAPL") == pytest.approx(0.9932980858800138, abs=1e-15)
     assert fixed_rank(54321, "AAPL") == pytest.approx(0.8325241622012335, abs=1e-15)
 
 
 def test_neutral_rank_depends_on_the_three_arguments():
     base = neutral_rank(1, _d(0), "AAA")
-    assert neutral_rank(2, _d(0), "AAA") != base       # semilla
-    assert neutral_rank(1, _d(1), "AAA") != base       # fecha ⇒ ROTA
-    assert neutral_rank(1, _d(0), "BBB") != base       # ticker
+    assert neutral_rank(2, _d(0), "AAA") != base  # semilla
+    assert neutral_rank(1, _d(1), "AAA") != base  # fecha ⇒ ROTA
+    assert neutral_rank(1, _d(0), "BBB") != base  # ticker
 
 
 def test_fixed_rank_ignores_the_date():
@@ -91,14 +90,14 @@ def test_fixed_rank_ignores_the_date():
     persistente (apuesta a nombres fijos), ``N_rot`` no persiste nada."""
     assert fixed_rank(3, "AAA") == fixed_rank(3, "AAA")
     vals = {neutral_rank(3, _d(i), "AAA") for i in range(10)}
-    assert len(vals) == 10          # el rotado cambia todos los días
+    assert len(vals) == 10  # el rotado cambia todos los días
 
 
 def test_values_are_in_unit_interval_and_spread_out():
     xs = [neutral_rank(11, _d(i % 50), f"T{i}") for i in range(2000)]
     assert all(0.0 <= x < 1.0 for x in xs)
-    assert len(set(xs)) == len(xs)                       # sin colisiones
-    assert 0.45 < sum(xs) / len(xs) < 0.55               # uniformidad gruesa
+    assert len(set(xs)) == len(xs)  # sin colisiones
+    assert 0.45 < sum(xs) / len(xs) < 0.55  # uniformidad gruesa
 
 
 # ── §2 — brazos ──────────────────────────────────────────────────────────────
@@ -123,7 +122,7 @@ def test_oracle_and_anti_oracle_look_at_the_future():
     score_by, realized = _fixtures()
     arms = build_arms(score_by, realized, n_seeds=1)
     o, a = arms[ORACLE_ARM], arms[ANTI_ORACLE_ARM]
-    assert o("AAA", _d(1)) > o("BBB", _d(1))      # AAA rindió más
+    assert o("AAA", _d(1)) > o("BBB", _d(1))  # AAA rindió más
     assert a("AAA", _d(1)) < a("BBB", _d(1))
 
 
@@ -171,14 +170,12 @@ def _seeds(cagrs, dd=0.20):
     return [_sum(cagr=c, dd=dd) for c in cagrs]
 
 
-_GOOD_REGIME = {BULL_NORMAL: 0.02, "stress_2018q4": 0.01,
-                "stress_covid_2020": 0.00, "stress_bear_2022": 0.03}
+_GOOD_REGIME = {BULL_NORMAL: 0.02, "stress_2018q4": 0.01, "stress_covid_2020": 0.00, "stress_bear_2022": 0.03}
 _GOOD_SENS = {"c1_sign": True, "c2": True}
 
 
 def test_ships_when_all_six_pass():
-    v = evaluate(_sum(), _seeds([0.12, 0.13, 0.14]), _Boot(0.002),
-                 _GOOD_REGIME, _GOOD_SENS)
+    v = evaluate(_sum(), _seeds([0.12, 0.13, 0.14]), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)
     assert v["ship"] is True
     assert "SHIP" in v["outcome"] and "12345" in v["outcome"]
 
@@ -187,8 +184,7 @@ def test_split_case_more_return_worse_drawdown():
     """El caso que la T9 dejó sin especificar (allá el score tenía 6,1 pts MENOS de
     maxDD) y que la T21 vio dado vuelta. La dirección es desconocida: por eso el
     umbral está declarado antes."""
-    v = evaluate(_sum(dd=0.20), _seeds([0.15, 0.16, 0.17], dd=0.25), _Boot(0.002),
-                 _GOOD_REGIME, _GOOD_SENS)
+    v = evaluate(_sum(dd=0.20), _seeds([0.15, 0.16, 0.17], dd=0.25), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)
     assert v["c1_cagr"] is True and v["c3_maxdd"] is False
     assert v["ship"] is False and "caso partido" in v["outcome"]
 
@@ -196,8 +192,7 @@ def test_split_case_more_return_worse_drawdown():
 def test_c2_requires_every_seed_to_win():
     """Se cablea UNA semilla elegida a ciegas: si el resultado depende de cuál toca,
     no hay política validada."""
-    v = evaluate(_sum(cagr=0.10), _seeds([0.09, 0.13, 0.14]), _Boot(0.002),
-                 _GOOD_REGIME, _GOOD_SENS)
+    v = evaluate(_sum(cagr=0.10), _seeds([0.09, 0.13, 0.14]), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)
     assert v["c1_cagr"] is True and v["c2_all_seeds"] is False
     assert v["ship"] is False
     assert "2/3" in v["outcome"] and "lead" in v["outcome"]
@@ -205,8 +200,7 @@ def test_c2_requires_every_seed_to_win():
 
 def test_bootstrap_gate_blocks_a_good_looking_delta():
     """Precedente directo: es exactamente lo que le pasó al alfabético en la T21."""
-    v = evaluate(_sum(), _seeds([0.13, 0.14, 0.15]), _Boot(-0.001),
-                 _GOOD_REGIME, _GOOD_SENS)
+    v = evaluate(_sum(), _seeds([0.13, 0.14, 0.15]), _Boot(-0.001), _GOOD_REGIME, _GOOD_SENS)
     assert v["c1_cagr"] and v["c2_all_seeds"] and v["c3_maxdd"]
     assert v["c4_bootstrap"] is False and v["ship"] is False
     assert "T21" in v["outcome"]
@@ -225,8 +219,9 @@ def test_regime_tolerance_is_half_a_point():
 
 
 def test_sensitivity_gate_blocks_and_missing_run_is_not_a_pass():
-    v = evaluate(_sum(), _seeds([0.13, 0.14, 0.15]), _Boot(0.002), _GOOD_REGIME,
-                 {"c1_sign": True, "c2": False})
+    v = evaluate(
+        _sum(), _seeds([0.13, 0.14, 0.15]), _Boot(0.002), _GOOD_REGIME, {"c1_sign": True, "c2": False}
+    )
     assert v["c6_sensitivity"] is False and v["ship"] is False and "C6" in v["outcome"]
     # Sin corrida de sensibilidad C6 NO se da por pasado.
     v2 = evaluate(_sum(), _seeds([0.13, 0.14, 0.15]), _Boot(0.002), _GOOD_REGIME, None)
@@ -234,26 +229,37 @@ def test_sensitivity_gate_blocks_and_missing_run_is_not_a_pass():
 
 
 def test_no_ship_when_the_deficit_does_not_clear_the_threshold():
-    v = evaluate(_sum(cagr=0.10), _seeds([0.102, 0.103, 0.104]), _Boot(0.002),
-                 _GOOD_REGIME, _GOOD_SENS)
+    v = evaluate(_sum(cagr=0.10), _seeds([0.102, 0.103, 0.104]), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)
     assert v["c1_cagr"] is False and v["ship"] is False
     assert "caducidad parcial" in v["outcome"]
 
 
 def test_c1_threshold_is_half_a_point_on_the_median():
     base = _sum(cagr=0.10)
-    assert evaluate(base, _seeds([0.104, 0.1051, 0.106]), _Boot(0.002),
-                    _GOOD_REGIME, _GOOD_SENS)["c1_cagr"] is True
-    assert evaluate(base, _seeds([0.103, 0.1049, 0.106]), _Boot(0.002),
-                    _GOOD_REGIME, _GOOD_SENS)["c1_cagr"] is False
+    assert (
+        evaluate(base, _seeds([0.104, 0.1051, 0.106]), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)["c1_cagr"]
+        is True
+    )
+    assert (
+        evaluate(base, _seeds([0.103, 0.1049, 0.106]), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)["c1_cagr"]
+        is False
+    )
 
 
 def test_maxdd_tolerance_is_three_points_on_the_median():
     base = _sum(dd=0.20)
-    assert evaluate(base, _seeds([0.13, 0.14, 0.15], dd=0.229), _Boot(0.002),
-                    _GOOD_REGIME, _GOOD_SENS)["c3_maxdd"] is True
-    assert evaluate(base, _seeds([0.13, 0.14, 0.15], dd=0.231), _Boot(0.002),
-                    _GOOD_REGIME, _GOOD_SENS)["c3_maxdd"] is False
+    assert (
+        evaluate(base, _seeds([0.13, 0.14, 0.15], dd=0.229), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)[
+            "c3_maxdd"
+        ]
+        is True
+    )
+    assert (
+        evaluate(base, _seeds([0.13, 0.14, 0.15], dd=0.231), _Boot(0.002), _GOOD_REGIME, _GOOD_SENS)[
+            "c3_maxdd"
+        ]
+        is False
+    )
 
 
 def test_broken_accounting_never_ships():
@@ -304,7 +310,7 @@ def test_regime_window_returns_compound_inside_each_window():
     out = regime_window_returns(pairs)
     assert out["stress_2018q4"] == pytest.approx(1.10 * 0.90 - 1.0)
     assert out[BULL_NORMAL] == pytest.approx(0.05)
-    assert out["stress_bear_2022"] == 0.0     # sin días en la muestra
+    assert out["stress_bear_2022"] == 0.0  # sin días en la muestra
 
 
 def test_cash_days_count_as_zero_not_as_absent():
@@ -316,15 +322,22 @@ def test_cash_days_count_as_zero_not_as_absent():
     assert regime_window_returns(quieto)["stress_bear_2022"] == 0.0
     assert regime_window_returns(invertido)["stress_bear_2022"] < 0.0
     # …y castigado si se pierde la recuperación.
-    assert (regime_window_returns(quieto)["stress_bear_2022"]
-            < regime_window_returns([("2022-03-01", 0.10)])["stress_bear_2022"])
+    assert (
+        regime_window_returns(quieto)["stress_bear_2022"]
+        < regime_window_returns([("2022-03-01", 0.10)])["stress_bear_2022"]
+    )
 
 
 def test_regime_windows_partition_the_sample():
     """Componer los cuatro regímenes reconstruye el retorno total: ninguna barra se
     cuenta dos veces ni se pierde."""
-    pairs = [("2018-10-05", 0.03), ("2020-03-02", -0.07), ("2022-05-05", 0.02),
-             ("2024-01-04", 0.01), ("2019-07-07", -0.01)]
+    pairs = [
+        ("2018-10-05", 0.03),
+        ("2020-03-02", -0.07),
+        ("2022-05-05", 0.02),
+        ("2024-01-04", 0.01),
+        ("2019-07-07", -0.01),
+    ]
     out = regime_window_returns(pairs)
     total = 1.0
     for r in pairs:
@@ -355,7 +368,7 @@ def test_rank_autocorr_takes_a_lag():
     alta que se desarma en una semana no concentra nada. Por eso el lag se mide, no
     se extrapola."""
     pool = {_d(i): ["AAA", "BBB", "CCC", "DDD", "EEE"] for i in range(60)}
-    fijo = lambda t, d: fixed_rank(9, t)                                   # noqa: E731
+    fijo = lambda t, d: fixed_rank(9, t)
     assert rank_autocorr(fijo, pool, lag=8) == pytest.approx(1.0)
     assert abs(rank_autocorr(lambda t, d: neutral_rank(9, d, t), pool, lag=8)) < 0.25
 
@@ -404,18 +417,21 @@ def test_the_rotated_policy_changes_who_takes_the_slot():
     bars_by = {"AAA": _bars(40, 100.0, 1.0), "BBB": _bars(40, 50.0, -0.2)}
     sigs = {t: {} for t in bars_by}
     entries = [("AAA", 5), ("BBB", 5)]
-    common = dict(max_positions=1, initial_capital=10_000.0, cap_days=10,
-                  so_params=ScaleOutParams(), costs=CostModel(),
-                  allow_reentry_while_open=False)
+    common = dict(
+        max_positions=1,
+        initial_capital=10_000.0,
+        cap_days=10,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        allow_reentry_while_open=False,
+    )
 
     def _taken(fn):
-        res = simulate_portfolio(entries, bars_by, sigs, atr_p=AtrParams(),
-                                 rank_score=fn, **common)
+        res = simulate_portfolio(entries, bars_by, sigs, atr_p=AtrParams(), rank_score=fn, **common)
         return {t.ticker for t in res.trades}
 
     score = _taken(lambda t, d: 1.0 if t == "AAA" else 0.0)
     assert score == {"AAA"}
     # Con semillas distintas la política elige distinto: el orden muerde.
-    elegidos = {frozenset(_taken(lambda t, d, _s=s: neutral_rank(_s, d, t)))
-                for s in range(12345, 12365)}
+    elegidos = {frozenset(_taken(lambda t, d, _s=s: neutral_rank(_s, d, t))) for s in range(12345, 12365)}
     assert len(elegidos) == 2

@@ -61,13 +61,14 @@ def _make_df(offset: float = 0.0, periods: int = 140) -> pd.DataFrame:
 
 # ── 1. Un solo fit por los dos consumidores reales ───────────────────────────
 
+
 def test_both_call_sites_share_one_fit(fit_counter):
     """El caso que motivó la tarea: los DOS consumidores reales, un solo fit."""
     calls, _ = fit_counter
     df = _make_df()
 
     gs.compute_annual_volatility(df)  # vía detect_market_regime*
-    gs.train_garch_signal(df)         # la señal GARCH
+    gs.train_garch_signal(df)  # la señal GARCH
 
     assert calls["n"] == 1, "el mismo df se fiteó más de una vez"
 
@@ -101,6 +102,7 @@ def test_out_of_valid_region_is_also_cached(fit_counter):
 
 
 # ── 2. Paridad: el memo no cambia el resultado ───────────────────────────────
+
 
 def test_cached_result_matches_uncached(fit_counter):
     """El valor servido del cache es idéntico al que sale de fitear de nuevo."""
@@ -168,6 +170,7 @@ def test_different_horizon_is_a_different_entry(fit_counter):
 
 # ── 3. El cache está acotado ─────────────────────────────────────────────────
 
+
 def test_cache_is_bounded(fit_counter):
     """La app corre horas y cada barra nueva es una huella nueva: sin tope, crece infinito."""
     for i in range(gs._GARCH_CACHE_MAXSIZE + 50):
@@ -178,11 +181,12 @@ def test_cache_is_bounded(fit_counter):
 
 # ── 4. La huella nunca rompe el scan ─────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "frame",
     [
         pd.DataFrame({"Close": []}),
-        pd.DataFrame({"Close": [100.0]}),                      # 1 fila → squeeze da escalar
+        pd.DataFrame({"Close": [100.0]}),  # 1 fila → squeeze da escalar
         pd.DataFrame({"Close": [100.0, 101.0]}),
         pd.DataFrame({"Close": [np.nan, np.nan, np.nan]}),
     ],

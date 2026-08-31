@@ -29,13 +29,13 @@ from analysis.exit_replay import (
     simulate_variant,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 # Fechas hábiles sintéticas: usamos un calendario lineal D01..D60 (strings
 # ordenables); el módulo solo compara/bisecta strings, no parsea fechas.
 def _d(i: int) -> str:
-    return f"2026-03-{i:02d}" if i <= 31 else f"2026-04-{i-31:02d}"
+    return f"2026-03-{i:02d}" if i <= 31 else f"2026-04-{i - 31:02d}"
 
 
 def flat_bars(n: int, close: float = 100.0, tr: float = 2.0) -> list:
@@ -49,10 +49,18 @@ def bars_with_closes(closes: list[float], tr: float = 2.0) -> list:
 
 def make_event(**kw) -> SellEvent:
     defaults = dict(
-        order_id=1, ticker="AAA", sell_date=_d(20), sell_price=100.0,
-        reason="analyze SELL (0.35)", signal_score=0.35, shares=10.0,
-        avg_cost=95.0, entry_date=_d(17), entry_price=95.0,
-        sell_commission=1.0, sell_slippage=1.0,
+        order_id=1,
+        ticker="AAA",
+        sell_date=_d(20),
+        sell_price=100.0,
+        reason="analyze SELL (0.35)",
+        signal_score=0.35,
+        shares=10.0,
+        avg_cost=95.0,
+        entry_date=_d(17),
+        entry_price=95.0,
+        sell_commission=1.0,
+        sell_slippage=1.0,
     )
     defaults.update(kw)
     return SellEvent(**defaults)
@@ -90,39 +98,34 @@ class TestAtrSeries:
 
 class TestAtrExit:
     def test_hard_stop(self):
-        r = atr_exit(current_price=90.9, avg_cost=95.0, high_water_mark=95.0,
-                     atr_value=2.0, p=P)
+        r = atr_exit(current_price=90.9, avg_cost=95.0, high_water_mark=95.0, atr_value=2.0, p=P)
         assert r == "atr_stop"  # stop = 95 - 4 = 91
 
     def test_trail_suppressed_below_min_excess(self):
         # hwm apenas sobre entry (< 1 ATR de exceso) → trail no dispara
-        r = atr_exit(current_price=92.5, avg_cost=95.0, high_water_mark=96.5,
-                     atr_value=2.0, p=P)
+        r = atr_exit(current_price=92.5, avg_cost=95.0, high_water_mark=96.5, atr_value=2.0, p=P)
         assert r is None  # trail = 96.5-4 = 92.5 pero hwm <= 95+2
 
     def test_trail_fires_after_excess(self):
         # hwm = 100 (> 95+2) → trail = 96; precio 95.5 ≤ 96
-        r = atr_exit(current_price=95.5, avg_cost=95.0, high_water_mark=100.0,
-                     atr_value=2.0, p=P)
+        r = atr_exit(current_price=95.5, avg_cost=95.0, high_water_mark=100.0, atr_value=2.0, p=P)
         assert r == "atr_trail"
 
     def test_take_profit(self):
-        r = atr_exit(current_price=103.1, avg_cost=95.0, high_water_mark=103.1,
-                     atr_value=2.0, p=P)
+        r = atr_exit(current_price=103.1, avg_cost=95.0, high_water_mark=103.1, atr_value=2.0, p=P)
         assert r == "atr_tp"  # tp = 95 + 8 = 103
 
     def test_stop_precedence_over_tp(self):
         # entradas degeneradas: stop y tp imposibles a la vez salvo ATR raro;
         # validamos que con precio bajo gana stop aunque tp_mult=0 lo cubriera
-        r = atr_exit(current_price=80.0, avg_cost=95.0, high_water_mark=95.0,
-                     atr_value=2.0, p=AtrParams(tp_mult=0.0))
+        r = atr_exit(
+            current_price=80.0, avg_cost=95.0, high_water_mark=95.0, atr_value=2.0, p=AtrParams(tp_mult=0.0)
+        )
         assert r == "atr_stop"
 
     def test_degenerate_inputs(self):
-        assert atr_exit(current_price=0.0, avg_cost=95.0, high_water_mark=None,
-                        atr_value=2.0, p=P) is None
-        assert atr_exit(current_price=100.0, avg_cost=95.0, high_water_mark=None,
-                        atr_value=0.0, p=P) is None
+        assert atr_exit(current_price=0.0, avg_cost=95.0, high_water_mark=None, atr_value=2.0, p=P) is None
+        assert atr_exit(current_price=100.0, avg_cost=95.0, high_water_mark=None, atr_value=0.0, p=P) is None
 
 
 # ── replay_event ─────────────────────────────────────────────────────────────
@@ -201,8 +204,7 @@ def _loader_for(bars):
 class TestSimulateVariant:
     def test_atr_sells_passthrough(self):
         ev = make_event(reason="atr_trail @ 100.00 ≤ 101.00 (peak 110)", signal_score=None)
-        sims = simulate_variant([ev], _loader_for(bars_with_closes([100.0] * 30)),
-                                "confirm_next_scan")
+        sims = simulate_variant([ev], _loader_for(bars_with_closes([100.0] * 30)), "confirm_next_scan")
         assert not sims[0].modified
         assert sims[0].pnl_sim == pytest.approx(ev.pnl_real)
 
@@ -210,17 +212,15 @@ class TestSimulateVariant:
         bars = bars_with_closes([100.0] * 40)
         lo = make_event(order_id=1, signal_score=0.20, reason="analyze SELL (0.20)")
         hi = make_event(order_id=2, signal_score=0.40, reason="analyze SELL (0.40)")
-        sims = simulate_variant([lo, hi], _loader_for(bars), "score_threshold",
-                                sell_threshold=0.25)
-        assert not sims[0].modified          # 0.20 < 0.25 ejecuta igual
-        assert sims[1].modified              # 0.40 se saltea → replay
+        sims = simulate_variant([lo, hi], _loader_for(bars), "score_threshold", sell_threshold=0.25)
+        assert not sims[0].modified  # 0.20 < 0.25 ejecuta igual
+        assert sims[1].modified  # 0.40 se saltea → replay
 
     def test_min_holding_passthrough_when_old(self):
         bars = bars_with_closes([100.0] * 40)
         # entry idx 16, sell idx 19 → edad 3 ≥ 2 → pasa igual
         ev = make_event()
-        sims = simulate_variant([ev], _loader_for(bars), "min_holding",
-                                min_holding_days=2)
+        sims = simulate_variant([ev], _loader_for(bars), "min_holding", min_holding_days=2)
         assert not sims[0].modified
 
     def test_min_holding_defers_young_position(self):
@@ -228,8 +228,7 @@ class TestSimulateVariant:
         closes[19] = 103.0  # día del exit diferido (entry idx 16 + 3)
         bars = bars_with_closes(closes)
         ev = make_event(sell_date=_d(18), entry_date=_d(17))  # edad 1 < 3
-        sims = simulate_variant([ev], _loader_for(bars), "min_holding",
-                                min_holding_days=3)
+        sims = simulate_variant([ev], _loader_for(bars), "min_holding", min_holding_days=3)
         assert sims[0].modified
         assert sims[0].exit_date == _d(20)  # idx 16 + 3 = 19
         assert sims[0].exit_reason == "deferred_signal_sell"
@@ -257,35 +256,52 @@ class TestMetrics:
         real = [(_d(i + 1), 1000.0) for i in range(10)]
         ev = make_event(sell_date=_d(3))
         from analysis.exit_replay import SimExit
-        sim = SimExit(event=ev, modified=True, exit_date=_d(5), exit_price=104.0,
-                      exit_reason="deferred_signal_sell",
-                      pnl_sim=ev.pnl_real + 40.0,
-                      daily_delta=[(_d(4), 20.0), (_d(5), 40.0)])
+
+        sim = SimExit(
+            event=ev,
+            modified=True,
+            exit_date=_d(5),
+            exit_price=104.0,
+            exit_reason="deferred_signal_sell",
+            pnl_sim=ev.pnl_real + 40.0,
+            daily_delta=[(_d(4), 20.0), (_d(5), 40.0)],
+        )
         adj = adjusted_equity_curve(real, [sim])
-        assert adj[2][1] == 1000.0           # antes del replay
-        assert adj[3][1] == 1020.0           # MTM día 1
-        assert adj[4][1] == 1040.0           # MTM día 2 (exit)
-        assert adj[9][1] == 1040.0           # delta realizado congelado
+        assert adj[2][1] == 1000.0  # antes del replay
+        assert adj[3][1] == 1020.0  # MTM día 1
+        assert adj[4][1] == 1040.0  # MTM día 2 (exit)
+        assert adj[9][1] == 1040.0  # delta realizado congelado
 
     def test_build_report_kill_criteria(self):
         bars = bars_with_closes([100.0] * 40)
         loader = _loader_for(bars)
         ev = make_event()
         from analysis.exit_replay import SimExit
+
         # delta enorme y DD plano → pasa
-        sim = SimExit(event=ev, modified=True, exit_date=_d(25), exit_price=200.0,
-                      exit_reason="cap_reached", pnl_sim=ev.pnl_real + 2000.0,
-                      daily_delta=[(_d(21), 2000.0)])
+        sim = SimExit(
+            event=ev,
+            modified=True,
+            exit_date=_d(25),
+            exit_price=200.0,
+            exit_reason="cap_reached",
+            pnl_sim=ev.pnl_real + 2000.0,
+            daily_delta=[(_d(21), 2000.0)],
+        )
         real = [(_d(i + 1), 50_000.0) for i in range(40)]
-        rep = build_report("test", [sim], real, initial_capital=50_000.0,
-                           bar_loader=loader)
+        rep = build_report("test", [sim], real, initial_capital=50_000.0, bar_loader=loader)
         assert rep.pnl_delta_pts == pytest.approx(4.0)
         assert rep.passes_kill_criteria
 
         # delta chico → no pasa
-        sim2 = SimExit(event=ev, modified=True, exit_date=_d(25), exit_price=100.5,
-                       exit_reason="cap_reached", pnl_sim=ev.pnl_real + 5.0,
-                       daily_delta=[(_d(21), 5.0)])
-        rep2 = build_report("test", [sim2], real, initial_capital=50_000.0,
-                            bar_loader=loader)
+        sim2 = SimExit(
+            event=ev,
+            modified=True,
+            exit_date=_d(25),
+            exit_price=100.5,
+            exit_reason="cap_reached",
+            pnl_sim=ev.pnl_real + 5.0,
+            daily_delta=[(_d(21), 5.0)],
+        )
+        rep2 = build_report("test", [sim2], real, initial_capital=50_000.0, bar_loader=loader)
         assert not rep2.passes_kill_criteria

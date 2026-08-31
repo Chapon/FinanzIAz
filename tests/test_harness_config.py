@@ -81,10 +81,7 @@ PORTFOLIO_RUNNERS = [
 # Todos los que corren sobre ``replay_cycle``, o sea los que heredaban el fill
 # look-ahead de la barrera decidida al close (T33). Suma el T7 —que no simula
 # cartera pero replaya ciclos— y el 26b, que es el que lo destapó.
-REPLAY_RUNNERS = PORTFOLIO_RUNNERS + [
-    "run_scaleout_replay_t7.py",
-    "run_stop_price_replay_t26b.py",
-]
+REPLAY_RUNNERS = [*PORTFOLIO_RUNNERS, "run_scaleout_replay_t7.py", "run_stop_price_replay_t26b.py"]
 
 # Los runners que anclan un sanity de reproducción contra un número publicado, o
 # sea los que la tarea 52 barrió para que declaren también su POBLACIÓN.
@@ -129,7 +126,7 @@ def test_reentry_gates_deviation_is_declared_unless_modelled():
     off = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
     dev = next(d for d in deviations(off) if "gates de re-entrada" in d)
     assert "Gate 5" in dev and "Gate 5b" in dev
-    assert "21,15%-36,36%" in dev          # el costo medido, no una vaguedad
+    assert "21,15%-36,36%" in dev  # el costo medido, no una vaguedad
     assert "gates de re-entrada" in config_banner(off)
 
 
@@ -153,8 +150,10 @@ def test_exit_eval_price_deviation_is_always_declared():
     """T32 — el cuarto desvío: el harness decide las barreras ATR al **close** y el
     engine vivo al **precio intradía**. Es estructural de ``replay_cycle``, así que
     no depende de cómo se invoque al harness: se declara siempre."""
-    for cfg in (HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE),
-                HarnessConfig(LEGACY_MAX_POSITIONS, "y.txt", 41)):
+    for cfg in (
+        HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE),
+        HarnessConfig(LEGACY_MAX_POSITIONS, "y.txt", 41),
+    ):
         devs = deviations(cfg)
         assert any("barreras ATR" in d and "close diario" in d for d in devs)
 
@@ -164,8 +163,7 @@ def test_the_false_fill_claim_never_comes_back():
     media verdad tapó el look-ahead durante cinco harness: en modo ``close`` el fill
     **no** estaba modelado, estaba mal. Si alguien reintroduce la frase, esto falla."""
     for fm in (HARNESS_FILL_MODE, LEGACY_FILL_MODE):
-        cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE,
-                            fill_mode=fm)
+        cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, fill_mode=fm)
         assert "el fill sí está modelado" not in config_banner(cfg)
 
 
@@ -182,8 +180,7 @@ def test_honest_fill_is_declared_as_a_conservative_deviation():
 def test_legacy_fill_in_close_mode_is_announced_as_look_ahead():
     """El caso que dio vuelta el hallazgo central de la T26 no es un desvío: es un
     defecto, y el banner tiene que gritarlo (con el número que vale)."""
-    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE,
-                        fill_mode=LEGACY_FILL_MODE)
+    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, fill_mode=LEGACY_FILL_MODE)
     dev = next(d for d in deviations(cfg) if "LOOK-AHEAD" in d)
     assert "NIVEL" in dev and "+5.01 pp" in dev
     assert "LOOK-AHEAD" in config_banner(cfg)
@@ -194,8 +191,7 @@ def test_at_touch_there_is_no_fill_deviation_at_all():
     coinciden entre sí y con ``gates.model_exit_fill_price`` del engine: no hay nada
     que declarar, ni siquiera con el legacy."""
     for fm in (HARNESS_FILL_MODE, LEGACY_FILL_MODE):
-        cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE,
-                            eval_mode="touch", fill_mode=fm)
+        cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, eval_mode="touch", fill_mode=fm)
         devs = deviations(cfg)
         assert not any("fill de la barrera" in d or "LOOK-AHEAD" in d for d in devs)
         assert any("cota SUPERIOR" in d for d in devs)
@@ -226,15 +222,13 @@ def test_banner_names_the_live_account():
 
 
 def test_banner_warns_when_default_does_not_reproduce_the_verdict():
-    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", 41,
-                        verdict_max_positions=LEGACY_MAX_POSITIONS)
+    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", 41, verdict_max_positions=LEGACY_MAX_POSITIONS)
     txt = config_banner(cfg)
     assert "--max-positions 5" in txt
 
 
 def test_banner_is_quiet_when_verdict_config_matches():
-    cfg = HarnessConfig(LEGACY_MAX_POSITIONS, "x.txt", 41,
-                        verdict_max_positions=LEGACY_MAX_POSITIONS)
+    cfg = HarnessConfig(LEGACY_MAX_POSITIONS, "x.txt", 41, verdict_max_positions=LEGACY_MAX_POSITIONS)
     assert "OJO" not in config_banner(cfg)
 
 
@@ -271,7 +265,7 @@ def test_runner_exposes_fill_mode_and_defaults_to_the_honest_one(script):
     el veredicto publicado siga siendo reproducible sin volver a ser el default."""
     txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
     assert '"--fill-mode"' in txt
-    assert f'default={LEGACY_FILL_MODE!r}' not in txt
+    assert f"default={LEGACY_FILL_MODE!r}" not in txt
     assert 'default="resting"' not in txt
 
 
@@ -284,13 +278,12 @@ def test_replay_library_defaults_to_the_honest_fill():
     from analysis.scaleout_replay import replay_cycle
 
     for fn in (replay_cycle, simulate_portfolio):
-        assert (inspect.signature(fn).parameters["fill_mode"].default
-                == HARNESS_FILL_MODE)
+        assert inspect.signature(fn).parameters["fill_mode"].default == HARNESS_FILL_MODE
 
 
 def test_live_universe_file_exists_and_is_parseable():
-    from scripts.precompute_pit_signals import parse_universe_file
     from analysis.harness_config import LIVE_UNIVERSE_FILE
+    from scripts.precompute_pit_signals import parse_universe_file
 
     path = _REPO / LIVE_UNIVERSE_FILE
     assert path.exists(), "correr scripts/refresh_live_universe.py"
@@ -317,8 +310,7 @@ def test_universe_file_with_bom_does_not_lose_the_first_ticker(tmp_path):
 def _make_db(path: Path, tickers: list[str], account_id: int = 2) -> None:
     con = sqlite3.connect(path)
     con.execute("create table paper_watchlist (account_id int, ticker text)")
-    con.executemany("insert into paper_watchlist values (?, ?)",
-                    [(account_id, t) for t in tickers])
+    con.executemany("insert into paper_watchlist values (?, ?)", [(account_id, t) for t in tickers])
     con.commit()
     con.close()
 
@@ -347,11 +339,10 @@ def test_refresh_reads_only_the_requested_account(tmp_path):
     db = tmp_path / "t.db"
     con = sqlite3.connect(db)
     con.execute("create table paper_watchlist (account_id int, ticker text)")
-    con.executemany("insert into paper_watchlist values (?, ?)",
-                    [(1, "OLD"), (2, "NEW"), (2, "NEW")])
+    con.executemany("insert into paper_watchlist values (?, ?)", [(1, "OLD"), (2, "NEW"), (2, "NEW")])
     con.commit()
     con.close()
-    assert watchlist_tickers(db, 2) == ["NEW"]      # distinct
+    assert watchlist_tickers(db, 2) == ["NEW"]  # distinct
     assert watchlist_tickers(db, 1) == ["OLD"]
 
 
@@ -371,15 +362,20 @@ def test_the_artifact_window_deviation_is_declared_even_when_the_runner_omits_it
     dev = next(d for d in sin if "artefactos" in d)
     assert "NO declara" in dev and "RODANTE" in dev
 
-    con = deviations(HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE,
-                                   window=ArtifactWindow("2016-07-11", "2026-08-07", 2514)))
+    con = deviations(
+        HarnessConfig(
+            LIVE_MAX_POSITIONS,
+            "x.txt",
+            LIVE_WATCHLIST_SIZE,
+            window=ArtifactWindow("2016-07-11", "2026-08-07", 2514),
+        )
+    )
     dev2 = next(d for d in con if "artefactos" in d)
     assert "2016-07-11..2026-08-07" in dev2 and "RODANTE" in dev2
 
 
 def test_artifact_window_is_computed_from_the_bars_without_io():
-    bars = {"A": [("2020-01-02", 1, 1, 1, 1), ("2020-01-03", 1, 1, 1, 1)],
-            "B": [("2019-12-31", 1, 1, 1, 1)]}
+    bars = {"A": [("2020-01-02", 1, 1, 1, 1), ("2020-01-03", 1, 1, 1, 1)], "B": [("2019-12-31", 1, 1, 1, 1)]}
     w = artifact_window(bars)
     assert (w.start, w.end, w.n_bars) == ("2019-12-31", "2020-01-03", 2)
     assert artifact_window({}) is None
@@ -394,8 +390,7 @@ _P_LEGACY = ArtifactPopulation("data/harness_universe_41_10y.txt", 41)
 
 
 def test_reproduction_ok_when_the_number_reproduces():
-    st, _ = reproduction_check(0.1277, 0.1277, tol=0.0005, current=_W_HOY,
-                               measured_on=_W_HOY)
+    st, _ = reproduction_check(0.1277, 0.1277, tol=0.0005, current=_W_HOY, measured_on=_W_HOY)
     assert st == REPRO_OK
 
 
@@ -403,9 +398,15 @@ def test_reproduction_fails_only_when_the_whole_sample_is_the_same():
     """MISMA muestra + número distinto ⇒ cambió la cañería, que es lo que el sanity
     existe para detectar. Ahí sí corresponde invalidar la corrida. Desde la tarea 52
     "misma muestra" son **los dos ejes**: misma ventana y misma población."""
-    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_HOY,
-                                 population=_P_VIVO, measured_over=_P_VIVO)
+    st, why = reproduction_check(
+        0.1277,
+        0.1289,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_HOY,
+        population=_P_VIVO,
+        measured_over=_P_VIVO,
+    )
     assert st == REPRO_FAIL
     assert "cañería" in why
 
@@ -415,8 +416,7 @@ def test_a_moved_window_is_indeterminate_not_a_failure():
     artefactos se refrescaron, no porque se rompiera nada. Con dos estados eso se
     reportaba como FALLA ⇒ corrida INVÁLIDA: una máquina de invalidar corridas buenas
     con el paso del calendario."""
-    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_VIEJA)
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY, measured_on=_W_VIEJA)
     assert st == REPRO_INDETERMINATE
     assert "la ventana se movió" in why and "tarea 48" in why
 
@@ -431,8 +431,7 @@ def test_an_undeclared_reference_window_never_accuses_the_pipeline():
 
 def test_a_missing_measurement_is_a_failure_not_an_indeterminate():
     """Si el brazo de reproducción ni siquiera corrió, no hay nada que interpretar."""
-    st, _ = reproduction_check(None, 0.1289, tol=0.0005, current=_W_HOY,
-                               measured_on=_W_HOY)
+    st, _ = reproduction_check(None, 0.1289, tol=0.0005, current=_W_HOY, measured_on=_W_HOY)
     assert st == REPRO_FAIL
 
 
@@ -460,8 +459,7 @@ def test_entries_are_compared_only_when_both_sides_declare_them():
     ancla = ArtifactPopulation("u.txt", 127)
     assert ancla.matches(ArtifactPopulation("u.txt", 127, 3210))
     assert ArtifactPopulation("u.txt", 127, 3210).matches(ancla)
-    assert not ArtifactPopulation("u.txt", 127, 3210).matches(
-        ArtifactPopulation("u.txt", 127, 2999))
+    assert not ArtifactPopulation("u.txt", 127, 3210).matches(ArtifactPopulation("u.txt", 127, 2999))
 
 
 def test_another_universe_is_not_applicable_not_a_failure():
@@ -470,9 +468,15 @@ def test_another_universe_is_not_applicable_not_a_failure():
     y los tres chequeos salieron `FALLA — MISMA ventana ⇒ cambió la cañería`. No
     había cambiado ninguna línea de la cañería: cambió la muestra. Un `FALLA`
     invalida la corrida entera, así que el defecto puede matar una corrida buena."""
-    st, why = reproduction_check(0.0693, 0.0201, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_HOY,
-                                 population=_P_LEGACY, measured_over=_P_VIVO)
+    st, why = reproduction_check(
+        0.0693,
+        0.0201,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_HOY,
+        population=_P_LEGACY,
+        measured_over=_P_VIVO,
+    )
     assert st == REPRO_NA
     assert "cañería" not in why and "tarea 52" in why
 
@@ -480,9 +484,15 @@ def test_another_universe_is_not_applicable_not_a_failure():
 def test_not_applicable_wins_over_a_number_that_happens_to_match():
     """Sobre otra población el ancla no aplica, y que el número coincida es
     coincidencia: sigue sin haber reproducción que reportar."""
-    st, _ = reproduction_check(0.0201, 0.0201, tol=0.0005, current=_W_HOY,
-                               measured_on=_W_HOY,
-                               population=_P_LEGACY, measured_over=_P_VIVO)
+    st, _ = reproduction_check(
+        0.0201,
+        0.0201,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_HOY,
+        population=_P_LEGACY,
+        measured_over=_P_VIVO,
+    )
     assert st == REPRO_NA
 
 
@@ -497,9 +507,14 @@ def test_a_sample_change_inside_the_same_universe_is_indeterminate():
     """Mismo universo pero otras entradas: no es otra población —el ancla sigue
     aplicando— pero tampoco es la misma muestra, así que no alcanza para acusar."""
     st, why = reproduction_check(
-        0.1277, 0.1289, tol=0.0005, current=_W_HOY, measured_on=_W_HOY,
+        0.1277,
+        0.1289,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_HOY,
         population=ArtifactPopulation(_LIVE_U, 127, 3210),
-        measured_over=ArtifactPopulation(_LIVE_U, 127, 2999))
+        measured_over=ArtifactPopulation(_LIVE_U, 127, 2999),
+    )
     assert st == REPRO_INDETERMINATE
     assert "cambió la muestra dentro del universo" in why
 
@@ -507,8 +522,7 @@ def test_a_sample_change_inside_the_same_universe_is_indeterminate():
 def test_an_undeclared_population_never_accuses_the_pipeline():
     """Mismo default conservador que la ventana: para acusar hacen falta los dos
     ejes declarados. Antes de la 52 esto salía `FALLA`."""
-    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_HOY)
+    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY, measured_on=_W_HOY)
     assert st == REPRO_INDETERMINATE
     assert "no declara sobre qué población" in why
 
@@ -516,9 +530,15 @@ def test_an_undeclared_population_never_accuses_the_pipeline():
 def test_a_moved_window_is_reported_as_the_window_even_with_populations():
     """Cuando se mueven los dos ejes manda la ventana: es la explicación más barata
     (un refresh de artefactos) y la que trae la instrucción de re-anclar."""
-    st, why = reproduction_check(0.1277, 0.1289, tol=0.0005, current=_W_HOY,
-                                 measured_on=_W_VIEJA,
-                                 population=_P_VIVO, measured_over=_P_VIVO)
+    st, why = reproduction_check(
+        0.1277,
+        0.1289,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_VIEJA,
+        population=_P_VIVO,
+        measured_over=_P_VIVO,
+    )
     assert st == REPRO_INDETERMINATE
     assert "la ventana se movió" in why
 

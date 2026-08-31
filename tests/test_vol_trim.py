@@ -62,16 +62,24 @@ def _close_with_sigma(annual_sigma: float, rows: int = 200, start: float = 100.0
 
 def _pos(ticker: str, shares: float, price: float) -> SimpleNamespace:
     return SimpleNamespace(
-        ticker=ticker, shares=float(shares), avg_cost=float(price),
-        high_water_mark=float(price), opened_at=None,
+        ticker=ticker,
+        shares=float(shares),
+        avg_cost=float(price),
+        high_water_mark=float(price),
+        opened_at=None,
     )
 
 
 def _account(cash: float = 0.0, **overrides) -> SimpleNamespace:
     base = dict(
-        cash=cash, max_positions=5, allocation_mode="signal_weighted",
-        fixed_amount=5_000.0, commission=0.0, drift_threshold=0.25,
-        monthly_rebalance=False, last_monthly_rebalance=None,
+        cash=cash,
+        max_positions=5,
+        allocation_mode="signal_weighted",
+        fixed_amount=5_000.0,
+        commission=0.0,
+        drift_threshold=0.25,
+        monthly_rebalance=False,
+        last_monthly_rebalance=None,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -109,7 +117,7 @@ def _restore_settings():
 def high_vol_book():
     """Two independent high-σ names held at 100 shares each."""
     book = {"HV1": _close_with_sigma(0.40, seed=1), "HV2": _close_with_sigma(0.40, seed=2)}
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {t: float(df["Close"].iloc[-1]) for t, df in book.items()}
     positions = [_pos("HV1", 100, prices["HV1"]), _pos("HV2", 100, prices["HV2"])]
     return book, hp, prices, positions
@@ -171,7 +179,7 @@ def test_no_trim_when_book_under_target(monkeypatch):
     from paper_trading.strategies import generate_trades_analyze_single
 
     book = {"LV1": _close_with_sigma(0.06, seed=3), "LV2": _close_with_sigma(0.06, seed=4)}
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {t: float(df["Close"].iloc[-1]) for t, df in book.items()}
     positions = [_pos("LV1", 100, prices["LV1"]), _pos("LV2", 100, prices["LV2"])]
     _patch_analyze(monkeypatch, {"LV1": ("HOLD", 0.5), "LV2": ("HOLD", 0.5)})
@@ -224,7 +232,7 @@ def test_trim_shares_never_exceed_position(monkeypatch):
     from paper_trading.strategies import generate_trades_analyze_single
 
     book = {"XV": _close_with_sigma(1.20, seed=9)}  # σ ≫ target → factor → 0
-    hp = lambda t: book.get(t)  # noqa: E731
+    hp = lambda t: book.get(t)
     prices = {"XV": float(book["XV"]["Close"].iloc[-1])}
     positions = [_pos("XV", 50, prices["XV"])]
     _patch_analyze(monkeypatch, {"XV": ("HOLD", 0.5)})

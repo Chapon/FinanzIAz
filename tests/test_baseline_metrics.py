@@ -27,7 +27,7 @@ Edge cases cubiertos
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -43,13 +43,11 @@ from scripts.baseline_metrics import (
     max_drawdown,
     monthly_breakdown,
     period_return,
+    run,
     sharpe_annual,
     trade_stats,
     turnover_metrics,
-    run,
-    write_json,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -157,7 +155,7 @@ def test_sharpe_returns_none_with_zero_stdev():
 
 def test_sharpe_known_value():
     """Sharpe de retornos constantes [+1%, -1%, +1%, -1%]:
-       mean=0 → Sharpe=0."""
+    mean=0 → Sharpe=0."""
     assert sharpe_annual([0.01, -0.01, 0.01, -0.01]) == pytest.approx(0.0)
 
 
@@ -326,6 +324,7 @@ def test_trade_stats_empty_list():
 def test_trade_stats_only_wins_profit_factor_infinity():
     """Sin losses → profit_factor = ∞."""
     import math as _m
+
     fills = [
         buy(shares=10, price=100, when="2026-01-01T10:00:00", commission=0, slippage=0),
         sell(shares=10, price=110, when="2026-01-02T10:00:00", commission=0, slippage=0),
@@ -409,8 +408,14 @@ def test_monthly_breakdown_groups_by_close_month():
 
 def test_compute_account_flags_thin_sample_notes():
     """3 snapshots y 1 round-trip → debería disparar las 3 notas de fragility."""
-    account = {"id": 99, "name": "tiny", "initial_capital": 1000.0,
-               "is_active": True, "strategy": "x", "allocation_mode": "y"}
+    account = {
+        "id": 99,
+        "name": "tiny",
+        "initial_capital": 1000.0,
+        "is_active": True,
+        "strategy": "x",
+        "allocation_mode": "y",
+    }
     snaps = [
         snap("2026-01-01", 1000.0),
         snap("2026-01-02", 1010.0),
@@ -429,8 +434,14 @@ def test_compute_account_flags_thin_sample_notes():
 
 def test_compute_account_no_snapshots_no_fills():
     """Cuenta vacía: todo None, sin crashear."""
-    account = {"id": 1, "name": "empty", "initial_capital": 1000.0,
-               "is_active": True, "strategy": "x", "allocation_mode": "y"}
+    account = {
+        "id": 1,
+        "name": "empty",
+        "initial_capital": 1000.0,
+        "is_active": True,
+        "strategy": "x",
+        "allocation_mode": "y",
+    }
     result = compute_account(account, fills=[], snapshots=[], open_positions=[])
     assert result.overall["n_round_trips"] == 0
     assert result.overall["sharpe_annual"] is None
@@ -452,6 +463,7 @@ def test_run_against_backup_db(tmp_path):
     files = list(out_dir.glob("baseline_*.json"))
     assert len(files) == 1
     import json as _json
+
     payload = _json.loads(files[0].read_text())
     assert "accounts" in payload
     assert isinstance(payload["accounts"], list)

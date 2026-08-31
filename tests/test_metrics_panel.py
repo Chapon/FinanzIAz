@@ -1,4 +1,5 @@
 """Tests offline para analysis/metrics_panel.py — DB sintética en memoria."""
+
 from __future__ import annotations
 
 import json
@@ -28,8 +29,22 @@ def _make_db() -> sqlite3.Connection:
     return con
 
 
-def _order(con, oid, ticker, side, price, shares, when, *, comm=1.0, slip=0.5,
-           score=None, reason=None, status="filled", acct=1):
+def _order(
+    con,
+    oid,
+    ticker,
+    side,
+    price,
+    shares,
+    when,
+    *,
+    comm=1.0,
+    slip=0.5,
+    score=None,
+    reason=None,
+    status="filled",
+    acct=1,
+):
     reason = reason or (f"analyze {side}")
     con.execute(
         "INSERT INTO paper_orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -44,8 +59,7 @@ def _hist(con, ticker, closes: list[tuple[str, float]]):
         "data": [[c, c, c, c, 1000] for _, c in closes],
     }
     con.execute(
-        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
-        "VALUES (?,?,?,?,?)",
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) VALUES (?,?,?,?,?)",
         (ticker, "2y", "1d", json.dumps(payload), "2026-06-17"),
     )
 
@@ -93,8 +107,14 @@ def test_exit_kind_classification():
 
 # ── forward_return ────────────────────────────────────────────────────────────
 def test_forward_return_basic():
-    series = [("2026-01-01", 100.0), ("2026-01-02", 101.0), ("2026-01-03", 102.0),
-              ("2026-01-04", 103.0), ("2026-01-05", 104.0), ("2026-01-06", 110.0)]
+    series = [
+        ("2026-01-01", 100.0),
+        ("2026-01-02", 101.0),
+        ("2026-01-03", 102.0),
+        ("2026-01-04", 103.0),
+        ("2026-01-05", 104.0),
+        ("2026-01-06", 110.0),
+    ]
     # base = idx 0 (100), +5 barras = idx5 (110) -> +10%
     assert mp.forward_return(series, "2026-01-01", 5) == pytest.approx(0.10, abs=1e-9)
 
@@ -110,18 +130,40 @@ def test_build_metrics_realized_and_timing():
     con = _make_db()
     # AAA: round-trip ganador. BBB: round-trip perdedor.
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0, score=0.8)
-    _order(con, 2, "AAA", "SELL", 120.0, 10, "2026-01-08 10:00:00", comm=0, slip=0,
-           reason="analyze SELL (0.30)")
+    _order(
+        con, 2, "AAA", "SELL", 120.0, 10, "2026-01-08 10:00:00", comm=0, slip=0, reason="analyze SELL (0.30)"
+    )
     _order(con, 3, "BBB", "BUY", 50.0, 20, "2026-01-02 10:00:00", comm=0, slip=0, score=0.7)
-    _order(con, 4, "BBB", "SELL", 40.0, 20, "2026-01-09 10:00:00", comm=0, slip=0,
-           reason="atr_stop @ 40 ≤ 41")
+    _order(
+        con, 4, "BBB", "SELL", 40.0, 20, "2026-01-09 10:00:00", comm=0, slip=0, reason="atr_stop @ 40 ≤ 41"
+    )
     # series para forward returns (>=6 barras tras cada buy)
-    _hist(con, "AAA", [("2026-01-01", 100.0), ("2026-01-02", 101.0), ("2026-01-05", 102.0),
-                       ("2026-01-06", 103.0), ("2026-01-07", 104.0), ("2026-01-08", 105.0),
-                       ("2026-01-09", 108.0)])
-    _hist(con, "BBB", [("2026-01-02", 50.0), ("2026-01-05", 49.0), ("2026-01-06", 48.0),
-                       ("2026-01-07", 47.0), ("2026-01-08", 46.0), ("2026-01-09", 45.0),
-                       ("2026-01-12", 44.0)])
+    _hist(
+        con,
+        "AAA",
+        [
+            ("2026-01-01", 100.0),
+            ("2026-01-02", 101.0),
+            ("2026-01-05", 102.0),
+            ("2026-01-06", 103.0),
+            ("2026-01-07", 104.0),
+            ("2026-01-08", 105.0),
+            ("2026-01-09", 108.0),
+        ],
+    )
+    _hist(
+        con,
+        "BBB",
+        [
+            ("2026-01-02", 50.0),
+            ("2026-01-05", 49.0),
+            ("2026-01-06", 48.0),
+            ("2026-01-07", 47.0),
+            ("2026-01-08", 46.0),
+            ("2026-01-09", 45.0),
+            ("2026-01-12", 44.0),
+        ],
+    )
     m = mp.build_metrics(con, 1)
     r = m["realized"]
     assert r["n_round_trips"] == 2
@@ -141,12 +183,34 @@ def test_build_metrics_filters_by_account():
     con = _make_db()
     # Cuenta 1: un round-trip ganador de AAA (+200).
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0, acct=1)
-    _order(con, 2, "AAA", "SELL", 120.0, 10, "2026-01-08 10:00:00", comm=0, slip=0,
-           reason="analyze SELL (0.30)", acct=1)
+    _order(
+        con,
+        2,
+        "AAA",
+        "SELL",
+        120.0,
+        10,
+        "2026-01-08 10:00:00",
+        comm=0,
+        slip=0,
+        reason="analyze SELL (0.30)",
+        acct=1,
+    )
     # Cuenta 2: un round-trip perdedor de CCC (-100) → payload distinto.
     _order(con, 10, "CCC", "BUY", 50.0, 10, "2026-02-01 10:00:00", comm=0, slip=0, acct=2)
-    _order(con, 11, "CCC", "SELL", 40.0, 10, "2026-02-05 10:00:00", comm=0, slip=0,
-           reason="atr_stop @ 40 ≤ 41", acct=2)
+    _order(
+        con,
+        11,
+        "CCC",
+        "SELL",
+        40.0,
+        10,
+        "2026-02-05 10:00:00",
+        comm=0,
+        slip=0,
+        reason="atr_stop @ 40 ≤ 41",
+        acct=2,
+    )
 
     m1 = mp.build_metrics(con, 1)
     m2 = mp.build_metrics(con, 2)
@@ -179,8 +243,7 @@ def _hist_ohlc(con, ticker, bars: list[tuple[str, float, float, float]]):
         "data": [[c, h, lw, c, 1000] for _, h, lw, c in bars],
     }
     con.execute(
-        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) "
-        "VALUES (?,?,?,?,?)",
+        "INSERT INTO historical_data_cache (ticker,period,interval,data_json,fetched_at) VALUES (?,?,?,?,?)",
         (ticker, "2y", "1d", json.dumps(payload), "2026-06-17"),
     )
 
@@ -188,8 +251,7 @@ def _hist_ohlc(con, ticker, bars: list[tuple[str, float, float, float]]):
 # ── MAE/MFE (V1) ──────────────────────────────────────────────────────────────
 def test_load_ohlc_series_basic():
     con = _make_db()
-    _hist_ohlc(con, "AAA", [("2026-01-01", 105.0, 95.0, 100.0),
-                            ("2026-01-02", 112.0, 101.0, 110.0)])
+    _hist_ohlc(con, "AAA", [("2026-01-01", 105.0, 95.0, 100.0), ("2026-01-02", 112.0, 101.0, 110.0)])
     s = mp.load_ohlc_series(con, "AAA")
     assert s == [("2026-01-01", 105.0, 95.0), ("2026-01-02", 112.0, 101.0)]
 
@@ -202,9 +264,13 @@ def test_load_ohlc_series_missing():
 def test_excursions_window_high_low():
     # entrada 100; ventana 01→05; max High 130 (MFE +30%), min Low 88 (MAE -12%).
     # La barra del 08 (fuera de la ventana) NO debe influir.
-    series = [("2026-01-01", 105.0, 98.0), ("2026-01-02", 115.0, 92.0),
-              ("2026-01-03", 130.0, 100.0), ("2026-01-05", 120.0, 88.0),
-              ("2026-01-08", 200.0, 60.0)]
+    series = [
+        ("2026-01-01", 105.0, 98.0),
+        ("2026-01-02", 115.0, 92.0),
+        ("2026-01-03", 130.0, 100.0),
+        ("2026-01-05", 120.0, 88.0),
+        ("2026-01-08", 200.0, 60.0),
+    ]
     mae, mfe = mp.excursions(series, "2026-01-01", "2026-01-05", 100.0)
     assert mfe == pytest.approx(0.30)
     assert mae == pytest.approx(-0.12)
@@ -221,10 +287,16 @@ def test_build_metrics_round_trip_mae_mfe():
     con = _make_db()
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
     _order(con, 2, "AAA", "SELL", 118.0, 10, "2026-01-05 10:00:00", comm=0, slip=0)
-    _hist_ohlc(con, "AAA", [("2026-01-01", 104.0, 99.0, 100.0),
-                            ("2026-01-02", 108.0, 90.0, 105.0),   # Low 90 → MAE -10%
-                            ("2026-01-03", 125.0, 110.0, 120.0),  # High 125 → MFE +25%
-                            ("2026-01-05", 120.0, 115.0, 118.0)])
+    _hist_ohlc(
+        con,
+        "AAA",
+        [
+            ("2026-01-01", 104.0, 99.0, 100.0),
+            ("2026-01-02", 108.0, 90.0, 105.0),  # Low 90 → MAE -10%
+            ("2026-01-03", 125.0, 110.0, 120.0),  # High 125 → MFE +25%
+            ("2026-01-05", 120.0, 115.0, 118.0),
+        ],
+    )
     r = mp.build_metrics(con, 1)["realized"]
     rt = r["round_trips"][0]
     assert rt["mae"] == pytest.approx(-0.10)
@@ -282,13 +354,13 @@ def _snap(con, when, equity):
 def test_benchmark_panel_vs_spy():
     con = _make_db()
     _snap(con, "2026-01-01 16:00:00", 50000.0)
-    _snap(con, "2026-01-31 16:00:00", 52500.0)   # cuenta +5%
+    _snap(con, "2026-01-31 16:00:00", 52500.0)  # cuenta +5%
     _hist(con, "SPY", [("2026-01-01", 400.0), ("2026-01-15", 404.0), ("2026-01-31", 408.0)])
     bm = mp.build_metrics(con, 1)["benchmark"]
     assert bm["available"] is True
     assert bm["account_return"] == pytest.approx(0.05)
-    assert bm["spy_return"] == pytest.approx(0.02)         # 408/400 - 1
-    assert bm["vs_spy"] == pytest.approx(0.03)             # alpha del período
+    assert bm["spy_return"] == pytest.approx(0.02)  # 408/400 - 1
+    assert bm["vs_spy"] == pytest.approx(0.03)  # alpha del período
     assert bm["start_day"] == "2026-01-01" and bm["end_day"] == "2026-01-31"
 
 
@@ -303,9 +375,9 @@ def test_benchmark_unavailable_without_spy_cache():
     con = _make_db()
     _snap(con, "2026-01-01 16:00:00", 50000.0)
     _snap(con, "2026-01-31 16:00:00", 52500.0)
-    bm = mp.build_metrics(con, 1)["benchmark"]   # sin cache de SPY
+    bm = mp.build_metrics(con, 1)["benchmark"]  # sin cache de SPY
     assert bm["available"] is False
-    assert bm["account_return"] == pytest.approx(0.05)   # el retorno propio igual se reporta
+    assert bm["account_return"] == pytest.approx(0.05)  # el retorno propio igual se reporta
     assert bm["spy_return"] is None
     assert bm["stale"] is False
 
@@ -314,7 +386,7 @@ def test_benchmark_unavailable_without_spy_cache():
 def test_benchmark_stale_bdays_helper():
     # 07-10 (vie) → 07-21 (mar): 7 días hábiles atrás.
     assert mp.benchmark_stale_bdays("2026-07-10", "2026-07-21") == 7
-    assert mp.benchmark_stale_bdays("2026-07-21", "2026-07-21") == 0   # al día
+    assert mp.benchmark_stale_bdays("2026-07-21", "2026-07-21") == 0  # al día
     assert mp.benchmark_stale_bdays("2026-07-22", "2026-07-21") == -1  # adelante
     # Tolera hora en la fecha y entradas inválidas/ausentes → 0 (no marca stale).
     assert mp.benchmark_stale_bdays("2026-07-21T16:00:00", "2026-07-21") == 0
@@ -325,16 +397,16 @@ def test_benchmark_stale_bdays_helper():
 def test_benchmark_panel_marks_stale_when_spy_lags():
     con = _make_db()
     _snap(con, "2026-07-01 16:00:00", 50000.0)
-    _snap(con, "2026-07-21 16:00:00", 52500.0)   # equity hasta el 21/07
+    _snap(con, "2026-07-21 16:00:00", 52500.0)  # equity hasta el 21/07
     # SPY se congeló el 10/07 (el bug real): 7 días hábiles atrás > umbral (3).
     _hist(con, "SPY", [("2026-07-01", 400.0), ("2026-07-10", 402.0)])
     bm = mp.build_metrics(con, 1)["benchmark"]
     assert bm["stale"] is True
     assert bm["available"] is False
-    assert bm["vs_spy"] is None                          # NO se computa el número sesgado
+    assert bm["vs_spy"] is None  # NO se computa el número sesgado
     assert bm["spy_return"] is None
     assert bm["spy_end_day"] == "2026-07-10"
-    assert bm["account_return"] == pytest.approx(0.05)   # el retorno propio igual se reporta
+    assert bm["account_return"] == pytest.approx(0.05)  # el retorno propio igual se reporta
 
 
 def test_benchmark_panel_not_stale_within_tolerance():
@@ -346,7 +418,7 @@ def test_benchmark_panel_not_stale_within_tolerance():
     bm = mp.build_metrics(con, 1)["benchmark"]
     assert bm["stale"] is False
     assert bm["available"] is True
-    assert bm["spy_return"] == pytest.approx(0.01)        # 404/400 - 1
+    assert bm["spy_return"] == pytest.approx(0.01)  # 404/400 - 1
     assert bm["vs_spy"] == pytest.approx(0.04)
     assert bm["spy_end_day"] == "2026-07-17"
 
@@ -373,7 +445,7 @@ def test_cached_sector_reads_and_ignores_na():
     _company_info(con, "MU", "Technology")
     _company_info(con, "ZZZ", "N/A")
     assert mp.cached_sector(con, "MU") == "Technology"
-    assert mp.cached_sector(con, "ZZZ") is None       # "N/A" → None
+    assert mp.cached_sector(con, "ZZZ") is None  # "N/A" → None
     assert mp.cached_sector(con, "NOPE") is None
 
 
@@ -381,17 +453,17 @@ def test_concentration_panel_weights_and_pnl():
     con = _make_db()
     con.execute("INSERT INTO paper_positions VALUES (1,1,'MU',100,50.0)")
     con.execute("INSERT INTO paper_positions VALUES (2,1,'AAPL',50,100.0)")
-    _hist(con, "MU", [("2026-06-16", 55.0), ("2026-06-17", 60.0)])     # mark 60 → mv 6000, upnl +1000
+    _hist(con, "MU", [("2026-06-16", 55.0), ("2026-06-17", 60.0)])  # mark 60 → mv 6000, upnl +1000
     _hist(con, "AAPL", [("2026-06-16", 110.0), ("2026-06-17", 90.0)])  # mark 90 → mv 4500, upnl -500
     c = mp.build_metrics(con, 1)["concentration"]
     assert c["n"] == 2
     assert c["total_value"] == pytest.approx(10500.0)
     assert c["top_ticker"] == "MU"
     assert c["top_weight"] == pytest.approx(6000.0 / 10500.0)
-    assert c["total_unrealized_pnl"] == pytest.approx(500.0)   # +1000 -500
+    assert c["total_unrealized_pnl"] == pytest.approx(500.0)  # +1000 -500
     assert c["best_ticker"] == "MU" and c["worst_ticker"] == "AAPL"
-    assert c["pnl_ex_best"] == pytest.approx(-500.0)           # sin MU
-    assert c["pnl_ex_worst"] == pytest.approx(1000.0)          # sin AAPL
+    assert c["pnl_ex_best"] == pytest.approx(-500.0)  # sin MU
+    assert c["pnl_ex_worst"] == pytest.approx(1000.0)  # sin AAPL
 
 
 def test_concentration_panel_sector_from_cache():
@@ -418,25 +490,67 @@ def test_sell_timing_panel_inverted_and_by_kind():
     # compras. AAA (signal_sell) baja → buena; BBB (atr_stop) sube → regret.
     con = _make_db()
     _order(con, 1, "AAA", "BUY", 100.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
-    _order(con, 2, "AAA", "SELL", 100.0, 10, "2026-01-02 10:00:00", comm=0, slip=0,
-           reason="analyze SELL (0.40)", score=0.40)
+    _order(
+        con,
+        2,
+        "AAA",
+        "SELL",
+        100.0,
+        10,
+        "2026-01-02 10:00:00",
+        comm=0,
+        slip=0,
+        reason="analyze SELL (0.40)",
+        score=0.40,
+    )
     _order(con, 3, "BBB", "BUY", 50.0, 10, "2026-01-01 10:00:00", comm=0, slip=0)
-    _order(con, 4, "BBB", "SELL", 50.0, 10, "2026-01-02 10:00:00", comm=0, slip=0,
-           reason="atr_stop @ 50 ≤ 51", score=0.20)
-    _hist(con, "AAA", [("2026-01-02", 100.0), ("2026-01-05", 99.0), ("2026-01-06", 98.0),
-                       ("2026-01-07", 97.0), ("2026-01-08", 96.0), ("2026-01-09", 95.0),
-                       ("2026-01-12", 94.0)])
-    _hist(con, "BBB", [("2026-01-02", 50.0), ("2026-01-05", 51.0), ("2026-01-06", 52.0),
-                       ("2026-01-07", 53.0), ("2026-01-08", 54.0), ("2026-01-09", 55.0),
-                       ("2026-01-12", 56.0)])
+    _order(
+        con,
+        4,
+        "BBB",
+        "SELL",
+        50.0,
+        10,
+        "2026-01-02 10:00:00",
+        comm=0,
+        slip=0,
+        reason="atr_stop @ 50 ≤ 51",
+        score=0.20,
+    )
+    _hist(
+        con,
+        "AAA",
+        [
+            ("2026-01-02", 100.0),
+            ("2026-01-05", 99.0),
+            ("2026-01-06", 98.0),
+            ("2026-01-07", 97.0),
+            ("2026-01-08", 96.0),
+            ("2026-01-09", 95.0),
+            ("2026-01-12", 94.0),
+        ],
+    )
+    _hist(
+        con,
+        "BBB",
+        [
+            ("2026-01-02", 50.0),
+            ("2026-01-05", 51.0),
+            ("2026-01-06", 52.0),
+            ("2026-01-07", 53.0),
+            ("2026-01-08", 54.0),
+            ("2026-01-09", 55.0),
+            ("2026-01-12", 56.0),
+        ],
+    )
     st = mp.build_metrics(con, 1)["sell_timing"]
     assert st["n5"] == 2
-    assert st["good5"] == 1                       # AAA bajó (buena), BBB subió (mala)
+    assert st["good5"] == 1  # AAA bajó (buena), BBB subió (mala)
     assert st["good5_pct"] == pytest.approx(0.5)
     assert st["by_exit_kind"]["signal_sell"]["good_pct"] == pytest.approx(1.0)
     assert st["by_exit_kind"]["atr_stop"]["good_pct"] == pytest.approx(0.0)
-    assert st["by_exit_kind"]["signal_sell"]["mean_fwd5"] < 0   # caída evitada
-    assert st["by_exit_kind"]["atr_stop"]["mean_fwd5"] > 0      # regret
+    assert st["by_exit_kind"]["signal_sell"]["mean_fwd5"] < 0  # caída evitada
+    assert st["by_exit_kind"]["atr_stop"]["mean_fwd5"] > 0  # regret
     assert st["top_avoided"][0]["ticker"] == "AAA"
     assert st["top_regret"][0]["ticker"] == "BBB"
 

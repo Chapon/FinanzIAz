@@ -94,7 +94,7 @@ def test_intraday_spike_does_not_count():
     una capacidad que el sistema no tiene."""
     closes = [100.0] + [100.5] * 40
     highs = list(closes)
-    highs[3] = 120.0          # pico intradía muy por encima del TP=104
+    highs[3] = 120.0  # pico intradía muy por encima del TP=104
     bars = _bars(closes, high=highs)
     assert triple_barrier_label(bars, 0, _flat_atr(len(bars))) == 0
 
@@ -102,9 +102,9 @@ def test_intraday_spike_does_not_count():
 def test_incomplete_window_is_none_not_zero():
     """Sin 20 ruedas completas de futuro la etiqueta es None y la muestra se
     descarta. Imputar 0 sesgaría sistemáticamente el final de cada serie."""
-    bars = _bars([100.0] * (MAX_DAYS))          # entry_idx + 20 > n-1
+    bars = _bars([100.0] * (MAX_DAYS))  # entry_idx + 20 > n-1
     assert triple_barrier_label(bars, 0, _flat_atr(len(bars))) is None
-    bars = _bars([100.0] * (MAX_DAYS + 1))      # justo alcanza
+    bars = _bars([100.0] * (MAX_DAYS + 1))  # justo alcanza
     assert triple_barrier_label(bars, 0, _flat_atr(len(bars))) == 0
 
 
@@ -129,8 +129,8 @@ def test_multipliers_are_the_live_engine_values():
     from analysis.meta_labeling import STOP_MULT, TP_MULT
 
     live = AtrParams()
-    assert STOP_MULT == live.stop_mult
-    assert TP_MULT == live.tp_mult
+    assert live.stop_mult == STOP_MULT
+    assert live.tp_mult == TP_MULT
 
 
 # ── Las features (§4) ────────────────────────────────────────────────────────

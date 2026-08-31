@@ -30,7 +30,6 @@ from analysis.portfolio_risk import (
     mean_correlation,
     returns_frame,
 )
-from config.settings_manager import settings
 
 # ── Synthetic return / price builders ──────────────────────────────────────────
 
@@ -179,7 +178,7 @@ def test_book_concentration_pnl_ex_best_worst():
     # total unrealized = 800 - 200 + 50 = 650
     assert c["total_unrealized_pnl"] == pytest.approx(650.0)
     assert c["best_ticker"] == "MU" and c["worst_ticker"] == "AAPL"
-    assert c["pnl_ex_best"] == pytest.approx(650.0 - 800.0)   # sin MU: -150
+    assert c["pnl_ex_best"] == pytest.approx(650.0 - 800.0)  # sin MU: -150
     assert c["pnl_ex_worst"] == pytest.approx(650.0 - (-200.0))  # sin AAPL: 850
 
 
@@ -187,7 +186,7 @@ def test_book_concentration_sectors_grouped():
     sectors = {"MU": "Technology", "AAPL": "Technology", "TJX": "Consumer"}
     c = book_concentration(_positions(), sector_of=lambda t: sectors.get(t))
     by = {s["sector"]: s["weight"] for s in c["sectors"]}
-    assert by["Technology"] == pytest.approx(0.9)   # MU 0.6 + AAPL 0.3
+    assert by["Technology"] == pytest.approx(0.9)  # MU 0.6 + AAPL 0.3
     assert by["Consumer"] == pytest.approx(0.1)
     # el sector más pesado va primero
     assert c["sectors"][0]["sector"] == "Technology"
@@ -233,6 +232,7 @@ def _patch_analyze(monkeypatch, table: dict[str, tuple[str, float | None]]):
         return SimpleNamespace(overall_signal=sig, ml_probability=prob)
 
     monkeypatch.setattr(technical, "analyze", fake_analyze)
+
 
 # Integration tests for ``analyze_single`` / ``portfolio_engine`` correlation
 # wiring were removed in Sprint 3 — see docs/sprint2_kill_criteria.md (Enmienda 2).

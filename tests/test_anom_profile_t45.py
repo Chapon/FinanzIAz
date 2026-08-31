@@ -70,7 +70,7 @@ def _control(by_regime: dict[str, list[float]]) -> dict[str, list[float]]:
 
 def _split(vs, bull=None):
     n = len(vs) // 3
-    out = {_STRESS[0]: vs[:n], _STRESS[1]: vs[n:2 * n], _STRESS[2]: vs[2 * n:]}
+    out = {_STRESS[0]: vs[:n], _STRESS[1]: vs[n : 2 * n], _STRESS[2]: vs[2 * n :]}
     out[BULL_NORMAL] = list(bull if bull is not None else [1.0] * 50)
     return out
 
@@ -82,17 +82,15 @@ def test_tolerance_is_computed_not_constant():
     """La tolerancia efectiva = max(material, detectable). Con muestra chica lo
     detectable manda, y eso es lo que impide escribir un umbral que sólo puede
     fallar por ruido — el defecto que la 46 midió en el §6.5 de la T11b."""
-    ruidoso = [10.0, -10.0] * 9          # σ grande, n=18 ⇒ detectable >> material
-    out = regime_criterion(_control(_split(ruidoso)), _arm(_split(ruidoso)),
-                           n_resamples=200, seed=1)
+    ruidoso = [10.0, -10.0] * 9  # σ grande, n=18 ⇒ detectable >> material
+    out = regime_criterion(_control(_split(ruidoso)), _arm(_split(ruidoso)), n_resamples=200, seed=1)
     assert out["detectable_pts"] > TOL_MATERIAL_PTS
     assert out["tolerance_pts"] == pytest.approx(out["detectable_pts"])
 
 
 def test_tolerance_floors_at_the_material_threshold():
-    tranquilo = [1.0, 1.1, 0.9, 1.05] * 60      # n=240, σ ~0.08
-    out = regime_criterion(_control(_split(tranquilo)), _arm(_split(tranquilo)),
-                           n_resamples=200, seed=1)
+    tranquilo = [1.0, 1.1, 0.9, 1.05] * 60  # n=240, σ ~0.08
+    out = regime_criterion(_control(_split(tranquilo)), _arm(_split(tranquilo)), n_resamples=200, seed=1)
     assert out["detectable_pts"] < TOL_MATERIAL_PTS
     assert out["tolerance_pts"] == pytest.approx(TOL_MATERIAL_PTS)
 
@@ -100,10 +98,8 @@ def test_tolerance_floors_at_the_material_threshold():
 def test_tolerance_grows_when_the_sample_shrinks():
     """Lo que hace honesto al criterio: menos trades ⇒ más tolerancia."""
     vals = [4.0, -4.0, 2.0, -2.0]
-    grande = regime_criterion(_control(_split(vals * 30)), _arm(_split(vals * 30)),
-                              n_resamples=100, seed=1)
-    chico = regime_criterion(_control(_split(vals * 3)), _arm(_split(vals * 3)),
-                             n_resamples=100, seed=1)
+    grande = regime_criterion(_control(_split(vals * 30)), _arm(_split(vals * 30)), n_resamples=100, seed=1)
+    chico = regime_criterion(_control(_split(vals * 3)), _arm(_split(vals * 3)), n_resamples=100, seed=1)
     assert chico["tolerance_pts"] > grande["tolerance_pts"]
 
 
@@ -111,9 +107,14 @@ def test_a_single_ugly_window_does_not_block():
     """EL defecto que mató a la T11b: rechazaba por `bear_2022` −2.01 pts con n=20,
     donde lo detectable era ±2.35. Acá el gate mira el agregado."""
     ctrl = _control({r: [0.0] * 30 for r in _STRESS} | {BULL_NORMAL: [1.0] * 50})
-    cand = _arm({_STRESS[0]: [-0.5] * 30,          # la ventana fea
-                 _STRESS[1]: [0.0] * 30, _STRESS[2]: [0.0] * 30,
-                 BULL_NORMAL: [1.0] * 50})
+    cand = _arm(
+        {
+            _STRESS[0]: [-0.5] * 30,  # la ventana fea
+            _STRESS[1]: [0.0] * 30,
+            _STRESS[2]: [0.0] * 30,
+            BULL_NORMAL: [1.0] * 50,
+        }
+    )
     out = regime_criterion(ctrl, cand, n_resamples=300, seed=1)
     assert out["windows"][_STRESS[0]]["delta_pts"] == pytest.approx(-0.5)
     assert out["passes"] is True
@@ -140,10 +141,12 @@ def test_delta_is_measured_against_the_control_not_against_zero():
 
 
 def test_pooled_window_aggregates_the_three_stress_windows():
-    ctrl = _control({_STRESS[0]: [1.0] * 10, _STRESS[1]: [2.0] * 10,
-                     _STRESS[2]: [3.0] * 10, BULL_NORMAL: [0.0] * 10})
-    cand = _arm({_STRESS[0]: [1.0] * 10, _STRESS[1]: [2.0] * 10,
-                 _STRESS[2]: [3.0] * 10, BULL_NORMAL: [0.0] * 10})
+    ctrl = _control(
+        {_STRESS[0]: [1.0] * 10, _STRESS[1]: [2.0] * 10, _STRESS[2]: [3.0] * 10, BULL_NORMAL: [0.0] * 10}
+    )
+    cand = _arm(
+        {_STRESS[0]: [1.0] * 10, _STRESS[1]: [2.0] * 10, _STRESS[2]: [3.0] * 10, BULL_NORMAL: [0.0] * 10}
+    )
     out = regime_criterion(ctrl, cand, n_resamples=100, seed=1)
     assert out["windows"][POOLED]["n_cand"] == 30
     assert out["windows"][BULL_NORMAL]["n_cand"] == 10
@@ -153,12 +156,11 @@ def test_detectable_uses_the_candidate_sample():
     """§4.1: lo que limita la resolución es el n del CANDIDATO, no el del control
     (que son los trades de las K carteras del Monte Carlo, ~500× más)."""
     vals = [3.0, -1.0, 2.0, 0.5] * 15
-    ctrl = _control(_split(vals * 20))      # control enorme
+    ctrl = _control(_split(vals * 20))  # control enorme
     out = regime_criterion(ctrl, _arm(_split(vals)), n_resamples=100, seed=1)
     w = out["windows"][POOLED]
     assert w["n_control"] > w["n_cand"]
-    assert w["detectable"] == pytest.approx(
-        detectable_mean_effect(w["sd_pts"], w["n_cand"]))
+    assert w["detectable"] == pytest.approx(detectable_mean_effect(w["sd_pts"], w["n_cand"]))
 
 
 def test_per_trade_pts_converts_to_points():
@@ -218,12 +220,9 @@ def test_prio_rank_only_reorders_the_day():
 
 
 def test_trade_diff_share_counts_by_ticker_and_date():
-    base = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"),
-                 _T(0.0, BULL_NORMAL, "BBB", "2020-01-03")])
-    same = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"),
-                 _T(0.0, BULL_NORMAL, "BBB", "2020-01-03")])
-    other = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"),
-                  _T(0.0, BULL_NORMAL, "CCC", "2020-01-03")])
+    base = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"), _T(0.0, BULL_NORMAL, "BBB", "2020-01-03")])
+    same = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"), _T(0.0, BULL_NORMAL, "BBB", "2020-01-03")])
+    other = _Res([_T(0.0, BULL_NORMAL, "AAA", "2020-01-02"), _T(0.0, BULL_NORMAL, "CCC", "2020-01-03")])
     assert trade_diff_share(base, same) == pytest.approx(0.0)
     assert trade_diff_share(base, other) == pytest.approx(2 / 3)
 
@@ -250,26 +249,54 @@ class _Pbo:
 
 
 def _sum(cagr=0.10, sharpe=1.10, dd=0.13):
-    return {"cagr": cagr, "sharpe": sharpe, "max_dd": dd, "accounting_ok": True,
-            "n_taken": 100, "n_offered": 120}
+    return {
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_dd": dd,
+        "accounting_ok": True,
+        "n_taken": 100,
+        "n_offered": 120,
+    }
 
 
-_RB = {"cagr_p95": 0.06, "cagr_median": 0.03, "sharpe_p95": 1.00,
-       "sharpe_median": 0.60, "maxdd_median": 0.12, "k": 500}
-_C5_OK = {"passes": True, "tolerance_pts": 1.85, "material_pts": 1.00,
-          "detectable_pts": 1.85, "pooled_delta_pts": 0.1, "pooled_ci_high": 1.2,
-          "pooled_ci_low": -1.0, "windows": {}}
+_RB = {
+    "cagr_p95": 0.06,
+    "cagr_median": 0.03,
+    "sharpe_p95": 1.00,
+    "sharpe_median": 0.60,
+    "maxdd_median": 0.12,
+    "k": 500,
+}
+_C5_OK = {
+    "passes": True,
+    "tolerance_pts": 1.85,
+    "material_pts": 1.00,
+    "detectable_pts": 1.85,
+    "pooled_delta_pts": 0.1,
+    "pooled_ci_high": 1.2,
+    "pooled_ci_low": -1.0,
+    "windows": {},
+}
 _LOTO_OK = {"dropped": "AAA", "cagr_without": 0.08, "survives": True}
 _SENS_OK = {"c1": True, "c2": True}
 _C8_OK = {"c8_cagr": True, "c8_boot": True}
 
 
 def _ev(**over):
-    kw = dict(cand_sum=_sum(), rb=_RB, dsr=_Dsr(0.9), pbo=_Pbo(0.3), c5=_C5_OK,
-              loto=_LOTO_OK, sens=_SENS_OK, c8=_C8_OK)
+    kw = dict(
+        cand_sum=_sum(),
+        rb=_RB,
+        dsr=_Dsr(0.9),
+        pbo=_Pbo(0.3),
+        c5=_C5_OK,
+        loto=_LOTO_OK,
+        sens=_SENS_OK,
+        c8=_C8_OK,
+    )
     kw.update(over)
-    return evaluate(kw["cand_sum"], kw["rb"], kw["dsr"], kw["pbo"], kw["c5"],
-                    kw["loto"], kw["sens"], kw["c8"])
+    return evaluate(
+        kw["cand_sum"], kw["rb"], kw["dsr"], kw["pbo"], kw["c5"], kw["loto"], kw["sens"], kw["c8"]
+    )
 
 
 def test_ships_when_all_eight_pass():
@@ -304,14 +331,13 @@ def test_c5_rejection_says_it_means_something_now():
 
 def test_the_five_criteria_reused_from_t11b_keep_their_thresholds():
     """C1/C2/C3/C4/C6 se reusan tal cual: mismos umbrales, misma aritmética."""
-    assert _ev(cand_sum=_sum(cagr=0.059))["c1_vs_random"] is False   # < p95
+    assert _ev(cand_sum=_sum(cagr=0.059))["c1_vs_random"] is False  # < p95
     assert _ev(cand_sum=_sum(sharpe=0.99))["c1_vs_random"] is False  # Sharpe < p95
-    assert _ev(cand_sum=_sum(cagr=0.0499))["c2_dcagr"] is False      # ΔCAGR < +2pp
-    assert _ev(cand_sum=_sum(dd=0.181))["c3_maxdd"] is False         # > 1.5× mediana
+    assert _ev(cand_sum=_sum(cagr=0.0499))["c2_dcagr"] is False  # ΔCAGR < +2pp
+    assert _ev(cand_sum=_sum(dd=0.181))["c3_maxdd"] is False  # > 1.5× mediana
     assert _ev(dsr=_Dsr(0.4))["c4_dsr_pbo"] is False
     assert _ev(pbo=_Pbo(0.6))["c4_dsr_pbo"] is False
-    assert _ev(loto={"dropped": "AAA", "cagr_without": 0.01,
-                     "survives": False})["c6_loto"] is False
+    assert _ev(loto={"dropped": "AAA", "cagr_without": 0.01, "survives": False})["c6_loto"] is False
     assert _ev(loto=None)["c6_loto"] is False
 
 
@@ -328,6 +354,7 @@ def _res_ok():
         exposure_share = 0.0
         total_return_pts = 0.1
         max_dd = 0.0
+
     return _R()
 
 
@@ -335,27 +362,25 @@ _REPRO_OK = {"live_ok": True, "legacy_ran": True, "legacy_ok": True}
 
 
 def test_run_is_valid_when_every_sanity_passes():
-    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923),
-                         _sum(cagr=1.05), _REPRO_OK)
+    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=1.05), _REPRO_OK)
     assert sa["valid"] is True
 
 
 def test_a_failed_reproduction_invalidates_the_run():
-    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=1.05),
-                         dict(_REPRO_OK, live_ok=False))
+    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=1.05), dict(_REPRO_OK, live_ok=False))
     assert sa["valid"] is False and sa["checks"]["repro_live"] is False
 
 
 def test_an_oracle_that_does_not_take_off_invalidates_the_run():
     """Si el harness no ve calidad de entrada, ningún veredicto vale."""
-    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923),
-                         _sum(cagr=0.15), _REPRO_OK)      # +5.8 pp < +20
+    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=0.15), _REPRO_OK)  # +5.8 pp < +20
     assert sa["valid"] is False and sa["checks"]["oracle_takes_off"] is False
 
 
 def test_skipping_the_legacy_reproduction_does_not_silently_pass_it():
-    sa = evaluate_sanity({"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=1.05),
-                         {"live_ok": True, "legacy_ran": False})
+    sa = evaluate_sanity(
+        {"a": _res_ok()}, _sum(cagr=0.0923), _sum(cagr=1.05), {"live_ok": True, "legacy_ran": False}
+    )
     assert sa["checks"]["repro_legacy"] is None and sa["legacy_skipped"] is True
 
 

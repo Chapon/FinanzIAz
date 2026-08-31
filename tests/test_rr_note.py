@@ -5,6 +5,7 @@ BUY (stop/TP + R:R) para que la UI de Paper los muestre. Es display-only: no
 cambia ninguna decisión ni sizing (regla 3). La matemática pura está en
 ``test_paper_gates.py`` (entry_risk_levels/format_entry_risk_note).
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -35,8 +36,13 @@ def _history_flat(price: float, n: int = 30) -> pd.DataFrame:
     """OHLCV constante → ATR = 0 → sin nota (fail-open)."""
     idx = pd.date_range("2026-01-01", periods=n, freq="D")
     return pd.DataFrame(
-        {"Open": [price] * n, "High": [price] * n, "Low": [price] * n,
-         "Close": [price] * n, "Volume": [10_000.0] * n},
+        {
+            "Open": [price] * n,
+            "High": [price] * n,
+            "Low": [price] * n,
+            "Close": [price] * n,
+            "Volume": [10_000.0] * n,
+        },
         index=idx,
     )
 
@@ -56,9 +62,16 @@ def _buy_strategy(ticker: str, dollars: float):
     from paper_trading.strategies import TargetTrade
 
     def strat(account, watchlist, positions, prices, history_provider):
-        return [TargetTrade(ticker=ticker, side="BUY", target_shares=None,
-                            target_dollars=dollars, reason="analyze BUY",
-                            source="analyze_single")]
+        return [
+            TargetTrade(
+                ticker=ticker,
+                side="BUY",
+                target_shares=None,
+                target_dollars=dollars,
+                reason="analyze BUY",
+                source="analyze_single",
+            )
+        ]
 
     return strat
 
@@ -81,8 +94,9 @@ def test_manual_buy_gets_rr_note(test_db, monkeypatch):
     with session_scope() as s:
         s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
 
-    result = _run(monkeypatch, a, ticker="AAPL", price=100.0,
-                  history=_history_varying(100.0), buy_dollars=10_000.0)
+    result = _run(
+        monkeypatch, a, ticker="AAPL", price=100.0, history=_history_varying(100.0), buy_dollars=10_000.0
+    )
 
     assert result is not None and result.queued == 1
     with session_scope() as s:
@@ -98,8 +112,9 @@ def test_auto_buy_fill_gets_rr_note(test_db, monkeypatch):
     with session_scope() as s:
         s.add(PaperWatchlistItem(account_id=a.id, ticker="MSFT"))
 
-    result = _run(monkeypatch, a, ticker="MSFT", price=100.0,
-                  history=_history_varying(100.0), buy_dollars=10_000.0)
+    result = _run(
+        monkeypatch, a, ticker="MSFT", price=100.0, history=_history_varying(100.0), buy_dollars=10_000.0
+    )
 
     assert result is not None and result.filled == 1
     with session_scope() as s:
@@ -113,8 +128,9 @@ def test_flat_history_no_note_failopen(test_db, monkeypatch):
     with session_scope() as s:
         s.add(PaperWatchlistItem(account_id=a.id, ticker="TSLA"))
 
-    result = _run(monkeypatch, a, ticker="TSLA", price=100.0,
-                  history=_history_flat(100.0), buy_dollars=10_000.0)
+    result = _run(
+        monkeypatch, a, ticker="TSLA", price=100.0, history=_history_flat(100.0), buy_dollars=10_000.0
+    )
 
     assert result is not None and result.queued == 1
     with session_scope() as s:

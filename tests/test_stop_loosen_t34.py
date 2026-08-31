@@ -106,7 +106,7 @@ def test_gate5_blocks_rebuy_after_a_recent_losing_cycle():
     bars_by = {"A": _falling(30)}
     res = _sim([("A", 0), ("A", 3)], bars_by, max_positions=5, live_gates=True)
 
-    assert res.n_taken == 1               # sólo la primera
+    assert res.n_taken == 1  # sólo la primera
     assert res.n_gate5_blocked == 1
     assert [t.entry_date for t in res.trades] == [_d(0)]
 
@@ -126,7 +126,7 @@ def test_gate5_ignores_a_loss_that_fell_out_of_the_window():
     ``_last_closed_cycle_pnl_pct`` devuelve ``None`` y no bloquea. El cooldown
     expira solo."""
     bars_by = {"A": _falling(40)}
-    far = 2 + LIVE_WHIPSAW_LOOKBACK_DAYS + 5      # bien afuera de los 7 días
+    far = 2 + LIVE_WHIPSAW_LOOKBACK_DAYS + 5  # bien afuera de los 7 días
     res = _sim([("A", 0), ("A", far)], bars_by, max_positions=5, live_gates=True)
 
     assert res.n_taken == 2
@@ -137,12 +137,17 @@ def test_gate5_window_edge_is_inclusive():
     """El borde exacto: un cierre a ``LIVE_WHIPSAW_LOOKBACK_DAYS`` días todavía
     bloquea; un día más y ya no. Si alguien mueve el ``<`` por un ``<=`` esto falla."""
     bars_by = {"A": _falling(40)}
-    exit_idx = 2                                   # cap_days=2 ⇒ el ciclo cierra acá
+    exit_idx = 2  # cap_days=2 ⇒ el ciclo cierra acá
 
-    inside = _sim([("A", 0), ("A", exit_idx + LIVE_WHIPSAW_LOOKBACK_DAYS)],
-                  bars_by, max_positions=5, live_gates=True)
-    outside = _sim([("A", 0), ("A", exit_idx + LIVE_WHIPSAW_LOOKBACK_DAYS + 1)],
-                   bars_by, max_positions=5, live_gates=True)
+    inside = _sim(
+        [("A", 0), ("A", exit_idx + LIVE_WHIPSAW_LOOKBACK_DAYS)], bars_by, max_positions=5, live_gates=True
+    )
+    outside = _sim(
+        [("A", 0), ("A", exit_idx + LIVE_WHIPSAW_LOOKBACK_DAYS + 1)],
+        bars_by,
+        max_positions=5,
+        live_gates=True,
+    )
 
     assert inside.n_gate5_blocked == 1
     assert outside.n_gate5_blocked == 0
@@ -156,8 +161,7 @@ def test_gate5b_blocks_by_frequency_even_when_the_cycles_win():
     Con precio en alza, Gate 5 nunca dispara, así que lo que bloquee es el 5b."""
     bars_by = {"A": _rising(40)}
     entries = [("A", i) for i in (0, 2, 4, 6, 8)]
-    res = _sim([e for e in entries], bars_by, cap_days=1, max_positions=5,
-               live_gates=True)
+    res = _sim([e for e in entries], bars_by, cap_days=1, max_positions=5, live_gates=True)
 
     assert res.n_gate5_blocked == 0
     assert res.n_gate5b_blocked > 0
@@ -176,8 +180,7 @@ def test_a_cycle_that_has_not_closed_yet_cannot_block():
     """
     bars_by = {"A": _falling(30)}
     # cap_days alto ⇒ el primer ciclo sigue abierto cuando llega el segundo candidato.
-    res = _sim([("A", 0), ("A", 3)], bars_by, cap_days=20, max_positions=5,
-               live_gates=True)
+    res = _sim([("A", 0), ("A", 3)], bars_by, cap_days=20, max_positions=5, live_gates=True)
 
     assert res.n_already_open == 1
     assert res.n_gate5_blocked == 0
@@ -211,9 +214,17 @@ def test_out_of_order_closes_do_not_confuse_the_gates():
     # El que se abrió primero cierra ÚLTIMO: el orden de apertura miente.
     bars_by = {"A": _bars([100.0] * 3 + [101.0] + [90.0] * 20)}
     res = simulate_portfolio(
-        [("A", 0), ("A", 2)], bars_by, {}, atr_p=NO_ATR, costs=NO_COST,
-        so_params=ScaleOutParams(), cap_days=12, max_positions=5,
-        allow_reentry_while_open=True, live_gates=True)
+        [("A", 0), ("A", 2)],
+        bars_by,
+        {},
+        atr_p=NO_ATR,
+        costs=NO_COST,
+        so_params=ScaleOutParams(),
+        cap_days=12,
+        max_positions=5,
+        allow_reentry_while_open=True,
+        live_gates=True,
+    )
     # No se afirma cuántos bloquea: se afirma que no explota y que el historial
     # quedó consistente (el gate se pronuncia sobre el cierre correcto).
     assert res.n_taken + res.n_gate5_blocked + res.n_gate5b_blocked == res.n_offered
@@ -225,15 +236,31 @@ def test_an_open_losing_cycle_cannot_block_a_reentry():
     que si el gate mirara el futuro este test fallaría."""
     bars_by = {"A": _falling(30)}
     still_open = simulate_portfolio(
-        [("A", 0), ("A", 3)], bars_by, {}, atr_p=NO_ATR, costs=NO_COST,
-        so_params=ScaleOutParams(), cap_days=20, max_positions=5,
-        allow_reentry_while_open=True, live_gates=True)
+        [("A", 0), ("A", 3)],
+        bars_by,
+        {},
+        atr_p=NO_ATR,
+        costs=NO_COST,
+        so_params=ScaleOutParams(),
+        cap_days=20,
+        max_positions=5,
+        allow_reentry_while_open=True,
+        live_gates=True,
+    )
     already_closed = simulate_portfolio(
-        [("A", 0), ("A", 3)], bars_by, {}, atr_p=NO_ATR, costs=NO_COST,
-        so_params=ScaleOutParams(), cap_days=2, max_positions=5,
-        allow_reentry_while_open=True, live_gates=True)
+        [("A", 0), ("A", 3)],
+        bars_by,
+        {},
+        atr_p=NO_ATR,
+        costs=NO_COST,
+        so_params=ScaleOutParams(),
+        cap_days=2,
+        max_positions=5,
+        allow_reentry_while_open=True,
+        live_gates=True,
+    )
 
-    assert still_open.n_gate5_blocked == 0      # el ciclo perdedor sigue ABIERTO
+    assert still_open.n_gate5_blocked == 0  # el ciclo perdedor sigue ABIERTO
     assert already_closed.n_gate5_blocked == 1  # el mismo ciclo, ya cerrado
 
 
@@ -250,22 +277,34 @@ def _verdict(**over):
     # Por default la curva tiene un máximo **interior** en el candidato: si no, C6
     # falla y todos los tests medirían lo mismo (fue el primer bug de este fixture).
     peak = MULTS.index(cand_mult)
-    cagrs = over.pop("cagrs", None) or {
-        m: 0.10 - 0.01 * abs(i - peak) for i, m in enumerate(MULTS)}
+    cagrs = over.pop("cagrs", None) or {m: 0.10 - 0.01 * abs(i - peak) for i, m in enumerate(MULTS)}
     summaries = {}
     for mode in ("touch", "close"):
         for m in MULTS:
             summaries[arm_name(m, mode)] = {
-                "cagr": cagrs[m], "sharpe": 0.2 + 0.2 * (m == cand_mult),
-                "max_dd": 0.30, "stop_share": 0.1, "exit_mix": {},
+                "cagr": cagrs[m],
+                "sharpe": 0.2 + 0.2 * (m == cand_mult),
+                "max_dd": 0.30,
+                "stop_share": 0.1,
+                "exit_mix": {},
             }
     summaries[cand]["sharpe"] = 0.6
     summaries_5 = {n: dict(s) for n, s in summaries.items()}
-    regimes = {n: {k: {"mean_ret_pts": 1.0} for k in
-                   ("bull_normal", "stress_2018q4", "stress_covid_2020", "stress_bear_2022")}
-               for n in (BASELINE_ARM, cand)}
-    wf = {"m_star": cand_mult, "agreement": 5, "picks": [cand] * 5, "per_fold": [],
-          "proc": {"cagr": 0.08, "max_dd": 0.25}, "base": {"cagr": 0.02, "max_dd": 0.27}}
+    regimes = {
+        n: {
+            k: {"mean_ret_pts": 1.0}
+            for k in ("bull_normal", "stress_2018q4", "stress_covid_2020", "stress_bear_2022")
+        }
+        for n in (BASELINE_ARM, cand)
+    }
+    wf = {
+        "m_star": cand_mult,
+        "agreement": 5,
+        "picks": [cand] * 5,
+        "per_fold": [],
+        "proc": {"cagr": 0.08, "max_dd": 0.25},
+        "base": {"cagr": 0.02, "max_dd": 0.27},
+    }
 
     class _B:
         ci_low, ci_high, p_value, observed = 0.01, 0.10, 0.01, 0.05
@@ -293,7 +332,7 @@ def test_verdict_fails_c6_when_the_max_sits_on_the_loose_edge():
     borde. Tiene que ser NO-SHIP **y** decir que abre tarea propia."""
     from scripts.run_stop_loosen_t34 import MULTS
 
-    cagrs = {m: 0.01 * i for i, m in enumerate(MULTS)}   # monótona ⇒ máximo en `off`
+    cagrs = {m: 0.01 * i for i, m in enumerate(MULTS)}  # monótona ⇒ máximo en `off`
     v = _verdict(cagrs=cagrs, cand_mult=MULTS[-1], wf={"m_star": MULTS[-1]})
     assert v["ship"] is False
     assert v["criteria"]["C6_interior_max"][1] is False
@@ -301,8 +340,9 @@ def test_verdict_fails_c6_when_the_max_sits_on_the_loose_edge():
 
 
 def test_verdict_fails_c5_when_one_regime_degrades():
-    v = _verdict(regimes={"bull_normal": 1.0, "stress_2018q4": -1.2,
-                          "stress_covid_2020": 1.0, "stress_bear_2022": 1.0})
+    v = _verdict(
+        regimes={"bull_normal": 1.0, "stress_2018q4": -1.2, "stress_covid_2020": 1.0, "stress_bear_2022": 1.0}
+    )
     assert v["ship"] is False
     assert v["criteria"]["C5_regime"][1] is False
 
@@ -366,4 +406,4 @@ def test_entries_between_filters_by_entry_date_inclusive():
     bars_by = {"A": _bars([100.0] * 10)}
     entries = [("A", i) for i in range(10)]
     got = entries_between(entries, bars_by, _d(2), _d(4))
-    assert [i for _, i in got] == [2, 3, 4]      # los dos bordes adentro
+    assert [i for _, i in got] == [2, 3, 4]  # los dos bordes adentro

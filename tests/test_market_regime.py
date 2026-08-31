@@ -141,8 +141,8 @@ def test_filter_half_halves_size_in_risk_off(series_off):
 def test_filter_confirm_waits_for_the_streak(series_off):
     f = make_entry_filter(series_off, mode="confirm", confirm_days=5)
     idx = next(i for i, x in enumerate(series_off.risk_off) if x and i > SMA_WINDOW)
-    assert f("AAPL", series_off.dates[idx + 1]) == 1.0   # racha corta todavía
-    assert f("AAPL", series_off.dates[-1]) == 0.0        # racha larga
+    assert f("AAPL", series_off.dates[idx + 1]) == 1.0  # racha corta todavía
+    assert f("AAPL", series_off.dates[-1]) == 0.0  # racha larga
 
 
 def test_unknown_mode_raises():

@@ -8,7 +8,7 @@ Tests for the recovery / idempotency safeguards added in the
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from database.models import session_scope, utcnow_naive
 from paper_trading.account import create_account
@@ -65,24 +65,52 @@ def test_reconcile_keeps_risk_exit_sells_alive(test_db):
     old = utcnow_naive() - timedelta(hours=48)
 
     with session_scope() as session:
-        session.add(PaperOrder(
-            account_id=a.id, ticker="KO", side="SELL", target_shares=10,
-            reason="atr_stop @ 80.28 ≤ 80.78 (entry 83.94 − 2.0×ATR 1.58)",
-            source="atr_stop_gate", status="pending", created_at=old,
-        ))
-        session.add(PaperOrder(
-            account_id=a.id, ticker="MO", side="SELL", target_shares=5,
-            reason="atr_trail @ 70.81 ≤ 71.21 (peak 74.14 − 2.0×ATR 1.46)",
-            source="atr_stop_gate", status="pending", created_at=old,
-        ))
-        session.add(PaperOrder(
-            account_id=a.id, ticker="PEP", side="SELL", target_shares=8,
-            reason="analyze SELL (0.30)", status="pending", created_at=old,
-        ))
-        session.add(PaperOrder(
-            account_id=a.id, ticker="AAPL", side="BUY", target_dollars=100,
-            reason="analyze BUY", status="pending", created_at=old,
-        ))
+        session.add(
+            PaperOrder(
+                account_id=a.id,
+                ticker="KO",
+                side="SELL",
+                target_shares=10,
+                reason="atr_stop @ 80.28 ≤ 80.78 (entry 83.94 − 2.0×ATR 1.58)",
+                source="atr_stop_gate",
+                status="pending",
+                created_at=old,
+            )
+        )
+        session.add(
+            PaperOrder(
+                account_id=a.id,
+                ticker="MO",
+                side="SELL",
+                target_shares=5,
+                reason="atr_trail @ 70.81 ≤ 71.21 (peak 74.14 − 2.0×ATR 1.46)",
+                source="atr_stop_gate",
+                status="pending",
+                created_at=old,
+            )
+        )
+        session.add(
+            PaperOrder(
+                account_id=a.id,
+                ticker="PEP",
+                side="SELL",
+                target_shares=8,
+                reason="analyze SELL (0.30)",
+                status="pending",
+                created_at=old,
+            )
+        )
+        session.add(
+            PaperOrder(
+                account_id=a.id,
+                ticker="AAPL",
+                side="BUY",
+                target_dollars=100,
+                reason="analyze BUY",
+                status="pending",
+                created_at=old,
+            )
+        )
 
     n = reconcile_account(a.id, expire_pending_after_hours=24)
     assert n == 2  # solo el SELL de señal y el BUY
@@ -90,8 +118,8 @@ def test_reconcile_keeps_risk_exit_sells_alive(test_db):
     with session_scope() as session:
         rows = session.query(PaperOrder).filter(PaperOrder.account_id == a.id).all()
         statuses = {r.ticker: r.status for r in rows}
-    assert statuses["KO"] == "pending"   # atr_stop sobrevive
-    assert statuses["MO"] == "pending"   # atr_trail sobrevive
+    assert statuses["KO"] == "pending"  # atr_stop sobrevive
+    assert statuses["MO"] == "pending"  # atr_trail sobrevive
     assert statuses["PEP"] == "expired"  # SELL de señal expira
     assert statuses["AAPL"] == "expired"  # BUY expira
 

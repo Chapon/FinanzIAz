@@ -33,8 +33,13 @@ def _no_trades_strategy(account, watchlist, positions, prices, history_provider)
 def _history(n: int = 30) -> pd.DataFrame:
     idx = pd.date_range("2026-01-01", periods=n, freq="D")
     return pd.DataFrame(
-        {"Open": [100.0] * n, "High": [100.0] * n, "Low": [100.0] * n,
-         "Close": [100.0] * n, "Volume": [10_000.0] * n},
+        {
+            "Open": [100.0] * n,
+            "High": [100.0] * n,
+            "Low": [100.0] * n,
+            "Close": [100.0] * n,
+            "Volume": [10_000.0] * n,
+        },
         index=idx,
     )
 
@@ -88,7 +93,8 @@ def test_warmup_skipped_when_history_provider_injected(test_db, monkeypatch):
 
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        yfmod, "get_historical_data_batch",
+        yfmod,
+        "get_historical_data_batch",
         lambda tickers, **kw: calls.append(list(tickers)) or {},
     )
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _no_trades_strategy)
@@ -139,11 +145,11 @@ def test_spy_fallback_fetched_when_batch_skips_it(monkeypatch):
 
     singles: list[str] = []
     monkeypatch.setattr(
-        yfmod, "get_historical_data_batch",
+        yfmod,
+        "get_historical_data_batch",
         lambda tickers, **kw: {t.upper(): None for t in tickers},  # todo None (throttle)
     )
-    monkeypatch.setattr(yfmod, "get_historical_data",
-                        lambda ticker, **kw: singles.append(ticker))
+    monkeypatch.setattr(yfmod, "get_historical_data", lambda ticker, **kw: singles.append(ticker))
 
     engine._warm_up_history_cache(["AAPL", "MSFT"])
     assert singles == ["SPY"]  # sólo SPY recibe el re-fetch per-ticker
@@ -155,12 +161,11 @@ def test_spy_fallback_skipped_when_batch_returns_it(monkeypatch):
 
     singles: list[str] = []
     monkeypatch.setattr(
-        yfmod, "get_historical_data_batch",
-        lambda tickers, **kw: {t.upper(): (None if t.upper() != "SPY" else object())
-                               for t in tickers},
+        yfmod,
+        "get_historical_data_batch",
+        lambda tickers, **kw: {t.upper(): (None if t.upper() != "SPY" else object()) for t in tickers},
     )
-    monkeypatch.setattr(yfmod, "get_historical_data",
-                        lambda ticker, **kw: singles.append(ticker))
+    monkeypatch.setattr(yfmod, "get_historical_data", lambda ticker, **kw: singles.append(ticker))
 
     engine._warm_up_history_cache(["AAPL"])
     assert singles == []  # SPY vino en el batch → un solo request, sin refetch
@@ -176,8 +181,7 @@ def test_spy_fallback_fetched_when_batch_raises(monkeypatch):
         raise RuntimeError("crumb storm")
 
     monkeypatch.setattr(yfmod, "get_historical_data_batch", _boom)
-    monkeypatch.setattr(yfmod, "get_historical_data",
-                        lambda ticker, **kw: singles.append(ticker))
+    monkeypatch.setattr(yfmod, "get_historical_data", lambda ticker, **kw: singles.append(ticker))
 
     engine._warm_up_history_cache(["AAPL"])
     assert singles == ["SPY"]  # aun con el batch caído, el benchmark recibe fallback

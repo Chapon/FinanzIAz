@@ -15,8 +15,8 @@ import types
 import pandas as pd
 import pytest
 
-from data import yahoo_finance as yfm
 from data import failed_tickers as ft
+from data import yahoo_finance as yfm
 from data.failed_tickers import get_failing_set
 
 
@@ -27,7 +27,7 @@ class _RaisingFastInfo:
         self._exc = exc
 
     @property
-    def last_price(self):  # noqa: D401 - mimics yfinance lazy property
+    def last_price(self):
         raise self._exc
 
 
@@ -60,9 +60,7 @@ def test_safe_fast_info_missing_attr_returns_default():
 
 def test_fetch_ticker_info_handles_metadata_keyerror(test_db, mock_yfinance, caplog):
     """B1: símbolo con metadata sin exchangeTimezoneName → None, sin traceback."""
-    mock_yfinance.Ticker.return_value.fast_info = _RaisingFastInfo(
-        KeyError("exchangeTimezoneName")
-    )
+    mock_yfinance.Ticker.return_value.fast_info = _RaisingFastInfo(KeyError("exchangeTimezoneName"))
 
     with caplog.at_level(logging.ERROR, logger="data.yahoo_finance"):
         result = yfm._fetch_ticker_info("K")
@@ -178,8 +176,9 @@ def test_batch_skips_known_failing_ticker(test_db, mock_yfinance):
 # ── get_company_info: cache-first (V2) ─────────────────────────────────────────
 def test_company_info_cache_first_skips_fetch(test_db, monkeypatch):
     """Con una fila vigente en company_info_cache, no se hace el scrape lento."""
-    yfm._write_company_info_cache("MU", {"name": "Micron", "sector": "Technology",
-                                         "industry": "Semiconductors"})
+    yfm._write_company_info_cache(
+        "MU", {"name": "Micron", "sector": "Technology", "industry": "Semiconductors"}
+    )
 
     def _boom(*a, **k):
         raise AssertionError("no debería fetchear cuando hay cache")
@@ -193,7 +192,8 @@ def test_company_info_cache_first_skips_fetch(test_db, monkeypatch):
 def test_company_info_fetch_writes_cache(test_db, monkeypatch):
     """Un miss fetchea y persiste; la 2ª llamada sale del cache sin re-fetchear."""
     monkeypatch.setattr(
-        yfm, "_run_with_timeout",
+        yfm,
+        "_run_with_timeout",
         lambda fn, **k: {"name": "Apple", "sector": "Technology", "industry": "Consumer Electronics"},
     )
     info = yfm.get_company_info("AAPL")

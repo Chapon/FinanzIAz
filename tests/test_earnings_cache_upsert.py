@@ -94,7 +94,4 @@ def test_persistent_lock_is_swallowed_as_warning(test_db, monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="data.yahoo_finance"):
         yf._write_earnings_cache("TSLA", None, attempts=2)  # no debe levantar
 
-    assert any(
-        "TSLA" in r.getMessage() and r.levelno == logging.WARNING
-        for r in caplog.records
-    )
+    assert any("TSLA" in r.getMessage() and r.levelno == logging.WARNING for r in caplog.records)

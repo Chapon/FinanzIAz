@@ -36,7 +36,6 @@ from analysis.insider_cluster import (
 )
 from scripts.ingest_form345 import _parse_form345_date, _quarters, parse_form345_tables
 
-
 # ── Builders sintéticos ──────────────────────────────────────────────────────
 
 
@@ -80,7 +79,7 @@ def test_fires_with_three_distinct_insiders():
     assert len(events) == 1
     ev = events[0]
     assert ev.ticker == "ABC"
-    assert ev.event_date == "2022-01-10"   # PIT: la 3ra filing, la que cruza a C
+    assert ev.event_date == "2022-01-10"  # PIT: la 3ra filing, la que cruza a C
     assert ev.n_insiders == 3
 
 
@@ -119,9 +118,9 @@ def test_window_boundary_exact_span_fires():
 
 def test_code_filter_excludes_non_purchases():
     txs = [
-        _tx(cik="1", code="S", filing="2022-01-01"),        # venta
-        _tx(cik="2", code="A", filing="2022-01-05"),        # grant/award
-        _tx(cik="3", code="M", filing="2022-01-08"),        # ejercicio de opción
+        _tx(cik="1", code="S", filing="2022-01-01"),  # venta
+        _tx(cik="2", code="A", filing="2022-01-05"),  # grant/award
+        _tx(cik="3", code="M", filing="2022-01-08"),  # ejercicio de opción
         _tx(cik="4", code="P", ad="D", filing="2022-01-10"),  # P pero disposición
     ]
     assert build_cluster_events(txs) == []
@@ -147,7 +146,7 @@ def test_nan_shares_or_price_excluded():
 
 
 def test_continuation_within_window_does_not_refire():
-    txs = _cluster() + [_tx(cik="4", filing="2022-01-12")]  # 4to dentro de la ventana
+    txs = [*_cluster(), _tx(cik="4", filing="2022-01-12")]  # 4to dentro de la ventana
     events = build_cluster_events(txs)
     assert len(events) == 1
     assert events[0].event_date == "2022-01-10"
@@ -180,7 +179,7 @@ def test_same_day_new_cluster_after_full_window_refires():
 def test_require_officer_arm():
     base = _cluster()  # ningún officer
     assert build_cluster_events(base, ClusterParams(require_officer=True)) == []
-    with_officer = base[:2] + [_tx(cik="3", filing="2022-01-10", officer=True)]
+    with_officer = [*base[:2], _tx(cik="3", filing="2022-01-10", officer=True)]
     events = build_cluster_events(with_officer, ClusterParams(require_officer=True))
     assert len(events) == 1
     assert events[0].has_officer is True
@@ -188,9 +187,9 @@ def test_require_officer_arm():
 
 def test_total_dollars_and_n_insiders():
     txs = [
-        _tx(cik="1", filing="2022-01-01", shares=100, price=10),   # 1000
-        _tx(cik="2", filing="2022-01-05", shares=200, price=5),    # 1000
-        _tx(cik="3", filing="2022-01-10", shares=50, price=20),    # 1000
+        _tx(cik="1", filing="2022-01-01", shares=100, price=10),  # 1000
+        _tx(cik="2", filing="2022-01-05", shares=200, price=5),  # 1000
+        _tx(cik="3", filing="2022-01-10", shares=50, price=20),  # 1000
     ]
     ev = build_cluster_events(txs)[0]
     assert ev.n_insiders == 3
@@ -237,9 +236,7 @@ def test_passes_purchase_filter_unit():
 # ── Ingester (parseo puro) ───────────────────────────────────────────────────
 
 _SUB = (
-    "ACCESSION_NUMBER\tFILING_DATE\tISSUERTRADINGSYMBOL\n"
-    "0001-A\t10-JAN-2022\tABC\n"
-    "0002-A\t2022-01-11\tXYZ\n"
+    "ACCESSION_NUMBER\tFILING_DATE\tISSUERTRADINGSYMBOL\n0001-A\t10-JAN-2022\tABC\n0002-A\t2022-01-11\tXYZ\n"
 )
 _OWN = (
     "ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNER_RELATIONSHIP\tRPTOWNER_ISOFFICER\n"
@@ -258,13 +255,13 @@ def test_parse_joins_three_tables():
     assert len(txs) == 2
     by_t = {t.issuer_ticker: t for t in txs}
     a = by_t["ABC"]
-    assert a.filing_date == "2022-01-10"     # DD-MON-YYYY → ISO
+    assert a.filing_date == "2022-01-10"  # DD-MON-YYYY → ISO
     assert a.owner_cik == "111"
     assert a.trans_code == "P" and a.acq_disp == "A"
     assert math.isclose(a.shares, 100.0) and math.isclose(a.price, 10.5)
     assert a.is_officer is True
     x = by_t["XYZ"]
-    assert x.filing_date == "2022-01-11"     # ISO passthrough
+    assert x.filing_date == "2022-01-11"  # ISO passthrough
     assert x.trans_code == "S"
     assert x.is_director is True and x.is_officer is False
 
@@ -277,16 +274,13 @@ def test_parse_universe_filter():
 def test_parse_drops_rows_without_submission():
     non = (
         "ACCESSION_NUMBER\tTRANS_CODE\tTRANS_ACQUIRED_DISP_CD\tTRANS_SHARES\tTRANS_PRICEPERSHARE\n"
-        "9999-X\tP\tA\t100\t10\n"   # accession inexistente en SUBMISSION
+        "9999-X\tP\tA\t100\t10\n"  # accession inexistente en SUBMISSION
     )
     assert parse_form345_tables(_SUB, _OWN, non) == []
 
 
 def test_parse_officer_from_relationship_text_without_flag_column():
-    own = (
-        "ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNER_RELATIONSHIP\n"
-        "0001-A\t111\tOfficer, Director\n"
-    )
+    own = "ACCESSION_NUMBER\tRPTOWNERCIK\tRPTOWNER_RELATIONSHIP\n0001-A\t111\tOfficer, Director\n"
     txs = parse_form345_tables(_SUB, own, _NON, universe={"ABC"})
     assert txs[0].is_officer is True
     assert txs[0].is_director is True

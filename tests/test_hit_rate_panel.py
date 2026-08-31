@@ -39,7 +39,6 @@ from scripts.dashboard_data import (
     _score_bucket,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -70,8 +69,9 @@ def _bdays(start: date, n: int) -> list[str]:
     return out
 
 
-def _seed_series(con: sqlite3.Connection, ticker: str, closes: list[float],
-                 start: date = date(2026, 1, 5)) -> list[str]:
+def _seed_series(
+    con: sqlite3.Connection, ticker: str, closes: list[float], start: date = date(2026, 1, 5)
+) -> list[str]:
     """Carga una serie 1d en cache (orient=split). Devuelve las fechas."""
     dates = _bdays(start, len(closes))
     payload = {
@@ -87,9 +87,18 @@ def _seed_series(con: sqlite3.Connection, ticker: str, closes: list[float],
     return dates
 
 
-def _order(con: sqlite3.Connection, *, ticker: str, side: str, price: float,
-           shares: float, filled_at: str, reason: str, score: float | None,
-           account_id: int = 1) -> None:
+def _order(
+    con: sqlite3.Connection,
+    *,
+    ticker: str,
+    side: str,
+    price: float,
+    shares: float,
+    filled_at: str,
+    reason: str,
+    score: float | None,
+    account_id: int = 1,
+) -> None:
     con.execute(
         "INSERT INTO paper_orders (account_id, ticker, side, status, fill_price, "
         "fill_shares, signal_score, filled_at, reason, commission_paid, slippage_cost) "
@@ -106,16 +115,19 @@ def _panel(con: sqlite3.Connection, account_id: int = 1) -> dict:
 # ── _reason_kind ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("reason,expected", [
-    ("analyze BUY", "signal"),
-    ("analyze SELL (0.31)", "signal"),
-    ("atr_stop @ 121.99 ≤ 124.46 (entry 131.12 − 2.0×ATR 3.33)", "atr_stop"),
-    ("atr_trail @ 70.81 ≤ 71.21 (peak 74.14 − 2.0×ATR 1.46)", "atr_trail"),
-    ("vol_trim σ 0.32 > target 0.25", "vol_trim"),
-    (None, "other"),
-    ("", "other"),
-    ("manual override", "other"),
-])
+@pytest.mark.parametrize(
+    "reason,expected",
+    [
+        ("analyze BUY", "signal"),
+        ("analyze SELL (0.31)", "signal"),
+        ("atr_stop @ 121.99 ≤ 124.46 (entry 131.12 − 2.0×ATR 3.33)", "atr_stop"),
+        ("atr_trail @ 70.81 ≤ 71.21 (peak 74.14 − 2.0×ATR 1.46)", "atr_trail"),
+        ("vol_trim σ 0.32 > target 0.25", "vol_trim"),
+        (None, "other"),
+        ("", "other"),
+        ("manual override", "other"),
+    ],
+)
 def test_reason_kind(reason, expected):
     assert _reason_kind(reason) == expected
 
@@ -123,14 +135,17 @@ def test_reason_kind(reason, expected):
 # ── _score_bucket ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("score,expected", [
-    (0.0, "0.0-0.1"),
-    (0.31, "0.3-0.4"),
-    (0.4, "0.4-0.5"),
-    (0.999, "0.9-1.0"),
-    (1.0, "0.9-1.0"),   # clamp al tope
-    (None, None),
-])
+@pytest.mark.parametrize(
+    "score,expected",
+    [
+        (0.0, "0.0-0.1"),
+        (0.31, "0.3-0.4"),
+        (0.4, "0.4-0.5"),
+        (0.999, "0.9-1.0"),
+        (1.0, "0.9-1.0"),  # clamp al tope
+        (None, None),
+    ],
+)
 def test_score_bucket(score, expected):
     assert _score_bucket(score) == expected
 
@@ -138,16 +153,19 @@ def test_score_bucket(score, expected):
 # ── _hit_for ─────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("side,fwd5,expected", [
-    ("BUY", 0.02, True),
-    ("BUY", -0.02, False),
-    ("BUY", 0.0, False),
-    ("SELL", -0.02, True),
-    ("SELL", 0.0, True),
-    ("SELL", 0.02, False),
-    ("BUY", None, None),
-    ("SELL", None, None),
-])
+@pytest.mark.parametrize(
+    "side,fwd5,expected",
+    [
+        ("BUY", 0.02, True),
+        ("BUY", -0.02, False),
+        ("BUY", 0.0, False),
+        ("SELL", -0.02, True),
+        ("SELL", 0.0, True),
+        ("SELL", 0.02, False),
+        ("BUY", None, None),
+        ("SELL", None, None),
+    ],
+)
 def test_hit_for(side, fwd5, expected):
     assert _hit_for(side, fwd5) is expected
 
@@ -189,13 +207,36 @@ def test_panel_buckets_and_sentinel_excluded(monkeypatch):
     con = _make_db()
     # Serie plana 100 → fwd5 = 0 en todas partes (SELL hit, BUY no-hit)
     dates = _seed_series(con, "AAA", [100.0] * 30)
-    _order(con, ticker="AAA", side="BUY", price=100, shares=10,
-           filled_at=f"{dates[2]} 10:00:00", reason="analyze BUY", score=0.65)
-    _order(con, ticker="AAA", side="SELL", price=100, shares=5,
-           filled_at=f"{dates[5]} 10:00:00", reason="analyze SELL (0.31)", score=0.31)
-    _order(con, ticker="AAA", side="SELL", price=100, shares=5,
-           filled_at=f"{dates[8]} 10:00:00",
-           reason="atr_trail @ 99 ≤ 100 (peak 105 − 2.0×ATR 3)", score=1.0)
+    _order(
+        con,
+        ticker="AAA",
+        side="BUY",
+        price=100,
+        shares=10,
+        filled_at=f"{dates[2]} 10:00:00",
+        reason="analyze BUY",
+        score=0.65,
+    )
+    _order(
+        con,
+        ticker="AAA",
+        side="SELL",
+        price=100,
+        shares=5,
+        filled_at=f"{dates[5]} 10:00:00",
+        reason="analyze SELL (0.31)",
+        score=0.31,
+    )
+    _order(
+        con,
+        ticker="AAA",
+        side="SELL",
+        price=100,
+        shares=5,
+        filled_at=f"{dates[8]} 10:00:00",
+        reason="atr_trail @ 99 ≤ 100 (peak 105 − 2.0×ATR 3)",
+        score=1.0,
+    )
 
     panel = _panel(con)
     buckets = {(b["side"], b["bucket"]) for b in panel["by_bucket"]}
@@ -223,17 +264,33 @@ def test_panel_fwd_and_calibration_gap(monkeypatch):
     """Serie creciente: SELLs venden algo que sube → gap > 0."""
     monkeypatch.setattr(dashboard_data, "_regime_for_dates", lambda con, d: None)
     con = _make_db()
-    closes = [100.0 * (1.02 ** i) for i in range(30)]  # +2% por barra
+    closes = [100.0 * (1.02**i) for i in range(30)]  # +2% por barra
     dates = _seed_series(con, "BBB", closes)
-    _order(con, ticker="BBB", side="BUY", price=closes[1], shares=10,
-           filled_at=f"{dates[1]} 10:00:00", reason="analyze BUY", score=0.70)
-    _order(con, ticker="BBB", side="SELL", price=closes[6], shares=10,
-           filled_at=f"{dates[6]} 10:00:00", reason="analyze SELL (0.30)", score=0.30)
+    _order(
+        con,
+        ticker="BBB",
+        side="BUY",
+        price=closes[1],
+        shares=10,
+        filled_at=f"{dates[1]} 10:00:00",
+        reason="analyze BUY",
+        score=0.70,
+    )
+    _order(
+        con,
+        ticker="BBB",
+        side="SELL",
+        price=closes[6],
+        shares=10,
+        filled_at=f"{dates[6]} 10:00:00",
+        reason="analyze SELL (0.30)",
+        score=0.30,
+    )
 
     panel = _panel(con)
     sell_bucket = next(b for b in panel["by_bucket"] if b["side"] == "SELL")
     # fwd5 = 1.02^5 − 1
-    assert sell_bucket["median_fwd5"] == pytest.approx(1.02 ** 5 - 1, rel=1e-9)
+    assert sell_bucket["median_fwd5"] == pytest.approx(1.02**5 - 1, rel=1e-9)
     # precio subió tras el SELL: p_up = 1.0, score 0.30 → gap = +0.70
     assert sell_bucket["p_up_fwd5"] == 1.0
     assert sell_bucket["calibration_gap"] == pytest.approx(0.70)
@@ -248,10 +305,26 @@ def test_panel_realized_pct_fifo(monkeypatch):
     monkeypatch.setattr(dashboard_data, "_regime_for_dates", lambda con, d: None)
     con = _make_db()
     dates = _seed_series(con, "CCC", [100.0] * 30)
-    _order(con, ticker="CCC", side="BUY", price=100.0, shares=10,
-           filled_at=f"{dates[1]} 10:00:00", reason="analyze BUY", score=0.70)
-    _order(con, ticker="CCC", side="SELL", price=110.0, shares=10,
-           filled_at=f"{dates[10]} 10:00:00", reason="analyze SELL (0.30)", score=0.30)
+    _order(
+        con,
+        ticker="CCC",
+        side="BUY",
+        price=100.0,
+        shares=10,
+        filled_at=f"{dates[1]} 10:00:00",
+        reason="analyze BUY",
+        score=0.70,
+    )
+    _order(
+        con,
+        ticker="CCC",
+        side="SELL",
+        price=110.0,
+        shares=10,
+        filled_at=f"{dates[10]} 10:00:00",
+        reason="analyze SELL (0.30)",
+        score=0.30,
+    )
 
     panel = _panel(con)
     kinds = {(r["side"], r["reason_kind"]): r for r in panel["by_reason"]}
@@ -268,9 +341,16 @@ def test_panel_sell_reliability_range(monkeypatch):
     in_range = [0.25, 0.40]
     out_of_range = [0.47, 0.10]
     for i, sc in enumerate(in_range + out_of_range):
-        _order(con, ticker="DDD", side="SELL", price=100, shares=1,
-               filled_at=f"{dates[2 + i]} 10:00:00",
-               reason=f"analyze SELL ({sc:.2f})", score=sc)
+        _order(
+            con,
+            ticker="DDD",
+            side="SELL",
+            price=100,
+            shares=1,
+            filled_at=f"{dates[2 + i]} 10:00:00",
+            reason=f"analyze SELL ({sc:.2f})",
+            score=sc,
+        )
 
     panel = _panel(con)
     rel = panel["sell_reliability"]
@@ -285,12 +365,29 @@ def test_panel_by_regime_groups(monkeypatch):
     con = _make_db()
     dates = _seed_series(con, "EEE", [100.0] * 30)
     d_bull, d_bear = dates[2], dates[10]
-    _order(con, ticker="EEE", side="BUY", price=100, shares=1,
-           filled_at=f"{d_bull} 10:00:00", reason="analyze BUY", score=0.7)
-    _order(con, ticker="EEE", side="SELL", price=100, shares=1,
-           filled_at=f"{d_bear} 10:00:00", reason="analyze SELL (0.30)", score=0.3)
+    _order(
+        con,
+        ticker="EEE",
+        side="BUY",
+        price=100,
+        shares=1,
+        filled_at=f"{d_bull} 10:00:00",
+        reason="analyze BUY",
+        score=0.7,
+    )
+    _order(
+        con,
+        ticker="EEE",
+        side="SELL",
+        price=100,
+        shares=1,
+        filled_at=f"{d_bear} 10:00:00",
+        reason="analyze SELL (0.30)",
+        score=0.3,
+    )
     monkeypatch.setattr(
-        dashboard_data, "_regime_for_dates",
+        dashboard_data,
+        "_regime_for_dates",
         lambda con, ds: {d_bull: "bull_quiet", d_bear: "bear"},
     )
 
@@ -304,9 +401,17 @@ def test_panel_other_account_excluded(monkeypatch):
     monkeypatch.setattr(dashboard_data, "_regime_for_dates", lambda con, d: None)
     con = _make_db()
     dates = _seed_series(con, "FFF", [100.0] * 30)
-    _order(con, ticker="FFF", side="BUY", price=100, shares=1,
-           filled_at=f"{dates[2]} 10:00:00", reason="analyze BUY", score=0.7,
-           account_id=2)
+    _order(
+        con,
+        ticker="FFF",
+        side="BUY",
+        price=100,
+        shares=1,
+        filled_at=f"{dates[2]} 10:00:00",
+        reason="analyze BUY",
+        score=0.7,
+        account_id=2,
+    )
     panel = _panel(con, account_id=1)
     assert all(r["n"] == 0 for r in panel["by_reason"]) or panel["by_reason"] == []
     assert panel["sell_reliability"] is None
@@ -317,8 +422,16 @@ def test_panel_pending_fwd_noted(monkeypatch):
     monkeypatch.setattr(dashboard_data, "_regime_for_dates", lambda con, d: None)
     con = _make_db()
     dates = _seed_series(con, "GGG", [100.0] * 10)
-    _order(con, ticker="GGG", side="SELL", price=100, shares=1,
-           filled_at=f"{dates[-1]} 10:00:00", reason="analyze SELL (0.30)", score=0.3)
+    _order(
+        con,
+        ticker="GGG",
+        side="SELL",
+        price=100,
+        shares=1,
+        filled_at=f"{dates[-1]} 10:00:00",
+        reason="analyze SELL (0.30)",
+        score=0.3,
+    )
     panel = _panel(con)
     assert any("sin fwd5" in n for n in panel["notes"])
     kinds = {(r["side"], r["reason_kind"]): r for r in panel["by_reason"]}

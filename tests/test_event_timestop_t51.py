@@ -37,7 +37,6 @@ from scripts.run_event_timestop_t51 import (
     population_share,
 )
 
-
 # ── El tope por posición ─────────────────────────────────────────────────────
 
 
@@ -74,9 +73,12 @@ def test_cap_for_keys_is_pure():
 _CANDS = {"2024-01-02": ["A", "B", "C", "D"], "2024-01-03": ["E", "F"]}
 _N_BY_DATE = {"2024-01-02": 2, "2024-01-03": 1}
 _REALIZED = {
-    ("A", "2024-01-02"): 0.30, ("B", "2024-01-02"): -0.20,
-    ("C", "2024-01-02"): 0.05, ("D", "2024-01-02"): -0.40,
-    ("E", "2024-01-03"): 0.10, ("F", "2024-01-03"): -0.10,
+    ("A", "2024-01-02"): 0.30,
+    ("B", "2024-01-02"): -0.20,
+    ("C", "2024-01-02"): 0.05,
+    ("D", "2024-01-02"): -0.40,
+    ("E", "2024-01-03"): 0.10,
+    ("F", "2024-01-03"): -0.10,
 }
 
 
@@ -149,8 +151,8 @@ def test_an_isolated_peak_at_twenty_fails():
     motivó la tarea. Eso es sobreajuste al número, no un mecanismo."""
     d = {10: 0.000, 15: 0.001, 20: 0.040, 30: 0.001, 40: 0.000, 60: 0.000}
     out = dose_response(d, 20)
-    assert out["unimodal"]                     # sube y baja una sola vez
-    assert not out["no_isolated_peak"]         # pero los vecinos no conservan nada
+    assert out["unimodal"]  # sube y baja una sola vez
+    assert not out["no_isolated_peak"]  # pero los vecinos no conservan nada
     assert not out["passes"]
 
 
@@ -193,14 +195,12 @@ def test_candidate_b_ships_when_every_criterion_holds():
 
 
 def test_candidate_b_needs_the_bootstrap_not_just_the_point_estimate():
-    v = evaluate_b(_sum(0.030), _sum(0.050), _boot(ci_low=-0.001), _C6_OK, _C8_OK,
-                   _SENS_OK)
+    v = evaluate_b(_sum(0.030), _sum(0.050), _boot(ci_low=-0.001), _C6_OK, _C8_OK, _SENS_OK)
     assert v["c1_dcagr"] and not v["c4_boot_base"] and not v["ship"]
 
 
 def test_candidate_b_without_dose_response_does_not_ship():
-    v = evaluate_b(_sum(0.030), _sum(0.050), _boot(), {"passes": False}, _C8_OK,
-                   _SENS_OK)
+    v = evaluate_b(_sum(0.030), _sum(0.050), _boot(), {"passes": False}, _C8_OK, _SENS_OK)
     assert not v["ship"]
 
 
@@ -208,8 +208,9 @@ def test_candidate_a_must_beat_the_unconditional_arm():
     """C9 — la jerarquía declarada en el §6: si A no le gana a B, el efecto no es
     del evento y lo que shipea es B."""
     controls = [_sum(0.030) for _ in range(20)]
-    v = evaluate_a(_sum(0.030), _sum(0.050), _sum(0.050), controls, _boot(),
-                   _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK)
+    v = evaluate_a(
+        _sum(0.030), _sum(0.050), _sum(0.050), controls, _boot(), _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK
+    )
     assert v["dcagr_over_b"] < KILL_A_OVER_B
     assert not v["c9_beats_uncond"] and not v["ship"]
 
@@ -218,15 +219,17 @@ def test_candidate_a_must_beat_the_rate_matched_control():
     """C2 — el criterio que mató a la 49: ganarle al baseline no alcanza si
     cualquier subconjunto igualado en tasa hace lo mismo."""
     controls = [_sum(0.060) for _ in range(20)]
-    v = evaluate_a(_sum(0.030), _sum(0.050), _sum(0.040), controls, _boot(),
-                   _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK)
+    v = evaluate_a(
+        _sum(0.030), _sum(0.050), _sum(0.040), controls, _boot(), _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK
+    )
     assert not v["c2_vs_control"] and not v["ship"]
 
 
 def test_candidate_a_ships_when_it_beats_base_control_and_the_uncond_arm():
     controls = [_sum(0.030) for _ in range(20)]
-    v = evaluate_a(_sum(0.030), _sum(0.070), _sum(0.050), controls, _boot(),
-                   _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK)
+    v = evaluate_a(
+        _sum(0.030), _sum(0.070), _sum(0.050), controls, _boot(), _boot(), _boot(), _C6_OK, _C8_OK, _SENS_OK
+    )
     assert v["c2_vs_control"] and v["c9_beats_uncond"] and v["ship"]
 
 
@@ -240,8 +243,7 @@ def test_no_population_is_not_a_no_ship():
     """La corrección que la tarea 57 tuvo que hacer, fijada en un test: sin
     población el brazo está SIN PODER, y decir «no funciona» es leer al revés lo
     que la T13 publicó."""
-    out = outcome_of({"ship": False}, {"ship": False},
-                     {"b_ok": False, "a_ok": False}, sanity_valid=True)
+    out = outcome_of({"ship": False}, {"ship": False}, {"b_ok": False, "a_ok": False}, sanity_valid=True)
     assert "SIN POBLACIÓN" in out and "no refutado" in out
     assert "NO-SHIP" not in out
 
@@ -249,29 +251,30 @@ def test_no_population_is_not_a_no_ship():
 def test_shipping_a_warns_about_the_wiring_cost():
     """§7: el detector no corre en el engine vivo, así que un SHIP de A no es
     cableable sin construir esa cañería."""
-    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK,
-                     sanity_valid=True)
+    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK, sanity_valid=True)
     assert "SHIP A" in out and "cañería" in out
 
 
 def test_shipping_b_says_it_was_the_tenure_not_the_event():
-    out = outcome_of({"ship": False, "c1_dcagr": True}, {"ship": True}, _POP_OK,
-                     sanity_valid=True)
+    out = outcome_of({"ship": False, "c1_dcagr": True}, {"ship": True}, _POP_OK, sanity_valid=True)
     assert "SHIP B" in out and "no era el evento" in out.lower()
 
 
 def test_both_failing_c1_refutes_the_hypothesis_with_power():
-    out = outcome_of({"ship": False, "c1_dcagr": False, "c6_dose": True},
-                     {"ship": False, "c1_dcagr": False, "c6_dose": True}, _POP_OK,
-                     sanity_valid=True)
+    out = outcome_of(
+        {"ship": False, "c1_dcagr": False, "c6_dose": True},
+        {"ship": False, "c1_dcagr": False, "c6_dose": True},
+        _POP_OK,
+        sanity_valid=True,
+    )
     assert "refutada CON PODER" in out
+
 
 def test_a_failed_sanity_invalidates_the_run_over_every_criterion():
     """§5: si falla un sanity la corrida es INVÁLIDA y **no hay veredicto** — aunque
     los dos candidatos pasen todo. Es el molde de la 45/47/49, que este runner no
     tenía: sin la guarda, un SHIP podía publicarse sobre una corrida caída."""
-    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK,
-                     sanity_valid=False)
+    out = outcome_of({"ship": True, "c1_dcagr": True}, {"ship": True}, _POP_OK, sanity_valid=False)
     assert "CORRIDA INVÁLIDA" in out
     assert "SHIP" not in out
 
@@ -280,8 +283,7 @@ def test_invalid_without_population_names_the_cause():
     """Cuando la invalidez viene de que no hay a quién capar, el diagnóstico lo dice:
     mandar a buscar un bug en la cañería sería el error que la 48 y la 52 arreglaron
     por los otros dos ejes."""
-    out = outcome_of({"ship": False}, {"ship": False},
-                     {"b_ok": False, "a_ok": False}, sanity_valid=False)
+    out = outcome_of({"ship": False}, {"ship": False}, {"b_ok": False, "a_ok": False}, sanity_valid=False)
     assert "CORRIDA INVÁLIDA" in out and "§5.2" in out
 
 
@@ -292,4 +294,3 @@ def test_outcome_of_requires_declaring_the_sanity():
 
     with pytest.raises(TypeError):
         outcome_of({"ship": True}, {"ship": True}, _POP_OK)
-

@@ -16,7 +16,7 @@ from scripts.run_atr_stop_recalib import partition_atr_events
 
 
 def _d(i: int) -> str:
-    return f"2026-03-{i:02d}" if i <= 31 else f"2026-04-{i-31:02d}"
+    return f"2026-03-{i:02d}" if i <= 31 else f"2026-04-{i - 31:02d}"
 
 
 def bars_with_closes(closes, tr: float = 2.0):
@@ -27,10 +27,18 @@ def make_event(**kw) -> SellEvent:
     # avg_cost = entry = 100 → sin pico previo el trail queda suprimido
     # (hwm no supera entry + 1·ATR), así el stop dispara limpio en los tests.
     defaults = dict(
-        order_id=1, ticker="AAA", sell_date=_d(20), sell_price=100.0,
-        reason="atr_stop @ 91.0 ≤ 91.0", signal_score=None, shares=10.0,
-        avg_cost=100.0, entry_date=_d(17), entry_price=100.0,
-        sell_commission=1.0, sell_slippage=1.0,
+        order_id=1,
+        ticker="AAA",
+        sell_date=_d(20),
+        sell_price=100.0,
+        reason="atr_stop @ 91.0 ≤ 91.0",
+        signal_score=None,
+        shares=10.0,
+        avg_cost=100.0,
+        entry_date=_d(17),
+        entry_price=100.0,
+        sell_commission=1.0,
+        sell_slippage=1.0,
     )
     defaults.update(kw)
     return SellEvent(**defaults)
@@ -61,8 +69,7 @@ class TestReplayAtrRecalib:
         bars = bars_with_closes(closes)
         baseline = replay_atr_recalib(make_event(), bars, cap_days=5, atr_p=P)
         assert baseline.exit_reason == "atr_stop"  # mult 2.0 sí dispara en D
-        laxo = replay_atr_recalib(make_event(), bars, cap_days=5,
-                                  atr_p=AtrParams(stop_mult=3.0))
+        laxo = replay_atr_recalib(make_event(), bars, cap_days=5, atr_p=AtrParams(stop_mult=3.0))
         assert laxo.exit_reason == "cap_reached"
         assert laxo.exit_date == _d(25)  # idx 19 + 5
 
@@ -71,8 +78,8 @@ class TestReplayAtrRecalib:
         closes[19] = 90.0  # caería bajo el stop normal, pero está apagado
         bars = bars_with_closes(closes)
         sim = replay_atr_recalib(
-            make_event(), bars, cap_days=5,
-            atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False))
+            make_event(), bars, cap_days=5, atr_p=AtrParams(stop_mult=1e9, tp_mult=1e9, trail_enabled=False)
+        )
         assert sim.exit_reason == "cap_reached"
         assert sim.exit_date == _d(25)
 
@@ -97,8 +104,7 @@ class TestReplayAtrRecalib:
 
     def test_sell_day_no_en_barras_none(self):
         bars = bars_with_closes([100.0] * 10)
-        assert replay_atr_recalib(make_event(sell_date=_d(25)), bars,
-                                  cap_days=20, atr_p=P) is None
+        assert replay_atr_recalib(make_event(sell_date=_d(25)), bars, cap_days=20, atr_p=P) is None
 
     def test_sin_barras_none(self):
         assert replay_atr_recalib(make_event(), [], cap_days=20, atr_p=P) is None

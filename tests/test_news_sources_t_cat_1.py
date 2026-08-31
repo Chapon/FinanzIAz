@@ -15,19 +15,17 @@ from datetime import datetime
 import data.news_sources as ns
 from data.news_sources import (
     NewsItem,
-    _CollectResult,
     _finnhub_source_label,
     _rss_source_label,
+    cik_for_ticker,
     collect_all,
     collect_finnhub_news,
-    cik_for_ticker,
     default_feed_urls,
     parse_company_tickers,
     parse_edgar_submissions,
     parse_finnhub_news,
     yahoo_rss_url,
 )
-
 
 # ── fixtures (recorded EDGAR shapes) ─────────────────────────────────────────
 
@@ -105,8 +103,7 @@ def test_parse_edgar_published_at_is_filing_date():
 def test_parse_edgar_builds_archive_url():
     items = parse_edgar_submissions("AAPL", SUBMISSIONS_AAPL)
     assert items[0].url == (
-        "https://www.sec.gov/Archives/edgar/data/320193/"
-        "000032019326000050/aapl-8k_20260501.htm"
+        "https://www.sec.gov/Archives/edgar/data/320193/000032019326000050/aapl-8k_20260501.htm"
     )
 
 

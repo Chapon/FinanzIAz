@@ -48,8 +48,7 @@ def _bars(n: int = 40, *, pico_en: int | None = None, pico: float = 0.0):
 
 
 def _trade(**kw):
-    d = {"ticker": "AAA", "entry_date": "2026-01-21", "exit_date": "2026-01-30",
-         "ret": 0.05, "held_days": 9}
+    d = {"ticker": "AAA", "entry_date": "2026-01-21", "exit_date": "2026-01-30", "ret": 0.05, "held_days": 9}
     d.update(kw)
     return SimpleNamespace(**d)
 
@@ -57,7 +56,7 @@ def _trade(**kw):
 def test_the_excess_is_measured_in_atrs_over_the_entry_close():
     """El excedente es ``(HWM − close de entrada) / ATR(entrada)`` — la misma
     magnitud que ``gates.atr_exit_decision`` compara contra el umbral."""
-    bars = _bars(pico_en=25, pico=6.0)          # +6.00 sobre el close de entrada
+    bars = _bars(pico_en=25, pico=6.0)  # +6.00 sobre el close de entrada
     res = SimpleNamespace(trades=[_trade()])
     rows = trade_excess_atrs(res, {"AAA": bars})
     assert len(rows) == 1
@@ -89,9 +88,9 @@ def test_the_differential_population_is_the_interval_not_the_cumulative():
     La acumulada los sobrestima, y ése es el error que la 51 pagó por el otro eje."""
     excess = [0.1, 0.4, 0.6, 0.9, 1.2, 2.5]
     diff = {d["value"]: d["n_changed"] for d in differential_population(excess, [0.0, 0.5, 1.0])}
-    assert diff[0.0] == 4        # 0.1, 0.4, 0.6, 0.9
-    assert diff[0.5] == 2        # 0.6, 0.9
-    assert diff[1.0] == 0        # es el baseline: no cambia a nadie
+    assert diff[0.0] == 4  # 0.1, 0.4, 0.6, 0.9
+    assert diff[0.5] == 2  # 0.6, 0.9
+    assert diff[1.0] == 0  # es el baseline: no cambia a nadie
 
 
 def test_raising_the_threshold_disarms_and_that_also_counts():
@@ -132,8 +131,7 @@ def _res(trades):
 
 
 def _tr(ticker, entry, *, ret=0.0, exit_date="2026-02-01", reason="signal_full"):
-    return SimpleNamespace(ticker=ticker, entry_date=entry, ret=ret,
-                           exit_date=exit_date, exit_reason=reason)
+    return SimpleNamespace(ticker=ticker, entry_date=entry, ret=ret, exit_date=exit_date, exit_reason=reason)
 
 
 _POP_OK = {"ok": True}
@@ -163,15 +161,16 @@ def test_the_oracles_split_the_affectable_population_in_disjoint_halves():
     idéntico al baseline: el excedente es el techo del retorno, así que *los que
     mejor terminan* son casi exactamente *los que el umbral no puede tocar*. Ahora
     los dos salen de la población afectable, y quedan igualados en tasa."""
-    base = _res([_tr("A", "d", ret=-0.5), _tr("B", "d", ret=0.4),
-                 _tr("C", "d", ret=-0.2), _tr("D", "d", ret=0.9)])
+    base = _res(
+        [_tr("A", "d", ret=-0.5), _tr("B", "d", ret=0.4), _tr("C", "d", ret=-0.2), _tr("D", "d", ret=0.9)]
+    )
     D = {("A", "d"), ("B", "d"), ("C", "d"), ("D", "d")}
     peores = oracle_arm_keys(D, base, worst=True)
     mejores = oracle_arm_keys(D, base, worst=False)
     assert peores == {("A", "d"), ("C", "d")}
     assert mejores == {("B", "d"), ("D", "d")}
-    assert len(peores) == len(mejores)          # igualados en tasa
-    assert not (peores & mejores)               # y disjuntos
+    assert len(peores) == len(mejores)  # igualados en tasa
+    assert not (peores & mejores)  # y disjuntos
 
 
 def test_the_oracles_stay_inside_the_population_they_are_given():
@@ -185,10 +184,18 @@ def test_changed_exits_counts_the_salidas_not_the_armings():
     """El descriptivo que el smoke obligó a agregar: un trailing **armado** que
     nunca dispara deja la salida igual, así que la población del §5.3 es una cota
     superior de lo que un brazo mueve."""
-    base = _res([_tr("A", "d", exit_date="2026-03-01", reason="signal_full"),
-                 _tr("B", "d", exit_date="2026-03-05", reason="signal_full")])
-    cand = _res([_tr("A", "d", exit_date="2026-02-10", reason="atr_trail"),
-                 _tr("B", "d", exit_date="2026-03-05", reason="signal_full")])
+    base = _res(
+        [
+            _tr("A", "d", exit_date="2026-03-01", reason="signal_full"),
+            _tr("B", "d", exit_date="2026-03-05", reason="signal_full"),
+        ]
+    )
+    cand = _res(
+        [
+            _tr("A", "d", exit_date="2026-02-10", reason="atr_trail"),
+            _tr("B", "d", exit_date="2026-03-05", reason="signal_full"),
+        ]
+    )
     ce = changed_exits(base, cand, {("A", "d"), ("B", "d")})
     assert ce["n_common"] == 2 and ce["n_changed"] == 1
     assert ce["share"] == 0.5 and ce["n_changed_in_diff_pop"] == 1
@@ -200,7 +207,7 @@ def test_the_differential_return_is_paired_by_key():
     base = _res([_tr("A", "d", ret=-0.10), _tr("B", "d", ret=0.20)])
     cand = _res([_tr("A", "d", ret=-0.02), _tr("Z", "d", ret=5.0)])
     dr = differential_return(base, cand, {("A", "d"), ("B", "d")})
-    assert dr["n_common"] == 1                       # B no está en el candidato
+    assert dr["n_common"] == 1  # B no está en el candidato
     assert dr["base_pts"] == -10.0 and dr["cand_pts"] == -2.0
     assert dr["delta_pts"] == 8.0
 
@@ -208,9 +215,13 @@ def test_the_differential_return_is_paired_by_key():
 def test_exit_mix_groups_by_reason_not_by_level():
     """La razón viva trae el nivel adentro (``atr_trail @ 12.3 ≤ …``); el
     descriptivo agrupa por el motivo."""
-    res = _res([_tr("A", "d", reason="atr_trail @ 12.30 ≤ 12.50 (peak …)"),
-                _tr("B", "d", reason="atr_trail @ 9.10 ≤ 9.20 (peak …)"),
-                _tr("C", "d", reason="signal_full")])
+    res = _res(
+        [
+            _tr("A", "d", reason="atr_trail @ 12.30 ≤ 12.50 (peak …)"),
+            _tr("B", "d", reason="atr_trail @ 9.10 ≤ 9.20 (peak …)"),
+            _tr("C", "d", reason="signal_full"),
+        ]
+    )
     assert exit_mix(res) == {"atr_trail": 2, "signal_full": 1}
 
 
@@ -218,10 +229,15 @@ def _v(**over):
     base = {"cagr": 0.05, "max_dd": 0.30}
     cand = {"cagr": 0.07, "max_dd": 0.30}
     boot = SimpleNamespace(ci_low=0.001, ci_high=0.02, observed=0.01, p_value=0.01)
-    kw = {"base": base, "cand": cand, "boot": boot,
-          "c6": {"passes": True}, "c8": {"passes": True},
-          "sens": {"c1": True, "c4": True},
-          "diff_ret": {"n_common": 10, "delta_pts": 1.0}}
+    kw = {
+        "base": base,
+        "cand": cand,
+        "boot": boot,
+        "c6": {"passes": True},
+        "c8": {"passes": True},
+        "sens": {"c1": True, "c4": True},
+        "diff_ret": {"n_common": 10, "delta_pts": 1.0},
+    }
     kw.update(over)
     return evaluate(**kw)
 

@@ -30,8 +30,13 @@ def _no_trades_strategy(account, watchlist, positions, prices, history_provider)
 def _history(n: int = 30) -> pd.DataFrame:
     idx = pd.date_range("2026-01-01", periods=n, freq="D")
     return pd.DataFrame(
-        {"Open": [100.0] * n, "High": [100.0] * n, "Low": [100.0] * n,
-         "Close": [100.0] * n, "Volume": [10_000.0] * n},
+        {
+            "Open": [100.0] * n,
+            "High": [100.0] * n,
+            "Low": [100.0] * n,
+            "Close": [100.0] * n,
+            "Volume": [10_000.0] * n,
+        },
         index=idx,
     )
 

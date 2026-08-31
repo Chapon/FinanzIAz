@@ -32,8 +32,7 @@ def _df(closes):
     idx = pd.to_datetime([d for d, _ in closes])
     vals = [c for _, c in closes]
     return pd.DataFrame(
-        {"Open": vals, "High": vals, "Low": vals, "Close": vals,
-         "Volume": [1_000_000.0] * len(vals)},
+        {"Open": vals, "High": vals, "Low": vals, "Close": vals, "Volume": [1_000_000.0] * len(vals)},
         index=idx,
     )
 
@@ -44,13 +43,21 @@ def seeded_db(tmp_path):
     con = sqlite3.connect(str(db))
     con.execute(_CREATE)
     rows = [
-        ("AAPL", "1y", "1d",
-         _df([("2024-01-02", 100.0), ("2024-01-03", 101.0)]).to_json(orient="split", date_format="iso"),
-         "2026-07-11 12:00:00"),
+        (
+            "AAPL",
+            "1y",
+            "1d",
+            _df([("2024-01-02", 100.0), ("2024-01-03", 101.0)]).to_json(orient="split", date_format="iso"),
+            "2026-07-11 12:00:00",
+        ),
         # fila vieja → debe quedar stale con TTL corto tras migrar
-        ("MSFT", "6mo", "1d",
-         _df([("2023-06-01", 250.0)]).to_json(orient="split", date_format="iso"),
-         "2020-01-01 00:00:00"),
+        (
+            "MSFT",
+            "6mo",
+            "1d",
+            _df([("2023-06-01", 250.0)]).to_json(orient="split", date_format="iso"),
+            "2020-01-01 00:00:00",
+        ),
         # fila corrupta → cuenta como fallida, no rompe
         ("BADX", "1y", "1d", "{not valid json", "2026-07-11 12:00:00"),
     ]

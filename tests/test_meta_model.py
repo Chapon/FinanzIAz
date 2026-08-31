@@ -42,8 +42,7 @@ LABEL_DAYS = 20
 
 def _seq_samples(dates: list[str]) -> list[Sample]:
     return [
-        Sample(ticker="T", date=d, bar_idx=i, label=i % 2,
-               features=np.zeros(3, dtype=float))
+        Sample(ticker="T", date=d, bar_idx=i, label=i % 2, features=np.zeros(3, dtype=float))
         for i, d in enumerate(dates)
     ]
 
@@ -57,8 +56,7 @@ def test_purge_drops_samples_whose_label_window_reaches_the_test():
     cal = _calendar(samples)
     cutoff = dates[80]
 
-    train, purged = _split_train(samples, cutoff, cal,
-                                 label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS)
+    train, purged = _split_train(samples, cutoff, cal, label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS)
 
     # Se entrena solo con lo que queda a >= 40 ruedas del corte.
     assert all(s.date < cutoff for s in train)
@@ -81,8 +79,7 @@ def test_purge_counts_trading_days_not_calendar_days():
     cal = _calendar(samples)
     cutoff = dates[50]
 
-    train, purged = _split_train(samples, cutoff, cal,
-                                 label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS)
+    train, purged = _split_train(samples, cutoff, cal, label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS)
     assert purged == LABEL_DAYS + EMBARGO_DAYS
     assert len(train) == 50 - (LABEL_DAYS + EMBARGO_DAYS)
 
@@ -91,19 +88,18 @@ def test_no_training_sample_is_on_or_after_the_cutoff():
     dates = [f"2021-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(60)]
     dates = sorted(set(dates))
     samples = _seq_samples(dates)
-    train, _ = _split_train(samples, dates[30], _calendar(samples),
-                            label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS)
+    train, _ = _split_train(
+        samples, dates[30], _calendar(samples), label_days=LABEL_DAYS, embargo_days=EMBARGO_DAYS
+    )
     assert all(s.date < dates[30] for s in train)
 
 
 def test_cutoff_absent_from_the_calendar_still_purges():
     """El 1 de enero nunca es rueda: el corte tiene que resolverse a la primera
     fecha posterior en vez de romper o dejar pasar todo."""
-    dates = [f"2020-06-{d:02d}" for d in range(1, 29)] + \
-            [f"2021-06-{d:02d}" for d in range(1, 29)]
+    dates = [f"2020-06-{d:02d}" for d in range(1, 29)] + [f"2021-06-{d:02d}" for d in range(1, 29)]
     samples = _seq_samples(dates)
-    train, purged = _split_train(samples, "2021-01-01", _calendar(samples),
-                                 label_days=2, embargo_days=1)
+    train, purged = _split_train(samples, "2021-01-01", _calendar(samples), label_days=2, embargo_days=1)
     assert all(s.date < "2021-01-01" for s in train)
     assert purged == 3
 
@@ -123,10 +119,15 @@ def _yearly_dataset(n_years: int = 7, per_year: int = 200, seed: int = 3) -> Dat
             label = int(rng.random() < p)
             month = 1 + (k * 12) // per_year
             day = 1 + (k % 27)
-            ds.samples.append(Sample(
-                ticker=f"T{k % 5}", date=f"{y}-{month:02d}-{day:02d}",
-                bar_idx=k, label=label, features=x,
-            ))
+            ds.samples.append(
+                Sample(
+                    ticker=f"T{k % 5}",
+                    date=f"{y}-{month:02d}-{day:02d}",
+                    bar_idx=k,
+                    label=label,
+                    features=x,
+                )
+            )
     ds.samples.sort(key=lambda s: (s.date, s.ticker))
     return ds
 
@@ -150,8 +151,7 @@ def test_only_out_of_sample_years_get_predictions():
 def test_every_scored_sample_appears_exactly_once():
     ds = _yearly_dataset(n_years=6)
     oof = walkforward_oof(ds)
-    expected = {(s.ticker, s.date) for s in ds.samples
-                if int(s.date[:4]) in {f.test_year for f in oof.folds}}
+    expected = {(s.ticker, s.date) for s in ds.samples if int(s.date[:4]) in {f.test_year for f in oof.folds}}
     assert set(oof.proba) == expected
 
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
 from config.settings_manager import settings
@@ -41,8 +41,9 @@ def _series(daily_vol: float, rows: int = 120, seed: int = 0, start: float = 100
 
 
 def _account(**overrides):
-    base = dict(cash=100_000.0, max_positions=5, allocation_mode="equal_weight",
-                fixed_amount=5_000.0, commission=0.0)
+    base = dict(
+        cash=100_000.0, max_positions=5, allocation_mode="equal_weight", fixed_amount=5_000.0, commission=0.0
+    )
     base.update(overrides)
     return SimpleNamespace(**base)
 

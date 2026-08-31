@@ -8,6 +8,8 @@ Pre-registro: docs/scaleout_trailing_t7_2026-07-20.md
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 
 from analysis.scaleout_replay import CycleResult, Leg
@@ -48,7 +50,7 @@ def test_build_entries_respects_spacing_from_last_accepted():
     sigs = {_d(i): "BUY" for i in range(6, 60)}  # BUY todos los días
     got = build_entries({"X": bars}, {"X": sigs}, spacing=20, warmup=3)
     idxs = [i for _, i in got]
-    assert all(b - a >= 20 for a, b in zip(idxs, idxs[1:])), idxs
+    assert all(b - a >= 20 for a, b in pairwise(idxs)), idxs
 
 
 def test_build_entries_is_chronological_across_tickers():
@@ -56,7 +58,8 @@ def test_build_entries_is_chronological_across_tickers():
     got = build_entries(
         {"A": bars, "B": bars},
         {"A": {_d(20): "BUY"}, "B": {_d(10): "BUY"}},
-        spacing=1, warmup=3,
+        spacing=1,
+        warmup=3,
     )
     assert [t for t, _ in got] == ["B", "A"]
 
@@ -71,10 +74,12 @@ def test_build_entries_skips_last_bar():
 # ── Curva compuesta ──────────────────────────────────────────────────────────
 
 
-def _cycle(vals: list[tuple[str, float]], entry_cost: float = 100.0,
-           regime: str = "bull_normal") -> CycleResult:
-    r = CycleResult(ticker="X", entry_date=vals[0][0], entry_price=1.0,
-                    shares=1.0, entry_cost=entry_cost, regime=regime)
+def _cycle(
+    vals: list[tuple[str, float]], entry_cost: float = 100.0, regime: str = "bull_normal"
+) -> CycleResult:
+    r = CycleResult(
+        ticker="X", entry_date=vals[0][0], entry_price=1.0, shares=1.0, entry_cost=entry_cost, regime=regime
+    )
     r.daily_value = list(vals)
     r.legs = [Leg(vals[-1][0], 1.0, 1.0, "cap_reached", vals[-1][1])]
     return r
@@ -134,10 +139,14 @@ def test_summarise_fails_when_drawdown_blows_up():
 
 
 def test_summarise_splits_delta_by_regime():
-    base = [_cycle([(_d(1), 100.0), (_d(2), 100.0)], regime="bull_normal"),
-            _cycle([(_d(1), 100.0), (_d(2), 100.0)], regime="stress_bear_2022")]
-    arm = [_cycle([(_d(1), 100.0), (_d(2), 104.0)], regime="bull_normal"),
-           _cycle([(_d(1), 100.0), (_d(2), 98.0)], regime="stress_bear_2022")]
+    base = [
+        _cycle([(_d(1), 100.0), (_d(2), 100.0)], regime="bull_normal"),
+        _cycle([(_d(1), 100.0), (_d(2), 100.0)], regime="stress_bear_2022"),
+    ]
+    arm = [
+        _cycle([(_d(1), 100.0), (_d(2), 104.0)], regime="bull_normal"),
+        _cycle([(_d(1), 100.0), (_d(2), 98.0)], regime="stress_bear_2022"),
+    ]
     s = summarise("arm", arm, base)
     reg = s["delta_by_regime"]
     assert reg["bull_normal"] == pytest.approx(4.0)
@@ -156,8 +165,13 @@ def test_baseline_summary_has_no_verdict():
 def test_preregistered_arms_are_intact():
     """El pre-registro fija los brazos: que nadie agregue uno post-hoc sin querer."""
     assert set(ARMS) == {
-        "B0_baseline_full_exit", "A50_scaleout_50", "B_trail_2.5", "B_trail_3.0",
-        "C_A4_levels_rule", "A33_scaleout_33", "A67_scaleout_67",
+        "B0_baseline_full_exit",
+        "A50_scaleout_50",
+        "B_trail_2.5",
+        "B_trail_3.0",
+        "C_A4_levels_rule",
+        "A33_scaleout_33",
+        "A67_scaleout_67",
     }
     assert PRIMARY_ARM in ARMS and BASELINE_ARM in ARMS
     # el baseline tiene que ser el engine de hoy: cierre total, trailing = stop

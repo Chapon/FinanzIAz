@@ -1,16 +1,19 @@
 """Test del fill realista (exit_fill_prices) en _execute_rebalance del backtest."""
+
 from __future__ import annotations
 
 import pandas as pd
 import pytest
 
-from analysis.portfolio_backtest import _PositionState, _execute_rebalance
+from analysis.portfolio_backtest import _execute_rebalance, _PositionState
 
 
 def _make_position(shares=100.0, avg_cost=100.0):
     return _PositionState(
-        shares=shares, avg_cost=avg_cost,
-        entry_date=pd.Timestamp("2026-05-01"), entry_reason="BUY signal",
+        shares=shares,
+        avg_cost=avg_cost,
+        entry_date=pd.Timestamp("2026-05-01"),
+        entry_reason="BUY signal",
     )
 
 

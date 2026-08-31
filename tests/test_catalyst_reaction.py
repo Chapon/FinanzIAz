@@ -26,7 +26,9 @@ def _ramp_df(start="2026-01-01", n=40, step=1.0, start_price=100.0):
     """Business-day OHLCV where Close increases by ``step`` each bar."""
     idx = pd.bdate_range(start=start, periods=n)
     close = start_price + step * np.arange(n)
-    return pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close, "Volume": 1000}, index=idx)
+    return pd.DataFrame(
+        {"Open": close, "High": close, "Low": close, "Close": close, "Volume": 1000}, index=idx
+    )
 
 
 # ── forward_return ───────────────────────────────────────────────────────────

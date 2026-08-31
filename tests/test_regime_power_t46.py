@@ -34,7 +34,6 @@ from analysis.walkforward_power import (
 )
 from scripts.run_regime_power_t46 import per_trade_by_regime
 
-
 # ── detectable_mean_effect ───────────────────────────────────────────────────
 
 
@@ -45,8 +44,7 @@ def test_detectable_effect_shrinks_with_n_and_grows_with_sigma():
 
 def test_detectable_effect_scales_as_one_over_sqrt_n():
     """Cuadruplicar la muestra parte el efecto detectable al medio."""
-    assert (detectable_mean_effect(5.0, 400)
-            == pytest.approx(detectable_mean_effect(5.0, 100) / 2.0, rel=1e-9))
+    assert detectable_mean_effect(5.0, 400) == pytest.approx(detectable_mean_effect(5.0, 100) / 2.0, rel=1e-9)
 
 
 def test_detectable_effect_is_the_inverse_of_n_for_mean_effect():
@@ -81,13 +79,13 @@ def test_power_for_the_published_tolerance_is_alpha():
 
 
 def test_sign_stability_is_a_coin_flip_when_the_mean_is_noise():
-    xs = [5.0, -5.0] * 20                    # media exactamente 0 salvo redondeo
+    xs = [5.0, -5.0] * 20  # media exactamente 0 salvo redondeo
     out = sign_stability(xs, n_resamples=500)
     assert 0.35 <= out["p_same_sign"] <= 0.65
 
 
 def test_sign_stability_is_certain_when_the_effect_is_large():
-    xs = [10.0, 11.0, 9.0, 10.5] * 10        # media ~10, σ chica
+    xs = [10.0, 11.0, 9.0, 10.5] * 10  # media ~10, σ chica
     out = sign_stability(xs, n_resamples=500)
     assert out["p_same_sign"] == 1.0
     assert out["ci_low"] > 0
@@ -138,7 +136,7 @@ def test_block_delta_is_paired_so_common_market_noise_cancels():
     rng = random.Random(3)
     market = [rng.gauss(0.0, 0.02) for _ in range(200)]
     a = market
-    b = [m + 0.001 for m in market]          # el candidato gana 10 pb por día
+    b = [m + 0.001 for m in market]  # el candidato gana 10 pb por día
     out = block_delta_sign_stability(a, b, block=20, n_resamples=300)
     assert out["delta"] > 0
     assert out["p_same_sign"] == 1.0
@@ -178,4 +176,4 @@ def test_per_trade_by_regime_converts_to_points_and_keeps_every_regime():
     out = per_trade_by_regime(res)
     assert out["stress_bear_2022"] == [pytest.approx(5.0)]
     assert out[BULL_NORMAL] == [pytest.approx(-2.0)]
-    assert out["stress_2018q4"] == []        # las vacías existen, no desaparecen
+    assert out["stress_2018q4"] == []  # las vacías existen, no desaparecen

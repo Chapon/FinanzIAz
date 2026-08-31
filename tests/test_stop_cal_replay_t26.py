@@ -96,8 +96,8 @@ def test_stop_filter_no_apaga_el_trailing():
     sale por ``atr_stop``; con filtro tiene que salir por ``atr_trail``, no seguir viva.
     """
     subida = [101.0, 102.0, 103.0, 104.0, 105.0, 106.0]
-    bars = _flat_then(subida + [90.0, 89.0, 88.0])
-    a = AtrParams(stop_mult=2.0, tp_mult=NO_STOP)   # TP fuera del camino
+    bars = _flat_then([*subida, 90.0, 89.0, 88.0])
+    a = AtrParams(stop_mult=2.0, tp_mult=NO_STOP)  # TP fuera del camino
     base = _cycle(bars, a)
     assert "atr_stop" in base.exit_reasons
     filtrado = _cycle(bars, a, stop_filter=lambda _b, _i: False)
@@ -136,7 +136,7 @@ def test_stop_mas_estricto_dispara_donde_el_laxo_no():
     laxo = _cycle(bars, AtrParams(stop_mult=3.0))
     assert "atr_stop" in estricto.exit_reasons
     assert "atr_stop" not in laxo.exit_reasons
-    assert laxo.ret > estricto.ret          # el que aguantó capturó la recuperación
+    assert laxo.ret > estricto.ret  # el que aguantó capturó la recuperación
 
 
 def test_s_off_no_emite_ninguna_barrera_de_abajo():
@@ -150,7 +150,7 @@ def test_s_off_no_emite_ninguna_barrera_de_abajo():
 def test_brazo_de_diagnostico_mueve_solo_el_stop():
     """``D1_stop_only_3.0``: stop en 3.0 con el trailing pineado en 2.0."""
     subida = [101.0, 102.0, 103.0, 104.0, 105.0, 106.0]
-    bars = _flat_then(subida + [95.0, 94.0])
+    bars = _flat_then([*subida, 95.0, 94.0])
     d1 = _cycle(bars, AtrParams(stop_mult=3.0, trail_mult=2.0, tp_mult=NO_STOP))
     acoplado = _cycle(bars, AtrParams(stop_mult=3.0, tp_mult=NO_STOP))
     # con el trail pineado en 2.0 el nivel queda más arriba ⇒ sale antes o igual
@@ -163,8 +163,8 @@ def test_brazo_de_diagnostico_mueve_solo_el_stop():
 def test_oraculo_permite_el_stop_solo_si_la_caida_sigue():
     bajando = _bars([100.0 - i for i in range(40)])
     subiendo = _bars([100.0 + i for i in range(40)])
-    assert _oracle_stop_filter(bajando, 5) is True     # close[25] < close[5]
-    assert _oracle_stop_filter(subiendo, 5) is False   # rebota ⇒ el stop no dispara
+    assert _oracle_stop_filter(bajando, 5) is True  # close[25] < close[5]
+    assert _oracle_stop_filter(subiendo, 5) is False  # rebota ⇒ el stop no dispara
 
 
 def test_anti_oraculo_es_el_espejo():
@@ -190,7 +190,7 @@ def test_control_aleatorio_es_determinista_y_respeta_la_tasa():
     dec1 = [f1(bars, i) for i in range(len(bars))]
     assert dec1 == [f2(bars, i) for i in range(len(bars))]
     tasa = sum(dec1) / len(dec1)
-    assert 0.38 < tasa < 0.55           # ~0.463 con tolerancia de muestra
+    assert 0.38 < tasa < 0.55  # ~0.463 con tolerancia de muestra
     otra = random_stop_filter(0.463, seed=43)
     assert dec1 != [otra(bars, i) for i in range(len(bars))]
 
@@ -208,14 +208,23 @@ def test_oraculo_le_gana_al_baseline_en_un_dip_que_rebota():
 
 
 def _summ(cagr, sharpe, max_dd, stop_share=0.20):
-    return {"cagr": cagr, "sharpe": sharpe, "max_dd": max_dd, "p5_trade": -0.07,
-            "accounting_ok": True, "n_taken": 100, "n_offered": 200, "exposure": 0.6,
-            "stop_share": stop_share, "exit_mix": {"atr_stop": stop_share},
-            "total_return_pts": 0.0}
+    return {
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_dd": max_dd,
+        "p5_trade": -0.07,
+        "accounting_ok": True,
+        "n_taken": 100,
+        "n_offered": 200,
+        "exposure": 0.6,
+        "stop_share": stop_share,
+        "exit_mix": {"atr_stop": stop_share},
+        "total_return_pts": 0.0,
+    }
 
 
 def _reg(vals):
-    return {name: {"n": 20, "mean_ret_pts": v} for name, v in zip(_REG_NAMES, vals)}
+    return {name: {"n": 20, "mean_ret_pts": v} for name, v in zip(_REG_NAMES, vals, strict=True)}
 
 
 class _Boot:
@@ -233,9 +242,9 @@ def _case(**over):
     summaries = {
         "S_1.0": _summ(0.060, 0.40, 0.42, 0.55),
         "S_1.5": _summ(0.090, 0.60, 0.40, 0.38),
-        "S_2.0": _summ(0.100, 0.70, 0.39, 0.25),   # baseline
-        "S_2.5": _summ(0.112, 0.76, 0.39, 0.18),   # acompaña al candidato (C6)
-        "S_3.0": _summ(0.130, 0.85, 0.40, 0.12),   # candidato
+        "S_2.0": _summ(0.100, 0.70, 0.39, 0.25),  # baseline
+        "S_2.5": _summ(0.112, 0.76, 0.39, 0.18),  # acompaña al candidato (C6)
+        "S_3.0": _summ(0.130, 0.85, 0.40, 0.12),  # candidato
         "S_3.5": _summ(0.120, 0.80, 0.41, 0.07),
         "S_off": _summ(0.105, 0.72, 0.44, 0.00),
     }
@@ -256,8 +265,7 @@ def test_ship_cuando_pasan_los_seis():
     summaries, regimes = _case()
     v = evaluate(summaries, regimes, _Boot(0.008), "S_3.0")
     assert v["ship"] is True
-    assert all(v[k] for k in ("c1_cagr", "c2_maxdd", "c3_boot", "c4_sharpe",
-                              "c5_regime", "c6_dose"))
+    assert all(v[k] for k in ("c1_cagr", "c2_maxdd", "c3_boot", "c4_sharpe", "c5_regime", "c6_dose"))
 
 
 def test_noship_si_el_dcagr_no_llega():
@@ -270,8 +278,8 @@ def test_noship_si_el_maxdd_empeora_mas_de_2pp():
     """El caso partido resuelto ex ante: más CAGR comprado con drawdown NO shipea."""
     summaries, regimes = _case(summaries={"S_3.0": _summ(0.130, 0.85, 0.42, 0.12)})
     v = evaluate(summaries, regimes, _Boot(0.008), "S_3.0")
-    assert v["c1_cagr"] is True          # el retorno mejora...
-    assert v["c2_maxdd"] is False        # ...pero el riesgo se pasa del umbral
+    assert v["c1_cagr"] is True  # el retorno mejora...
+    assert v["c2_maxdd"] is False  # ...pero el riesgo se pasa del umbral
     assert v["ship"] is False
 
 
@@ -298,12 +306,14 @@ def test_noship_si_el_sharpe_cae_demasiado():
 
 def test_c6_el_baseline_no_cuenta_como_vecino():
     """El defecto que la enmienda §0 corrige: si el baseline contara, C6 sería vacuo."""
-    summaries, _ = _case(summaries={
-        "S_2.5": _summ(0.090, 0.60, 0.39, 0.18),   # peor que el baseline
-        "S_3.0": _summ(0.130, 0.85, 0.40, 0.12),   # pico aislado
-        "S_3.5": _summ(0.095, 0.55, 0.41, 0.07),
-        "S_off": _summ(0.098, 0.50, 0.44, 0.00),
-    })
+    summaries, _ = _case(
+        summaries={
+            "S_2.5": _summ(0.090, 0.60, 0.39, 0.18),  # peor que el baseline
+            "S_3.0": _summ(0.130, 0.85, 0.40, 0.12),  # pico aislado
+            "S_3.5": _summ(0.095, 0.55, 0.41, 0.07),
+            "S_off": _summ(0.098, 0.50, 0.44, 0.00),
+        }
+    )
     assert c6_dose_response(summaries, "S_3.0") is False
 
 
@@ -314,12 +324,14 @@ def test_c6_pasa_cuando_un_vecino_del_mismo_lado_acompana():
 
 def test_c6_es_aplicable_al_lado_estricto():
     """Con la enmienda, un candidato estricto también puede pasar C6 (antes no podía)."""
-    summaries, _ = _case(summaries={
-        "S_1.0": _summ(0.140, 0.90, 0.36, 0.55),   # candidato estricto
-        "S_1.5": _summ(0.105, 0.75, 0.38, 0.38),   # acompaña (Δ ≥ 0)
-    })
+    summaries, _ = _case(
+        summaries={
+            "S_1.0": _summ(0.140, 0.90, 0.36, 0.55),  # candidato estricto
+            "S_1.5": _summ(0.105, 0.75, 0.38, 0.38),  # acompaña (Δ ≥ 0)
+        }
+    )
     assert c6_dose_response(summaries, "S_1.0") is True
-    summaries["S_1.5"] = _summ(0.080, 0.50, 0.38, 0.38)   # deja de acompañar
+    summaries["S_1.5"] = _summ(0.080, 0.50, 0.38, 0.38)  # deja de acompañar
     assert c6_dose_response(summaries, "S_1.0") is False
 
 

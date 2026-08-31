@@ -34,11 +34,10 @@ from analysis.entry_rules import (
     ema_series,
     resolve_pullback,
 )
-from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
 from analysis.exit_replay import AtrParams
+from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
 from analysis.walkforward_power import paired_block_bootstrap
 from scripts.run_ent1_replay_t13 import TIME_STOP_N, evaluate_arm
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,7 +64,7 @@ def test_ema_seed_is_sma_and_warmup_is_none():
     bars = _bars([10.0, 20.0, 30.0, 40.0])
     ema = ema_series(bars, period=3)
     assert ema[0] is None and ema[1] is None
-    assert ema[2] == pytest.approx(20.0)          # SMA(10,20,30)
+    assert ema[2] == pytest.approx(20.0)  # SMA(10,20,30)
     alpha = 2.0 / 4.0
     assert ema[3] == pytest.approx(alpha * 40.0 + (1 - alpha) * 20.0)
 
@@ -93,15 +92,13 @@ def _ema_stub(n: int, value: float) -> list:
 def test_pullback_fills_at_first_touch():
     # close cae por debajo de la EMA (=100) recién en la barra 3.
     bars = _bars([101.0, 102.0, 103.0, 99.0, 98.0, 97.0, 96.0])
-    out = resolve_pullback(bars, 0, {}, window=5, condition="ema20",
-                           ema=_ema_stub(len(bars), 100.0))
+    out = resolve_pullback(bars, 0, {}, window=5, condition="ema20", ema=_ema_stub(len(bars), 100.0))
     assert out.status == "filled" and out.fill_idx == 3
 
 
 def test_pullback_expires_when_no_touch_in_window():
     bars = _bars([101.0] + [110.0] * 8)
-    out = resolve_pullback(bars, 0, {}, window=3, condition="ema20",
-                           ema=_ema_stub(len(bars), 100.0))
+    out = resolve_pullback(bars, 0, {}, window=3, condition="ema20", ema=_ema_stub(len(bars), 100.0))
     assert out.status == "expired" and out.fill_idx is None
 
 
@@ -110,16 +107,14 @@ def test_pullback_cancelled_by_sell_flip():
     igual sería comprar algo que el sistema ya quiere vender."""
     bars = _bars([101.0, 102.0, 99.0, 98.0, 97.0])
     sigs = {bars[1][0]: "SELL"}
-    out = resolve_pullback(bars, 0, sigs, window=4, condition="ema20",
-                           ema=_ema_stub(len(bars), 100.0))
+    out = resolve_pullback(bars, 0, sigs, window=4, condition="ema20", ema=_ema_stub(len(bars), 100.0))
     assert out.status == "cancelled" and out.fill_idx is None
 
 
 def test_pullback_needs_a_future_bar():
     """El toque en la última barra no es un fill: ``replay_cycle`` necesita futuro."""
-    bars = _bars([101.0, 102.0, 99.0])   # el toque cae en n-1
-    out = resolve_pullback(bars, 0, {}, window=5, condition="ema20",
-                           ema=_ema_stub(len(bars), 100.0))
+    bars = _bars([101.0, 102.0, 99.0])  # el toque cae en n-1
+    out = resolve_pullback(bars, 0, {}, window=5, condition="ema20", ema=_ema_stub(len(bars), 100.0))
     assert out.status == "expired"
 
 
@@ -146,18 +141,17 @@ def test_apply_pullback_dedups_one_wait_per_ticker():
     entries = [("AAA", 1), ("AAA", 2), ("AAA", 3)]
     out, stats = apply_pullback(entries, bars_by, sigs_by, window=5, condition="negday")
     assert stats.n_signals == 3
-    assert stats.n_waits == 1          # sólo la más vieja abrió espera
+    assert stats.n_waits == 1  # sólo la más vieja abrió espera
     assert stats.n_dup_skipped == 2
-    assert out == [("AAA", 5)]         # primer día de retorno negativo
+    assert out == [("AAA", 5)]  # primer día de retorno negativo
 
 
 def test_apply_pullback_accounting_and_order():
     bars_a = _bars([100.0, 101.0, 99.0, 98.0, 97.0, 96.0])
-    bars_b = _bars([50.0] + [60.0] * 5)          # nunca retrocede → expira
+    bars_b = _bars([50.0] + [60.0] * 5)  # nunca retrocede → expira
     bars_by = {"AAA": bars_a, "BBB": bars_b}
     sigs_by = {"AAA": {}, "BBB": {}}
-    out, stats = apply_pullback([("AAA", 0), ("BBB", 0)], bars_by, sigs_by,
-                                window=3, condition="negday")
+    out, stats = apply_pullback([("AAA", 0), ("BBB", 0)], bars_by, sigs_by, window=3, condition="negday")
     assert stats.n_waits == 2
     assert stats.n_filled == 1 and stats.n_expired == 1
     assert stats.expired_share == pytest.approx(0.5)
@@ -178,9 +172,17 @@ _COSTS = CostModel()
 
 
 def _cycle(bars, *, time_stop_days=None, cap_days=40):
-    return replay_cycle(bars, 0, {}, params=_SO, atr_p=AtrParams(),
-                        cap_days=cap_days, costs=_COSTS, notional=10_000.0,
-                        time_stop_days=time_stop_days)
+    return replay_cycle(
+        bars,
+        0,
+        {},
+        params=_SO,
+        atr_p=AtrParams(),
+        cap_days=cap_days,
+        costs=_COSTS,
+        notional=10_000.0,
+        time_stop_days=time_stop_days,
+    )
 
 
 def test_time_stop_fires_at_bar_n_when_flat():
@@ -195,7 +197,7 @@ def test_time_stop_fires_at_bar_n_when_flat():
 def test_time_stop_does_not_fire_when_position_advanced():
     """Con P/L > 0 en la barra N la posición sigue: es lo que protege a los runners
     que arrancan tarde (T7: 4 trades de 12–27 días hicieron el 69% de la ganancia)."""
-    closes = [100.0 + 0.05 * i for i in range(40)]     # +1.95 en 39 ruedas
+    closes = [100.0 + 0.05 * i for i in range(40)]  # +1.95 en 39 ruedas
     cyc = _cycle(_bars(closes), time_stop_days=TIME_STOP_N)
     assert cyc is not None
     assert "time_stop" not in cyc.exit_reasons
@@ -204,8 +206,8 @@ def test_time_stop_does_not_fire_when_position_advanced():
 def test_time_stop_is_one_shot_not_rolling():
     """Positivo en la barra N y negativo después ⇒ NO se cierra: la regla se evalúa
     una sola vez (la variante rolling está declarada fuera de alcance en el §4.2)."""
-    closes = [100.0 + 0.05 * i for i in range(TIME_STOP_N + 1)]     # +1.0 al día N
-    closes += [101.0 - 0.15 * i for i in range(1, 20)]              # cae bajo el costo
+    closes = [100.0 + 0.05 * i for i in range(TIME_STOP_N + 1)]  # +1.0 al día N
+    closes += [101.0 - 0.15 * i for i in range(1, 20)]  # cae bajo el costo
     bars = _bars(closes)
     cyc = _cycle(bars, time_stop_days=TIME_STOP_N, cap_days=len(closes) - 1)
     assert cyc is not None
@@ -240,6 +242,7 @@ def test_time_stop_uses_net_pnl_not_raw_price():
 
 def _wiggle(n: int, seed: int = 7) -> list[float]:
     import random
+
     rnd = random.Random(seed)
     return [rnd.gauss(0.0004, 0.01) for _ in range(n)]
 
@@ -249,12 +252,12 @@ def test_bootstrap_identical_series_does_not_pass_the_gate():
     out = paired_block_bootstrap(r, r, block=20, n_resamples=200, seed=1)
     assert out.observed == pytest.approx(0.0, abs=1e-12)
     assert out.ci_low <= 0.0 <= out.ci_high
-    assert not (out.ci_low > 0.0)          # el gate C5 NO pasa
+    assert not (out.ci_low > 0.0)  # el gate C5 NO pasa
 
 
 def test_bootstrap_strictly_better_candidate_passes():
     base = _wiggle(500)
-    cand = [x + 0.0008 for x in base]      # mejor todos los días
+    cand = [x + 0.0008 for x in base]  # mejor todos los días
     out = paired_block_bootstrap(base, cand, block=20, n_resamples=300, seed=1)
     assert out.observed > 0
     assert out.ci_low > 0.0
@@ -289,8 +292,15 @@ class _Stats:
 
 
 def _summary(cagr=0.10, sharpe=1.0, dd=0.20, winner=5.0, p95=0.12):
-    return {"cagr": cagr, "sharpe": sharpe, "max_dd": dd, "p5_trade": -0.07,
-            "p95_trade": p95, "winner_mean_pts": winner, "accounting_ok": True}
+    return {
+        "cagr": cagr,
+        "sharpe": sharpe,
+        "max_dd": dd,
+        "p5_trade": -0.07,
+        "p95_trade": p95,
+        "winner_mean_pts": winner,
+        "accounting_ok": True,
+    }
 
 
 def _regimes(delta=0.0):
@@ -322,15 +332,16 @@ def test_evaluate_arm_blocked_by_regime_robustness():
 
 
 def test_evaluate_arm_c6_is_expiry_for_a_and_right_tail_for_b():
-    summaries = {"BASE": _summary(),
-                 "A_pullback": _summary(cagr=0.12),
-                 "B_timestop": _summary(cagr=0.12, winner=4.0)}
+    summaries = {
+        "BASE": _summary(),
+        "A_pullback": _summary(cagr=0.12),
+        "B_timestop": _summary(cagr=0.12, winner=4.0),
+    }
     regimes = {n: _regimes() for n in summaries}
     # (a) — demasiadas entradas perdidas por expiración
     va = evaluate_arm("A_pullback", summaries, regimes, _Boot(0.001), _Stats(0.35))
     assert va["c6_specific"] is False and va["ship"] is False
-    assert evaluate_arm("A_pullback", summaries, regimes, _Boot(0.001),
-                        _Stats(0.10))["ship"] is True
+    assert evaluate_arm("A_pullback", summaries, regimes, _Boot(0.001), _Stats(0.10))["ship"] is True
     # (b) — el time stop recortó la cola derecha (ganadores 5.0 → 4.0 pts)
     vb = evaluate_arm("B_timestop", summaries, regimes, _Boot(0.001), None)
     assert vb["c6_specific"] is False and vb["ship"] is False

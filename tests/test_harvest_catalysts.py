@@ -24,7 +24,6 @@ from data.news_sources import (
 from database.models import AnalystEstimateSnapshot, NewsEvent, session_scope
 from scripts.harvest_catalysts import canonical_url, harvest, resolve_universe
 
-
 # ── fake collectors ──────────────────────────────────────────────────────────
 
 
@@ -173,7 +172,13 @@ def test_url_dedup_within_batch_across_sources(test_db):
     when = datetime(2026, 6, 5, 14, 0)
     # Same article, two outlets, DIFFERENT titles → content_hash differs, but the
     # canonical URL is identical (one has tracking params) → must collapse to 1.
-    a = _news("NVDA", "NVDA lands deal", when, url="https://www.reuters.com/nvda?utm_source=z", source="finnhub:Reuters")
+    a = _news(
+        "NVDA",
+        "NVDA lands deal",
+        when,
+        url="https://www.reuters.com/nvda?utm_source=z",
+        source="finnhub:Reuters",
+    )
     b = _news("NVDA", "Nvidia signs supply pact", when, url="https://reuters.com/nvda", source="yfinance")
     collector = _fixed_collector({"NVDA": [a, b]})
     rep = harvest(["NVDA"], collector=collector, now=when)

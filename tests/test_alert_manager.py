@@ -206,9 +206,7 @@ def test_update_alert_persists_and_rearms_even_a_triggered_one(portfolio_id):
 
 def test_update_alert_missing_returns_none(portfolio_id):
     assert (
-        AlertManager.update_alert(
-            999999, ticker="AAPL", alert_type="ABOVE", target_value=1.0, message=""
-        )
+        AlertManager.update_alert(999999, ticker="AAPL", alert_type="ABOVE", target_value=1.0, message="")
         is None
     )
 

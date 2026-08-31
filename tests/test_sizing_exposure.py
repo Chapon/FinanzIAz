@@ -71,24 +71,24 @@ def test_realized_vol_insufficient_bars_is_none():
 def test_make_size_weight_vol_target():
     sigma = {("A", "d"): 0.10, ("B", "d"): 0.40}
     vt = make_size_weight("vol_target", sigma, vol_target=0.20)
-    assert vt("A", "d") == pytest.approx(2.0)   # 0.20/0.10, cap 2.0
-    assert vt("B", "d") == pytest.approx(0.5)   # 0.20/0.40
+    assert vt("A", "d") == pytest.approx(2.0)  # 0.20/0.10, cap 2.0
+    assert vt("B", "d") == pytest.approx(0.5)  # 0.20/0.40
 
 
 def test_make_size_weight_inverse_vol_clamps_and_falls_back():
     sigma = {("A", "d"): 0.10, ("B", "d"): 0.40}  # mediana global = 0.25
     iv = make_size_weight("inverse_vol", sigma)
-    assert iv("A", "d") == pytest.approx(2.0)     # 0.25/0.10=2.5 → clamp 2.0
-    assert iv("B", "d") == pytest.approx(0.625)   # 0.25/0.40
-    assert iv("Z", "zz") == pytest.approx(1.0)    # σ ausente → mediana/mediana
+    assert iv("A", "d") == pytest.approx(2.0)  # 0.25/0.10=2.5 → clamp 2.0
+    assert iv("B", "d") == pytest.approx(0.625)  # 0.25/0.40
+    assert iv("Z", "zz") == pytest.approx(1.0)  # σ ausente → mediana/mediana
 
 
 def test_make_size_weight_equal_and_oracle():
     eq = make_size_weight("equal", {})
     assert eq("A", "d") == 1.0
     o = make_size_weight("oracle", {}, oracle_returns={("A", "d"): 0.25})
-    assert o("A", "d") == pytest.approx(2.0)      # 1 + 4·0.25, cap 2.0
-    assert o("B", "d") == 1.0                      # sin dato → neutral
+    assert o("A", "d") == pytest.approx(2.0)  # 1 + 4·0.25, cap 2.0
+    assert o("B", "d") == 1.0  # sin dato → neutral
 
 
 # ── risk_sizing: métricas de cartera ──────────────────────────────────────────
@@ -105,8 +105,7 @@ def test_sharpe_none_on_flat_curve():
 def test_size_weight_none_is_equal_weight():
     """Sin size_weight, dos entradas del mismo día reciben cash/free_slots iguales."""
     bars = _flat_bars(40)
-    res = _sim([("A", 5), ("B", 5)], {"A": bars, "B": bars},
-               max_positions=5, initial_capital=50_000.0)
+    res = _sim([("A", 5), ("B", 5)], {"A": bars, "B": bars}, max_positions=5, initial_capital=50_000.0)
     inv = {t.ticker: t.invested for t in res.trades}
     assert inv["A"] == pytest.approx(inv["B"], rel=1e-6)
 
@@ -114,9 +113,15 @@ def test_size_weight_none_is_equal_weight():
 def test_size_weight_scales_notional_by_risk_weight():
     """A pesa 2× y B 0.5× → A invierte más que B (max_weight alto = sin tope)."""
     bars = _flat_bars(40)
-    sw = lambda t, _d: {"A": 2.0, "B": 0.5}[t]  # noqa: E731
-    res = _sim([("A", 5), ("B", 5)], {"A": bars, "B": bars},
-               max_positions=4, size_weight=sw, max_weight=1.0, initial_capital=50_000.0)
+    sw = lambda t, _d: {"A": 2.0, "B": 0.5}[t]
+    res = _sim(
+        [("A", 5), ("B", 5)],
+        {"A": bars, "B": bars},
+        max_positions=4,
+        size_weight=sw,
+        max_weight=1.0,
+        initial_capital=50_000.0,
+    )
     inv = {t.ticker: t.invested for t in res.trades}
     assert inv["A"] > inv["B"]
 
@@ -124,15 +129,20 @@ def test_size_weight_scales_notional_by_risk_weight():
 def test_size_weight_capped_by_max_weight():
     """Un peso enorme se topa a max_weight de la equity."""
     bars = _flat_bars(40)
-    res = _sim([("A", 5)], {"A": bars}, max_positions=1,
-               size_weight=lambda _t, _d: 5.0, max_weight=0.25, initial_capital=50_000.0)
+    res = _sim(
+        [("A", 5)],
+        {"A": bars},
+        max_positions=1,
+        size_weight=lambda _t, _d: 5.0,
+        max_weight=0.25,
+        initial_capital=50_000.0,
+    )
     assert res.trades[0].invested <= 0.25 * 50_000.0 + 1.0
 
 
 # ── market_regime: modo scale (sweep del factor de la tarea 20) ───────────────
 def test_make_entry_filter_scale_applies_factor_in_risk_off():
-    s = RegimeSeries(dates=["2020-01-01", "2020-01-02"],
-                     risk_off=[True, True], streak=[1, 2])
+    s = RegimeSeries(dates=["2020-01-01", "2020-01-02"], risk_off=[True, True], streak=[1, 2])
     f = make_entry_filter(s, mode="scale", factor=0.3)
-    assert f("X", "2020-01-03") == pytest.approx(0.3)   # día previo risk-off
-    assert f("X", "2019-12-31") == 1.0                  # sin historia → risk-on
+    assert f("X", "2020-01-03") == pytest.approx(0.3)  # día previo risk-off
+    assert f("X", "2019-12-31") == 1.0  # sin historia → risk-on

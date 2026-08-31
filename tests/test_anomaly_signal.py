@@ -30,9 +30,9 @@ from analysis.anomaly_signal import (
 # ── Builders sintéticos ──────────────────────────────────────────────────────
 
 _BASE_CLOSE = 100.0
-_HALF_RANGE = 0.5          # → TR ≈ 1.0/día en la serie plana → ATR14 ≈ 1.0
-_ADV = 1_000_000.0         # volumen "normal"
-_WARMUP = 30               # chico para tests rápidos (start = max(warmup, 20, 15))
+_HALF_RANGE = 0.5  # → TR ≈ 1.0/día en la serie plana → ATR14 ≈ 1.0
+_ADV = 1_000_000.0  # volumen "normal"
+_WARMUP = 30  # chico para tests rápidos (start = max(warmup, 20, 15))
 
 
 def _dates(n: int) -> list[str]:
@@ -43,8 +43,10 @@ def _dates(n: int) -> list[str]:
 def _flat_series(n: int):
     """Serie plana: close constante, TR≈1 (ATR≈1), volumen constante _ADV."""
     ds = _dates(n)
-    bars = [(ds[i], _BASE_CLOSE, _BASE_CLOSE + _HALF_RANGE, _BASE_CLOSE - _HALF_RANGE,
-             _BASE_CLOSE) for i in range(n)]
+    bars = [
+        (ds[i], _BASE_CLOSE, _BASE_CLOSE + _HALF_RANGE, _BASE_CLOSE - _HALF_RANGE, _BASE_CLOSE)
+        for i in range(n)
+    ]
     volumes = [_ADV] * n
     return bars, volumes
 
@@ -73,8 +75,7 @@ def test_fires_when_both_conditions_hold():
 def test_entry_is_next_business_day():
     bars, vols = _flat_series(60)
     _inject(bars, vols, 40, jump=5.0, vol_mult=5.0)
-    entries = build_anomaly_entries({"AAA": bars}, {"AAA": vols},
-                                    AnomalyParams(), warmup=_WARMUP)
+    entries = build_anomaly_entries({"AAA": bars}, {"AAA": vols}, AnomalyParams(), warmup=_WARMUP)
     assert entries == [("AAA", 41)]  # entrada al día hábil siguiente (i+1)
 
 
@@ -129,8 +130,7 @@ def test_last_bar_anomaly_has_no_operable_entry():
     _inject(bars, vols, n - 1, jump=5.0, vol_mult=5.0)
     assert detect_anomalies(bars, vols, AnomalyParams(), warmup=_WARMUP) == [n - 1]
     # pero build_anomaly_entries la descarta (sin rueda de fill + posterior)
-    assert build_anomaly_entries({"AAA": bars}, {"AAA": vols},
-                                 AnomalyParams(), warmup=_WARMUP) == []
+    assert build_anomaly_entries({"AAA": bars}, {"AAA": vols}, AnomalyParams(), warmup=_WARMUP) == []
 
 
 # ── 4. Refractario ───────────────────────────────────────────────────────────
@@ -193,7 +193,8 @@ def test_entries_are_chronological_across_tickers():
     entries = build_anomaly_entries(
         {"AAA": a_bars, "BBB": b_bars},
         {"AAA": a_vols, "BBB": b_vols},
-        AnomalyParams(), warmup=_WARMUP,
+        AnomalyParams(),
+        warmup=_WARMUP,
     )
     # BBB (evento en 40 → entrada 41) antes que AAA (evento en 55 → entrada 56)
     assert entries == [("BBB", 41), ("AAA", 56)]
@@ -205,7 +206,8 @@ def test_build_entries_skips_ticker_with_bad_volume():
     entries = build_anomaly_entries(
         {"AAA": bars, "BAD": bars},
         {"AAA": vols, "BAD": vols[:10]},  # volumen desalineado → se saltea
-        AnomalyParams(), warmup=_WARMUP,
+        AnomalyParams(),
+        warmup=_WARMUP,
     )
     assert entries == [("AAA", 41)]
 

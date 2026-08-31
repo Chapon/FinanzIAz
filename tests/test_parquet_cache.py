@@ -65,9 +65,7 @@ def test_equivalence_with_json_backend():
     parquet_out = pc.read("MSFT", "6mo", "1d", ttl_hours=1)
     json_out = _json_roundtrip(df)
     assert parquet_out is not None
-    assert_frame_equal(
-        parquet_out, json_out, check_dtype=False, check_names=False, check_freq=False
-    )
+    assert_frame_equal(parquet_out, json_out, check_dtype=False, check_names=False, check_freq=False)
 
 
 def test_keys_are_isolated():
@@ -136,13 +134,10 @@ def test_invalidate_removes_all_ticker_files():
 
 
 def test_duckdb_scan_window_function():
-    df = _make_frame(
-        [("2024-01-02", 100.0), ("2024-01-03", 110.0), ("2024-01-04", 99.0)]
-    )
+    df = _make_frame([("2024-01-02", 100.0), ("2024-01-03", 110.0), ("2024-01-04", 99.0)])
     pc.write("AAPL", "1y", "1d", df)
     out = pc.scan(
-        'SELECT "Close" - LAG("Close") OVER (ORDER BY "Date") AS delta '
-        "FROM read_parquet(?) ORDER BY \"Date\"",
+        'SELECT "Close" - LAG("Close") OVER (ORDER BY "Date") AS delta FROM read_parquet(?) ORDER BY "Date"',
         [pc.parquet_glob("1d")],
     )
     deltas = out["delta"].tolist()

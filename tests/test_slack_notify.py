@@ -32,7 +32,6 @@ from paper_trading.account import create_account
 from paper_trading.models import PaperWatchlistItem
 from paper_trading.strategies import TargetTrade
 
-
 # ── Test doubles & helpers ──────────────────────────────────────────────────────
 
 

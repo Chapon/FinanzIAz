@@ -30,6 +30,13 @@ import pytest
 # scripts/ is sibling to tests/; add repo root so import works regardless of cwd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from analysis.regime_detector import (
+    REGIME_BEAR,
+    REGIME_BULL_QUIET,
+    REGIME_BULL_VOLATILE,
+    REGIME_LATERAL,
+    REGIME_WARMUP,
+)
 from scripts.regime_attribution import (
     NON_WARMUP_REGIMES,
     RegimeSharpe,
@@ -44,20 +51,11 @@ from scripts.regime_attribution import (
     slice_returns_by_regime,
     verdict_for_feature,
 )
-from analysis.regime_detector import (
-    REGIME_BEAR,
-    REGIME_BULL_QUIET,
-    REGIME_BULL_VOLATILE,
-    REGIME_LATERAL,
-    REGIME_WARMUP,
-)
-
 
 # ── Builders ────────────────────────────────────────────────────────────────
 
 
-def _make_equity(returns: np.ndarray, start: str = "2024-01-02",
-                 initial: float = 50_000.0) -> pd.Series:
+def _make_equity(returns: np.ndarray, start: str = "2024-01-02", initial: float = 50_000.0) -> pd.Series:
     """Build an equity curve from a daily-returns vector."""
     idx = pd.bdate_range(start=start, periods=len(returns) + 1)
     # equity_0 = initial, then compounded
@@ -109,8 +107,7 @@ class TestSlicing:
         # 4-day series, each day with a distinct régime label.
         idx = pd.bdate_range("2024-01-02", periods=4)
         rets = pd.Series([0.01, -0.02, 0.005, -0.003], index=idx)
-        regs = pd.Series([REGIME_BULL_QUIET, REGIME_BEAR, REGIME_LATERAL,
-                          REGIME_BULL_VOLATILE], index=idx)
+        regs = pd.Series([REGIME_BULL_QUIET, REGIME_BEAR, REGIME_LATERAL, REGIME_BULL_VOLATILE], index=idx)
         sliced = slice_returns_by_regime(rets, regs)
         assert sliced[REGIME_BULL_QUIET].iloc[0] == pytest.approx(0.01)
         assert sliced[REGIME_BEAR].iloc[0] == pytest.approx(-0.02)
@@ -145,7 +142,7 @@ class TestComputeVariantRegimeSharpe:
         regs = pd.Series(index=idx, dtype="object")
         # First bar of eq has no return, so regimes for returns start at idx[1]
         # Easiest: set whole index, but slicing uses return index.
-        regs.iloc[: 101] = REGIME_BULL_QUIET
+        regs.iloc[:101] = REGIME_BULL_QUIET
         regs.iloc[101:] = REGIME_BEAR
 
         out = compute_variant_regime_sharpe(eq, regs, variant_name="v")
@@ -184,10 +181,8 @@ class TestDeltaSharpeTable:
 
     def test_baseline_row_is_all_zero(self):
         d = self._make_three_variants(
-            {REGIME_BULL_QUIET: 1.0, REGIME_BULL_VOLATILE: 0.5,
-             REGIME_LATERAL: 0.0, REGIME_BEAR: -1.0},
-            {REGIME_BULL_QUIET: 1.2, REGIME_BULL_VOLATILE: 0.4,
-             REGIME_LATERAL: 0.1, REGIME_BEAR: -0.8},
+            {REGIME_BULL_QUIET: 1.0, REGIME_BULL_VOLATILE: 0.5, REGIME_LATERAL: 0.0, REGIME_BEAR: -1.0},
+            {REGIME_BULL_QUIET: 1.2, REGIME_BULL_VOLATILE: 0.4, REGIME_LATERAL: 0.1, REGIME_BEAR: -0.8},
         )
         delta = delta_sharpe_table(d)
         for reg in NON_WARMUP_REGIMES:
@@ -197,10 +192,8 @@ class TestDeltaSharpeTable:
         # Ablation is *better* in bull (Δ > 0 → feature hurts there)
         # and *worse* in bear (Δ < 0 → feature helps there).
         d = self._make_three_variants(
-            {REGIME_BULL_QUIET: 1.0, REGIME_BULL_VOLATILE: 0.5,
-             REGIME_LATERAL: 0.0, REGIME_BEAR: -1.0},
-            {REGIME_BULL_QUIET: 1.5, REGIME_BULL_VOLATILE: 0.7,
-             REGIME_LATERAL: 0.0, REGIME_BEAR: -1.5},
+            {REGIME_BULL_QUIET: 1.0, REGIME_BULL_VOLATILE: 0.5, REGIME_LATERAL: 0.0, REGIME_BEAR: -1.0},
+            {REGIME_BULL_QUIET: 1.5, REGIME_BULL_VOLATILE: 0.7, REGIME_LATERAL: 0.0, REGIME_BEAR: -1.5},
         )
         delta = delta_sharpe_table(d)
         assert delta.loc["no_feature_x", REGIME_BULL_QUIET] == pytest.approx(0.5)
