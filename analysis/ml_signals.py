@@ -130,7 +130,7 @@ MIN_WALKFORWARD_ROWS = 250
 # account had just paid to train.
 
 
-def _lru_get(cache: "OrderedDict[str, object]", key: str, default=None):
+def _lru_get(cache: OrderedDict[str, object], key: str, default=None):
     """Read ``key``, marking it most-recently-used. ``default`` when absent."""
     if not key or key not in cache:
         return default
@@ -138,7 +138,7 @@ def _lru_get(cache: "OrderedDict[str, object]", key: str, default=None):
     return cache[key]
 
 
-def _lru_put(cache: "OrderedDict[str, object]", key: str, value, max_entries: int) -> None:
+def _lru_put(cache: OrderedDict[str, object], key: str, value, max_entries: int) -> None:
     """Store ``key`` and drop the least-recently-used entries over capacity."""
     if not key:
         return
@@ -161,7 +161,7 @@ def _lru_put(cache: "OrderedDict[str, object]", key: str, value, max_entries: in
 # entry measures ~633 KiB pickled → 192 entries ≈ 119 MiB, which covers the
 # whole scan universe plus headroom for the ad-hoc analyses of the Analysis and
 # Leads tabs. The old cap of 64 could not even hold one account's scan.
-_XGB_CACHE: "OrderedDict[str, tuple]" = OrderedDict()
+_XGB_CACHE: OrderedDict[str, tuple] = OrderedDict()
 _XGB_CACHE_MAX = 192
 
 
@@ -198,7 +198,7 @@ def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) ->
         # Non-numeric closes: better no caching than a key that can't tell two
         # different training sets apart.
         return ""
-    payload = f"{sorted(feature_cols)}|{n_samples}|{trainable.index[-1]}".encode("utf-8")
+    payload = f"{sorted(feature_cols)}|{n_samples}|{trainable.index[-1]}".encode()
     return hashlib.sha256(closes.tobytes() + payload).hexdigest()[:16]
 
 
@@ -484,6 +484,7 @@ def _fit_gaussian_hmm(X: np.ndarray, n_states: int = HMM_N_STATES) -> object | N
     state_order[0] = lowest mean return  → BEAR
     state_order[-1] = highest mean return → BULL
     """
+
     # Diagonal covariance is far more numerically robust than "full" for the
     # two tiny-scale features here: with "full", a state that collapses onto a
     # few near-identical observations can drive its covariance matrix to be
@@ -1199,7 +1200,7 @@ STACKING_FEATURE_COLS = [
 # don't refit the whole XGB-OOF + HMM + logistic stack. Mirrors _XGB_CACHE.
 # A trained ``dict`` *and* a ``None`` outcome (e.g. too few rows) are both cached,
 # so the expensive feature build isn't repeated just to re-learn it's a no-go.
-_STACK_CACHE: "OrderedDict[str, object]" = OrderedDict()
+_STACK_CACHE: OrderedDict[str, object] = OrderedDict()
 _STACK_CACHE_MAX = 64
 _STACK_MISS = object()  # sentinel: distinguishes "not cached" from "cached None"
 

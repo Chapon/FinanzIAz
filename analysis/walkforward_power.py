@@ -28,11 +28,11 @@ tests corren offline. El runner CLI (con ``analyze()`` PIT + red) vive en
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from itertools import combinations
 from statistics import NormalDist
-from typing import Callable
 
 import numpy as np
 
@@ -57,7 +57,7 @@ ScoreFn = Callable[[str, "list[Bar]"], "float | None"]
 class Regime:
     name: str
     start: str  # iso10 inclusive
-    end: str    # iso10 inclusive
+    end: str  # iso10 inclusive
 
 
 # Ventanas de stress históricas (drawdown real) para evaluar guardrails fuera del
@@ -80,7 +80,7 @@ def regime_for_date(date_iso10: str, regimes: list[Regime] = STRESS_REGIMES) -> 
 
 
 def regime_window_returns(
-    pairs: "list[tuple[str, float]]",
+    pairs: list[tuple[str, float]],
     regimes: list[Regime] = STRESS_REGIMES,
 ) -> dict[str, float]:
     """Retorno **compuesto de la cartera** durante los días de cada régimen.
@@ -127,9 +127,9 @@ class EntrySample:
     """
 
     ticker: str
-    entry_date: str      # iso10
-    entry_idx: int       # índice en las barras de ese ticker
-    entry_price: float   # close en la entrada
+    entry_date: str  # iso10
+    entry_idx: int  # índice en las barras de ese ticker
+    entry_price: float  # close en la entrada
     regime: str
     fwd5: float | None
     fwd20: float | None
@@ -165,14 +165,17 @@ def build_entry_grid(
         if entry_price is None or not math.isfinite(entry_price) or entry_price <= 0:
             continue
 
+        # `_fwd` captura `idx` y `entry_price` del loop, pero se INVOCA dentro
+        # de la misma iteracion (ver `fwd5=`/`fwd20=` abajo) y nunca se guarda,
+        # asi que el late-binding que B023 advierte no puede darse aca.
         def _fwd(h: int) -> float | None:
-            j = idx + h
+            j = idx + h  # noqa: B023
             if j >= n:
                 return None
             fut = bars[j][4]
             if fut is None or not math.isfinite(fut) or fut <= 0:
                 return None
-            return fut / entry_price - 1.0
+            return fut / entry_price - 1.0  # noqa: B023
 
         label_end_idx = idx + fwd_long
         label_end = bars[label_end_idx][0] if label_end_idx < n else None
@@ -205,8 +208,13 @@ def sample_universe(
     for ticker, bars in data.items():
         out.extend(
             build_entry_grid(
-                bars, ticker, spacing=spacing, warmup=warmup,
-                fwd_short=fwd_short, fwd_long=fwd_long, regimes=regimes,
+                bars,
+                ticker,
+                spacing=spacing,
+                warmup=warmup,
+                fwd_short=fwd_short,
+                fwd_long=fwd_long,
+                regimes=regimes,
             )
         )
     return out
@@ -218,10 +226,10 @@ def sample_universe(
 @dataclass
 class StopReplayOutcome:
     entry: EntrySample
-    ret_with_stops: float        # retorno por-share bajo el ATR baseline
-    ret_no_stops: float          # retorno por-share manteniendo hasta cap sin stops
+    ret_with_stops: float  # retorno por-share bajo el ATR baseline
+    ret_no_stops: float  # retorno por-share manteniendo hasta cap sin stops
     exit_reason_with_stops: str
-    exit_days_with_stops: int    # barras desde la entrada hasta el exit con stops
+    exit_days_with_stops: int  # barras desde la entrada hasta el exit con stops
 
     @property
     def delta(self) -> float:
@@ -274,9 +282,7 @@ def replay_from_entry(
                 p=atr_p,
             )
         if fired is not None:
-            level = _atr_trigger_level(
-                fired, avg_cost=avg_cost, hwm=hwm, atr_value=a, p=atr_p
-            )
+            level = _atr_trigger_level(fired, avg_cost=avg_cost, hwm=hwm, atr_value=a, p=atr_p)
             return (i, _exit_fill_price(fired, level, bars[i]), fired)
         if i == last_idx:
             return (i, close_i, "cap_reached")
@@ -374,13 +380,11 @@ class ICResult:
     n_dates: int
     mean_ic: float | None
     std_ic: float | None
-    t_stat: float | None       # mean_ic / (std_ic / sqrt(n_dates))
+    t_stat: float | None  # mean_ic / (std_ic / sqrt(n_dates))
     per_date_ic: list[float] = field(default_factory=list)
 
 
-def cross_sectional_ic(
-    entries: list[EntrySample], *, horizon: str = "fwd5", min_names: int = 5
-) -> ICResult:
+def cross_sectional_ic(entries: list[EntrySample], *, horizon: str = "fwd5", min_names: int = 5) -> ICResult:
     """Agrupa por ``entry_date`` y corre corr(score, fwd) entre nombres en cada
     fecha con ≥ ``min_names`` observaciones; devuelve el IC medio y su t-stat."""
     by_date: dict[str, list[EntrySample]] = {}
@@ -403,8 +407,12 @@ def cross_sectional_ic(
     std = float(arr.std(ddof=1)) if len(arr) > 1 else 0.0
     t = (mean / (std / math.sqrt(len(arr)))) if std > 0 else None
     return ICResult(
-        horizon=horizon, n_dates=len(ics), mean_ic=mean, std_ic=std,
-        t_stat=t, per_date_ic=ics,
+        horizon=horizon,
+        n_dates=len(ics),
+        mean_ic=mean,
+        std_ic=std,
+        t_stat=t,
+        per_date_ic=ics,
     )
 
 
@@ -461,8 +469,7 @@ def achieved_power_mean(d: float, n: int, *, alpha: float = 0.05) -> float:
     return float(1 - nd.cdf(z_a - ncp) + nd.cdf(-z_a - ncp))
 
 
-def detectable_mean_effect(sd: float, n: int, *, alpha: float = 0.05,
-                           power: float = 0.80) -> float:
+def detectable_mean_effect(sd: float, n: int, *, alpha: float = 0.05, power: float = 0.80) -> float:
     """Efecto medio más chico detectable con ``n`` muestras de desvío ``sd``.
 
     Es ``n_for_mean_effect`` dado vuelta, y en las unidades del dato (pts por
@@ -476,8 +483,7 @@ def detectable_mean_effect(sd: float, n: int, *, alpha: float = 0.05,
     return float(abs(sd) * z / math.sqrt(n))
 
 
-def sign_stability(values: "list[float]", *, n_resamples: int = 2000,
-                   seed: int = 12345) -> dict:
+def sign_stability(values: list[float], *, n_resamples: int = 2000, seed: int = 12345) -> dict:
     """¿Sobrevive el **signo de la media** a remuestrear la propia muestra?
 
     Bootstrap i.i.d. sobre ``values``. Devuelve la media observada, el IC95% y
@@ -489,23 +495,30 @@ def sign_stability(values: "list[float]", *, n_resamples: int = 2000,
     arr = np.asarray(values, dtype=float)
     n = arr.size
     if n < 2:
-        return {"n": int(n), "mean": (float(arr[0]) if n else None),
-                "ci_low": None, "ci_high": None, "p_same_sign": None}
+        return {
+            "n": int(n),
+            "mean": (float(arr[0]) if n else None),
+            "ci_low": None,
+            "ci_high": None,
+            "p_same_sign": None,
+        }
     rng = np.random.default_rng(seed)
     idx = rng.integers(0, n, size=(n_resamples, n))
     means = arr[idx].mean(axis=1)
     obs = float(arr.mean())
     same = float(np.mean(np.sign(means) == np.sign(obs))) if obs != 0 else 0.5
     return {
-        "n": int(n), "mean": obs,
+        "n": int(n),
+        "mean": obs,
         "ci_low": float(np.percentile(means, 2.5)),
         "ci_high": float(np.percentile(means, 97.5)),
         "p_same_sign": same,
     }
 
 
-def block_sign_stability(rets: "list[float]", *, block: int = 20,
-                         n_resamples: int = 2000, seed: int = 12345) -> dict:
+def block_sign_stability(
+    rets: list[float], *, block: int = 20, n_resamples: int = 2000, seed: int = 12345
+) -> dict:
     """Igual que ``sign_stability`` pero para una serie **diaria de cartera**.
 
     Remuestrea bloques móviles contiguos (preserva autocorrelación y el efecto
@@ -516,8 +529,7 @@ def block_sign_stability(rets: "list[float]", *, block: int = 20,
     arr = np.asarray(rets, dtype=float)
     T = arr.size
     if T < 2:
-        return {"n": int(T), "ret": None, "ci_low": None, "ci_high": None,
-                "p_same_sign": None}
+        return {"n": int(T), "ret": None, "ci_low": None, "ci_high": None, "p_same_sign": None}
     b = max(1, min(int(block), T))
     n_blocks = math.ceil(T / b)
     rng = np.random.default_rng(seed)
@@ -530,16 +542,17 @@ def block_sign_stability(rets: "list[float]", *, block: int = 20,
     obs = float(np.prod(1.0 + arr) - 1.0)
     same = float(np.mean(np.sign(out) == np.sign(obs))) if obs != 0 else 0.5
     return {
-        "n": int(T), "ret": obs,
+        "n": int(T),
+        "ret": obs,
         "ci_low": float(np.percentile(out, 2.5)),
         "ci_high": float(np.percentile(out, 97.5)),
         "p_same_sign": same,
     }
 
 
-def block_delta_sign_stability(rets_a: "list[float]", rets_b: "list[float]", *,
-                               block: int = 20, n_resamples: int = 2000,
-                               seed: int = 12345) -> dict:
+def block_delta_sign_stability(
+    rets_a: list[float], rets_b: list[float], *, block: int = 20, n_resamples: int = 2000, seed: int = 12345
+) -> dict:
     """Estabilidad del signo de **Δ(retorno de ventana)** entre dos brazos, pareado.
 
     Es lo que un criterio de régimen realmente evalúa: no *"¿la cartera perdió en
@@ -552,8 +565,7 @@ def block_delta_sign_stability(rets_a: "list[float]", rets_b: "list[float]", *,
     b = np.asarray(rets_b, dtype=float)
     T = min(a.size, b.size)
     if T < 2:
-        return {"n": int(T), "delta": None, "ci_low": None, "ci_high": None,
-                "p_same_sign": None}
+        return {"n": int(T), "delta": None, "ci_low": None, "ci_high": None, "p_same_sign": None}
     a, b = a[:T], b[:T]
     bl = max(1, min(int(block), T))
     n_blocks = math.ceil(T / bl)
@@ -567,7 +579,8 @@ def block_delta_sign_stability(rets_a: "list[float]", rets_b: "list[float]", *,
     obs = float(np.prod(1.0 + b) - np.prod(1.0 + a))
     same = float(np.mean(np.sign(out) == np.sign(obs))) if obs != 0 else 0.5
     return {
-        "n": int(T), "delta": obs,
+        "n": int(T),
+        "delta": obs,
         "ci_low": float(np.percentile(out, 2.5)),
         "ci_high": float(np.percentile(out, 97.5)),
         "p_same_sign": same,
@@ -583,9 +596,9 @@ class RegimeStopStats:
     n: int
     mean_ret_with_stops: float | None
     mean_ret_no_stops: float | None
-    mean_delta: float | None       # no_stops − with_stops
-    d: float | None                # Cohen del Δ pareado
-    achieved_power: float | None   # potencia del test pareado con este n
+    mean_delta: float | None  # no_stops − with_stops
+    d: float | None  # Cohen del Δ pareado
+    achieved_power: float | None  # potencia del test pareado con este n
     loo_worst_delta: float | None  # mean_delta sacando el ticker de ±mayor aporte
 
 
@@ -669,9 +682,9 @@ def _merge_intervals(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
 @dataclass(frozen=True)
 class CPCVSplit:
-    test_groups: tuple[int, ...]   # grupos temporales que forman el test
-    train_idx: tuple[int, ...]     # posiciones (en la lista original) del train purgado
-    test_idx: tuple[int, ...]      # posiciones del test
+    test_groups: tuple[int, ...]  # grupos temporales que forman el test
+    train_idx: tuple[int, ...]  # posiciones (en la lista original) del train purgado
+    test_idx: tuple[int, ...]  # posiciones del test
 
 
 def entry_intervals(entries: list[EntrySample]) -> list[tuple[str, str]]:
@@ -707,7 +720,7 @@ def cpcv_splits(
     pos = 0
     for g in range(n_groups):
         size = base + (1 if g < extra else 0)
-        groups.append(order[pos:pos + size])
+        groups.append(order[pos : pos + size])
         pos += size
 
     splits: list[CPCVSplit] = []
@@ -717,14 +730,15 @@ def cpcv_splits(
         test_set = set(test_idx)
         merged = _merge_intervals([(starts[i], ends[i] + embargo_days) for i in test_idx])
         train_idx = [
-            i for i in (all_idx - test_set)
-            if not any(starts[i] <= me and ms <= ends[i] for ms, me in merged)
+            i for i in (all_idx - test_set) if not any(starts[i] <= me and ms <= ends[i] for ms, me in merged)
         ]
-        splits.append(CPCVSplit(
-            test_groups=combo,
-            train_idx=tuple(sorted(train_idx)),
-            test_idx=tuple(sorted(test_idx)),
-        ))
+        splits.append(
+            CPCVSplit(
+                test_groups=combo,
+                train_idx=tuple(sorted(train_idx)),
+                test_idx=tuple(sorted(test_idx)),
+            )
+        )
     return splits
 
 
@@ -735,9 +749,9 @@ def cpcv_splits(
 class CPCVEffectResult:
     regime: str
     n_paths: int
-    mean_delta: float | None       # promedio de los Δ medios por path
-    std_delta: float | None        # dispersión entre paths (robustez temporal)
-    frac_positive: float | None    # fracción de paths con Δ medio > 0
+    mean_delta: float | None  # promedio de los Δ medios por path
+    std_delta: float | None  # dispersión entre paths (robustez temporal)
+    frac_positive: float | None  # fracción de paths con Δ medio > 0
     per_path_delta: list[float] = field(default_factory=list)
 
 
@@ -757,8 +771,7 @@ def cpcv_effect_distribution(
     if len(filt) < n_groups:
         return CPCVEffectResult(regime, 0, None, None, None, [])
     intervals = entry_intervals([o.entry for o in filt])
-    splits = cpcv_splits(intervals, n_groups=n_groups, k_test=k_test,
-                         embargo_days=embargo_days)
+    splits = cpcv_splits(intervals, n_groups=n_groups, k_test=k_test, embargo_days=embargo_days)
     per_path: list[float] = []
     for sp in splits:
         m = _mean([filt[i].delta for i in sp.test_idx])
@@ -780,7 +793,7 @@ def cpcv_effect_distribution(
 # ── PBO vía CSCV (Bailey & López de Prado) ───────────────────────────────────
 
 
-def _sharpe(xs: "list[float] | np.ndarray") -> float:
+def _sharpe(xs: list[float] | np.ndarray) -> float:
     """Sharpe por-observación (mean/std, SIN anualizar). std 0 ⇒ devuelve la media
     (config degenerado sin dispersión)."""
     a = np.asarray(xs, dtype=float)
@@ -795,12 +808,12 @@ class PBOResult:
     n_configs: int
     n_splits: int
     n_combos: int
-    pbo: float                                  # P(mejor-IS por debajo de la mediana OOS)
+    pbo: float  # P(mejor-IS por debajo de la mediana OOS)
     mean_logit: float | None = None
     best_is_counts: dict[str, int] = field(default_factory=dict)
 
 
-def pbo_cscv(perf_matrix: dict[str, "list[float]"], *, n_splits: int = 10) -> PBOResult:
+def pbo_cscv(perf_matrix: dict[str, list[float]], *, n_splits: int = 10) -> PBOResult:
     """Probability of Backtest Overfitting vía CSCV (Bailey & López de Prado 2017).
 
     ``perf_matrix`` = {config: serie de performance por-observación} (todas del
@@ -816,7 +829,7 @@ def pbo_cscv(perf_matrix: dict[str, "list[float]"], *, n_splits: int = 10) -> PB
     if N < 2:
         return PBOResult(N, 0, 0, float("nan"))
     T = len(perf_matrix[configs[0]])
-    if any(len(perf_matrix[c]) != T for c in configs) or n_splits < 2 or T < n_splits:
+    if any(len(perf_matrix[c]) != T for c in configs) or n_splits < 2 or n_splits > T:
         return PBOResult(N, n_splits, 0, float("nan"))
     if n_splits % 2:
         n_splits -= 1
@@ -841,14 +854,15 @@ def pbo_cscv(perf_matrix: dict[str, "list[float]"], *, n_splits: int = 10) -> PB
     if not logits:
         return PBOResult(N, n_splits, 0, float("nan"), best_is_counts=best_counts)
     pbo = float(np.mean([1.0 if x <= 0 else 0.0 for x in logits]))
-    return PBOResult(N, n_splits, len(logits), pbo,
-                     mean_logit=float(np.mean(logits)), best_is_counts=best_counts)
+    return PBOResult(
+        N, n_splits, len(logits), pbo, mean_logit=float(np.mean(logits)), best_is_counts=best_counts
+    )
 
 
 # ── Deflated Sharpe Ratio (Bailey & López de Prado 2014) ─────────────────────
 
 
-def _skew_kurt(xs: "list[float] | np.ndarray") -> tuple[float, float]:
+def _skew_kurt(xs: list[float] | np.ndarray) -> tuple[float, float]:
     """Skew (γ3) y kurtosis de Pearson (γ4, normal=3) poblacionales."""
     a = np.asarray(xs, dtype=float)
     if a.size < 3:
@@ -858,21 +872,21 @@ def _skew_kurt(xs: "list[float] | np.ndarray") -> tuple[float, float]:
     if s == 0:
         return 0.0, 3.0
     z = (a - m) / s
-    return float(np.mean(z ** 3)), float(np.mean(z ** 4))
+    return float(np.mean(z**3)), float(np.mean(z**4))
 
 
 @dataclass
 class DSRResult:
-    observed_sharpe: float           # por-observación (sin anualizar)
+    observed_sharpe: float  # por-observación (sin anualizar)
     n_trials: int
     n_obs: int
-    expected_max_sharpe: float       # SR0: máximo esperado bajo el nulo
-    deflated_sharpe: float           # P(SR verdadero > 0) tras deflactar
-    prob_positive_raw: float         # PSR contra 0 sin deflactar (referencia)
+    expected_max_sharpe: float  # SR0: máximo esperado bajo el nulo
+    deflated_sharpe: float  # P(SR verdadero > 0) tras deflactar
+    prob_positive_raw: float  # PSR contra 0 sin deflactar (referencia)
 
 
 def deflated_sharpe_ratio(
-    trial_sharpes: "list[float]",
+    trial_sharpes: list[float],
     *,
     n_obs: int,
     selected: float | None = None,
@@ -896,19 +910,22 @@ def deflated_sharpe_ratio(
     if N >= 2:
         var_trials = float(np.var(np.asarray(trial_sharpes, dtype=float), ddof=1))
         sr0 = math.sqrt(max(var_trials, 0.0)) * (
-            (1 - gamma) * Z.inv_cdf(1 - 1.0 / N)
-            + gamma * Z.inv_cdf(1 - 1.0 / (N * math.e))
+            (1 - gamma) * Z.inv_cdf(1 - 1.0 / N) + gamma * Z.inv_cdf(1 - 1.0 / (N * math.e))
         )
     else:
         sr0 = 0.0  # sin múltiples intentos no hay nada que deflactar
 
-    denom = math.sqrt(max(1e-12, 1 - skew * sr + (kurtosis - 1) / 4.0 * sr ** 2))
+    denom = math.sqrt(max(1e-12, 1 - skew * sr + (kurtosis - 1) / 4.0 * sr**2))
     scale = math.sqrt(max(n_obs - 1, 0))
     deflated = float(Z.cdf((sr - sr0) * scale / denom)) if n_obs >= 2 else float("nan")
     raw = float(Z.cdf(sr * scale / denom)) if n_obs >= 2 else float("nan")
     return DSRResult(
-        observed_sharpe=sr, n_trials=N, n_obs=n_obs,
-        expected_max_sharpe=sr0, deflated_sharpe=deflated, prob_positive_raw=raw,
+        observed_sharpe=sr,
+        n_trials=N,
+        n_obs=n_obs,
+        expected_max_sharpe=sr0,
+        deflated_sharpe=deflated,
+        prob_positive_raw=raw,
     )
 
 
@@ -919,17 +936,17 @@ def deflated_sharpe_ratio(
 class PairedBootstrapResult:
     """Distribución bootstrapeada de ΔCAGR (candidato − baseline)."""
 
-    observed: float          # ΔCAGR puntual sobre la serie completa
-    mean: float              # media de los resamples
-    ci_low: float            # percentil 2.5
-    ci_high: float           # percentil 97.5
-    p_value: float           # fracción de resamples con Δ ≤ 0 (unilateral)
+    observed: float  # ΔCAGR puntual sobre la serie completa
+    mean: float  # media de los resamples
+    ci_low: float  # percentil 2.5
+    ci_high: float  # percentil 97.5
+    p_value: float  # fracción de resamples con Δ ≤ 0 (unilateral)
     n_obs: int
     block: int
     n_resamples: int
 
 
-def _compound_cagr(rets: "np.ndarray", periods: int = 252) -> float:
+def _compound_cagr(rets: np.ndarray, periods: int = 252) -> float:
     """CAGR anualizado por composición de retornos diarios."""
     if rets.size == 0:
         return 0.0
@@ -940,8 +957,8 @@ def _compound_cagr(rets: "np.ndarray", periods: int = 252) -> float:
 
 
 def paired_block_bootstrap(
-    base_rets: "list[float]",
-    cand_rets: "list[float]",
+    base_rets: list[float],
+    cand_rets: list[float],
     *,
     block: int = 20,
     n_resamples: int = 2000,
@@ -976,7 +993,7 @@ def paired_block_bootstrap(
     a, b = a[:T], b[:T]
 
     observed = _compound_cagr(b, periods) - _compound_cagr(a, periods)
-    n_blocks = int(math.ceil(T / block))
+    n_blocks = math.ceil(T / block)
     max_start = T - block  # inclusive
     rng = np.random.default_rng(seed)
 

@@ -283,8 +283,7 @@ class ArtifactPopulation:
 
         Es el eje categórico: si difiere, el ancla se midió sobre otra cosa y no
         hay nada que reproducir (``REPRO_NA``)."""
-        return (self.universe_file == other.universe_file
-                and self.n_tickers == other.n_tickers)
+        return self.universe_file == other.universe_file and self.n_tickers == other.n_tickers
 
     def matches(self, other: ArtifactPopulation) -> bool:
         """Misma muestra: mismo universo y —cuando **las dos** lo declaran— mismas
@@ -360,8 +359,11 @@ def reproduction_check(
     """
     # El eje categórico va primero: si el ancla se midió sobre otro universo, no
     # hay desajuste que interpretar — ni siquiera un brazo que no corrió.
-    if (population is not None and measured_over is not None
-            and not population.same_universe_as(measured_over)):
+    if (
+        population is not None
+        and measured_over is not None
+        and not population.same_universe_as(measured_over)
+    ):
         return REPRO_NA, (
             f"la referencia se midió sobre {measured_over}; esta corrida usa "
             f"{population}. El ancla no aplica (tarea 52): re-medila sobre esta "
@@ -371,25 +373,21 @@ def reproduction_check(
         return REPRO_FAIL, "no se midió el brazo de reproducción"
     if abs(measured - expected) <= tol:
         return REPRO_OK, f"{measured:.4f} vs {expected:.4f} (tol {tol:.4f})"
-    same_window = (
-        measured_on is not None
-        and current is not None
-        and str(measured_on) == str(current)
-    )
+    same_window = measured_on is not None and current is not None and str(measured_on) == str(current)
     same_population = (
-        population is not None
-        and measured_over is not None
-        and population.matches(measured_over)
+        population is not None and measured_over is not None and population.matches(measured_over)
     )
     detail = f"{measured:.4f} vs {expected:.4f} esperado (tol {tol:.4f})"
     if same_window and same_population:
         return REPRO_FAIL, (
-            f"{detail} — MISMA muestra (ventana {current} · población "
-            f"{population}) ⇒ cambió la cañería"
+            f"{detail} — MISMA muestra (ventana {current} · población {population}) ⇒ cambió la cañería"
         )
     if not same_window:
-        movida = (f"la ventana se movió ({measured_on} → {current})" if measured_on
-                  else "la referencia no declara sobre qué ventana se midió")
+        movida = (
+            f"la ventana se movió ({measured_on} → {current})"
+            if measured_on
+            else "la referencia no declara sobre qué ventana se midió"
+        )
         return (
             REPRO_INDETERMINATE,
             f"{detail} — {movida}: el chequeo no distingue cañería de refresh de "
@@ -449,8 +447,11 @@ def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE)
     T7, que corre con capital ilimitado y no tiene config de cartera.
     """
     decide = PIT_EXIT_EVAL_DESC if eval_mode == "close" else TOUCH_EXIT_EVAL_DESC
-    fill = ("al precio que tomó la decisión" if fill_mode == HARNESS_FILL_MODE
-            else "orden en reposo en el nivel (LEGACY)")
+    fill = (
+        "al precio que tomó la decisión"
+        if fill_mode == HARNESS_FILL_MODE
+        else "orden en reposo en el nivel (LEGACY)"
+    )
     return f"Regla de salida simulada: barrera decidida al {decide} · fill {fill}"
 
 
@@ -458,19 +459,12 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     """Desvíos de ``cfg`` respecto de la cuenta viva, en prosa."""
     out: list[str] = []
     if cfg.max_positions != LIVE_MAX_POSITIONS:
-        out.append(
-            f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta "
-            f"{LIVE_ACCOUNT_ID}"
-        )
+        out.append(f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta {LIVE_ACCOUNT_ID}")
     if cfg.n_tickers < LIVE_WATCHLIST_SIZE:
-        out.append(
-            f"universo {cfg.n_tickers} tickers vs {LIVE_WATCHLIST_SIZE} de la watchlist viva"
-        )
+        out.append(f"universo {cfg.n_tickers} tickers vs {LIVE_WATCHLIST_SIZE} de la watchlist viva")
     # La ventana de señal siempre difiere mientras los artefactos PIT sean los
     # actuales — se declara siempre, no es condicional.
-    out.append(
-        f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo"
-    )
+    out.append(f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo")
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
     # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
     # depende del brazo es de qué lado del engine cae el desvío.
@@ -536,8 +530,7 @@ def config_banner(cfg: HarnessConfig) -> str:
     no rompe la reproducibilidad en silencio.
     """
     lines = [
-        f"Config: max_positions={cfg.max_positions} · universo={cfg.universe_file} "
-        f"({cfg.n_tickers} tickers)",
+        f"Config: max_positions={cfg.max_positions} · universo={cfg.universe_file} ({cfg.n_tickers} tickers)",
         f"Cuenta viva de referencia: {LIVE_ACCOUNT_NAME} (id={LIVE_ACCOUNT_ID}, "
         f"{LIVE_MODE}, {LIVE_ALLOCATION_MODE}, {LIVE_MAX_POSITIONS} slots)",
         exit_rule_line(cfg.eval_mode, cfg.fill_mode),
@@ -548,8 +541,7 @@ def config_banner(cfg: HarnessConfig) -> str:
         lines.extend(f"  · {d}" for d in devs)
     else:
         lines.append("Sin desvíos contra la cuenta viva.")
-    if (cfg.verdict_max_positions is not None
-            and cfg.verdict_max_positions != cfg.max_positions):
+    if cfg.verdict_max_positions is not None and cfg.verdict_max_positions != cfg.max_positions:
         lines.append(
             f"OJO: el veredicto publicado de esta tarea corrió con "
             f"max_positions={cfg.verdict_max_positions}; para reproducirlo pasá "
@@ -686,35 +678,41 @@ class GridPopulation:
         out: list[str] = []
         if self.inert:
             vals = ", ".join(_fmt_value(a.value) for a in self.inert)
-            out.append(f"AVISO: {len(self.inert)} brazo(s) INERTE(s) ({vals}) — no tocan "
-                       f"ningún trade: son el baseline con otro nombre. Sacarlos de la "
-                       f"grilla (T58).")
+            out.append(
+                f"AVISO: {len(self.inert)} brazo(s) INERTE(s) ({vals}) — no tocan "
+                f"ningún trade: son el baseline con otro nombre. Sacarlos de la "
+                f"grilla (T58)."
+            )
         if self.underpowered:
             vals = ", ".join(_fmt_value(a.value) for a in self.underpowered)
-            out.append(f"AVISO: {len(self.underpowered)} brazo(s) SIN POBLACIÓN ({vals}) — "
-                       f"por debajo del {100 * GRID_MIN_POPULATION:.0f}% de la T13: un "
-                       f"resultado ahí es *sin poder, NO refutado*.")
+            out.append(
+                f"AVISO: {len(self.underpowered)} brazo(s) SIN POBLACIÓN ({vals}) — "
+                f"por debajo del {100 * GRID_MIN_POPULATION:.0f}% de la T13: un "
+                f"resultado ahí es *sin poder, NO refutado*."
+            )
         if not self.viable:
-            out.append("AVISO: NINGÚN valor de la grilla tiene población — la pregunta no se "
-                       "puede medir sobre esta cartera, y un veredicto sería sobre ruido.")
+            out.append(
+                "AVISO: NINGÚN valor de la grilla tiene población — la pregunta no se "
+                "puede medir sobre esta cartera, y un veredicto sería sobre ruido."
+            )
         return out
 
     def lines(self) -> list[str]:
-        out = [f"Población de la grilla — {self.label} sobre {self.n_trades} trades "
-               f"del baseline:",
-               f"  media {self.mean:.1f} · p25 {_fmt_value(self.p25)} · "
-               f"p50 {_fmt_value(self.p50)} · p75 {_fmt_value(self.p75)} · "
-               f"p90 {_fmt_value(self.p90)} · p95 {_fmt_value(self.p95)} · "
-               f"p99 {_fmt_value(self.p99)} · MÁX {_fmt_value(self.maximum)}",
-               f"  {'valor':>8} {'trades':>8} {'población':>11}"]
+        out = [
+            f"Población de la grilla — {self.label} sobre {self.n_trades} trades del baseline:",
+            f"  media {self.mean:.1f} · p25 {_fmt_value(self.p25)} · "
+            f"p50 {_fmt_value(self.p50)} · p75 {_fmt_value(self.p75)} · "
+            f"p90 {_fmt_value(self.p90)} · p95 {_fmt_value(self.p95)} · "
+            f"p99 {_fmt_value(self.p99)} · MÁX {_fmt_value(self.maximum)}",
+            f"  {'valor':>8} {'trades':>8} {'población':>11}",
+        ]
         for a in self.arms:
             nota = ""
             if a.inert:
                 nota = "  <- INERTE: es el baseline con otro nombre"
             elif a.underpowered:
                 nota = f"  <- sin población (<{100 * a.min_share:.0f}%)"
-            out.append(f"  {_fmt_value(a.value):>8} {a.n_hit:>8} "
-                       f"{100 * a.share:>10.2f}%{nota}")
+            out.append(f"  {_fmt_value(a.value):>8} {a.n_hit:>8} {100 * a.share:>10.2f}%{nota}")
         out.extend("  " + w for w in self.warnings())
         return out
 

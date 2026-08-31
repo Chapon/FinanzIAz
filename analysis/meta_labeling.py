@@ -45,13 +45,21 @@ ATR_PERIOD = 14
 # Feature order — fijo, para que el modelo entrenado y el que puntúa vean las
 # mismas columnas en el mismo orden aunque un ticker tenga NaNs distintos.
 FEATURE_COLUMNS: list[str] = [
-    "ret_1d", "ret_3d", "ret_5d", "ret_10d", "ret_20d",
-    "rsi", "rsi_delta5",
-    "macd_hist", "macd_hist_chg",
-    "bb_position", "bb_width",
+    "ret_1d",
+    "ret_3d",
+    "ret_5d",
+    "ret_10d",
+    "ret_20d",
+    "rsi",
+    "rsi_delta5",
+    "macd_hist",
+    "macd_hist_chg",
+    "bb_position",
+    "bb_width",
     "volume_ratio",
     "volatility_20",
-    "price_sma20", "price_sma50",
+    "price_sma20",
+    "price_sma50",
     "atr_rel",
 ]
 
@@ -197,12 +205,12 @@ class Sample:
     """Una barra con señal primaria BUY, etiquetada y con sus features."""
 
     ticker: str
-    date: str          # iso10 de la barra de la señal (= fecha de entrada)
-    bar_idx: int       # índice en la serie del ticker
-    label: int         # 1 = TP antes que stop · 0 = stop primero o timeout
+    date: str  # iso10 de la barra de la señal (= fecha de entrada)
+    bar_idx: int  # índice en la serie del ticker
+    label: int  # 1 = TP antes que stop · 0 = stop primero o timeout
     features: np.ndarray
-    buy_score: float | None = None   # ml_probability del artefacto PIT (brazo B1)
-    mom121: float | None = None      # momentum 12-1 (brazo F1)
+    buy_score: float | None = None  # ml_probability del artefacto PIT (brazo B1)
+    mom121: float | None = None  # momentum 12-1 (brazo F1)
 
 
 @dataclass
@@ -263,8 +271,12 @@ def build_dataset(
             if sigs.get(date) != "BUY":
                 continue
             label = triple_barrier_label(
-                bars, idx, atrs,
-                stop_mult=stop_mult, tp_mult=tp_mult, max_days=max_days,
+                bars,
+                idx,
+                atrs,
+                stop_mult=stop_mult,
+                tp_mult=tp_mult,
+                max_days=max_days,
             )
             if label is None:
                 ds.n_dropped_no_label += 1
@@ -279,12 +291,17 @@ def build_dataset(
                 continue
             prob = probs.get(date)
             m = mom_values[fi]
-            ds.samples.append(Sample(
-                ticker=ticker, date=date, bar_idx=idx, label=label,
-                features=row,
-                buy_score=None if prob is None else float(prob),
-                mom121=None if not math.isfinite(m) else float(m),
-            ))
+            ds.samples.append(
+                Sample(
+                    ticker=ticker,
+                    date=date,
+                    bar_idx=idx,
+                    label=label,
+                    features=row,
+                    buy_score=None if prob is None else float(prob),
+                    mom121=None if not math.isfinite(m) else float(m),
+                )
+            )
 
     ds.samples.sort(key=lambda s: (s.date, s.ticker))
     return ds

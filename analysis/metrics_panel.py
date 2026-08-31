@@ -72,6 +72,7 @@ Schema del payload (``build_metrics``)::
 
 ``commit_markers(repo_dir)`` es aparte (usa git) para no acoplar el cálculo al repo.
 """
+
 from __future__ import annotations
 
 import json
@@ -118,14 +119,36 @@ def benchmark_stale_bdays(spy_last_day: str | None, ref_day: str | None) -> int:
     except (TypeError, ValueError):
         return 0
 
+
 # Keywords que marcan commits que cambian la *lógica de trading* (para el overlay
 # del gráfico de efectividad). Se filtran del git log por subject.
 _BEHAVIOR_COMMIT_KEYWORDS = (
-    "gate", "exit", "stop", "atr", "churn", "hysteresis",
-    "vol-overlay", "vol overlay", "overlay", "sizing",
-    "t6.", "t-cat", "t01", "t05", "t06", "t09", "t10",
-    "anti-churn", "anti-whipsaw", "regime", "regimen",
-    "kill", "stacking", "veto", "hit-rate", "score-hysteresis",
+    "gate",
+    "exit",
+    "stop",
+    "atr",
+    "churn",
+    "hysteresis",
+    "vol-overlay",
+    "vol overlay",
+    "overlay",
+    "sizing",
+    "t6.",
+    "t-cat",
+    "t01",
+    "t05",
+    "t06",
+    "t09",
+    "t10",
+    "anti-churn",
+    "anti-whipsaw",
+    "regime",
+    "regimen",
+    "kill",
+    "stacking",
+    "veto",
+    "hit-rate",
+    "score-hysteresis",
 )
 # Prefijos de commits de infraestructura/datos que NO cambian la lógica de
 # trading (se excluyen aunque matcheen una keyword por casualidad).
@@ -165,7 +188,10 @@ def load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, f
     except (ValueError, KeyError, json.JSONDecodeError):
         return None
     out: list[tuple[str, float]] = []
-    for idx, vals in zip(d.get("index", []), d.get("data", [])):
+    # strict=False a proposito: esto parsea un JSON EXTERNO (orient="split")
+    # en un path de display, y el try/except de arriba ya cerro. Un largo
+    # distinto tiene que degradar, no tirar abajo el panel de metricas.
+    for idx, vals in zip(d.get("index", []), d.get("data", []), strict=False):
         try:
             cl = vals[ci]
         except (IndexError, TypeError):
@@ -198,7 +224,10 @@ def load_ohlc_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, fl
     except (ValueError, KeyError, json.JSONDecodeError):
         return None
     out: list[tuple[str, float, float]] = []
-    for idx, vals in zip(d.get("index", []), d.get("data", [])):
+    # strict=False a proposito: esto parsea un JSON EXTERNO (orient="split")
+    # en un path de display, y el try/except de arriba ya cerro. Un largo
+    # distinto tiene que degradar, no tirar abajo el panel de metricas.
+    for idx, vals in zip(d.get("index", []), d.get("data", []), strict=False):
         try:
             h = vals[hi]
             lw = vals[lo]
@@ -210,9 +239,12 @@ def load_ohlc_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, fl
     return out or None
 
 
-def excursions(series_hl: list[tuple[str, float, float]] | None,
-               buy_day: str | None, sell_day: str | None,
-               buy_price: float | None) -> tuple[float | None, float | None]:
+def excursions(
+    series_hl: list[tuple[str, float, float]] | None,
+    buy_day: str | None,
+    sell_day: str | None,
+    buy_price: float | None,
+) -> tuple[float | None, float | None]:
     """MAE/MFE de un round-trip long, en fracción sobre el precio de entrada.
 
     Sobre las barras diarias con ``buy_day <= fecha <= sell_day`` (inclusive):
@@ -250,8 +282,7 @@ def _annotate_excursions(con: sqlite3.Connection, rts: list[dict]) -> None:
         t = r["ticker"]
         if t not in series_cache:
             series_cache[t] = load_ohlc_series(con, t)
-        mae, mfe = excursions(series_cache[t], r.get("buy_day"), r.get("sell_day"),
-                              r.get("buy_price"))
+        mae, mfe = excursions(series_cache[t], r.get("buy_day"), r.get("sell_day"), r.get("buy_price"))
         r["mae"] = mae
         r["mfe"] = mfe
 
@@ -285,9 +316,22 @@ def _filled_orders(con: sqlite3.Connection, account_id: int) -> list[dict]:
         "WHERE account_id=? AND status='filled' ORDER BY filled_at, id",
         (account_id,),
     ).fetchall()
-    cols = ("id", "ticker", "side", "fill_price", "fill_shares", "commission",
-            "slippage", "score", "reason", "filled_at")
-    return [dict(zip(cols, r)) for r in rows]
+    cols = (
+        "id",
+        "ticker",
+        "side",
+        "fill_price",
+        "fill_shares",
+        "commission",
+        "slippage",
+        "score",
+        "reason",
+        "filled_at",
+    )
+    # strict=True: `cols` y el SELECT de arriba tienen que coincidir. Si
+    # alguien agrega una columna a uno y no al otro, es mejor que grite que
+    # devolver dicts truncados en silencio.
+    return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
 def _exit_kind(reason: str | None) -> str:
@@ -322,8 +366,15 @@ def pair_round_trips(orders: list[dict]) -> list[dict]:
         sps = (o["slippage"] or 0.0) / sh
         if o["side"] == "BUY":
             lots[o["ticker"]].append(
-                dict(shares=sh, price=o["fill_price"], cps=cps, sps=sps,
-                     buy_id=o["id"], day=_day(o["filled_at"]), score=o["score"])
+                dict(
+                    shares=sh,
+                    price=o["fill_price"],
+                    cps=cps,
+                    sps=sps,
+                    buy_id=o["id"],
+                    day=_day(o["filled_at"]),
+                    score=o["score"],
+                )
             )
             buy_time[o["id"]] = _parse(o["filled_at"])
         else:  # SELL
@@ -338,16 +389,26 @@ def pair_round_trips(orders: list[dict]) -> list[dict]:
                 pnl = sell_proc - buy_cost
                 bt = buy_time.get(lot["buy_id"])
                 hold = (sell_dt - bt).days if (sell_dt and bt) else 0
-                rts.append(dict(
-                    ticker=o["ticker"], buy_id=lot["buy_id"], sell_id=o["id"],
-                    shares=take, buy_price=lot["price"], sell_price=o["fill_price"],
-                    pnl=pnl, pnl_pct=(pnl / (take * lot["price"]) if lot["price"] else 0.0),
-                    buy_score=lot["score"], sell_score=o["score"],
-                    sell_reason=o["reason"], exit_kind=_exit_kind(o["reason"]),
-                    buy_day=lot["day"], sell_day=_day(o["filled_at"]),
-                    hold_days=hold,
-                    costs=(take * lot["cps"] + take * lot["sps"] + take * cps + take * sps),
-                ))
+                rts.append(
+                    dict(
+                        ticker=o["ticker"],
+                        buy_id=lot["buy_id"],
+                        sell_id=o["id"],
+                        shares=take,
+                        buy_price=lot["price"],
+                        sell_price=o["fill_price"],
+                        pnl=pnl,
+                        pnl_pct=(pnl / (take * lot["price"]) if lot["price"] else 0.0),
+                        buy_score=lot["score"],
+                        sell_score=o["score"],
+                        sell_reason=o["reason"],
+                        exit_kind=_exit_kind(o["reason"]),
+                        buy_day=lot["day"],
+                        sell_day=_day(o["filled_at"]),
+                        hold_days=hold,
+                        costs=(take * lot["cps"] + take * lot["sps"] + take * cps + take * sps),
+                    )
+                )
                 lot["shares"] -= take
                 remaining -= take
                 if lot["shares"] <= 1e-9:
@@ -381,15 +442,36 @@ def _corr(pairs: list[tuple[float, float]]) -> float | None:
 # ── paneles ───────────────────────────────────────────────────────────────────
 def _realized_panel(rts: list[dict]) -> dict:
     if not rts:
-        return dict(n_round_trips=0, total_pnl=0.0, n_wins=0, n_losses=0,
-                    win_rate=0.0, profit_factor=None, avg_win=0.0, avg_loss=0.0,
-                    payoff_ratio=None,
-                    expectancy=0.0, avg_hold_days=0.0, total_costs=0.0,
-                    excursion={"n": 0, "median_mae": None, "median_mfe": None,
-                               "avg_mae": None, "avg_mfe": None,
-                               "worst_mae": None, "best_mfe": None},
-                    by_exit_kind={}, per_ticker=[], worst_ticker=None,
-                    pnl_ex_worst=0.0, top_winners=[], top_losers=[], round_trips=[])
+        return dict(
+            n_round_trips=0,
+            total_pnl=0.0,
+            n_wins=0,
+            n_losses=0,
+            win_rate=0.0,
+            profit_factor=None,
+            avg_win=0.0,
+            avg_loss=0.0,
+            payoff_ratio=None,
+            expectancy=0.0,
+            avg_hold_days=0.0,
+            total_costs=0.0,
+            excursion={
+                "n": 0,
+                "median_mae": None,
+                "median_mfe": None,
+                "avg_mae": None,
+                "avg_mfe": None,
+                "worst_mae": None,
+                "best_mfe": None,
+            },
+            by_exit_kind={},
+            per_ticker=[],
+            worst_ticker=None,
+            pnl_ex_worst=0.0,
+            top_winners=[],
+            top_losers=[],
+            round_trips=[],
+        )
     wins = [r for r in rts if r["pnl"] > 0]
     losses = [r for r in rts if r["pnl"] <= 0]
     gw = sum(r["pnl"] for r in wins)
@@ -430,8 +512,19 @@ def _realized_panel(rts: list[dict]) -> dict:
     }
 
     def _slim(r: dict) -> dict:
-        d = {k: r[k] for k in ("ticker", "pnl", "pnl_pct", "hold_days",
-                               "exit_kind", "sell_reason", "buy_day", "sell_day")}
+        d = {
+            k: r[k]
+            for k in (
+                "ticker",
+                "pnl",
+                "pnl_pct",
+                "hold_days",
+                "exit_kind",
+                "sell_reason",
+                "buy_day",
+                "sell_day",
+            )
+        }
         d["mae"] = r.get("mae")
         d["mfe"] = r.get("mfe")
         return d
@@ -450,8 +543,9 @@ def _realized_panel(rts: list[dict]) -> dict:
         avg_hold_days=sum(r["hold_days"] for r in rts) / len(rts),
         total_costs=sum(r["costs"] for r in rts),
         excursion=excursion,
-        by_exit_kind={k: {"n": v[0], "pnl": v[1], "avg": v[1] / v[0] if v[0] else 0.0}
-                      for k, v in by_kind.items()},
+        by_exit_kind={
+            k: {"n": v[0], "pnl": v[1], "avg": v[1] / v[0] if v[0] else 0.0} for k, v in by_kind.items()
+        },
         per_ticker=per_ticker,
         worst_ticker=worst,
         pnl_ex_worst=pnl_ex_worst,
@@ -482,8 +576,7 @@ def _timing_panel(con: sqlite3.Connection, orders: list[dict]) -> dict:
         s = series(o["ticker"])
         r5 = forward_return(s, day, FWD_SHORT)
         r20 = forward_return(s, day, FWD_LONG)
-        per_buy.append({"ticker": o["ticker"], "score": o["score"],
-                        "fwd5": r5, "fwd20": r20, "day": day})
+        per_buy.append({"ticker": o["ticker"], "score": o["score"], "fwd5": r5, "fwd20": r20, "day": day})
         if r5 is not None:
             f5.append(r5)
             if o["score"] is not None:
@@ -493,11 +586,18 @@ def _timing_panel(con: sqlite3.Connection, orders: list[dict]) -> dict:
     g5 = [x for x in f5 if x > 0]
     g20 = [x for x in f20 if x > 0]
     return dict(
-        n5=len(f5), good5=len(g5), good5_pct=(len(g5) / len(f5) if f5 else 0.0),
-        mean5=(sum(f5) / len(f5) if f5 else 0.0), median5=_median(f5),
-        n20=len(f20), good20=len(g20), good20_pct=(len(g20) / len(f20) if f20 else 0.0),
-        mean20=(sum(f20) / len(f20) if f20 else 0.0), median20=_median(f20),
-        score_fwd5_corr=_corr(pairs), score_fwd5_n=len(pairs),
+        n5=len(f5),
+        good5=len(g5),
+        good5_pct=(len(g5) / len(f5) if f5 else 0.0),
+        mean5=(sum(f5) / len(f5) if f5 else 0.0),
+        median5=_median(f5),
+        n20=len(f20),
+        good20=len(g20),
+        good20_pct=(len(g20) / len(f20) if f20 else 0.0),
+        mean20=(sum(f20) / len(f20) if f20 else 0.0),
+        median20=_median(f20),
+        score_fwd5_corr=_corr(pairs),
+        score_fwd5_n=len(pairs),
         per_buy=per_buy,
     )
 
@@ -518,7 +618,8 @@ def _sell_calibration_panel(con: sqlite3.Connection, orders: list[dict]) -> dict
             regret.append(r5)
     up = [r for r in regret if r > 0]
     return dict(
-        n=len(regret), up_after=len(up),
+        n=len(regret),
+        up_after=len(up),
         up_after_pct=(len(up) / len(regret) if regret else 0.0),
         mean_fwd5=(sum(regret) / len(regret) if regret else 0.0),
     )
@@ -553,8 +654,16 @@ def _sell_timing_panel(con: sqlite3.Connection, orders: list[dict]) -> dict:
         r5 = forward_return(series(o["ticker"]), day, FWD_SHORT)
         r20 = forward_return(series(o["ticker"]), day, FWD_LONG)
         kind = _exit_kind(o["reason"])
-        per_sell.append({"ticker": o["ticker"], "score": o["score"], "exit_kind": kind,
-                         "fwd5": r5, "fwd20": r20, "day": day})
+        per_sell.append(
+            {
+                "ticker": o["ticker"],
+                "score": o["score"],
+                "exit_kind": kind,
+                "fwd5": r5,
+                "fwd20": r20,
+                "day": day,
+            }
+        )
         if r5 is not None:
             f5.append(r5)
             by_kind[kind][0] += 1
@@ -565,18 +674,30 @@ def _sell_timing_panel(con: sqlite3.Connection, orders: list[dict]) -> dict:
                 pairs.append((float(o["score"]), r5))
         if r20 is not None:
             f20.append(r20)
-    g5 = [x for x in f5 if x <= 0]   # venta buena = el precio no subió después
+    g5 = [x for x in f5 if x <= 0]  # venta buena = el precio no subió después
     g20 = [x for x in f20 if x <= 0]
     with_f5 = [p for p in per_sell if p["fwd5"] is not None]
     return dict(
-        n5=len(f5), good5=len(g5), good5_pct=(len(g5) / len(f5) if f5 else 0.0),
-        mean5=(sum(f5) / len(f5) if f5 else 0.0), median5=_median(f5),
-        n20=len(f20), good20=len(g20), good20_pct=(len(g20) / len(f20) if f20 else 0.0),
-        mean20=(sum(f20) / len(f20) if f20 else 0.0), median20=_median(f20),
-        by_exit_kind={k: {"n": v[0], "good_pct": (v[1] / v[0] if v[0] else 0.0),
-                          "mean_fwd5": (v[2] / v[0] if v[0] else 0.0)}
-                      for k, v in by_kind.items()},
-        sell_score_fwd5_corr=_corr(pairs), sell_score_fwd5_n=len(pairs),
+        n5=len(f5),
+        good5=len(g5),
+        good5_pct=(len(g5) / len(f5) if f5 else 0.0),
+        mean5=(sum(f5) / len(f5) if f5 else 0.0),
+        median5=_median(f5),
+        n20=len(f20),
+        good20=len(g20),
+        good20_pct=(len(g20) / len(f20) if f20 else 0.0),
+        mean20=(sum(f20) / len(f20) if f20 else 0.0),
+        median20=_median(f20),
+        by_exit_kind={
+            k: {
+                "n": v[0],
+                "good_pct": (v[1] / v[0] if v[0] else 0.0),
+                "mean_fwd5": (v[2] / v[0] if v[0] else 0.0),
+            }
+            for k, v in by_kind.items()
+        },
+        sell_score_fwd5_corr=_corr(pairs),
+        sell_score_fwd5_n=len(pairs),
         # mejores ventas = más caída evitada (fwd5 más negativo); peores = regret.
         top_avoided=sorted(with_f5, key=lambda x: x["fwd5"])[:5],
         top_regret=sorted(with_f5, key=lambda x: -x["fwd5"])[:5],
@@ -597,8 +718,9 @@ def _churn_panel(orders: list[dict]) -> dict:
             if evs[i][1] == "SELL" and evs[i + 1][1] == "BUY":
                 gap = (evs[i + 1][0] - evs[i][0]).days
                 if gap <= CHURN_DAYS:
-                    events.append({"ticker": t, "gap_days": gap,
-                                   "sell_id": evs[i][2], "buy_id": evs[i + 1][2]})
+                    events.append(
+                        {"ticker": t, "gap_days": gap, "sell_id": evs[i][2], "buy_id": evs[i + 1][2]}
+                    )
     events.sort(key=lambda x: x["gap_days"])
     return dict(n_le7d=len(events), events=events)
 
@@ -613,15 +735,13 @@ def _timeline(rts: list[dict]) -> list[dict]:
         cum += r["pnl"]
         if r["pnl"] > 0:
             wins += 1
-        out.append({"day": r["sell_day"], "cum_pnl": cum, "trades": i,
-                    "rolling_win_rate": wins / i})
+        out.append({"day": r["sell_day"], "cum_pnl": cum, "trades": i, "rolling_win_rate": wins / i})
     return out
 
 
 def _open_positions(con: sqlite3.Connection, account_id: int) -> list[dict]:
     rows = con.execute(
-        "SELECT ticker,shares,avg_cost FROM paper_positions "
-        "WHERE account_id=? AND shares>0 ORDER BY ticker",
+        "SELECT ticker,shares,avg_cost FROM paper_positions WHERE account_id=? AND shares>0 ORDER BY ticker",
         (account_id,),
     ).fetchall()
     out = []
@@ -629,8 +749,7 @@ def _open_positions(con: sqlite3.Connection, account_id: int) -> list[dict]:
         s = load_close_series(con, tkr)
         mark = s[-1][1] if s else ac
         mtm = (mark / ac - 1.0) if ac else 0.0
-        out.append({"ticker": tkr, "shares": sh, "avg_cost": ac,
-                    "mark": mark, "mtm_pct": mtm})
+        out.append({"ticker": tkr, "shares": sh, "avg_cost": ac, "mark": mark, "mtm_pct": mtm})
     return out
 
 
@@ -678,8 +797,7 @@ def cached_sector(con: sqlite3.Connection, ticker: str) -> str | None:
     """
     try:
         row = con.execute(
-            "SELECT sector FROM company_info_cache WHERE ticker=? "
-            "ORDER BY fetched_at DESC LIMIT 1",
+            "SELECT sector FROM company_info_cache WHERE ticker=? ORDER BY fetched_at DESC LIMIT 1",
             (ticker.upper(),),
         ).fetchone()
     except sqlite3.OperationalError:
@@ -710,11 +828,13 @@ def _concentration_panel(con: sqlite3.Connection, account_id: int) -> dict:
         mark = s[-1][1] if s else (ac or 0.0)
         shares = float(sh or 0.0)
         avg = float(ac or 0.0)
-        positions.append({
-            "ticker": tkr,
-            "market_value": shares * float(mark),
-            "unrealized_pnl": (float(mark) - avg) * shares if avg > 0 else 0.0,
-        })
+        positions.append(
+            {
+                "ticker": tkr,
+                "market_value": shares * float(mark),
+                "unrealized_pnl": (float(mark) - avg) * shares if avg > 0 else 0.0,
+            }
+        )
 
     # Frame de retornos desde el cache (para la correlación media). El history
     # provider arma un DataFrame ['Close'] por ticker a partir de load_close_series.
@@ -724,8 +844,7 @@ def _concentration_panel(con: sqlite3.Connection, account_id: int) -> dict:
             return None
         import pandas as pd
 
-        return pd.DataFrame({"Close": [c for _, c in s]},
-                            index=[d for d, _ in s])
+        return pd.DataFrame({"Close": [c for _, c in s]}, index=[d for d, _ in s])
 
     rf = None
     tickers = [p["ticker"] for p in positions]
@@ -735,9 +854,7 @@ def _concentration_panel(con: sqlite3.Connection, account_id: int) -> dict:
         except Exception:
             rf = None
 
-    return book_concentration(
-        positions, returns=rf, sector_of=lambda t: cached_sector(con, t)
-    )
+    return book_concentration(positions, returns=rf, sector_of=lambda t: cached_sector(con, t))
 
 
 def _expired_buys(con: sqlite3.Connection, account_id: int) -> dict:
@@ -780,10 +897,17 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     Best-effort/display-only: ``available=False`` si faltan snapshots (<2) o el
     cache de SPY. No lanza si la tabla de snapshots no existe (DB sintética).
     """
-    empty = {"available": False, "ticker": BENCHMARK_TICKER,
-             "start_day": None, "end_day": None,
-             "account_return": None, "spy_return": None, "vs_spy": None,
-             "stale": False, "spy_end_day": None}
+    empty = {
+        "available": False,
+        "ticker": BENCHMARK_TICKER,
+        "start_day": None,
+        "end_day": None,
+        "account_return": None,
+        "spy_return": None,
+        "vs_spy": None,
+        "stale": False,
+        "spy_end_day": None,
+    }
     try:
         rows = con.execute(
             "SELECT snapshot_at, total_equity FROM paper_equity_snapshots "
@@ -801,31 +925,44 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     account_return = (end_eq / start_eq - 1.0) if start_eq > 0 else None
     spy = load_close_series(con, BENCHMARK_TICKER)
     if not spy or start_day is None or end_day is None:
-        return {**empty, "start_day": start_day, "end_day": end_day,
-                "account_return": account_return}
+        return {**empty, "start_day": start_day, "end_day": end_day, "account_return": account_return}
     spy = sorted(spy)
     spy_end_day = spy[-1][0] if spy else None
     # tarea 22: si el cache de SPY quedó > K días hábiles atrás del último
     # snapshot, comparar la cuenta (ventana completa) contra un SPY recortado
     # sesga el vs_spy en silencio → se marca stale y NO se computa el número.
     if benchmark_stale_bdays(spy_end_day, end_day) > BENCHMARK_STALE_BDAYS:
-        return {**empty, "start_day": start_day, "end_day": end_day,
-                "account_return": account_return, "stale": True,
-                "spy_end_day": spy_end_day}
+        return {
+            **empty,
+            "start_day": start_day,
+            "end_day": end_day,
+            "account_return": account_return,
+            "stale": True,
+            "spy_end_day": spy_end_day,
+        }
     p0 = _close_on_or_after(spy, start_day)
     p1 = _close_on_or_before(spy, end_day)
     spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
-    vs_spy = (account_return - spy_return) if (
-        account_return is not None and spy_return is not None) else None
-    return {"available": spy_return is not None, "ticker": BENCHMARK_TICKER,
-            "start_day": start_day, "end_day": end_day,
-            "account_return": account_return, "spy_return": spy_return,
-            "vs_spy": vs_spy, "stale": False, "spy_end_day": spy_end_day}
+    vs_spy = (
+        (account_return - spy_return) if (account_return is not None and spy_return is not None) else None
+    )
+    return {
+        "available": spy_return is not None,
+        "ticker": BENCHMARK_TICKER,
+        "start_day": start_day,
+        "end_day": end_day,
+        "account_return": account_return,
+        "spy_return": spy_return,
+        "vs_spy": vs_spy,
+        "stale": False,
+        "spy_end_day": spy_end_day,
+    }
 
 
 # ── entrypoint ────────────────────────────────────────────────────────────────
-def build_metrics(con: sqlite3.Connection, account_id: int = 1,
-                  now: datetime | None = None) -> dict[str, Any]:
+def build_metrics(
+    con: sqlite3.Connection, account_id: int = 1, now: datetime | None = None
+) -> dict[str, Any]:
     """Calcula el payload completo de métricas para ``account_id``."""
     orders = _filled_orders(con, account_id)
     rts = pair_round_trips(orders)
@@ -866,10 +1003,19 @@ def commit_markers(repo_dir: str | Path, *, limit: int = 60) -> list[dict]:
     """
     try:
         out = subprocess.run(
-            ["git", "-C", str(repo_dir), "log",
-             f"-{limit}", "--date=format:%Y-%m-%d",
-             "--pretty=format:%ad|%s"],
-            capture_output=True, text=True, timeout=10, check=False,
+            [
+                "git",
+                "-C",
+                str(repo_dir),
+                "log",
+                f"-{limit}",
+                "--date=format:%Y-%m-%d",
+                "--pretty=format:%ad|%s",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -892,4 +1038,6 @@ def commit_markers(repo_dir: str | Path, *, limit: int = 60) -> list[dict]:
         seen.add(key)
         markers.append({"day": day.strip(), "subject": subject.strip()})
     return markers
+
+
 # (módulo puro: sin efectos secundarios al importar)

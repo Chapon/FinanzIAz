@@ -27,9 +27,9 @@ table strengthens as the harvest accumulates (same warm-up story as T-CAT-0).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, asdict
+from collections.abc import Callable, Iterable
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -47,7 +47,7 @@ PriceLoader = Callable[[str], "pd.DataFrame | None"]
 # ── forward returns ──────────────────────────────────────────────────────────
 
 
-def _price_series(df: "pd.DataFrame | None", col: str = "Close") -> "pd.Series | None":
+def _price_series(df: pd.DataFrame | None, col: str = "Close") -> pd.Series | None:
     if df is None or getattr(df, "empty", True) or col not in df.columns:
         return None
     s = df[col].squeeze()
@@ -64,12 +64,12 @@ def _price_series(df: "pd.DataFrame | None", col: str = "Close") -> "pd.Series |
     return s.sort_index()
 
 
-def _close_series(df: "pd.DataFrame | None") -> "pd.Series | None":
+def _close_series(df: pd.DataFrame | None) -> pd.Series | None:
     return _price_series(df, "Close")
 
 
 def forward_return(
-    df: "pd.DataFrame | None",
+    df: pd.DataFrame | None,
     event_date,
     horizon: int,
     *,
@@ -129,8 +129,8 @@ def forward_return(
 @dataclass(frozen=True)
 class ReactionStat:
     count: int
-    mean: float | None      # mean forward return
-    std: float | None       # sample std
+    mean: float | None  # mean forward return
+    std: float | None  # sample std
     hit_rate: float | None  # fraction of positive returns
 
     def to_dict(self) -> dict:
@@ -151,7 +151,7 @@ def aggregate(returns: list[float]) -> ReactionStat:
 
 
 def build_historical_reaction(
-    events: Iterable[tuple[str, str, "datetime | None"]],
+    events: Iterable[tuple[str, str, datetime | None]],
     price_loader: PriceLoader,
     *,
     horizons: tuple[int, ...] = DEFAULT_HORIZONS,
@@ -168,7 +168,7 @@ def build_historical_reaction(
           "by_ticker_event": {"TICKER|event_type": {h: stat_dict}},
         }
     """
-    cache: dict[str, "pd.DataFrame | None"] = {}
+    cache: dict[str, pd.DataFrame | None] = {}
 
     def _load(ticker: str):
         if ticker not in cache:
@@ -237,10 +237,18 @@ def lookup_reaction(
 # ── economic relevance ───────────────────────────────────────────────────────
 
 _MULT = {
-    "k": 1e3, "thousand": 1e3,
-    "m": 1e6, "mm": 1e6, "mn": 1e6, "million": 1e6,
-    "b": 1e9, "bn": 1e9, "billion": 1e9,
-    "t": 1e12, "tn": 1e12, "trillion": 1e12,
+    "k": 1e3,
+    "thousand": 1e3,
+    "m": 1e6,
+    "mm": 1e6,
+    "mn": 1e6,
+    "million": 1e6,
+    "b": 1e9,
+    "bn": 1e9,
+    "billion": 1e9,
+    "t": 1e12,
+    "tn": 1e12,
+    "trillion": 1e12,
 }
 _DOLLAR_RE = re.compile(
     r"\$\s?([0-9][0-9,]*(?:\.[0-9]+)?)\s?(trillion|billion|million|thousand|tn|bn|mm|mn|t|b|m|k)?\b",

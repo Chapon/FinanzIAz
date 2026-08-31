@@ -25,9 +25,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
-import numpy as np
 import pandas as pd
-
 
 NEUTRAL_PERCENTILE: float = 0.5
 """Score assigned to tickers that cannot be ranked (insufficient history / NaN)."""
@@ -75,7 +73,7 @@ def momentum_percentile(
         if series is None or len(series) < lookback + 1:
             continue
         # Force numeric, drop NaN tail — caller may pass partly-NaN series.
-        tail = pd.to_numeric(series.iloc[-(lookback + 1):], errors="coerce")
+        tail = pd.to_numeric(series.iloc[-(lookback + 1) :], errors="coerce")
         if tail.isna().any():
             continue
         start = float(tail.iloc[0])
@@ -180,8 +178,6 @@ def blended_scores(
     """
     percentiles = momentum_percentile(closes_by_ticker, lookback)
     return {
-        ticker: combine_score(strengths.get(ticker, 0.0),
-                              percentiles.get(ticker, NEUTRAL_PERCENTILE),
-                              weight)
+        ticker: combine_score(strengths.get(ticker, 0.0), percentiles.get(ticker, NEUTRAL_PERCENTILE), weight)
         for ticker in strengths
     }

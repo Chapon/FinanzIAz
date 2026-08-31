@@ -208,7 +208,7 @@ def detect_regime_series(
 
     vol = returns.rolling(cfg.vol_window).std() * sqrt_year
 
-    raw = [_classify(s, v, cfg) for s, v in zip(sharpe.values, vol.values)]
+    raw = [_classify(s, v, cfg) for s, v in zip(sharpe.values, vol.values, strict=True)]
     smoothed = _smooth_min_run_length(raw, cfg.min_run_length)
 
     return pd.DataFrame(
@@ -225,8 +225,9 @@ def detect_regime_series(
 # ── Convenience helpers ─────────────────────────────────────────────────────
 
 
-def regime_at(market_df: pd.DataFrame, when: pd.Timestamp | str | None = None,
-              cfg: RegimeConfig | None = None) -> str:
+def regime_at(
+    market_df: pd.DataFrame, when: pd.Timestamp | str | None = None, cfg: RegimeConfig | None = None
+) -> str:
     """Return the regime label at a single point in time.
 
     If ``when`` is None, returns the regime at the last bar of ``market_df``.
@@ -243,9 +244,9 @@ def regime_at(market_df: pd.DataFrame, when: pd.Timestamp | str | None = None,
     return str(series.loc[matches, "regime"].iloc[-1])
 
 
-def regime_distribution(market_df: pd.DataFrame,
-                        cfg: RegimeConfig | None = None,
-                        include_warmup: bool = False) -> dict[str, float]:
+def regime_distribution(
+    market_df: pd.DataFrame, cfg: RegimeConfig | None = None, include_warmup: bool = False
+) -> dict[str, float]:
     """Return the empirical share of each regime over the input window.
 
     Useful to sanity-check that thresholds aren't producing a degenerate
@@ -261,8 +262,7 @@ def regime_distribution(market_df: pd.DataFrame,
     return {str(k): float(v) for k, v in counts.items()}
 
 
-def regime_run_lengths(market_df: pd.DataFrame,
-                       cfg: RegimeConfig | None = None) -> pd.DataFrame:
+def regime_run_lengths(market_df: pd.DataFrame, cfg: RegimeConfig | None = None) -> pd.DataFrame:
     """Compress the regime series into consecutive runs.
 
     Returns a DataFrame with one row per run: ``start``, ``end``, ``regime``,
@@ -273,6 +273,11 @@ def regime_run_lengths(market_df: pd.DataFrame,
     runs = []
     cur_start = None
     cur_label = None
+    # Inicializado aunque hoy sea inalcanzable usarlo sin asignar: `cur_label`
+    # solo deja de ser None en una rama que ya paso por `prev_ts = ts`. El
+    # invariante depende del entrelazado de dos variables, y eso no se declara
+    # solo (ruff lo marcaba F821: nombre indefinido).
+    prev_ts = None
     for ts, lab in reg.items():
         if lab == REGIME_WARMUP:
             if cur_label is not None:
@@ -297,7 +302,7 @@ def regime_run_lengths(market_df: pd.DataFrame,
     df = pd.DataFrame(runs, columns=["start", "end", "regime"])
     # length in bars: count of bars between start and end inclusive within reg
     lengths = []
-    for s, e in zip(df["start"], df["end"]):
+    for s, e in zip(df["start"], df["end"], strict=True):
         lengths.append(int(((reg.index >= s) & (reg.index <= e)).sum()))
     df["length"] = lengths
     return df

@@ -15,14 +15,14 @@ Computes 8 core metrics from backtest results:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+
 import numpy as np
-import pandas as pd
 
 
 @dataclass(frozen=True)
 class ComputedMetrics:
     """8 core metrics from a backtest run."""
+
     period_return: float  # %
     cagr: float  # % annualized
     sharpe_annual: float  # dimensionless
@@ -31,7 +31,7 @@ class ComputedMetrics:
     win_rate: float  # %
     profit_factor: float  # dimensionless (gross_profit / gross_loss)
     expectancy: float  # $ per trade
-    holding_days_avg: Optional[float] = None  # avg days per trade
+    holding_days_avg: float | None = None  # avg days per trade
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -64,7 +64,7 @@ def compute_metrics(
     Returns:
         ComputedMetrics dataclass with 8 metrics filled in.
     """
-    if backtest_result is None or not hasattr(backtest_result, 'equity_curve'):
+    if backtest_result is None or not hasattr(backtest_result, "equity_curve"):
         raise ValueError("Invalid backtest_result: missing equity_curve")
 
     # Normalize equity to a plain numpy array. PortfolioBacktestResult ships a
@@ -113,7 +113,7 @@ def compute_metrics(
     # PortfolioBacktestResult doesn't carry dollar-volume turnover; use round trips
     # per year (n_trades / years). Comparable across ablations at the same horizon.
     # Mocks that inject a `turnover` attribute take precedence.
-    if hasattr(backtest_result, 'turnover'):
+    if hasattr(backtest_result, "turnover"):
         turnover = float(backtest_result.turnover)
     else:
         years = (n_days / trading_days_per_year) if n_days > 0 else 0.0
@@ -121,7 +121,7 @@ def compute_metrics(
 
     # 6. Win Rate (%)
     if len(trades) > 0:
-        wins = sum(1 for t in trades if hasattr(t, 'pnl') and t.pnl > 0)
+        wins = sum(1 for t in trades if hasattr(t, "pnl") and t.pnl > 0)
         win_rate = 100.0 * wins / len(trades)
     else:
         win_rate = 0.0
@@ -130,7 +130,7 @@ def compute_metrics(
     gross_profit = 0.0
     gross_loss = 0.0
     for t in trades:
-        if hasattr(t, 'pnl'):
+        if hasattr(t, "pnl"):
             if t.pnl > 0:
                 gross_profit += t.pnl
             else:
@@ -138,7 +138,7 @@ def compute_metrics(
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
 
     # 8. Expectancy ($ per trade)
-    total_pnl = sum(t.pnl for t in trades if hasattr(t, 'pnl'))
+    total_pnl = sum(t.pnl for t in trades if hasattr(t, "pnl"))
     expectancy = total_pnl / len(trades) if len(trades) > 0 else 0.0
 
     # Bonus: Holding Days Average
@@ -146,7 +146,7 @@ def compute_metrics(
     if len(trades) > 0:
         holding_days = []
         for t in trades:
-            if hasattr(t, 'exit_date') and hasattr(t, 'entry_date'):
+            if hasattr(t, "exit_date") and hasattr(t, "entry_date"):
                 holding = (t.exit_date - t.entry_date).days
                 if holding >= 0:
                     holding_days.append(holding)

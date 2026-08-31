@@ -35,9 +35,9 @@ vetoes on garbage.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Callable, Iterable, Sequence
 
 from config.logging_config import get_logger
 
@@ -45,12 +45,12 @@ log = get_logger(__name__)
 
 
 # ── tuning constants (explicit so a backtest can move them with evidence) ──────
-MIN_QUARTERS: int = 4          # quarters of history for a usable directional call
+MIN_QUARTERS: int = 4  # quarters of history for a usable directional call
 DEFAULT_BUILD_INTERVAL_DAYS: int = 7  # in-app weekly rebuild cadence (T-CAT-5a)
-BEAT_EPS: float = 1e-9         # |surprise| below this counts as an in-line print
+BEAT_EPS: float = 1e-9  # |surprise| below this counts as an in-line print
 STRONG_BEAT_RATE: float = 0.60  # beat_rate above this → clearly positive prior
 STRONG_MISS_RATE: float = 0.60  # miss_rate above this → clearly negative prior
-SURPRISE_CAP: float = 0.50     # clip a single quarter's surprise to ±50% (outliers)
+SURPRISE_CAP: float = 0.50  # clip a single quarter's surprise to ±50% (outliers)
 
 # A row of past earnings: (period_label, eps_estimate, eps_reported).
 # eps_estimate may be None/NaN (quarter dropped); eps_reported None ⇒ not yet out.
@@ -63,13 +63,13 @@ class SurpriseProfile:
     """Per-ticker EPS surprise track record. Pure summary, no I/O."""
 
     ticker: str
-    n_quarters: int            # usable quarters (estimate and reported present)
-    beat_rate: float           # fraction with reported > estimate
-    miss_rate: float           # fraction with reported < estimate
-    mean_surprise: float       # mean signed surprise, fraction (0.09 = +9%)
-    median_surprise: float     # median signed surprise, fraction
-    last_surprise: float       # most-recent quarter's signed surprise, fraction
-    directional_score: float   # [-1, 1]: sign = expected direction, |·| = conviction
+    n_quarters: int  # usable quarters (estimate and reported present)
+    beat_rate: float  # fraction with reported > estimate
+    miss_rate: float  # fraction with reported < estimate
+    mean_surprise: float  # mean signed surprise, fraction (0.09 = +9%)
+    median_surprise: float  # median signed surprise, fraction
+    last_surprise: float  # most-recent quarter's signed surprise, fraction
+    directional_score: float  # [-1, 1]: sign = expected direction, |·| = conviction
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -87,8 +87,13 @@ class SurpriseProfile:
 
 
 _NEUTRAL_TEMPLATE = dict(
-    n_quarters=0, beat_rate=0.0, miss_rate=0.0, mean_surprise=0.0,
-    median_surprise=0.0, last_surprise=0.0, directional_score=0.0,
+    n_quarters=0,
+    beat_rate=0.0,
+    miss_rate=0.0,
+    mean_surprise=0.0,
+    median_surprise=0.0,
+    last_surprise=0.0,
+    directional_score=0.0,
 )
 
 
@@ -96,7 +101,7 @@ def _neutral(ticker: str) -> SurpriseProfile:
     return SurpriseProfile(ticker=ticker, **_NEUTRAL_TEMPLATE)
 
 
-def _to_float(x) -> "float | None":
+def _to_float(x) -> float | None:
     if x is None:
         return None
     try:
@@ -116,7 +121,7 @@ def _median(xs: Sequence[float]) -> float:
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
-def surprise_pct(eps_estimate: "float | None", eps_reported: "float | None") -> "float | None":
+def surprise_pct(eps_estimate: float | None, eps_reported: float | None) -> float | None:
     """Signed surprise as a fraction: (reported - estimate) / |estimate|.
 
     Returns None when either side is missing or the estimate is ~0 (the ratio
@@ -135,7 +140,7 @@ def surprise_pct(eps_estimate: "float | None", eps_reported: "float | None") -> 
 
 def build_surprise_profile(
     ticker: str,
-    rows: "Iterable[EarningsRow] | None",
+    rows: Iterable[EarningsRow] | None,
 ) -> SurpriseProfile:
     """Aggregate a ticker's past-earnings rows into a :class:`SurpriseProfile`.
 
@@ -148,7 +153,7 @@ def build_surprise_profile(
 
     try:
         surprises: list[float] = []
-        first_usable: "float | None" = None
+        first_usable: float | None = None
         beats = misses = 0
         for row in rows:
             try:
@@ -204,7 +209,7 @@ def _directional_score(n: int, beat_rate: float, miss_rate: float, mean_s: float
     """
     if n < MIN_QUARTERS:
         return 0.0
-    consistency = beat_rate - miss_rate                  # [-1, 1]
+    consistency = beat_rate - miss_rate  # [-1, 1]
     magnitude = max(-1.0, min(1.0, mean_s / SURPRISE_CAP))  # [-1, 1]
     # geometric-style blend that respects sign agreement
     if consistency == 0.0 and magnitude == 0.0:
@@ -218,7 +223,7 @@ def _directional_score(n: int, beat_rate: float, miss_rate: float, mean_s: float
 
 def make_surprise_loader(
     profiles: dict[str, dict] | dict[str, SurpriseProfile] | None,
-) -> EarningsLoader:  # noqa: D401 — name kept symmetric with the engine's providers
+) -> EarningsLoader:
     """Build a ``ticker -> SurpriseProfile | None`` callable from a prebuilt map.
 
     Accepts either a map of ``SurpriseProfile`` or of plain dicts (e.g. the JSON
@@ -227,19 +232,29 @@ def make_surprise_loader(
     """
     profiles = profiles or {}
 
-    def _load(ticker: str) -> "SurpriseProfile | None":
+    def _load(ticker: str) -> SurpriseProfile | None:
         v = profiles.get(ticker)
         if v is None:
             return None
         if isinstance(v, SurpriseProfile):
             return v
         try:
-            return SurpriseProfile(ticker=ticker, **{
-                k: v[k] for k in (
-                    "n_quarters", "beat_rate", "miss_rate", "mean_surprise",
-                    "median_surprise", "last_surprise", "directional_score",
-                ) if k in v
-            })
+            return SurpriseProfile(
+                ticker=ticker,
+                **{
+                    k: v[k]
+                    for k in (
+                        "n_quarters",
+                        "beat_rate",
+                        "miss_rate",
+                        "mean_surprise",
+                        "median_surprise",
+                        "last_surprise",
+                        "directional_score",
+                    )
+                    if k in v
+                },
+            )
         except Exception:
             log.exception("make_surprise_loader: bad profile dict for %s", ticker)
             return None
@@ -251,7 +266,7 @@ def make_surprise_loader(
 
 
 def build_due(
-    last_iso: "str | None",
+    last_iso: str | None,
     now: datetime,
     interval_days: int = DEFAULT_BUILD_INTERVAL_DAYS,
 ) -> bool:

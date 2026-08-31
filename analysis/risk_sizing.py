@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from typing import Callable
+from collections.abc import Callable
 
 from analysis.exit_replay import AtrParams, Bar
 from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
@@ -32,10 +32,10 @@ from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
 # size_weight(ticker, date_iso10) -> m ≥ 0 (multiplicador de riesgo sobre el slice).
 SizeWeight = Callable[[str, str], float]
 
-DEFAULT_LOOKBACK = 60         # ruedas de vol realizada (§4)
-DEFAULT_VOL_TARGET = 0.20     # objetivo de vol anual por nombre (§4)
-DEFAULT_CLAMP = (0.25, 2.0)   # recorte del multiplicador (§4)
-_VOL_FALLBACK = 0.20          # cuando no hay ni una σ conocida en todo el universo
+DEFAULT_LOOKBACK = 60  # ruedas de vol realizada (§4)
+DEFAULT_VOL_TARGET = 0.20  # objetivo de vol anual por nombre (§4)
+DEFAULT_CLAMP = (0.25, 2.0)  # recorte del multiplicador (§4)
+_VOL_FALLBACK = 0.20  # cuando no hay ni una σ conocida en todo el universo
 TRADING_DAYS = 252
 
 
@@ -114,10 +114,17 @@ def precompute_oracle_returns(
         if not bars or idx >= len(bars):
             continue
         cyc = replay_cycle(
-            bars, idx, sigs_by.get(ticker) or {},
-            params=so_params, atr_p=atr_p, cap_days=cap_days,
-            costs=costs, notional=10_000.0, regime="",
-            eval_mode=eval_mode, fill_mode=fill_mode,
+            bars,
+            idx,
+            sigs_by.get(ticker) or {},
+            params=so_params,
+            atr_p=atr_p,
+            cap_days=cap_days,
+            costs=costs,
+            notional=10_000.0,
+            regime="",
+            eval_mode=eval_mode,
+            fill_mode=fill_mode,
         )
         if cyc is None or cyc.entry_cost <= 0:
             continue
@@ -147,20 +154,22 @@ def make_size_weight(
     if mode == "equal":
         return lambda _t, _d: 1.0
 
-    global_median = (
-        statistics.median(sigma_by_key.values()) if sigma_by_key else _VOL_FALLBACK
-    )
+    global_median = statistics.median(sigma_by_key.values()) if sigma_by_key else _VOL_FALLBACK
 
     if mode == "inverse_vol":
+
         def f(t: str, d: str) -> float:
             s = sigma_by_key.get((t, d)) or global_median
             return _clamp(global_median / s) if s > 0 else 1.0
+
         return f
 
     if mode == "vol_target":
+
         def f(t: str, d: str) -> float:
             s = sigma_by_key.get((t, d)) or global_median
             return _clamp(vol_target / s) if s > 0 else 1.0
+
         return f
 
     if mode == "oracle":
@@ -172,6 +181,7 @@ def make_size_weight(
                 return 1.0
             # monótono en el retorno realizado: r=+0.25 → tope 2.0; r=−0.19 → 0.25.
             return _clamp(1.0 + 4.0 * r)
+
         return f
 
     raise ValueError(f"modo de sizing desconocido: {mode}")

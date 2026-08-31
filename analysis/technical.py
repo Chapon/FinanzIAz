@@ -59,6 +59,7 @@ def _toggle(key: str, default: bool = True) -> bool:
     except Exception:
         return default
 
+
 # ── Data classes ──────────────────────────────────────────────────────────────
 
 

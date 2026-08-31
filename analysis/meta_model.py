@@ -36,10 +36,10 @@ from analysis.meta_labeling import MAX_DAYS, Dataset, Sample
 log = logging.getLogger(__name__)
 
 # §5 — congelados.
-MIN_TRAIN_YEARS = 4      # el primer año de test es el quinto de la muestra
-EMBARGO_DAYS = 20        # ruedas de embargo después del corte (López de Prado)
+MIN_TRAIN_YEARS = 4  # el primer año de test es el quinto de la muestra
+EMBARGO_DAYS = 20  # ruedas de embargo después del corte (López de Prado)
 MIN_CALIB_SAMPLES = 100  # bajo esto se usa el modelo crudo (igual que ml_signals)
-CALIB_FRACTION = 0.20    # cola del train reservada para la isotónica
+CALIB_FRACTION = 0.20  # cola del train reservada para la isotónica
 
 
 @dataclass
@@ -83,8 +83,11 @@ def roc_auc(y: list[int], p: list[float]) -> float | None:
     testear sin depender de la versión de sklearn instalada, y porque el cálculo
     por rangos es exacto y de tres líneas.
     """
-    pos = [pi for yi, pi in zip(y, p) if yi == 1]
-    neg = [pi for yi, pi in zip(y, p) if yi == 0]
+    # strict=True: `y` y `p` son labels y predicciones del MISMO fold. Un
+    # largo distinto significaria un AUC calculado sobre pares desalineados,
+    # que es peor que un error.
+    pos = [pi for yi, pi in zip(y, p, strict=True) if yi == 1]
+    neg = [pi for yi, pi in zip(y, p, strict=True) if yi == 0]
     if not pos or not neg:
         return None
     order = sorted(range(len(p)), key=lambda i: p[i])
@@ -98,7 +101,7 @@ def roc_auc(y: list[int], p: list[float]) -> float | None:
         for k in range(i, j + 1):
             ranks[order[k]] = avg
         i = j + 1
-    sum_pos = sum(r for r, yi in zip(ranks, y) if yi == 1)
+    sum_pos = sum(r for r, yi in zip(ranks, y, strict=True) if yi == 1)
     n_pos, n_neg = len(pos), len(neg)
     return (sum_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
 
@@ -146,9 +149,7 @@ def _split_train(
     return train, purged
 
 
-def _fit_predict(
-    train: list[Sample], test: list[Sample]
-) -> tuple[list[float] | None, bool, int]:
+def _fit_predict(train: list[Sample], test: list[Sample]) -> tuple[list[float] | None, bool, int]:
     """Entrena sobre ``train`` y puntúa ``test``. ``(proba, calibrada, n_calib)``.
 
     Arquitectura: exactamente ``ml_signals._make_raw_xgb()`` — **sin tunear
@@ -176,7 +177,7 @@ def _fit_predict(
     use_calib = n_calib >= MIN_CALIB_SAMPLES and n_fit >= MIN_CALIB_SAMPLES
     if use_calib:
         X_fit, y_fit = X[:n_fit], y[:n_fit]
-        X_cal, y_cal = X[n - n_calib:], y[n - n_calib:]
+        X_cal, y_cal = X[n - n_calib :], y[n - n_calib :]
         use_calib = len(set(y_fit.tolist())) >= 2 and len(set(y_cal.tolist())) >= 2
     if not use_calib:
         X_fit, y_fit = X, y
@@ -218,15 +219,20 @@ def walkforward_oof(
     cal = _calendar(samples)
     years = sorted({int(s.date[:4]) for s in samples})
     if len(years) <= min_train_years:
-        log.warning("solo %d años en la muestra: no alcanza para %d de entrenamiento",
-                    len(years), min_train_years)
+        log.warning(
+            "solo %d años en la muestra: no alcanza para %d de entrenamiento", len(years), min_train_years
+        )
         return res
 
     for test_year in years[min_train_years:]:
         cutoff = f"{test_year}-01-01"
         test = [s for s in samples if int(s.date[:4]) == test_year]
         train, n_purged = _split_train(
-            samples, cutoff, cal, label_days=label_days, embargo_days=embargo_days,
+            samples,
+            cutoff,
+            cal,
+            label_days=label_days,
+            embargo_days=embargo_days,
         )
         if not train or not test:
             res.n_skipped_folds += 1
@@ -237,17 +243,23 @@ def walkforward_oof(
             res.n_skipped_folds += 1
             continue
 
-        for s, p in zip(test, proba):
+        for s, p in zip(test, proba, strict=True):
             res.proba[(s.ticker, s.date)] = p
 
         auc = roc_auc([s.label for s in test], proba)
-        res.folds.append(FoldReport(
-            test_year=test_year,
-            n_train=len(train), n_purged=n_purged, n_calib=n_calib, n_test=len(test),
-            train_base_rate=sum(s.label for s in train) / len(train),
-            test_base_rate=sum(s.label for s in test) / len(test),
-            calibrated=calibrated, auc=auc,
-        ))
+        res.folds.append(
+            FoldReport(
+                test_year=test_year,
+                n_train=len(train),
+                n_purged=n_purged,
+                n_calib=n_calib,
+                n_test=len(test),
+                train_base_rate=sum(s.label for s in train) / len(train),
+                test_base_rate=sum(s.label for s in test) / len(test),
+                calibrated=calibrated,
+                auc=auc,
+            )
+        )
 
     return res
 

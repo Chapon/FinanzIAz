@@ -55,10 +55,10 @@ DEFAULT_REFRACTORY = 20  # = cap_days del harness
 class AnomalyParams:
     """Par umbral (lo único que barre la grilla del harness) + forma congelada."""
 
-    k: float = 2.0                    # umbral de retorno en unidades de ATR14
-    m: float = 2.0                    # múltiplo de volumen sobre ADV20
-    atr_period: int = ATR_PERIOD      # congelado
-    adv_window: int = ADV_WINDOW      # congelado
+    k: float = 2.0  # umbral de retorno en unidades de ATR14
+    m: float = 2.0  # múltiplo de volumen sobre ADV20
+    atr_period: int = ATR_PERIOD  # congelado
+    adv_window: int = ADV_WINDOW  # congelado
     refractory: int = DEFAULT_REFRACTORY  # congelado (= cap_days)
 
 

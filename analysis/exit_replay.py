@@ -36,8 +36,8 @@ from __future__ import annotations
 import bisect
 import math
 import statistics
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Callable, Iterable
 
 # ── Datos de entrada ─────────────────────────────────────────────────────────
 
@@ -53,14 +53,14 @@ class SellEvent:
 
     order_id: int
     ticker: str
-    sell_date: str          # iso10 del fill
-    sell_price: float       # fill_price real
+    sell_date: str  # iso10 del fill
+    sell_price: float  # fill_price real
     reason: str
     signal_score: float | None
     shares: float
-    avg_cost: float         # costo por share del lote consumido (incl. fees BUY)
-    entry_date: str         # iso10 del BUY más viejo consumido
-    entry_price: float      # fill_price del primer BUY (seed del HWM)
+    avg_cost: float  # costo por share del lote consumido (incl. fees BUY)
+    entry_date: str  # iso10 del BUY más viejo consumido
+    entry_price: float  # fill_price del primer BUY (seed del HWM)
     sell_commission: float = 0.0
     sell_slippage: float = 0.0
 
@@ -70,9 +70,12 @@ class SellEvent:
 
     @property
     def pnl_real(self) -> float:
-        return (self.sell_price * self.shares
-                - self.sell_commission - self.sell_slippage
-                - self.avg_cost * self.shares)
+        return (
+            self.sell_price * self.shares
+            - self.sell_commission
+            - self.sell_slippage
+            - self.avg_cost * self.shares
+        )
 
 
 @dataclass(frozen=True)
@@ -102,7 +105,7 @@ class SimExit:
     """Resultado de replay de un SellEvent bajo una variante."""
 
     event: SellEvent
-    modified: bool                  # False ⇒ pasa igual que el real
+    modified: bool  # False ⇒ pasa igual que el real
     exit_date: str = ""
     exit_price: float = 0.0
     exit_reason: str = ""
@@ -186,8 +189,9 @@ def atr_exit(
     return None
 
 
-def _atr_trigger_level(reason: str, *, avg_cost: float, hwm: float, atr_value: float,
-                       p: "AtrParams") -> float | None:
+def _atr_trigger_level(
+    reason: str, *, avg_cost: float, hwm: float, atr_value: float, p: AtrParams
+) -> float | None:
     """Nivel-gatillo que corresponde a un ``reason`` ATR, para modelar el fill."""
     if reason == "atr_stop":
         return avg_cost - p.stop_mult * atr_value
@@ -198,7 +202,7 @@ def _atr_trigger_level(reason: str, *, avg_cost: float, hwm: float, atr_value: f
     return None
 
 
-def _exit_fill_price(reason: str, level: float | None, bar: "Bar") -> float:
+def _exit_fill_price(reason: str, level: float | None, bar: Bar) -> float:
     """Fill realista (stdlib) espejo de ``gates.model_exit_fill_price``.
 
     Stops/trailing (vende al caer): gap-open (``open<=level`` → open) /
@@ -296,9 +300,7 @@ def replay_event(
             exit_idx, exit_reason = i, fired
             # HWM acá es el pre-close (el update ocurre tras el break), igual que
             # el engine → el nivel del trail usa el HWM previo.
-            exit_level = _atr_trigger_level(
-                fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p
-            )
+            exit_level = _atr_trigger_level(fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p)
         elif scheduled_exit_idx is not None and i >= scheduled_exit_idx:
             exit_idx, exit_reason = i, "deferred_signal_sell"
         elif i == last_idx:
@@ -318,9 +320,7 @@ def replay_event(
         exit_price = _exit_fill_price(exit_reason, exit_level, bars[exit_idx])
     else:
         exit_price = bars[exit_idx][4]
-    pnl_sim = (exit_price * ev.shares
-               - ev.sell_commission - ev.sell_slippage
-               - ev.avg_cost * ev.shares)
+    pnl_sim = exit_price * ev.shares - ev.sell_commission - ev.sell_slippage - ev.avg_cost * ev.shares
     return SimExit(
         event=ev,
         modified=True,
@@ -394,9 +394,7 @@ def replay_atr_recalib(
             )
         if fired is not None:
             exit_idx, exit_reason = i, fired
-            exit_level = _atr_trigger_level(
-                fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p
-            )
+            exit_level = _atr_trigger_level(fired, avg_cost=ev.avg_cost, hwm=hwm, atr_value=a, p=atr_p)
         elif i == last_idx:
             exit_idx, exit_reason = i, "cap_reached"
 
@@ -412,9 +410,7 @@ def replay_atr_recalib(
         exit_price = _exit_fill_price(exit_reason, exit_level, bars[exit_idx])
     else:
         exit_price = bars[exit_idx][4]
-    pnl_sim = (exit_price * ev.shares
-               - ev.sell_commission - ev.sell_slippage
-               - ev.avg_cost * ev.shares)
+    pnl_sim = exit_price * ev.shares - ev.sell_commission - ev.sell_slippage - ev.avg_cost * ev.shares
     return SimExit(
         event=ev,
         modified=True,
@@ -472,13 +468,11 @@ def simulate_variant(
         if variant == "confirm_next_scan":
             if bars:
                 d_idx = _idx_on_or_after(bars, ev.sell_date)
-                sim = replay_event(ev, bars, scheduled_exit_idx=d_idx + 1,
-                                   cap_days=cap_days, atr_p=atr_p)
+                sim = replay_event(ev, bars, scheduled_exit_idx=d_idx + 1, cap_days=cap_days, atr_p=atr_p)
         elif variant == "score_threshold":
             if ev.signal_score is not None and ev.signal_score >= sell_threshold:
                 if bars:
-                    sim = replay_event(ev, bars, scheduled_exit_idx=None,
-                                       cap_days=cap_days, atr_p=atr_p)
+                    sim = replay_event(ev, bars, scheduled_exit_idx=None, cap_days=cap_days, atr_p=atr_p)
             else:
                 out.append(_passthrough(ev))
                 continue
@@ -490,9 +484,9 @@ def simulate_variant(
                     out.append(_passthrough(ev))
                     continue
                 e_idx = _idx_on_or_after(bars, ev.entry_date)
-                sim = replay_event(ev, bars,
-                                   scheduled_exit_idx=e_idx + min_holding_days,
-                                   cap_days=cap_days, atr_p=atr_p)
+                sim = replay_event(
+                    ev, bars, scheduled_exit_idx=e_idx + min_holding_days, cap_days=cap_days, atr_p=atr_p
+                )
         else:
             raise ValueError(f"variante desconocida: {variant}")
 
@@ -507,9 +501,12 @@ def simulate_variant(
 
 def _passthrough(ev: SellEvent) -> SimExit:
     return SimExit(
-        event=ev, modified=False,
-        exit_date=ev.sell_date, exit_price=ev.sell_price,
-        exit_reason=ev.reason, pnl_sim=ev.pnl_real,
+        event=ev,
+        modified=False,
+        exit_date=ev.sell_date,
+        exit_price=ev.sell_price,
+        exit_reason=ev.reason,
+        pnl_sim=ev.pnl_real,
     )
 
 
@@ -525,17 +522,18 @@ class ReplayReport:
     pnl_real_total: float
     pnl_sim_total: float
     pnl_delta_total: float
-    pnl_delta_pts: float            # delta como % del capital inicial
-    max_dd_real: float              # fracción positiva (0.06 = 6%)
+    pnl_delta_pts: float  # delta como % del capital inicial
+    max_dd_real: float  # fracción positiva (0.06 = 6%)
     max_dd_sim: float
-    dd_ratio: float                 # max_dd_sim / max_dd_real
-    median_extra_return: float | None   # mediana de (exit_sim/sell_real - 1) en modificados
+    dd_ratio: float  # max_dd_sim / max_dd_real
+    median_extra_return: float | None  # mediana de (exit_sim/sell_real - 1) en modificados
     capture_ratio_median: float | None  # mediana de capturado / rally máximo 20d
     passes_kill_criteria: bool
     exits_by_reason: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         from dataclasses import asdict
+
         return asdict(self)
 
 
@@ -605,10 +603,7 @@ def build_report(
     modified = [s for s in sims if s.modified]
     skipped = sum(1 for s in sims if not s.modified and s.exit_reason == "no_data")
 
-    extra_returns = [
-        s.exit_price / s.event.sell_price - 1.0
-        for s in modified if s.event.sell_price > 0
-    ]
+    extra_returns = [s.exit_price / s.event.sell_price - 1.0 for s in modified if s.event.sell_price > 0]
 
     # capture ratio: cuánto del rally máximo a 20d post-SELL se retuvo
     captures: list[float] = []
@@ -623,9 +618,7 @@ def build_report(
         )
         if peak is None or peak <= s.event.sell_price:
             continue  # no hubo rally: no aplica
-        captures.append(
-            (s.exit_price - s.event.sell_price) / (peak - s.event.sell_price)
-        )
+        captures.append((s.exit_price - s.event.sell_price) / (peak - s.event.sell_price))
 
     dd_real = max_drawdown(real_curve)
     adj = adjusted_equity_curve(real_curve, sims)

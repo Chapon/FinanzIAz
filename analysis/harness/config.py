@@ -4,8 +4,7 @@ ExperimentConfig: declarative experiment specification for harness runs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from typing import Optional
+from dataclasses import asdict, dataclass
 
 
 @dataclass(frozen=True)
@@ -30,13 +29,14 @@ class ExperimentConfig:
     Default False — the feature ships only if harness validation passes.
     Full spec: docs/sprint4_t05_cross_sectional_spec.md.
     """
+
     name: str
     hmm_enabled: bool = True
     stacking_enabled: bool = True
     xgb_signal_enabled: bool = True
     vol_overlay_enabled: bool = True
     cross_sectional_enabled: bool = False
-    description: Optional[str] = None
+    description: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""

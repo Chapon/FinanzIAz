@@ -118,11 +118,20 @@ def book_concentration(
     from collections import defaultdict
 
     empty = {
-        "n": 0, "total_value": 0.0, "weights": [], "top_ticker": None,
-        "top_weight": None, "hhi": None, "effective_names": None,
-        "sectors": [], "mean_correlation": None,
-        "total_unrealized_pnl": 0.0, "pnl_ex_best": None, "pnl_ex_worst": None,
-        "best_ticker": None, "worst_ticker": None,
+        "n": 0,
+        "total_value": 0.0,
+        "weights": [],
+        "top_ticker": None,
+        "top_weight": None,
+        "hhi": None,
+        "effective_names": None,
+        "sectors": [],
+        "mean_correlation": None,
+        "total_unrealized_pnl": 0.0,
+        "pnl_ex_best": None,
+        "pnl_ex_worst": None,
+        "best_ticker": None,
+        "worst_ticker": None,
     }
     if not positions:
         return empty
@@ -139,13 +148,15 @@ def book_concentration(
                 sec = sector_of(p["ticker"])
             except Exception:
                 sec = None
-        enriched.append({
-            "ticker": p["ticker"],
-            "market_value": mv,
-            "weight": mv / total,
-            "unrealized_pnl": float(p.get("unrealized_pnl", 0.0) or 0.0),
-            "sector": sec or "Sin dato",
-        })
+        enriched.append(
+            {
+                "ticker": p["ticker"],
+                "market_value": mv,
+                "weight": mv / total,
+                "unrealized_pnl": float(p.get("unrealized_pnl", 0.0) or 0.0),
+                "sector": sec or "Sin dato",
+            }
+        )
     weights_sorted = sorted(enriched, key=lambda x: -x["weight"])
     top = weights_sorted[0]
     hhi = sum(x["weight"] ** 2 for x in enriched)
@@ -167,9 +178,16 @@ def book_concentration(
     return {
         "n": len(enriched),
         "total_value": total,
-        "weights": [{"ticker": x["ticker"], "weight": x["weight"],
-                     "market_value": x["market_value"], "sector": x["sector"],
-                     "unrealized_pnl": x["unrealized_pnl"]} for x in weights_sorted],
+        "weights": [
+            {
+                "ticker": x["ticker"],
+                "weight": x["weight"],
+                "market_value": x["market_value"],
+                "sector": x["sector"],
+                "unrealized_pnl": x["unrealized_pnl"],
+            }
+            for x in weights_sorted
+        ],
         "top_ticker": top["ticker"],
         "top_weight": top["weight"],
         "hhi": hhi,

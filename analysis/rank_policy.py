@@ -83,10 +83,10 @@ def fixed_rank(seed: int, ticker: str) -> float:
 
 
 def rate_matched_priority(
-    candidates_by_date: "dict[str, list[str]]",
-    n_by_date: "dict[str, int]",
+    candidates_by_date: dict[str, list[str]],
+    n_by_date: dict[str, int],
     seed: int,
-) -> "set[tuple[str, str]]":
+) -> set[tuple[str, str]]:
     """Conjunto priorizado **igualado en tasa** — enabler de la **Tarea 49**.
 
     Dado el conjunto de candidatos de cada fecha y **cuántas** prioridades lleva

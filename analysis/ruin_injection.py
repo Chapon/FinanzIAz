@@ -74,7 +74,7 @@ class RuinEvent:
     anchor_close: float
     terminal_close: float
     span: int
-    n_bars_after: int       # barras de la serie que quedan desde start_idx
+    n_bars_after: int  # barras de la serie que quedan desde start_idx
 
     @property
     def completes(self) -> bool:
@@ -130,8 +130,9 @@ def _decline_factor(j: int, depth: float, span: int) -> float:
     return math.exp(math.log(1.0 - depth) * (j / span))
 
 
-def _apply_event(bars: list[Bar], start_idx: int, depth: float,
-                 span: int) -> tuple[list[Bar], RuinEvent | None]:
+def _apply_event(
+    bars: list[Bar], start_idx: int, depth: float, span: int
+) -> tuple[list[Bar], RuinEvent | None]:
     """Devuelve la serie con el evento aplicado desde ``start_idx``."""
     n = len(bars)
     if not (0 <= start_idx < n):
@@ -161,8 +162,12 @@ def _apply_event(bars: list[Bar], start_idx: int, depth: float,
         out.append((date, o * k, h * k, lo * k, c * k))
 
     ev = RuinEvent(
-        ticker="", start_idx=start_idx, start_date=bars[start_idx][0],
-        anchor_close=anchor_close, terminal_close=terminal, span=span,
+        ticker="",
+        start_idx=start_idx,
+        start_date=bars[start_idx][0],
+        anchor_close=anchor_close,
+        terminal_close=terminal,
+        span=span,
         n_bars_after=n - start_idx,
     )
     return out, ev
@@ -196,7 +201,7 @@ def inject_ruin(
     out: dict[str, list[Bar]] = {}
     events: list[RuinEvent] = []
 
-    for ticker in sorted(bars_by):          # orden estable, aunque el RNG no dependa
+    for ticker in sorted(bars_by):  # orden estable, aunque el RNG no dependa
         bars = bars_by[ticker]
         if not bars or rate <= 0.0:
             out[ticker] = bars
@@ -208,11 +213,17 @@ def inject_ruin(
         new_bars, ev = _apply_event(bars, start, depth, span)
         out[ticker] = new_bars
         if ev is not None:
-            events.append(RuinEvent(
-                ticker=ticker, start_idx=ev.start_idx, start_date=ev.start_date,
-                anchor_close=ev.anchor_close, terminal_close=ev.terminal_close,
-                span=ev.span, n_bars_after=ev.n_bars_after,
-            ))
+            events.append(
+                RuinEvent(
+                    ticker=ticker,
+                    start_idx=ev.start_idx,
+                    start_date=ev.start_date,
+                    anchor_close=ev.anchor_close,
+                    terminal_close=ev.terminal_close,
+                    span=ev.span,
+                    n_bars_after=ev.n_bars_after,
+                )
+            )
     return out, events
 
 
@@ -228,13 +239,12 @@ def bars_digest(bars_by: dict[str, list[Bar]]) -> str:
         h.update(ticker.encode("utf-8"))
         h.update(b"\x1f")
         for date, o, hi, lo, c in bars_by[ticker]:
-            h.update(f"{date}|{o!r}|{hi!r}|{lo!r}|{c!r}\x1e".encode("utf-8"))
+            h.update(f"{date}|{o!r}|{hi!r}|{lo!r}|{c!r}\x1e".encode())
         h.update(b"\x1d")
     return h.hexdigest()
 
 
-def event_summary(events: list[RuinEvent], n_tickers: int,
-                  total_ticker_years: float | None = None) -> dict:
+def event_summary(events: list[RuinEvent], n_tickers: int, total_ticker_years: float | None = None) -> dict:
     """Descriptivo del barrido: cuántos eventos, en cuántos nombres, y la tasa."""
     completed = [e for e in events if e.completes]
     out = {
@@ -242,8 +252,7 @@ def event_summary(events: list[RuinEvent], n_tickers: int,
         "n_completed": len(completed),
         "n_tickers_hit": len({e.ticker for e in events}),
         "n_tickers": n_tickers,
-        "share_tickers_hit": (len({e.ticker for e in events}) / n_tickers
-                              if n_tickers else 0.0),
+        "share_tickers_hit": (len({e.ticker for e in events}) / n_tickers if n_tickers else 0.0),
     }
     if total_ticker_years:
         out["events_per_ticker_year"] = len(events) / total_ticker_years

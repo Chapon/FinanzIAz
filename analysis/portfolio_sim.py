@@ -137,14 +137,14 @@ class PortfolioResult:
     final_equity: float
     trades: list[Trade] = field(default_factory=list)
     equity_curve: list[tuple[str, float]] = field(default_factory=list)
-    n_offered: int = 0        # entradas candidatas ofrecidas al simulador
-    n_taken: int = 0          # efectivamente abiertas
-    n_no_slot: int = 0        # rechazadas por falta de slot
-    n_filtered: int = 0       # rechazadas por el entry_filter (size 0)
-    n_no_cash: int = 0        # rechazadas por falta de cash
-    n_already_open: int = 0   # rechazadas por tener ya el ticker en cartera
+    n_offered: int = 0  # entradas candidatas ofrecidas al simulador
+    n_taken: int = 0  # efectivamente abiertas
+    n_no_slot: int = 0  # rechazadas por falta de slot
+    n_filtered: int = 0  # rechazadas por el entry_filter (size 0)
+    n_no_cash: int = 0  # rechazadas por falta de cash
+    n_already_open: int = 0  # rechazadas por tener ya el ticker en cartera
     n_gate5_blocked: int = 0  # rechazadas por Gate 5 vivo (anti-whipsaw), T34
-    n_gate5b_blocked: int = 0 # rechazadas por Gate 5b vivo (anti-churn), T34
+    n_gate5b_blocked: int = 0  # rechazadas por Gate 5b vivo (anti-churn), T34
 
     @property
     def total_return_pts(self) -> float:
@@ -326,10 +326,13 @@ def simulate_portfolio(
             return False
         cutoff = _ord(entry_date) - LIVE_CHURN_LOOKBACK_DAYS
         n = 0
+        # El contador sube DESPUES del break, asi que cuenta ciclos DENTRO de la
+        # ventana y no iteraciones; enumerate() contaria lo otro. Ademas es el
+        # gate de churn del que salieron numeros publicados: no se toca por estilo.
         for exit_date, _ in reversed(hist):
             if _ord(exit_date) < cutoff:
                 break
-            n += 1
+            n += 1  # noqa: SIM113
             if n >= LIVE_CHURN_MAX_CYCLES:
                 return True
         return False
@@ -423,18 +426,29 @@ def simulate_portfolio(
             atr_i = atr_p
             if trail_min_excess_of is not None:
                 cand = trail_min_excess_of(ticker, entry_date)
-                if (isinstance(cand, (int, float)) and not isinstance(cand, bool)
-                        and math.isfinite(cand) and cand >= 0
-                        and float(cand) != atr_p.trail_min_excess_atrs):
+                if (
+                    isinstance(cand, (int, float))
+                    and not isinstance(cand, bool)
+                    and math.isfinite(cand)
+                    and cand >= 0
+                    and float(cand) != atr_p.trail_min_excess_atrs
+                ):
                     atr_i = replace(atr_p, trail_min_excess_atrs=float(cand))
 
             cyc = replay_cycle(
-                bars, idx, sigs_by.get(ticker) or {},
-                params=so_params, atr_p=atr_i, cap_days=cap_i,
-                costs=costs, notional=notional,
+                bars,
+                idx,
+                sigs_by.get(ticker) or {},
+                params=so_params,
+                atr_p=atr_i,
+                cap_days=cap_i,
+                costs=costs,
+                notional=notional,
                 regime="" if regime_of is None else regime_of(entry_date),
-                time_stop_days=time_stop_days, stop_filter=stop_filter,
-                eval_mode=eval_mode, fill_mode=fill_mode,
+                time_stop_days=time_stop_days,
+                stop_filter=stop_filter,
+                eval_mode=eval_mode,
+                fill_mode=fill_mode,
             )
             if cyc is None:
                 continue
@@ -445,12 +459,19 @@ def simulate_portfolio(
             open_positions.append((exit_date, proceeds, ticker, cyc.entry_cost))
             all_dates.add(exit_date)
             res.n_taken += 1
-            res.trades.append(Trade(
-                ticker=ticker, entry_date=entry_date, exit_date=exit_date,
-                invested=cyc.entry_cost, proceeds=proceeds,
-                regime=cyc.regime, held_days=cyc.held_days,
-                exit_reason=cyc.exit_reasons, size_factor=size_factor,
-            ))
+            res.trades.append(
+                Trade(
+                    ticker=ticker,
+                    entry_date=entry_date,
+                    exit_date=exit_date,
+                    invested=cyc.entry_cost,
+                    proceeds=proceeds,
+                    regime=cyc.regime,
+                    held_days=cyc.held_days,
+                    exit_reason=cyc.exit_reasons,
+                    size_factor=size_factor,
+                )
+            )
 
     # cerrar todo lo que quede
     for _, proceeds, _tk, _ec in open_positions:
@@ -464,7 +485,9 @@ def simulate_portfolio(
 
 
 def _build_equity_curve(
-    trades: list[Trade], initial_capital: float, bars_by: dict[str, list[Bar]],
+    trades: list[Trade],
+    initial_capital: float,
+    bars_by: dict[str, list[Bar]],
 ) -> list[tuple[str, float]]:
     """Curva de equity diaria: cash + MTM de las posiciones abiertas.
 
@@ -484,8 +507,7 @@ def _build_equity_curve(
         closes[t.ticker] = {b[0]: b[4] for b in (bars_by.get(t.ticker) or [])}
 
     # calendario completo entre la primera y la última fecha relevante
-    cal = sorted({b0 for tk in closes for b0 in closes[tk]
-                  if dates[0] <= b0 <= dates[-1]})
+    cal = sorted({b0 for tk in closes for b0 in closes[tk] if dates[0] <= b0 <= dates[-1]})
     if not cal:
         cal = dates
 

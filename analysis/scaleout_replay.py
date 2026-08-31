@@ -40,8 +40,8 @@ Contrafactual (congelado en el doc §3)
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Callable
 
 from analysis.exit_replay import (
     AtrParams,
@@ -70,8 +70,8 @@ _NO_STOP = 1e9
 class CostModel:
     """Comisión + slippage como fracción del notional (espejo de la cuenta viva)."""
 
-    commission: float = 0.001   # 0.1%
-    slippage: float = 0.0005    # 0.05%
+    commission: float = 0.001  # 0.1%
+    slippage: float = 0.0005  # 0.05%
 
     def sell_proceeds(self, shares: float, price: float) -> float:
         """Efectivo neto de vender ``shares`` a ``price`` (costos descontados)."""
@@ -119,15 +119,15 @@ class CycleResult:
     entry_date: str
     entry_price: float
     shares: float
-    entry_cost: float = 0.0   # lo que costó abrir, con costos
+    entry_cost: float = 0.0  # lo que costó abrir, con costos
     regime: str = ""
     legs: list[Leg] = field(default_factory=list)
     # Curva diaria de valor de la posición (MTM + cash ya realizado), para el DD
     # compuesto. [(iso10, valor_total)] incluyendo el día de entrada.
     daily_value: list[tuple[str, float]] = field(default_factory=list)
     # Excursiones sobre el capital invertido inicial.
-    mae: float = 0.0   # max adverse excursion (fracción negativa o 0)
-    mfe: float = 0.0   # max favourable excursion (fracción positiva o 0)
+    mae: float = 0.0  # max adverse excursion (fracción negativa o 0)
+    mfe: float = 0.0  # max favourable excursion (fracción positiva o 0)
 
     @property
     def total_proceeds(self) -> float:
@@ -149,8 +149,9 @@ class CycleResult:
         return len(self.daily_value) - 1 if self.daily_value else 0
 
 
-def _fired_barrier(bar: Bar, *, avg_cost: float, hwm: float, atr_value: float,
-                   p: AtrParams, eval_mode: str) -> str | None:
+def _fired_barrier(
+    bar: Bar, *, avg_cost: float, hwm: float, atr_value: float, p: AtrParams, eval_mode: str
+) -> str | None:
     """Qué barrera ATR dispara en ``bar``, según **contra qué precio se decide**.
 
     * ``"close"`` — contra el close, que es lo que hicieron T7/T23/T13/T21/T26.
@@ -165,22 +166,20 @@ def _fired_barrier(bar: Bar, *, avg_cost: float, hwm: float, atr_value: float,
     """
     _, _open, high, low, close = bar
     if eval_mode == "close":
-        return atr_exit(current_price=close, avg_cost=avg_cost,
-                        high_water_mark=hwm, atr_value=atr_value, p=p)
+        return atr_exit(current_price=close, avg_cost=avg_cost, high_water_mark=hwm, atr_value=atr_value, p=p)
 
-    down = atr_exit(current_price=low, avg_cost=avg_cost,
-                    high_water_mark=hwm, atr_value=atr_value, p=p)
+    down = atr_exit(current_price=low, avg_cost=avg_cost, high_water_mark=hwm, atr_value=atr_value, p=p)
     if down is not None:
         return down
     # Las barreras de abajo ya quedaron descartadas contra el ``low`` (y ``low`` es
     # el precio más adverso de la barra), así que acá sólo puede aparecer el TP.
-    up = atr_exit(current_price=high, avg_cost=avg_cost,
-                  high_water_mark=hwm, atr_value=atr_value, p=p)
+    up = atr_exit(current_price=high, avg_cost=avg_cost, high_water_mark=hwm, atr_value=atr_value, p=p)
     return up if up == "atr_tp" else None
 
 
-def _barrier_fill_price(bar: Bar, fired: str, level: float | None, *,
-                        eval_mode: str, fill_mode: str) -> float:
+def _barrier_fill_price(
+    bar: Bar, fired: str, level: float | None, *, eval_mode: str, fill_mode: str
+) -> float:
     """A qué precio se llena la barrera que disparó en ``bar``.
 
     ``fill_mode``:
@@ -283,8 +282,7 @@ def replay_cycle(
     if eval_mode not in ("close", "touch"):
         raise ValueError(f"eval_mode inválido: {eval_mode!r} (esperado 'close' o 'touch')")
     if fill_mode not in ("resting", "decision"):
-        raise ValueError(
-            f"fill_mode inválido: {fill_mode!r} (esperado 'resting' o 'decision')")
+        raise ValueError(f"fill_mode inválido: {fill_mode!r} (esperado 'resting' o 'decision')")
     n = len(bars)
     if not bars or entry_idx >= n - 1:
         return None
@@ -299,8 +297,12 @@ def replay_cycle(
 
     atrs = atr_series(bars, atr_p.period)
     res = CycleResult(
-        ticker="", entry_date=bars[entry_idx][0], entry_price=entry_price,
-        shares=shares, entry_cost=entry_cost, regime=regime,
+        ticker="",
+        entry_date=bars[entry_idx][0],
+        entry_price=entry_price,
+        shares=shares,
+        entry_cost=entry_cost,
+        regime=regime,
     )
     res.daily_value.append((bars[entry_idx][0], entry_cost))
 
@@ -318,25 +320,23 @@ def replay_cycle(
         fired = None
         p_eff = atr_p
         if a is not None:
-            fired = _fired_barrier(bars[i], avg_cost=avg_cost, hwm=hwm,
-                                   atr_value=a, p=atr_p, eval_mode=eval_mode)
-            if (fired == "atr_stop" and stop_filter is not None
-                    and not stop_filter(bars, i)):
+            fired = _fired_barrier(
+                bars[i], avg_cost=avg_cost, hwm=hwm, atr_value=a, p=atr_p, eval_mode=eval_mode
+            )
+            if fired == "atr_stop" and stop_filter is not None and not stop_filter(bars, i):
                 # Stop suprimido en esta barra (brazos oráculo de la T26). Se
                 # re-evalúa la misma barra con el stop apagado y el trailing
                 # **pineado en su múltiplo efectivo**: sin ese pin, apagar el
                 # stop apagaría también al trail, que por default comparte
                 # múltiplo con él (espejo de ``gates.py``). Así el filtro toca
                 # una sola barrera, que es lo que el pre-registro congeló.
-                p_eff = replace(atr_p, stop_mult=_NO_STOP,
-                                trail_mult=atr_p.effective_trail_mult)
-                fired = _fired_barrier(bars[i], avg_cost=avg_cost, hwm=hwm,
-                                       atr_value=a, p=p_eff, eval_mode=eval_mode)
+                p_eff = replace(atr_p, stop_mult=_NO_STOP, trail_mult=atr_p.effective_trail_mult)
+                fired = _fired_barrier(
+                    bars[i], avg_cost=avg_cost, hwm=hwm, atr_value=a, p=p_eff, eval_mode=eval_mode
+                )
         if fired is not None:
-            level = _atr_trigger_level(fired, avg_cost=avg_cost, hwm=hwm,
-                                       atr_value=a, p=p_eff)
-            px = _barrier_fill_price(bars[i], fired, level,
-                                     eval_mode=eval_mode, fill_mode=fill_mode)
+            level = _atr_trigger_level(fired, avg_cost=avg_cost, hwm=hwm, atr_value=a, p=p_eff)
+            px = _barrier_fill_price(bars[i], fired, level, eval_mode=eval_mode, fill_mode=fill_mode)
             proceeds = costs.sell_proceeds(remaining, px)
             res.legs.append(Leg(date_i, px, remaining, fired, proceeds))
             realized_cash += proceeds
@@ -346,9 +346,7 @@ def replay_cycle(
 
         # ── 2. Flip de señal ──────────────────────────────────────────────────
         sig = signals.get(date_i)
-        if sig == "SELL" and _passes_hysteresis(
-            bars, entry_idx, i, scores, date_i, params
-        ):
+        if sig == "SELL" and _passes_hysteresis(bars, entry_idx, i, scores, date_i, params):
             frac = _fraction_to_sell(params, scaled_out)
             if frac > 0:
                 sell_shares = remaining * frac
@@ -368,11 +366,7 @@ def replay_cycle(
         # el P/L neto real —lo que quedaría si liquidara al close, contra lo que
         # costó abrir— no sobre el precio, así los costos de las dos puntas
         # cuentan igual que en el resto del harness.
-        if (
-            time_stop_days is not None
-            and remaining > 0
-            and (i - entry_idx) == time_stop_days
-        ):
+        if time_stop_days is not None and remaining > 0 and (i - entry_idx) == time_stop_days:
             net_if_closed = realized_cash + costs.sell_proceeds(remaining, close_i)
             if net_if_closed <= entry_cost:
                 proceeds = costs.sell_proceeds(remaining, close_i)
@@ -406,8 +400,12 @@ def replay_cycle(
 
 
 def _passes_hysteresis(
-    bars: list[Bar], entry_idx: int, i: int,
-    scores: dict | None, date_i: str, params: ScaleOutParams,
+    bars: list[Bar],
+    entry_idx: int,
+    i: int,
+    scores: dict | None,
+    date_i: str,
+    params: ScaleOutParams,
 ) -> bool:
     """Gate 2b del engine vivo (T6.4): el SELL de señal espera ``min_age_bdays``
     días hábiles salvo que el score sea < ``bypass_score`` (convicción alta de salir).

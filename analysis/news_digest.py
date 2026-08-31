@@ -22,9 +22,9 @@ Everything is fail-soft and offline-testable (``http_post`` injectable).
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable, Iterable, Sequence
 
 from config.logging_config import get_logger
 
@@ -33,8 +33,8 @@ log = get_logger(__name__)
 # Same local model the daily classification scheduler uses
 # (scripts/daily_catalyst_harvest.bat → --backend hybrid-ollama --model qwen2.5:14b).
 DEFAULT_BRIEFING_MODEL = "qwen2.5:14b"
-DEFAULT_TOP_N = 50          # rows shown in the table
-BRIEFING_HEADLINES = 12     # top rows fed to the LLM
+DEFAULT_TOP_N = 50  # rows shown in the table
+BRIEFING_HEADLINES = 12  # top rows fed to the LLM
 
 # Spanish labels for the taxonomy (UI display only; keys = data.catalyst_taxonomy)
 EVENT_LABELS_ES: dict[str, str] = {
@@ -73,9 +73,9 @@ class DigestItem:
     event_type: str | None
     sentiment: str | None
     classifier_confidence: float | None
-    impact: float          # signed score_event().value — sign = expected direction
-    direction: int         # -1 | 0 | +1
-    basis: str             # "reaction" | "prior"
+    impact: float  # signed score_event().value — sign = expected direction
+    direction: int  # -1 | 0 | +1
+    basis: str  # "reaction" | "prior"
 
     @property
     def event_label(self) -> str:
@@ -206,7 +206,7 @@ def rank_news(
     rows: Iterable,
     *,
     reaction_table: dict | None = None,
-    market_cap_loader: "Callable[[str], float | None] | None" = None,
+    market_cap_loader: Callable[[str], float | None] | None = None,
     top_n: int | None = DEFAULT_TOP_N,
 ) -> list[DigestItem]:
     """
@@ -401,10 +401,7 @@ def harvested_today(*, now: datetime | None = None) -> bool:
     now = now or datetime.utcnow()
     start = datetime(now.year, now.month, now.day)
     with session_scope() as s:
-        return (
-            s.query(NewsEvent.id).filter(NewsEvent.fetched_at >= start).first()
-            is not None
-        )
+        return s.query(NewsEvent.id).filter(NewsEvent.fetched_at >= start).first() is not None
 
 
 def unclassified_count() -> int:
@@ -412,9 +409,7 @@ def unclassified_count() -> int:
     from database.models import NewsEvent, session_scope
 
     with session_scope() as s:
-        return int(
-            s.query(NewsEvent.id).filter(NewsEvent.event_type.is_(None)).count()
-        )
+        return int(s.query(NewsEvent.id).filter(NewsEvent.event_type.is_(None)).count())
 
 
 def refresh_due(*, now: datetime | None = None) -> bool:

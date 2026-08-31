@@ -61,9 +61,7 @@ def ema_series(bars: list[Bar], period: int = EMA_PERIOD) -> list[float | None]:
     return out
 
 
-def _condition_met(
-    bars: list[Bar], j: int, condition: str, ema: list[float | None]
-) -> bool:
+def _condition_met(bars: list[Bar], j: int, condition: str, ema: list[float | None]) -> bool:
     if condition == "ema20":
         e = ema[j]
         return e is not None and bars[j][4] <= e
@@ -76,9 +74,9 @@ def _condition_met(
 class PullbackOutcome:
     """Cómo se resolvió una espera. ``fill_idx`` es ``None`` salvo en ``filled``."""
 
-    status: str          # "filled" | "expired" | "cancelled"
+    status: str  # "filled" | "expired" | "cancelled"
     fill_idx: int | None
-    resolved_idx: int    # última barra que consumió la espera (para el dedup)
+    resolved_idx: int  # última barra que consumió la espera (para el dedup)
 
 
 def resolve_pullback(
@@ -121,8 +119,8 @@ def resolve_pullback(
 class PullbackStats:
     """Contabilidad de la transformación (alimenta el sanity §6.2 y el C6a)."""
 
-    n_signals: int = 0      # señales BUY vistas
-    n_waits: int = 0        # señales que efectivamente abrieron una espera
+    n_signals: int = 0  # señales BUY vistas
+    n_waits: int = 0  # señales que efectivamente abrieron una espera
     n_filled: int = 0
     n_expired: int = 0
     n_cancelled: int = 0
@@ -180,8 +178,12 @@ def apply_pullback(
                 stats.n_dup_skipped += 1
                 continue
             res = resolve_pullback(
-                bars, idx, sigs_by.get(ticker) or {},
-                window=window, condition=condition, ema=ema,
+                bars,
+                idx,
+                sigs_by.get(ticker) or {},
+                window=window,
+                condition=condition,
+                ema=ema,
             )
             stats.n_waits += 1
             blocked_until = res.resolved_idx

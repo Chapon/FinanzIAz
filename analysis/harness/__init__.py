@@ -6,11 +6,11 @@ different feature combinations against baseline.
 """
 
 from .config import ExperimentConfig
-from .runner import HarnessRunner
 from .metrics import ComputedMetrics
+from .runner import HarnessRunner
 
 __all__ = [
+    "ComputedMetrics",
     "ExperimentConfig",
     "HarnessRunner",
-    "ComputedMetrics",
 ]

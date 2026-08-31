@@ -46,9 +46,9 @@ import math
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-MIN_INSIDERS = 3          # C congelado (brazo primario)
-WINDOW_DAYS = 15          # W congelado (días calendario)
-DEFAULT_REFRACTORY = 20   # ruedas — lo aplica el HARNESS, no el detector
+MIN_INSIDERS = 3  # C congelado (brazo primario)
+WINDOW_DAYS = 15  # W congelado (días calendario)
+DEFAULT_REFRACTORY = 20  # ruedas — lo aplica el HARNESS, no el detector
 
 
 @dataclass(frozen=True)
@@ -60,10 +60,10 @@ class InsiderTx:
     """
 
     issuer_ticker: str
-    filing_date: str      # ISO YYYY-MM-DD
+    filing_date: str  # ISO YYYY-MM-DD
     owner_cik: str
-    trans_code: str       # "P", "S", "A", "M", "F", ...
-    acq_disp: str         # "A" (adquisición) / "D" (disposición)
+    trans_code: str  # "P", "S", "A", "M", "F", ...
+    acq_disp: str  # "A" (adquisición) / "D" (disposición)
     shares: float
     price: float
     accession: str = ""
@@ -76,9 +76,9 @@ class ClusterParams:
     """Definición del cluster. Lo único que barre la grilla del harness es (C, W)
     y ``require_officer``; el resto de la forma está congelado (§2)."""
 
-    min_insiders: int = MIN_INSIDERS   # C
-    window_days: int = WINDOW_DAYS     # W (días calendario)
-    require_officer: bool = False      # arm CLU_C3_W15_senior
+    min_insiders: int = MIN_INSIDERS  # C
+    window_days: int = WINDOW_DAYS  # W (días calendario)
+    require_officer: bool = False  # arm CLU_C3_W15_senior
 
 
 @dataclass(frozen=True)
@@ -87,9 +87,9 @@ class ClusterEvent:
     del filing que hace cruzar el conteo distinto a ≥ C dentro de la ventana."""
 
     ticker: str
-    event_date: str        # ISO YYYY-MM-DD
-    n_insiders: int        # CIK distintos en la ventana al disparar
-    total_dollars: float   # Σ shares·price de las compras en la ventana (ranking $)
+    event_date: str  # ISO YYYY-MM-DD
+    n_insiders: int  # CIK distintos en la ventana al disparar
+    total_dollars: float  # Σ shares·price de las compras en la ventana (ranking $)
     has_officer: bool
 
 

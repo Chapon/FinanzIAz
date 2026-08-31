@@ -13,17 +13,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 import pandas as pd
 
-from analysis.portfolio_backtest import portfolio_backtest, AllocationMode
+from analysis.portfolio_backtest import AllocationMode, portfolio_backtest
 from config.settings_manager import settings as _settings_singleton
 from paper_trading.gates import (
     compute_vol_overlay as _gate_compute_vol_overlay,
 )
-from .config import ExperimentConfig
-from .metrics import compute_metrics, ComputedMetrics
 
+from .config import ExperimentConfig
+from .metrics import ComputedMetrics, compute_metrics
 
 # Settings keys the harness writes to. Keep in sync with ExperimentConfig.as_settings_dict().
 # ``correlation_gate_enabled`` was removed in Sprint 3 (see docs/sprint2_kill_criteria.md).
@@ -51,17 +52,17 @@ class HarnessRunner:
     def __init__(
         self,
         tickers: list[str],
-        data: Optional[dict[str, pd.DataFrame]] = None,
+        data: dict[str, pd.DataFrame] | None = None,
         period: str = "2y",
         initial_capital: float = 50_000.0,
         commission: float = 0.001,
         slippage: float = 0.0005,
         warmup: int = 50,
         step: int = 5,
-        max_positions: Optional[int] = None,
+        max_positions: int | None = None,
         verbose: bool = False,
-        regime_series: Optional[pd.Series] = None,
-        vol_overlay_policy: Optional["RegimeFeaturePolicy"] = None,  # noqa: F821
+        regime_series: pd.Series | None = None,
+        vol_overlay_policy: RegimeFeaturePolicy | None = None,  # noqa: F821
     ):
         self.data = data
         self.tickers = tickers
@@ -135,26 +136,23 @@ class HarnessRunner:
         return metrics
 
     def _build_vol_overlay(self):
-        regime_aware = (self.regime_series is not None
-                        and self.vol_overlay_policy is not None)
+        regime_aware = self.regime_series is not None and self.vol_overlay_policy is not None
 
         def overlay_fn(target_weights, returns_by_ticker):
             if regime_aware:
                 current_ts = None
                 for s in returns_by_ticker.values():
-                    if s is not None and not s.empty:
-                        if current_ts is None or s.index.max() > current_ts:
-                            current_ts = s.index.max()
+                    if s is not None and not s.empty and (current_ts is None or s.index.max() > current_ts):
+                        current_ts = s.index.max()
                 if current_ts is None:
                     return 1.0
                 matches = self.regime_series.index <= current_ts
                 if not matches.any():
                     from analysis.regime_detector import REGIME_WARMUP
+
                     regime_at_bar = REGIME_WARMUP
                 else:
-                    regime_at_bar = str(
-                        self.regime_series.loc[matches].iloc[-1]
-                    )
+                    regime_at_bar = str(self.regime_series.loc[matches].iloc[-1])
                 effective = self.vol_overlay_policy.effective(regime_at_bar)
                 if not bool(effective.get("vol_overlay_enabled", True)):
                     return 1.0
@@ -191,7 +189,7 @@ class HarnessRunner:
         self,
         signal_fn,
         experiments: list[ExperimentConfig],
-        output_dir: Optional[Path] = None,
+        output_dir: Path | None = None,
     ) -> dict[str, ComputedMetrics]:
         snapshot = self.snapshot_toggles()
         if self.verbose:
@@ -208,7 +206,7 @@ class HarnessRunner:
         finally:
             self.restore_toggles(snapshot)
             if self.verbose:
-                print(f"Settings restored to original snapshot")
+                print("Settings restored to original snapshot")
 
         return results_dict
 
@@ -238,27 +236,27 @@ class HarnessRunner:
             bh_equity = getattr(backtest_result, "bh_equity_curve", None)
             if bh_equity is not None and len(bh_equity) > 0:
                 bh_file = results_dir / f"{exp_name}.bh_equity.csv"
-                bh_df = pd.DataFrame(
-                    {"bh_equity": bh_equity.values}, index=bh_equity.index
-                )
+                bh_df = pd.DataFrame({"bh_equity": bh_equity.values}, index=bh_equity.index)
                 bh_df.index.name = "date"
                 bh_df.to_csv(bh_file)
 
         csv_file = output_dir / "index.csv"
         rows = []
-        for exp_name, (metrics, backtest_result, config) in self.results.items():
-            rows.append({
-                "name": config.name,
-                "period_return": metrics.period_return,
-                "cagr": metrics.cagr,
-                "sharpe_annual": metrics.sharpe_annual,
-                "max_drawdown": metrics.max_drawdown,
-                "turnover": metrics.turnover,
-                "win_rate": metrics.win_rate,
-                "profit_factor": metrics.profit_factor,
-                "expectancy": metrics.expectancy,
-                "n_trades": len(backtest_result.trades) if backtest_result.trades else 0,
-            })
+        for _exp_name, (metrics, backtest_result, config) in self.results.items():
+            rows.append(
+                {
+                    "name": config.name,
+                    "period_return": metrics.period_return,
+                    "cagr": metrics.cagr,
+                    "sharpe_annual": metrics.sharpe_annual,
+                    "max_drawdown": metrics.max_drawdown,
+                    "turnover": metrics.turnover,
+                    "win_rate": metrics.win_rate,
+                    "profit_factor": metrics.profit_factor,
+                    "expectancy": metrics.expectancy,
+                    "n_trades": len(backtest_result.trades) if backtest_result.trades else 0,
+                }
+            )
 
         df_index = pd.DataFrame(rows)
         df_index.to_csv(csv_file, index=False)
@@ -279,7 +277,9 @@ class HarnessRunner:
 
         measured, _, _ = self.results["baseline"]
 
-        pct_diff = abs(measured.period_return - baseline_metrics.period_return) / abs(baseline_metrics.period_return)
+        pct_diff = abs(measured.period_return - baseline_metrics.period_return) / abs(
+            baseline_metrics.period_return
+        )
         if pct_diff > tolerance:
             print(f"FAIL Fidelity: period_return diff {pct_diff:.2%}")
             return False
@@ -299,8 +299,10 @@ class HarnessRunner:
                 (-50 <= metrics.period_return <= 100, f"period_return {metrics.period_return}%"),
                 (-2 <= metrics.sharpe_annual <= 5, f"sharpe_annual {metrics.sharpe_annual}"),
                 (20 <= metrics.win_rate <= 80, f"win_rate {metrics.win_rate}%"),
-                (0 <= metrics.max_drawdown or metrics.max_drawdown <= 50,
-                 f"max_drawdown {metrics.max_drawdown}%"),
+                (
+                    metrics.max_drawdown >= 0 or metrics.max_drawdown <= 50,
+                    f"max_drawdown {metrics.max_drawdown}%",
+                ),
             ]
             for check, label in checks:
                 if not check:

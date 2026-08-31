@@ -27,9 +27,9 @@ raises. ``price_loader`` / ``earnings_loader`` are injected so tests run offline
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Callable
 
 import numpy as np
 
@@ -39,12 +39,12 @@ log = get_logger(__name__)
 
 
 # ── Calibration constants (explicit so a backtest can move them with evidence) ─
-SCALE: float = 0.05        # magnitude saturation: a 5% mean move → tanh(1) ≈ 0.76
-MIN_SAMPLE: int = 8        # reaction count for full confidence weight
-R: float = 0.5            # max relevance boost (relevance_weight ∈ [1, 1+R])
-REL_SCALE: float = 0.10    # relevance saturation ($amount/mcap of 0.10 → tanh(1))
-CONF_FLOOR: float = 0.4    # confidence_weight floor (don't zero a material event)
-DEFAULT_HORIZON: int = 5   # operative horizon — the model predicts at 5d
+SCALE: float = 0.05  # magnitude saturation: a 5% mean move → tanh(1) ≈ 0.76
+MIN_SAMPLE: int = 8  # reaction count for full confidence weight
+R: float = 0.5  # max relevance boost (relevance_weight ∈ [1, 1+R])
+REL_SCALE: float = 0.10  # relevance saturation ($amount/mcap of 0.10 → tanh(1))
+CONF_FLOOR: float = 0.4  # confidence_weight floor (don't zero a material event)
+DEFAULT_HORIZON: int = 5  # operative horizon — the model predicts at 5d
 
 # Prior magnitude per event_type for the cold start (no reaction history yet).
 # Magnitude only (sign comes from sentiment in that case). Hypotheses, not
@@ -82,13 +82,13 @@ EarningsLoader = Callable[[str], "datetime | None"]
 
 @dataclass(frozen=True)
 class ImpactScore:
-    value: float              # ≈ [-1.5, 1.5]; sign = direction, |·| = conviction
-    direction: int            # -1 | 0 | +1
-    magnitude: float          # [0, 1]
+    value: float  # ≈ [-1.5, 1.5]; sign = direction, |·| = conviction
+    direction: int  # -1 | 0 | +1
+    magnitude: float  # [0, 1]
     confidence_weight: float  # [CONF_FLOOR, 1]
-    relevance_weight: float   # [1, 1+R]
+    relevance_weight: float  # [1, 1+R]
     horizon: int
-    basis: str                # "reaction" | "prior" — where magnitude came from
+    basis: str  # "reaction" | "prior" — where magnitude came from
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -121,7 +121,7 @@ def score_event(
     classifier ``sentiment`` for direction and an event-type prior for magnitude.
     """
     try:
-        from analysis.catalyst_reaction import lookup_reaction, extract_dollar_amount, relevance
+        from analysis.catalyst_reaction import extract_dollar_amount, lookup_reaction, relevance
     except Exception:  # pragma: no cover - import guard
         log.exception("impact_score: catalyst_reaction import failed")
         lookup_reaction = extract_dollar_amount = relevance = None  # type: ignore
@@ -155,8 +155,7 @@ def score_event(
     except (TypeError, ValueError):
         conf = 0.0
     conf = _clamp(conf, 0.0, 1.0)
-    confidence_weight = _clamp(CONF_FLOOR + (1.0 - CONF_FLOOR) * conf * sample_factor,
-                               CONF_FLOOR, 1.0)
+    confidence_weight = _clamp(CONF_FLOOR + (1.0 - CONF_FLOOR) * conf * sample_factor, CONF_FLOOR, 1.0)
 
     relevance_weight = 1.0
     if extract_dollar_amount is not None and relevance is not None and market_cap:
@@ -185,12 +184,12 @@ def score_event(
 
 @dataclass(frozen=True)
 class CatalystSignal:
-    kind: str                 # "earnings" (v1)
-    days_until: int           # business days until the event
-    expected_direction: int   # -1 | 0 | +1
-    expected_magnitude: float # [0, 1]
-    score: float              # direction × magnitude × confidence_weight
-    basis: str = "reaction"   # "reaction" (mean move) | "surprise" (T-CAT-5a track record)
+    kind: str  # "earnings" (v1)
+    days_until: int  # business days until the event
+    expected_direction: int  # -1 | 0 | +1
+    expected_magnitude: float  # [0, 1]
+    score: float  # direction × magnitude × confidence_weight
+    basis: str = "reaction"  # "reaction" (mean move) | "surprise" (T-CAT-5a track record)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -211,10 +210,10 @@ def imminent_catalyst(
     *,
     reaction_table: dict | None,
     earnings_loader: EarningsLoader,
-    surprise_loader: "SurpriseLoader | None" = None,
+    surprise_loader: SurpriseLoader | None = None,
     horizon_bdays: int = 3,
     score_horizon: int = DEFAULT_HORIZON,
-) -> "CatalystSignal | None":
+) -> CatalystSignal | None:
     """
     Return a :class:`CatalystSignal` iff ``ticker`` has a *known future* catalyst
     within ``horizon_bdays`` business days. v1 source = next earnings date (the
@@ -264,8 +263,7 @@ def imminent_catalyst(
             log.exception("imminent_catalyst: surprise_loader failed for %s", ticker)
             profile = None
 
-    if profile is not None and getattr(profile, "is_usable", False) \
-            and getattr(profile, "direction", 0) != 0:
+    if profile is not None and getattr(profile, "is_usable", False) and getattr(profile, "direction", 0) != 0:
         direction = int(profile.direction)
         # conviction from the track record; keep the reaction magnitude as a floor
         # so a known catalyst still carries weight even with a mild surprise edge.
@@ -298,7 +296,7 @@ def exit_veto_block(
     signal_score: float | None,
     ticker: str,
     scan_at: datetime,
-    signal: "CatalystSignal | None",
+    signal: CatalystSignal | None,
     enabled: bool,
     gray_low: float,
     gray_high: float,
@@ -323,6 +321,7 @@ def exit_veto_block(
     # never veto a risk exit
     try:
         from paper_trading.gates import is_atr_forced_exit_reason, is_vol_trim_reason
+
         if is_atr_forced_exit_reason(reason) or is_vol_trim_reason(reason):
             return None
     except Exception:  # pragma: no cover - import guard
@@ -340,4 +339,6 @@ def exit_veto_block(
         f"(score {signal.score:.2f} ≥ {veto_min_score:.2f}); score de venta "
         f"{signal_score:.2f} en zona gris [{gray_low:.2f}, {gray_high:.2f}]."
     )
+
+
 # T-CAT-5a: surprise track record wired into imminent_catalyst (see surprise_score.py)

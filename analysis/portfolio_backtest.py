@@ -540,20 +540,17 @@ def portfolio_backtest(
     # El hook puede devolver (should_exit, reason) o, para salidas por nivel (ATR),
     # (should_exit, reason, trigger_level) → habilita el fill realista gap/touch.
     forced_exit_fn: (
-        Callable[[str, pd.DataFrame, _PositionState],
-                 "tuple[bool, str] | tuple[bool, str, float | None]"]
+        Callable[[str, pd.DataFrame, _PositionState], tuple[bool, str] | tuple[bool, str, float | None]]
         | None
     ) = None,
-    vol_overlay_fn: (
-        Callable[[dict[str, float], dict[str, "pd.Series"]], float] | None
-    ) = None,
+    vol_overlay_fn: (Callable[[dict[str, float], dict[str, pd.Series]], float] | None) = None,
     # R1 account-level drawdown breaker (harness-only hook). Given the bar date,
     # the current portfolio value and the equity curve so far, returns True to
     # SUPPRESS new BUY entries this step — held positions still exit / rebalance
     # (the breaker never blocks a way out). None = legacy behavior (no
     # suppression). The live gate lives in ``run_scan``; this hook exists to
     # validate the guardrail against the pre-registered kill-criteria.
-    breaker_fn: Callable[["pd.Timestamp", float, "pd.Series"], bool] | None = None,
+    breaker_fn: Callable[[pd.Timestamp, float, pd.Series], bool] | None = None,
     verbose: bool = False,
 ) -> PortfolioBacktestResult | None:
     """
@@ -667,8 +664,12 @@ def portfolio_backtest(
                     bo = bh = bl = None
                 cur = float(closes[t].iloc[i])
                 exit_fill_prices[t] = model_exit_fill_price(
-                    reason=reason_t, trigger_level=lvl,
-                    bar_open=bo, bar_high=bh, bar_low=bl, current_price=cur,
+                    reason=reason_t,
+                    trigger_level=lvl,
+                    bar_open=bo,
+                    bar_high=bh,
+                    bar_low=bl,
+                    current_price=cur,
                 )
 
         # (2) Open slots after forced exits
@@ -686,23 +687,22 @@ def portfolio_backtest(
         # legacy ``key=strengths[t]`` path exactly. Computed inside the loop
         # so per-step settings flips (harness ablations) take effect.
         candidate_pool = [
-            t for t in tickers_ok
-            if signals[t] == "BUY" and t not in still_open and t not in forced_exits
+            t for t in tickers_ok if signals[t] == "BUY" and t not in still_open and t not in forced_exits
         ]
         rank_key = strengths
         if candidate_pool:
             from config.settings_manager import settings as _settings
+
             if bool(_settings.get("cross_sectional_enabled", False)):
                 from analysis.ranking import blended_scores
+
                 lookback = max(2, int(_settings.get("cross_sectional_lookback", 120)))
                 weight = float(_settings.get("cross_sectional_weight", 0.5))
                 weight = min(1.0, max(0.0, weight))
                 # Universe for the cross-sectional rank = every ticker with
                 # data at this bar (not only the BUY pool) so a percentile
                 # reflects the candidate's standing in the full watchlist.
-                closes_at_bar = {
-                    t: closes[t].iloc[: i + 1] for t in tickers_ok
-                }
+                closes_at_bar = {t: closes[t].iloc[: i + 1] for t in tickers_ok}
                 rank_key = blended_scores(
                     {t: strengths[t] for t in candidate_pool},
                     closes_at_bar,
@@ -784,8 +784,7 @@ def portfolio_backtest(
             if vol_overlay_fn is not None and target_weights:
                 window_lo = max(0, i - 60)
                 returns_by_ticker = {
-                    t: closes[t].iloc[window_lo : i + 1].pct_change().dropna()
-                    for t in tickers_ok
+                    t: closes[t].iloc[window_lo : i + 1].pct_change().dropna() for t in tickers_ok
                 }
                 try:
                     factor = float(vol_overlay_fn(dict(target_weights), returns_by_ticker))

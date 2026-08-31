@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 from analysis.exit_replay import Bar
 
-SMA_WINDOW = 200          # congelado (§3 del pre-registro)
+SMA_WINDOW = 200  # congelado (§3 del pre-registro)
 CONFIRM_DAYS_DEFAULT = 5  # solo para la variante R2c; valor fijado, no barrido
 
 
@@ -88,7 +88,7 @@ def build_regime_series(spy_bars: list[Bar], *, window: int = SMA_WINDOW) -> Reg
         if len(closes) > window:
             running -= closes[-window - 1]
         if len(closes) < window:
-            flags.append(False)   # fail-open mientras no haya SMA
+            flags.append(False)  # fail-open mientras no haya SMA
             streaks.append(0)
             streak = 0
             continue
@@ -102,7 +102,10 @@ def build_regime_series(spy_bars: list[Bar], *, window: int = SMA_WINDOW) -> Reg
 
 
 def make_entry_filter(
-    series: RegimeSeries, *, mode: str, confirm_days: int = CONFIRM_DAYS_DEFAULT,
+    series: RegimeSeries,
+    *,
+    mode: str,
+    confirm_days: int = CONFIRM_DAYS_DEFAULT,
     factor: float = 0.5,
 ):
     """Construye el ``entry_filter`` del simulador para un brazo pre-registrado.
@@ -129,7 +132,5 @@ def make_entry_filter(
         f = float(factor)
         return lambda _ticker, date: f if series.is_risk_off(date) else 1.0
     if mode == "confirm":
-        return lambda _ticker, date: (
-            0.0 if series.is_risk_off(date, confirm_days=confirm_days) else 1.0
-        )
+        return lambda _ticker, date: 0.0 if series.is_risk_off(date, confirm_days=confirm_days) else 1.0
     raise ValueError(f"modo de régimen desconocido: {mode}")
