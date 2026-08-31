@@ -5,8 +5,18 @@
 #
 # Versions are minimums; pip will resolve the latest compatible builds.
 
-# Linting & formatting (ruff replaces flake8/isort/black for our purposes)
-ruff>=0.6.0
+# Linting & formatting (ruff replaces flake8/isort/black for our purposes).
+#
+# PINEADO EXACTO a propósito (tarea 65). Con `ruff>=0.6.0` el CI instalaba la
+# última —0.16.5— mientras acá corre 0.15.20, y el FORMATTER difiere entre esas
+# dos: el repo pasaba `ruff format --check` en la máquina y fallaba en CI, con el
+# job en rojo sin que nadie hubiera tocado el código. Un linter sin techo hace que
+# el veredicto de CI cambie solo.
+#
+# Para subir de versión: actualizar el pin, correr `ruff check --fix .` y
+# `ruff format .`, revisar el diff y la suite. Es un cambio deliberado, no algo
+# que deba pasar por sí solo entre dos pushes.
+ruff==0.15.20
 
 # Static type checking
 mypy>=1.10
