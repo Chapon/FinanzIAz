@@ -34,6 +34,7 @@ import sys
 from datetime import datetime, timezone
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -294,7 +295,7 @@ def run_diagnostics(ds, oof, probs_by, bars_by, sigs_by, entries, common) -> dic
     print("=" * 78)
 
     print("\n[a] ¿El harness puede detectar un ranking bueno? (oráculo = mira el futuro)")
-    probes = {
+    probes: dict[str, Any] = {
         "B0_neutral": None,
         "ORACULO": lambda t, d: realized.get((t, d), -9.9),
         "ANTI_ORACULO": lambda t, d: -realized.get((t, d), 9.9),
@@ -302,16 +303,18 @@ def run_diagnostics(ds, oof, probs_by, bars_by, sigs_by, entries, common) -> dic
     out_probe = {}
     print(f"    {'brazo':<16}{'CAGR':>10}{'Sharpe':>9}{'max DD':>9}{'equity':>16}")
     for name, rs in probes.items():
-        r = simulate_portfolio(entries, bars_by, sigs_by, rank_score=rs, **common)
+        # `res` y no `r`: en esta funcion `r` ya es un float. Quinto caso del mismo
+        # patron en la migracion.
+        res = simulate_portfolio(entries, bars_by, sigs_by, rank_score=rs, **common)
         out_probe[name] = {
-            "cagr": cagr(r),
-            "sharpe": sharpe_annual(r),
-            "max_dd": r.max_dd,
-            "final_equity": r.final_equity,
+            "cagr": cagr(res),
+            "sharpe": sharpe_annual(res),
+            "max_dd": res.max_dd,
+            "final_equity": res.final_equity,
         }
         print(
-            f"    {name:<16}{cagr(r):>9.2f}%{sharpe_annual(r):>9.2f}"
-            f"{100 * r.max_dd:>8.1f}%{r.final_equity:>16,.0f}"
+            f"    {name:<16}{cagr(res):>9.2f}%{sharpe_annual(res):>9.2f}"
+            f"{100 * res.max_dd:>8.1f}%{res.final_equity:>16,.0f}"
         )
 
     print("\n[b] ¿Algún score correlaciona con el retorno realizado del ciclo?")
@@ -319,7 +322,7 @@ def run_diagnostics(ds, oof, probs_by, bars_by, sigs_by, entries, common) -> dic
     for s, _ in rows:
         mom_by_date.setdefault(s.date, {})[s.ticker] = s.mom121
     pct = {d: cross_sectional_percentile(v) for d, v in mom_by_date.items()}
-    scores = {
+    scores: dict[str, Any] = {
         "B1 buy_score": [s.buy_score or 0.0 for s, _ in rows],
         "M1 meta proba": [oof.proba.get((s.ticker, s.date), 0.0) for s, _ in rows],
         "F1 mom 12-1": [pct[s.date][s.ticker] for s, _ in rows],
@@ -431,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     rank_scores = build_rank_scores(ds, oof, probs_by)
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -488,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in ARM_NAMES:
         r = results[name]
         c, dd = cagr(r), r.max_dd
-        s = {
+        s: dict[str, Any] = {
             "arm": name,
             "cagr": c,
             "sharpe": sharpe_annual(r),
@@ -515,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         summaries.append(s)
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_samples": len(ds.samples),
         "base_rate": ds.base_rate,

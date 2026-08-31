@@ -32,6 +32,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -201,7 +202,7 @@ def summarise(name: str, results: list[CycleResult], base: list[CycleResult] | N
     losses = [x for x in rets if x < 0]
     curve = composite_curve(results)
     dd = max_drawdown(curve)
-    out = {
+    out: dict[str, Any] = {
         "arm": name,
         "n": len(results),
         "mean_ret_pts": 100.0 * statistics.fmean(rets) if rets else 0.0,
@@ -330,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         kurtosis=ku,
     )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

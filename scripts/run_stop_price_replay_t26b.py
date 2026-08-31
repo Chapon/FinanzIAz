@@ -35,6 +35,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -285,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         + "\n"
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,

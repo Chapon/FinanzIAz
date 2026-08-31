@@ -176,6 +176,8 @@ def main() -> int:
     t0 = time.time()
     print("Corrida BASELINE (sin breaker)...")
     base = portfolio_backtest(signal_fn, breaker_fn=None, **common_kw)
+    if base is None:  # sin datos o con menos barras que el warmup
+        raise SystemExit("BASELINE sin resultado: revisar universo/periodo")
     print(
         f"  baseline listo en {time.time() - t0:.0f}s "
         f"(final ${base.final_equity:,.0f}, maxDD {base.max_drawdown * 100:.1f}%)"
@@ -184,6 +186,8 @@ def main() -> int:
     t1 = time.time()
     print("Corrida BREAKER (DD ≥ 15% / peak rolling 90d)...")
     brk = portfolio_backtest(signal_fn, breaker_fn=make_breaker(THRESHOLD_PCT, WINDOW_DAYS), **common_kw)
+    if brk is None:
+        raise SystemExit("BREAKER sin resultado: revisar universo/periodo")
     print(
         f"  breaker listo en {time.time() - t1:.0f}s "
         f"(final ${brk.final_equity:,.0f}, maxDD {brk.max_drawdown * 100:.1f}%, "

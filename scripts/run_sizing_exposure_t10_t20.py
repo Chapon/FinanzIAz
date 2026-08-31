@@ -32,6 +32,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -145,7 +146,7 @@ def _aligned_returns(results: dict[str, PortfolioResult], arms: list[str]) -> di
 
 
 def summarise(name: str, res: PortfolioResult, base: PortfolioResult | None) -> dict:
-    out = {
+    out: dict[str, Any] = {
         "arm": name,
         "cagr": cagr(res.equity_curve),
         "sharpe": sharpe_annual(res.equity_curve),
@@ -242,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         f"capital={args.capital:,.0f}\n"
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -281,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     base = results[BASELINE_ARM]
-    summaries = {
+    summaries: dict[str, Any] = {
         name: summarise(name, results[name], None if name == BASELINE_ARM else base)
         for name in CANDIDATE_ARMS
     }
@@ -306,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ship = selected is not None and dsr is not None and dsr.deflated_sharpe > 0.5 and pbo.pbo < 0.5
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_entries": len(entries),
         "n_tickers": len(bars_by),

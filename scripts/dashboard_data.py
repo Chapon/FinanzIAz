@@ -55,6 +55,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Reuse the baseline metric helpers so the dashboard and the frozen baseline
 # agree. ``scripts/baseline_metrics.py`` lives next to this file.
@@ -762,7 +763,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
         snapshots = load_snapshots(con, account_id)
         fills = load_fills(con, account_id)
         monthly = _monthly_perf(con, snapshots, fills)
-        payload = {
+        payload: dict[str, Any] = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "db_path": str(db_path),
             "account": account,

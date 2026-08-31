@@ -36,6 +36,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
@@ -216,7 +217,7 @@ def main():
         print(f"{exp:<24} | {cells} | {v}")
 
     # Save JSON summary
-    summary = {
+    summary: dict[str, Any] = {
         "timestamp": ts,
         "n_windows": args.n_windows,
         "tickers_used": list(full_data.keys()),

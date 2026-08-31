@@ -49,6 +49,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -236,7 +237,7 @@ def main():
             # Build a fresh runner per variant. For full_switcher, plumb
             # régime series + policy so the vol_overlay closure becomes
             # régime-aware.
-            kwargs = dict(
+            kwargs: dict[str, Any] = dict(
                 data=window_data,
                 tickers=list(window_data.keys()),
                 initial_capital=50_000.0,

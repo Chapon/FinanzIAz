@@ -40,6 +40,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -286,7 +287,7 @@ def evaluate_sanity(
     seeds_ok = bool(
         ctrl_diff_median >= SANITY_MIN_TRADE_DIFF and len({round(c["cagr"], 8) for c in controls}) > 1
     )
-    checks = {
+    checks: dict[str, Any] = {
         "accounting": acc,
         "repro_t45": bool(repro.get("t45_ok")),
         "repro_t33": bool(repro.get("t33_ok")),
@@ -309,7 +310,7 @@ def evaluate_sanity(
 
 
 def _common(max_positions: int, capital: float, cap_days: int, **over) -> dict:
-    base = dict(
+    base: dict[str, Any] = dict(
         max_positions=max_positions,
         initial_capital=capital,
         cap_days=cap_days,
@@ -471,7 +472,7 @@ def main(argv: list[str] | None = None) -> int:
             for k in range(args.seeds)
         ]
         s_p95 = _pct([c["cagr"] for c in s_ctrl], KILL_CONTROL_PCTILE)
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_base["cagr"],
             "cand_cagr": s_cand["cagr"],
@@ -506,12 +507,12 @@ def main(argv: list[str] | None = None) -> int:
         # de por un `abs() <= tol` de dos estados: la ventana de los artefactos es
         # RODANTE y la población puede no ser la de las anclas, y ninguna de las
         # dos cosas es evidencia de que cambió la cañería.
-        checks = {
+        checks: dict[str, Any] = {
             "t45_analyze": (r_analyze["cagr"], SANITY_T45_ANALYZE),
             "t45_merged_prio": (r_merged["cagr"], SANITY_T45_MERGED_PRIO),
             "t33": (t33["cagr"], SANITY_T33_CAGR),
         }
-        states = {
+        states: dict[str, Any] = {
             k: reproduction_check(
                 got,
                 exp,
@@ -523,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             for k, (got, exp) in checks.items()
         }
-        repro = {
+        repro: dict[str, Any] = {
             "t45_analyze": r_analyze["cagr"],
             "t45_merged_prio": r_merged["cagr"],
             "t45_ok": all(states[k][0] == REPRO_OK for k in ("t45_analyze", "t45_merged_prio")),
@@ -561,7 +562,7 @@ def main(argv: list[str] | None = None) -> int:
             "veredicto y no se re-especifica nada (precedente T26)."
         )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

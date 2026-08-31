@@ -37,6 +37,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -309,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         file=log,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -352,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     rand_dist = random_baseline(
         run_plain, bars_by, count_by_month, operable_by_month, k_random=args.k_random, seed0=args.seed
     )
-    rb = {
+    rb: dict[str, Any] = {
         "cagr_p95": _pct(rand_dist["cagr"], SANITY_RANDOM_PCTILE),
         "cagr_median": _median(rand_dist["cagr"]),
         "sharpe_p95": _pct(rand_dist["sharpe"], SANITY_RANDOM_PCTILE),
@@ -413,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     sens = None
     if not args.no_sensitivity:
         print(f"  [{args.sens_max_positions} slots] sensibilidad …", file=log, flush=True)
-        s_res = {
+        s_res: dict[str, Any] = {
             n: run_gate(GATE_ARMS[n], entries, max_positions=args.sens_max_positions)
             for n in (BASELINE_ARM, CANDIDATE_ARM)
         }
@@ -421,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         s_reg = {n: regime_window_returns(s_daily[n]) for n in s_daily}
         s_sum = {n: summarise(r) for n, r in s_res.items()}
         bear = "stress_bear_2022"
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[CANDIDATE_ARM]["cagr"],
@@ -432,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     bites = gate_bites(results[BASELINE_ARM], results[CANDIDATE_ARM])
-    sanity = {
+    sanity: dict[str, Any] = {
         "accounting": all(summaries[n]["accounting_ok"] for n in results),
         "oracle_edge": summaries[ORACLE_ARM]["cagr"] - summaries[BASELINE_ARM]["cagr"],
         "oracle_ok": (summaries[ORACLE_ARM]["cagr"] >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
@@ -470,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Los secundarios se reportan como descriptivos: NO pueden reemplazar al primario.
     others = {n: summaries[n]["cagr"] for n in GATE_ARMS if n not in (BASELINE_ARM, CANDIDATE_ARM)}
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

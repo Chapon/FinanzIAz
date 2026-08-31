@@ -35,6 +35,7 @@ import sys
 from datetime import datetime, timezone
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -408,7 +409,7 @@ def evaluate_sanity(
     band = sorted(c["cagr"] for c in controls)
     ctrl_p95 = _pct(band, SANITY_ORACLE_PCTILE) if band else float("nan")
     ctrl_median = statistics.median(band) if band else float("nan")
-    checks = {
+    checks: dict[str, Any] = {
         "accounting": acc,
         "repro_base": bool(repro.get("base_ok")),
         "repro_alpha_cap20": bool(repro.get("alpha20_ok")),
@@ -456,7 +457,7 @@ def walk_forward(entries, bars_by, sigs_by, common: dict, caps_of: dict, *, tag:
             flush=True,
         )
 
-        train_cagr = {
+        train_cagr: dict[str, Any] = {
             n: cagr(
                 _sim(
                     f"wf|{tag}|{fi}|train|{n}", train, bars_by, sigs_by, cap_days_of=caps_of[n], **common
@@ -547,7 +548,7 @@ def regime_pooled(base_res: PortfolioResult, cand_res: PortfolioResult) -> dict:
 
 
 def _common(max_positions: int, capital: float, **over) -> dict:
-    base = dict(
+    base: dict[str, Any] = dict(
         max_positions=max_positions,
         initial_capital=capital,
         cap_days=BASE_CAP,
@@ -696,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 3. §5.2 — el sanity de población de la T13, sobre el N* de cada familia ─
     base_res = results[BASELINE_ARM]
-    pop = {
+    pop: dict[str, Any] = {
         "b_share": population_share(base_res, star_u),
         "a_share": population_share(base_res, star_e, event_keys),
         "min": SANITY_MIN_POPULATION,
@@ -749,12 +750,12 @@ def main(argv: list[str] | None = None) -> int:
             )["cagr"]
 
     pop_run = cfg.population(len(entries))
-    repro_specs = {
+    repro_specs: dict[str, Any] = {
         "base": (summaries[BASELINE_ARM]["cagr"], REPRO_BASE_CAGR),
         "alpha20": (grid22["alpha_cap20"], REPRO_ALPHA_CAP20),
         "alpha250": (grid22["alpha_cap250"], REPRO_ALPHA_CAP250),  # cross-check
     }
-    repro_states = {
+    repro_states: dict[str, Any] = {
         k: reproduction_check(
             got,
             exp,
@@ -766,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         for k, (got, exp) in repro_specs.items()
     }
-    repro = {
+    repro: dict[str, Any] = {
         "grid_2x2": grid22,
         "base_ok": repro_states["base"][0] == REPRO_OK,
         "alpha20_ok": repro_states["alpha20"][0] == REPRO_OK,
@@ -811,7 +812,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_sensitivity:
         print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log, flush=True)
         s_common = _common(SENS_MAX_POSITIONS, args.capital, rank_score=b1)
-        s_res = {
+        s_res: dict[str, Any] = {
             BASELINE_ARM: _sim(f"sens|{BASELINE_ARM}", entries, bars_by, sigs_by, **s_common),
             arm_u: _sim(
                 f"sens|{arm_u}", entries, bars_by, sigs_by, cap_days_of=caps_uncond[star_u], **s_common
@@ -824,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
         s_daily = aligned_daily(s_res, [BASELINE_ARM, arm_u, arm_e])
         s_boot_u = _boot(s_daily[BASELINE_ARM], s_daily[arm_u])
         s_boot_e = _boot(s_daily[BASELINE_ARM], s_daily[arm_e])
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": SENS_MAX_POSITIONS,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "u_cagr": s_sum[arm_u]["cagr"],
@@ -868,7 +869,7 @@ def main(argv: list[str] | None = None) -> int:
         vb["ship"] = va["ship"] = False
     outcome = outcome_of(va, vb, pop, sanity_valid=sanity["valid"])
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "smoke": smoke,
         "universe": args.universe,

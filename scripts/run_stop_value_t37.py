@@ -50,6 +50,7 @@ import uuid
 from datetime import date, datetime, timezone
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -285,7 +286,7 @@ def arm_params(stop: float, trail: float) -> dict:
 def build_arms() -> dict[str, dict]:
     """Los 15 de la rejilla + los 2 de sanity."""
     arms = {arm_name(s, t): arm_params(s, t) for s, t in grid_cells()}
-    base = {
+    base: dict[str, Any] = {
         "atr_p": AtrParams(stop_mult=LIVE_STOP, trail_mult=LIVE_TRAIL),
         "eval_mode": EVAL_MODE,
         "fill_mode": FILL_MODE,
@@ -1009,7 +1010,7 @@ def _run(argv: list[str] | None = None) -> int:
     if smoke:
         print("*** SMOKE — la corrida NO puede dictar veredicto ***\n", file=log)
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -1035,7 +1036,7 @@ def _run(argv: list[str] | None = None) -> int:
     # anclas de la T34 declaran su población y un desajuste sobre otro universo
     # sale `REPRO_NA` en vez de acusar a la cañería.
     pop = cfg.population(len(entries))
-    repro = {
+    repro: dict[str, Any] = {
         n: reproduction_check(
             summaries[n]["cagr"],
             exp,
@@ -1052,7 +1053,7 @@ def _run(argv: list[str] | None = None) -> int:
     if args.no_walkforward:
         cells = [c for c in grid_cells()]
         star = max(cells, key=lambda st: summaries[arm_name(*st)]["cagr"])
-        wf = {
+        wf: dict[str, Any] = {
             "per_fold": [],
             "picks": [],
             "star": star,
@@ -1133,7 +1134,7 @@ def _run(argv: list[str] | None = None) -> int:
             **arm_params(*cand_cell),
             **s_common,
         )
-        sens5 = {
+        sens5: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "base_cagr": cagr(sb.equity_curve),
             "cand_cagr": cagr(sc.equity_curve),
@@ -1155,7 +1156,7 @@ def _run(argv: list[str] | None = None) -> int:
             **common,
         )
         cc = _sim(f"c8b|{cand_arm}|close|{run_tag}", entries, bars_by, sigs_by, **_close(cand_cell), **common)
-        sens_close = {
+        sens_close: dict[str, Any] = {
             "base_cagr": cagr(cb.equity_curve),
             "cand_cagr": cagr(cc.equity_curve),
             "dcagr": cagr(cc.equity_curve) - cagr(cb.equity_curve),
@@ -1164,7 +1165,7 @@ def _run(argv: list[str] | None = None) -> int:
     # 6. §3 — el barrido de ruina (C9) + la sensibilidad de forma.
     sweep: dict = {}
     sweep_gap: dict = {}
-    ruin_mono = {
+    ruin_mono: dict[str, Any] = {
         "steps": [],
         "dose_ok": False,
         "damage_pp": 0.0,
@@ -1223,7 +1224,7 @@ def _run(argv: list[str] | None = None) -> int:
             "(precedente T26, T34, 38)."
         )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

@@ -43,6 +43,7 @@ import sys
 from datetime import date, datetime, timezone
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -143,7 +144,12 @@ def build_arms(*, live_gates: bool = True, fill_mode: str = "decision") -> dict[
     base_p = AtrParams(stop_mult=LIVE_MULT)
     # Los dos de sanity corren en el modo del BASELINE (``touch``), que es la regla
     # viva: se valida el instrumento donde se dicta el veredicto.
-    common = {"atr_p": base_p, "eval_mode": "touch", "fill_mode": fill_mode, "live_gates": live_gates}
+    common: dict[str, Any] = {
+        "atr_p": base_p,
+        "eval_mode": "touch",
+        "fill_mode": fill_mode,
+        "live_gates": live_gates,
+    }
     arms[ORACLE_ARM] = {**common, "stop_filter": _oracle_stop_filter}
     arms[RANDOM_KEEP_ARM] = {**common, "stop_filter": random_stop_filter(RANDOM_KEEP_PROB)}
     return arms
@@ -290,7 +296,7 @@ def evaluate_sanity(summaries: dict, results: dict, base_off: PortfolioResult) -
         shares = [summaries[arm_name(m, mode)]["stop_share"] for m in MULTS]
         monotone = monotone and all(a >= b - 1e-12 for a, b in pairwise(shares))
 
-    checks = {
+    checks: dict[str, Any] = {
         "accounting": all(s["accounting_ok"] for s in summaries.values()),
         "oracle_vs_random_cagr": d_cagr >= SANITY_ORACLE_VS_RANDOM_CAGR,
         "oracle_vs_random_dd": d_dd <= -SANITY_ORACLE_VS_RANDOM_DD,
@@ -322,7 +328,7 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
     c2_is = cand_s["max_dd"] - base_s["max_dd"]
     c2_oos = wf["proc"]["max_dd"] - wf["base"]["max_dd"]
     c4 = (cand_s["sharpe"] or 0.0) - (base_s["sharpe"] or 0.0)
-    c5 = {
+    c5: dict[str, Any] = {
         k: regimes[cand][k]["mean_ret_pts"] - regimes[BASELINE_ARM][k]["mean_ret_pts"]
         for k in regimes[BASELINE_ARM]
     }
@@ -330,7 +336,7 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
     c8a = summaries_5[cand]["cagr"] - summaries_5[BASELINE_ARM]["cagr"]
     c8b = summaries[arm_name(m_star, "close")]["cagr"] - summaries[arm_name(LIVE_MULT, "close")]["cagr"]
 
-    crit = {
+    crit: dict[str, Any] = {
         "C1_dcagr_oos": (c1, c1 >= KILL_MIN_DCAGR_OOS),
         "C2_maxdd": ((c2_is, c2_oos), c2_is <= KILL_DD_TOL and c2_oos <= KILL_DD_TOL),
         "C3_bootstrap": (boot.ci_low, boot.ci_low > 0),
@@ -424,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         f"el candidato lo elige el walk-forward, NO está hardcodeado\n"
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -440,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Descriptivo: la misma rejilla ``touch`` SIN los gates, para cuantificar el sexto
     # desvío contra lo que midieron los harness publicados. No dicta nada.
-    gates_off_res = {
+    gates_off_res: dict[str, Any] = {
         arm_name(m): simulate_portfolio(
             entries,
             bars_by,
@@ -458,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Sensibilidad a 5 slots (C8a).
     common5 = {**common, "max_positions": 5}
-    summaries_5 = {
+    summaries_5: dict[str, Any] = {
         n: summarise(simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **common5))
         for n in [BASELINE_ARM] + [arm_name(m) for m in MULTS]
     }
@@ -508,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
         verdict["ship"] = False
         verdict["outcome"] = "SIN VEREDICTO — se salteó el walk-forward (§6), que es C1 y C7."
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

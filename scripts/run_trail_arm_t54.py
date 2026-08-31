@@ -38,6 +38,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -228,7 +229,7 @@ def walk_forward(entries, bars_by, sigs_by, common: dict, ks: list[float], *, lo
         test = entries_between(entries, bars_by, test_lo, test_hi)
         print(f"    fold {fi}/{len(FOLDS)} — train {len(train)} · test {len(test)} …", file=log, flush=True)
 
-        train_cagr = {
+        train_cagr: dict[str, Any] = {
             k: cagr(
                 _sim(
                     f"wf|{fi}|train|{k:.2f}",
@@ -374,7 +375,7 @@ def evaluate_sanity(summaries: dict, trade_diff: float, repro: dict, pop: dict, 
     orac = summaries[ORACLE_ARM]["cagr"]
     anti = summaries[ANTI_ORACLE_ARM]["cagr"]
     cand = summaries[arm_name(k_star)]["cagr"]
-    checks = {
+    checks: dict[str, Any] = {
         "accounting": acc,
         "repro_base": bool(repro.get("base_ok")),
         "repro_never_armed": bool(repro.get("never_armed_ok")),
@@ -443,7 +444,7 @@ def outcome_of(v: dict, pop: dict, *, sanity_valid: bool) -> str:
 
 
 def _common(max_positions: int, capital: float, **over) -> dict:
-    base = dict(
+    base: dict[str, Any] = dict(
         max_positions=max_positions,
         initial_capital=capital,
         cap_days=BASE_CAP,
@@ -576,7 +577,7 @@ def main(argv: list[str] | None = None) -> int:
         file=log,
     )
 
-    pop = {
+    pop: dict[str, Any] = {
         "share": diff_share[star],
         "min": SANITY_MIN_POPULATION,
         "ok": bool(diff_share[star] >= SANITY_MIN_POPULATION),
@@ -610,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
         measured_over=POPULATION_LIVE_ACCT2,
     )
     never_armed = sum(1 for m in excess.values() if m <= BASE_K) / len(excess)
-    repro = {
+    repro: dict[str, Any] = {
         "base_state": st_base,
         "base_why": why_base,
         "base_ok": st_base == REPRO_OK,
@@ -654,7 +655,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_sensitivity:
         print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log, flush=True)
         s_common = _common(SENS_MAX_POSITIONS, args.capital)
-        s_res = {
+        s_res: dict[str, Any] = {
             BASELINE_ARM: _sim(f"sens|{BASELINE_ARM}", entries, bars_by, sigs_by, **s_common),
             arm: _sim(
                 f"sens|{arm}", entries, bars_by, sigs_by, trail_min_excess_of=thr_for_all(star), **s_common
@@ -663,7 +664,7 @@ def main(argv: list[str] | None = None) -> int:
         s_sum = {n: summarise(r) for n, r in s_res.items()}
         s_daily = aligned_daily(s_res, [BASELINE_ARM, arm])
         s_boot = _boot(s_daily[BASELINE_ARM], s_daily[arm])
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": SENS_MAX_POSITIONS,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[arm]["cagr"],
@@ -679,7 +680,7 @@ def main(argv: list[str] | None = None) -> int:
         v["ship"] = False
     outcome = outcome_of(v, pop, sanity_valid=sanity["valid"])
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "smoke": smoke,
         "universe": args.universe,

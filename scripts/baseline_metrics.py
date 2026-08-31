@@ -570,7 +570,7 @@ def write_json(results: list[AccountResult], db_path: Path, out_dir: Path) -> Pa
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
     target = out_dir / f"baseline_{ts}.json"
-    payload = {
+    payload: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "db_path": str(db_path),
         "accounts": [

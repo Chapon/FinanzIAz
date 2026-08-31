@@ -30,6 +30,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -390,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         file=log,
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -445,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         sens_sum = {n: summarise(r) for n, r in sens_res.items()}
         s_base = sens_sum[BASELINE_ARM]["cagr"]
         s_cagrs = sorted(sens_sum[n]["cagr"] for n in rot_names)
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_base,
             "median_cagr": statistics.median(s_cagrs),
@@ -483,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         for j in range(i + 1, len(rot_names))
     ]
     seed_cagrs = [summaries[n]["cagr"] for n in rot_names]
-    sanity = {
+    sanity: dict[str, Any] = {
         "accounting": all(summaries[n]["accounting_ok"] for n in results),
         "repro_cagr": repro_cagr,
         "repro_state": repro_state,
@@ -523,14 +524,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # §4.2 — descriptivo: dónde cae el score entre las dos puntas del bracket.
     pool = buy_candidates_by_date(bars_by, sigs_by, args.warmup)
-    persistence = {
+    persistence: dict[str, Any] = {
         BASELINE_ARM: rank_autocorr(arms[BASELINE_ARM], pool),
         rot_name(0): rank_autocorr(arms[rot_name(0)], pool),
         fix_name(0): rank_autocorr(arms[fix_name(0)], pool),
     }
     # A qué horizonte se desarma el orden del score: es lo que decide si la punta
     # relevante del bracket es la fija o la rotada.
-    persistence_lags = {
+    persistence_lags: dict[str, Any] = {
         f"lag_{k}": rank_autocorr(arms[BASELINE_ARM], pool, lag=k)
         # El 8 es la tenencia media del baseline: es el lag que decide cuál punta
         # del bracket aplica, porque la concentración se juega a ese horizonte.
@@ -554,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
             kurtosis=ku,
         )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

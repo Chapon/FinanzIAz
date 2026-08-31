@@ -35,6 +35,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -260,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}", file=log)
     print(f"BASELINE = {BASELINE_ARM} (la regla viva) · candidato = {CANDIDATE_ARM}\n", file=log)
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -311,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_sensitivity:
         print(f"  [{args.sens_max_positions} slots] sensibilidad …", file=log, flush=True)
         s_common = dict(common, max_positions=args.sens_max_positions)
-        s_res = {
+        s_res: dict[str, Any] = {
             n: simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **s_common)
             for n in (BASELINE_ARM, CANDIDATE_ARM)
         }
@@ -324,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
             n_resamples=args.resamples,
             seed=BOOT_SEED,
         )
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[CANDIDATE_ARM]["cagr"],
@@ -347,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     # y de la población — las anclas de la 26b se midieron sobre el universo vivo.
     win = artifact_window(bars_by)
     pop = cfg.population(len(entries))
-    repro_checks = {
+    repro_checks: dict[str, Any] = {
         n: reproduction_check(
             repro[n],
             REPRO_EXPECTED[n],
@@ -376,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
             "veredicto. No se re-especifica nada para salvarla."
         )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries": len(entries),

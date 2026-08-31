@@ -40,6 +40,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 ROOT = _HERE.parent
@@ -70,7 +71,7 @@ REACTION_JSON = ROOT / "data" / "catalyst" / "historical_reaction.json"
 
 # ── settings (con fallback a los defaults del engine para el veto) ────────────
 def _veto_settings() -> dict:
-    g = {
+    g: dict[str, Any] = {
         "gray_low": 0.25,  # paper_signal_sell_bypass_score (T6.4)
         "gray_high": 0.50,  # paper_catalyst_veto_gray_high
         "veto_min_score": 0.30,  # paper_catalyst_veto_min_score
@@ -250,7 +251,7 @@ def run(db_path: Path, account_id: int, cap_days: int, horizon: int):
         # kill-criteria T-CAT-6 (distinto del built-in de T6.1)
         passes_tcat6 = report.pnl_delta_pts >= 1.5 and report.dd_ratio <= 1.3
 
-        ctx = {
+        ctx: dict[str, Any] = {
             "db": str(db_path),
             "account_id": account_id,
             "n_sell_events": len(events),

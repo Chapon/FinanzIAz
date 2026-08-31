@@ -69,6 +69,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -493,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    common = dict(
+    common: dict[str, Any] = dict(
         max_positions=args.max_positions,
         initial_capital=args.capital,
         cap_days=args.cap_days,
@@ -538,7 +539,7 @@ def main(argv: list[str] | None = None) -> int:
     rand_dist = random_baseline(
         run, bars_by, count_by_month, operable_by_month, k_random=args.k_random, seed0=args.seed
     )
-    rb = {
+    rb: dict[str, Any] = {
         "cagr_p95": _pct(rand_dist["cagr"], KILL_RANDOM_PCTILE),
         "cagr_median": _median(rand_dist["cagr"]),
         "sharpe_p95": _pct(rand_dist["sharpe"], KILL_RANDOM_PCTILE),
@@ -629,7 +630,7 @@ def main(argv: list[str] | None = None) -> int:
         and loto["survives"]
     )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "signals_mode": args.signals_mode,
         "n_tickers_with_bars": len(bars_by),

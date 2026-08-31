@@ -24,6 +24,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -99,7 +100,7 @@ def build_sell_events(con: sqlite3.Connection, account_id: int) -> list[SellEven
         raise RuntimeError(f"FIFO mismatch: {len(trades)} trades vs {len(sell_fills)} SELL fills")
 
     # reason/score por order_id
-    meta = {
+    meta: dict[str, Any] = {
         int(r[0]): (r[1], r[2])
         for r in con.execute(
             "SELECT id, reason, signal_score FROM paper_orders "
@@ -167,7 +168,7 @@ def run(db_path: Path, account_id: int, cap_days: int) -> tuple[list[ReplayRepor
             rep.variant = label
             reports.append(rep)
 
-        ctx = {
+        ctx: dict[str, Any] = {
             "db": str(db_path),
             "account_id": account_id,
             "n_sell_events": len(events),

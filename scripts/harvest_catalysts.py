@@ -35,6 +35,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Allow ``python scripts/harvest_catalysts.py`` from the repo root.
@@ -119,11 +120,11 @@ def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
     from paper_trading.models import PaperPosition, PaperWatchlistItem
 
     with session_scope() as s:
-        watch = {
+        watch: dict[str, Any] = {
             w.ticker
             for w in s.query(PaperWatchlistItem).filter(PaperWatchlistItem.account_id == account_id).all()
         }
-        pos = {
+        pos: dict[str, Any] = {
             p.ticker
             for p in s.query(PaperPosition)
             .filter(PaperPosition.account_id == account_id)

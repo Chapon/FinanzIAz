@@ -47,6 +47,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -361,7 +362,7 @@ def evaluate_sanity(
     oracle_ok = bool(oracle_gap is not None and oracle_gap >= SANITY_ORACLE_MIN_DCAGR)
     live_ok = bool(repro.get("live_ok"))
     legacy_ok = bool(repro.get("legacy_ok")) if repro.get("legacy_ran") else None
-    checks = {
+    checks: dict[str, Any] = {
         "accounting": acc,
         "oracle_takes_off": oracle_ok,
         "repro_live": live_ok,
@@ -536,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── Población A: el marco de la T11b ─────────────────────────────────────
-    entries_by = {
+    entries_by: dict[str, Any] = {
         name: build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=k, m=m), warmup=args.warmup)
         for name, (k, m) in CANDIDATE_ARMS.items()
     }
@@ -649,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         s_sum = summarise(s_run(cand_entries))
         s_rb = _mc(s_run, bars_by, cand_entries, operable_by_month, k_random=args.k_random, seed=args.seed)
         s_sh = s_sum["sharpe"] if s_sum["sharpe"] is not None else -1e9
-        sens = {
+        sens: dict[str, Any] = {
             "max_positions": args.sens_max_positions,
             "cagr": s_sum["cagr"],
             "sharpe": s_sum["sharpe"],
@@ -664,7 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         analyze = buy_entries(bars_by, sigs_by, args.warmup)
         merged = merge_entries(analyze, cand_entries, bars_by)
         anom_keys = {(t, bars_by[t][i][0]) for t, i in cand_entries}
-        b_res = {
+        b_res: dict[str, Any] = {
             ANALYZE_ARM: run(analyze),
             COMBINED_ARM: run(merged),
             COMBINED_PRIO_ARM: run(merged, rank_score=make_prio_rank(anom_keys)),
@@ -688,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
         )
         dcagr = b_sum[COMBINED_ARM]["cagr"] - b_sum[ANALYZE_ARM]["cagr"]
-        c8 = {
+        c8: dict[str, Any] = {
             "n_analyze": len(analyze),
             "n_merged": len(merged),
             "summaries": b_sum,
@@ -739,7 +740,7 @@ def main(argv: list[str] | None = None) -> int:
             "veredicto y no se re-especifica nada (precedente T26)."
         )
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "n_tickers": len(bars_by),
         "n_entries_candidate": len(cand_entries),

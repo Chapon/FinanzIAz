@@ -37,6 +37,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -326,7 +327,7 @@ def main():
     emit(f"\n→ {verdict}")
 
     # Persist summary as a JSON next to per-window results
-    summary = {
+    summary: dict[str, Any] = {
         "timestamp": ts,
         "universe": str(args.universe_file),
         "period": args.period,
