@@ -99,6 +99,23 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+      - name: Qt shared libs (headless)
+        # PyQt6 se enlaza contra libEGL/libGL, y el runner de Ubuntu no las trae.
+        # Sin esto, ``pytest-qt`` explota importando ``PyQt6.QtGui`` DENTRO de
+        # ``pytest_configure`` —un hook histórico— así que la excepción escapa de
+        # ``_do_configure`` y mata la sesión entera con INTERNALERROR (exit 3),
+        # antes de recolectar un solo test:
+        #
+        #     ImportError: libEGL.so.1: cannot open shared object file
+        #
+        # OJO con la explicación vieja, que estuvo acá y era FALSA: no es el plugin
+        # de plataforma ``xcb``, y por eso ``QT_QPA_PLATFORM=offscreen`` nunca
+        # alcanzó. Esto falla al **cargar la librería compartida**, antes de que Qt
+        # llegue a elegir plataforma; ``offscreen`` sólo importa después. Tarea 65.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3
       - name: Install
         run: |
           python -m pip install --upgrade pip
@@ -106,9 +123,10 @@ jobs:
       - name: pytest
         # Skip tests marked ``network`` — they hit real yfinance and don't
         # belong in CI.
-        # QT_QPA_PLATFORM=offscreen: some test modules import PyQt6 at
-        # collection time; without a virtual framebuffer the xcb platform
-        # plugin aborts the process on headless Ubuntu (pytest exit code 3).
+        # QT_QPA_PLATFORM=offscreen: tres módulos de test importan PyQt6 al
+        # recolectar, y sin framebuffer el plugin de plataforma por defecto no
+        # levanta. Hace falta, pero NO era la causa del exit 3 — ver el paso de
+        # las libs de Qt más arriba.
         #
         # El tail del output se emite como ``::error::`` cuando el paso falla, y
         # eso no es cosmético: los LOGS de Actions piden autenticación, así que un
