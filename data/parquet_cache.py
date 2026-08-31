@@ -194,21 +194,14 @@ def read(
     return _restore_frame(path)
 
 
-def latest_1d(ticker: str) -> pd.DataFrame | None:
-    """Frame ``1d`` más fresco del ticker sin importar el ``period`` (ancla de escala).
-
-    Equivalente parquet de ``reference_close``: NO aplica TTL (staleness aceptable
-    para anclar la escala del precio). Elige el candidato con el ``fetched_at``
-    embebido más nuevo (fallback: mtime del archivo).
-    """
+def _candidates_1d(ticker: str) -> list[Path]:
+    """Parquets ``1d`` del ticker (cualquier period), del más fresco al más viejo."""
     d = get_parquet_dir()
     if not d.exists():
-        return None
+        return []
     t = _safe(ticker.upper())
     suffix = _safe("1d")
     candidates = list(d.glob(f"{t}__*__{suffix}.parquet"))
-    if not candidates:
-        return None
 
     def _freshness(p: Path) -> datetime:
         f = _read_fetched_at(p)
@@ -219,7 +212,37 @@ def latest_1d(ticker: str) -> pd.DataFrame | None:
         except OSError:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    return _restore_frame(max(candidates, key=_freshness))
+    return sorted(candidates, key=_freshness, reverse=True)
+
+
+def latest_1d(ticker: str) -> pd.DataFrame | None:
+    """Frame ``1d`` más fresco del ticker sin importar el ``period`` (ancla de escala).
+
+    Equivalente parquet de ``reference_close``: NO aplica TTL (staleness aceptable
+    para anclar la escala del precio). Elige el candidato con el ``fetched_at``
+    embebido más nuevo (fallback: mtime del archivo).
+    """
+    candidates = _candidates_1d(ticker)
+    if not candidates:
+        return None
+    return _restore_frame(candidates[0])
+
+
+def all_1d(ticker: str) -> list[pd.DataFrame]:
+    """**Todos** los frames ``1d`` del ticker, del más fresco al más viejo.
+
+    El par de ``latest_1d``, y existe para lo que aquél no puede hacer: **cruzar**
+    los períodos en vez de elegir uno (tarea 63). Dos frames del mismo ticker que
+    no coinciden en la escala son la única señal, disponible sin red y sin un
+    provider nuevo, de que el cache **no puede arbitrar** — es el sanity bilateral
+    de la tarea 14 un nivel más abajo, intra-proveedor.
+    """
+    out: list[pd.DataFrame] = []
+    for p in _candidates_1d(ticker):
+        df = _restore_frame(p)
+        if df is not None:
+            out.append(df)
+    return out
 
 
 def invalidate(ticker: str) -> None:

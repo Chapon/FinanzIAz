@@ -13,6 +13,7 @@ guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
 the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -521,6 +522,56 @@ def _read_latest_1d_frame(ticker_upper: str) -> pd.DataFrame | None:
     return _sqlite_latest_1d(ticker_upper)
 
 
+def _sqlite_all_1d(ticker_upper: str) -> list[pd.DataFrame]:
+    """Todos los frames ``1d`` del ticker en SQLite, del más fresco al más viejo."""
+    out: list[pd.DataFrame] = []
+    with session_scope() as session:
+        rows = (
+            session.query(HistoricalDataCache)
+            .filter(HistoricalDataCache.ticker == ticker_upper)
+            .filter(HistoricalDataCache.interval == "1d")
+            .order_by(HistoricalDataCache.fetched_at.desc())
+            .all()
+        )
+        for row in rows:
+            try:
+                out.append(pd.read_json(StringIO(row.data_json), orient="split"))
+            except Exception:
+                log.exception("cache 1d ilegible para %s", ticker_upper)
+    return out
+
+
+def _read_all_1d_frames(ticker_upper: str) -> list[pd.DataFrame]:
+    """Todos los frames ``1d`` cacheados del ticker según el backend activo (ARQ1).
+
+    El par de ``_read_latest_1d_frame``: aquél **elige** uno, éste los devuelve
+    todos para poder **cruzarlos** (tarea 63).
+    """
+    backend = _historical_cache_backend()
+    if backend in ("parquet", "dual"):
+        try:
+            from data import parquet_cache
+
+            frames = parquet_cache.all_1d(ticker_upper)
+        except Exception:
+            log.exception("parquet all_1d failed for %s", ticker_upper)
+            frames = []
+        if frames or backend == "parquet":
+            return frames
+    return _sqlite_all_1d(ticker_upper)
+
+
+def _last_close(df: pd.DataFrame | None) -> float | None:
+    """Último close positivo de un frame OHLCV, o None si no hay ninguno."""
+    if df is None or "Close" not in df.columns or df.empty:
+        return None
+    closes = pd.to_numeric(df["Close"], errors="coerce").dropna()
+    closes = closes[closes > 0]
+    if closes.empty:
+        return None
+    return float(closes.iloc[-1])
+
+
 def reference_close(ticker: str) -> float | None:
     """Último close diario válido del cache OHLCV, como ancla de escala.
 
@@ -531,17 +582,275 @@ def reference_close(ticker: str) -> float | None:
     if not _cache_enabled():
         return None
     try:
-        df = _read_latest_1d_frame(ticker.upper())
-        if df is None or "Close" not in df.columns or df.empty:
-            return None
-        closes = pd.to_numeric(df["Close"], errors="coerce").dropna()
-        closes = closes[closes > 0]
-        if closes.empty:
-            return None
-        return float(closes.iloc[-1])
+        return _last_close(_read_latest_1d_frame(ticker.upper()))
     except Exception:
         log.exception("reference_close failed for %s", ticker)
         return None
+
+
+# ── Cuando la sospechosa es la REFERENCIA, no el precio (tarea 63) ────────────
+# El guard de arriba toma el cache como verdad. Eso alcanza para el caso KLAC
+# (cotización corrupta, cache sano), pero el caso SIMÉTRICO —cache corrupto,
+# cotización sana— lo deja descartando el precio bueno en cada fetch, para
+# siempre, porque nada en este path corrige ni invalida el cache. Pasó con AVB
+# 2026-08-27: Yahoo le aplicó un split FANTASMA de 2.793 al frame ``2y`` y no al
+# ``10y`` ni a la cotización, y el ticker quedó invisible 4 días con 927 WARNINGs.
+#
+# El modo de falla que fija la severidad: los dos guards del engine
+# (``_price_out_of_band`` en el fill y en la aprobación) **no miran el lado**, así
+# que con una posición abierta esto también bloquea la SELL. O sea que el riesgo
+# no es "no entramos": es **"no podemos salir"**. De ahí el principio que ordena
+# todo lo que sigue: **cuando la referencia misma es dudosa, bloquear es peor que
+# no bloquear**.
+
+# Ventana hacia atrás para atribuirle el desvío a un split del proveedor.
+_SPLIT_LOOKBACK_DAYS = 30
+
+# Tolerancia con la que el factor de split tiene que explicar el desvío. Es
+# generosa a propósito: comparamos una cotización de HOY contra un close que
+# puede tener días, así que el precio se movió por su cuenta. Un error de escala
+# tipo KLAC (~10×) no cae dentro de esta tolerancia de ningún split real salvo
+# que la empresa haya partido ~10:1 — y en ese caso fail-open es lo correcto.
+_SPLIT_MATCH_TOL = 0.20
+
+# Denominadores de un split de verdad: 2:1, 3:1, 3:2, 5:2, 1:10… Un ratio que no
+# es una fracción simple (2.793) es dato podrido del proveedor, no un ajuste.
+_PLAUSIBLE_SPLIT_DENOMS = (1, 2, 3, 4, 5, 8, 10)
+
+# A partir de cuántos rechazos seguidos el WARNING pasa a ERROR. Un rechazo
+# aislado es la corrupción transitoria que E5 espera; una racha es un ticker
+# invisible, y hoy los dos se ven igual en el log.
+_ESCALATE_AFTER = 3
+
+# El lookup de splits pega a la red, así que se memoiza: un ticker roto consulta
+# ~4 veces por día en vez de una por minuto.
+_SPLIT_CACHE_TTL_SECONDS = 6 * 3600
+_split_factor_cache: dict[str, tuple[float, float | None]] = {}
+_split_cache_lock = threading.Lock()
+
+# Racha de rechazos por ticker: {ticker: (n, primer_rechazo, ya_anunciado)}.
+# ``ya_anunciado`` es lo que corta el spam: se loguea al **cambiar de estado**
+# (bloqueado → escalado → referencia dudosa), no una vez por fetch. Sin esto el
+# caso AVB dejó 927 líneas idénticas en el log (misma familia que la T25).
+_out_of_band_streak: dict[str, tuple[int, str, str]] = {}
+_streak_lock = threading.Lock()
+
+
+def is_plausible_split(factor: float | None) -> bool:
+    """True si ``factor`` se parece a un split real (una fracción simple).
+
+    Las empresas parten 2:1, 3:1, 3:2, 5:2, 1:10 — no **2.793:1**. Distinguirlos
+    no cambia si se bloquea o no (en los dos casos la referencia es dudosa), pero
+    sí qué se hace con el cache y qué dice el log: un split real deja el cache
+    **desactualizado** (se invalida y se rebaja solo), uno fantasma lo deja
+    **podrido** (invalidarlo sólo re-baja la misma basura).
+    """
+    if factor is None:
+        return False
+    try:
+        f = float(factor)
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(f) or f <= 0:
+        return False
+    for den in _PLAUSIBLE_SPLIT_DENOMS:
+        num = f * den
+        if abs(num - round(num)) <= 1e-6 and 1 <= round(num) <= 50:
+            return True
+    return False
+
+
+def recent_split_factor(
+    ticker: str,
+    lookback_days: int = _SPLIT_LOOKBACK_DAYS,
+    allow_network: bool = True,
+) -> float | None:
+    """Factor acumulado de los splits reportados en los últimos N días, o None.
+
+    Se consulta **sólo en el camino de excepción** (un precio ya fuera de banda),
+    así que no agrega latencia al scan. Fail-safe: cualquier error devuelve None,
+    que deja el guard exactamente como estaba antes de esta tarea.
+
+    ``allow_network=False`` responde **sólo con lo memoizado**: es lo que usa el
+    guard del engine, que no puede permitirse una llamada de red en medio de un
+    fill pero sí aprovechar lo que el fetch ya aprendió.
+    """
+    key = ticker.upper()
+    now = time.time()
+    with _split_cache_lock:
+        hit = _split_factor_cache.get(key)
+        if hit is not None and now - hit[0] < _SPLIT_CACHE_TTL_SECONDS:
+            return hit[1]
+    if not allow_network:
+        return None
+
+    factor: float | None = None
+    try:
+        splits = _run_with_timeout(lambda: _ticker(key).splits, default=None)
+        if splits is not None and len(splits) > 0:
+            cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=lookback_days)
+            idx = pd.to_datetime(splits.index, utc=True, errors="coerce")
+            recent = pd.to_numeric(
+                pd.Series(splits.values, index=idx), errors="coerce"
+            ).dropna()
+            recent = recent[(recent.index >= cutoff) & (recent > 0)]
+            if not recent.empty:
+                factor = float(recent.prod())
+    except Exception:
+        log.exception("recent_split_factor failed for %s", key)
+        factor = None
+
+    with _split_cache_lock:
+        _split_factor_cache[key] = (now, factor)
+    return factor
+
+
+def split_explains(
+    price: float | None,
+    reference: float | None,
+    factor: float | None,
+    tol: float = _SPLIT_MATCH_TOL,
+) -> bool:
+    """True si ``factor`` (o su inverso) explica el desvío ``price/reference``."""
+    if factor is None or price is None or reference is None:
+        return False
+    try:
+        observed = float(price) / float(reference)
+        f = float(factor)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return False
+    if not math.isfinite(observed) or observed <= 0 or not math.isfinite(f) or f <= 0:
+        return False
+    return any(abs(observed / cand - 1.0) <= tol for cand in (f, 1.0 / f))
+
+
+def scale_is_disputed(price: float | None, ticker: str, band: float | None = None) -> bool:
+    """True si los frames ``1d`` cacheados NO coinciden sobre ``price``.
+
+    **Sin umbral nuevo a propósito:** la disputa se define por el *veredicto*, no
+    por un porcentaje de diferencia entre frames. Así el drift normal del
+    re-ajuste por dividendos (unos pocos puntos entre dos fetches separados)
+    nunca la dispara, y un cambio de escala —que mueve el precio por un factor—
+    sí. Si un frame dice "en banda" y otro "fuera de banda", el cache **no puede
+    arbitrar**: no hay referencia con la cual acusar.
+    """
+    if price is None:
+        return False
+    try:
+        refs = [
+            c
+            for c in (_last_close(df) for df in _read_all_1d_frames(ticker.upper()))
+            if c is not None
+        ]
+    except Exception:
+        log.exception("scale_is_disputed failed for %s", ticker)
+        return False
+    if len(refs) < 2:
+        return False
+    return len({is_price_out_of_band(price, r, band) for r in refs}) > 1
+
+
+def _invalidate_history_cache(ticker_upper: str) -> None:
+    """Borra los frames cacheados del ticker para que el próximo fetch los rebaje."""
+    backend = _historical_cache_backend()
+    if backend in ("parquet", "dual"):
+        try:
+            from data import parquet_cache
+
+            parquet_cache.invalidate(ticker_upper)
+        except Exception:
+            log.exception("parquet invalidate failed for %s", ticker_upper)
+    if backend in ("sqlite", "dual"):
+        try:
+            with session_scope() as session:
+                (
+                    session.query(HistoricalDataCache)
+                    .filter(HistoricalDataCache.ticker == ticker_upper)
+                    .filter(HistoricalDataCache.interval == "1d")
+                    .delete(synchronize_session=False)
+                )
+        except Exception:
+            log.exception("sqlite invalidate failed for %s", ticker_upper)
+
+
+def _note_out_of_band(ticker_upper: str) -> tuple[int, str]:
+    """Suma uno a la racha de rechazos del ticker → ``(n, desde)``."""
+    with _streak_lock:
+        n, since, announced = _out_of_band_streak.get(
+            ticker_upper, (0, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "")
+        )
+        n += 1
+        _out_of_band_streak[ticker_upper] = (n, since, announced)
+        return n, since
+
+
+def _already_announced(ticker_upper: str, kind: str) -> bool:
+    """True si ya se logueó ``kind`` para esta racha (y lo marca si no)."""
+    with _streak_lock:
+        entry = _out_of_band_streak.get(ticker_upper)
+        if entry is None:
+            return False
+        n, since, announced = entry
+        if announced == kind:
+            return True
+        _out_of_band_streak[ticker_upper] = (n, since, kind)
+        return False
+
+
+def _clear_out_of_band_streak(ticker_upper: str) -> None:
+    """Corta la racha: el ticker volvió a dar un precio **en banda**.
+
+    Ojo con lo que NO la corta: un fail-open por referencia dudosa. Si lo hiciera,
+    el contador volvería a cero y el ticker oscilaría —bloqueado, bloqueado,
+    aceptado, bloqueado— porque la investigación de la referencia depende
+    justamente de la racha.
+    """
+    with _streak_lock:
+        _out_of_band_streak.pop(ticker_upper, None)
+
+
+def unreliable_reference(
+    ticker: str, price: float | None, reference: float | None, *, allow_network: bool
+) -> str | None:
+    """Motivo por el que la REFERENCIA no sirve para acusar, o None si sirve.
+
+    El orden separa lo **gratis** de lo **caro**, y no es cosmético:
+
+    1. Cruzar los frames cacheados no pega a la red, así que corre **siempre** y
+       resuelve el caso AVB en el primer rechazo.
+    2. Consultar los splits del proveedor **sí** pega a la red, así que sólo corre
+       con ``allow_network``. En el fetch eso lo habilita la racha, cuando ya
+       probó que no es transitorio; un rechazo aislado es la corrupción pasajera
+       que E5 espera y se sigue bloqueando como siempre. En el engine nunca: un
+       fill no puede colgarse esperando a Yahoo, pero sí aprovecha lo memoizado.
+
+    Es **pública a propósito**: el guard del fetch y el del engine tienen que
+    decidir con la misma función. Que uno acepte un precio y el otro lo rechace
+    —con la misma referencia— es cómo una posición queda sin poder venderse.
+    """
+    if price is None or reference is None:
+        return None
+    if scale_is_disputed(price, ticker):
+        return (
+            "los frames 1d cacheados no coinciden sobre este precio "
+            "(escala en disputa entre períodos)"
+        )
+    ticker_upper = ticker.upper()
+    factor = recent_split_factor(ticker_upper, allow_network=allow_network)
+    if not split_explains(price, reference, factor):
+        return None
+    if is_plausible_split(factor):
+        # Split real: el cache quedó viejo, no podrido → se rebaja solo.
+        _invalidate_history_cache(ticker_upper)
+        return (
+            f"un split reciente de {factor:g} explica el desvío y el cache quedó "
+            "pre-split — invalidado para que se rebaje"
+        )
+    # Ratio que no es un split (2.793): invalidar sólo re-bajaría la misma basura.
+    return (
+        f"el proveedor reporta un split de {factor:g}, que no es un ratio real "
+        "— dato podrido del histórico, el cache NO se invalida"
+    )
 
 
 def is_price_out_of_band(
@@ -568,26 +877,64 @@ def is_price_out_of_band(
 def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
     """Descarta un fetch en vivo cuyo precio esté fuera de banda vs el histórico.
 
-    Devuelve el ``info`` intacto si el precio es sano (o no hay referencia), o
-    None si es basura de escala. NO envenena el ``failing`` set: la corrupción es
-    transitoria (símbolo vivo, dato podrido) → el próximo scan reintenta.
+    Devuelve el ``info`` intacto si el precio es sano (o **si la referencia no es
+    confiable**, tarea 63), o None si es basura de escala. NO envenena el
+    ``failing`` set: la corrupción es transitoria (símbolo vivo, dato podrido) →
+    el próximo scan reintenta.
     """
     if info is None:
         return None
     price = info.get("price")
     ref = reference_close(ticker_upper)
-    if is_price_out_of_band(price, ref):
+    if not is_price_out_of_band(price, ref):
+        _clear_out_of_band_streak(ticker_upper)
+        return info
+
+    n, since = _note_out_of_band(ticker_upper)
+    px, rf = float(price), float(ref)
+    args = (ticker_upper, px, rf, abs(px / rf - 1.0) * 100, _price_sanity_band() * 100)
+
+    reason = unreliable_reference(
+        ticker_upper, px, rf, allow_network=(n >= _ESCALATE_AFTER)
+    )
+    if reason is not None:
+        if not _already_announced(ticker_upper, "unreliable"):
+            log.error(
+                "Referencia de escala NO confiable para %s: %.4f vs último close "
+                "%.4f (desvío %.0f%% > %.0f%%) — %s. El precio se ACEPTA: "
+                "bloquear contra una referencia dudosa deja la posición sin "
+                "salida, porque los guards del fill no miran el lado.",
+                *args,
+                reason,
+            )
+        return info
+
+    if n >= _ESCALATE_AFTER:
+        if not _already_announced(ticker_upper, "escalated"):
+            log.error(
+                "Precio fuera de banda para %s: %.4f vs último close %.4f "
+                "(desvío %.0f%% > %.0f%%) — %d rechazos seguidos desde %s: el "
+                "ticker está INVISIBLE (sin precio para entrar ni para salir). "
+                "Revisar la escala del histórico cacheado.",
+                *args,
+                n,
+                since,
+            )
+    elif not _already_announced(ticker_upper, "blocked"):
         log.warning(
             "Precio fuera de banda para %s: %.4f vs último close %.4f "
             "(desvío %.0f%% > %.0f%%) — descartado como cotización corrupta",
-            ticker_upper,
-            float(price),
-            float(ref),
-            abs(float(price) / float(ref) - 1.0) * 100,
-            _price_sanity_band() * 100,
+            *args,
         )
-        return None
-    return info
+    else:
+        # Ni una línea más por minuto: la racha ya se anunció (higiene, T25).
+        log.debug(
+            "Precio fuera de banda para %s (rechazo #%d desde %s)",
+            ticker_upper,
+            n,
+            since,
+        )
+    return None
 
 
 def get_current_price(ticker: str) -> dict | None:

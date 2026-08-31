@@ -80,18 +80,62 @@ def _default_prices_provider(tickers: list[str]) -> dict[str, float]:
     return out
 
 
-def _price_out_of_band(ticker: str, price: float | None) -> bool:
-    """Sanity de escala (E5): True si ``price`` está fuera de banda vs el último
-    close diario cacheado del ticker.
+def _price_out_of_band(ticker: str, price: float | None, side: str | None = None) -> bool:
+    """Sanity de escala (E5): True si NO hay que fillar a ``price``.
 
     Última línea de defensa antes de fillar, por si un precio de escala corrupta
     (~10× tipo KLAC 2026-06-01) esquiva el guard del fetch (provider inyectado en
     tests, precio cacheado de antes del guard, path alternativo). Fail-open si no
     hay referencia (no podemos juzgar la escala → no bloqueamos).
-    """
-    from data.yahoo_finance import is_price_out_of_band, reference_close
 
-    return is_price_out_of_band(price, reference_close(ticker))
+    **Con la referencia en duda (tarea 63): salir sí, entrar no.** El veredicto de
+    escala lo da la misma función que usa el guard del fetch
+    (``unreliable_reference``) —dos guards que con la misma referencia llegan a
+    conclusiones opuestas son cómo una posición queda trabada—, pero encima va una
+    decisión de política que **sí** mira el lado, y es la asimetría que el caso
+    AVB reveló:
+
+    * **SELL / desconocido → no se bloquea.** Este guard no distinguía el lado, y
+      con un histórico podrido eso no evita una compra mala: deja la posición sin
+      poder venderse. Quedar trapeado es peor que salir a un precio dudoso.
+    * **BUY → se bloquea igual.** No alcanza con que la *cotización* sea creíble:
+      el ATR y las barreras salen del **mismo histórico** que está en duda
+      (``paper_history_period`` = ``2y``, el frame que en AVB quedó 2.793× fuera
+      de escala), así que la posición entraría con un stop calculado en otra
+      escala. Entrar es opcional; salir no.
+    """
+    from data.yahoo_finance import (
+        is_price_out_of_band,
+        reference_close,
+        unreliable_reference,
+    )
+
+    ref = reference_close(ticker)
+    if not is_price_out_of_band(price, ref):
+        return False
+    reason = unreliable_reference(ticker, price, ref, allow_network=False)
+    if reason is None:
+        return True
+
+    from config.logging_config import get_logger
+
+    entrando = str(side or "").upper() == "BUY"
+    get_logger(__name__).error(
+        "%s: %.4f fuera de banda vs el histórico (%.4f), pero la referencia NO es "
+        "confiable — %s. %s",
+        ticker.upper(),
+        float(price),
+        float(ref),
+        reason,
+        (
+            "La ENTRADA se bloquea igual: el ATR y las barreras salen del mismo "
+            "histórico en duda."
+            if entrando
+            else "El fill NO se bloquea: con una referencia dudosa este guard "
+            "trabaría también la SELL y dejaría la posición sin salida."
+        ),
+    )
+    return entrando
 
 
 _VALID_YF_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
@@ -1125,7 +1169,7 @@ def run_scan(
             # (~10× tipo KLAC) aunque haya esquivado el guard del fetch. Preferimos
             # NO operar a operar sobre basura (el notional inflado contamina peso,
             # DD, ADV y la muestra de exits).
-            if _price_out_of_band(trade.ticker, fill_px):
+            if _price_out_of_band(trade.ticker, fill_px, trade.side):
                 result.skipped += 1
                 result.warnings.append(
                     f"{trade.ticker}: precio {fill_px:.2f} fuera de banda vs histórico "
@@ -1340,7 +1384,7 @@ def approve_order(
         # Guard de sanity (E5): un precio de aprobación con escala corrupta (~10×
         # tipo KLAC) no debe fillarse. Tratado como "sin precio" → expira; el
         # usuario re-genera la orden cuando Yahoo devuelva un precio sano.
-        if _price_out_of_band(order.ticker, px):
+        if _price_out_of_band(order.ticker, px, order.side):
             order.status = "expired"
             order.notes = (order.notes or "") + "\n[approve] precio fuera de banda, expirada."
             order.decided_at = utcnow_naive()
