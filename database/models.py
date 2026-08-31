@@ -79,6 +79,7 @@ def _set_sqlite_pragma(dbapi_conn, _connection_record):
     finally:
         cursor.close()
 
+
 # Single sessionmaker bound to the engine. Re-using one factory is more
 # efficient than re-building it on every ``get_session()`` call.
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, expire_on_commit=False)
@@ -516,8 +517,9 @@ def _alembic_sync(engine=None, db_path: str | None = None):
     from sqlalchemy import inspect as _sa_inspect
 
     try:
-        from alembic import command
         from alembic.config import Config
+
+        from alembic import command
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError(
             "alembic es requerido desde T7.3 — `pip install alembic` (está en requirements.txt)"

@@ -115,7 +115,7 @@ def _fmt_shares(shares: float | None) -> str:
         return "?"
     # Whole-share counts are the common case; show integers cleanly.
     if abs(shares - round(shares)) < 1e-9:
-        return f"{int(round(shares))}"
+        return f"{round(shares)}"
     return f"{shares:.4f}"
 
 
@@ -201,9 +201,7 @@ def format_outage_message(kind: str, *, minutes: float, level: int) -> str:
             "El breaker reintenta con backoff."
         )
     if kind == "recovered":
-        return (
-            f"✅ *FinanzIAs · Yahoo se recuperó* tras ~{minutes:.0f} min — precios al día."
-        )
+        return f"✅ *FinanzIAs · Yahoo se recuperó* tras ~{minutes:.0f} min — precios al día."
     return ""
 
 

@@ -79,7 +79,9 @@ SCHEMA: dict[str, SettingSpec] = {
     # "dual" = escribe a ambos y lee prefiriendo parquet (migración incremental).
     # Rollback = volver a "sqlite". Requiere correr scripts/migrate_historical_cache_to_parquet.py.
     "historical_cache_backend": SettingSpec(
-        str, "sqlite", choices=("sqlite", "parquet", "dual"),
+        str,
+        "sqlite",
+        choices=("sqlite", "parquet", "dual"),
         doc="Backend del cache OHLCV: sqlite (legacy) | parquet (ARQ1) | dual (migración)",
     ),
     "pre_market": SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
@@ -108,14 +110,20 @@ SCHEMA: dict[str, SettingSpec] = {
     # T6.4 score-hysteresis (validado en T6.1, docs/exit_replay_t61_2026-06-10.md):
     # los SELLs por señal a 1-3 días regalan el rally del horizonte 5d del label.
     "paper_signal_sell_min_age_bdays": SettingSpec(
-        int, 3, min=0, max=30,
+        int,
+        3,
+        min=0,
+        max=30,
         doc=(
             "T6.4: SELLs de señal (con signal_score) esperan esta edad mínima en "
             "días hábiles. 0 = off. Exits atr_*/vol_trim no aplican."
         ),
     ),
     "paper_signal_sell_bypass_score": SettingSpec(
-        (int, float), 0.25, min=0.0, max=1.0,
+        (int, float),
+        0.25,
+        min=0.0,
+        max=1.0,
         doc=(
             "T6.4: SELLs de señal con score < este umbral ejecutan directo sin "
             "esperar la edad mínima (convicción alta de venta). 0 = sin bypass."
