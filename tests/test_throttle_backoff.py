@@ -171,6 +171,19 @@ def test_only_one_thread_pays_the_probe(monkeypatch):
 # ── Higiene de log: WARNING solo en transiciones ──────────────────────────────
 
 
+def _yahoo_warnings(caplog):
+    """Los WARNING **del breaker**, no los de todo el proceso.
+
+    ``caplog.records`` junta lo de **todos** los loggers, aunque el ``at_level``
+    apunte a uno solo. Sin filtrar por nombre, estos tests contaban de rebote los
+    WARNING del notificador de outage a Slack (*"missing SLACK_BOT_TOKEN or
+    channel — skipping send"*), que aparecen o no **según la configuración de la
+    máquina**: en Windows pasaban y en CI daban `5 == 3`. Un test cuyo veredicto
+    depende de `~/.finanzias/settings.json` no está midiendo el código.
+    """
+    return [r for r in caplog.records if r.levelno == logging.WARNING and r.name == "data.yahoo_finance"]
+
+
 def test_warning_only_on_transitions(monkeypatch, caplog):
     clock = _patch_clock(monkeypatch)
     with caplog.at_level(logging.WARNING, logger="data.yahoo_finance"):
@@ -179,7 +192,7 @@ def test_warning_only_on_transitions(monkeypatch, caplog):
         clock.advance(91)
         yfm._note_throttle()  # escalada → WARNING
         yfm._note_fetch_success()  # recuperación → WARNING
-    warns = [r for r in caplog.records if r.levelno == logging.WARNING]
+    warns = _yahoo_warnings(caplog)
     assert len(warns) == 3  # apertura + escalada + cierre
 
 
@@ -244,7 +257,7 @@ def test_incident_simulation_2h_throttle(test_db, monkeypatch, caplog):
         clock.advance(yfm.throttle_state()["cooldown_remaining"] + 1)
         out = yfm.get_bulk_prices(universe)
 
-    warns = [r for r in caplog.records if r.levelno == logging.WARNING]
+    warns = _yahoo_warnings(caplog)
     # Reducción drástica vs el naive de ~360 fetches / ~120 WARNINGs.
     assert net_calls["n"] < 30, net_calls["n"]
     assert len(warns) <= 12, len(warns)
