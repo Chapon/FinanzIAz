@@ -32,8 +32,19 @@ from data import yahoo_finance as yfm
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _seed(ticker: str, closes: list[tuple[str, float]], period: str) -> None:
-    """Frame ``1d`` cacheado para ``(ticker, period)``."""
+def _seed(ticker: str, closes: list[tuple[str, float]], period: str, *, fetched: str = "2026-08-01") -> None:
+    """Frame ``1d`` cacheado para ``(ticker, period)``, con su ``fetched_at``.
+
+    El ``fetched_at`` va **explícito y distinto** entre frames a propósito.
+    ``reference_close`` elige el frame **más fresco** (``ORDER BY fetched_at DESC``),
+    y sembrar dos filas sin sello dejaba a las dos con la marca del mismo tick del
+    reloj: cuál era "el más fresco" quedaba **indefinido**, y de ahí salían fallos
+    intermitentes —a veces el 2y, a veces el 10y— que dependían de la resolución
+    del reloj y no del código. Mismo defecto de fondo que el de los WARNING de
+    Slack: el veredicto del test apoyado en algo incidental.
+    """
+    from datetime import datetime
+
     from database.models import HistoricalDataCache, session_scope
 
     idx = pd.to_datetime([d for d, _ in closes])
@@ -54,6 +65,7 @@ def _seed(ticker: str, closes: list[tuple[str, float]], period: str) -> None:
                 period=period,
                 interval="1d",
                 data_json=df.to_json(orient="split", date_format="iso"),
+                fetched_at=datetime.fromisoformat(fetched),
             )
         )
 
@@ -141,27 +153,39 @@ def test_without_a_reported_split_nothing_is_explained():
 
 def test_two_frames_that_disagree_on_the_verdict_are_a_dispute():
     # El caso AVB exacto: el 10y sano y el 2y con el split fantasma aplicado.
-    _seed("AVB", [("2026-08-07", 187.55)], period="10y")
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     assert yfm.scale_is_disputed(184.06, "AVB") is True
+
+
+def test_the_reference_is_the_FRESHEST_frame_not_any_frame():
+    """El invariante del que dependían en silencio los tests de acá arriba.
+
+    Con dos frames del mismo ticker, ``reference_close`` tiene que devolver el del
+    ``fetched_at`` más nuevo. Sin esto pineado, sembrar sin sello dejaba la
+    elección librada a la resolución del reloj y los tests fallaban de a ratos.
+    """
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
+    assert yfm.reference_close("AVB") == pytest.approx(68.14)
 
 
 def test_two_frames_that_agree_are_not_a_dispute():
     # Los dos dicen "en banda": no hay nada que arbitrar.
-    _seed("AAPL", [("2026-08-07", 200.0)], period="10y")
-    _seed("AAPL", [("2026-08-24", 205.0)], period="2y")
+    _seed("AAPL", [("2026-08-07", 200.0)], period="10y", fetched="2026-08-09")
+    _seed("AAPL", [("2026-08-24", 205.0)], period="2y", fetched="2026-08-31")
     assert yfm.scale_is_disputed(203.0, "AAPL") is False
 
 
 def test_two_frames_that_both_reject_are_not_a_dispute():
     # Los dos dicen "fuera de banda" → el cache SÍ puede arbitrar, y acusa.
-    _seed("KLAC", [("2026-08-07", 194.0)], period="10y")
-    _seed("KLAC", [("2026-08-24", 196.0)], period="2y")
+    _seed("KLAC", [("2026-08-07", 194.0)], period="10y", fetched="2026-08-09")
+    _seed("KLAC", [("2026-08-24", 196.0)], period="2y", fetched="2026-08-31")
     assert yfm.scale_is_disputed(1942.70, "KLAC") is False
 
 
 def test_a_single_frame_cannot_be_disputed():
-    _seed("KLAC", [("2026-08-24", 194.0)], period="2y")
+    _seed("KLAC", [("2026-08-24", 194.0)], period="2y", fetched="2026-08-31")
     assert yfm.scale_is_disputed(1942.70, "KLAC") is False
 
 
@@ -173,8 +197,8 @@ def test_the_dispute_is_by_verdict_not_by_percentage():
     Por eso la disputa se define por el *veredicto* y no por un umbral de
     diferencia: un 3% nunca cambia el veredicto, un split sí.
     """
-    _seed("PLD", [("2026-08-07", 140.0)], period="10y")
-    _seed("PLD", [("2026-08-24", 135.8)], period="2y")  # −3% de re-ajuste
+    _seed("PLD", [("2026-08-07", 140.0)], period="10y", fetched="2026-08-09")
+    _seed("PLD", [("2026-08-24", 135.8)], period="2y", fetched="2026-08-31")  # −3% de re-ajuste
     assert yfm.scale_is_disputed(141.0, "PLD") is False
 
 
@@ -183,8 +207,8 @@ def test_the_dispute_is_by_verdict_not_by_percentage():
 
 def test_the_avb_case_the_good_price_is_no_longer_discarded(caplog):
     """El bug que abrió la tarea: el precio bueno se aceptaba nunca."""
-    _seed("AVB", [("2026-08-07", 187.55)], period="10y")
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
 
     with caplog.at_level(logging.ERROR, logger="data.yahoo_finance"):
         out = yfm._reject_if_out_of_band("AVB", _info("AVB", 184.06))
@@ -195,7 +219,7 @@ def test_the_avb_case_the_good_price_is_no_longer_discarded(caplog):
 
 def test_klac_is_still_blocked(no_split, caplog):
     """El caso para el que E5 existe no se afloja: un solo frame coherente acusa."""
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
 
     with caplog.at_level(logging.WARNING, logger="data.yahoo_finance"):
         out = yfm._reject_if_out_of_band("KLAC", _info("KLAC", 1942.70))
@@ -210,7 +234,7 @@ def test_a_transient_rejection_does_not_touch_the_network(monkeypatch):
     Sin esto, cada precio corrupto costaría una llamada de red **por scan** — y el
     guard corre en cada fetch de cada ticker.
     """
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
 
     def _boom(fn, **kw):
         raise AssertionError("el primer rechazo no debe pegar a la red")
@@ -220,7 +244,7 @@ def test_a_transient_rejection_does_not_touch_the_network(monkeypatch):
 
 
 def test_the_network_lookup_waits_until_the_streak_proves_persistence(monkeypatch):
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
     calls: list[int] = []
 
     def _count(fn, **kw):
@@ -238,7 +262,7 @@ def test_the_network_lookup_waits_until_the_streak_proves_persistence(monkeypatc
 
 def test_a_real_split_unblocks_and_invalidates_the_stale_cache(monkeypatch):
     """Un split REAL deja el cache viejo, no podrido → se invalida y se rebaja."""
-    _seed("SPLIT", [("2026-08-24", 300.0)], period="2y")
+    _seed("SPLIT", [("2026-08-24", 300.0)], period="2y", fetched="2026-08-31")
     monkeypatch.setattr(yfm, "recent_split_factor", _splits(3.0))
 
     out = None
@@ -251,7 +275,7 @@ def test_a_real_split_unblocks_and_invalidates_the_stale_cache(monkeypatch):
 
 def test_a_phantom_split_unblocks_but_does_NOT_invalidate_the_cache(monkeypatch):
     """Con un ratio que no es un split, invalidar sólo re-bajaría la misma basura."""
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     monkeypatch.setattr(yfm, "recent_split_factor", _splits(2.793))
 
     out = None
@@ -264,7 +288,7 @@ def test_a_phantom_split_unblocks_but_does_NOT_invalidate_the_cache(monkeypatch)
 
 def test_the_streak_escalates_to_error_instead_of_repeating_the_warning(no_split, caplog):
     """927 WARNINGs idénticos no distinguen «pasó una vez» de «hace 4 días»."""
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
 
     with caplog.at_level(logging.DEBUG, logger="data.yahoo_finance"):
         for _ in range(6):
@@ -278,7 +302,7 @@ def test_the_streak_escalates_to_error_instead_of_repeating_the_warning(no_split
 
 
 def test_a_price_back_in_band_resets_the_streak(no_split):
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
     yfm._reject_if_out_of_band("KLAC", _info("KLAC", 1942.70))
     assert "KLAC" in yfm._out_of_band_streak
 
@@ -294,7 +318,7 @@ def test_an_unreliable_reference_does_not_reset_the_streak(monkeypatch):
     """
     # El split fantasma es el caso que dura: el cache NO se invalida, así que el
     # ticker sigue fuera de banda fetch tras fetch.
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     monkeypatch.setattr(yfm, "recent_split_factor", _splits(2.793))
 
     # Los primeros rechazos bloquean (todavía parece transitorio) y suman racha.
@@ -318,8 +342,8 @@ def test_the_engine_guard_lets_a_sell_out_on_a_disputed_reference():
     """Lo que la tarea existe para arreglar: quedar trapeado es peor que salir."""
     from paper_trading import engine
 
-    _seed("AVB", [("2026-08-07", 187.55)], period="10y")
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     assert engine._price_out_of_band("AVB", 184.06, "SELL") is False
     assert engine._price_out_of_band("AVB", 184.06) is False  # lado desconocido
 
@@ -334,15 +358,15 @@ def test_the_engine_guard_still_blocks_a_BUY_on_a_disputed_reference():
     """
     from paper_trading import engine
 
-    _seed("AVB", [("2026-08-07", 187.55)], period="10y")
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     assert engine._price_out_of_band("AVB", 184.06, "BUY") is True
 
 
 def test_the_engine_guard_still_blocks_klac():
     from paper_trading import engine
 
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
     assert engine._price_out_of_band("KLAC", 1942.70) is True
     assert engine._price_out_of_band("KLAC", 200.0) is False
 
@@ -356,9 +380,9 @@ def test_the_two_guards_agree_on_the_scale_verdict(no_split):
     """
     from paper_trading import engine
 
-    _seed("AVB", [("2026-08-07", 187.55)], period="10y")
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("AVB", [("2026-08-07", 187.55)], period="10y", fetched="2026-08-09")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
 
     for ticker, price in (("AVB", 184.06), ("KLAC", 1942.70)):
         fetch_acepta = yfm._reject_if_out_of_band(ticker, _info(ticker, price)) is not None
@@ -370,7 +394,7 @@ def test_the_engine_guard_never_hits_the_network(monkeypatch):
     """Un fill no puede colgarse esperando el lookup de splits de Yahoo."""
     from paper_trading import engine
 
-    _seed("KLAC", [("2026-05-29", 194.0)], period="2y")
+    _seed("KLAC", [("2026-05-29", 194.0)], period="2y", fetched="2026-08-31")
 
     def _boom(fn, **kw):
         raise AssertionError("el guard del engine no debe pegar a la red")
@@ -383,7 +407,7 @@ def test_the_engine_guard_reuses_what_the_fetch_already_learned(monkeypatch):
     """Sin red, pero sí con el memo: lo que el fetch aprendió le sirve al fill."""
     from paper_trading import engine
 
-    _seed("AVB", [("2026-08-24", 68.14)], period="2y")
+    _seed("AVB", [("2026-08-24", 68.14)], period="2y", fetched="2026-08-31")
     # Un solo frame: no hay cruce posible, así que sin el memo el engine bloquea.
     assert engine._price_out_of_band("AVB", 184.06, "SELL") is True
 

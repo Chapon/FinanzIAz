@@ -49,6 +49,13 @@ jobs:
     # Best-effort: don't fail the whole pipeline yet — we're migrating
     # to type hints incrementally. Flip ``continue-on-error`` to ``false``
     # once mypy passes cleanly across the codebase.
+    #
+    # OJO con la lectura de este job (tarea 65): hasta 2026-08-31 salía con
+    # **exit 2**, que en mypy es un error BLOQUEANTE, no errores de tipo — moría
+    # resolviendo módulos y no chequeaba nada. O sea que su rojo no significaba
+    # "faltan tipos": significaba "mypy no arrancó". Arreglado en `pyproject.toml`
+    # (`explicit_package_bases`); ahora el rojo sí es la deuda de tipado real,
+    # medida en 1074 errores sobre 158 de 323 archivos.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -81,11 +88,25 @@ jobs:
           python-version: "3.11"
 
       - name: Install + audit
+        # Mismo patrón que el paso de pytest: los logs de Actions piden token, así
+        # que el propio job publica su salida como anotación cuando falla. Sin
+        # esto, `pip-audit` sólo dejaba "Process completed with exit code 1" y no
+        # se podía saber si el rojo era una CVE real o un fallo de instalación.
+        # `set +e` porque Actions corre los `run` con `bash -e`. Tarea 65.
         run: |
+          set +e
+          set -o pipefail
           python -m pip install --upgrade pip
           pip install pip-audit
           pip install -r requirements.txt
-          pip-audit --strict
+          pip-audit --strict 2>&1 | tee audit-output.txt
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            msg=$(tail -c 3500 audit-output.txt \
+              | python3 -c 'import sys;print(sys.stdin.read().replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+            echo "::error title=pip-audit salió con $code::$msg"
+          fi
+          exit $code
 
   tests:
     name: pytest

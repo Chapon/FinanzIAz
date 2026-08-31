@@ -102,6 +102,16 @@ check_untyped_defs = true
 ignore_missing_imports = true     # third-party stubs are inconsistent
 exclude = ["build/", "dist/", "venv/", ".venv/"]
 
+# `scripts/` no tiene __init__.py: en runtime funciona como namespace package
+# porque los runners hacen `sys.path.insert(0, repo_root)`. Sin declarar la base,
+# mypy veía `scripts/harvest_catalysts.py` con DOS nombres a la vez
+# (`harvest_catalysts` y `scripts.harvest_catalysts`) y moría con un error
+# BLOQUEANTE — exit 2, sin llegar a chequear un solo tipo. O sea que el job no
+# estaba siendo "best-effort": no estaba corriendo. Es la resolución (b) que
+# recomienda el propio mypy. Tarea 65.
+mypy_path = "."
+explicit_package_bases = true
+
 # Per-module overrides — start permissive, tighten later.
 [[tool.mypy.overrides]]
 module = ["ui.*"]
