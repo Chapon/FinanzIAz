@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from database.models import NewsEvent, session_scope  # noqa: E402
+from database.models import NewsEvent, session_scope
 
 DEFAULT_ACCOUNT_ID = 1  # "Sim Principal"
 
@@ -63,10 +63,7 @@ def recent_news(
             NewsEvent.published_at.desc(),
             NewsEvent.id.desc(),
         ).limit(limit)
-        return [
-            FeedRow(r.ticker, r.published_at, r.source, r.title, r.url, r.event_type)
-            for r in q.all()
-        ]
+        return [FeedRow(r.ticker, r.published_at, r.source, r.title, r.url, r.event_type) for r in q.all()]
 
 
 def _watchlist_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:

@@ -68,11 +68,14 @@ def main():
     parser.add_argument("universe_file", type=Path)
     parser.add_argument("-p", "--period", default="2y", help="Period to load from cache (default 2y)")
     parser.add_argument(
-        "--n-windows", type=int, default=2,
+        "--n-windows",
+        type=int,
+        default=2,
         help="Number of non-overlapping windows to split the data into (default 2)",
     )
     parser.add_argument(
-        "--suite", default="all",
+        "--suite",
+        default="all",
         choices=["all", "stacking_test", "corr_test"],
         help=(
             "Which experiments per window. 'all' = baseline + 4 ablations (12 backtests "
@@ -84,9 +87,9 @@ def main():
     args = parser.parse_args()
 
     # Imports here so --help works without yfinance available
-    from data.yahoo_finance import get_historical_data_batch
-    from analysis.harness import ExperimentConfig, HarnessRunner
     from analysis.backtest import signal_from_analyze_stacked
+    from analysis.harness import ExperimentConfig, HarnessRunner
+    from data.yahoo_finance import get_historical_data_batch
 
     tickers = parse_universe_file(args.universe_file)
     print(f"Loading {args.period} of OHLCV for {len(tickers)} tickers from cache...")
@@ -118,15 +121,15 @@ def main():
 
     # Build N non-overlapping windows
     windows: dict[str, tuple[int, int]] = {}
-    edges = [int(round(i * n_bars / args.n_windows)) for i in range(args.n_windows + 1)]
+    edges = [round(i * n_bars / args.n_windows) for i in range(args.n_windows + 1)]
     for i in range(args.n_windows):
         lo, hi = edges[i], edges[i + 1]
         if args.n_windows == 2:
             name = "early_12m" if i == 0 else "late_12m"
         else:
-            name = f"w{i+1}"
+            name = f"w{i + 1}"
         windows[name] = (lo, hi)
-        print(f"  Window {name}: bars [{lo}:{hi}]  ({common_idx[lo].date()} -> {common_idx[hi-1].date()})")
+        print(f"  Window {name}: bars [{lo}:{hi}]  ({common_idx[lo].date()} -> {common_idx[hi - 1].date()})")
 
     # Prepare output directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -145,7 +148,7 @@ def main():
         # branch as a stub so old commands don't error — it runs only baseline.
         experiments = [ExperimentConfig.baseline()]
     else:
-        experiments = [ExperimentConfig.baseline()] + ExperimentConfig.ablation_variants()
+        experiments = [ExperimentConfig.baseline(), *ExperimentConfig.ablation_variants()]
     print(f"Suite: {args.suite}  ->  {len(experiments)} experiments per window")
 
     all_sharpe: dict[str, dict[str, float]] = {}
@@ -156,10 +159,7 @@ def main():
         print(f"\n{'=' * 60}\nWindow: {w_name}  ({i1 - i0} bars)\n{'=' * 60}")
         t_start = time.time()
         # Slice each ticker to this window — align to common index first
-        window_data = {
-            t: df.loc[common_idx[i0:i1]].copy()
-            for t, df in full_data.items()
-        }
+        window_data = {t: df.loc[common_idx[i0:i1]].copy() for t, df in full_data.items()}
         runner = HarnessRunner(
             data=window_data,
             tickers=list(window_data.keys()),
@@ -170,17 +170,11 @@ def main():
         )
         runner.run_suite(signal_fn, experiments, output_dir=out_root / w_name)
         elapsed = time.time() - t_start
-        print(f"Window {w_name} done in {elapsed/60:.1f} min")
+        print(f"Window {w_name} done in {elapsed / 60:.1f} min")
 
-        all_sharpe[w_name] = {
-            name: float(m.sharpe_annual) for name, (m, _, _) in runner.results.items()
-        }
-        all_return[w_name] = {
-            name: float(m.period_return) for name, (m, _, _) in runner.results.items()
-        }
-        all_maxdd[w_name] = {
-            name: float(m.max_drawdown) for name, (m, _, _) in runner.results.items()
-        }
+        all_sharpe[w_name] = {name: float(m.sharpe_annual) for name, (m, _, _) in runner.results.items()}
+        all_return[w_name] = {name: float(m.period_return) for name, (m, _, _) in runner.results.items()}
+        all_maxdd[w_name] = {name: float(m.max_drawdown) for name, (m, _, _) in runner.results.items()}
 
     # ── Consolidated summary ──────────────────────────────────────────────
     # Derive exp_order from what actually ran. Pre-Sprint-3 this was hardcoded
@@ -196,7 +190,9 @@ def main():
         cells = " | ".join(f"{all_sharpe[w].get(exp, float('nan')):>12.3f}" for w in w_names)
         print(f"{exp:<24} | {cells}")
 
-    print(f"\n{'=' * 76}\nΔSharpe vs baseline per window  (positive = ablation BETTER, kill candidate)\n{'=' * 76}")
+    print(
+        f"\n{'=' * 76}\nΔSharpe vs baseline per window  (positive = ablation BETTER, kill candidate)\n{'=' * 76}"
+    )
     header = f"{'Ablation':<24} | " + " | ".join(f"{w:>12}" for w in w_names) + " | Verdict"
     print(header)
     print("-" * len(header))

@@ -40,8 +40,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams, Bar  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams, Bar
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -50,10 +50,10 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr, sharpe_annual
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import (
     STRESS_REGIMES,
     _sharpe,
     _skew_kurt,
@@ -62,17 +62,17 @@ from analysis.walkforward_power import (  # noqa: E402
     pbo_cscv,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import (  # noqa: E402
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_ranking_t21 import trade_overlap
+from scripts.run_tp_cal_replay_t23 import (
     aligned_returns,
     buy_entries,
     load_bars_signals,
 )
-from scripts.run_ranking_t21 import trade_overlap  # noqa: E402
 
-CAP_DAYS = 250            # lección T13 §2 (el engine no tiene tope de tenencia)
-NO_STOP = 1e9             # stop_mult que nunca dispara ("sin barrera de abajo")
-ORACLE_HORIZON = 20       # ruedas de look-ahead (el horizonte de la evidencia viva)
+CAP_DAYS = 250  # lección T13 §2 (el engine no tiene tope de tenencia)
+NO_STOP = 1e9  # stop_mult que nunca dispara ("sin barrera de abajo")
+ORACLE_HORIZON = 20  # ruedas de look-ahead (el horizonte de la evidencia viva)
 
 BASELINE_ARM = "S_2.0"
 # §3.2 — brazos de decisión, en el orden del eje (para la monotonía mecánica y C6).
@@ -105,15 +105,15 @@ RANDOM_KEEP_PROB = 0.463
 RANDOM_KEEP_SEED = 20260813
 
 # §6 — kill-criteria congelados.
-KILL_MIN_DCAGR = 0.0050      # C1: ΔCAGR ≥ +0.50pp
-KILL_DD_TOL = 0.0200         # C2: maxDD(cand) ≤ maxDD(base) + 2.00pp
-KILL_SHARPE_TOL = 0.05       # C4: Sharpe(cand) ≥ Sharpe(base) − 0.05
-KILL_REGIME_TOL = 0.05       # C5: Δ ret medio por trade ≥ −0.05 pts en cada régimen
+KILL_MIN_DCAGR = 0.0050  # C1: ΔCAGR ≥ +0.50pp
+KILL_DD_TOL = 0.0200  # C2: maxDD(cand) ≤ maxDD(base) + 2.00pp
+KILL_SHARPE_TOL = 0.05  # C4: Sharpe(cand) ≥ Sharpe(base) − 0.05
+KILL_REGIME_TOL = 0.05  # C5: Δ ret medio por trade ≥ −0.05 pts en cada régimen
 
 # §5 — sanity del instrumento.
-SANITY_MIN_STOP_SHARE = 0.05   # el stop tiene población en el baseline
-SANITY_MIN_TRADE_DIFF = 0.10   # los brazos muerden
-SANITY_ORACLE_EDGE = 0.0500    # ORACULO ≥ base + 5.00pp de CAGR
+SANITY_MIN_STOP_SHARE = 0.05  # el stop tiene población en el baseline
+SANITY_MIN_TRADE_DIFF = 0.10  # los brazos muerden
+SANITY_ORACLE_EDGE = 0.0500  # ORACULO ≥ base + 5.00pp de CAGR
 
 BOOT_BLOCK = 20
 BOOT_RESAMPLES = 2000
@@ -157,10 +157,11 @@ def random_stop_filter(keep_prob: float, seed: int = RANDOM_KEEP_SEED):
     Determinista: el sorteo se deriva de un digest de ``(seed, fecha, i)``, no del
     ``hash()`` de Python (que está salteado por proceso).
     """
+
     def _f(bars: list[Bar], i: int) -> bool:
         raw = f"{seed}|{bars[i][0]}|{i}".encode()
         u = int.from_bytes(hashlib.blake2b(raw, digest_size=8).digest(), "big")
-        return (u / 2 ** 64) < keep_prob
+        return (u / 2**64) < keep_prob
 
     return _f
 
@@ -247,13 +248,17 @@ def evaluate_sanity(summaries: dict, results: dict, cand_name: str) -> dict:
         "trade_diff_share": diff_share,
         "arms_bite": diff_share >= SANITY_MIN_TRADE_DIFF,
         "oracle_edge": summaries[ORACLE_ARM]["cagr"] - summaries[BASELINE_ARM]["cagr"],
-        "oracle_ok": (summaries[ORACLE_ARM]["cagr"]
-                      >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
-        "anti_oracle_ok": (summaries[ANTI_ORACLE_ARM]["cagr"]
-                           <= summaries[BASELINE_ARM]["cagr"]),
+        "oracle_ok": (summaries[ORACLE_ARM]["cagr"] >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
+        "anti_oracle_ok": (summaries[ANTI_ORACLE_ARM]["cagr"] <= summaries[BASELINE_ARM]["cagr"]),
     }
-    s["all_ok"] = bool(s["accounting"] and s["stop_monotone"] and s["stop_has_population"]
-                       and s["arms_bite"] and s["oracle_ok"] and s["anti_oracle_ok"])
+    s["all_ok"] = bool(
+        s["accounting"]
+        and s["stop_monotone"]
+        and s["stop_has_population"]
+        and s["arms_bite"]
+        and s["oracle_ok"]
+        and s["anti_oracle_ok"]
+    )
     return s
 
 
@@ -264,7 +269,7 @@ def pick_candidate(summaries: dict) -> str:
     """Candidato = mejor Sharpe entre los 6 candidatos (congelado en §6)."""
     return max(
         CANDIDATE_ARMS,
-        key=lambda n: (summaries[n]["sharpe"] if summaries[n]["sharpe"] is not None else -1e9),
+        key=lambda n: summaries[n]["sharpe"] if summaries[n]["sharpe"] is not None else -1e9,
     )
 
 
@@ -276,8 +281,7 @@ def c6_dose_response(summaries: dict, cand_name: str) -> bool:
     """
     side = STRICT_SIDE if cand_name in STRICT_SIDE else LOOSE_SIDE
     base_cagr = summaries[BASELINE_ARM]["cagr"]
-    return any(summaries[n]["cagr"] - base_cagr >= 0.0
-               for n in side if n != cand_name)
+    return any(summaries[n]["cagr"] - base_cagr >= 0.0 for n in side if n != cand_name)
 
 
 def evaluate(summaries: dict, regimes: dict, boot, cand_name: str) -> dict:
@@ -309,8 +313,13 @@ def evaluate(summaries: dict, regimes: dict, boot, cand_name: str) -> dict:
         "sharpe_delta": c_sh - b_sh,
         "p5_delta": cand["p5_trade"] - base["p5_trade"],
         "regime_delta": reg_delta,
-        "c1_cagr": c1, "c2_maxdd": c2, "c3_boot": c3, "c4_sharpe": c4,
-        "c5_regime": c5, "c6_dose": c6, "ship": ship,
+        "c1_cagr": c1,
+        "c2_maxdd": c2,
+        "c3_boot": c3,
+        "c4_sharpe": c4,
+        "c5_regime": c5,
+        "c6_dose": c6,
+        "ship": ship,
     }
 
 
@@ -319,12 +328,8 @@ def evaluate(summaries: dict, regimes: dict, boot, cand_name: str) -> dict:
 
 def build_arms(diagnostics: bool = False) -> dict[str, dict]:
     """{nombre: kwargs de simulate_portfolio propios del brazo}."""
-    arms: dict[str, dict] = {
-        n: {"atr_p": AtrParams(stop_mult=m)} for n, m in DECISION_ARMS.items()
-    }
-    arms[DIAG_ARM] = {
-        "atr_p": AtrParams(stop_mult=DIAG_STOP_MULT, trail_mult=DIAG_TRAIL_MULT)
-    }
+    arms: dict[str, dict] = {n: {"atr_p": AtrParams(stop_mult=m)} for n, m in DECISION_ARMS.items()}
+    arms[DIAG_ARM] = {"atr_p": AtrParams(stop_mult=DIAG_STOP_MULT, trail_mult=DIAG_TRAIL_MULT)}
     base_p = AtrParams(stop_mult=DECISION_ARMS[BASELINE_ARM])
     arms[ORACLE_ARM] = {"atr_p": base_p, "stop_filter": _oracle_stop_filter}
     arms[ANTI_ORACLE_ARM] = {"atr_p": base_p, "stop_filter": _anti_oracle_stop_filter}
@@ -345,12 +350,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
-    p.add_argument("--diagnostics", action="store_true",
-                   help="suma el control post-hoc de supresión aleatoria (no decide nada)")
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce la corrida publicada, cuyo "
-                        f"hallazgo central era ese look-ahead (Tareas 26b/33)")
+    p.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="suma el control post-hoc de supresión aleatoria (no decide nada)",
+    )
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce la corrida publicada, cuyo "
+        f"hallazgo central era ese look-ahead (Tareas 26b/33)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -360,29 +371,36 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     if missing:
-        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}",
-              file=sys.stderr)
+        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}", file=sys.stderr)
 
     entries = buy_entries(bars_by, sigs_by, args.warmup)
     if not entries:
         print("Sin entradas BUY — nada que evaluar.", file=sys.stderr)
         return 1
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        verdict_max_positions=LEGACY_MAX_POSITIONS,
+        fill_mode=args.fill_mode,
+    )
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}\n")
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
         fill_mode=args.fill_mode,
     )
 
     arms = build_arms(diagnostics=args.diagnostics)
     results = {
-        name: simulate_portfolio(entries, bars_by, sigs_by, **kw, **common)
-        for name, kw in arms.items()
+        name: simulate_portfolio(entries, bars_by, sigs_by, **kw, **common) for name, kw in arms.items()
     }
     summaries = {n: summarise(r) for n, r in results.items()}
     regimes = {n: regime_trade_breakdown(results[n]) for n in results}
@@ -391,16 +409,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # C3 — bootstrap pareado candidato vs baseline (el gate anti-overfit).
     rets = aligned_returns(results, [BASELINE_ARM, cand_name])
-    boot = paired_block_bootstrap(rets[BASELINE_ARM], rets[cand_name],
-                                  block=BOOT_BLOCK, n_resamples=args.resamples,
-                                  seed=BOOT_SEED)
+    boot = paired_block_bootstrap(
+        rets[BASELINE_ARM], rets[cand_name], block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED
+    )
 
     sanity = evaluate_sanity(summaries, results, cand_name)
     verdict = evaluate(summaries, regimes, boot, cand_name)
     if not sanity["all_ok"]:
         verdict["ship"] = False
-        verdict["outcome"] = ("CORRIDA INVÁLIDA — falla un sanity del §5; no hay veredicto "
-                              "(el instrumento no está validado).")
+        verdict["outcome"] = (
+            "CORRIDA INVÁLIDA — falla un sanity del §5; no hay veredicto (el instrumento no está validado)."
+        )
 
     # Descriptivos: DSR/PBO sobre los brazos de decisión (NO son gate — T13/T27).
     dec = list(DECISION_ARMS)
@@ -410,24 +429,41 @@ def main(argv: list[str] | None = None) -> int:
     dsr = None
     if T >= 2:
         sk, ku = _skew_kurt(rets_all[cand_name])
-        dsr = deflated_sharpe_ratio([_sharpe(rets_all[c]) for c in dec], n_obs=T,
-                                    selected=_sharpe(rets_all[cand_name]),
-                                    skew=sk, kurtosis=ku)
+        dsr = deflated_sharpe_ratio(
+            [_sharpe(rets_all[c]) for c in dec],
+            n_obs=T,
+            selected=_sharpe(rets_all[cand_name]),
+            skew=sk,
+            kurtosis=ku,
+        )
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_tickers": len(bars_by), "n_entries": len(entries),
-        "max_positions": args.max_positions, "capital": args.capital,
-        "cap_days": args.cap_days, "universe": args.universe,
+        "n_tickers": len(bars_by),
+        "n_entries": len(entries),
+        "max_positions": args.max_positions,
+        "capital": args.capital,
+        "cap_days": args.cap_days,
+        "universe": args.universe,
         "fill_mode": args.fill_mode,
-        "dsr": (dsr.deflated_sharpe if dsr else None), "pbo": (pbo.pbo if pbo else None),
-        "dsr_obs": T, "verdict": verdict, "sanity": sanity,
-        "boot": {"observed": boot.observed, "ci_low": boot.ci_low,
-                 "ci_high": boot.ci_high, "p_value": boot.p_value,
-                 "block": boot.block, "n_resamples": boot.n_resamples},
+        "dsr": (dsr.deflated_sharpe if dsr else None),
+        "pbo": (pbo.pbo if pbo else None),
+        "dsr_obs": T,
+        "verdict": verdict,
+        "sanity": sanity,
+        "boot": {
+            "observed": boot.observed,
+            "ci_low": boot.ci_low,
+            "ci_high": boot.ci_high,
+            "p_value": boot.p_value,
+            "block": boot.block,
+            "n_resamples": boot.n_resamples,
+        },
         "kill_criteria": {
-            "min_dcagr": KILL_MIN_DCAGR, "dd_tol": KILL_DD_TOL,
-            "sharpe_tol": KILL_SHARPE_TOL, "regime_tol": KILL_REGIME_TOL,
+            "min_dcagr": KILL_MIN_DCAGR,
+            "dd_tol": KILL_DD_TOL,
+            "sharpe_tol": KILL_SHARPE_TOL,
+            "regime_tol": KILL_REGIME_TOL,
             "min_stop_share": SANITY_MIN_STOP_SHARE,
             "min_trade_diff": SANITY_MIN_TRADE_DIFF,
             "oracle_edge": SANITY_ORACLE_EDGE,
@@ -435,8 +471,14 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.json:
-        print(json.dumps({"context": ctx, "summaries": summaries, "regimes": regimes},
-                         ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "summaries": summaries, "regimes": regimes},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
     _report(summaries, regimes, ctx, verdict, sanity, boot, dsr, pbo, T)
@@ -446,27 +488,40 @@ def main(argv: list[str] | None = None) -> int:
 def _f(x, w=8, p=2, suf=""):
     if x is None:
         return f"{'—':>{w}}"
-    return f"{x*(100 if suf == '%' else 1):>{w-len(suf)}.{p}f}{suf}"
+    return f"{x * (100 if suf == '%' else 1):>{w - len(suf)}.{p}f}{suf}"
 
 
 def _report(summaries, regimes, ctx, verdict, sanity, boot, dsr, pbo, T):
-    hdr = (f"{'brazo':<20}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'%stop':>8}"
-           f"{'%trail':>8}{'%tp':>7}{'p5trd':>8}{'tomad':>7}")
+    hdr = (
+        f"{'brazo':<20}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'%stop':>8}"
+        f"{'%trail':>8}{'%tp':>7}{'p5trd':>8}{'tomad':>7}"
+    )
     print(hdr)
     print("-" * len(hdr))
-    order = [n for n in
-             list(DECISION_ARMS) + [DIAG_ARM, ORACLE_ARM, ANTI_ORACLE_ARM, RANDOM_KEEP_ARM]
-             if n in summaries]
+    order = [
+        n
+        for n in [*list(DECISION_ARMS), DIAG_ARM, ORACLE_ARM, ANTI_ORACLE_ARM, RANDOM_KEEP_ARM]
+        if n in summaries
+    ]
     for n in order:
         s = summaries[n]
-        mark = ("BASE" if n == BASELINE_ARM else
-                "*cand" if n == verdict["candidate"] else
-                "diag" if n in (DIAG_ARM, RANDOM_KEEP_ARM) else
-                "sanity" if n in (ORACLE_ARM, ANTI_ORACLE_ARM) else "")
-        print(f"{n:<20}{_f(s['cagr'],9,2,'%')}{_f(s['sharpe'],9,2)}{_f(s['max_dd'],9,1,'%')}"
-              f"{_f(s['stop_share'],8,1,'%')}{_f(s['exit_mix'].get('atr_trail',0),8,1,'%')}"
-              f"{_f(s['exit_mix'].get('atr_tp',0),7,0,'%')}{_f(s['p5_trade'],8,1,'%')}"
-              f"{s['n_taken']:>7}  {mark}")
+        mark = (
+            "BASE"
+            if n == BASELINE_ARM
+            else "*cand"
+            if n == verdict["candidate"]
+            else "diag"
+            if n in (DIAG_ARM, RANDOM_KEEP_ARM)
+            else "sanity"
+            if n in (ORACLE_ARM, ANTI_ORACLE_ARM)
+            else ""
+        )
+        print(
+            f"{n:<20}{_f(s['cagr'], 9, 2, '%')}{_f(s['sharpe'], 9, 2)}{_f(s['max_dd'], 9, 1, '%')}"
+            f"{_f(s['stop_share'], 8, 1, '%')}{_f(s['exit_mix'].get('atr_trail', 0), 8, 1, '%')}"
+            f"{_f(s['exit_mix'].get('atr_tp', 0), 7, 0, '%')}{_f(s['p5_trade'], 8, 1, '%')}"
+            f"{s['n_taken']:>7}  {mark}"
+        )
 
     print(f"\nCandidato (mejor Sharpe entre los 6): {verdict['candidate']}")
     print("Por régimen — ret medio por trade (pts), Δ vs baseline:")
@@ -474,41 +529,47 @@ def _report(summaries, regimes, ctx, verdict, sanity, boot, dsr, pbo, T):
         b = regimes[BASELINE_ARM][r]["mean_ret_pts"]
         c = regimes[verdict["candidate"]][r]["mean_ret_pts"]
         n = regimes[verdict["candidate"]][r]["n"]
-        print(f"  {r:<18} base {b:>+6.2f} · cand {c:>+6.2f} · Δ {verdict['regime_delta'][r]:>+6.2f}"
-              f"  (n={n})")
+        print(f"  {r:<18} base {b:>+6.2f} · cand {c:>+6.2f} · Δ {verdict['regime_delta'][r]:>+6.2f}  (n={n})")
 
-    print(f"\nΔCAGR {_f(verdict['dcagr'],0,2,'%')} · ΔmaxDD {_f(verdict['dd_delta'],0,2,'%')} · "
-          f"ΔSharpe {verdict['sharpe_delta']:+.3f} · Δp5 {_f(verdict['p5_delta'],0,2,'%')}")
-    print(f"Bootstrap pareado (bloques {boot.block}d, {boot.n_resamples} resamples): "
-          f"ΔCAGR obs {_f(boot.observed,0,2,'%')} · IC95% "
-          f"[{_f(boot.ci_low,0,2,'%')}, {_f(boot.ci_high,0,2,'%')}] · p={boot.p_value:.3f}")
-    print(f"Descriptivos (NO son gate): DSR = "
-          f"{dsr.deflated_sharpe:.3f}" if dsr else "Descriptivos: DSR = n/d",
-          f"· PBO = {pbo.pbo:.3f}" if pbo else "· PBO = n/d", f"(T={T} obs)")
+    print(
+        f"\nΔCAGR {_f(verdict['dcagr'], 0, 2, '%')} · ΔmaxDD {_f(verdict['dd_delta'], 0, 2, '%')} · "
+        f"ΔSharpe {verdict['sharpe_delta']:+.3f} · Δp5 {_f(verdict['p5_delta'], 0, 2, '%')}"
+    )
+    print(
+        f"Bootstrap pareado (bloques {boot.block}d, {boot.n_resamples} resamples): "
+        f"ΔCAGR obs {_f(boot.observed, 0, 2, '%')} · IC95% "
+        f"[{_f(boot.ci_low, 0, 2, '%')}, {_f(boot.ci_high, 0, 2, '%')}] · p={boot.p_value:.3f}"
+    )
+    print(
+        f"Descriptivos (NO son gate): DSR = {dsr.deflated_sharpe:.3f}" if dsr else "Descriptivos: DSR = n/d",
+        f"· PBO = {pbo.pbo:.3f}" if pbo else "· PBO = n/d",
+        f"(T={T} obs)",
+    )
 
     print("\nSanity del instrumento (§5) — si falla alguno NO hay veredicto:")
-    for k, label in [("accounting", "contabilidad"),
-                     ("stop_monotone", "monotonía mecánica del %atr_stop"),
-                     ("stop_has_population", f"el stop tiene población "
-                                             f"({sanity['stop_share_base']*100:.1f}% ≥ 5%)"),
-                     ("arms_bite", f"los brazos muerden "
-                                   f"({sanity['trade_diff_share']*100:.1f}% ≥ 10%)"),
-                     ("oracle_ok", f"oráculo despega (+{sanity['oracle_edge']*100:.2f}pp ≥ 5pp)"),
-                     ("anti_oracle_ok", "anti-oráculo ≤ baseline")]:
+    for k, label in [
+        ("accounting", "contabilidad"),
+        ("stop_monotone", "monotonía mecánica del %atr_stop"),
+        ("stop_has_population", f"el stop tiene población ({sanity['stop_share_base'] * 100:.1f}% ≥ 5%)"),
+        ("arms_bite", f"los brazos muerden ({sanity['trade_diff_share'] * 100:.1f}% ≥ 10%)"),
+        ("oracle_ok", f"oráculo despega (+{sanity['oracle_edge'] * 100:.2f}pp ≥ 5pp)"),
+        ("anti_oracle_ok", "anti-oráculo ≤ baseline"),
+    ]:
         print(f"  [{'OK  ' if sanity[k] else 'FALLA'}] {label}")
 
     print("\nCriterios (§6):")
-    for k, label in [("c1_cagr", "C1 ΔCAGR ≥ +0.50pp"),
-                     ("c2_maxdd", "C2 maxDD ≤ base + 2.00pp"),
-                     ("c3_boot", "C3 bootstrap pareado IC95% inf > 0"),
-                     ("c4_sharpe", "C4 Sharpe ≥ base − 0.05"),
-                     ("c5_regime", "C5 régimen robusto (Δ ≥ −0.05 en los 4)"),
-                     ("c6_dose", "C6 coherencia dosis-respuesta")]:
+    for k, label in [
+        ("c1_cagr", "C1 ΔCAGR ≥ +0.50pp"),
+        ("c2_maxdd", "C2 maxDD ≤ base + 2.00pp"),
+        ("c3_boot", "C3 bootstrap pareado IC95% inf > 0"),
+        ("c4_sharpe", "C4 Sharpe ≥ base − 0.05"),
+        ("c5_regime", "C5 régimen robusto (Δ ≥ −0.05 en los 4)"),
+        ("c6_dose", "C6 coherencia dosis-respuesta"),
+    ]:
         print(f"  [{'PASA ' if verdict[k] else 'FALLA'}] {label}")
     if verdict.get("outcome"):
         print(f"\n  {verdict['outcome']}")
-    print(f"\n  VEREDICTO: "
-          f"{'SHIP (' + verdict['candidate'] + ')' if verdict['ship'] else 'NO-SHIP'}")
+    print(f"\n  VEREDICTO: {'SHIP (' + verdict['candidate'] + ')' if verdict['ship'] else 'NO-SHIP'}")
 
 
 if __name__ == "__main__":

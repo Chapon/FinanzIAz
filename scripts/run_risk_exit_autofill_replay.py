@@ -52,7 +52,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import (  # noqa: E402
+from analysis.exit_replay import (
     AtrParams,
     SellEvent,
     SimExit,
@@ -60,8 +60,8 @@ from analysis.exit_replay import (  # noqa: E402
     max_drawdown,
     replay_event,
 )
-from scripts.baseline_metrics import load_snapshots  # noqa: E402
-from scripts.run_exit_replay_t61 import (  # noqa: E402
+from scripts.baseline_metrics import load_snapshots
+from scripts.run_exit_replay_t61 import (
     build_sell_events,
     make_bar_loader,
 )
@@ -81,8 +81,8 @@ def is_risk_exit(reason: str | None) -> bool:
 @dataclass
 class RiskExitReplay:
     event: SellEvent
-    expire_sim: SimExit | None          # None ⇒ sin barras / demasiado reciente
-    worst_excursion: float = 0.0        # peor MTM $ debajo del fill del stop
+    expire_sim: SimExit | None  # None ⇒ sin barras / demasiado reciente
+    worst_excursion: float = 0.0  # peor MTM $ debajo del fill del stop
     approval_delay_h: float | None = None
 
 
@@ -123,9 +123,7 @@ def run(db_path: Path, account_id: int, cap_days: int):
             sim = None
             worst = 0.0
             if bars:
-                sim = replay_event(
-                    ev, bars, scheduled_exit_idx=None, cap_days=cap_days, atr_p=_NO_ATR
-                )
+                sim = replay_event(ev, bars, scheduled_exit_idx=None, cap_days=cap_days, atr_p=_NO_ATR)
                 if sim is not None and sim.daily_delta:
                     worst = min((d for _, d in sim.daily_delta), default=0.0)
             replays.append(
@@ -139,12 +137,11 @@ def run(db_path: Path, account_id: int, cap_days: int):
 
         # Agregados.
         modeled = [r for r in replays if r.expire_sim is not None]
-        pnl_auto = sum(r.event.pnl_real for r in replays)              # auto = real
+        pnl_auto = sum(r.event.pnl_real for r in replays)  # auto = real
         pnl_expire = sum(
-            (r.expire_sim.pnl_sim if r.expire_sim is not None else r.event.pnl_real)
-            for r in replays
+            (r.expire_sim.pnl_sim if r.expire_sim is not None else r.event.pnl_real) for r in replays
         )
-        delta = pnl_auto - pnl_expire                                  # >0 ⇒ auto mejor
+        delta = pnl_auto - pnl_expire  # >0 ⇒ auto mejor
         delta_pts = 100.0 * delta / initial_capital if initial_capital > 0 else 0.0
 
         # DD: curva real (auto, el stop salió) vs ajustada por el ride del expire.
@@ -198,7 +195,8 @@ def render(replays: list[RiskExitReplay], agg: dict, ctx: dict) -> str:
         f"cap {ctx['cap_days']}d · capital {ctx['initial_capital']:,.0f}",
         f"Delay máx de aprobación de SELLs reales: "
         f"{ctx['max_approval_delay_h']:.2f}h  (auto-fill ≈ fills reales)"
-        if ctx["max_approval_delay_h"] is not None else "",
+        if ctx["max_approval_delay_h"] is not None
+        else "",
         "",
         f"{'ticker':<8} {'reason':<10} {'pnl_auto$':>11} {'pnl_expire$':>12} "
         f"{'Δ(auto-exp)$':>13} {'peor exc.$':>11} {'delay h':>8}",
@@ -218,10 +216,9 @@ def render(replays: list[RiskExitReplay], agg: dict, ctx: dict) -> str:
         f"TOTAL  pnl_auto={agg['pnl_auto']:+.2f}  "
         f"pnl_expire(worst)={agg['pnl_expire_worstcase']:+.2f}  "
         f"Δ={agg['pnl_delta_auto_minus_expire']:+.2f} ({agg['pnl_delta_pts']:+.2f} pts)",
-        f"DD auto={100*agg['dd_auto']:.2f}%  DD expire(worst)={100*agg['dd_expire_worstcase']:.2f}%  "
+        f"DD auto={100 * agg['dd_auto']:.2f}%  DD expire(worst)={100 * agg['dd_expire_worstcase']:.2f}%  "
         f"ratio={agg['dd_ratio_expire_over_auto']:.2f}",
-        f"Cola de pérdidas evitada (peor excursión total): "
-        f"{agg['worst_adverse_excursion_total']:+.2f}",
+        f"Cola de pérdidas evitada (peor excursión total): {agg['worst_adverse_excursion_total']:+.2f}",
         "",
         f"Kill-criteria — no empeora P/L: {'✅' if agg['no_worse_pnl'] else '—'}  ·  "
         f"reduce cola de DD: {'✅' if agg['reduces_dd_tail'] else '—'}  ·  "
@@ -245,8 +242,7 @@ def main(argv: list[str] | None = None) -> int:
 
     replays, agg, ctx = run(db_path, args.account, args.cap_days)
     if args.json:
-        print(json.dumps({"context": ctx, "aggregate": agg}, ensure_ascii=False,
-                         indent=2, default=str))
+        print(json.dumps({"context": ctx, "aggregate": agg}, ensure_ascii=False, indent=2, default=str))
     else:
         print(render(replays, agg, ctx))
     return 0

@@ -41,37 +41,40 @@ import json
 import statistics
 import sys
 from datetime import date, datetime, timezone
+from itertools import pairwise
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import (
+    AtrParams,
+    max_drawdown,
+)
+from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
     artifact_window,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.exit_replay import max_drawdown  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import (
     STRESS_REGIMES,
     paired_block_bootstrap,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_stop_cal_replay_t26 import (  # noqa: E402
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_ranking_t21 import trade_overlap
+from scripts.run_stop_cal_replay_t26 import (
     NO_STOP,
     RANDOM_KEEP_PROB,
     _oracle_stop_filter,
     random_stop_filter,
     summarise,
 )
-from scripts.run_ranking_t21 import trade_overlap  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import (  # noqa: E402
+from scripts.run_tp_cal_replay_t23 import (
     aligned_returns,
     buy_entries,
     load_bars_signals,
@@ -82,19 +85,19 @@ CAP_DAYS = 250
 # §5 — la rejilla extendida. El orden importa para leer la forma de la curva (C6).
 MULTS: tuple[float, ...] = (1.0, 1.5, 2.0, 2.5, 3.0, 3.5, NO_STOP)
 LIVE_MULT = 2.0
-LOOSE_EDGE = (3.5, NO_STOP)      # C6 — el extremo suelto de la rejilla
+LOOSE_EDGE = (3.5, NO_STOP)  # C6 — el extremo suelto de la rejilla
 
 BASELINE_ARM = "touch_2.0"
 ORACLE_ARM = "ORACULO_STOP"
 RANDOM_KEEP_ARM = "AZAR_MISMA_TASA"
-DIAG_TRAIL_MULT = 2.0            # diagnóstico de desacople (descriptivo, no decide)
+DIAG_TRAIL_MULT = 2.0  # diagnóstico de desacople (descriptivo, no decide)
 
 # §8 — criterios congelados.
-KILL_MIN_DCAGR_OOS = 0.0100      # C1 — ≥ +1.00 pp fuera de muestra
-KILL_DD_TOL = 0.0100             # C2 — maxDD ≤ base + 1.00 pp (in-sample Y OOS)
-KILL_MIN_DSHARPE = 0.05          # C4 — mejora real, no sólo no-degradación
-KILL_REGIME_TOL = 0.05           # C5
-KILL_MIN_FOLD_AGREEMENT = 4      # C7 — mismo múltiplo en ≥4 de 5 folds
+KILL_MIN_DCAGR_OOS = 0.0100  # C1 — ≥ +1.00 pp fuera de muestra
+KILL_DD_TOL = 0.0100  # C2 — maxDD ≤ base + 1.00 pp (in-sample Y OOS)
+KILL_MIN_DSHARPE = 0.05  # C4 — mejora real, no sólo no-degradación
+KILL_REGIME_TOL = 0.05  # C5
+KILL_MIN_FOLD_AGREEMENT = 4  # C7 — mismo múltiplo en ≥4 de 5 folds
 
 # §7 — sanity del instrumento, contra el CONTROL IGUALADO (no contra el baseline).
 SANITY_ORACLE_VS_RANDOM_CAGR = 0.0150
@@ -132,14 +135,15 @@ def build_arms(*, live_gates: bool = True, fill_mode: str = "decision") -> dict[
     for mode in ("touch", "close"):
         for m in MULTS:
             arms[arm_name(m, mode)] = {
-                "atr_p": AtrParams(stop_mult=m), "eval_mode": mode,
-                "fill_mode": fill_mode, "live_gates": live_gates,
+                "atr_p": AtrParams(stop_mult=m),
+                "eval_mode": mode,
+                "fill_mode": fill_mode,
+                "live_gates": live_gates,
             }
     base_p = AtrParams(stop_mult=LIVE_MULT)
     # Los dos de sanity corren en el modo del BASELINE (``touch``), que es la regla
     # viva: se valida el instrumento donde se dicta el veredicto.
-    common = {"atr_p": base_p, "eval_mode": "touch", "fill_mode": fill_mode,
-              "live_gates": live_gates}
+    common = {"atr_p": base_p, "eval_mode": "touch", "fill_mode": fill_mode, "live_gates": live_gates}
     arms[ORACLE_ARM] = {**common, "stop_filter": _oracle_stop_filter}
     arms[RANDOM_KEEP_ARM] = {**common, "stop_filter": random_stop_filter(RANDOM_KEEP_PROB)}
     return arms
@@ -198,34 +202,58 @@ def walk_forward(entries, bars_by, sigs_by, common: dict) -> dict:
         # 1. Selección: el múltiplo con mayor CAGR en el train. Una sola métrica.
         train_cagr: dict[float, float] = {}
         for m in MULTS:
-            r = simulate_portfolio(train, bars_by, sigs_by, atr_p=AtrParams(stop_mult=m),
-                                   eval_mode="touch", fill_mode="decision",
-                                   live_gates=True, **common)
+            r = simulate_portfolio(
+                train,
+                bars_by,
+                sigs_by,
+                atr_p=AtrParams(stop_mult=m),
+                eval_mode="touch",
+                fill_mode="decision",
+                live_gates=True,
+                **common,
+            )
             train_cagr[m] = cagr(r.equity_curve)
         pick = max(MULTS, key=lambda m: train_cagr[m])
         picks.append(pick)
 
         # 2. Se cobra en el test, con la equity que viene del bloque anterior.
         r_proc = simulate_portfolio(
-            test, bars_by, sigs_by, atr_p=AtrParams(stop_mult=pick),
-            eval_mode="touch", fill_mode="decision", live_gates=True,
-            **{**common, "initial_capital": proc_eq})
+            test,
+            bars_by,
+            sigs_by,
+            atr_p=AtrParams(stop_mult=pick),
+            eval_mode="touch",
+            fill_mode="decision",
+            live_gates=True,
+            **{**common, "initial_capital": proc_eq},
+        )
         r_base = simulate_portfolio(
-            test, bars_by, sigs_by, atr_p=AtrParams(stop_mult=LIVE_MULT),
-            eval_mode="touch", fill_mode="decision", live_gates=True,
-            **{**common, "initial_capital": base_eq})
+            test,
+            bars_by,
+            sigs_by,
+            atr_p=AtrParams(stop_mult=LIVE_MULT),
+            eval_mode="touch",
+            fill_mode="decision",
+            live_gates=True,
+            **{**common, "initial_capital": base_eq},
+        )
 
         proc_curve.extend(r_proc.equity_curve)
         base_curve.extend(r_base.equity_curve)
         proc_eq, base_eq = r_proc.final_equity, r_base.final_equity
 
-        per_fold.append({
-            "train_end": train_end, "test": f"{test_lo}..{test_hi}",
-            "n_train": len(train), "n_test": len(test),
-            "pick": arm_name(pick), "train_cagr": {arm_name(m): train_cagr[m] for m in MULTS},
-            "oos_cagr_proc": cagr(r_proc.equity_curve),
-            "oos_cagr_base": cagr(r_base.equity_curve),
-        })
+        per_fold.append(
+            {
+                "train_end": train_end,
+                "test": f"{test_lo}..{test_hi}",
+                "n_train": len(train),
+                "n_test": len(test),
+                "pick": arm_name(pick),
+                "train_cagr": {arm_name(m): train_cagr[m] for m in MULTS},
+                "oos_cagr_proc": cagr(r_proc.equity_curve),
+                "oos_cagr_base": cagr(r_base.equity_curve),
+            }
+        )
 
     counts = {m: picks.count(m) for m in set(picks)}
     m_star = max(counts, key=lambda m: (counts[m], -m))
@@ -234,10 +262,8 @@ def walk_forward(entries, bars_by, sigs_by, common: dict) -> dict:
         "picks": [arm_name(m) for m in picks],
         "m_star": m_star,
         "agreement": counts[m_star],
-        "proc": {"cagr": cagr(proc_curve), "max_dd": max_drawdown(proc_curve),
-                 "final_equity": proc_eq},
-        "base": {"cagr": cagr(base_curve), "max_dd": max_drawdown(base_curve),
-                 "final_equity": base_eq},
+        "proc": {"cagr": cagr(proc_curve), "max_dd": max_drawdown(proc_curve), "final_equity": proc_eq},
+        "base": {"cagr": cagr(base_curve), "max_dd": max_drawdown(base_curve), "final_equity": base_eq},
     }
 
 
@@ -262,7 +288,7 @@ def evaluate_sanity(summaries: dict, results: dict, base_off: PortfolioResult) -
     monotone = True
     for mode in ("touch", "close"):
         shares = [summaries[arm_name(m, mode)]["stop_share"] for m in MULTS]
-        monotone = monotone and all(a >= b - 1e-12 for a, b in zip(shares, shares[1:]))
+        monotone = monotone and all(a >= b - 1e-12 for a, b in pairwise(shares))
 
     checks = {
         "accounting": all(s["accounting_ok"] for s in summaries.values()),
@@ -273,9 +299,15 @@ def evaluate_sanity(summaries: dict, results: dict, base_off: PortfolioResult) -
         "gates_wired": wired,
         "gates_bite_composition": diff >= SANITY_MIN_TRADE_DIFF,
     }
-    return {**checks, "all_ok": all(checks.values()),
-            "d_cagr": d_cagr, "d_dd": d_dd, "trade_diff": diff,
-            "n_gate5_blocked": base.n_gate5_blocked, "n_taken": base.n_taken}
+    return {
+        **checks,
+        "all_ok": all(checks.values()),
+        "d_cagr": d_cagr,
+        "d_dd": d_dd,
+        "trade_diff": diff,
+        "n_gate5_blocked": base.n_gate5_blocked,
+        "n_taken": base.n_taken,
+    }
 
 
 # ── §8 — los ocho criterios ──────────────────────────────────────────────────
@@ -290,12 +322,13 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
     c2_is = cand_s["max_dd"] - base_s["max_dd"]
     c2_oos = wf["proc"]["max_dd"] - wf["base"]["max_dd"]
     c4 = (cand_s["sharpe"] or 0.0) - (base_s["sharpe"] or 0.0)
-    c5 = {k: regimes[cand][k]["mean_ret_pts"] - regimes[BASELINE_ARM][k]["mean_ret_pts"]
-          for k in regimes[BASELINE_ARM]}
+    c5 = {
+        k: regimes[cand][k]["mean_ret_pts"] - regimes[BASELINE_ARM][k]["mean_ret_pts"]
+        for k in regimes[BASELINE_ARM]
+    }
     best_touch = max(MULTS, key=lambda m: summaries[arm_name(m)]["cagr"])
     c8a = summaries_5[cand]["cagr"] - summaries_5[BASELINE_ARM]["cagr"]
-    c8b = (summaries[arm_name(m_star, "close")]["cagr"]
-           - summaries[arm_name(LIVE_MULT, "close")]["cagr"])
+    c8b = summaries[arm_name(m_star, "close")]["cagr"] - summaries[arm_name(LIVE_MULT, "close")]["cagr"]
 
     crit = {
         "C1_dcagr_oos": (c1, c1 >= KILL_MIN_DCAGR_OOS),
@@ -310,24 +343,31 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
     ship = all(ok for _, ok in crit.values())
 
     if ship:
-        outcome = (f"SHIP — se cabla atr_stop_mult = {m_star:.1f} en la cuenta viva 2. "
-                   f"Es un cambio de politica de salida EN VIVO (y afloja tambien el trailing).")
+        outcome = (
+            f"SHIP — se cabla atr_stop_mult = {m_star:.1f} en la cuenta viva 2. "
+            f"Es un cambio de politica de salida EN VIVO (y afloja tambien el trailing)."
+        )
     elif not crit["C6_interior_max"][1]:
-        outcome = (f"NO-SHIP por C6 — el maximo cae en el BORDE suelto ({arm_name(best_touch)}). "
-                   f"Lo que dice la corrida no es 'aflojar a M*' sino 'el stop ATR no aporta', "
-                   f"que es otra afirmacion y NO se cabla desde aca: abre tarea propia.")
+        outcome = (
+            f"NO-SHIP por C6 — el maximo cae en el BORDE suelto ({arm_name(best_touch)}). "
+            f"Lo que dice la corrida no es 'aflojar a M*' sino 'el stop ATR no aporta', "
+            f"que es otra afirmacion y NO se cabla desde aca: abre tarea propia."
+        )
     elif not crit["C7_fold_agreement"][1]:
-        outcome = (f"NO-SHIP por C7 — el multiplo baila entre folds ({wf['picks']}). "
-                   f"No hay parametro que cablear; el lead de la 26b §3 queda cerrado como RUIDO.")
+        outcome = (
+            f"NO-SHIP por C7 — el multiplo baila entre folds ({wf['picks']}). "
+            f"No hay parametro que cablear; el lead de la 26b §3 queda cerrado como RUIDO."
+        )
     elif m_star == LIVE_MULT:
-        outcome = ("NO-SHIP — el walk-forward elige el multiplo VIVO (2.0). Resultado POSITIVO: "
-                   "el multiplo esta bien puesto y el lead de la 26b era in-sample.")
+        outcome = (
+            "NO-SHIP — el walk-forward elige el multiplo VIVO (2.0). Resultado POSITIVO: "
+            "el multiplo esta bien puesto y el lead de la 26b era in-sample."
+        )
     else:
         failed = [k for k, (_, ok) in crit.items() if not ok]
         outcome = f"NO-SHIP — falla {', '.join(failed)}. atr_stop_mult queda en 2.0."
 
-    return {"ship": ship, "outcome": outcome, "candidate": cand,
-            "m_star": m_star, "criteria": crit}
+    return {"ship": ship, "outcome": outcome, "candidate": cand, "m_star": m_star, "criteria": crit}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -342,10 +382,17 @@ def main(argv: list[str] | None = None) -> int:
     # El veredicto se dicta con el fill honesto (§4). El legacy queda accesible por
     # la regresión de la T33 —ningún runner puede no poder elegirlo— pero bajo
     # ``touch``, que es donde se dicta, los dos fill coinciden y el flag no muerde.
-    p.add_argument("--fill-mode", choices=("decision", "resting"), default="decision",
-                   help="'resting' es el legacy look-ahead; bajo touch da idéntico")
-    p.add_argument("--no-walk-forward", action="store_true",
-                   help="saltea el walk-forward (§6) — deja la corrida SIN veredicto")
+    p.add_argument(
+        "--fill-mode",
+        choices=("decision", "resting"),
+        default="decision",
+        help="'resting' es el legacy look-ahead; bajo touch da idéntico",
+    )
+    p.add_argument(
+        "--no-walk-forward",
+        action="store_true",
+        help="saltea el walk-forward (§6) — deja la corrida SIN veredicto",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -355,38 +402,55 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     if missing:
-        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}",
-              file=sys.stderr)
+        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}", file=sys.stderr)
 
     entries = buy_entries(bars_by, sigs_by, args.warmup)
     if not entries:
         print("Sin entradas BUY — nada que evaluar.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             eval_mode="touch", fill_mode=args.fill_mode, live_gates=True)
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        eval_mode="touch",
+        fill_mode=args.fill_mode,
+        live_gates=True,
+    )
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)}")
-    print(f"BASELINE = {BASELINE_ARM} (regla, múltiplo y gates vivos) · "
-          f"el candidato lo elige el walk-forward, NO está hardcodeado\n")
+    print(
+        f"BASELINE = {BASELINE_ARM} (regla, múltiplo y gates vivos) · "
+        f"el candidato lo elige el walk-forward, NO está hardcodeado\n"
+    )
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
     )
 
     arms = build_arms(live_gates=True, fill_mode=args.fill_mode)
-    results = {n: simulate_portfolio(entries, bars_by, sigs_by, **kw, **common)
-               for n, kw in arms.items()}
+    results = {n: simulate_portfolio(entries, bars_by, sigs_by, **kw, **common) for n, kw in arms.items()}
     summaries = {n: summarise(r) for n, r in results.items()}
 
     # Descriptivo: la misma rejilla ``touch`` SIN los gates, para cuantificar el sexto
     # desvío contra lo que midieron los harness publicados. No dicta nada.
     gates_off_res = {
         arm_name(m): simulate_portfolio(
-            entries, bars_by, sigs_by, atr_p=AtrParams(stop_mult=m), eval_mode="touch",
-            fill_mode=args.fill_mode, live_gates=False, **common)
+            entries,
+            bars_by,
+            sigs_by,
+            atr_p=AtrParams(stop_mult=m),
+            eval_mode="touch",
+            fill_mode=args.fill_mode,
+            live_gates=False,
+            **common,
+        )
         for m in MULTS
     }
     gates_off = {n: summarise(r) for n, r in gates_off_res.items()}
@@ -399,121 +463,179 @@ def main(argv: list[str] | None = None) -> int:
         for n in [BASELINE_ARM] + [arm_name(m) for m in MULTS]
     }
 
-    wf = ({"m_star": LIVE_MULT, "agreement": 0, "picks": [], "per_fold": [],
-           "proc": {"cagr": 0.0, "max_dd": 0.0}, "base": {"cagr": 0.0, "max_dd": 0.0}}
-          if args.no_walk_forward else
-          walk_forward(entries, bars_by, sigs_by, common))
+    wf = (
+        {
+            "m_star": LIVE_MULT,
+            "agreement": 0,
+            "picks": [],
+            "per_fold": [],
+            "proc": {"cagr": 0.0, "max_dd": 0.0},
+            "base": {"cagr": 0.0, "max_dd": 0.0},
+        }
+        if args.no_walk_forward
+        else walk_forward(entries, bars_by, sigs_by, common)
+    )
 
     cand = arm_name(wf["m_star"])
     regimes = {n: regime_trade_breakdown(results[n]) for n in (BASELINE_ARM, cand)}
     rets = aligned_returns(results, [BASELINE_ARM, cand])
-    boot = paired_block_bootstrap(rets[BASELINE_ARM], rets[cand], block=BOOT_BLOCK,
-                                  n_resamples=args.resamples, seed=BOOT_SEED)
+    boot = paired_block_bootstrap(
+        rets[BASELINE_ARM], rets[cand], block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED
+    )
 
     # Diagnóstico descriptivo del desacople stop/trailing (§5). No entra en criterios.
-    diag = summarise(simulate_portfolio(
-        entries, bars_by, sigs_by,
-        atr_p=AtrParams(stop_mult=wf["m_star"], trail_mult=DIAG_TRAIL_MULT),
-        eval_mode="touch", fill_mode="decision", live_gates=True, **common))
+    diag = summarise(
+        simulate_portfolio(
+            entries,
+            bars_by,
+            sigs_by,
+            atr_p=AtrParams(stop_mult=wf["m_star"], trail_mult=DIAG_TRAIL_MULT),
+            eval_mode="touch",
+            fill_mode="decision",
+            live_gates=True,
+            **common,
+        )
+    )
 
     sanity = evaluate_sanity(summaries, results, base_off_res)
     verdict = evaluate(summaries, summaries_5, regimes, boot, wf)
     if not sanity["all_ok"]:
         verdict["ship"] = False
-        verdict["outcome"] = ("CORRIDA INVÁLIDA — falla un sanity del §7; no hay veredicto "
-                              "(el instrumento no está validado).")
+        verdict["outcome"] = (
+            "CORRIDA INVÁLIDA — falla un sanity del §7; no hay veredicto (el instrumento no está validado)."
+        )
     if args.no_walk_forward:
         verdict["ship"] = False
         verdict["outcome"] = "SIN VEREDICTO — se salteó el walk-forward (§6), que es C1 y C7."
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_tickers": len(bars_by), "n_entries": len(entries),
-        "max_positions": args.max_positions, "cap_days": args.cap_days,
-        "universe": args.universe, "verdict": verdict, "sanity": sanity,
-        "walk_forward": wf, "diag_stop_only": diag,
-        "boot": {"observed": boot.observed, "ci_low": boot.ci_low,
-                 "ci_high": boot.ci_high, "p_value": boot.p_value},
+        "n_tickers": len(bars_by),
+        "n_entries": len(entries),
+        "max_positions": args.max_positions,
+        "cap_days": args.cap_days,
+        "universe": args.universe,
+        "verdict": verdict,
+        "sanity": sanity,
+        "walk_forward": wf,
+        "diag_stop_only": diag,
+        "boot": {
+            "observed": boot.observed,
+            "ci_low": boot.ci_low,
+            "ci_high": boot.ci_high,
+            "p_value": boot.p_value,
+        },
     }
     if args.json:
-        print(json.dumps({"context": ctx, "summaries": summaries,
-                          "summaries_5": summaries_5, "gates_off": gates_off,
-                          "regimes": regimes}, ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {
+                    "context": ctx,
+                    "summaries": summaries,
+                    "summaries_5": summaries_5,
+                    "gates_off": gates_off,
+                    "regimes": regimes,
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
-    _report(summaries, summaries_5, gates_off, regimes, verdict, sanity, boot, wf, diag,
-            results)
+    _report(summaries, summaries_5, gates_off, regimes, verdict, sanity, boot, wf, diag, results)
     return 0
 
 
 def _f(x, w=8, p=2, suf=""):
     if x is None:
         return f"{'—':>{w}}"
-    return f"{x*(100 if suf == '%' else 1):>{w-len(suf)}.{p}f}{suf}"
+    return f"{x * (100 if suf == '%' else 1):>{w - len(suf)}.{p}f}{suf}"
 
 
-def _report(summaries, summaries_5, gates_off, regimes, verdict, sanity, boot, wf,
-            diag, results):
+def _report(summaries, summaries_5, gates_off, regimes, verdict, sanity, boot, wf, diag, results):
     print("── Rejilla `touch` (regla viva) con los gates de re-entrada MODELADOS ──")
-    hdr = (f"{'brazo':<14}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'%stop':>8}"
-           f"{'%trail':>8}{'%tp':>7}{'tomad':>8}{'G5 bloq':>9}")
+    hdr = (
+        f"{'brazo':<14}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'%stop':>8}"
+        f"{'%trail':>8}{'%tp':>7}{'tomad':>8}{'G5 bloq':>9}"
+    )
     print(hdr)
     for m in MULTS:
         n = arm_name(m)
         s = summaries[n]
         mark = "  <-- BASELINE (vivo)" if m == LIVE_MULT else ""
-        print(f"{n:<14}{_f(s['cagr'],9,2,'%')}{_f(s['sharpe'],9)}{_f(s['max_dd'],9,1,'%')}"
-              f"{_f(s['stop_share'],8,1,'%')}{_f(s['exit_mix'].get('atr_trail',0),8,1,'%')}"
-              f"{_f(s['exit_mix'].get('atr_tp',0),7,0,'%')}{s['n_taken']:>8}"
-              f"{results[n].n_gate5_blocked:>9}{mark}")
+        print(
+            f"{n:<14}{_f(s['cagr'], 9, 2, '%')}{_f(s['sharpe'], 9)}{_f(s['max_dd'], 9, 1, '%')}"
+            f"{_f(s['stop_share'], 8, 1, '%')}{_f(s['exit_mix'].get('atr_trail', 0), 8, 1, '%')}"
+            f"{_f(s['exit_mix'].get('atr_tp', 0), 7, 0, '%')}{s['n_taken']:>8}"
+            f"{results[n].n_gate5_blocked:>9}{mark}"
+        )
 
     print("\n── La misma rejilla SIN los gates (lo que miden los harness publicados) ──")
     print(f"{'brazo':<14}{'CAGR c/gates':>14}{'CAGR s/gates':>14}{'delta':>10}")
     for m in MULTS:
         n = arm_name(m)
         d = summaries[n]["cagr"] - gates_off[n]["cagr"]
-        print(f"{n:<14}{_f(summaries[n]['cagr'],14,2,'%')}{_f(gates_off[n]['cagr'],14,2,'%')}"
-              f"{_f(d,10,2,'%')}")
+        print(
+            f"{n:<14}{_f(summaries[n]['cagr'], 14, 2, '%')}{_f(gates_off[n]['cagr'], 14, 2, '%')}"
+            f"{_f(d, 10, 2, '%')}"
+        )
 
     print("\n── Rejilla `close` (cota INFERIOR de disparo — C8b) ──")
     print(f"{'brazo':<14}{'CAGR':>9}{'maxDD':>9}")
     for m in MULTS:
         n = arm_name(m, "close")
-        print(f"{n:<14}{_f(summaries[n]['cagr'],9,2,'%')}{_f(summaries[n]['max_dd'],9,1,'%')}")
+        print(f"{n:<14}{_f(summaries[n]['cagr'], 9, 2, '%')}{_f(summaries[n]['max_dd'], 9, 1, '%')}")
 
     if wf["per_fold"]:
         print("\n── §6 Walk-forward de la selección ──")
-        print(f"{'fold':<24}{'n_train':>9}{'n_test':>8}{'elige':>12}"
-              f"{'OOS proc':>10}{'OOS base':>10}")
+        print(f"{'fold':<24}{'n_train':>9}{'n_test':>8}{'elige':>12}{'OOS proc':>10}{'OOS base':>10}")
         for f in wf["per_fold"]:
-            print(f"{f['test']:<24}{f['n_train']:>9}{f['n_test']:>8}{f['pick']:>12}"
-                  f"{_f(f['oos_cagr_proc'],10,2,'%')}{_f(f['oos_cagr_base'],10,2,'%')}")
-        print(f"\nSelecciones: {wf['picks']}  ⇒  M* = {arm_name(wf['m_star'])} "
-              f"({wf['agreement']}/{len(FOLDS)} folds)")
-        print(f"Cadena OOS — procedimiento: CAGR {_f(wf['proc']['cagr'],0,2,'%')} · "
-              f"maxDD {_f(wf['proc']['max_dd'],0,1,'%')}   |   "
-              f"baseline fijo 2.0: CAGR {_f(wf['base']['cagr'],0,2,'%')} · "
-              f"maxDD {_f(wf['base']['max_dd'],0,1,'%')}")
+            print(
+                f"{f['test']:<24}{f['n_train']:>9}{f['n_test']:>8}{f['pick']:>12}"
+                f"{_f(f['oos_cagr_proc'], 10, 2, '%')}{_f(f['oos_cagr_base'], 10, 2, '%')}"
+            )
+        print(
+            f"\nSelecciones: {wf['picks']}  ⇒  M* = {arm_name(wf['m_star'])} "
+            f"({wf['agreement']}/{len(FOLDS)} folds)"
+        )
+        print(
+            f"Cadena OOS — procedimiento: CAGR {_f(wf['proc']['cagr'], 0, 2, '%')} · "
+            f"maxDD {_f(wf['proc']['max_dd'], 0, 1, '%')}   |   "
+            f"baseline fijo 2.0: CAGR {_f(wf['base']['cagr'], 0, 2, '%')} · "
+            f"maxDD {_f(wf['base']['max_dd'], 0, 1, '%')}"
+        )
 
     print("\n── §7 Sanity del instrumento ──")
-    for k in ("accounting", "oracle_vs_random_cagr", "oracle_vs_random_dd",
-              "off_arm_fires_nothing", "stop_share_monotone", "gates_wired",
-              "gates_bite_composition"):
+    for k in (
+        "accounting",
+        "oracle_vs_random_cagr",
+        "oracle_vs_random_dd",
+        "off_arm_fires_nothing",
+        "stop_share_monotone",
+        "gates_wired",
+        "gates_bite_composition",
+    ):
         print(f"  {'OK ' if sanity[k] else 'FALLA'}  {k}")
-    print(f"  (oráculo vs azar: ΔCAGR {_f(sanity['d_cagr'],0,2,'%')} · "
-          f"ΔmaxDD {_f(sanity['d_dd'],0,2,'%')} · Gate 5 bloqueó "
-          f"{sanity['n_gate5_blocked']} candidatos contra {sanity['n_taken']} trades "
-          f"tomados · trades que difieren vs sin gates: "
-          f"{_f(sanity['trade_diff'],0,1,'%')})")
+    print(
+        f"  (oráculo vs azar: ΔCAGR {_f(sanity['d_cagr'], 0, 2, '%')} · "
+        f"ΔmaxDD {_f(sanity['d_dd'], 0, 2, '%')} · Gate 5 bloqueó "
+        f"{sanity['n_gate5_blocked']} candidatos contra {sanity['n_taken']} trades "
+        f"tomados · trades que difieren vs sin gates: "
+        f"{_f(sanity['trade_diff'], 0, 1, '%')})"
+    )
 
     print("\n── §8 Criterios (AND de los ocho) ──")
     for k, (val, ok) in verdict["criteria"].items():
         print(f"  {'PASA ' if ok else 'FALLA'}  {k:<20} {val}")
-    print(f"\nDiagnóstico descriptivo (desacople stop/trailing, NO decide): "
-          f"stop {verdict['m_star']:.1f} con trail {DIAG_TRAIL_MULT} ⇒ "
-          f"CAGR {_f(diag['cagr'],0,2,'%')}")
-    print(f"\nbootstrap pareado: IC95% [{_f(boot.ci_low,0,4)}, {_f(boot.ci_high,0,4)}] "
-          f"p={boot.p_value:.3f}")
+    print(
+        f"\nDiagnóstico descriptivo (desacople stop/trailing, NO decide): "
+        f"stop {verdict['m_star']:.1f} con trail {DIAG_TRAIL_MULT} ⇒ "
+        f"CAGR {_f(diag['cagr'], 0, 2, '%')}"
+    )
+    print(
+        f"\nbootstrap pareado: IC95% [{_f(boot.ci_low, 0, 4)}, {_f(boot.ci_high, 0, 4)}] p={boot.p_value:.3f}"
+    )
     print(f"\nVEREDICTO: {verdict['outcome']}")
 
 

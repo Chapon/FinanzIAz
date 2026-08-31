@@ -35,10 +35,12 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams, Bar  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.exit_replay import AtrParams, Bar
+from analysis.walkforward_power import (
     A1_VARIANTS,
     EntrySample,
+    _sharpe,
+    _skew_kurt,
     cpcv_effect_distribution,
     cross_sectional_ic,
     deflated_sharpe_ratio,
@@ -50,8 +52,6 @@ from analysis.walkforward_power import (  # noqa: E402
     replay_stop_vs_nostop,
     sample_universe,
     stop_stats_by_regime,
-    _sharpe,
-    _skew_kurt,
 )
 
 DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
@@ -87,8 +87,7 @@ def df_to_bars(df) -> list[Bar]:
     bars: list[Bar] = []
     for ts, row in df.iterrows():
         try:
-            o, h, lo, c = (float(row["Open"]), float(row["High"]),
-                           float(row["Low"]), float(row["Close"]))
+            o, h, lo, c = (float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"]))
         except (KeyError, TypeError, ValueError):
             continue
         if not all(math.isfinite(v) for v in (o, h, lo, c)) or c <= 0:
@@ -128,9 +127,8 @@ def load_universe_bars(universe_file: Path, period: str, batch_size: int):
 
 
 def run_a1(entries: list[EntrySample], data: dict[str, list[Bar]], cap_days: int):
-    bar_loader = lambda t: data.get(t)  # noqa: E731
-    outcomes = replay_stop_vs_nostop(entries, bar_loader, cap_days=cap_days,
-                                     atr_p=AtrParams())
+    bar_loader = lambda t: data.get(t)
+    outcomes = replay_stop_vs_nostop(entries, bar_loader, cap_days=cap_days, atr_p=AtrParams())
     stats = stop_stats_by_regime(outcomes)
     return outcomes, stats
 
@@ -138,17 +136,21 @@ def run_a1(entries: list[EntrySample], data: dict[str, list[Bar]], cap_days: int
 def run_a1_robustness(entries, data, outcomes, cap_days: int):
     """Ampliación E4: PBO/DSR sobre las variantes de stop-mult + distribución del
     Δ por CPCV (por régimen). Devuelve (dict serializable, texto)."""
-    bar_loader = lambda t: data.get(t)  # noqa: E731
-    used, cols = per_entry_returns_by_config(entries, bar_loader, A1_VARIANTS,
-                                             cap_days=cap_days)
+    bar_loader = lambda t: data.get(t)
+    used, cols = per_entry_returns_by_config(entries, bar_loader, A1_VARIANTS, cap_days=cap_days)
     trial_sharpes = {name: _sharpe(col) for name, col in cols.items()}
     pbo = pbo_cscv(cols, n_splits=10)
     best_name = max(trial_sharpes, key=lambda k: trial_sharpes[k]) if trial_sharpes else None
     dsr = None
     if best_name is not None:
         sk, ku = _skew_kurt(cols[best_name])
-        dsr = deflated_sharpe_ratio(list(trial_sharpes.values()), n_obs=len(used),
-                                    selected=trial_sharpes[best_name], skew=sk, kurtosis=ku)
+        dsr = deflated_sharpe_ratio(
+            list(trial_sharpes.values()),
+            n_obs=len(used),
+            selected=trial_sharpes[best_name],
+            skew=sk,
+            kurtosis=ku,
+        )
 
     regimes = ["all", "bull_normal", "stress_2018q4", "stress_covid_2020", "stress_bear_2022"]
     cpcv = {r: cpcv_effect_distribution(outcomes, regime=r) for r in regimes}
@@ -160,8 +162,7 @@ def run_a1_robustness(entries, data, outcomes, cap_days: int):
         "pbo": vars(pbo),
         "dsr": (vars(dsr) if dsr is not None else None),
         "cpcv_delta_by_regime": {
-            r: {k: v for k, v in vars(res).items() if k != "per_path_delta"}
-            for r, res in cpcv.items()
+            r: {k: v for k, v in vars(res).items() if k != "per_path_delta"} for r, res in cpcv.items()
         },
     }
     return out, render_a1_robustness(out)
@@ -176,11 +177,15 @@ def render_a1_robustness(rob: dict) -> str:
     ]
     pbo = rob["pbo"]
     if pbo.get("pbo") == pbo.get("pbo"):  # no-NaN
-        interp = ("selección puro ruido" if pbo["pbo"] >= 0.4
-                  else "el ganador aguanta OOS" if pbo["pbo"] <= 0.1 else "señal débil")
+        interp = (
+            "selección puro ruido"
+            if pbo["pbo"] >= 0.4
+            else "el ganador aguanta OOS"
+            if pbo["pbo"] <= 0.1
+            else "señal débil"
+        )
         lines.append(
-            f"PBO (CSCV S={pbo['n_splits']}, {pbo['n_combos']} combos): "
-            f"{pbo['pbo']:.2f}  → {interp}"
+            f"PBO (CSCV S={pbo['n_splits']}, {pbo['n_combos']} combos): {pbo['pbo']:.2f}  → {interp}"
         )
     d = rob.get("dsr")
     if d is not None:
@@ -189,11 +194,14 @@ def render_a1_robustness(rob: dict) -> str:
             f"{d['expected_max_sharpe']:.4f}  DSR=P(SR>0)={d['deflated_sharpe']:.3f}  "
             f"(PSR sin deflactar={d['prob_positive_raw']:.3f})"
         )
-    lines += ["", "CPCV Δ (no_stops − baseline_2.0) por régimen:",
-              f"{'régimen':<20} {'paths':>6} {'Δ mean':>9} {'Δ std':>9} {'%Δ>0':>7}"]
+    lines += [
+        "",
+        "CPCV Δ (no_stops − baseline_2.0) por régimen:",
+        f"{'régimen':<20} {'paths':>6} {'Δ mean':>9} {'Δ std':>9} {'%Δ>0':>7}",
+    ]
 
     def _p(x, w=9):
-        return f"{'—':>{w}}" if x is None else f"{100*x:>{w-1}.2f}%"
+        return f"{'—':>{w}}" if x is None else f"{100 * x:>{w - 1}.2f}%"
 
     for reg, res in rob["cpcv_delta_by_regime"].items():
         if res["n_paths"] == 0:
@@ -201,7 +209,7 @@ def render_a1_robustness(rob: dict) -> str:
         fp = res["frac_positive"]
         lines.append(
             f"{reg:<20} {res['n_paths']:>6} {_p(res['mean_delta'])} {_p(res['std_delta'])} "
-            f"{('—' if fp is None else f'{100*fp:.0f}%'):>7}"
+            f"{('—' if fp is None else f'{100 * fp:.0f}%'):>7}"
         )
     return "\n".join(lines)
 
@@ -219,7 +227,7 @@ def render_a1(stats: dict) -> str:
     def _p(x, w=9, pct=True):
         if x is None:
             return f"{'—':>{w}}"
-        return f"{100*x:>{w-1}.2f}%" if pct else f"{x:>{w}.3f}"
+        return f"{100 * x:>{w - 1}.2f}%" if pct else f"{x:>{w}.3f}"
 
     for reg in order:
         s = stats.get(reg)
@@ -278,8 +286,10 @@ def compute_scores(
     todo = [e for e in entries if f"{e.ticker}|{e.entry_date}" not in cache]
     if limit is not None:
         todo = todo[:limit]
-    print(f"  scores: {len(entries)-len(todo)} en cache, {len(todo)} por computar "
-          f"(analyze() PIT, entrena XGBoost por llamada — lento)")
+    print(
+        f"  scores: {len(entries) - len(todo)} en cache, {len(todo)} por computar "
+        f"(analyze() PIT, entrena XGBoost por llamada — lento)"
+    )
 
     computed = 0
     t0 = time.time()
@@ -294,7 +304,7 @@ def compute_scores(
                 if res is not None and res.ml_probability is not None:
                     p = float(res.ml_probability)
                     score = p if p == p else None  # descarta NaN
-            except Exception:  # noqa: BLE001 — un ticker que falla no corta el run
+            except Exception:
                 score = None
         cache[key] = score
         computed += 1
@@ -328,12 +338,13 @@ def render_t3(entries: list[EntrySample]) -> str:
             continue
         t_s = f"{ic.t_stat:+.2f}" if ic.t_stat is not None else "—"
         lines.append(
-            f"IC {h:5}: fechas={ic.n_dates:>4}  mean_IC={ic.mean_ic:+.4f}  "
-            f"std={ic.std_ic:.4f}  t={t_s}"
+            f"IC {h:5}: fechas={ic.n_dates:>4}  mean_IC={ic.mean_ic:+.4f}  std={ic.std_ic:.4f}  t={t_s}"
         )
     lines.append("")
-    lines.append("N para 80% potencia (Fisher-z): "
-                 + "  ".join(f"ρ={r}→{int(n_for_correlation(r))}" for r in (0.05, 0.10, 0.15, 0.20)))
+    lines.append(
+        "N para 80% potencia (Fisher-z): "
+        + "  ".join(f"ρ={r}→{int(n_for_correlation(r))}" for r in (0.05, 0.10, 0.15, 0.20))
+    )
     return "\n".join(lines)
 
 
@@ -344,15 +355,24 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Walk-forward power harness (E4)")
     p.add_argument("--universe", default=DEFAULT_UNIVERSE)
     p.add_argument("--period", default="10y")
-    p.add_argument("--spacing", type=int, default=20,
-                   help="días hábiles entre entradas (≥ fwd_long=20 para no-solapar)")
-    p.add_argument("--warmup", type=int, default=250,
-                   help="barras iniciales antes de la primera entrada (≥200 para analyze())")
+    p.add_argument(
+        "--spacing", type=int, default=20, help="días hábiles entre entradas (≥ fwd_long=20 para no-solapar)"
+    )
+    p.add_argument(
+        "--warmup",
+        type=int,
+        default=250,
+        help="barras iniciales antes de la primera entrada (≥200 para analyze())",
+    )
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--only", choices=["a1", "t3", "both"], default="both")
     p.add_argument("--batch-size", type=int, default=20)
-    p.add_argument("--score-limit", type=int, default=None,
-                   help="tope de scores nuevos a computar en esta corrida (para runs parciales)")
+    p.add_argument(
+        "--score-limit",
+        type=int,
+        default=None,
+        help="tope de scores nuevos a computar en esta corrida (para runs parciales)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -370,8 +390,10 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = sample_universe(data, spacing=args.spacing, warmup=args.warmup)
     n_dates = len({e.entry_date for e in entries})
-    print(f"Grilla PIT: {len(entries)} entradas · {n_dates} fechas distintas · "
-          f"spacing={args.spacing} · warmup={args.warmup}")
+    print(
+        f"Grilla PIT: {len(entries)} entradas · {n_dates} fechas distintas · "
+        f"spacing={args.spacing} · warmup={args.warmup}"
+    )
     reg_counts: dict[str, int] = {}
     for e in entries:
         reg_counts[e.regime] = reg_counts.get(e.regime, 0) + 1
@@ -410,8 +432,14 @@ def main(argv: list[str] | None = None) -> int:
         text_blocks.append(block)
         out["t3"] = {
             "pooled": {h: vars(pooled_correlation(entries, h)) for h in ("fwd5", "fwd20")},
-            "ic": {h: {k: v for k, v in vars(cross_sectional_ic(entries, horizon=h)).items()
-                       if k != "per_date_ic"} for h in ("fwd5", "fwd20")},
+            "ic": {
+                h: {
+                    k: v
+                    for k, v in vars(cross_sectional_ic(entries, horizon=h)).items()
+                    if k != "per_date_ic"
+                }
+                for h in ("fwd5", "fwd20")
+            },
             "scored_entries": sum(1 for e in entries if e.score is not None),
         }
 
@@ -419,8 +447,7 @@ def main(argv: list[str] | None = None) -> int:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = OUT_ROOT / ts
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "summary.json").write_text(
-        json.dumps(out, indent=2, default=str), encoding="utf-8")
+    (run_dir / "summary.json").write_text(json.dumps(out, indent=2, default=str), encoding="utf-8")
     (run_dir / "summary.txt").write_text("\n\n".join(text_blocks), encoding="utf-8")
     print(f"\nResumen en {run_dir}/summary.{{json,txt}}")
 

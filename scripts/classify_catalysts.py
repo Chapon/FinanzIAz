@@ -36,9 +36,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config.logging_config import get_logger  # noqa: E402
-from data.catalyst_classifier import classify  # noqa: E402
-from database.models import NewsEvent, session_scope, utcnow_naive  # noqa: E402
+from config.logging_config import get_logger
+from data.catalyst_classifier import classify
+from database.models import NewsEvent, session_scope, utcnow_naive
 
 log = get_logger(__name__)
 
@@ -250,7 +250,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Model override. Defaults: claude-haiku-4-5-20251001 (llm/hybrid) or llama3.1 (ollama).",
     )
     p.add_argument("--dry-run", action="store_true", help="Report distribution without writing.")
-    p.add_argument("--show", action="store_true", help="Print each row as it's classified (eyeball the backend live).")
+    p.add_argument(
+        "--show", action="store_true", help="Print each row as it's classified (eyeball the backend live)."
+    )
     p.add_argument("--sample", type=int, default=0, help="Dump N classified rows for manual QA and exit.")
     p.add_argument("--seed", type=int, default=None, help="Seed for --sample shuffling.")
     return p.parse_args(argv)

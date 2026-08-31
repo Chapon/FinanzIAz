@@ -35,8 +35,8 @@ _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 sys.path.insert(0, str(_ROOT))
 
-from analysis.harness_config import LIVE_UNIVERSE_FILE  # noqa: E402
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
+from analysis.harness_config import LIVE_UNIVERSE_FILE
+from scripts.precompute_pit_signals import parse_universe_file
 
 OUT_DIR = _ROOT / "data" / "pit_risk"
 SCHEMA_VERSION = 1
@@ -55,20 +55,29 @@ def load_existing(path: Path) -> dict:
         return {}
 
 
-def save(path: Path, ticker: str, period: str, warmup: int,
-         rows: dict, n_bars: int, *, done: bool) -> None:
+def save(path: Path, ticker: str, period: str, warmup: int, rows: dict, n_bars: int, *, done: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "schema_version": SCHEMA_VERSION,
-        "ticker": ticker, "period": period, "warmup": warmup,
-        "n_bars": n_bars, "complete": done, "risk": rows,
-    }, ensure_ascii=False), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "ticker": ticker,
+                "period": period,
+                "warmup": warmup,
+                "n_bars": n_bars,
+                "complete": done,
+                "risk": rows,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int) -> tuple[int, int]:
     """(computadas ahora, total en el artefacto). No lanza: loguea y sigue."""
-    from data import parquet_cache
     from analysis.ml_signals import detect_market_regime
+    from data import parquet_cache
 
     path = out_path(ticker, period, warmup)
     prev = load_existing(path)
@@ -131,9 +140,11 @@ def main(argv: list[str] | None = None) -> int:
         total_new += new
         if k % 10 == 0:
             el = time.perf_counter() - t0
-            print(f"  [{k}/{len(tickers)}] {el/60:.1f} min · faltan ~"
-                  f"{(el/k)*(len(tickers)-k)/60:.1f} min")
-    print(f"Listo: {total_new} evaluaciones nuevas en {(time.perf_counter()-t0)/60:.1f} min")
+            print(
+                f"  [{k}/{len(tickers)}] {el / 60:.1f} min · faltan ~"
+                f"{(el / k) * (len(tickers) - k) / 60:.1f} min"
+            )
+    print(f"Listo: {total_new} evaluaciones nuevas en {(time.perf_counter() - t0) / 60:.1f} min")
     return 0
 
 

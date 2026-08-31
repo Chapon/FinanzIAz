@@ -28,6 +28,7 @@ Uso (Windows)
 
 Requiere ``lxml`` instalado (pandas lo necesita para ``read_html``).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,8 +60,12 @@ def validate_against_yahoo(symbols: list[str]) -> tuple[list[str], list[str]]:
     for start in range(0, len(symbols), BATCH_SIZE):
         batch = symbols[start : start + BATCH_SIZE]
         data = yf.download(
-            batch, period="5d", progress=False, auto_adjust=False,
-            group_by="ticker", threads=True,
+            batch,
+            period="5d",
+            progress=False,
+            auto_adjust=False,
+            group_by="ticker",
+            threads=True,
         )
         for symbol in batch:
             try:
@@ -74,7 +79,7 @@ def validate_against_yahoo(symbols: list[str]) -> tuple[list[str], list[str]]:
 
 def render_block(symbols: list[str]) -> str:
     """Formatea la tupla literal, 10 símbolos por línea (igual que a mano)."""
-    lines = ['_SP500_FALLBACK: tuple[str, ...] = (']
+    lines = ["_SP500_FALLBACK: tuple[str, ...] = ("]
     for start in range(0, len(symbols), PER_LINE):
         chunk = symbols[start : start + PER_LINE]
         lines.append("    " + " ".join(f'"{s}",' for s in chunk))
@@ -84,9 +89,7 @@ def render_block(symbols: list[str]) -> str:
 
 def replace_block(source: str, block: str) -> str:
     """Reemplaza lo que hay entre los marcadores. Falla ruidosamente si no están."""
-    pattern = re.compile(
-        re.escape(START_MARKER) + r".*?" + re.escape(END_MARKER), re.DOTALL
-    )
+    pattern = re.compile(re.escape(START_MARKER) + r".*?" + re.escape(END_MARKER), re.DOTALL)
     if not pattern.search(source):
         raise SystemExit(f"No encontré los marcadores en {TARGET}")
     return pattern.sub(f"{START_MARKER}\n{block}\n{END_MARKER}", source)

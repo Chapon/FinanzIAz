@@ -13,6 +13,7 @@ Uso:
     python scripts/run_exposure_cap_replay.py \
         --db backups/finanzias_2026-07-01_00-59-13_daily.db --account 1
 """
+
 from __future__ import annotations
 
 import argparse
@@ -107,9 +108,7 @@ def _load_orders(db: str, account: int) -> list[dict]:
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
     init_cap = float(
-        con.execute(
-            "SELECT initial_capital FROM paper_accounts WHERE id=?", (account,)
-        ).fetchone()[0]
+        con.execute("SELECT initial_capital FROM paper_accounts WHERE id=?", (account,)).fetchone()[0]
     )
     rows = con.execute(
         "SELECT ticker, side, fill_price, fill_shares, filled_at FROM paper_orders "
@@ -136,9 +135,11 @@ def main() -> None:
     print(f"account={args.account}  initial_capital=${init_cap:,.0f}  n_filled={len(orders)}\n")
 
     base = summarize(replay_exposure_cap(orders, 0.0, init_cap))
-    print(f"P/L realizado actual (sin cap): ${base['total_actual']:,.0f}  "
-          f"(peor {WORST_NAME}: ${base['worst_actual']:,.0f} · "
-          f"big-4 {'+'.join(BIG_WINNERS)}: ${base['big_actual']:,.0f})\n")
+    print(
+        f"P/L realizado actual (sin cap): ${base['total_actual']:,.0f}  "
+        f"(peor {WORST_NAME}: ${base['worst_actual']:,.0f} · "
+        f"big-4 {'+'.join(BIG_WINNERS)}: ${base['big_actual']:,.0f})\n"
+    )
 
     hdr = f"{'cap':>6} {'ΔP/L':>10} {'total':>10} {'worst_red':>10} {'big_ret':>9}"
     print(hdr)
@@ -146,9 +147,11 @@ def main() -> None:
     for cap in caps:
         s = summarize(replay_exposure_cap(orders, cap, init_cap))
         d_pts = s["delta_total"] / init_cap * 100
-        print(f"{cap:>6.0%} ${s['delta_total']:>+8,.0f} ${s['total_capped']:>+8,.0f} "
-              f"{s['worst_reduction']:>9.0%} {s['big_retained']:>8.0%}  "
-              f"(Δ={d_pts:+.2f} pts)")
+        print(
+            f"{cap:>6.0%} ${s['delta_total']:>+8,.0f} ${s['total_capped']:>+8,.0f} "
+            f"{s['worst_reduction']:>9.0%} {s['big_retained']:>8.0%}  "
+            f"(Δ={d_pts:+.2f} pts)"
+        )
 
 
 if __name__ == "__main__":

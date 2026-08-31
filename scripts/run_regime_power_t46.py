@@ -43,18 +43,18 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries  # noqa: E402
-from analysis.exit_replay import AtrParams  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries
+from analysis.exit_replay import AtrParams
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.rank_policy import neutral_rank  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.rank_policy import neutral_rank
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import (
     BULL_NORMAL,
     STRESS_REGIMES,
     achieved_power_mean,
@@ -65,8 +65,8 @@ from analysis.walkforward_power import (  # noqa: E402
     regime_window_returns,
     sign_stability,
 )
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_rank_neutral_t39 import aligned_daily  # noqa: E402
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_rank_neutral_t39 import aligned_daily
 
 EVAL_MODE = "touch"
 LIVE_GATES = True
@@ -75,7 +75,7 @@ BOOT_SEED = 12345
 BOOT_BLOCK = 20
 
 # Los umbrales de régimen que la serie usó, para contrastarlos contra lo detectable.
-PUBLISHED_TOLERANCE_PTS = 0.05     # C5 de 26b/34: Δ ≥ −0.05 pts por trade
+PUBLISHED_TOLERANCE_PTS = 0.05  # C5 de 26b/34: Δ ≥ −0.05 pts por trade
 # Los rechazos que ese criterio produjo (pts por trade), para re-leerlos.
 PUBLISHED_REJECTIONS = {
     "26b · close_2.0 en 2018Q4": -0.15,
@@ -92,10 +92,17 @@ STRESS_POOLED = "stress_POOLED"
 
 def _common(max_positions: int, cap_days: int, capital: float) -> dict:
     return dict(
-        max_positions=max_positions, initial_capital=capital, cap_days=cap_days,
-        atr_p=AtrParams(), so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
-        eval_mode=EVAL_MODE, fill_mode=HARNESS_FILL_MODE, live_gates=LIVE_GATES,
+        max_positions=max_positions,
+        initial_capital=capital,
+        cap_days=cap_days,
+        atr_p=AtrParams(),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
+        eval_mode=EVAL_MODE,
+        fill_mode=HARNESS_FILL_MODE,
+        live_gates=LIVE_GATES,
     )
 
 
@@ -107,8 +114,7 @@ def per_trade_by_regime(res: PortfolioResult) -> dict[str, list[float]]:
     return out
 
 
-def analyse(res_a: PortfolioResult, res_b: PortfolioResult, *,
-            n_resamples: int, seed: int) -> dict:
+def analyse(res_a: PortfolioResult, res_b: PortfolioResult, *, n_resamples: int, seed: int) -> dict:
     """Las tres lecturas del mismo eje, para poder compararlas de frente."""
     pt_a = per_trade_by_regime(res_a)
     pt_b = per_trade_by_regime(res_b)
@@ -121,7 +127,7 @@ def analyse(res_a: PortfolioResult, res_b: PortfolioResult, *,
     pt_b[STRESS_POOLED] = [v for r in stress_names for v in pt_b.get(r, [])]
 
     out: dict[str, dict] = {}
-    for r in REGIMES + [STRESS_POOLED]:
+    for r in [*REGIMES, STRESS_POOLED]:
         xs, ys = pt_a.get(r, []), pt_b.get(r, [])
         n = len(xs)
         sd = statistics.stdev(xs) if n > 1 else 0.0
@@ -135,32 +141,38 @@ def analyse(res_a: PortfolioResult, res_b: PortfolioResult, *,
         if xs and ys:
             samples = _delta_samples(xs, ys, n_resamples=n_resamples, seed=seed)
             stab_delta = _summarise_samples(samples, delta)
+
         # (C) la versión de CARTERA, que es la que usan T38/T39
+        # `_in_window` captura `r` del loop pero se invoca en las dos lineas
+        # siguientes, dentro de la misma iteracion, y no se guarda: el
+        # late-binding que B023 advierte no puede darse aca.
         def _in_window(dt: str) -> bool:
             reg = regime_for_date(dt)
-            return reg in stress_names if r == STRESS_POOLED else reg == r
+            return reg in stress_names if r == STRESS_POOLED else reg == r  # noqa: B023
 
         daily_r = [v for dt, v in daily["a"] if _in_window(dt)]
         daily_r_b = [v for dt, v in daily["b"] if _in_window(dt)]
-        stab_port = block_sign_stability(daily_r, block=BOOT_BLOCK,
-                                         n_resamples=n_resamples, seed=seed)
+        stab_port = block_sign_stability(daily_r, block=BOOT_BLOCK, n_resamples=n_resamples, seed=seed)
         # (D) y lo que un criterio de régimen REALMENTE evalúa: el Δ entre brazos
         # dentro de la ventana. El nivel de (C) habla del mercado, no de la política.
         stab_port_delta = block_delta_sign_stability(
-            daily_r, daily_r_b, block=BOOT_BLOCK, n_resamples=n_resamples, seed=seed)
-        port_a_r = (sum(port_a.get(x, 0.0) for x in stress_names)
-                    if r == STRESS_POOLED else port_a.get(r, 0.0))
-        port_b_r = (sum(port_b.get(x, 0.0) for x in stress_names)
-                    if r == STRESS_POOLED else port_b.get(r, 0.0))
+            daily_r, daily_r_b, block=BOOT_BLOCK, n_resamples=n_resamples, seed=seed
+        )
+        port_a_r = sum(port_a.get(x, 0.0) for x in stress_names) if r == STRESS_POOLED else port_a.get(r, 0.0)
+        port_b_r = sum(port_b.get(x, 0.0) for x in stress_names) if r == STRESS_POOLED else port_b.get(r, 0.0)
         out[r] = {
             "n_trades": n,
-            "mean_pts": mean, "sd_pts": sd, "cohens_d": d,
+            "mean_pts": mean,
+            "sd_pts": sd,
+            "cohens_d": d,
             "detectable_at_80": detectable_mean_effect(sd, n) if n > 1 else None,
-            "power_for_tolerance": (achieved_power_mean(PUBLISHED_TOLERANCE_PTS / sd, n)
-                                    if sd > 0 and n > 1 else 0.0),
+            "power_for_tolerance": (
+                achieved_power_mean(PUBLISHED_TOLERANCE_PTS / sd, n) if sd > 0 and n > 1 else 0.0
+            ),
             "power_for_observed": achieved_power_mean(d, n) if n > 1 else 0.0,
             "arm_sign": stab_arm,
-            "delta_pts": delta, "delta_sign": stab_delta,
+            "delta_pts": delta,
+            "delta_sign": stab_delta,
             "portfolio_ret_a": port_a_r,
             "portfolio_ret_b": port_b_r,
             "portfolio_sign": stab_port,
@@ -169,8 +181,7 @@ def analyse(res_a: PortfolioResult, res_b: PortfolioResult, *,
     return out
 
 
-def _delta_samples(xs: list[float], ys: list[float], *,
-                   n_resamples: int, seed: int) -> list[float]:
+def _delta_samples(xs: list[float], ys: list[float], *, n_resamples: int, seed: int) -> list[float]:
     """Distribución bootstrap de la **diferencia de medias** entre dos brazos.
 
     Los brazos no comparten trades (cambian cuáles se toman), así que la
@@ -194,7 +205,8 @@ def _summarise_samples(samples: list[float], observed: float) -> dict:
     arr = np.asarray(samples, dtype=float)
     same = float(np.mean(np.sign(arr) == np.sign(observed))) if observed != 0 else 0.5
     return {
-        "n": int(arr.size), "mean": observed,
+        "n": int(arr.size),
+        "mean": observed,
         "ci_low": float(np.percentile(arr, 2.5)),
         "ci_high": float(np.percentile(arr, 97.5)),
         "p_same_sign": same,
@@ -212,18 +224,21 @@ def population_anomaly(universe: str, period: str, warmup: int, common: dict):
 
     tickers = parse_universe_file(_HERE.parent / universe)
     bars_by, sigs_by, vol_by, _m, _i = load_bars_signals_volume(tickers, period, warmup)
-    entries = build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=2.0, m=1.5),
-                                    warmup=warmup)
+    entries = build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=2.0, m=1.5), warmup=warmup)
     series = build_regime_series(load_spy_bars(period) or [])
     a = simulate_portfolio(entries, bars_by, sigs_by, **common)
     # Contraste = ``G_hard``, no ``G_half``: el criterio C5 de 26b/34 mide la
     # DIFERENCIA de medias entre brazos, y ``half`` toma exactamente los mismos
     # trades (sólo los achica), así que su Δ por trade es 0 por construcción — el
     # mismo motivo por el que el sanity de la T38 no podía verlo.
-    b = simulate_portfolio(entries, bars_by, sigs_by,
-                           entry_filter=make_entry_filter(series, mode="hard"), **common)
-    return a, b, {"n_tickers": len(bars_by), "n_entries": len(entries),
-                  "arm_a": "U_ungated", "arm_b": "G_hard"}
+    b = simulate_portfolio(
+        entries, bars_by, sigs_by, entry_filter=make_entry_filter(series, mode="hard"), **common
+    )
+    return (
+        a,
+        b,
+        {"n_tickers": len(bars_by), "n_entries": len(entries), "arm_a": "U_ungated", "arm_b": "G_hard"},
+    )
 
 
 def population_analyze(universe: str, period: str, warmup: int, common: dict):
@@ -232,16 +247,23 @@ def population_analyze(universe: str, period: str, warmup: int, common: dict):
     from scripts.run_tp_cal_replay_t23 import buy_entries
 
     tickers = parse_universe_file(_HERE.parent / universe)
-    bars_by, sigs_by, score_by, _missing = load_bars_signals_scores(
-        tickers, period, warmup)
+    bars_by, sigs_by, score_by, _missing = load_bars_signals_scores(tickers, period, warmup)
     entries = buy_entries(bars_by, sigs_by, warmup)
-    a = simulate_portfolio(entries, bars_by, sigs_by,
-                           rank_score=lambda t, d: float((score_by.get(t) or {}).get(d, 0.0)),
-                           **common)
-    b = simulate_portfolio(entries, bars_by, sigs_by,
-                           rank_score=lambda t, d: neutral_rank(12345, d, t), **common)
-    return a, b, {"n_tickers": len(bars_by), "n_entries": len(entries),
-                  "arm_a": "B1_score", "arm_b": "N_rot_0"}
+    a = simulate_portfolio(
+        entries,
+        bars_by,
+        sigs_by,
+        rank_score=lambda t, d: float((score_by.get(t) or {}).get(d, 0.0)),
+        **common,
+    )
+    b = simulate_portfolio(
+        entries, bars_by, sigs_by, rank_score=lambda t, d: neutral_rank(12345, d, t), **common
+    )
+    return (
+        a,
+        b,
+        {"n_tickers": len(bars_by), "n_entries": len(entries), "arm_a": "B1_score", "arm_b": "N_rot_0"},
+    )
 
 
 POPULATIONS = {"anomaly": population_anomaly, "analyze": population_analyze}
@@ -267,29 +289,40 @@ def main(argv: list[str] | None = None) -> int:
     log = sys.stderr if args.json else sys.stdout
     cap_days = args.cap_days if args.population == "anomaly" else 250
     common = _common(args.max_positions, cap_days, args.capital)
-    announce(args.max_positions, args.universe, 0, eval_mode=EVAL_MODE,
-             fill_mode=HARNESS_FILL_MODE, live_gates=LIVE_GATES, file=log)
+    announce(
+        args.max_positions,
+        args.universe,
+        0,
+        eval_mode=EVAL_MODE,
+        fill_mode=HARNESS_FILL_MODE,
+        live_gates=LIVE_GATES,
+        file=log,
+    )
     print(f"Población: {args.population} · cap_days={cap_days}\n", file=log)
 
-    res_a, res_b, meta = POPULATIONS[args.population](
-        args.universe, args.period, args.warmup, common)
-    print(f"{meta['n_tickers']} tickers · {meta['n_entries']} entradas · "
-          f"brazos {meta['arm_a']} vs {meta['arm_b']}\n", file=log)
+    res_a, res_b, meta = POPULATIONS[args.population](args.universe, args.period, args.warmup, common)
+    print(
+        f"{meta['n_tickers']} tickers · {meta['n_entries']} entradas · "
+        f"brazos {meta['arm_a']} vs {meta['arm_b']}\n",
+        file=log,
+    )
 
     stats = analyse(res_a, res_b, n_resamples=args.resamples, seed=args.seed)
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "population": args.population, "cap_days": cap_days,
-        "max_positions": args.max_positions, "eval_mode": EVAL_MODE,
-        "live_gates": LIVE_GATES, "resamples": args.resamples,
+        "population": args.population,
+        "cap_days": cap_days,
+        "max_positions": args.max_positions,
+        "eval_mode": EVAL_MODE,
+        "live_gates": LIVE_GATES,
+        "resamples": args.resamples,
         "published_tolerance_pts": PUBLISHED_TOLERANCE_PTS,
         "published_rejections": PUBLISHED_REJECTIONS,
         **meta,
     }
 
     if args.json:
-        print(json.dumps({"context": ctx, "regimes": stats},
-                         ensure_ascii=False, indent=2, default=str))
+        print(json.dumps({"context": ctx, "regimes": stats}, ensure_ascii=False, indent=2, default=str))
         return 0
 
     _report(stats, ctx)
@@ -298,27 +331,32 @@ def main(argv: list[str] | None = None) -> int:
 
 def _report(stats: dict, ctx: dict):
     print("POR TRADE — lo que evalúa el criterio de régimen de la serie")
-    hdr = (f"{'régimen':<20}{'n':>5}{'media':>9}{'σ':>9}{'detectable':>12}"
-           f"{'pot(obs)':>10}{'P(signo)':>10}")
+    hdr = f"{'régimen':<20}{'n':>5}{'media':>9}{'σ':>9}{'detectable':>12}{'pot(obs)':>10}{'P(signo)':>10}"
     print(hdr)
     print("-" * len(hdr))
     for r, s in stats.items():
         det = s["detectable_at_80"]
         ps = s["arm_sign"]["p_same_sign"]
-        print(f"{r:<20}{s['n_trades']:>5}{s['mean_pts']:>+9.2f}{s['sd_pts']:>9.2f}"
-              f"{('—' if det is None else f'±{det:.2f}'):>12}"
-              f"{100*s['power_for_observed']:>9.0f}%"
-              f"{('—' if ps is None else f'{100*ps:.0f}%'):>10}")
+        print(
+            f"{r:<20}{s['n_trades']:>5}{s['mean_pts']:>+9.2f}{s['sd_pts']:>9.2f}"
+            f"{('—' if det is None else f'±{det:.2f}'):>12}"
+            f"{100 * s['power_for_observed']:>9.0f}%"
+            f"{('—' if ps is None else f'{100 * ps:.0f}%'):>10}"
+        )
 
-    print(f"\n  'detectable' = efecto medio más chico que se distingue de 0 con ese n y "
-          f"esa σ,\n  al 80% de potencia y α=0.05. 'P(signo)' = fracción de resamples "
-          f"que conserva el\n  signo de la media observada — si ronda 50%, el criterio "
-          f"tira una moneda.")
+    print(
+        "\n  'detectable' = efecto medio más chico que se distingue de 0 con ese n y "
+        "esa σ,\n  al 80% de potencia y α=0.05. 'P(signo)' = fracción de resamples "
+        "que conserva el\n  signo de la media observada — si ronda 50%, el criterio "
+        "tira una moneda."
+    )
 
-    print(f"\n  El umbral que la serie usó (C5 de 26b/34) es ±{PUBLISHED_TOLERANCE_PTS:.2f} "
-          f"pts por trade.\n  Potencia para detectarlo con los n de arriba:")
+    print(
+        f"\n  El umbral que la serie usó (C5 de 26b/34) es ±{PUBLISHED_TOLERANCE_PTS:.2f} "
+        f"pts por trade.\n  Potencia para detectarlo con los n de arriba:"
+    )
     for r, s in stats.items():
-        print(f"    {r:<20} {100*s['power_for_tolerance']:>5.1f}%")
+        print(f"    {r:<20} {100 * s['power_for_tolerance']:>5.1f}%")
 
     print("\nDIFERENCIA ENTRE BRAZOS — lo que evalúa C5 (26b/34)")
     hdr2 = f"{'régimen':<20}{'Δ pts':>10}{'IC95%':>22}{'P(signo)':>10}"
@@ -330,8 +368,7 @@ def _report(stats: dict, ctx: dict):
             print(f"{r:<20}{'—':>10}{'—':>22}{'—':>10}")
             continue
         ci = f"[{ds['ci_low']:+.2f}, {ds['ci_high']:+.2f}]"
-        print(f"{r:<20}{s['delta_pts']:>+10.2f}{ci:>22}"
-              f"{100*ds['p_same_sign']:>9.0f}%")
+        print(f"{r:<20}{s['delta_pts']:>+10.2f}{ci:>22}{100 * ds['p_same_sign']:>9.0f}%")
 
     print("\nA NIVEL CARTERA — la versión que usan la T38 y la T39")
     hdr3 = f"{'régimen':<20}{'ret':>10}{'IC95%':>24}{'P(signo)':>10}{'días':>7}"
@@ -340,12 +377,13 @@ def _report(stats: dict, ctx: dict):
     for r, s in stats.items():
         ps_ = s["portfolio_sign"]
         lo, hi, pss = ps_["ci_low"], ps_["ci_high"], ps_["p_same_sign"]
-        print(f"{r:<20}{100*s['portfolio_ret_a']:>+9.2f}%"
-              f"{('—' if lo is None else f'[{100*lo:+.1f}%, {100*hi:+.1f}%]'):>24}"
-              f"{('—' if pss is None else f'{100*pss:.0f}%'):>10}{ps_['n']:>7}")
+        print(
+            f"{r:<20}{100 * s['portfolio_ret_a']:>+9.2f}%"
+            f"{('—' if lo is None else f'[{100 * lo:+.1f}%, {100 * hi:+.1f}%]'):>24}"
+            f"{('—' if pss is None else f'{100 * pss:.0f}%'):>10}{ps_['n']:>7}"
+        )
 
-    print("\nΔ ENTRE BRAZOS a nivel CARTERA — lo que un criterio de régimen "
-          "realmente evalúa")
+    print("\nΔ ENTRE BRAZOS a nivel CARTERA — lo que un criterio de régimen realmente evalúa")
     hdr4 = f"{'régimen':<20}{'Δ ret':>10}{'IC95%':>24}{'P(signo)':>10}"
     print(hdr4)
     print("-" * len(hdr4))
@@ -354,9 +392,8 @@ def _report(stats: dict, ctx: dict):
         if pd_["delta"] is None:
             print(f"{r:<20}{'—':>10}{'—':>24}{'—':>10}")
             continue
-        ci = f"[{100*pd_['ci_low']:+.1f}%, {100*pd_['ci_high']:+.1f}%]"
-        print(f"{r:<20}{100*pd_['delta']:>+9.2f}%{ci:>24}"
-              f"{100*pd_['p_same_sign']:>9.0f}%")
+        ci = f"[{100 * pd_['ci_low']:+.1f}%, {100 * pd_['ci_high']:+.1f}%]"
+        print(f"{r:<20}{100 * pd_['delta']:>+9.2f}%{ci:>24}{100 * pd_['p_same_sign']:>9.0f}%")
 
     print("\nLos rechazos que ese criterio produjo, contra lo detectable:")
     for label, delta in PUBLISHED_REJECTIONS.items():

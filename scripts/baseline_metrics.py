@@ -43,10 +43,11 @@ import json
 import math
 import sqlite3
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ def load_accounts(con: sqlite3.Connection) -> list[dict[str, Any]]:
         "strategy, created_at FROM paper_accounts ORDER BY id"
     )
     cols = [c[0] for c in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 
 def load_fills(con: sqlite3.Connection, account_id: int) -> list[Fill]:
@@ -370,9 +371,7 @@ def fifo_match(fills: list[Fill]) -> tuple[list[Trade], dict[str, deque]]:
         # Pro-rata proceeds for what we actually closed (in case of overshoot).
         closed_proceeds = proceeds_total * (closed_shares / f.shares)
         avg_holding = (
-            weighted_open_days / weighted_shares_for_holding
-            if weighted_shares_for_holding > 0
-            else 0.0
+            weighted_open_days / weighted_shares_for_holding if weighted_shares_for_holding > 0 else 0.0
         )
         trades.append(
             Trade(
@@ -472,9 +471,7 @@ def equity_metrics(snapshots: list[AccountSnapshot]) -> dict[str, Any]:
         "n_trading_days": len(endpoints),
         "n_daily_returns": len(rets),
         "calendar_days": (
-            (endpoints[-1][0].date() - endpoints[0][0].date()).days
-            if len(endpoints) >= 2
-            else 0
+            (endpoints[-1][0].date() - endpoints[0][0].date()).days if len(endpoints) >= 2 else 0
         ),
         "first_snapshot_at": endpoints[0][0].isoformat() if endpoints else None,
         "last_snapshot_at": endpoints[-1][0].isoformat() if endpoints else None,
@@ -544,7 +541,7 @@ def compute_account(
 
     eq = equity_metrics(snapshots)
     to = turnover_metrics(fills, daily_endpoints(snapshots))
-    trades, open_lots = fifo_match(fills)
+    trades, _open_lots = fifo_match(fills)
     ts = trade_stats(trades)
 
     result.overall = {
@@ -558,17 +555,11 @@ def compute_account(
 
     # Annotations for thin samples
     if eq["n_daily_returns"] is not None and eq["n_daily_returns"] < MIN_DAYS_FOR_SHARPE:
-        result.notes.append(
-            f"sharpe based on {eq['n_daily_returns']} daily returns — fragile"
-        )
+        result.notes.append(f"sharpe based on {eq['n_daily_returns']} daily returns — fragile")
     if eq["calendar_days"] is not None and eq["calendar_days"] < MIN_DAYS_FOR_CAGR:
-        result.notes.append(
-            f"cagr extrapolated from {eq['calendar_days']} calendar days — fragile"
-        )
+        result.notes.append(f"cagr extrapolated from {eq['calendar_days']} calendar days — fragile")
     if ts["n_round_trips"] is not None and ts["n_round_trips"] < 10:
-        result.notes.append(
-            f"trade stats based on {ts['n_round_trips']} round trips — noisy"
-        )
+        result.notes.append(f"trade stats based on {ts['n_round_trips']} round trips — noisy")
 
     result.monthly = monthly_breakdown(snapshots, trades)
     result.open_positions = open_positions
@@ -595,9 +586,7 @@ def write_json(results: list[AccountResult], db_path: Path, out_dir: Path) -> Pa
             for r in results
         ],
     }
-    target.write_text(
-        json.dumps(payload, indent=2, default=_json_default), encoding="utf-8"
-    )
+    target.write_text(json.dumps(payload, indent=2, default=_json_default), encoding="utf-8")
     return target
 
 
@@ -613,7 +602,7 @@ def _json_default(o: Any) -> Any:
 
 
 def _fmt_pct(x: float | None, digits: int = 2) -> str:
-    return f"{x*100:.{digits}f}%" if x is not None else "—"
+    return f"{x * 100:.{digits}f}%" if x is not None else "—"
 
 
 def _fmt_money(x: float | None) -> str:
@@ -642,9 +631,7 @@ def print_account(result: AccountResult) -> None:
             f"Periodo: {o['first_snapshot_at'][:10]} → {o['last_snapshot_at'][:10]}  "
             f"({o['calendar_days']} días calendario, {o['n_trading_days']} días con snap)"
         )
-        print(
-            f"Equity: {_fmt_money(o['start_equity'])} → {_fmt_money(o['end_equity'])}"
-        )
+        print(f"Equity: {_fmt_money(o['start_equity'])} → {_fmt_money(o['end_equity'])}")
     else:
         print("Sin snapshots de equity — saltea métricas equity-based.")
 
@@ -661,7 +648,7 @@ def print_account(result: AccountResult) -> None:
     print(f"{'Notional fills':<28} {_fmt_money(o.get('notional_volume')):>18}")
     fills_str = f"{o.get('n_buys', 0)} / {o.get('n_sells', 0)}"
     print(f"{'Fills (BUY / SELL)':<28} {fills_str:>18}")
-    print(f"{'Round trips cerrados':<28} {o.get('n_round_trips',0):>18}")
+    print(f"{'Round trips cerrados':<28} {o.get('n_round_trips', 0):>18}")
     print(f"{'Win rate':<28} {_fmt_pct(o.get('win_rate')):>18}")
     print(f"{'Profit factor':<28} {_fmt_ratio(o.get('profit_factor')):>18}")
     print(f"{'Expectancy ($)':<28} {_fmt_money(o.get('expectancy_dollars')):>18}")

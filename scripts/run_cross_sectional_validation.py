@@ -95,23 +95,33 @@ def main():
     )
     parser.add_argument("universe_file", type=Path)
     parser.add_argument(
-        "-p", "--period", default="10y",
+        "-p",
+        "--period",
+        default="10y",
         help="Cache period to load (default: 10y).",
     )
     parser.add_argument(
-        "--n-windows", type=int, default=4,
+        "--n-windows",
+        type=int,
+        default=4,
         help="Number of non-overlapping windows (default: 4).",
     )
     parser.add_argument(
-        "--lookback", type=int, default=None,
+        "--lookback",
+        type=int,
+        default=None,
         help="Override cross_sectional_lookback (default: SCHEMA default 120).",
     )
     parser.add_argument(
-        "--weight", type=float, default=None,
+        "--weight",
+        type=float,
+        default=None,
         help="Override cross_sectional_weight (default: SCHEMA default 0.5).",
     )
     parser.add_argument(
-        "--max-positions", type=int, default=5,
+        "--max-positions",
+        type=int,
+        default=5,
         help=(
             "Slot constraint for the harness. CRITICAL: must be smaller than "
             "the universe size or the candidate ranking is never truncated "
@@ -122,10 +132,10 @@ def main():
     args = parser.parse_args()
 
     # Imports inside main() so --help works without yfinance.
-    from data.yahoo_finance import get_historical_data_batch
-    from analysis.harness import ExperimentConfig, HarnessRunner
     from analysis.backtest import signal_from_analyze_stacked
+    from analysis.harness import ExperimentConfig, HarnessRunner
     from config.settings_manager import settings
+    from data.yahoo_finance import get_historical_data_batch
 
     # Load OHLCV
     tickers = parse_universe_file(args.universe_file)
@@ -141,8 +151,7 @@ def main():
         else:
             full_data[t] = df
     if failed:
-        print(f"  WARNING: skipping {len(failed)} tickers without data: "
-              f"{', '.join(failed)}")
+        print(f"  WARNING: skipping {len(failed)} tickers without data: {', '.join(failed)}")
     print(f"  Loaded {len(full_data)}/{len(tickers)} tickers")
     if len(full_data) < 5:
         print("Error: not enough tickers loaded.")
@@ -154,8 +163,7 @@ def main():
         common_idx = df.index if common_idx is None else common_idx.intersection(df.index)
     common_idx = common_idx.sort_values()
     n_bars = len(common_idx)
-    print(f"  Common index: {n_bars} bars  "
-          f"({common_idx[0].date()} -> {common_idx[-1].date()})")
+    print(f"  Common index: {n_bars} bars  ({common_idx[0].date()} -> {common_idx[-1].date()})")
 
     # Optional knob overrides — set BEFORE the harness reads them. Restored
     # by HarnessRunner.run_suite's finally block via the toggle snapshot.
@@ -170,14 +178,13 @@ def main():
             print(f"  Override: {key} = {val}")
 
     # Build N non-overlapping windows
-    edges = [int(round(i * n_bars / args.n_windows)) for i in range(args.n_windows + 1)]
+    edges = [round(i * n_bars / args.n_windows) for i in range(args.n_windows + 1)]
     windows: dict[str, tuple[int, int]] = {}
     for i in range(args.n_windows):
         lo, hi = edges[i], edges[i + 1]
-        name = f"w{i+1}" if args.n_windows > 2 else ("early" if i == 0 else "late")
+        name = f"w{i + 1}" if args.n_windows > 2 else ("early" if i == 0 else "late")
         windows[name] = (lo, hi)
-        print(f"  Window {name}: bars [{lo}:{hi}]  "
-              f"({common_idx[lo].date()} -> {common_idx[hi-1].date()})")
+        print(f"  Window {name}: bars [{lo}:{hi}]  ({common_idx[lo].date()} -> {common_idx[hi - 1].date()})")
 
     # Output directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -191,20 +198,30 @@ def main():
     # (HMM off, Stacking off, XGB on, vol_overlay on). The only delta is the
     # T05 toggle.
     variants: list[tuple[str, ExperimentConfig]] = [
-        ("kill_only", ExperimentConfig(
-            name="kill_only",
-            hmm_enabled=False, stacking_enabled=False,
-            xgb_signal_enabled=True, vol_overlay_enabled=True,
-            cross_sectional_enabled=False,
-            description="Sprint 2 kill_only frozen baseline (2026-06-02).",
-        )),
-        ("cross_sectional", ExperimentConfig(
-            name="cross_sectional",
-            hmm_enabled=False, stacking_enabled=False,
-            xgb_signal_enabled=True, vol_overlay_enabled=True,
-            cross_sectional_enabled=True,
-            description="kill_only + cross-sectional momentum ranking (T05).",
-        )),
+        (
+            "kill_only",
+            ExperimentConfig(
+                name="kill_only",
+                hmm_enabled=False,
+                stacking_enabled=False,
+                xgb_signal_enabled=True,
+                vol_overlay_enabled=True,
+                cross_sectional_enabled=False,
+                description="Sprint 2 kill_only frozen baseline (2026-06-02).",
+            ),
+        ),
+        (
+            "cross_sectional",
+            ExperimentConfig(
+                name="cross_sectional",
+                hmm_enabled=False,
+                stacking_enabled=False,
+                xgb_signal_enabled=True,
+                vol_overlay_enabled=True,
+                cross_sectional_enabled=True,
+                description="kill_only + cross-sectional momentum ranking (T05).",
+            ),
+        ),
     ]
 
     all_sharpe: dict[str, dict[str, float]] = {w: {} for w in windows}
@@ -237,11 +254,13 @@ def main():
                 all_return[w_name][variant_label] = float(m.period_return)
                 all_maxdd[w_name][variant_label] = float(m.max_drawdown)
                 all_turnover[w_name][variant_label] = float(getattr(m, "turnover", 0.0))
-                print(f"    sharpe={m.sharpe_annual:+.3f}  return={m.period_return:+.2f}%  "
-                      f"maxdd={m.max_drawdown:.2f}%  turnover={getattr(m,'turnover',0):.1f}%  "
-                      f"({time.time()-v_start:.0f}s)")
+                print(
+                    f"    sharpe={m.sharpe_annual:+.3f}  return={m.period_return:+.2f}%  "
+                    f"maxdd={m.max_drawdown:.2f}%  turnover={getattr(m, 'turnover', 0):.1f}%  "
+                    f"({time.time() - v_start:.0f}s)"
+                )
 
-            print(f"Window {w_name} total: {(time.time()-t_start)/60:.1f} min")
+            print(f"Window {w_name} total: {(time.time() - t_start) / 60:.1f} min")
     finally:
         # Restore any settings knobs we overrode.
         for key, val in knob_snapshot.items():
@@ -251,6 +270,7 @@ def main():
     w_names = list(windows.keys())
 
     summary_lines: list[str] = []
+
     def emit(s=""):
         print(s)
         summary_lines.append(s)
@@ -277,8 +297,7 @@ def main():
     tovr_base = float(np.mean([all_turnover[w]["kill_only"] for w in w_names]))
     tovr_cs = float(np.mean([all_turnover[w]["cross_sectional"] for w in w_names]))
     tovr_lift = (tovr_cs - tovr_base) / max(1e-6, tovr_base)
-    emit(f"\nTurnover: kill_only={tovr_base:.1f}%  cross_sectional={tovr_cs:.1f}%  "
-         f"lift={tovr_lift:+.1%}")
+    emit(f"\nTurnover: kill_only={tovr_base:.1f}%  cross_sectional={tovr_cs:.1f}%  lift={tovr_lift:+.1%}")
 
     # Max DD guardrail
     dd_base = float(np.mean([all_maxdd[w]["kill_only"] for w in w_names]))

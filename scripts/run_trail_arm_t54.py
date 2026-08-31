@@ -79,7 +79,7 @@ from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals
 # ── Config congelada (§3) ────────────────────────────────────────────────────
 
 EVAL_MODE = "touch"
-FILL_MODE = HARNESS_FILL_MODE          # "decision" (T33)
+FILL_MODE = HARNESS_FILL_MODE  # "decision" (T33)
 LIVE_GATES = True
 BASE_CAP = 250
 
@@ -95,10 +95,10 @@ ANTI_ORACLE_ARM = "ANTI_ORACULO_arm"
 
 # ── Umbrales del §6 (CONGELADOS) ─────────────────────────────────────────────
 
-KILL_MIN_DCAGR = 0.0050        # C1: +0.50 pp
-KILL_MAX_DD_WORSE = 0.0300     # C3: +3.00 pp
-KILL_REGIME_TOL_PTS = -1.00    # C8 (vía regime_pooled de la 51)
-SENS_MAX_POSITIONS = 5         # C7
+KILL_MIN_DCAGR = 0.0050  # C1: +0.50 pp
+KILL_MAX_DD_WORSE = 0.0300  # C3: +3.00 pp
+KILL_REGIME_TOL_PTS = -1.00  # C8 (vía regime_pooled de la 51)
+SENS_MAX_POSITIONS = 5  # C7
 
 BOOT_BLOCK = 20
 BOOT_RESAMPLES = 2000
@@ -106,9 +106,9 @@ BOOT_SEED = 12345
 
 # ── Sanity (§5, con la enmienda 1) ───────────────────────────────────────────
 
-SANITY_MIN_POPULATION = 0.05   # §5.3 — el umbral de la T13, sobre la DIFERENCIAL
-SANITY_MIN_TRADE_DIFF = 0.10   # §5.5 — el umbral muerde
-ORACLE_MIN_SPREAD = 0.0100     # §5.4 (enmienda): oráculo − anti ≥ +1.00 pp
+SANITY_MIN_POPULATION = 0.05  # §5.3 — el umbral de la T13, sobre la DIFERENCIAL
+SANITY_MIN_TRADE_DIFF = 0.10  # §5.5 — el umbral muerde
+ORACLE_MIN_SPREAD = 0.0100  # §5.4 (enmienda): oráculo − anti ≥ +1.00 pp
 
 # §5.2 — reproducción. El brazo vivo ya reprodujo los dos dígitos de la T37 §7.7
 # en la medición previa (9.17% / 28.2%), antes de congelar el pre-registro.
@@ -131,8 +131,7 @@ _CACHE = SimCache(None, None)
 
 
 def _sim(tag: str, entries, bars_by, sigs_by, **kw) -> PortfolioResult:
-    return _CACHE.run(f"t54|{tag}",
-                      lambda: simulate_portfolio(entries, bars_by, sigs_by, **kw))
+    return _CACHE.run(f"t54|{tag}", lambda: simulate_portfolio(entries, bars_by, sigs_by, **kw))
 
 
 # ── Brazos (§2) ──────────────────────────────────────────────────────────────
@@ -145,8 +144,10 @@ def arm_name(k: float) -> str:
 def thr_for_all(k: float):
     """El umbral de armado a **todas** las posiciones — el candidato, que es
     incondicional (por eso la enmienda 1 retira el control igualado en tasa)."""
+
     def f(_ticker: str, _date_iso10: str) -> float:
         return k
+
     return f
 
 
@@ -155,8 +156,10 @@ def thr_for_keys(keys: set[tuple[str, str]], k: float, base: float = BASE_K):
 
     Pura: depende de ``(ticker, fecha)`` y del conjunto, no del estado de la cartera
     ni del orden de las llamadas. Es lo que usan el oráculo y el anti-oráculo."""
+
     def f(ticker: str, date_iso10: str) -> float:
         return k if (ticker, date_iso10) in keys else base
+
     return f
 
 
@@ -165,8 +168,7 @@ def thr_for_keys(keys: set[tuple[str, str]], k: float, base: float = BASE_K):
 
 def excess_by_key(base_res: PortfolioResult, bars_by: dict) -> dict:
     """``{(ticker, fecha_entrada): excedente máximo sobre la entrada, en ATRs}``."""
-    return {(r["ticker"], r["entry"]): r["excess_atrs"]
-            for r in trade_excess_atrs(base_res, bars_by)}
+    return {(r["ticker"], r["entry"]): r["excess_atrs"] for r in trade_excess_atrs(base_res, bars_by)}
 
 
 def differential_keys(excess: dict, k: float, base: float = BASE_K) -> set:
@@ -189,8 +191,7 @@ def population_share(excess: dict, k: float, base: float = BASE_K) -> float:
 # ── §5.4 con la ENMIENDA 2 — el oráculo, dentro de lo que el brazo puede tocar ─
 
 
-def oracle_arm_keys(diff_keys: set, base_res: PortfolioResult, *,
-                    worst: bool) -> set:
+def oracle_arm_keys(diff_keys: set, base_res: PortfolioResult, *, worst: bool) -> set:
     """La mitad **peor** (o **mejor**) de la población que el brazo puede cambiar.
 
     La enmienda 2 existe porque elegir entre **todos** los candidatos —el molde de
@@ -203,14 +204,13 @@ def oracle_arm_keys(diff_keys: set, base_res: PortfolioResult, *,
     """
     rets = {(t.ticker, t.entry_date): t.ret for t in base_res.trades}
     pool = sorted(diff_keys, key=lambda k: (rets.get(k, 0.0), k), reverse=not worst)
-    return set(pool[:len(pool) // 2])
+    return set(pool[: len(pool) // 2])
 
 
 # ── §6 — walk-forward que elige k* ───────────────────────────────────────────
 
 
-def walk_forward(entries, bars_by, sigs_by, common: dict, ks: list[float],
-                 *, log=sys.stdout) -> dict:
+def walk_forward(entries, bars_by, sigs_by, common: dict, ks: list[float], *, log=sys.stdout) -> dict:
     """Elige el umbral en el **train** y lo cobra en el **test** siguiente.
 
     ``ks`` es la grilla **que pasó el §5.3**: la lección de la 58 es mirar la
@@ -226,41 +226,69 @@ def walk_forward(entries, bars_by, sigs_by, common: dict, ks: list[float],
     for fi, (train_end, test_lo, test_hi) in enumerate(FOLDS, 1):
         train = entries_between(entries, bars_by, None, _prev_day(train_end))
         test = entries_between(entries, bars_by, test_lo, test_hi)
-        print(f"    fold {fi}/{len(FOLDS)} — train {len(train)} · test {len(test)} …",
-              file=log, flush=True)
+        print(f"    fold {fi}/{len(FOLDS)} — train {len(train)} · test {len(test)} …", file=log, flush=True)
 
         train_cagr = {
-            k: cagr(_sim(f"wf|{fi}|train|{k:.2f}", train, bars_by, sigs_by,
-                         trail_min_excess_of=thr_for_all(k), **common).equity_curve)
+            k: cagr(
+                _sim(
+                    f"wf|{fi}|train|{k:.2f}",
+                    train,
+                    bars_by,
+                    sigs_by,
+                    trail_min_excess_of=thr_for_all(k),
+                    **common,
+                ).equity_curve
+            )
             for k in ks
         }
         pick = max(ks, key=lambda k: train_cagr[k])
         picks.append(pick)
 
-        r_proc = _sim(f"wf|{fi}|test|{pick:.2f}|eq{proc_eq:.6f}", test, bars_by,
-                      sigs_by, trail_min_excess_of=thr_for_all(pick),
-                      **{**common, "initial_capital": proc_eq})
-        r_base = _sim(f"wf|base|{fi}|test|eq{base_eq:.6f}", test, bars_by, sigs_by,
-                      **{**common, "initial_capital": base_eq})
+        r_proc = _sim(
+            f"wf|{fi}|test|{pick:.2f}|eq{proc_eq:.6f}",
+            test,
+            bars_by,
+            sigs_by,
+            trail_min_excess_of=thr_for_all(pick),
+            **{**common, "initial_capital": proc_eq},
+        )
+        r_base = _sim(
+            f"wf|base|{fi}|test|eq{base_eq:.6f}",
+            test,
+            bars_by,
+            sigs_by,
+            **{**common, "initial_capital": base_eq},
+        )
         proc_curve.extend(r_proc.equity_curve)
         base_curve.extend(r_base.equity_curve)
         proc_eq, base_eq = r_proc.final_equity, r_base.final_equity
 
-        per_fold.append({
-            "fold": fi, "train_end": train_end, "test": f"{test_lo}..{test_hi}",
-            "n_train": len(train), "n_test": len(test), "pick": pick,
-            "train_cagr": {f"{k:.2f}": train_cagr[k] for k in ks},
-            "oos_cagr_proc": cagr(r_proc.equity_curve),
-            "oos_cagr_base": cagr(r_base.equity_curve),
-        })
+        per_fold.append(
+            {
+                "fold": fi,
+                "train_end": train_end,
+                "test": f"{test_lo}..{test_hi}",
+                "n_train": len(train),
+                "n_test": len(test),
+                "pick": pick,
+                "train_cagr": {f"{k:.2f}": train_cagr[k] for k in ks},
+                "oos_cagr_proc": cagr(r_proc.equity_curve),
+                "oos_cagr_base": cagr(r_base.equity_curve),
+            }
+        )
 
     counts: dict[float, int] = {}
     for p in picks:
         counts[p] = counts.get(p, 0) + 1
     star = max(counts, key=lambda k: (counts[k], -k))
-    return {"per_fold": per_fold, "picks": picks, "star": star,
-            "agreement": counts[star],
-            "oos_cagr_proc": cagr(proc_curve), "oos_cagr_base": cagr(base_curve)}
+    return {
+        "per_fold": per_fold,
+        "picks": picks,
+        "star": star,
+        "agreement": counts[star],
+        "oos_cagr_proc": cagr(proc_curve),
+        "oos_cagr_base": cagr(base_curve),
+    }
 
 
 # ── C9 — que mueva el RESULTADO, no la etiqueta ──────────────────────────────
@@ -275,8 +303,7 @@ def exit_mix(res: PortfolioResult) -> dict:
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
-def changed_exits(base_res: PortfolioResult, cand_res: PortfolioResult,
-                  keys: set) -> dict:
+def changed_exits(base_res: PortfolioResult, cand_res: PortfolioResult, keys: set) -> dict:
     """Cuántos trades **cambian de salida** de verdad — descriptivo, NO gate.
 
     Cambiar el *estado de armado* del trailing no es cambiar la salida: un trailing
@@ -285,24 +312,21 @@ def changed_exits(base_res: PortfolioResult, cand_res: PortfolioResult,
     población del §5.3 —los trades que cruzan el umbral— es una **cota superior** de
     lo que un brazo mueve, y este número dice cuánto de esa cota se realiza.
     """
-    b = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason)
-         for t in base_res.trades}
-    c = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason)
-         for t in cand_res.trades}
+    b = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason) for t in base_res.trades}
+    c = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason) for t in cand_res.trades}
     comunes = [k for k in b if k in c]
     if not comunes:
-        return {"n_common": 0, "n_changed": 0, "share": 0.0,
-                "n_changed_in_diff_pop": 0}
+        return {"n_common": 0, "n_changed": 0, "share": 0.0, "n_changed_in_diff_pop": 0}
     cambiados = [k for k in comunes if b[k] != c[k]]
     return {
-        "n_common": len(comunes), "n_changed": len(cambiados),
+        "n_common": len(comunes),
+        "n_changed": len(cambiados),
         "share": len(cambiados) / len(comunes),
         "n_changed_in_diff_pop": sum(1 for k in cambiados if k in keys),
     }
 
 
-def differential_return(base_res: PortfolioResult, cand_res: PortfolioResult,
-                        keys: set) -> dict:
+def differential_return(base_res: PortfolioResult, cand_res: PortfolioResult, keys: set) -> dict:
     """Retorno medio, **pareado por clave**, de los trades que el brazo cambia.
 
     C9: si el umbral sólo cambia *quién firma la salida* sin mejorar el retorno de
@@ -315,15 +339,13 @@ def differential_return(base_res: PortfolioResult, cand_res: PortfolioResult,
         return {"n_common": 0, "base_pts": 0.0, "cand_pts": 0.0, "delta_pts": 0.0}
     xb = statistics.fmean(b[k] for k in comunes)
     xc = statistics.fmean(c[k] for k in comunes)
-    return {"n_common": len(comunes), "base_pts": xb, "cand_pts": xc,
-            "delta_pts": xc - xb}
+    return {"n_common": len(comunes), "base_pts": xb, "cand_pts": xc, "delta_pts": xc - xb}
 
 
 # ── §6 — la regla de decisión ────────────────────────────────────────────────
 
 
-def evaluate(base: dict, cand: dict, boot, c6: dict, c8: dict, sens: dict | None,
-             diff_ret: dict) -> dict:
+def evaluate(base: dict, cand: dict, boot, c6: dict, c8: dict, sens: dict | None, diff_ret: dict) -> dict:
     dcagr = cand["cagr"] - base["cagr"]
     c1 = bool(dcagr >= KILL_MIN_DCAGR)
     c3 = bool(cand["max_dd"] <= base["max_dd"] + KILL_MAX_DD_WORSE)
@@ -334,13 +356,20 @@ def evaluate(base: dict, cand: dict, boot, c6: dict, c8: dict, sens: dict | None
     # C9: mueve el resultado, no la etiqueta.
     c9 = bool(c1 and diff_ret["n_common"] > 0 and diff_ret["delta_pts"] > 0.0)
     ship = bool(c1 and c3 and c4 and c6_ok and c7 and c8_ok and c9)
-    return {"dcagr": dcagr, "c1_dcagr": c1, "c3_maxdd": c3, "c4_boot_base": c4,
-            "c6_dose": c6_ok, "c7_sensitivity": c7, "c8_regime": c8_ok,
-            "c9_moves_the_result": c9, "ship": ship}
+    return {
+        "dcagr": dcagr,
+        "c1_dcagr": c1,
+        "c3_maxdd": c3,
+        "c4_boot_base": c4,
+        "c6_dose": c6_ok,
+        "c7_sensitivity": c7,
+        "c8_regime": c8_ok,
+        "c9_moves_the_result": c9,
+        "ship": ship,
+    }
 
 
-def evaluate_sanity(summaries: dict, trade_diff: float, repro: dict,
-                    pop: dict, k_star: float) -> dict:
+def evaluate_sanity(summaries: dict, trade_diff: float, repro: dict, pop: dict, k_star: float) -> dict:
     acc = all(s["accounting_ok"] for s in summaries.values())
     orac = summaries[ORACLE_ARM]["cagr"]
     anti = summaries[ANTI_ORACLE_ARM]["cagr"]
@@ -354,9 +383,15 @@ def evaluate_sanity(summaries: dict, trade_diff: float, repro: dict,
         "candidate_inside_the_oracle_range": bool(anti <= cand <= orac),
         "threshold_bites": bool(trade_diff >= SANITY_MIN_TRADE_DIFF),
     }
-    return {"checks": checks, "valid": all(checks.values()),
-            "trade_diff": trade_diff, "oracle_cagr": orac, "anti_oracle_cagr": anti,
-            "population": pop, "k_star": k_star}
+    return {
+        "checks": checks,
+        "valid": all(checks.values()),
+        "trade_diff": trade_diff,
+        "oracle_cagr": orac,
+        "anti_oracle_cagr": anti,
+        "population": pop,
+        "k_star": k_star,
+    }
 
 
 def outcome_of(v: dict, pop: dict, *, sanity_valid: bool) -> str:
@@ -364,29 +399,43 @@ def outcome_of(v: dict, pop: dict, *, sanity_valid: bool) -> str:
     obligatorio** — la guarda que la tarea 60 tuvo que agregarle al runner de la 51
     después de escribirlo."""
     if not sanity_valid:
-        return ("CORRIDA INVÁLIDA — falló un sanity del §5. No hay veredicto y no se "
-                "re-especifica nada (precedente T26).")
+        return (
+            "CORRIDA INVÁLIDA — falló un sanity del §5. No hay veredicto y no se "
+            "re-especifica nada (precedente T26)."
+        )
     if not pop["ok"]:
-        return ("SIN POBLACIÓN — el umbral elegido cambia menos del 5% de los trades. "
-                "El brazo está SIN PODER, no refutado (T13, §5.3). No hay veredicto.")
+        return (
+            "SIN POBLACIÓN — el umbral elegido cambia menos del 5% de los trades. "
+            "El brazo está SIN PODER, no refutado (T13, §5.3). No hay veredicto."
+        )
     if v["ship"]:
-        return ("SHIP — el umbral de armado del trailing se mueve a k*. El ship es el "
-                "MECANISMO y apagado (§7): `paper_atr_trail_min_excess_atrs` con "
-                "default 1.0, en una tarea propia.")
+        return (
+            "SHIP — el umbral de armado del trailing se mueve a k*. El ship es el "
+            "MECANISMO y apagado (§7): `paper_atr_trail_min_excess_atrs` con "
+            "default 1.0, en una tarea propia."
+        )
     if not v["c1_dcagr"]:
-        return ("NO-SHIP — C1: mover el umbral de armado no paga sobre la política "
-                "que corre hoy. El 1.0 vivo NO está mal puesto, y eso es información "
-                "útil sobre una salida que está en producción.")
+        return (
+            "NO-SHIP — C1: mover el umbral de armado no paga sobre la política "
+            "que corre hoy. El 1.0 vivo NO está mal puesto, y eso es información "
+            "útil sobre una salida que está en producción."
+        )
     if not v["c9_moves_the_result"]:
-        return ("NO-SHIP — C9: el umbral mueve el MOTIVO de salida, no el resultado. "
-                "Cambia quién firma la salida sin mejorar el retorno de los trades "
-                "que efectivamente toca.")
+        return (
+            "NO-SHIP — C9: el umbral mueve el MOTIVO de salida, no el resultado. "
+            "Cambia quién firma la salida sin mejorar el retorno de los trades "
+            "que efectivamente toca."
+        )
     if not v["c4_boot_base"]:
-        return ("NO-SHIP — C4: la ventaja no sobrevive al bootstrap pareado contra el "
-                "baseline; el intervalo cruza el cero.")
+        return (
+            "NO-SHIP — C4: la ventaja no sobrevive al bootstrap pareado contra el "
+            "baseline; el intervalo cruza el cero."
+        )
     if not v["c6_dose"]:
-        return ("NO-SHIP — C6: no hay dosis-respuesta. El efecto vive en un umbral "
-                "aislado, que es la firma del sobreajuste, no la de un mecanismo.")
+        return (
+            "NO-SHIP — C6: no hay dosis-respuesta. El efecto vive en un umbral "
+            "aislado, que es la firma del sobreajuste, no la de un mecanismo."
+        )
     return "NO-SHIP — no pasa el AND de los criterios del §6."
 
 
@@ -395,12 +444,17 @@ def outcome_of(v: dict, pop: dict, *, sanity_valid: bool) -> str:
 
 def _common(max_positions: int, capital: float, **over) -> dict:
     base = dict(
-        max_positions=max_positions, initial_capital=capital, cap_days=BASE_CAP,
-        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT,
-                        trail_min_excess_atrs=BASE_K),
-        so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
-        eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES,
+        max_positions=max_positions,
+        initial_capital=capital,
+        cap_days=BASE_CAP,
+        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT, trail_min_excess_atrs=BASE_K),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
+        eval_mode=EVAL_MODE,
+        fill_mode=FILL_MODE,
+        live_gates=LIVE_GATES,
     )
     base.update(over)
     return base
@@ -409,8 +463,7 @@ def _common(max_positions: int, capital: float, **over) -> dict:
 def _boot_d(b) -> dict | None:
     if b is None:
         return None
-    return {"delta": b.observed, "ci_low": b.ci_low, "ci_high": b.ci_high,
-            "p_value": b.p_value}
+    return {"delta": b.observed, "ci_low": b.ci_low, "ci_high": b.ci_high, "p_value": b.p_value}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -429,13 +482,11 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     log = sys.stderr if args.json else sys.stdout
-    smoke = bool(args.universe != LIVE_UNIVERSE_FILE or args.no_walkforward
-                 or args.no_sensitivity)
+    smoke = bool(args.universe != LIVE_UNIVERSE_FILE or args.no_walkforward or args.no_sensitivity)
 
     global _CACHE
     try:
-        _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None,
-                          args.budget_seconds)
+        _CACHE = SimCache(Path(args.cache_dir) if args.cache_dir else None, args.budget_seconds)
     except CacheDirBusy as exc:
         # Tarea 59: morir temprano y con el culpable nombrado. Seguir seria
         # mezclarse con la otra corrida en el cache y en el artefacto, y eso
@@ -446,8 +497,7 @@ def main(argv: list[str] | None = None) -> int:
     tickers = parse_universe_file(_HERE.parent / args.universe)
     bars_by, sigs_by, _missing = load_bars_signals(tickers, args.period, args.warmup)
     if not bars_by:
-        print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.",
-              file=sys.stderr)
+        print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     entries = buy_entries(bars_by, sigs_by, args.warmup)
     if not entries:
@@ -455,12 +505,22 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     window = artifact_window(bars_by)
-    cfg = announce(args.max_positions, args.universe, len(bars_by), window=window,
-                   eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES,
-                   file=log)
+    cfg = announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=window,
+        eval_mode=EVAL_MODE,
+        fill_mode=FILL_MODE,
+        live_gates=LIVE_GATES,
+        file=log,
+    )
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
-    print(f"BASELINE = el brazo VIVO desde 2026-08-27: stop duro OFF + trail "
-          f"{LIVE_TRAIL_MULT}×ATR, armado en {BASE_K}×ATR", file=log)
+    print(
+        f"BASELINE = el brazo VIVO desde 2026-08-27: stop duro OFF + trail "
+        f"{LIVE_TRAIL_MULT}×ATR, armado en {BASE_K}×ATR",
+        file=log,
+    )
     print(f"Grilla del umbral: k ∈ {list(GRID_K)}\n", file=log)
     if smoke:
         print("*** SMOKE — la corrida NO puede dictar veredicto ***\n", file=log)
@@ -469,23 +529,23 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── 1. Baseline + la población de la grilla (T58, ANTES de los brazos) ────
     results: dict[str, PortfolioResult] = {}
-    results[BASELINE_ARM] = _sim(f"grid|{BASELINE_ARM}", entries, bars_by, sigs_by,
-                                 **common)
+    results[BASELINE_ARM] = _sim(f"grid|{BASELINE_ARM}", entries, bars_by, sigs_by, **common)
     base_res = results[BASELINE_ARM]
     excess = excess_by_key(base_res, bars_by)
-    grid_pop = announce_grid(list(excess.values()), GRID_K,
-                             label="excedente máximo sobre la entrada (en ATRs)",
-                             file=log)
+    grid_pop = announce_grid(
+        list(excess.values()), GRID_K, label="excedente máximo sobre la entrada (en ATRs)", file=log
+    )
     # La acumulada que imprime `announce_grid` es informativa; la que MANDA es la
     # diferencial (§5.3 + enmienda del pre-registro).
     diff_share = {k: population_share(excess, k) for k in GRID_K}
-    print("Población DIFERENCIAL — trades que cambian de comportamiento vs "
-          f"k={BASE_K:.2f}:", file=log)
+    print(f"Población DIFERENCIAL — trades que cambian de comportamiento vs k={BASE_K:.2f}:", file=log)
     print(f"  {'k':>6} {'cambian':>9} {'población':>11}", file=log)
     for k in GRID_K:
         marca = "" if diff_share[k] >= SANITY_MIN_POPULATION else "  <- sin población"
-        print(f"  {k:>6.2f} {round(diff_share[k] * len(excess)):>9} "
-              f"{100 * diff_share[k]:>10.2f}%{marca}", file=log)
+        print(
+            f"  {k:>6.2f} {round(diff_share[k] * len(excess)):>9} {100 * diff_share[k]:>10.2f}%{marca}",
+            file=log,
+        )
     print("", file=log)
 
     viables = [k for k in GRID_K if diff_share[k] >= SANITY_MIN_POPULATION]
@@ -496,51 +556,67 @@ def main(argv: list[str] | None = None) -> int:
     # ── 2. La grilla ─────────────────────────────────────────────────────────
     for k in GRID_K:
         print(f"  grilla k={k:.2f} …", file=log, flush=True)
-        results[arm_name(k)] = _sim(f"grid|{arm_name(k)}", entries, bars_by, sigs_by,
-                                    trail_min_excess_of=thr_for_all(k), **common)
+        results[arm_name(k)] = _sim(
+            f"grid|{arm_name(k)}", entries, bars_by, sigs_by, trail_min_excess_of=thr_for_all(k), **common
+        )
     summaries = {n: summarise(r) for n, r in results.items()}
 
     # ── 3. k* por WALK-FORWARD sobre la grilla CON POBLACIÓN ─────────────────
     if args.no_walkforward:
         star = max(viables, key=lambda k: summaries[arm_name(k)]["cagr"])
-        wf = {"star": star, "agreement": 0, "SMOKE": True, "per_fold": [],
-              "picks": []}
+        wf = {"star": star, "agreement": 0, "SMOKE": True, "per_fold": [], "picks": []}
     else:
         print("\n  §6 — walk-forward que elige k* …", file=log, flush=True)
         wf = walk_forward(entries, bars_by, sigs_by, common, viables, log=log)
         star = wf["star"]
     arm = arm_name(star)
-    print(f"\n  k* = {star:.2f} ({wf['agreement']}/{len(FOLDS)} folds) · "
-          f"población diferencial {100 * diff_share[star]:.2f}%\n", file=log)
+    print(
+        f"\n  k* = {star:.2f} ({wf['agreement']}/{len(FOLDS)} folds) · "
+        f"población diferencial {100 * diff_share[star]:.2f}%\n",
+        file=log,
+    )
 
-    pop = {"share": diff_share[star], "min": SANITY_MIN_POPULATION,
-           "ok": bool(diff_share[star] >= SANITY_MIN_POPULATION),
-           "by_k": {f"{k:.2f}": diff_share[k] for k in GRID_K}}
+    pop = {
+        "share": diff_share[star],
+        "min": SANITY_MIN_POPULATION,
+        "ok": bool(diff_share[star] >= SANITY_MIN_POPULATION),
+        "by_k": {f"{k:.2f}": diff_share[k] for k in GRID_K},
+    }
 
     # ── 4. Oráculo y anti-oráculo, igualados en tasa (§5.4 + enmienda) ───────
     print("  oráculo / anti-oráculo …", file=log, flush=True)
     keys_star = differential_keys(excess, star)
     for name, worst in ((ORACLE_ARM, True), (ANTI_ORACLE_ARM, False)):
         keys = oracle_arm_keys(keys_star, base_res, worst=worst)
-        results[name] = _sim(f"oracle2|{star:.2f}|{int(worst)}", entries, bars_by,
-                             sigs_by, trail_min_excess_of=thr_for_keys(keys, star),
-                             **common)
+        results[name] = _sim(
+            f"oracle2|{star:.2f}|{int(worst)}",
+            entries,
+            bars_by,
+            sigs_by,
+            trail_min_excess_of=thr_for_keys(keys, star),
+            **common,
+        )
         summaries[name] = summarise(results[name])
 
     # ── 5. §5.2 — reproducción (ventana + población: 48 y 52) ────────────────
     pop_run = cfg.population(len(entries))
     st_base, why_base = reproduction_check(
-        summaries[BASELINE_ARM]["cagr"], REPRO_BASE_CAGR, tol=REPRO_TOL,
-        current=window, measured_on=WINDOW_REFRESH_2026_08_09,
-        population=pop_run, measured_over=POPULATION_LIVE_ACCT2)
+        summaries[BASELINE_ARM]["cagr"],
+        REPRO_BASE_CAGR,
+        tol=REPRO_TOL,
+        current=window,
+        measured_on=WINDOW_REFRESH_2026_08_09,
+        population=pop_run,
+        measured_over=POPULATION_LIVE_ACCT2,
+    )
     never_armed = sum(1 for m in excess.values() if m <= BASE_K) / len(excess)
     repro = {
-        "base_state": st_base, "base_why": why_base,
+        "base_state": st_base,
+        "base_why": why_base,
         "base_ok": st_base == REPRO_OK,
         "never_armed": never_armed,
         "never_armed_expected": REPRO_NEVER_ARMED,
-        "never_armed_ok": bool(abs(never_armed - REPRO_NEVER_ARMED)
-                               <= REPRO_NEVER_ARMED_TOL),
+        "never_armed_ok": bool(abs(never_armed - REPRO_NEVER_ARMED) <= REPRO_NEVER_ARMED_TOL),
     }
 
     # ── 6. Bootstrap pareado (C4) ────────────────────────────────────────────
@@ -551,9 +627,13 @@ def main(argv: list[str] | None = None) -> int:
         if not xs or not ys:
             return None
         n = min(len(xs), len(ys))
-        return paired_block_bootstrap([v for _, v in xs[:n]], [v for _, v in ys[:n]],
-                                      block=BOOT_BLOCK, n_resamples=args.resamples,
-                                      seed=BOOT_SEED)
+        return paired_block_bootstrap(
+            [v for _, v in xs[:n]],
+            [v for _, v in ys[:n]],
+            block=BOOT_BLOCK,
+            n_resamples=args.resamples,
+            seed=BOOT_SEED,
+        )
 
     boot = _boot(daily[BASELINE_ARM], daily[arm])
 
@@ -572,55 +652,74 @@ def main(argv: list[str] | None = None) -> int:
     # ── 9. C7 — sensibilidad a 5 slots ───────────────────────────────────────
     sens = None
     if not args.no_sensitivity:
-        print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log,
-              flush=True)
+        print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log, flush=True)
         s_common = _common(SENS_MAX_POSITIONS, args.capital)
         s_res = {
-            BASELINE_ARM: _sim(f"sens|{BASELINE_ARM}", entries, bars_by, sigs_by,
-                               **s_common),
-            arm: _sim(f"sens|{arm}", entries, bars_by, sigs_by,
-                      trail_min_excess_of=thr_for_all(star), **s_common),
+            BASELINE_ARM: _sim(f"sens|{BASELINE_ARM}", entries, bars_by, sigs_by, **s_common),
+            arm: _sim(
+                f"sens|{arm}", entries, bars_by, sigs_by, trail_min_excess_of=thr_for_all(star), **s_common
+            ),
         }
         s_sum = {n: summarise(r) for n, r in s_res.items()}
         s_daily = aligned_daily(s_res, [BASELINE_ARM, arm])
         s_boot = _boot(s_daily[BASELINE_ARM], s_daily[arm])
         sens = {
             "max_positions": SENS_MAX_POSITIONS,
-            "base_cagr": s_sum[BASELINE_ARM]["cagr"], "cand_cagr": s_sum[arm]["cagr"],
-            "c1": bool(s_sum[arm]["cagr"] - s_sum[BASELINE_ARM]["cagr"]
-                       >= KILL_MIN_DCAGR),
+            "base_cagr": s_sum[BASELINE_ARM]["cagr"],
+            "cand_cagr": s_sum[arm]["cagr"],
+            "c1": bool(s_sum[arm]["cagr"] - s_sum[BASELINE_ARM]["cagr"] >= KILL_MIN_DCAGR),
             "c4": bool(s_boot is not None and s_boot.ci_low > 0.0),
         }
 
     # ── 10. Veredicto ────────────────────────────────────────────────────────
     trade_diff = trade_overlap(base_res, results[arm])
     sanity = evaluate_sanity(summaries, trade_diff, repro, pop, star)
-    v = evaluate(summaries[BASELINE_ARM], summaries[arm], boot, c6, c8, sens,
-                 diff_ret)
+    v = evaluate(summaries[BASELINE_ARM], summaries[arm], boot, c6, c8, sens, diff_ret)
     if not pop["ok"] or not sanity["valid"]:
         v["ship"] = False
     outcome = outcome_of(v, pop, sanity_valid=sanity["valid"])
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "smoke": smoke, "universe": args.universe, "n_tickers": len(bars_by),
-        "max_positions": args.max_positions, "window": str(window),
-        "population": str(pop_run), "n_entries": len(entries),
-        "grid_k": list(GRID_K), "base_k": BASE_K, "viables": viables,
-        "arm": arm, "k_star": star, "wf": wf,
-        "summaries": summaries, "repro": repro, "sanity": sanity,
+        "smoke": smoke,
+        "universe": args.universe,
+        "n_tickers": len(bars_by),
+        "max_positions": args.max_positions,
+        "window": str(window),
+        "population": str(pop_run),
+        "n_entries": len(entries),
+        "grid_k": list(GRID_K),
+        "base_k": BASE_K,
+        "viables": viables,
+        "arm": arm,
+        "k_star": star,
+        "wf": wf,
+        "summaries": summaries,
+        "repro": repro,
+        "sanity": sanity,
         "grid_population": {
-            "cumulative": [{"value": a.value, "n_hit": a.n_hit, "share": a.share,
-                            "inert": a.inert, "underpowered": a.underpowered}
-                           for a in grid_pop.arms],
+            "cumulative": [
+                {
+                    "value": a.value,
+                    "n_hit": a.n_hit,
+                    "share": a.share,
+                    "inert": a.inert,
+                    "underpowered": a.underpowered,
+                }
+                for a in grid_pop.arms
+            ],
             "differential": {f"{k:.2f}": diff_share[k] for k in GRID_K},
             "warnings": grid_pop.warnings(),
         },
-        "c6_dose": c6, "c8_regime": c8, "sensitivity": sens,
+        "c6_dose": c6,
+        "c8_regime": c8,
+        "sensitivity": sens,
         "boot_vs_base": _boot_d(boot),
-        "diff_return": diff_ret, "exit_mix": mixes,
+        "diff_return": diff_ret,
+        "exit_mix": mixes,
         "changed_exits": realized_change,
-        "verdict": v, "outcome": outcome,
+        "verdict": v,
+        "outcome": outcome,
         "cache": {"hits": _CACHE.hits, "misses": _CACHE.misses},
     }
 
@@ -659,30 +758,40 @@ def _report(ctx: dict) -> None:
     print("\n  Brazos:")
     for name in [BASELINE_ARM, ctx["arm"], ORACLE_ARM, ANTI_ORACLE_ARM]:
         v = s[name]
-        print(f"    {name:<18} CAGR {100 * v['cagr']:>7.2f}% · "
-              f"Sharpe {v['sharpe']:>5.2f} · maxDD {100 * v['max_dd']:>6.1f}% · "
-              f"tomadas {v['n_taken']:>5} · tenencia {v['mean_held_days']:.1f}d")
+        print(
+            f"    {name:<18} CAGR {100 * v['cagr']:>7.2f}% · "
+            f"Sharpe {v['sharpe']:>5.2f} · maxDD {100 * v['max_dd']:>6.1f}% · "
+            f"tomadas {v['n_taken']:>5} · tenencia {v['mean_held_days']:.1f}d"
+        )
 
     print("\n  §5 — sanity (si alguno falla, la corrida es INVÁLIDA):")
     for k, ok in sn["checks"].items():
         print(f"    [{'OK ' if ok else 'FALLA'}] {k}")
     rp = ctx["repro"]
-    print(f"    reproducción base: {rp['base_state']} · nunca arma "
-          f"{100 * rp['never_armed']:.2f}% (esperado "
-          f"{100 * rp['never_armed_expected']:.1f}%)")
-    print(f"    población diferencial del k*: {100 * sn['population']['share']:.2f}% "
-          f"(mínimo {100 * sn['population']['min']:.0f}%)")
+    print(
+        f"    reproducción base: {rp['base_state']} · nunca arma "
+        f"{100 * rp['never_armed']:.2f}% (esperado "
+        f"{100 * rp['never_armed_expected']:.1f}%)"
+    )
+    print(
+        f"    población diferencial del k*: {100 * sn['population']['share']:.2f}% "
+        f"(mínimo {100 * sn['population']['min']:.0f}%)"
+    )
 
     ce = ctx["changed_exits"]
-    print(f"\n  Salidas que CAMBIAN de verdad: {ce['n_changed']} de "
-          f"{ce['n_common']} trades comunes ({100 * ce['share']:.2f}%) · "
-          f"{ce['n_changed_in_diff_pop']} dentro de la población del §5.3 "
-          f"(descriptivo, no gate)")
+    print(
+        f"\n  Salidas que CAMBIAN de verdad: {ce['n_changed']} de "
+        f"{ce['n_common']} trades comunes ({100 * ce['share']:.2f}%) · "
+        f"{ce['n_changed_in_diff_pop']} dentro de la población del §5.3 "
+        f"(descriptivo, no gate)"
+    )
 
     dr = ctx["diff_return"]
-    print(f"\n  C9 — los {dr['n_common']} trades que el brazo cambia: "
-          f"{dr['base_pts']:.2f} → {dr['cand_pts']:.2f} pts "
-          f"(Δ {dr['delta_pts']:+.2f})")
+    print(
+        f"\n  C9 — los {dr['n_common']} trades que el brazo cambia: "
+        f"{dr['base_pts']:.2f} → {dr['cand_pts']:.2f} pts "
+        f"(Δ {dr['delta_pts']:+.2f})"
+    )
     for name, mix in ctx["exit_mix"].items():
         top = " · ".join(f"{m} {n}" for m, n in list(mix.items())[:4])
         print(f"    {name:<18} {top}")

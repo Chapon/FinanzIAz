@@ -36,26 +36,26 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams, Bar, max_drawdown  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams, Bar, max_drawdown
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     exit_rule_line,
 )
-from analysis.scaleout_replay import (  # noqa: E402
+from analysis.scaleout_replay import (
     CostModel,
     CycleResult,
     ScaleOutParams,
     replay_cycle,
 )
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.walkforward_power import (
     _sharpe,
     _skew_kurt,
     deflated_sharpe_ratio,
     pbo_cscv,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file  # noqa: E402
+from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file
 
 DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 
@@ -64,12 +64,12 @@ DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 # Los brazos B mueven además el trailing del remanente (stop inicial fijo en 2.0).
 ARMS: dict[str, tuple[ScaleOutParams, AtrParams]] = {
     "B0_baseline_full_exit": (ScaleOutParams(sell_fraction=1.0), AtrParams()),
-    "A50_scaleout_50":       (ScaleOutParams(sell_fraction=0.5), AtrParams()),
-    "B_trail_2.5":           (ScaleOutParams(sell_fraction=0.5), AtrParams(trail_mult=2.5)),
-    "B_trail_3.0":           (ScaleOutParams(sell_fraction=0.5), AtrParams(trail_mult=3.0)),
-    "C_A4_levels_rule":      (ScaleOutParams(sell_fraction=0.0), AtrParams()),
-    "A33_scaleout_33":       (ScaleOutParams(sell_fraction=0.33), AtrParams()),
-    "A67_scaleout_67":       (ScaleOutParams(sell_fraction=0.67), AtrParams()),
+    "A50_scaleout_50": (ScaleOutParams(sell_fraction=0.5), AtrParams()),
+    "B_trail_2.5": (ScaleOutParams(sell_fraction=0.5), AtrParams(trail_mult=2.5)),
+    "B_trail_3.0": (ScaleOutParams(sell_fraction=0.5), AtrParams(trail_mult=3.0)),
+    "C_A4_levels_rule": (ScaleOutParams(sell_fraction=0.0), AtrParams()),
+    "A33_scaleout_33": (ScaleOutParams(sell_fraction=0.33), AtrParams()),
+    "A67_scaleout_67": (ScaleOutParams(sell_fraction=0.67), AtrParams()),
 }
 PRIMARY_ARM = "A50_scaleout_50"
 BASELINE_ARM = "B0_baseline_full_exit"
@@ -106,8 +106,7 @@ def load_bars_and_signals(tickers: list[str], period: str, warmup: int):
         bars: list[Bar] = []
         for ts, row in df.iterrows():
             try:
-                o, h, lo, c = (float(row["Open"]), float(row["High"]),
-                               float(row["Low"]), float(row["Close"]))
+                o, h, lo, c = (float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"]))
             except (KeyError, TypeError, ValueError):
                 continue
             if not all(math.isfinite(v) for v in (o, h, lo, c)) or c <= 0:
@@ -131,7 +130,7 @@ def build_entries(bars_by: dict, sigs_by: dict, *, spacing: int, warmup: int):
     out: list[tuple[str, int]] = []
     for t, bars in bars_by.items():
         sigs = sigs_by.get(t) or {}
-        last = -10**9
+        last = -(10**9)
         for i in range(warmup, len(bars) - 1):
             if i - last < spacing:
                 continue
@@ -142,16 +141,22 @@ def build_entries(bars_by: dict, sigs_by: dict, *, spacing: int, warmup: int):
     return out
 
 
-def run_arm(entries, bars_by, sigs_by, params, atr_p, *, cap_days, costs, notional,
-            fill_mode: str = HARNESS_FILL_MODE):
+def run_arm(
+    entries, bars_by, sigs_by, params, atr_p, *, cap_days, costs, notional, fill_mode: str = HARNESS_FILL_MODE
+):
     """Corre un brazo sobre todas las entradas. Devuelve [CycleResult] alineado."""
     results: list[CycleResult] = []
     for ticker, idx in entries:
         bars = bars_by[ticker]
         res = replay_cycle(
-            bars, idx, sigs_by.get(ticker) or {},
-            params=params, atr_p=atr_p, cap_days=cap_days,
-            costs=costs, notional=notional,
+            bars,
+            idx,
+            sigs_by.get(ticker) or {},
+            params=params,
+            atr_p=atr_p,
+            cap_days=cap_days,
+            costs=costs,
+            notional=notional,
             regime=regime_for_date(bars[idx][0]),
             fill_mode=fill_mode,
         )
@@ -205,7 +210,8 @@ def summarise(name: str, results: list[CycleResult], base: list[CycleResult] | N
         "avg_win_pts": 100.0 * statistics.fmean(wins) if wins else 0.0,
         "avg_loss_pts": 100.0 * statistics.fmean(losses) if losses else 0.0,
         "payoff": (statistics.fmean(wins) / abs(statistics.fmean(losses)))
-                  if wins and losses else float("nan"),
+        if wins and losses
+        else float("nan"),
         "max_dd": dd,
         "sharpe": _sharpe(rets),
         "mean_held_days": statistics.fmean([r.held_days for r in results]) if results else 0.0,
@@ -237,9 +243,7 @@ def summarise(name: str, results: list[CycleResult], base: list[CycleResult] | N
             if b and a:
                 per_reg[reg] = 100.0 * (statistics.fmean(a) - statistics.fmean(b))
         out["delta_by_regime"] = per_reg
-        out["passes"] = bool(
-            out["delta_pts"] >= KILL_MIN_DELTA_PTS and out["dd_ratio"] <= KILL_MAX_DD_RATIO
-        )
+        out["passes"] = bool(out["delta_pts"] >= KILL_MIN_DELTA_PTS and out["dd_ratio"] <= KILL_MAX_DD_RATIO)
     return out
 
 
@@ -253,41 +257,56 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--notional", type=float, default=10_000.0)
     p.add_argument("--commission", type=float, default=0.001)
     p.add_argument("--slippage", type=float, default=0.0005)
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
-                        f"(look-ahead en el fill de la barrera — Tarea 33)")
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+        f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     tickers = parse_universe_file(_HERE.parent / args.universe)
-    bars_by, sigs_by, missing, incomplete = load_bars_and_signals(
-        tickers, args.period, args.warmup
-    )
+    bars_by, sigs_by, missing, incomplete = load_bars_and_signals(tickers, args.period, args.warmup)
     if incomplete:
-        print(f"AVISO: {len(incomplete)} tickers con señal PIT incompleta "
-              f"(se excluyen): {', '.join(incomplete[:8])}"
-              f"{'...' if len(incomplete) > 8 else ''}", file=sys.stderr)
+        print(
+            f"AVISO: {len(incomplete)} tickers con señal PIT incompleta "
+            f"(se excluyen): {', '.join(incomplete[:8])}"
+            f"{'...' if len(incomplete) > 8 else ''}",
+            file=sys.stderr,
+        )
     if missing:
-        print(f"AVISO: {len(missing)} tickers sin datos: "
-              f"{', '.join(missing[:8])}{'...' if len(missing) > 8 else ''}",
-              file=sys.stderr)
+        print(
+            f"AVISO: {len(missing)} tickers sin datos: "
+            f"{', '.join(missing[:8])}{'...' if len(missing) > 8 else ''}",
+            file=sys.stderr,
+        )
     if not bars_by:
-        print("Sin datos: corré scripts/precompute_pit_signals.py primero.",
-              file=sys.stderr)
+        print("Sin datos: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     costs = CostModel(commission=args.commission, slippage=args.slippage)
-    print(f"Tickers: {len(bars_by)} · entradas BUY point-in-time: {len(entries)} "
-          f"(spacing {args.spacing}, cap {args.cap_days}d)")
+    print(
+        f"Tickers: {len(bars_by)} · entradas BUY point-in-time: {len(entries)} "
+        f"(spacing {args.spacing}, cap {args.cap_days}d)"
+    )
     print(exit_rule_line(fill_mode=args.fill_mode))
 
     per_arm: dict[str, list[CycleResult]] = {}
     for name, (params, atr_p) in ARMS.items():
-        per_arm[name] = run_arm(entries, bars_by, sigs_by, params, atr_p,
-                                cap_days=args.cap_days, costs=costs,
-                                notional=args.notional, fill_mode=args.fill_mode)
+        per_arm[name] = run_arm(
+            entries,
+            bars_by,
+            sigs_by,
+            params,
+            atr_p,
+            cap_days=args.cap_days,
+            costs=costs,
+            notional=args.notional,
+            fill_mode=args.fill_mode,
+        )
 
     base = per_arm[BASELINE_ARM]
     summaries = [summarise(BASELINE_ARM, base, None)]
@@ -301,48 +320,67 @@ def main(argv: list[str] | None = None) -> int:
     lens = {len(v) for v in perf_matrix.values()}
     pbo = pbo_cscv(perf_matrix) if len(lens) == 1 else None
     trial_sharpes = [_sharpe(perf_matrix[n]) for n in ARMS if n != BASELINE_ARM]
-    best_name = max((n for n in ARMS if n != BASELINE_ARM),
-                    key=lambda n: _sharpe(perf_matrix[n]))
+    best_name = max((n for n in ARMS if n != BASELINE_ARM), key=lambda n: _sharpe(perf_matrix[n]))
     sk, ku = _skew_kurt(perf_matrix[best_name])
     dsr = deflated_sharpe_ratio(
-        trial_sharpes, n_obs=len(perf_matrix[best_name]),
-        selected=_sharpe(perf_matrix[best_name]), skew=sk, kurtosis=ku,
+        trial_sharpes,
+        n_obs=len(perf_matrix[best_name]),
+        selected=_sharpe(perf_matrix[best_name]),
+        skew=sk,
+        kurtosis=ku,
     )
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_tickers": len(bars_by), "n_entries": len(entries),
-        "spacing": args.spacing, "cap_days": args.cap_days,
+        "n_tickers": len(bars_by),
+        "n_entries": len(entries),
+        "spacing": args.spacing,
+        "cap_days": args.cap_days,
         "fill_mode": args.fill_mode,
         "costs": {"commission": args.commission, "slippage": args.slippage},
         "n_trials_dsr": N_TRIALS,
-        "kill_criteria": {"min_delta_pts": KILL_MIN_DELTA_PTS,
-                          "max_dd_ratio": KILL_MAX_DD_RATIO,
-                          "max_pbo": KILL_MAX_PBO},
+        "kill_criteria": {
+            "min_delta_pts": KILL_MIN_DELTA_PTS,
+            "max_dd_ratio": KILL_MAX_DD_RATIO,
+            "max_pbo": KILL_MAX_PBO,
+        },
     }
     if args.json:
-        print(json.dumps({
-            "context": ctx, "summaries": summaries,
-            "pbo": pbo.__dict__ if pbo else None, "dsr": dsr.__dict__,
-            "best_by_sharpe": best_name,
-        }, ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {
+                    "context": ctx,
+                    "summaries": summaries,
+                    "pbo": pbo.__dict__ if pbo else None,
+                    "dsr": dsr.__dict__,
+                    "best_by_sharpe": best_name,
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
     print()
-    hdr = (f"{'brazo':<24}{'n':>5}{'ret medio':>11}{'Δ pts':>8}{'win%':>7}"
-           f"{'payoff':>8}{'DD':>7}{'ratio':>7}{'días':>6}{'PASS':>6}")
+    hdr = (
+        f"{'brazo':<24}{'n':>5}{'ret medio':>11}{'Δ pts':>8}{'win%':>7}"
+        f"{'payoff':>8}{'DD':>7}{'ratio':>7}{'días':>6}{'PASS':>6}"
+    )
     print(hdr)
     print("-" * len(hdr))
     for s in summaries:
         d = s.get("delta_pts")
         r = s.get("dd_ratio")
-        print(f"{s['arm']:<24}{s['n']:>5}{s['mean_ret_pts']:>10.2f}%"
-              f"{('—' if d is None else f'{d:+.2f}'):>8}"
-              f"{s['win_rate']:>6.1f}%{s['payoff']:>8.2f}"
-              f"{100*s['max_dd']:>6.1f}%"
-              f"{('—' if r is None else f'{r:.2f}'):>7}"
-              f"{s['mean_held_days']:>6.1f}"
-              f"{('' if s.get('passes') is None else ('SI' if s['passes'] else 'no')):>6}")
+        print(
+            f"{s['arm']:<24}{s['n']:>5}{s['mean_ret_pts']:>10.2f}%"
+            f"{('—' if d is None else f'{d:+.2f}'):>8}"
+            f"{s['win_rate']:>6.1f}%{s['payoff']:>8.2f}"
+            f"{100 * s['max_dd']:>6.1f}%"
+            f"{('—' if r is None else f'{r:.2f}'):>7}"
+            f"{s['mean_held_days']:>6.1f}"
+            f"{('' if s.get('passes') is None else ('SI' if s['passes'] else 'no')):>6}"
+        )
 
     print("\nΔ por régimen (pts vs baseline):")
     for s in summaries[1:]:
@@ -358,12 +396,16 @@ def main(argv: list[str] | None = None) -> int:
     if pbo and pbo.best_is_counts:
         top = sorted(pbo.best_is_counts.items(), key=lambda kv: -kv[1])[:3]
         print(f"  mejor in-sample más veces: {top}")
-    print(f"DSR: mejor por Sharpe = {best_name} · SR={dsr.observed_sharpe:.4f} · "
-          f"SR0={dsr.expected_max_sharpe:.4f} · DSR={dsr.deflated_sharpe:.4f} "
-          f"({dsr.n_trials} intentos, n={dsr.n_obs})")
-    print(f"\nKill-criteria: Δ ≥ +{KILL_MIN_DELTA_PTS} pts · DD ratio ≤ "
-          f"{KILL_MAX_DD_RATIO} · PBO ≤ {KILL_MAX_PBO} · DSR > 0 · "
-          f"el signo no puede depender de un solo régimen")
+    print(
+        f"DSR: mejor por Sharpe = {best_name} · SR={dsr.observed_sharpe:.4f} · "
+        f"SR0={dsr.expected_max_sharpe:.4f} · DSR={dsr.deflated_sharpe:.4f} "
+        f"({dsr.n_trials} intentos, n={dsr.n_obs})"
+    )
+    print(
+        f"\nKill-criteria: Δ ≥ +{KILL_MIN_DELTA_PTS} pts · DD ratio ≤ "
+        f"{KILL_MAX_DD_RATIO} · PBO ≤ {KILL_MAX_PBO} · DSR > 0 · "
+        f"el signo no puede depender de un solo régimen"
+    )
     return 0
 
 

@@ -42,20 +42,29 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.insider_cluster import InsiderTx  # noqa: E402
+from analysis.insider_cluster import InsiderTx
 
 log = logging.getLogger("ingest_form345")
 
 # La ruta del dataset en sec.gov. Se puede overridear por CLI si la SEC la mueve;
 # se verifica contra el dato real en la primera corrida con red.
 FORM345_URL_TEMPLATE = (
-    "https://www.sec.gov/files/structureddata/data/"
-    "insider-transactions-data-sets/{year}q{q}_form345.zip"
+    "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/{year}q{q}_form345.zip"
 )
 
 _MONTHS = {
-    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+    "JAN": 1,
+    "FEB": 2,
+    "MAR": 3,
+    "APR": 4,
+    "MAY": 5,
+    "JUN": 6,
+    "JUL": 7,
+    "AUG": 8,
+    "SEP": 9,
+    "OCT": 10,
+    "NOV": 11,
+    "DEC": 12,
 }
 _TRUTHY = {"1", "Y", "YES", "TRUE", "T"}
 

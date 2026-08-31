@@ -19,6 +19,7 @@ Uso:
 Exit code 0 = sano, 1 = hay problemas. Pensado para correr a mano o como hook
 pre-commit. NO depende de paquetes externos (solo stdlib).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,7 +38,9 @@ SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "backups", 
 def _staged_files() -> list[Path]:
     out = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     return [ROOT / line.strip() for line in out.stdout.splitlines() if line.strip()]
 
@@ -111,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         print(f"check_repo_health: PROBLEMAS encontrados ({scope}):", file=sys.stderr)
         print("\n".join(problems), file=sys.stderr)
-        print("\nArreglalos antes de commitear. Detalle en CLAUDE.md / skill finanzias-conventions.", file=sys.stderr)
+        print(
+            "\nArreglalos antes de commitear. Detalle en CLAUDE.md / skill finanzias-conventions.",
+            file=sys.stderr,
+        )
         return 1
-
-   

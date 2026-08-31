@@ -28,7 +28,7 @@ _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 sys.path.insert(0, str(_ROOT))
 
-from analysis.harness_config import LIVE_ACCOUNT_ID, LIVE_UNIVERSE_FILE  # noqa: E402
+from analysis.harness_config import LIVE_ACCOUNT_ID, LIVE_UNIVERSE_FILE
 
 PIT_DIR = "data/pit_signals"
 
@@ -74,15 +74,18 @@ def main(argv: list[str] | None = None) -> int:
     missing = [t for t in wl if t not in pit]
 
     print(f"Watchlist cuenta {args.account_id}: {len(wl)} tickers")
-    print(f"Con artefacto PIT: {len(keep)} · sin artefacto: {len(missing)}"
-          + (f" ({', '.join(missing)})" if missing else ""))
+    print(
+        f"Con artefacto PIT: {len(keep)} · sin artefacto: {len(missing)}"
+        + (f" ({', '.join(missing)})" if missing else "")
+    )
     if missing:
-        print(f"  (para sumarlos: python {PIT_DIR and 'scripts/precompute_pit_signals.py'} "
-              f"--tickers {' '.join(missing)})")
+        print(
+            f"  (para sumarlos: python {PIT_DIR and 'scripts/precompute_pit_signals.py'} "
+            f"--tickers {' '.join(missing)})"
+        )
 
     header = [
-        f"# Universo de harness = watchlist de la cuenta {args.account_id} "
-        f"con artefacto PIT disponible.",
+        f"# Universo de harness = watchlist de la cuenta {args.account_id} con artefacto PIT disponible.",
         f"# Generado por scripts/refresh_live_universe.py el {date.today().isoformat()}.",
         f"# {len(keep)}/{len(wl)} tickers de la watchlist."
         + (f" Sin PIT: {', '.join(missing)}." if missing else ""),

@@ -36,9 +36,9 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.entry_rules import apply_pullback  # noqa: E402
-from analysis.exit_replay import AtrParams, Bar  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.entry_rules import apply_pullback
+from analysis.exit_replay import AtrParams
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -46,11 +46,11 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
 )
-from analysis.meta_labeling import MAX_DAYS  # noqa: E402
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.meta_labeling import MAX_DAYS
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr, sharpe_annual
+from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
+from analysis.walkforward_power import (
     STRESS_REGIMES,
     _sharpe,
     _skew_kurt,
@@ -59,8 +59,8 @@ from analysis.walkforward_power import (  # noqa: E402
     pbo_cscv,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries, load_bars_signals  # noqa: E402
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries, load_bars_signals
 
 DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 
@@ -68,8 +68,8 @@ DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 CAP_DAYS = 250
 
 # §4 — parámetros congelados de los brazos.
-PULLBACK_WINDOW = 5          # K días hábiles
-TIME_STOP_N = MAX_DAYS       # heredado de meta_labeling (nota de la tarea 21)
+PULLBACK_WINDOW = 5  # K días hábiles
+TIME_STOP_N = MAX_DAYS  # heredado de meta_labeling (nota de la tarea 21)
 TIME_STOP_N_EXPLORATORY = 10
 
 BASELINE_ARM = "BASE"
@@ -78,17 +78,17 @@ EXPLORATORY_ARMS = ("A_negday", "B_N10")
 COMBINED_ARM = "A+B"
 
 # §5 — kill-criteria congelados.
-KILL_MIN_DCAGR = 0.0030      # C1: ΔCAGR ≥ +0.30pp
-KILL_SHARPE_TOL = 0.02       # C2: Sharpe ≥ base − 0.02
-KILL_DD_TOL = 0.005          # C3: maxDD ≤ base + 0.5pp
-KILL_REGIME_TOL = 0.05       # C4: Δ ret medio por trade ≥ −0.05 pts por régimen
-KILL_MAX_EXPIRED = 0.20      # C6a: ≤ 20% de las esperas expiran
+KILL_MIN_DCAGR = 0.0030  # C1: ΔCAGR ≥ +0.30pp
+KILL_SHARPE_TOL = 0.02  # C2: Sharpe ≥ base − 0.02
+KILL_DD_TOL = 0.005  # C3: maxDD ≤ base + 0.5pp
+KILL_REGIME_TOL = 0.05  # C4: Δ ret medio por trade ≥ −0.05 pts por régimen
+KILL_MAX_EXPIRED = 0.20  # C6a: ≤ 20% de las esperas expiran
 KILL_WINNER_MEAN_TOL = 0.25  # C6b: ret medio de ganadores no cae > 0.25 pts
-KILL_P95_TOL = 1.00          # C6b: p95 del ret por trade no cae > 1.0 pt
+KILL_P95_TOL = 1.00  # C6b: p95 del ret por trade no cae > 1.0 pt
 
 # §6 — sanity.
-SANITY_MIN_TIMESTOP_POP = 0.05   # ≥ 5% de los trades del BASE alcanzables por (b)
-SANITY_MAX_CAP_SHARE = 0.02      # cap_reached residual en BASE
+SANITY_MIN_TIMESTOP_POP = 0.05  # ≥ 5% de los trades del BASE alcanzables por (b)
+SANITY_MAX_CAP_SHARE = 0.02  # cap_reached residual en BASE
 
 BOOT_BLOCK = 20
 BOOT_RESAMPLES = 2000
@@ -137,8 +137,7 @@ def summarise(res: PortfolioResult) -> dict:
         "exposure": res.exposure_share,
         "time_stop_share": _reason_share(res, "time_stop"),
         "cap_share": _reason_share(res, "cap_reached"),
-        "mean_held_days": (statistics.fmean([t.held_days for t in res.trades])
-                           if res.trades else 0.0),
+        "mean_held_days": (statistics.fmean([t.held_days for t in res.trades]) if res.trades else 0.0),
         "total_return_pts": res.total_return_pts,
         "accounting_ok": _accounting_ok(res),
     }
@@ -158,8 +157,7 @@ def regime_trade_breakdown(res: PortfolioResult) -> dict:
 # ── Sanity §6.3: ¿existe población para el time stop en el BASE? ─────────────
 
 
-def timestop_population(res: PortfolioResult, bars_by, sigs_by, n_days: int,
-                        common) -> float:
+def timestop_population(res: PortfolioResult, bars_by, sigs_by, n_days: int, common) -> float:
     """Fracción de los trades del BASE sobre los que el time stop *actuaría*.
 
     Se re-corre el ciclo de cada trade tomado por el baseline con el time stop
@@ -178,9 +176,15 @@ def timestop_population(res: PortfolioResult, bars_by, sigs_by, n_days: int,
         if i is None:
             continue
         cyc = replay_cycle(
-            bars_by[t.ticker], i, sigs_by.get(t.ticker) or {},
-            params=common["so_params"], atr_p=AtrParams(), cap_days=common["cap_days"],
-            costs=common["costs"], notional=10_000.0, time_stop_days=n_days,
+            bars_by[t.ticker],
+            i,
+            sigs_by.get(t.ticker) or {},
+            params=common["so_params"],
+            atr_p=AtrParams(),
+            cap_days=common["cap_days"],
+            costs=common["costs"],
+            notional=10_000.0,
+            time_stop_days=n_days,
             fill_mode=common["fill_mode"],
         )
         if cyc is not None and "time_stop" in cyc.exit_reasons:
@@ -205,7 +209,7 @@ def held_days_profile(res: PortfolioResult, n_days: int) -> dict:
     long_ones = [t for t in res.trades if t.held_days >= n_days]
     return {
         "n": n,
-        "pcts": {f"p{int(q*100)}": hd[int(q * n)] for q in (0.25, 0.5, 0.75, 0.9, 0.95, 0.99)},
+        "pcts": {f"p{int(q * 100)}": hd[int(q * n)] for q in (0.25, 0.5, 0.75, 0.9, 0.95, 0.99)},
         "max": hd[-1],
         "mean": statistics.fmean(hd),
         "share_ge_n": sum(1 for x in hd if x >= n_days) / n,
@@ -215,8 +219,7 @@ def held_days_profile(res: PortfolioResult, n_days: int) -> dict:
     }
 
 
-def pullback_counterfactual(entries, bars_by, sigs_by, common, *,
-                            window: int, condition: str) -> dict:
+def pullback_counterfactual(entries, bars_by, sigs_by, common, *, window: int, condition: str) -> dict:
     """Qué habría rendido cada espera **entrando el día de la señal** (baseline),
     separada por cómo terminó la espera.
 
@@ -241,13 +244,19 @@ def pullback_counterfactual(entries, bars_by, sigs_by, common, *,
         for idx in sorted(idxs):
             if idx <= blocked:
                 continue
-            r = resolve_pullback(bars, idx, sig, window=window,
-                                 condition=condition, ema=ema)
+            r = resolve_pullback(bars, idx, sig, window=window, condition=condition, ema=ema)
             blocked = r.resolved_idx
-            cyc = replay_cycle(bars, idx, sig, params=common["so_params"],
-                               atr_p=AtrParams(), cap_days=common["cap_days"],
-                               costs=common["costs"], notional=10_000.0,
-                               fill_mode=common["fill_mode"])
+            cyc = replay_cycle(
+                bars,
+                idx,
+                sig,
+                params=common["so_params"],
+                atr_p=AtrParams(),
+                cap_days=common["cap_days"],
+                costs=common["costs"],
+                notional=10_000.0,
+                fill_mode=common["fill_mode"],
+            )
             if cyc is not None:
                 buckets[r.status].append(cyc.ret)
 
@@ -294,7 +303,7 @@ def evaluate_arm(name: str, summaries: dict, regimes: dict, boot, pb_stats) -> d
     # C6 — específico del brazo.
     if name.startswith("A"):
         c6 = pb_stats is not None and pb_stats.expired_share <= KILL_MAX_EXPIRED
-        c6_label = f"expiran {100*pb_stats.expired_share:.1f}% ≤ 20%" if pb_stats else "n/d"
+        c6_label = f"expiran {100 * pb_stats.expired_share:.1f}% ≤ 20%" if pb_stats else "n/d"
     else:
         d_win = cand["winner_mean_pts"] - base["winner_mean_pts"]
         d_p95 = 100.0 * (cand["p95_trade"] - base["p95_trade"])
@@ -310,8 +319,13 @@ def evaluate_arm(name: str, summaries: dict, regimes: dict, boot, pb_stats) -> d
         "winner_delta": cand["winner_mean_pts"] - base["winner_mean_pts"],
         "p95_delta": 100.0 * (cand["p95_trade"] - base["p95_trade"]),
         "regime_delta": reg_delta,
-        "c1_cagr": c1, "c2_sharpe": c2, "c3_dd": c3, "c4_regime": c4,
-        "c5_bootstrap": c5, "c6_specific": c6, "c6_label": c6_label,
+        "c1_cagr": c1,
+        "c2_sharpe": c2,
+        "c3_dd": c3,
+        "c4_regime": c4,
+        "c5_bootstrap": c5,
+        "c6_specific": c6,
+        "c6_label": c6_label,
         "ship": ship,
     }
 
@@ -328,12 +342,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
-    p.add_argument("--no-diagnose", action="store_true",
-                   help="saltea los diagnósticos que interpretan el veredicto")
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
-                        f"(look-ahead en el fill de la barrera — Tarea 33)")
+    p.add_argument(
+        "--no-diagnose", action="store_true", help="saltea los diagnósticos que interpretan el veredicto"
+    )
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+        f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -343,8 +361,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     if missing:
-        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}",
-              file=sys.stderr)
+        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}", file=sys.stderr)
 
     base_entries = buy_entries(bars_by, sigs_by, args.warmup)
     if not base_entries:
@@ -352,27 +369,41 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     pull_entries, pull_stats = apply_pullback(
-        base_entries, bars_by, sigs_by, window=PULLBACK_WINDOW, condition="ema20")
+        base_entries, bars_by, sigs_by, window=PULLBACK_WINDOW, condition="ema20"
+    )
     neg_entries, neg_stats = apply_pullback(
-        base_entries, bars_by, sigs_by, window=PULLBACK_WINDOW, condition="negday")
+        base_entries, bars_by, sigs_by, window=PULLBACK_WINDOW, condition="negday"
+    )
 
     # Progreso a stderr: con --json el stdout tiene que ser JSON puro y nada más.
     log = sys.stderr if args.json else sys.stdout
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode,
-             file=log)
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        verdict_max_positions=LEGACY_MAX_POSITIONS,
+        fill_mode=args.fill_mode,
+        file=log,
+    )
     print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(base_entries)}", file=log)
     for label, st in (("EMA20 ", pull_stats), ("negday", neg_stats)):
-        print(f"Pullback {label} K={PULLBACK_WINDOW}: {st.n_waits} esperas → "
-              f"{st.n_filled} fills / {st.n_expired} expiradas / "
-              f"{st.n_cancelled} canceladas ({st.n_dup_skipped} dup)", file=log)
+        print(
+            f"Pullback {label} K={PULLBACK_WINDOW}: {st.n_waits} esperas → "
+            f"{st.n_filled} fills / {st.n_expired} expiradas / "
+            f"{st.n_cancelled} canceladas ({st.n_dup_skipped} dup)",
+            file=log,
+        )
     print("", file=log)
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
         fill_mode=args.fill_mode,
     )
 
@@ -384,8 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         "B_N10": (base_entries, TIME_STOP_N_EXPLORATORY),
     }
     results = {
-        n: simulate_portfolio(ent, bars_by, sigs_by, atr_p=AtrParams(),
-                              time_stop_days=ts, **common)
+        n: simulate_portfolio(ent, bars_by, sigs_by, atr_p=AtrParams(), time_stop_days=ts, **common)
         for n, (ent, ts) in arm_spec.items()
     }
     summaries = {n: summarise(r) for n, r in results.items()}
@@ -396,12 +426,11 @@ def main(argv: list[str] | None = None) -> int:
     for name in list(PRIMARY_ARMS) + list(EXPLORATORY_ARMS):
         rets = aligned_returns(results, [BASELINE_ARM, name])
         boots[name] = paired_block_bootstrap(
-            rets[BASELINE_ARM], rets[name],
-            block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED)
+            rets[BASELINE_ARM], rets[name], block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED
+        )
 
     # ── Sanity §6 ────────────────────────────────────────────────────────────
-    ts_pop = timestop_population(results[BASELINE_ARM], bars_by, sigs_by,
-                                 TIME_STOP_N, common)
+    ts_pop = timestop_population(results[BASELINE_ARM], bars_by, sigs_by, TIME_STOP_N, common)
     sanity = {
         "accounting": all(summaries[n]["accounting_ok"] for n in results),
         "pullback_detector": 0.0 < pull_stats.lost_share < 1.0,
@@ -410,15 +439,14 @@ def main(argv: list[str] | None = None) -> int:
         "cap_share_base": summaries[BASELINE_ARM]["cap_share"],
         "cap_marginal_ok": summaries[BASELINE_ARM]["cap_share"] < SANITY_MAX_CAP_SHARE,
     }
-    sanity["all_ok"] = bool(sanity["accounting"] and sanity["pullback_detector"]
-                            and sanity["cap_marginal_ok"])
+    sanity["all_ok"] = bool(
+        sanity["accounting"] and sanity["pullback_detector"] and sanity["cap_marginal_ok"]
+    )
 
     # ── Veredicto por brazo ──────────────────────────────────────────────────
     verdicts = {
-        "A_pullback": evaluate_arm("A_pullback", summaries, regimes,
-                                   boots["A_pullback"], pull_stats),
-        "B_timestop": evaluate_arm("B_timestop", summaries, regimes,
-                                   boots["B_timestop"], None),
+        "A_pullback": evaluate_arm("A_pullback", summaries, regimes, boots["A_pullback"], pull_stats),
+        "B_timestop": evaluate_arm("B_timestop", summaries, regimes, boots["B_timestop"], None),
     }
     if not sanity["timestop_population_ok"]:
         verdicts["B_timestop"]["ship"] = False
@@ -427,16 +455,21 @@ def main(argv: list[str] | None = None) -> int:
     # ── A+B: sólo si los dos primarios pasan (§4.3) ──────────────────────────
     if verdicts["A_pullback"]["ship"] and verdicts["B_timestop"]["ship"]:
         results[COMBINED_ARM] = simulate_portfolio(
-            pull_entries, bars_by, sigs_by, atr_p=AtrParams(),
-            time_stop_days=TIME_STOP_N, **common)
+            pull_entries, bars_by, sigs_by, atr_p=AtrParams(), time_stop_days=TIME_STOP_N, **common
+        )
         summaries[COMBINED_ARM] = summarise(results[COMBINED_ARM])
         regimes[COMBINED_ARM] = regime_trade_breakdown(results[COMBINED_ARM])
         rets = aligned_returns(results, [BASELINE_ARM, COMBINED_ARM])
         boots[COMBINED_ARM] = paired_block_bootstrap(
-            rets[BASELINE_ARM], rets[COMBINED_ARM],
-            block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED)
+            rets[BASELINE_ARM],
+            rets[COMBINED_ARM],
+            block=BOOT_BLOCK,
+            n_resamples=args.resamples,
+            seed=BOOT_SEED,
+        )
         verdicts[COMBINED_ARM] = evaluate_arm(
-            COMBINED_ARM, summaries, regimes, boots[COMBINED_ARM], pull_stats)
+            COMBINED_ARM, summaries, regimes, boots[COMBINED_ARM], pull_stats
+        )
 
     # ── Descriptivos: DSR/PBO sobre todos los brazos corridos ────────────────
     all_names = list(results)
@@ -449,36 +482,48 @@ def main(argv: list[str] | None = None) -> int:
     dsr = None
     if T >= 2:
         sk, ku = _skew_kurt(rets_all[best])
-        dsr = deflated_sharpe_ratio(trial_sharpes, n_obs=T, selected=_sharpe(rets_all[best]),
-                                    skew=sk, kurtosis=ku)
+        dsr = deflated_sharpe_ratio(
+            trial_sharpes, n_obs=T, selected=_sharpe(rets_all[best]), skew=sk, kurtosis=ku
+        )
 
     # ── Diagnósticos (descriptivos: interpretan el veredicto, no lo deciden) ──
     diag: dict = {}
     if not args.no_diagnose:
         diag["held_days"] = held_days_profile(results[BASELINE_ARM], TIME_STOP_N)
         diag["pullback_cf"] = pullback_counterfactual(
-            base_entries, bars_by, sigs_by, common,
-            window=PULLBACK_WINDOW, condition="ema20")
+            base_entries, bars_by, sigs_by, common, window=PULLBACK_WINDOW, condition="ema20"
+        )
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "diagnostics": diag,
-        "n_tickers": len(bars_by), "n_entries": len(base_entries),
-        "cap_days": args.cap_days, "max_positions": args.max_positions,
-        "capital": args.capital, "time_stop_n": TIME_STOP_N,
+        "n_tickers": len(bars_by),
+        "n_entries": len(base_entries),
+        "cap_days": args.cap_days,
+        "max_positions": args.max_positions,
+        "capital": args.capital,
+        "time_stop_n": TIME_STOP_N,
         "fill_mode": args.fill_mode,
         "pullback_window": PULLBACK_WINDOW,
         "pullback_stats": vars(pull_stats) | {"expired_share": pull_stats.expired_share},
         "negday_stats": vars(neg_stats) | {"expired_share": neg_stats.expired_share},
-        "sanity": sanity, "verdicts": verdicts,
+        "sanity": sanity,
+        "verdicts": verdicts,
         "dsr": (dsr.deflated_sharpe if dsr else None),
-        "pbo": (pbo.pbo if pbo else None), "dsr_obs": T,
+        "pbo": (pbo.pbo if pbo else None),
+        "dsr_obs": T,
         "bootstrap": {n: vars(b) for n, b in boots.items()},
     }
 
     if args.json:
-        print(json.dumps({"context": ctx, "summaries": summaries, "regimes": regimes},
-                         ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "summaries": summaries, "regimes": regimes},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
     _report(summaries, regimes, ctx, verdicts, boots, dsr, pbo, T, sanity)
@@ -488,46 +533,66 @@ def main(argv: list[str] | None = None) -> int:
 def _f(x, w=8, p=2, suf=""):
     if x is None:
         return f"{'—':>{w}}"
-    return f"{x*(100 if suf == '%' else 1):>{w-len(suf)}.{p}f}{suf}"
+    return f"{x * (100 if suf == '%' else 1):>{w - len(suf)}.{p}f}{suf}"
 
 
 def _report(summaries, regimes, ctx, verdicts, boots, dsr, pbo, T, sanity):
-    hdr = (f"{'brazo':<12}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'p5':>8}{'p95':>8}"
-           f"{'ganad':>8}{'tomad':>7}{'días':>7}{'%TS':>6}")
+    hdr = (
+        f"{'brazo':<12}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'p5':>8}{'p95':>8}"
+        f"{'ganad':>8}{'tomad':>7}{'días':>7}{'%TS':>6}"
+    )
     print(hdr)
     print("-" * len(hdr))
     for n in summaries:
         s = summaries[n]
         mark = "BASE" if n == BASELINE_ARM else ("*" if n in PRIMARY_ARMS else "expl")
-        print(f"{n:<12}{_f(s['cagr'],9,2,'%')}{_f(s['sharpe'],9,2)}{_f(s['max_dd'],9,1,'%')}"
-              f"{_f(s['p5_trade'],8,1,'%')}{_f(s['p95_trade'],8,1,'%')}"
-              f"{s['winner_mean_pts']:>8.2f}{s['n_taken']:>7}{s['mean_held_days']:>7.1f}"
-              f"{_f(s['time_stop_share'],6,0,'%')}  {mark}")
+        print(
+            f"{n:<12}{_f(s['cagr'], 9, 2, '%')}{_f(s['sharpe'], 9, 2)}{_f(s['max_dd'], 9, 1, '%')}"
+            f"{_f(s['p5_trade'], 8, 1, '%')}{_f(s['p95_trade'], 8, 1, '%')}"
+            f"{s['winner_mean_pts']:>8.2f}{s['n_taken']:>7}{s['mean_held_days']:>7.1f}"
+            f"{_f(s['time_stop_share'], 6, 0, '%')}  {mark}"
+        )
 
     print("\nSanity (§6):")
     print(f"  [{'OK' if sanity['accounting'] else 'FALLA'}] contabilidad de todos los brazos")
-    print(f"  [{'OK' if sanity['pullback_detector'] else 'FALLA'}] el detector de pullback "
-          f"hace algo (pérdida {100*ctx['pullback_stats']['n_expired']/max(1,ctx['pullback_stats']['n_waits']):.1f}% expiradas)")
-    print(f"  [{'OK' if sanity['timestop_population_ok'] else 'SIN POBLACIÓN'}] población del "
-          f"time stop en BASE = {100*sanity['timestop_population']:.1f}% (mín 5%)")
-    print(f"  [{'OK' if sanity['cap_marginal_ok'] else 'FALLA'}] cap_reached residual en BASE = "
-          f"{100*sanity['cap_share_base']:.2f}% (máx 2%)")
+    print(
+        f"  [{'OK' if sanity['pullback_detector'] else 'FALLA'}] el detector de pullback "
+        f"hace algo (pérdida {100 * ctx['pullback_stats']['n_expired'] / max(1, ctx['pullback_stats']['n_waits']):.1f}% expiradas)"
+    )
+    print(
+        f"  [{'OK' if sanity['timestop_population_ok'] else 'SIN POBLACIÓN'}] población del "
+        f"time stop en BASE = {100 * sanity['timestop_population']:.1f}% (mín 5%)"
+    )
+    print(
+        f"  [{'OK' if sanity['cap_marginal_ok'] else 'FALLA'}] cap_reached residual en BASE = "
+        f"{100 * sanity['cap_share_base']:.2f}% (máx 2%)"
+    )
 
     for name, v in verdicts.items():
         b = boots.get(name)
         print(f"\n── {name} ──")
-        print(f"  ΔCAGR {_f(v['dcagr'],0,2,'%')} · ΔSharpe {v['sharpe_delta']:+.3f} · "
-              f"ΔmaxDD {_f(v['dd_delta'],0,2,'%')}")
+        print(
+            f"  ΔCAGR {_f(v['dcagr'], 0, 2, '%')} · ΔSharpe {v['sharpe_delta']:+.3f} · "
+            f"ΔmaxDD {_f(v['dd_delta'], 0, 2, '%')}"
+        )
         if b is not None:
-            print(f"  Bootstrap pareado: ΔCAGR obs {100*b.observed:+.2f}pp · "
-                  f"IC95% [{100*b.ci_low:+.2f}, {100*b.ci_high:+.2f}]pp · "
-                  f"p={b.p_value:.3f} (bloques {b.block}, {b.n_resamples} resamples, T={b.n_obs})")
-        print("  Por régimen (Δ ret medio por trade, pts): " +
-              " · ".join(f"{r} {d:+.2f}" for r, d in v["regime_delta"].items()))
-        for k, label in [("c1_cagr", "C1 ΔCAGR ≥ +0.30pp"), ("c2_sharpe", "C2 Sharpe no-inferior"),
-                         ("c3_dd", "C3 DD no peor"), ("c4_regime", "C4 régimen robusto"),
-                         ("c5_bootstrap", "C5 IC95% inferior > 0"),
-                         ("c6_specific", f"C6 {v['c6_label']}")]:
+            print(
+                f"  Bootstrap pareado: ΔCAGR obs {100 * b.observed:+.2f}pp · "
+                f"IC95% [{100 * b.ci_low:+.2f}, {100 * b.ci_high:+.2f}]pp · "
+                f"p={b.p_value:.3f} (bloques {b.block}, {b.n_resamples} resamples, T={b.n_obs})"
+            )
+        print(
+            "  Por régimen (Δ ret medio por trade, pts): "
+            + " · ".join(f"{r} {d:+.2f}" for r, d in v["regime_delta"].items())
+        )
+        for k, label in [
+            ("c1_cagr", "C1 ΔCAGR ≥ +0.30pp"),
+            ("c2_sharpe", "C2 Sharpe no-inferior"),
+            ("c3_dd", "C3 DD no peor"),
+            ("c4_regime", "C4 régimen robusto"),
+            ("c5_bootstrap", "C5 IC95% inferior > 0"),
+            ("c6_specific", f"C6 {v['c6_label']}"),
+        ]:
             print(f"    [{'PASA' if v[k] else 'FALLA'}] {label}")
         if v.get("no_population"):
             print("    [SIN POBLACIÓN] el sanity §6.3 no se cumple → no es un veredicto de eficacia")
@@ -537,22 +602,28 @@ def _report(summaries, regimes, ctx, verdicts, boots, dsr, pbo, T, sanity):
     if diag.get("held_days"):
         h = diag["held_days"]
         print("\n── Diagnóstico: tenencia en el BASE (interpreta el §6.3) ──")
-        print("  " + " · ".join(f"{k} {v}d" for k, v in h["pcts"].items())
-              + f" · máx {h['max']}d · media {h['mean']:.1f}d")
-        print(f"  trades que llegan a {ctx['time_stop_n']} ruedas: {h['n_ge_n']}/{h['n']} "
-              f"({100*h['share_ge_n']:.1f}%) — de ésos, en pérdida al cierre: "
-              f"{h['n_ge_n_losing']}")
+        print(
+            "  "
+            + " · ".join(f"{k} {v}d" for k, v in h["pcts"].items())
+            + f" · máx {h['max']}d · media {h['mean']:.1f}d"
+        )
+        print(
+            f"  trades que llegan a {ctx['time_stop_n']} ruedas: {h['n_ge_n']}/{h['n']} "
+            f"({100 * h['share_ge_n']:.1f}%) — de ésos, en pérdida al cierre: "
+            f"{h['n_ge_n_losing']}"
+        )
         print("  razones de salida: " + " · ".join(f"{k} {v}" for k, v in h["reasons"].items()))
     if diag.get("pullback_cf"):
-        print("\n── Diagnóstico: qué rinden las esperas del brazo (a) entrando el día "
-              "de la señal ──")
+        print("\n── Diagnóstico: qué rinden las esperas del brazo (a) entrando el día de la señal ──")
         for k in ("filled", "expired", "cancelled"):
             d = diag["pullback_cf"].get(k) or {}
             if not d.get("n"):
                 continue
-            print(f"  {k:<10} n={d['n']:>5}  ret medio {d['mean_pts']:+6.2f} pts · "
-                  f"mediana {d['median_pts']:+6.2f} · p90 {d['p90_pts']:+6.2f} · "
-                  f"ganadoras {100*d['win_share']:.0f}%")
+            print(
+                f"  {k:<10} n={d['n']:>5}  ret medio {d['mean_pts']:+6.2f} pts · "
+                f"mediana {d['median_pts']:+6.2f} · p90 {d['p90_pts']:+6.2f} · "
+                f"ganadoras {100 * d['win_share']:.0f}%"
+            )
 
     tail = f"· PBO = {pbo.pbo:.3f}" if pbo else "· PBO = n/d"
     head = f"DSR = {dsr.deflated_sharpe:.3f}" if dsr else "DSR = n/d"

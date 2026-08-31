@@ -61,16 +61,14 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from scripts.baseline_metrics import (  # noqa: E402
+from scripts.baseline_metrics import (
     AccountSnapshot,
     _parse_dt,
-    daily_endpoints,
-    daily_returns,
     equity_metrics,
     fifo_match,
     load_fills,
-    load_snapshots,
     load_open_positions,
+    load_snapshots,
     monthly_breakdown,
     trade_stats,
 )
@@ -92,11 +90,21 @@ def _account_row(con: sqlite3.Connection, account_id: int) -> dict | None:
     if row is None:
         return None
     cols = [
-        "id", "name", "strategy", "mode", "allocation_mode", "max_positions",
-        "fixed_amount", "initial_capital", "cash", "commission", "slippage",
-        "is_active", "created_at",
+        "id",
+        "name",
+        "strategy",
+        "mode",
+        "allocation_mode",
+        "max_positions",
+        "fixed_amount",
+        "initial_capital",
+        "cash",
+        "commission",
+        "slippage",
+        "is_active",
+        "created_at",
     ]
-    return dict(zip(cols, row))
+    return dict(zip(cols, row, strict=True))
 
 
 def _last_price_for(con: sqlite3.Connection, ticker: str) -> float | None:
@@ -122,11 +130,13 @@ def _equity_curve(snapshots: list[AccountSnapshot]) -> list[dict]:
     """One row per snapshot, ordered ascending. Light payload for the chart."""
     out: list[dict] = []
     for s in snapshots:
-        out.append({
-            "t": s.snapshot_at.isoformat(),
-            "equity": float(s.total_equity),
-            "cash": float(s.cash),
-        })
+        out.append(
+            {
+                "t": s.snapshot_at.isoformat(),
+                "equity": float(s.total_equity),
+                "cash": float(s.cash),
+            }
+        )
     return out
 
 
@@ -139,14 +149,16 @@ def _positions_payload(con: sqlite3.Connection, account_id: int) -> list[dict]:
             mark = float(p["avg_cost"])
         avg = float(p["avg_cost"])
         mtm_pct = (mark / avg - 1.0) if avg > 0 else 0.0
-        out.append({
-            "ticker": p["ticker"],
-            "shares": float(p["shares"]),
-            "avg_cost": avg,
-            "mark": float(mark),
-            "value": float(p["shares"]) * float(mark),
-            "mtm_pct": mtm_pct,
-        })
+        out.append(
+            {
+                "ticker": p["ticker"],
+                "shares": float(p["shares"]),
+                "avg_cost": avg,
+                "mark": float(mark),
+                "value": float(p["shares"]) * float(mark),
+                "mtm_pct": mtm_pct,
+            }
+        )
     out.sort(key=lambda r: r["value"], reverse=True)
     return out
 
@@ -162,18 +174,20 @@ def _trades_recent(con: sqlite3.Connection, account_id: int, limit: int = 50) ->
     ).fetchall()
     out: list[dict] = []
     for ticker, side, px, sh, score, dt, reason, comm, slip in rows:
-        out.append({
-            "ticker": ticker,
-            "side": side,
-            "fill_price": float(px) if px else None,
-            "fill_shares": float(sh) if sh else None,
-            "signal_score": float(score) if score is not None else None,
-            "filled_at": dt,
-            "reason": reason,
-            "notional": (float(px) * float(sh)) if (px and sh) else None,
-            "commission": float(comm) if comm is not None else None,
-            "slippage_cost": float(slip) if slip is not None else None,
-        })
+        out.append(
+            {
+                "ticker": ticker,
+                "side": side,
+                "fill_price": float(px) if px else None,
+                "fill_shares": float(sh) if sh else None,
+                "signal_score": float(score) if score is not None else None,
+                "filled_at": dt,
+                "reason": reason,
+                "notional": (float(px) * float(sh)) if (px and sh) else None,
+                "commission": float(comm) if comm is not None else None,
+                "slippage_cost": float(slip) if slip is not None else None,
+            }
+        )
     return out
 
 
@@ -329,7 +343,7 @@ def _load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, 
         names = [c[0] if isinstance(c, list) else c for c in cols]
         ci = names.index("Close")
         pairs: list[tuple[str, float]] = []
-        for ts, vals in zip(d["index"], d["data"]):
+        for ts, vals in zip(d["index"], d["data"], strict=False):
             c = vals[ci]
             if c is not None and float(c) > 0:
                 pairs.append((str(ts)[:10], float(c)))
@@ -339,9 +353,7 @@ def _load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, 
         return None
 
 
-def _fwd_return_from_series(
-    pairs: list[tuple[str, float]], date_iso10: str, horizon: int
-) -> float | None:
+def _fwd_return_from_series(pairs: list[tuple[str, float]], date_iso10: str, horizon: int) -> float | None:
     """Return close-to-close ``horizon`` días hábiles después de ``date_iso10``.
 
     Base = cierre del primer día de trading en o después de la fecha (para un
@@ -401,20 +413,19 @@ def _post_sell_panel(con: sqlite3.Connection, account_id: int) -> dict:
             series_cache[ticker] = _load_close_series(con, ticker)
         pairs = series_cache[ticker]
         d10 = str(dt)[:10]
-        fwds = {
-            h: (_fwd_return_from_series(pairs, d10, h) if pairs else None)
-            for h in _POST_SELL_HORIZONS
-        }
-        per_sell.append({
-            "order_id": int(oid),
-            "ticker": ticker,
-            "filled_at": dt,
-            "fill_price": float(px) if px is not None else None,
-            "reason": reason,
-            "signal_score": float(score) if score is not None else None,
-            "fwd5": fwds[5],
-            "fwd20": fwds[20],
-        })
+        fwds = {h: (_fwd_return_from_series(pairs, d10, h) if pairs else None) for h in _POST_SELL_HORIZONS}
+        per_sell.append(
+            {
+                "order_id": int(oid),
+                "ticker": ticker,
+                "filled_at": dt,
+                "fill_price": float(px) if px is not None else None,
+                "reason": reason,
+                "signal_score": float(score) if score is not None else None,
+                "fwd5": fwds[5],
+                "fwd20": fwds[20],
+            }
+        )
 
     def _agg(values: list[float], prefix: str, with_mean: bool = False) -> dict:
         out: dict = {f"n_{prefix}": len(values)}
@@ -611,7 +622,7 @@ def _hit_rate_panel(con: sqlite3.Connection, account_id: int, fills) -> dict:
 
     series_cache: dict[str, list[tuple[str, float]] | None] = {}
     annotated: list[dict] = []
-    for oid, ticker, side, px, dt, reason, score in rows:
+    for oid, ticker, side, _px, dt, reason, score in rows:
         if ticker not in series_cache:
             series_cache[ticker] = _load_close_series(con, ticker)
         pairs = series_cache[ticker]
@@ -630,20 +641,22 @@ def _hit_rate_panel(con: sqlite3.Connection, account_id: int, fills) -> dict:
             lst = realized_by_key.get(key)
             if lst:
                 realized = lst.pop(0)
-        annotated.append({
-            "order_id": int(oid),
-            "ticker": ticker,
-            "side": side,
-            "filled_at": dt,
-            "date": d10,
-            "reason_kind": kind,
-            # score sentinel de exits de riesgo no es probabilidad → None
-            "signal_score": float(score) if (score is not None and kind == "signal") else None,
-            "fwd5": fwd5,
-            "fwd20": fwd20,
-            "hit": _hit_for(side, fwd5),
-            "realized_pct": realized,
-        })
+        annotated.append(
+            {
+                "order_id": int(oid),
+                "ticker": ticker,
+                "side": side,
+                "filled_at": dt,
+                "date": d10,
+                "reason_kind": kind,
+                # score sentinel de exits de riesgo no es probabilidad → None
+                "signal_score": float(score) if (score is not None and kind == "signal") else None,
+                "fwd5": fwd5,
+                "fwd20": fwd20,
+                "hit": _hit_for(side, fwd5),
+                "realized_pct": realized,
+            }
+        )
 
     notes: list[str] = []
 
@@ -679,10 +692,7 @@ def _hit_rate_panel(con: sqlite3.Connection, account_id: int, fills) -> dict:
 
     # sell_reliability — el número que pidió la auditoría
     lo, hi = _SELL_RELIABILITY_RANGE
-    rel_grp = [
-        o for o in sig
-        if o["side"] == "SELL" and lo <= o["signal_score"] <= hi
-    ]
+    rel_grp = [o for o in sig if o["side"] == "SELL" and lo <= o["signal_score"] <= hi]
     sell_reliability = None
     if rel_grp:
         stats = _hit_group_stats(rel_grp)
@@ -796,6 +806,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _json_default(o):
     import math
+
     if isinstance(o, float) and not math.isfinite(o):
         return None
     if isinstance(o, datetime):

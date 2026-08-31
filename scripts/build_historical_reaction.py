@@ -28,9 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from analysis.catalyst_reaction import DEFAULT_HORIZONS, build_historical_reaction  # noqa: E402
-from config.logging_config import get_logger  # noqa: E402
-from database.models import NewsEvent, session_scope  # noqa: E402
+from analysis.catalyst_reaction import DEFAULT_HORIZONS, build_historical_reaction
+from config.logging_config import get_logger
+from database.models import NewsEvent, session_scope
 
 log = get_logger(__name__)
 
@@ -66,11 +66,11 @@ def _print_summary(table: dict, horizon: int) -> None:
         stat = per_h.get(h, {})
         if stat.get("count", 0):
             rows.append((event_type, stat["count"], stat["mean"], stat["hit_rate"]))
-    rows.sort(key=lambda r: (r[2] if r[2] is not None else -9), reverse=True)
+    rows.sort(key=lambda r: r[2] if r[2] is not None else -9, reverse=True)
     print(f"\nForward return @ {horizon}d by event_type (n events with full window):")
     print(f"  {'event_type':<22} {'n':>5} {'mean':>8} {'hit_rate':>9}")
     for et, n, mean, hit in rows:
-        print(f"  {et:<22} {n:>5} {mean*100:>7.2f}% {hit*100:>8.1f}%")
+        print(f"  {et:<22} {n:>5} {mean * 100:>7.2f}% {hit * 100:>8.1f}%")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

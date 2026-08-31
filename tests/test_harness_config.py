@@ -27,6 +27,7 @@ Cubre:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -253,8 +254,14 @@ def test_runner_defaults_to_the_live_slot_count(script):
 
 @pytest.mark.parametrize("script", PORTFOLIO_RUNNERS)
 def test_runner_announces_its_config(script):
+    # La aserción va por regex y no por substring literal a propósito: lo que se
+    # exige es que el runner **declare su config**, no cómo quedó envuelta la
+    # llamada. Con el substring, `ruff format` partiendo `announce(` en varias
+    # líneas rompía diez runners sin que ninguno dejara de declarar nada (tarea 65).
     txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
-    assert "announce(args.max_positions" in txt
+    assert re.search(r"announce\(\s*args\.max_positions", txt), (
+        f"{script} dejó de declarar su config con announce(args.max_positions, …)"
+    )
 
 
 @pytest.mark.parametrize("script", REPLAY_RUNNERS)

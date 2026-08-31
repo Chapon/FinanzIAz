@@ -30,7 +30,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import (  # noqa: E402
+from analysis.exit_replay import (
     AtrParams,
     ReplayReport,
     SellEvent,
@@ -39,8 +39,8 @@ from analysis.exit_replay import (  # noqa: E402
     build_report,
     replay_atr_recalib,
 )
-from scripts.baseline_metrics import load_snapshots  # noqa: E402
-from scripts.run_exit_replay_t61 import (  # noqa: E402
+from scripts.baseline_metrics import load_snapshots
+from scripts.run_exit_replay_t61 import (
     build_sell_events,
     make_bar_loader,
 )
@@ -115,21 +115,24 @@ def run(db_path: Path, account_id: int, cap_days: int, contam_tol: float):
                 sim = replay_atr_recalib(ev, bars, cap_days=cap_days, atr_p=atr_p)
                 if sim is None:  # sin día de continuación; cuenta como real (sin cambio)
                     sim = SimExit(
-                        event=ev, modified=False, exit_date=ev.sell_date,
-                        exit_price=ev.sell_price, exit_reason=ev.reason,
+                        event=ev,
+                        modified=False,
+                        exit_date=ev.sell_date,
+                        exit_price=ev.sell_price,
+                        exit_reason=ev.reason,
                         pnl_sim=ev.pnl_real,
                     )
                 sims.append(sim)
-            rep = build_report(label, sims, real_curve,
-                               initial_capital=initial_capital, bar_loader=bar_loader)
+            rep = build_report(
+                label, sims, real_curve, initial_capital=initial_capital, bar_loader=bar_loader
+            )
             reports.append(rep)
             sims_by_variant[label] = sims
 
         ctx = {
             "db": str(db_path),
             "account_id": account_id,
-            "n_atr_exits_total": sum(
-                1 for e in all_events if (e.reason or "").startswith("atr_")),
+            "n_atr_exits_total": sum(1 for e in all_events if (e.reason or "").startswith("atr_")),
             "n_clean": len(clean),
             "n_excluded": len(excluded),
             "excluded": [(e.ticker, e.sell_date, why) for e, why in excluded],
@@ -163,8 +166,8 @@ def render(reports, sims_by_variant, ctx, detail: bool) -> str:
     for r in reports:
         lines.append(
             f"{r.variant:<14} {r.n_modified:>4} {r.pnl_delta_total:>+10.2f} "
-            f"{r.pnl_delta_pts:>+9.2f} {100*r.max_dd_real:>7.2f}% "
-            f"{100*r.max_dd_sim:>7.2f}% {r.dd_ratio:>6.2f} "
+            f"{r.pnl_delta_pts:>+9.2f} {100 * r.max_dd_real:>7.2f}% "
+            f"{100 * r.max_dd_sim:>7.2f}% {r.dd_ratio:>6.2f} "
             f"{'✅' if r.passes_kill_criteria else '—':>5}"
         )
         if r.exits_by_reason:
@@ -176,8 +179,7 @@ def render(reports, sims_by_variant, ctx, detail: bool) -> str:
             top = max(deltas, key=abs)
             loo_pts = 100.0 * (sum(deltas) - top) / cap
             tk = max(sims_by_variant[r.variant], key=lambda s: abs(s.pnl_delta)).event.ticker
-            lines.append(
-                f"{'':<14}   sensib: sin {tk} (±mayor) ΔP/L = {loo_pts:+.2f} pts")
+            lines.append(f"{'':<14}   sensib: sin {tk} (±mayor) ΔP/L = {loo_pts:+.2f} pts")
     lines.append("")
     lines.append("Kill criteria: ΔP/L ≥ +2.00 pts y DD ratio ≤ 1.50")
 
@@ -210,13 +212,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"db no encontrada: {db_path}", file=sys.stderr)
         return 1
 
-    reports, sims_by_variant, ctx = run(
-        db_path, args.account, args.cap_days, args.contam_tol)
+    reports, sims_by_variant, ctx = run(db_path, args.account, args.cap_days, args.contam_tol)
 
     if args.json:
-        print(json.dumps(
-            {"context": ctx, "reports": [r.to_dict() for r in reports]},
-            ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "reports": [r.to_dict() for r in reports]},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
     else:
         print(render(reports, sims_by_variant, ctx, args.detail))
     return 0

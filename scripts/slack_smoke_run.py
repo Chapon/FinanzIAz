@@ -66,11 +66,11 @@ def main() -> int:
 
     _bind_memory_db()
 
+    from database.models import session_scope
     from paper_trading import engine
     from paper_trading.account import create_account
     from paper_trading.models import PaperWatchlistItem
     from paper_trading.strategies import TargetTrade
-    from database.models import session_scope
 
     acct = create_account(
         name="SMOKE Slack (temporal)",
@@ -115,7 +115,9 @@ def main() -> int:
         return 1
 
     print(result.summary())
-    print(f"  generated={result.generated} queued={result.queued} filled={result.filled} skipped={result.skipped}")
+    print(
+        f"  generated={result.generated} queued={result.queued} filled={result.filled} skipped={result.skipped}"
+    )
     print(f"  órdenes capturadas para Slack: {len(result.new_orders)}")
     for n in result.new_orders:
         print(f"    - {n.side} {n.ticker} [{n.status}] score={n.signal_score}")

@@ -46,11 +46,11 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-import numpy as np  # noqa: E402
+import numpy as np
 
-from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries  # noqa: E402
-from analysis.exit_replay import AtrParams, Bar  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries
+from analysis.exit_replay import AtrParams, Bar
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -58,10 +58,10 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr, precompute_oracle_returns, sharpe_annual  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr, precompute_oracle_returns, sharpe_annual
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import (
     STRESS_REGIMES,
     _sharpe,
     _skew_kurt,
@@ -69,7 +69,7 @@ from analysis.walkforward_power import (  # noqa: E402
     pbo_cscv,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import (  # noqa: E402
+from scripts.precompute_pit_signals import (
     _load_existing,
     _out_path,
     parse_universe_file,
@@ -79,17 +79,23 @@ DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 
 # Brazos pre-registrados (§4): grilla del par umbral (k, m). Todo lo demás fijo.
 CANDIDATE_ARMS: dict[str, tuple[float, float]] = {
-    "A_k1.5_m1.5": (1.5, 1.5), "A_k1.5_m2.0": (1.5, 2.0), "A_k1.5_m3.0": (1.5, 3.0),
-    "A_k2.0_m1.5": (2.0, 1.5), "A_k2.0_m2.0": (2.0, 2.0), "A_k2.0_m3.0": (2.0, 3.0),
-    "A_k2.5_m1.5": (2.5, 1.5), "A_k2.5_m2.0": (2.5, 2.0), "A_k2.5_m3.0": (2.5, 3.0),
+    "A_k1.5_m1.5": (1.5, 1.5),
+    "A_k1.5_m2.0": (1.5, 2.0),
+    "A_k1.5_m3.0": (1.5, 3.0),
+    "A_k2.0_m1.5": (2.0, 1.5),
+    "A_k2.0_m2.0": (2.0, 2.0),
+    "A_k2.0_m3.0": (2.0, 3.0),
+    "A_k2.5_m1.5": (2.5, 1.5),
+    "A_k2.5_m2.0": (2.5, 2.0),
+    "A_k2.5_m3.0": (2.5, 3.0),
 }
 PRIMARY_ARM = "A_k2.0_m2.0"
 ORACLE_ARM = "V_oracle_entry"
 
 # Kill-criteria (§6) — congelados.
-KILL_MIN_DCAGR = 0.02        # +2pp de CAGR vs la mediana del baseline random
-KILL_RANDOM_PCTILE = 95      # CAGR y Sharpe > percentil 95 del baseline
-KILL_DD_MULT = 1.5           # maxDD <= 1.5× la mediana del maxDD random
+KILL_MIN_DCAGR = 0.02  # +2pp de CAGR vs la mediana del baseline random
+KILL_RANDOM_PCTILE = 95  # CAGR y Sharpe > percentil 95 del baseline
+KILL_DD_MULT = 1.5  # maxDD <= 1.5× la mediana del maxDD random
 KILL_MIN_DSR = 0.5
 KILL_MAX_PBO = 0.5
 
@@ -126,8 +132,7 @@ def load_bars_signals_volume(tickers: list[str], period: str, warmup: int):
         vols: list[float] = []
         for ts, row in df.iterrows():
             try:
-                o, h, lo, c = (float(row["Open"]), float(row["High"]),
-                               float(row["Low"]), float(row["Close"]))
+                o, h, lo, c = (float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"]))
                 v = float(row["Volume"])
             except (KeyError, TypeError, ValueError):
                 continue
@@ -170,6 +175,7 @@ def _month(bars_by, ti: tuple[str, int]) -> str:
 def make_runner(bars_by, sigs_by, common):
     def run(entries: list[tuple[str, int]]) -> PortfolioResult:
         return simulate_portfolio(entries, bars_by, sigs_by, **common)
+
     return run
 
 
@@ -227,8 +233,13 @@ def loto_edge(run, entries: list[tuple[str, int]], random_median_cagr: float) ->
 
 
 def random_baseline(
-    run, bars_by, count_by_month: dict[str, int],
-    operable_by_month: dict[str, list[tuple[str, int]]], *, k_random: int, seed0: int,
+    run,
+    bars_by,
+    count_by_month: dict[str, int],
+    operable_by_month: dict[str, list[tuple[str, int]]],
+    *,
+    k_random: int,
+    seed0: int,
     regime_pts: dict[str, list[float]] | None = None,
 ) -> dict[str, list[float]]:
     """K carteras aleatorias que respetan la distribución mensual del brazo
@@ -293,8 +304,7 @@ def aligned_returns(results: dict[str, PortfolioResult], arms: list[str]) -> dic
             if dt in d:
                 last = d[dt]
             filled.append(last)
-        out[name] = [filled[i] / filled[i - 1] - 1.0
-                     for i in range(1, len(filled)) if filled[i - 1] > 0]
+        out[name] = [filled[i] / filled[i - 1] - 1.0 for i in range(1, len(filled)) if filled[i - 1] > 0]
     return out
 
 
@@ -311,19 +321,28 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--k-random", type=int, default=500, help="nº de carteras Monte Carlo")
     p.add_argument("--seed", type=int, default=12345)
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
-                        f"(look-ahead en el fill de la barrera — Tarea 33)")
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+        f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
     # Enabler de la Tarea 38 (§4 de su pre-registro): los dos desvíos que la T11b
     # no modelaba. Defaults = los de la corrida publicada, así agregarlos no mueve
     # su veredicto.
-    p.add_argument("--eval-mode", choices=("close", "touch"), default="close",
-                   help="'close' reproduce el veredicto publicado; 'touch' es la "
-                        "regla que ejecuta el engine (Tarea 26b)")
-    p.add_argument("--live-gates", action="store_true",
-                   help="modela los gates de re-entrada del engine vivo "
-                        "(Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)")
+    p.add_argument(
+        "--eval-mode",
+        choices=("close", "touch"),
+        default="close",
+        help="'close' reproduce el veredicto publicado; 'touch' es la "
+        "regla que ejecuta el engine (Tarea 26b)",
+    )
+    p.add_argument(
+        "--live-gates",
+        action="store_true",
+        help="modela los gates de re-entrada del engine vivo (Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -338,11 +357,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos", file=sys.stderr)
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
-        costs=CostModel(), regime_of=regime_for_date,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        atr_p=AtrParams(),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful
-        eval_mode=args.eval_mode, fill_mode=args.fill_mode,
+        eval_mode=args.eval_mode,
+        fill_mode=args.fill_mode,
         live_gates=args.live_gates,
     )
     run = make_runner(bars_by, sigs_by, common)
@@ -350,16 +374,19 @@ def main(argv: list[str] | None = None) -> int:
     # entradas por brazo
     entries_by: dict[str, list[tuple[str, int]]] = {}
     for name, (k, m) in CANDIDATE_ARMS.items():
-        entries_by[name] = build_anomaly_entries(
-            bars_by, vol_by, AnomalyParams(k=k, m=m), warmup=args.warmup
-        )
+        entries_by[name] = build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=k, m=m), warmup=args.warmup)
     prim = entries_by[PRIMARY_ARM]
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, eval_mode=args.eval_mode,
-             fill_mode=args.fill_mode, live_gates=args.live_gates)
-    print(f"Tickers: {len(bars_by)} · entradas por brazo: "
-          f"{ {n: len(e) for n, e in entries_by.items()} }")
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        verdict_max_positions=LEGACY_MAX_POSITIONS,
+        eval_mode=args.eval_mode,
+        fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
+    )
+    print(f"Tickers: {len(bars_by)} · entradas por brazo: { {n: len(e) for n, e in entries_by.items()} }")
     print(f"Brazo primario {PRIMARY_ARM}: {len(prim)} entradas\n")
     if not prim:
         print("El brazo primario no produjo entradas — nada que evaluar.", file=sys.stderr)
@@ -374,8 +401,12 @@ def main(argv: list[str] | None = None) -> int:
     for ti in prim:
         count_by_month[_month(bars_by, ti)] = count_by_month.get(_month(bars_by, ti), 0) + 1
     rand_dist = random_baseline(
-        run, bars_by, count_by_month, operable_by_month,
-        k_random=args.k_random, seed0=args.seed,
+        run,
+        bars_by,
+        count_by_month,
+        operable_by_month,
+        k_random=args.k_random,
+        seed0=args.seed,
     )
     rb = {
         "cagr_p95": _pct(rand_dist["cagr"], KILL_RANDOM_PCTILE),
@@ -387,16 +418,22 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     # oráculo: las mejores entradas operables por retorno realizado (look-ahead)
-    oracle_ret = precompute_oracle_returns(operable, bars_by, sigs_by,
-                                           so_params=ScaleOutParams(), atr_p=AtrParams(),
-                                           cap_days=args.cap_days, costs=CostModel(),
-                                           fill_mode=args.fill_mode)
-    op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0])))
-                 for ti in operable]
+    oracle_ret = precompute_oracle_returns(
+        operable,
+        bars_by,
+        sigs_by,
+        so_params=ScaleOutParams(),
+        atr_p=AtrParams(),
+        cap_days=args.cap_days,
+        costs=CostModel(),
+        fill_mode=args.fill_mode,
+    )
+    op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0]))) for ti in operable]
     op_scored = [(ti, r) for ti, r in op_scored if r is not None]
     op_scored.sort(key=lambda x: x[1], reverse=True)
-    oracle_entries = sorted((ti for ti, _ in op_scored[:len(prim)]),
-                            key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0]))
+    oracle_entries = sorted(
+        (ti for ti, _ in op_scored[: len(prim)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
+    )
 
     # correr todos los brazos + oráculo
     results: dict[str, PortfolioResult] = {n: run(e) for n, e in entries_by.items()}
@@ -415,14 +452,17 @@ def main(argv: list[str] | None = None) -> int:
             and s["max_dd"] <= KILL_DD_MULT * rb["maxdd_median"]
             and (s["cagr"] - rb["cagr_median"]) >= KILL_MIN_DCAGR
         )
-    for n, s in summaries.items():
+
+    for _n, s in summaries.items():
         s["passes_local"] = passes_local(s)
 
     # brazo de decisión = mejor Sharpe entre los que pasan local
     eligibles = [n for n in CANDIDATE_ARMS if summaries[n]["passes_local"]]
-    ranked = sorted(CANDIDATE_ARMS,
-                    key=lambda n: (summaries[n]["sharpe"] if summaries[n]["sharpe"] is not None else -1e9),
-                    reverse=True)
+    ranked = sorted(
+        CANDIDATE_ARMS,
+        key=lambda n: summaries[n]["sharpe"] if summaries[n]["sharpe"] is not None else -1e9,
+        reverse=True,
+    )
     selected = next((n for n in ranked if n in eligibles), None)
 
     # PBO/DSR sobre los 9 brazos
@@ -434,8 +474,9 @@ def main(argv: list[str] | None = None) -> int:
     dsr = None
     if selected is not None and T >= 2:
         sk, ku = _skew_kurt(rets[selected])
-        dsr = deflated_sharpe_ratio(trial_sharpes, n_obs=T,
-                                    selected=_sharpe(rets[selected]), skew=sk, kurtosis=ku)
+        dsr = deflated_sharpe_ratio(
+            trial_sharpes, n_obs=T, selected=_sharpe(rets[selected]), skew=sk, kurtosis=ku
+        )
 
     # robustez del brazo de decisión: régimen + LOTO
     reg = regime_trade_breakdown(results[selected]) if selected else {}
@@ -444,68 +485,87 @@ def main(argv: list[str] | None = None) -> int:
 
     ship = bool(
         selected is not None
-        and dsr is not None and dsr.deflated_sharpe > KILL_MIN_DSR
-        and pbo is not None and pbo.pbo < KILL_MAX_PBO
+        and dsr is not None
+        and dsr.deflated_sharpe > KILL_MIN_DSR
+        and pbo is not None
+        and pbo.pbo < KILL_MAX_PBO
         and regime_sign_ok
-        and loto is not None and loto["survives"]
+        and loto is not None
+        and loto["survives"]
     )
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_tickers": len(bars_by), "n_entries_primary": len(prim),
-        "max_positions": args.max_positions, "capital": args.capital,
+        "n_tickers": len(bars_by),
+        "n_entries_primary": len(prim),
+        "max_positions": args.max_positions,
+        "capital": args.capital,
         "random_baseline": rb,
         "selected_arm": selected,
-        "pbo": (pbo.pbo if pbo else None), "dsr": (dsr.deflated_sharpe if dsr else None),
+        "pbo": (pbo.pbo if pbo else None),
+        "dsr": (dsr.deflated_sharpe if dsr else None),
         "dsr_obs": T,
         "regime_sign_ok": regime_sign_ok,
         "loto": loto,
         "ship": ship,
         "kill_criteria": {
-            "min_dcagr": KILL_MIN_DCAGR, "random_pctile": KILL_RANDOM_PCTILE,
-            "dd_mult": KILL_DD_MULT, "min_dsr": KILL_MIN_DSR, "max_pbo": KILL_MAX_PBO,
+            "min_dcagr": KILL_MIN_DCAGR,
+            "random_pctile": KILL_RANDOM_PCTILE,
+            "dd_mult": KILL_DD_MULT,
+            "min_dsr": KILL_MIN_DSR,
+            "max_pbo": KILL_MAX_PBO,
         },
     }
 
     if args.json:
-        print(json.dumps({
-            "context": ctx,
-            "summaries": {n: summaries[n] for n in CANDIDATE_ARMS},
-            "oracle": oracle_sum,
-            "regime_breakdown_selected": reg,
-        }, ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {
+                    "context": ctx,
+                    "summaries": {n: summaries[n] for n in CANDIDATE_ARMS},
+                    "oracle": oracle_sum,
+                    "regime_breakdown_selected": reg,
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
-    _report(summaries, oracle_sum, rb, cand, selected, pbo, dsr, T,
-            reg, regime_sign_ok, loto, ship)
+    _report(summaries, oracle_sum, rb, cand, selected, pbo, dsr, T, reg, regime_sign_ok, loto, ship)
     return 0
 
 
 def _f(x, w=8, p=2, suf=""):
     if x is None:
         return f"{'—':>{w}}"
-    return f"{x*(100 if suf == '%' else 1):>{w-len(suf)}.{p}f}{suf}"
+    return f"{x * (100 if suf == '%' else 1):>{w - len(suf)}.{p}f}{suf}"
 
 
-def _report(summaries, oracle_sum, rb, cand, selected, pbo, dsr, T,
-            reg, regime_sign_ok, loto, ship):
-    print(f"Baseline random (K={rb['k']}): "
-          f"CAGR mediana {_f(rb['cagr_median'],0,1,'%')} · p95 {_f(rb['cagr_p95'],0,1,'%')} | "
-          f"Sharpe mediana {rb['sharpe_median']:.2f} · p95 {rb['sharpe_p95']:.2f} | "
-          f"maxDD mediana {_f(rb['maxdd_median'],0,1,'%')}\n")
-    hdr = (f"{'brazo':<14}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'tomad':>7}"
-           f"{'ofrec':>7}{'expos':>7}{'local':>7}")
+def _report(summaries, oracle_sum, rb, cand, selected, pbo, dsr, T, reg, regime_sign_ok, loto, ship):
+    print(
+        f"Baseline random (K={rb['k']}): "
+        f"CAGR mediana {_f(rb['cagr_median'], 0, 1, '%')} · p95 {_f(rb['cagr_p95'], 0, 1, '%')} | "
+        f"Sharpe mediana {rb['sharpe_median']:.2f} · p95 {rb['sharpe_p95']:.2f} | "
+        f"maxDD mediana {_f(rb['maxdd_median'], 0, 1, '%')}\n"
+    )
+    hdr = f"{'brazo':<14}{'CAGR':>9}{'Sharpe':>9}{'maxDD':>9}{'tomad':>7}{'ofrec':>7}{'expos':>7}{'local':>7}"
     print(hdr)
     print("-" * len(hdr))
     for n in cand:
         s = summaries[n]
         mark = "*" if n == selected else ("PRIM" if n == PRIMARY_ARM else "")
-        print(f"{n:<14}{_f(s['cagr'],9,2,'%')}{_f(s['sharpe'],9,2)}{_f(s['max_dd'],9,1,'%')}"
-              f"{s['n_taken']:>7}{s['n_offered']:>7}{_f(s['exposure'],7,0,'%')}"
-              f"{('SI' if s['passes_local'] else 'no'):>5}{mark:>2}")
+        print(
+            f"{n:<14}{_f(s['cagr'], 9, 2, '%')}{_f(s['sharpe'], 9, 2)}{_f(s['max_dd'], 9, 1, '%')}"
+            f"{s['n_taken']:>7}{s['n_offered']:>7}{_f(s['exposure'], 7, 0, '%')}"
+            f"{('SI' if s['passes_local'] else 'no'):>5}{mark:>2}"
+        )
     o = oracle_sum
-    print(f"{ORACLE_ARM:<14}{_f(o['cagr'],9,2,'%')}{_f(o['sharpe'],9,2)}{_f(o['max_dd'],9,1,'%')}"
-          f"{o['n_taken']:>7}{o['n_offered']:>7}{_f(o['exposure'],7,0,'%')}{'val':>7}")
+    print(
+        f"{ORACLE_ARM:<14}{_f(o['cagr'], 9, 2, '%')}{_f(o['sharpe'], 9, 2)}{_f(o['max_dd'], 9, 1, '%')}"
+        f"{o['n_taken']:>7}{o['n_offered']:>7}{_f(o['exposure'], 7, 0, '%')}{'val':>7}"
+    )
 
     print("\nBrazo de decisión:", selected or "(ninguno pasa el filtro local)")
     if selected:
@@ -514,16 +574,23 @@ def _report(summaries, oracle_sum, rb, cand, selected, pbo, dsr, T,
             print(f"  {name:<18} {v['mean_ret_pts']:>+7.2f}  (n={v['n']})")
         print(f"  signo estable por régimen: {'SI' if regime_sign_ok else 'NO'}")
         if loto:
-            print(f"  LOTO (sacando {loto['dropped']}): CAGR {_f(loto['cagr_without'],0,2,'%')} "
-                  f"→ edge {'sobrevive' if loto['survives'] else 'SE CAE'}")
+            print(
+                f"  LOTO (sacando {loto['dropped']}): CAGR {_f(loto['cagr_without'], 0, 2, '%')} "
+                f"→ edge {'sobrevive' if loto['survives'] else 'SE CAE'}"
+            )
     print(f"\nDescuento por selección múltiple (9 brazos, T={T} obs):")
     print(f"  PBO (CSCV) = {pbo.pbo:.3f}" if pbo else "  PBO = n/d")
-    print(f"  DSR = {dsr.deflated_sharpe:.3f} (SR0={dsr.expected_max_sharpe:.4f})" if dsr
-          else "  DSR = n/d (ningún brazo pasa local)")
+    print(
+        f"  DSR = {dsr.deflated_sharpe:.3f} (SR0={dsr.expected_max_sharpe:.4f})"
+        if dsr
+        else "  DSR = n/d (ningún brazo pasa local)"
+    )
     print(f"\n  VEREDICTO: {'SHIP' if ship else 'NO-SHIP'}")
-    print(f"\nKill-criteria: CAGR y Sharpe > p95 random · ΔCAGR ≥ +{100*KILL_MIN_DCAGR:.0f}pp vs mediana "
-          f"· maxDD ≤ {KILL_DD_MULT}× · DSR>{KILL_MIN_DSR} · PBO<{KILL_MAX_PBO} · "
-          f"signo estable por régimen y por ticker (LOTO)")
+    print(
+        f"\nKill-criteria: CAGR y Sharpe > p95 random · ΔCAGR ≥ +{100 * KILL_MIN_DCAGR:.0f}pp vs mediana "
+        f"· maxDD ≤ {KILL_DD_MULT}× · DSR>{KILL_MIN_DSR} · PBO<{KILL_MAX_PBO} · "
+        f"signo estable por régimen y por ticker (LOTO)"
+    )
 
 
 if __name__ == "__main__":

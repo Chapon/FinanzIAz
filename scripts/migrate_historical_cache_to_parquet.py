@@ -22,6 +22,7 @@ Después de ``--apply``, activar el backend nuevo seteando en
 ``~/.finanzias/settings.json``:  ``"historical_cache_backend": "parquet"``
 (o ``"dual"`` para transición). Verificar la app; rollback = volver a ``"sqlite"``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,8 +69,7 @@ def migrate(db_path, *, apply: bool = False, parquet_dir=None, log=print) -> dic
     written = failed = 0
     try:
         rows = con.execute(
-            "SELECT ticker, period, interval, data_json, fetched_at "
-            "FROM historical_data_cache"
+            "SELECT ticker, period, interval, data_json, fetched_at FROM historical_data_cache"
         ).fetchall()
     finally:
         con.close()
@@ -89,7 +89,10 @@ def migrate(db_path, *, apply: bool = False, parquet_dir=None, log=print) -> dic
             continue
         if apply:
             parquet_cache.write(
-                r["ticker"], r["period"], r["interval"], df,
+                r["ticker"],
+                r["period"],
+                r["interval"],
+                df,
                 fetched_at=_parse_fetched_at(r["fetched_at"]),
             )
         written += 1
@@ -98,9 +101,7 @@ def migrate(db_path, *, apply: bool = False, parquet_dir=None, log=print) -> dic
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(
-        description="Migra historical_data_cache (JSON-en-SQLite) a Parquet (ARQ1)."
-    )
+    ap = argparse.ArgumentParser(description="Migra historical_data_cache (JSON-en-SQLite) a Parquet (ARQ1).")
     ap.add_argument("--db", type=str, default=str(DEFAULT_DB), help="Ruta a finanzias.db")
     ap.add_argument("--apply", action="store_true", help="Escribir los parquet (sin esto, dry-run).")
     args = ap.parse_args(argv)

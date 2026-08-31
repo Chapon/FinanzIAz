@@ -13,6 +13,7 @@ Uso
     python scripts/benchmark_historical_cache.py --passes 5
     python scripts/benchmark_historical_cache.py --period 10y  # solo ese period
 """
+
 from __future__ import annotations
 
 import argparse
@@ -125,8 +126,8 @@ def main(argv=None) -> int:
         print(f"⚠ Parquet miss: {missing} lecturas (¿migración incompleta?)")
     print()
     print("Frame completo (patrón get_historical_data):")
-    print(f"  JSON-en-SQLite : {t_json:8.3f}s  ({1000*t_json/n_json:6.2f} ms/lectura)")
-    print(f"  Parquet        : {t_pq:8.3f}s  ({1000*t_pq/n_pq:6.2f} ms/lectura)")
+    print(f"  JSON-en-SQLite : {t_json:8.3f}s  ({1000 * t_json / n_json:6.2f} ms/lectura)")
+    print(f"  Parquet        : {t_pq:8.3f}s  ({1000 * t_pq / n_pq:6.2f} ms/lectura)")
     if t_pq > 0:
         print(f"  Speedup        : {t_json / t_pq:6.2f}×  (chico ≈ paridad; crece con el tamaño del frame)")
     print("Proyección columnar solo Close (patrón de features/E4):")
@@ -135,8 +136,8 @@ def main(argv=None) -> int:
     if t_pq_col > 0:
         print(f"  Speedup           : {t_json_col / t_pq_col:6.2f}×")
     print()
-    print(f"Footprint  JSON (texto en DB): {json_bytes/1e6:7.2f} MB")
-    print(f"Footprint  Parquet (archivos): {pq_bytes/1e6:7.2f} MB")
+    print(f"Footprint  JSON (texto en DB): {json_bytes / 1e6:7.2f} MB")
+    print(f"Footprint  Parquet (archivos): {pq_bytes / 1e6:7.2f} MB")
     if pq_bytes:
         print(f"Compresión                   : {json_bytes / pq_bytes:6.2f}×")
     return 0

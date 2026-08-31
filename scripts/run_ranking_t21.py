@@ -49,8 +49,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LIVE_MAX_POSITIONS,
@@ -58,10 +58,10 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.risk_sizing import cagr, sharpe_annual  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle  # noqa: E402
-from analysis.walkforward_power import (  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.risk_sizing import cagr, sharpe_annual
+from analysis.scaleout_replay import CostModel, ScaleOutParams, replay_cycle
+from analysis.walkforward_power import (
     STRESS_REGIMES,
     _sharpe,
     _skew_kurt,
@@ -70,13 +70,13 @@ from analysis.walkforward_power import (  # noqa: E402
     pbo_cscv,
     regime_for_date,
 )
-from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file  # noqa: E402
-from scripts.precompute_pit_risk_score import load_existing as _load_risk  # noqa: E402
-from scripts.precompute_pit_risk_score import out_path as _risk_path  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries  # noqa: E402
+from scripts.precompute_pit_risk_score import load_existing as _load_risk
+from scripts.precompute_pit_risk_score import out_path as _risk_path
+from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file
+from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries
 
-CAP_DAYS = 250            # lección T13 §2 (el engine no tiene tope de tenencia)
-VOL_PENALTY_COEF = 0.08   # ml_signals.py:1147
+CAP_DAYS = 250  # lección T13 §2 (el engine no tiene tope de tenencia)
+VOL_PENALTY_COEF = 0.08  # ml_signals.py:1147
 
 BASELINE_ARM = "B1_score"
 CANDIDATE_ARM = "B0_neutral"
@@ -85,9 +85,9 @@ ORACLE_ARM = "ORACULO"
 ANTI_ORACLE_ARM = "ANTI_ORACULO"
 
 # §4 — regla de decisión congelada.
-KILL_MIN_DCAGR = 0.0050      # C1: ΔCAGR ≥ +0.50pp
-KILL_DD_TOL = 0.0300         # C2: maxDD ≤ base + 3.00pp (la métrica de riesgo, al frente)
-KILL_SHARPE_TOL = 0.05       # C4: Sharpe ≥ base − 0.05
+KILL_MIN_DCAGR = 0.0050  # C1: ΔCAGR ≥ +0.50pp
+KILL_DD_TOL = 0.0300  # C2: maxDD ≤ base + 3.00pp (la métrica de riesgo, al frente)
+KILL_SHARPE_TOL = 0.05  # C4: Sharpe ≥ base − 0.05
 
 # §5 — sanity del instrumento.
 SANITY_ORACLE_EDGE = 0.0500  # ORACULO ≥ B1 + 5.00pp de CAGR
@@ -122,8 +122,7 @@ def load_bars_signals_scores(tickers, period: str, warmup: int):
         bars = []
         for ts, row in df.iterrows():
             try:
-                o, h, lo, c = (float(row["Open"]), float(row["High"]),
-                               float(row["Low"]), float(row["Close"]))
+                o, h, lo, c = (float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"]))
             except (KeyError, TypeError, ValueError):
                 continue
             bars.append((ts.strftime("%Y-%m-%d"), o, h, lo, c))
@@ -133,8 +132,7 @@ def load_bars_signals_scores(tickers, period: str, warmup: int):
         bars_by[t] = bars
         sig_rows = blob.get("signals") or {}
         sigs_by[t] = {d: sv[0] for d, sv in sig_rows.items() if sv[0]}
-        score_by[t] = {d: sv[1] for d, sv in sig_rows.items()
-                       if len(sv) > 1 and sv[1] is not None}
+        score_by[t] = {d: sv[1] for d, sv in sig_rows.items() if len(sv) > 1 and sv[1] is not None}
     return bars_by, sigs_by, score_by, missing
 
 
@@ -212,9 +210,14 @@ def precompute_realized(entries, bars_by, sigs_by, common) -> dict:
         if not bars or idx >= len(bars):
             continue
         cyc = replay_cycle(
-            bars, idx, sigs_by.get(ticker) or {},
-            params=common["so_params"], atr_p=AtrParams(),
-            cap_days=common["cap_days"], costs=common["costs"], notional=10_000.0,
+            bars,
+            idx,
+            sigs_by.get(ticker) or {},
+            params=common["so_params"],
+            atr_p=AtrParams(),
+            cap_days=common["cap_days"],
+            costs=common["costs"],
+            notional=10_000.0,
             eval_mode=common.get("eval_mode", "close"),
             fill_mode=common["fill_mode"],
         )
@@ -240,8 +243,7 @@ def summarise(res: PortfolioResult) -> dict:
         "n_taken": res.n_taken,
         "n_offered": res.n_offered,
         "final_equity": res.final_equity,
-        "mean_held_days": (statistics.fmean([t.held_days for t in res.trades])
-                           if res.trades else 0.0),
+        "mean_held_days": (statistics.fmean([t.held_days for t in res.trades]) if res.trades else 0.0),
         "accounting_ok": _accounting_ok(res),
     }
 
@@ -250,8 +252,10 @@ def regime_breakdown(res: PortfolioResult) -> dict:
     out: dict[str, dict] = {}
     for name in ["bull_normal"] + [r.name for r in STRESS_REGIMES]:
         tr = [t for t in res.trades if t.regime == name]
-        out[name] = {"n": len(tr),
-                     "mean_ret_pts": 100.0 * statistics.fmean([t.ret for t in tr]) if tr else 0.0}
+        out[name] = {
+            "n": len(tr),
+            "mean_ret_pts": 100.0 * statistics.fmean([t.ret for t in tr]) if tr else 0.0,
+        }
     return out
 
 
@@ -282,9 +286,11 @@ def evaluate(summaries: dict, boot) -> dict:
 
     # El caso partido, resuelto ex ante por el pre-registro §4.
     if c1 and not c2:
-        outcome = ("NO-SHIP — caso partido resuelto ex ante: el ranking neutral rinde "
-                   "más pero el drawdown se deteriora por encima de la tolerancia "
-                   "declarada. La tarea 21 cierra en la OPCIÓN (a).")
+        outcome = (
+            "NO-SHIP — caso partido resuelto ex ante: el ranking neutral rinde "
+            "más pero el drawdown se deteriora por encima de la tolerancia "
+            "declarada. La tarea 21 cierra en la OPCIÓN (a)."
+        )
     elif ship:
         outcome = "SHIP — el ranking pasa a no-predictivo (opción (b))."
     else:
@@ -294,8 +300,12 @@ def evaluate(summaries: dict, boot) -> dict:
         "dcagr": cand["cagr"] - base["cagr"],
         "dd_delta": cand["max_dd"] - base["max_dd"],
         "sharpe_delta": c_sh - b_sh,
-        "c1_cagr": c1, "c2_maxdd": c2, "c3_bootstrap": c3, "c4_sharpe": c4,
-        "ship": ship, "outcome": outcome,
+        "c1_cagr": c1,
+        "c2_maxdd": c2,
+        "c3_bootstrap": c3,
+        "c4_sharpe": c4,
+        "ship": ship,
+        "outcome": outcome,
     }
 
 
@@ -311,95 +321,117 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--random-arms", type=int, default=10)
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
-                        f"(look-ahead en el fill de la barrera — Tarea 33)")
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+        f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
     # Enabler de la Tarea 39: los dos desvíos que la T21 no modelaba. Defaults =
     # los de la corrida publicada, así agregarlos no mueve su veredicto.
-    p.add_argument("--eval-mode", choices=("close", "touch"), default="close",
-                   help="'close' reproduce el veredicto publicado; 'touch' es la "
-                        "regla que ejecuta el engine (Tarea 26b)")
-    p.add_argument("--live-gates", action="store_true",
-                   help="modela los gates de re-entrada del engine vivo "
-                        "(Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)")
+    p.add_argument(
+        "--eval-mode",
+        choices=("close", "touch"),
+        default="close",
+        help="'close' reproduce el veredicto publicado; 'touch' es la "
+        "regla que ejecuta el engine (Tarea 26b)",
+    )
+    p.add_argument(
+        "--live-gates",
+        action="store_true",
+        help="modela los gates de re-entrada del engine vivo (Gate 5 anti-whipsaw / 5b anti-churn, Tarea 34)",
+    )
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     log = sys.stderr if args.json else sys.stdout
     tickers = parse_universe_file(_HERE.parent / args.universe)
-    bars_by, sigs_by, score_by, missing = load_bars_signals_scores(
-        tickers, args.period, args.warmup)
+    bars_by, sigs_by, score_by, missing = load_bars_signals_scores(tickers, args.period, args.warmup)
     if not bars_by:
         print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     if missing:
-        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}",
-              file=sys.stderr)
+        print(f"AVISO: {len(missing)} tickers sin señal/barras: {', '.join(missing)}", file=sys.stderr)
 
     entries = buy_entries(bars_by, sigs_by, args.warmup)
     if not entries:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
 
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             eval_mode=args.eval_mode, fill_mode=args.fill_mode,
-             live_gates=args.live_gates, file=log)
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        eval_mode=args.eval_mode,
+        fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
+        file=log,
+    )
     risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)
-    print(f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
-          f"risk_score PIT: {100*risk_cov:.0f}% de cobertura"
-          + ("" if risk_by else
-             f"  (< {100*MIN_RISK_COVERAGE:.0f}% → SIN brazo B2: con cobertura parcial "
-             "rankearía unos tickers por raw_prob y otros por score)"), file=log)
+    print(
+        f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
+        f"risk_score PIT: {100 * risk_cov:.0f}% de cobertura"
+        + (
+            ""
+            if risk_by
+            else f"  (< {100 * MIN_RISK_COVERAGE:.0f}% → SIN brazo B2: con cobertura parcial "
+            "rankearía unos tickers por raw_prob y otros por score)"
+        ),
+        file=log,
+    )
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
-        eval_mode=args.eval_mode, fill_mode=args.fill_mode,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
+        eval_mode=args.eval_mode,
+        fill_mode=args.fill_mode,
         live_gates=args.live_gates,
     )
     realized = precompute_realized(entries, bars_by, sigs_by, common)
     print(f"Retornos realizados para el oráculo: {len(realized)}\n", file=log)
 
-    arms = build_rank_fns(score_by, risk_by, realized,
-                          n_random=args.random_arms, seed=BOOT_SEED)
+    arms = build_rank_fns(score_by, risk_by, realized, n_random=args.random_arms, seed=BOOT_SEED)
     results = {
-        name: simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(),
-                                 rank_score=fn, **common)
+        name: simulate_portfolio(entries, bars_by, sigs_by, atr_p=AtrParams(), rank_score=fn, **common)
         for name, fn in arms.items()
     }
     summaries = {n: summarise(r) for n, r in results.items()}
-    regimes = {n: regime_breakdown(results[n])
-               for n in (BASELINE_ARM, CANDIDATE_ARM)}
+    regimes = {n: regime_breakdown(results[n]) for n in (BASELINE_ARM, CANDIDATE_ARM)}
 
     # C3 — bootstrap pareado candidato vs baseline.
     rets = aligned_returns(results, [BASELINE_ARM, CANDIDATE_ARM])
-    boot = paired_block_bootstrap(rets[BASELINE_ARM], rets[CANDIDATE_ARM],
-                                  block=BOOT_BLOCK, n_resamples=args.resamples,
-                                  seed=BOOT_SEED)
+    boot = paired_block_bootstrap(
+        rets[BASELINE_ARM], rets[CANDIDATE_ARM], block=BOOT_BLOCK, n_resamples=args.resamples, seed=BOOT_SEED
+    )
 
     # §5 — sanity del instrumento.
     diff_share = trade_overlap(results[BASELINE_ARM], results[CANDIDATE_ARM])
     sanity = {
         "accounting": all(summaries[n]["accounting_ok"] for n in results),
         "oracle_edge": summaries[ORACLE_ARM]["cagr"] - summaries[BASELINE_ARM]["cagr"],
-        "oracle_ok": (summaries[ORACLE_ARM]["cagr"]
-                      >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
+        "oracle_ok": (summaries[ORACLE_ARM]["cagr"] >= summaries[BASELINE_ARM]["cagr"] + SANITY_ORACLE_EDGE),
         "anti_oracle_ok": summaries[ANTI_ORACLE_ARM]["cagr"] <= summaries[BASELINE_ARM]["cagr"],
         "trade_diff_share": diff_share,
         "ranking_bites": diff_share >= SANITY_MIN_TRADE_DIFF,
     }
-    sanity["all_ok"] = bool(sanity["accounting"] and sanity["oracle_ok"]
-                            and sanity["anti_oracle_ok"] and sanity["ranking_bites"])
+    sanity["all_ok"] = bool(
+        sanity["accounting"] and sanity["oracle_ok"] and sanity["anti_oracle_ok"] and sanity["ranking_bites"]
+    )
 
     verdict = evaluate(summaries, boot)
     if not sanity["all_ok"]:
         verdict["ship"] = False
-        verdict["outcome"] = ("CORRIDA INVÁLIDA — falla un sanity del §5; no hay veredicto "
-                              "(el instrumento no está validado).")
+        verdict["outcome"] = (
+            "CORRIDA INVÁLIDA — falla un sanity del §5; no hay veredicto (el instrumento no está validado)."
+        )
 
     rand_names = [n for n in results if n.startswith("B0r_random")]
     rand_cagrs = sorted(summaries[n]["cagr"] for n in rand_names)
@@ -412,29 +444,46 @@ def main(argv: list[str] | None = None) -> int:
     dsr = None
     if T >= 2:
         sk, ku = _skew_kurt(rets_all[CANDIDATE_ARM])
-        dsr = deflated_sharpe_ratio([_sharpe(rets_all[c]) for c in real_arms], n_obs=T,
-                                    selected=_sharpe(rets_all[CANDIDATE_ARM]),
-                                    skew=sk, kurtosis=ku)
+        dsr = deflated_sharpe_ratio(
+            [_sharpe(rets_all[c]) for c in real_arms],
+            n_obs=T,
+            selected=_sharpe(rets_all[CANDIDATE_ARM]),
+            skew=sk,
+            kurtosis=ku,
+        )
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_tickers": len(bars_by), "n_entries": len(entries),
-        "max_positions": args.max_positions, "cap_days": args.cap_days,
-        "eval_mode": args.eval_mode, "fill_mode": args.fill_mode,
+        "n_tickers": len(bars_by),
+        "n_entries": len(entries),
+        "max_positions": args.max_positions,
+        "cap_days": args.cap_days,
+        "eval_mode": args.eval_mode,
+        "fill_mode": args.fill_mode,
         "live_gates": args.live_gates,
-        "sanity": sanity, "verdict": verdict,
+        "sanity": sanity,
+        "verdict": verdict,
         "bootstrap": vars(boot),
-        "random_cagr": {"n": len(rand_cagrs),
-                        "min": rand_cagrs[0] if rand_cagrs else None,
-                        "median": statistics.median(rand_cagrs) if rand_cagrs else None,
-                        "max": rand_cagrs[-1] if rand_cagrs else None},
+        "random_cagr": {
+            "n": len(rand_cagrs),
+            "min": rand_cagrs[0] if rand_cagrs else None,
+            "median": statistics.median(rand_cagrs) if rand_cagrs else None,
+            "max": rand_cagrs[-1] if rand_cagrs else None,
+        },
         "dsr": (dsr.deflated_sharpe if dsr else None),
-        "pbo": (pbo.pbo if pbo else None), "dsr_obs": T,
+        "pbo": (pbo.pbo if pbo else None),
+        "dsr_obs": T,
     }
 
     if args.json:
-        print(json.dumps({"context": ctx, "summaries": summaries, "regimes": regimes},
-                         ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "summaries": summaries, "regimes": regimes},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
         return 0
 
     _report(summaries, regimes, ctx, verdict, sanity, boot, rand_cagrs, dsr, pbo, T)
@@ -444,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
 def _f(x, w=9, p=2, suf=""):
     if x is None:
         return f"{'—':>{w}}"
-    return f"{x*(100 if suf == '%' else 1):>{w-len(suf)}.{p}f}{suf}"
+    return f"{x * (100 if suf == '%' else 1):>{w - len(suf)}.{p}f}{suf}"
 
 
 def _report(summaries, regimes, ctx, verdict, sanity, boot, rand_cagrs, dsr, pbo, T):
@@ -456,40 +505,57 @@ def _report(summaries, regimes, ctx, verdict, sanity, boot, rand_cagrs, dsr, pbo
         if n not in summaries:
             continue
         s = summaries[n]
-        tag = {BASELINE_ARM: "BASE (lo vivo)", CANDIDATE_ARM: "*candidato",
-               DIAGNOSTIC_ARM: "diagnóstico"}.get(n, "sanity")
-        print(f"{n:<16}{_f(s['cagr'],10,2,'%')}{_f(s['sharpe'],9,2)}{_f(s['max_dd'],9,1,'%')}"
-              f"{s['n_taken']:>8}{s['mean_held_days']:>7.1f}  {tag}")
+        tag = {
+            BASELINE_ARM: "BASE (lo vivo)",
+            CANDIDATE_ARM: "*candidato",
+            DIAGNOSTIC_ARM: "diagnóstico",
+        }.get(n, "sanity")
+        print(
+            f"{n:<16}{_f(s['cagr'], 10, 2, '%')}{_f(s['sharpe'], 9, 2)}{_f(s['max_dd'], 9, 1, '%')}"
+            f"{s['n_taken']:>8}{s['mean_held_days']:>7.1f}  {tag}"
+        )
     if rand_cagrs:
-        print(f"{'B0r_random':<16}{_f(statistics.median(rand_cagrs),10,2,'%')}"
-              f"{'':>9}{'':>9}{'':>8}{'':>7}  n={len(rand_cagrs)} "
-              f"[{100*rand_cagrs[0]:.2f}%, {100*rand_cagrs[-1]:.2f}%]")
+        print(
+            f"{'B0r_random':<16}{_f(statistics.median(rand_cagrs), 10, 2, '%')}"
+            f"{'':>9}{'':>9}{'':>8}{'':>7}  n={len(rand_cagrs)} "
+            f"[{100 * rand_cagrs[0]:.2f}%, {100 * rand_cagrs[-1]:.2f}%]"
+        )
 
     print("\nSanity del instrumento (§5):")
     print(f"  [{'OK' if sanity['accounting'] else 'FALLA'}] contabilidad")
-    print(f"  [{'OK' if sanity['oracle_ok'] else 'FALLA'}] el oráculo despega: "
-          f"+{100*sanity['oracle_edge']:.2f}pp sobre el baseline (mín +5.00pp)")
+    print(
+        f"  [{'OK' if sanity['oracle_ok'] else 'FALLA'}] el oráculo despega: "
+        f"+{100 * sanity['oracle_edge']:.2f}pp sobre el baseline (mín +5.00pp)"
+    )
     print(f"  [{'OK' if sanity['anti_oracle_ok'] else 'FALLA'}] el anti-oráculo hunde")
-    print(f"  [{'OK' if sanity['ranking_bites'] else 'FALLA'}] el ranking muerde: "
-          f"{100*sanity['trade_diff_share']:.1f}% de trades distintos (mín 10%)")
+    print(
+        f"  [{'OK' if sanity['ranking_bites'] else 'FALLA'}] el ranking muerde: "
+        f"{100 * sanity['trade_diff_share']:.1f}% de trades distintos (mín 10%)"
+    )
 
     print("\nPor régimen (ret medio por trade, pts):")
     for r in regimes[BASELINE_ARM]:
         b = regimes[BASELINE_ARM][r]["mean_ret_pts"]
         c = regimes[CANDIDATE_ARM][r]["mean_ret_pts"]
-        print(f"  {r:<20} base {b:>+6.2f} · cand {c:>+6.2f} · Δ {c-b:>+6.2f}")
+        print(f"  {r:<20} base {b:>+6.2f} · cand {c:>+6.2f} · Δ {c - b:>+6.2f}")
 
-    print(f"\nΔCAGR {_f(verdict['dcagr'],0,2,'%')} · ΔmaxDD {_f(verdict['dd_delta'],0,2,'%')} · "
-          f"ΔSharpe {verdict['sharpe_delta']:+.3f}")
-    print(f"Bootstrap pareado: ΔCAGR obs {100*boot.observed:+.2f}pp · "
-          f"IC95% [{100*boot.ci_low:+.2f}, {100*boot.ci_high:+.2f}]pp · p={boot.p_value:.3f} "
-          f"(bloques {boot.block}, {boot.n_resamples} resamples, T={boot.n_obs})")
+    print(
+        f"\nΔCAGR {_f(verdict['dcagr'], 0, 2, '%')} · ΔmaxDD {_f(verdict['dd_delta'], 0, 2, '%')} · "
+        f"ΔSharpe {verdict['sharpe_delta']:+.3f}"
+    )
+    print(
+        f"Bootstrap pareado: ΔCAGR obs {100 * boot.observed:+.2f}pp · "
+        f"IC95% [{100 * boot.ci_low:+.2f}, {100 * boot.ci_high:+.2f}]pp · p={boot.p_value:.3f} "
+        f"(bloques {boot.block}, {boot.n_resamples} resamples, T={boot.n_obs})"
+    )
 
     print("\nRegla de decisión (§4):")
-    for k, label in [("c1_cagr", "C1 ΔCAGR ≥ +0.50pp"),
-                     ("c2_maxdd", "C2 maxDD ≤ base + 3.00pp  ← métrica de riesgo"),
-                     ("c3_bootstrap", "C3 IC95% inferior > 0"),
-                     ("c4_sharpe", "C4 Sharpe no-inferior")]:
+    for k, label in [
+        ("c1_cagr", "C1 ΔCAGR ≥ +0.50pp"),
+        ("c2_maxdd", "C2 maxDD ≤ base + 3.00pp  ← métrica de riesgo"),
+        ("c3_bootstrap", "C3 IC95% inferior > 0"),
+        ("c4_sharpe", "C4 Sharpe no-inferior"),
+    ]:
         print(f"  [{'PASA' if verdict[k] else 'FALLA'}] {label}")
     head = f"DSR = {dsr.deflated_sharpe:.3f}" if dsr else "DSR = n/d"
     tail = f"· PBO = {pbo.pbo:.3f}" if pbo else "· PBO = n/d"

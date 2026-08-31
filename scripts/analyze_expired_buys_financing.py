@@ -91,12 +91,18 @@ def run(db_path: Path, account_id: int):
             # por debajo del target; igual la entrada se concreta (algo menor).
             recoverable = cause == "cash_insuficiente" and proceeds > 0.0
             fully = recoverable and proceeds >= need > 0
-            rows.append({
-                "order_id": oid, "ticker": tk, "need": need, "cause": cause,
-                "cosell_proceeds": proceeds, "recuperable": recoverable,
-                "financiamiento_total": fully,
-                "cosell_tickers": [s[1] for s in cosells],
-            })
+            rows.append(
+                {
+                    "order_id": oid,
+                    "ticker": tk,
+                    "need": need,
+                    "cause": cause,
+                    "cosell_proceeds": proceeds,
+                    "recuperable": recoverable,
+                    "financiamiento_total": fully,
+                    "cosell_tickers": [s[1] for s in cosells],
+                }
+            )
 
         in_scope = [r for r in rows if r["cause"] == "cash_insuficiente"]
         recoverable = [r for r in in_scope if r["recuperable"]]
@@ -113,7 +119,8 @@ def run(db_path: Path, account_id: int):
             "dollars_recuperables": sum(r["need"] for r in recoverable),
         }
         ctx = {
-            "db": str(db_path), "account_id": account_id,
+            "db": str(db_path),
+            "account_id": account_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         return rows, agg, ctx
@@ -170,8 +177,11 @@ def main(argv: list[str] | None = None) -> int:
 
     rows, agg, ctx = run(db_path, args.account)
     if args.json:
-        print(json.dumps({"context": ctx, "aggregate": agg, "rows": rows},
-                         ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "aggregate": agg, "rows": rows}, ensure_ascii=False, indent=2, default=str
+            )
+        )
     else:
         print(render(rows, agg, ctx))
     return 0

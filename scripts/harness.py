@@ -17,22 +17,19 @@ Results:
 
 from __future__ import annotations
 
-import json
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
 import pandas as pd
-import numpy as np
 
 # Add repo root to path
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
+from analysis.backtest import signal_from_analyze_stacked
 from analysis.harness import ExperimentConfig, HarnessRunner
 from analysis.harness.metrics import ComputedMetrics
-from analysis.backtest import signal_from_analyze_stacked
 
 
 def _load_baseline_metrics() -> ComputedMetrics:
@@ -65,9 +62,9 @@ def _load_baseline_metrics() -> ComputedMetrics:
 def main(
     suite: str = "all",
     period: str = "1y",
-    tickers: Optional[list[str]] = None,
-    output_dir: Optional[Path] = None,
-    max_positions: Optional[int] = None,
+    tickers: list[str] | None = None,
+    output_dir: Path | None = None,
+    max_positions: int | None = None,
     verbose: bool = True,
 ):
     """
@@ -156,6 +153,7 @@ def main(
         print(f"❌ Error during harness run: {e}")
         if verbose:
             import traceback
+
             traceback.print_exc()
         return 1
 
@@ -183,14 +181,16 @@ def main(
     if runner.results:
         rows = []
         for exp_name, (metrics, backtest_result, _) in runner.results.items():
-            rows.append({
-                "experiment": exp_name,
-                "return": f"{metrics.period_return:.2f}%",
-                "sharpe": f"{metrics.sharpe_annual:.2f}",
-                "max_dd": f"{metrics.max_drawdown:.2f}%",
-                "win_rate": f"{metrics.win_rate:.1f}%",
-                "n_trades": len(backtest_result.trades) if backtest_result.trades else 0,
-            })
+            rows.append(
+                {
+                    "experiment": exp_name,
+                    "return": f"{metrics.period_return:.2f}%",
+                    "sharpe": f"{metrics.sharpe_annual:.2f}",
+                    "max_dd": f"{metrics.max_drawdown:.2f}%",
+                    "win_rate": f"{metrics.win_rate:.1f}%",
+                    "n_trades": len(backtest_result.trades) if backtest_result.trades else 0,
+                }
+            )
         df = pd.DataFrame(rows)
         print("\n" + df.to_string(index=False))
 
@@ -216,7 +216,8 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "-m", "--max-positions",
+        "-m",
+        "--max-positions",
         type=int,
         default=None,
         help=(
@@ -227,10 +228,12 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "-p", "--period",
+        "-p",
+        "--period",
         default="1y",
         help="Data period to backtest ('1y', '2y', etc.)",
     )
+
     def _parse_tickers(s: str) -> list[str]:
         """Accept either ``AAPL,MSFT,...`` or ``@path/to/file.txt``.
 
@@ -239,6 +242,7 @@ if __name__ == "__main__":
         separators. We parse per-line so commas in comments don't bleed into
         ticker tokens.
         """
+
         def _parse_text(text: str) -> list[str]:
             out: list[str] = []
             for line in text.splitlines():
@@ -265,7 +269,8 @@ if __name__ == "__main__":
         return _parse_text(s)
 
     parser.add_argument(
-        "-t", "--tickers",
+        "-t",
+        "--tickers",
         type=_parse_tickers,
         help=(
             "Tickers to backtest. Either comma-separated (AAPL,MSFT,...) or "
@@ -282,12 +287,14 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         help="Output directory for results",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Suppress verbose output",
     )
@@ -297,6 +304,7 @@ if __name__ == "__main__":
     tickers = args.tickers
     if args.account_id is not None:
         import sqlite3
+
         db_path = repo_root / "finanzias.db"
         if not db_path.exists():
             print(f"Error: {db_path} not found")

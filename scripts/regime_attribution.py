@@ -37,9 +37,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -47,7 +46,7 @@ import pandas as pd
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
-from analysis.regime_detector import (  # noqa: E402
+from analysis.regime_detector import (
     REGIME_BEAR,
     REGIME_BULL_QUIET,
     REGIME_BULL_VOLATILE,
@@ -60,7 +59,7 @@ from analysis.regime_detector import (  # noqa: E402
 # Project annualisation convention. Re-imported here to keep this script
 # runnable in isolation without the config package.
 try:
-    from config.constants import TRADING_DAYS_PER_YEAR  # noqa: E402
+    from config.constants import TRADING_DAYS_PER_YEAR
 except Exception:  # pragma: no cover
     TRADING_DAYS_PER_YEAR = 252
 
@@ -81,8 +80,7 @@ def equity_to_daily_returns(equity: pd.Series) -> pd.Series:
     return equity.astype(float).pct_change().dropna()
 
 
-def annualised_sharpe(returns: pd.Series,
-                      trading_days_per_year: int = TRADING_DAYS_PER_YEAR) -> float:
+def annualised_sharpe(returns: pd.Series, trading_days_per_year: int = TRADING_DAYS_PER_YEAR) -> float:
     """Annualised Sharpe (no risk-free rate). Returns NaN for fewer than 2
     observations or zero variance — both indicate the bucket can't be measured."""
     r = returns.dropna()
@@ -116,6 +114,7 @@ def slice_returns_by_regime(returns: pd.Series, regimes: pd.Series) -> dict[str,
 @dataclass
 class RegimeSharpe:
     """Per-régime Sharpe for a single variant, plus bar counts."""
+
     variant: str
     sharpe_by_regime: dict[str, float]
     n_by_regime: dict[str, int]
@@ -126,29 +125,29 @@ class RegimeSharpe:
         return asdict(self)
 
 
-def compute_variant_regime_sharpe(equity: pd.Series,
-                                  regimes: pd.Series,
-                                  variant_name: str,
-                                  trading_days_per_year: int = TRADING_DAYS_PER_YEAR,
-                                  ) -> RegimeSharpe:
+def compute_variant_regime_sharpe(
+    equity: pd.Series,
+    regimes: pd.Series,
+    variant_name: str,
+    trading_days_per_year: int = TRADING_DAYS_PER_YEAR,
+) -> RegimeSharpe:
     """For one variant's equity curve, compute Sharpe within each régime and
     the overall Sharpe over all non-warmup bars."""
     rets = equity_to_daily_returns(equity)
     by_reg = slice_returns_by_regime(rets, regimes)
     sharpe_by = {k: annualised_sharpe(v, trading_days_per_year) for k, v in by_reg.items()}
-    n_by = {k: int(len(v)) for k, v in by_reg.items()}
+    n_by = {k: len(v) for k, v in by_reg.items()}
     all_non_warmup = pd.concat(by_reg.values()) if by_reg else pd.Series(dtype=float)
     return RegimeSharpe(
         variant=variant_name,
         sharpe_by_regime=sharpe_by,
         n_by_regime=n_by,
         sharpe_overall=annualised_sharpe(all_non_warmup, trading_days_per_year),
-        n_overall=int(len(all_non_warmup)),
+        n_overall=len(all_non_warmup),
     )
 
 
-def delta_sharpe_table(per_variant: dict[str, RegimeSharpe],
-                       baseline_name: str = "baseline") -> pd.DataFrame:
+def delta_sharpe_table(per_variant: dict[str, RegimeSharpe], baseline_name: str = "baseline") -> pd.DataFrame:
     """Build the headline N × 4 table: variant rows, régime columns, cell =
     ΔSharpe vs the baseline variant.
 
@@ -156,14 +155,12 @@ def delta_sharpe_table(per_variant: dict[str, RegimeSharpe],
     Variants missing the baseline name raise.
     """
     if baseline_name not in per_variant:
-        raise KeyError(f"baseline variant {baseline_name!r} not in results "
-                       f"(have: {list(per_variant)})")
+        raise KeyError(f"baseline variant {baseline_name!r} not in results (have: {list(per_variant)})")
     base = per_variant[baseline_name].sharpe_by_regime
     rows = {}
     for name, rs in per_variant.items():
         rows[name] = {
-            reg: (rs.sharpe_by_regime.get(reg, float("nan"))
-                  - base.get(reg, float("nan")))
+            reg: (rs.sharpe_by_regime.get(reg, float("nan")) - base.get(reg, float("nan")))
             for reg in NON_WARMUP_REGIMES
         }
     return pd.DataFrame(rows).T[list(NON_WARMUP_REGIMES)]
@@ -226,9 +223,11 @@ def load_variant_equity(window_dir: Path) -> dict[str, pd.Series]:
     return out
 
 
-def build_proxy_returns(equities: dict[str, pd.Series],
-                        proxy_series: Optional[pd.Series] = None,
-                        bh_equity: Optional[pd.Series] = None) -> pd.Series:
+def build_proxy_returns(
+    equities: dict[str, pd.Series],
+    proxy_series: pd.Series | None = None,
+    bh_equity: pd.Series | None = None,
+) -> pd.Series:
     """Build the market-proxy daily return series to feed the régime detector.
 
     Priority order (most → least accurate):
@@ -258,7 +257,7 @@ def build_proxy_returns(equities: dict[str, pd.Series],
     return proxy_eq.pct_change().dropna()
 
 
-def load_bh_equity(window_dir: Path) -> Optional[pd.Series]:
+def load_bh_equity(window_dir: Path) -> pd.Series | None:
     """Pick the first available ``<variant>.bh_equity.csv`` under the window's
     results directory. Returns None if no such file exists (older harness
     runs predate the 2026-06-01 patch and won't have these)."""
@@ -273,7 +272,7 @@ def load_bh_equity(window_dir: Path) -> Optional[pd.Series]:
     return df[col].astype(float)
 
 
-def stitch_global_bh_equity(window_dirs: list[Path]) -> Optional[pd.Series]:
+def stitch_global_bh_equity(window_dirs: list[Path]) -> pd.Series | None:
     """Concatenate the buy-and-hold equity curves from every available window
     into a single continuous series, sorted by date and de-duplicated.
 
@@ -319,10 +318,12 @@ def stitch_global_bh_equity(window_dirs: list[Path]) -> Optional[pd.Series]:
     return full
 
 
-def attribution_for_window(window_dir: Path,
-                           proxy_series: Optional[pd.Series] = None,
-                           cfg: Optional[RegimeConfig] = None,
-                           regime_series: Optional[pd.Series] = None) -> dict:
+def attribution_for_window(
+    window_dir: Path,
+    proxy_series: pd.Series | None = None,
+    cfg: RegimeConfig | None = None,
+    regime_series: pd.Series | None = None,
+) -> dict:
     """Run the full per-window attribution pipeline.
 
     Parameters
@@ -360,8 +361,7 @@ def attribution_for_window(window_dir: Path,
         # Legacy per-window path. Proxy priority: explicit > persisted bh_equity
         # > equity-mean fallback.
         bh_equity = load_bh_equity(window_dir) if proxy_series is None else None
-        proxy_returns = build_proxy_returns(equities, proxy_series=proxy_series,
-                                            bh_equity=bh_equity)
+        proxy_returns = build_proxy_returns(equities, proxy_series=proxy_series, bh_equity=bh_equity)
         proxy_close = (1.0 + proxy_returns).cumprod() * 100.0
         proxy_df = pd.DataFrame({"Close": proxy_close})
         regime_df = detect_regime_series(proxy_df, cfg or RegimeConfig())
@@ -372,11 +372,9 @@ def attribution_for_window(window_dir: Path,
         per_variant[name] = compute_variant_regime_sharpe(eq, regimes, variant_name=name)
 
     delta = delta_sharpe_table(per_variant, baseline_name="baseline")
-    verdicts = {name: verdict_for_feature(delta.loc[name])
-                for name in delta.index if name != "baseline"}
+    verdicts = {name: verdict_for_feature(delta.loc[name]) for name in delta.index if name != "baseline"}
 
-    regime_dist = (regimes[regimes != REGIME_WARMUP].value_counts(normalize=True)
-                   .to_dict())
+    regime_dist = regimes[regimes != REGIME_WARMUP].value_counts(normalize=True).to_dict()
     return {
         "window": str(window_dir.name),
         "regime_distribution": {k: float(v) for k, v in regime_dist.items()},
@@ -394,9 +392,10 @@ def format_table(report: dict) -> str:
     lines = []
     lines.append(f"=== Window: {report['window']} ===")
     dist = report["regime_distribution"]
-    lines.append("Régime distribution:  " + "  ".join(
-        f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1])
-    ))
+    lines.append(
+        "Régime distribution:  "
+        + "  ".join(f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1]))
+    )
     lines.append("")
     lines.append("Per-variant Sharpe by régime (n bars in parentheses):")
     header = f"  {'variant':<18} " + " ".join(f"{r:>16}" for r in NON_WARMUP_REGIMES) + f"  {'overall':>10}"
@@ -413,7 +412,9 @@ def format_table(report: dict) -> str:
         lines.append(f"  {name:<18} " + " ".join(cells) + f"  {all_cell:>10}")
     lines.append("")
     lines.append("ΔSharpe vs baseline (ablation − baseline; positive = feature hurts):")
-    lines.append(f"  {'variant':<18} " + " ".join(f"{r:>16}" for r in NON_WARMUP_REGIMES) + f"  {'verdict':>12}")
+    lines.append(
+        f"  {'variant':<18} " + " ".join(f"{r:>16}" for r in NON_WARMUP_REGIMES) + f"  {'verdict':>12}"
+    )
     for name, row in report["delta_sharpe"].items():
         if name == "baseline":
             continue
@@ -430,16 +431,23 @@ def format_table(report: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("root", type=Path,
-                   help="harness_walkforward/<ts>/ (multi-window) or harness_results/<ts>/ (single)")
-    p.add_argument("--single-window", action="store_true",
-                   help="Treat ROOT as a single window (no early_12m/late_12m subdirs).")
-    p.add_argument("--proxy-csv", type=Path, default=None,
-                   help="Optional CSV with date,Close for an explicit market proxy "
-                        "(e.g. SPY). If omitted, an equal-weight proxy is built "
-                        "from the variant equity curves themselves.")
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument(
+        "root", type=Path, help="harness_walkforward/<ts>/ (multi-window) or harness_results/<ts>/ (single)"
+    )
+    p.add_argument(
+        "--single-window",
+        action="store_true",
+        help="Treat ROOT as a single window (no early_12m/late_12m subdirs).",
+    )
+    p.add_argument(
+        "--proxy-csv",
+        type=Path,
+        default=None,
+        help="Optional CSV with date,Close for an explicit market proxy "
+        "(e.g. SPY). If omitted, an equal-weight proxy is built "
+        "from the variant equity curves themselves.",
+    )
     args = p.parse_args(argv)
 
     if not args.root.exists():
@@ -457,11 +465,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.single_window:
         windows = [args.root]
     else:
-        windows = [d for d in sorted(args.root.iterdir())
-                   if d.is_dir() and (d / "results").exists()]
+        windows = [d for d in sorted(args.root.iterdir()) if d.is_dir() and (d / "results").exists()]
         if not windows:
-            print(f"No window subdirectories with results/ found under {args.root}",
-                  file=sys.stderr)
+            print(f"No window subdirectories with results/ found under {args.root}", file=sys.stderr)
             return 2
 
     # Global régime detection (multi-window only). Stitch every window's
@@ -470,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     # warmup only at the absolute start of the 5y series, instead of once
     # per window — which is what makes régimes near a window edge (like the
     # Q1 2025 bear that started 9 days after w4 began) actually visible.
-    global_regime: Optional[pd.Series] = None
+    global_regime: pd.Series | None = None
     if proxy_series is None and len(windows) > 1:
         stitched = stitch_global_bh_equity(windows)
         if stitched is not None and len(stitched) > 60:
@@ -478,14 +484,16 @@ def main(argv: list[str] | None = None) -> int:
             global_regime_df = detect_regime_series(stitched_df, RegimeConfig())
             global_regime = global_regime_df["regime"]
             non_warmup = global_regime[global_regime != REGIME_WARMUP]
-            print(f"Global régime detection: {len(stitched)} bars "
-                  f"({stitched.index[0].date()} → {stitched.index[-1].date()}), "
-                  f"non-warmup={len(non_warmup)}")
-            dist = (non_warmup.value_counts(normalize=True)
-                    .to_dict())
-            print(f"  Global distribution: " + "  ".join(
-                f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1])
-            ))
+            print(
+                f"Global régime detection: {len(stitched)} bars "
+                f"({stitched.index[0].date()} → {stitched.index[-1].date()}), "
+                f"non-warmup={len(non_warmup)}"
+            )
+            dist = non_warmup.value_counts(normalize=True).to_dict()
+            print(
+                "  Global distribution: "
+                + "  ".join(f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1]))
+            )
             print()
     elif proxy_series is not None:
         # If an explicit proxy CSV is given, also compute régime globally on
@@ -498,8 +506,7 @@ def main(argv: list[str] | None = None) -> int:
     reports = []
     for w in windows:
         try:
-            r = attribution_for_window(w, proxy_series=proxy_series,
-                                       regime_series=global_regime)
+            r = attribution_for_window(w, proxy_series=proxy_series, regime_series=global_regime)
         except (FileNotFoundError, KeyError) as e:
             print(f"  SKIP {w.name}: {e}", file=sys.stderr)
             continue

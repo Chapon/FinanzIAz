@@ -45,26 +45,27 @@ import json
 import math
 import statistics
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams, atr_series  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams, atr_series
+from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
     announce_grid,
     artifact_window,
 )
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import regime_for_date  # noqa: E402
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_ranking_t21 import summarise  # noqa: E402
-from scripts.run_stop_cal_replay_t26 import NO_STOP  # noqa: E402
-from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals  # noqa: E402
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import regime_for_date
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_ranking_t21 import summarise
+from scripts.run_stop_cal_replay_t26 import NO_STOP
+from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals
 
 # La config de la cuenta viva, la misma de la 37/51 (touch/decision/live_gates).
 EVAL_MODE = "touch"
@@ -104,13 +105,17 @@ def trade_excess_atrs(res: PortfolioResult, bars_by: dict, period: int = 14) -> 
         if atr0 is None or not math.isfinite(atr0) or atr0 <= 0:
             continue
         entry_close = bars[i0][4]
-        hwm = max(b[2] for b in bars[i0:i1 + 1])
-        out.append({
-            "ticker": t.ticker, "entry": t.entry_date, "exit": t.exit_date,
-            "excess_atrs": (hwm - entry_close) / atr0,
-            "ret_pts": 100.0 * t.ret,
-            "held_days": t.held_days,
-        })
+        hwm = max(b[2] for b in bars[i0 : i1 + 1])
+        out.append(
+            {
+                "ticker": t.ticker,
+                "entry": t.entry_date,
+                "exit": t.exit_date,
+                "excess_atrs": (hwm - entry_close) / atr0,
+                "ret_pts": 100.0 * t.ret,
+                "held_days": t.held_days,
+            }
+        )
     return out
 
 
@@ -130,8 +135,14 @@ def differential_population(excess: list[float], grid, base: float = LIVE_MIN_EX
             hit = 0
         else:
             hit = sum(1 for m in excess if lo < m <= hi)
-        out.append({"value": k, "n_changed": hit, "share": (hit / n) if n else 0.0,
-                    "direction": "baja" if k < base else ("sube" if k > base else "base")})
+        out.append(
+            {
+                "value": k,
+                "n_changed": hit,
+                "share": (hit / n) if n else 0.0,
+                "direction": "baja" if k < base else ("sube" if k > base else "base"),
+            }
+        )
     return out
 
 
@@ -152,36 +163,55 @@ def main(argv: list[str] | None = None) -> int:
 
     log = sys.stderr if args.json else sys.stdout
     tickers = parse_universe_file(_HERE.parent / args.universe)
-    bars_by, sigs_by, missing = load_bars_signals(tickers, args.period, args.warmup)
+    bars_by, sigs_by, _missing = load_bars_signals(tickers, args.period, args.warmup)
     if not bars_by:
-        print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.",
-              file=sys.stderr)
+        print("Sin datos PIT: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
     entries = buy_entries(bars_by, sigs_by, args.warmup)
 
     window = artifact_window(bars_by)
-    announce(args.max_positions, args.universe, len(bars_by), window=window,
-             eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES, file=log)
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=window,
+        eval_mode=EVAL_MODE,
+        fill_mode=FILL_MODE,
+        live_gates=LIVE_GATES,
+        file=log,
+    )
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
-    print(f"Brazo medido: el VIVO desde 2026-08-27 — stop duro OFF + trail "
-          f"{LIVE_TRAIL_MULT}×ATR, armado en {LIVE_MIN_EXCESS}×ATR\n", file=log)
+    print(
+        f"Brazo medido: el VIVO desde 2026-08-27 — stop duro OFF + trail "
+        f"{LIVE_TRAIL_MULT}×ATR, armado en {LIVE_MIN_EXCESS}×ATR\n",
+        file=log,
+    )
 
     res = simulate_portfolio(
-        entries, bars_by, sigs_by,
-        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT,
-                        trail_min_excess_atrs=LIVE_MIN_EXCESS),
-        eval_mode=EVAL_MODE, fill_mode=FILL_MODE, live_gates=LIVE_GATES,
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=CAP_DAYS, so_params=ScaleOutParams(), costs=CostModel(),
-        regime_of=regime_for_date, allow_reentry_while_open=False,
+        entries,
+        bars_by,
+        sigs_by,
+        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT, trail_min_excess_atrs=LIVE_MIN_EXCESS),
+        eval_mode=EVAL_MODE,
+        fill_mode=FILL_MODE,
+        live_gates=LIVE_GATES,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=CAP_DAYS,
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
+        allow_reentry_while_open=False,
     )
     # El ancla de reproduccion del pre-registro: el brazo vivo tiene que dar el
     # 9.17% que publico la T37 (§7.7) sobre esta misma ventana y poblacion.
     base_sum = summarise(res)
-    print(f"Brazo vivo soff_t{LIVE_TRAIL_MULT}: CAGR {100*base_sum['cagr']:.2f}% · "
-          f"Sharpe {base_sum['sharpe']:.2f} · maxDD {100*base_sum['max_dd']:.1f}% · "
-          f"tomadas {base_sum['n_taken']} · tenencia {base_sum['mean_held_days']:.1f}d\n",
-          file=log)
+    print(
+        f"Brazo vivo soff_t{LIVE_TRAIL_MULT}: CAGR {100 * base_sum['cagr']:.2f}% · "
+        f"Sharpe {base_sum['sharpe']:.2f} · maxDD {100 * base_sum['max_dd']:.1f}% · "
+        f"tomadas {base_sum['n_taken']} · tenencia {base_sum['mean_held_days']:.1f}d\n",
+        file=log,
+    )
 
     rows = trade_excess_atrs(res, bars_by)
     excess = [r["excess_atrs"] for r in rows]
@@ -190,50 +220,73 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # 1. La distribución acumulada, con el instrumento de la 58.
-    pop = announce_grid(excess, CANDIDATE_GRID,
-                        label="excedente máximo sobre la entrada (en ATRs)", file=log)
+    pop = announce_grid(excess, CANDIDATE_GRID, label="excedente máximo sobre la entrada (en ATRs)", file=log)
 
     # 2. La población DIFERENCIAL, que es la que un brazo puede mover.
     diff = differential_population(excess, CANDIDATE_GRID)
-    print("Población DIFERENCIAL — trades que cambian de comportamiento vs el "
-          f"umbral vivo ({LIVE_MIN_EXCESS}×ATR):", file=log)
+    print(
+        "Población DIFERENCIAL — trades que cambian de comportamiento vs el "
+        f"umbral vivo ({LIVE_MIN_EXCESS}×ATR):",
+        file=log,
+    )
     print(f"  {'umbral':>8} {'cambian':>9} {'población':>11}", file=log)
     for d in diff:
-        marca = "" if d["share"] >= 0.05 or d["value"] == LIVE_MIN_EXCESS else \
-            "  <- bajo el 5% de la T13"
-        print(f"  {d['value']:>8.2f} {d['n_changed']:>9} "
-              f"{100 * d['share']:>10.2f}%{marca}", file=log)
+        marca = "" if d["share"] >= 0.05 or d["value"] == LIVE_MIN_EXCESS else "  <- bajo el 5% de la T13"
+        print(f"  {d['value']:>8.2f} {d['n_changed']:>9} {100 * d['share']:>10.2f}%{marca}", file=log)
 
     # 3. El retorno por tramo: ¿los que se armarían tarde son los que pierden?
     tramos = []
     bordes = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
-    for lo, hi in zip(bordes, bordes[1:]):
+    for lo, hi in pairwise(bordes):
         sel = [r["ret_pts"] for r in rows if lo <= r["excess_atrs"] < hi]
-        tramos.append({"lo": lo, "hi": hi, "n": len(sel),
-                       "mean_ret_pts": statistics.fmean(sel) if sel else 0.0})
+        tramos.append(
+            {"lo": lo, "hi": hi, "n": len(sel), "mean_ret_pts": statistics.fmean(sel) if sel else 0.0}
+        )
     sel_neg = [r["ret_pts"] for r in rows if r["excess_atrs"] < 0]
     sel_top = [r["ret_pts"] for r in rows if r["excess_atrs"] >= bordes[-1]]
     print("\nRetorno medio por tramo de excedente (descriptivo, NO decide):", file=log)
     print(f"  {'tramo':>14} {'trades':>8} {'ret medio':>11}", file=log)
-    print(f"  {'< 0.00':>14} {len(sel_neg):>8} "
-          f"{statistics.fmean(sel_neg) if sel_neg else 0.0:>10.2f} pts", file=log)
+    print(
+        f"  {'< 0.00':>14} {len(sel_neg):>8} {statistics.fmean(sel_neg) if sel_neg else 0.0:>10.2f} pts",
+        file=log,
+    )
     for t in tramos:
         etiqueta = f"{t['lo']:.2f}–{t['hi']:.2f}"
         print(f"  {etiqueta:>14} {t['n']:>8} {t['mean_ret_pts']:>10.2f} pts", file=log)
-    print(f"  {'≥ 3.00':>14} {len(sel_top):>8} "
-          f"{statistics.fmean(sel_top) if sel_top else 0.0:>10.2f} pts", file=log)
+    print(
+        f"  {'≥ 3.00':>14} {len(sel_top):>8} {statistics.fmean(sel_top) if sel_top else 0.0:>10.2f} pts",
+        file=log,
+    )
 
     s = sorted(excess)
     ctx = {
-        "window": str(window), "universe": args.universe, "n_tickers": len(bars_by),
-        "n_entries": len(entries), "n_trades": len(rows),
+        "window": str(window),
+        "universe": args.universe,
+        "n_tickers": len(bars_by),
+        "n_entries": len(entries),
+        "n_trades": len(rows),
         "baseline": base_sum,
-        "quantiles": {"p05": _pct(s, 0.05), "p25": _pct(s, 0.25), "p50": _pct(s, 0.50),
-                      "p75": _pct(s, 0.75), "p90": _pct(s, 0.90), "p95": _pct(s, 0.95),
-                      "max": s[-1], "min": s[0], "mean": statistics.fmean(s)},
-        "cumulative": [{"value": a.value, "n_hit": a.n_hit, "share": a.share,
-                        "inert": a.inert, "underpowered": a.underpowered}
-                       for a in pop.arms],
+        "quantiles": {
+            "p05": _pct(s, 0.05),
+            "p25": _pct(s, 0.25),
+            "p50": _pct(s, 0.50),
+            "p75": _pct(s, 0.75),
+            "p90": _pct(s, 0.90),
+            "p95": _pct(s, 0.95),
+            "max": s[-1],
+            "min": s[0],
+            "mean": statistics.fmean(s),
+        },
+        "cumulative": [
+            {
+                "value": a.value,
+                "n_hit": a.n_hit,
+                "share": a.share,
+                "inert": a.inert,
+                "underpowered": a.underpowered,
+            }
+            for a in pop.arms
+        ],
         "differential": diff,
         "ret_by_band": tramos,
         "never_armed_share": sum(1 for m in excess if m <= LIVE_MIN_EXCESS) / len(excess),

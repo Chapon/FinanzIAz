@@ -92,13 +92,12 @@ def make_breaker(threshold: float, window_days: int):
             return state["armed"]
         cutoff = date - pd.Timedelta(days=window_days)
         recent = equity_so_far[equity_so_far.index >= cutoff]
-        snaps = [
-            (ts.to_pydatetime(), float(v))
-            for ts, v in zip(recent.index, recent.values)
-        ]
+        snaps = [(ts.to_pydatetime(), float(v)) for ts, v in zip(recent.index, recent.values, strict=True)]
         st = compute_drawdown_state(
-            float(val), snaps,
-            threshold_pct=threshold, window_days=window_days,
+            float(val),
+            snaps,
+            threshold_pct=threshold,
+            window_days=window_days,
             now=date.to_pydatetime(),
         )
         if st.triggered:
@@ -142,9 +141,9 @@ def main() -> int:
     parser.add_argument("--initial-capital", type=float, default=50_000.0)
     args = parser.parse_args()
 
-    from data.yahoo_finance import get_historical_data_batch
     from analysis.backtest import signal_from_analyze
     from analysis.portfolio_backtest import AllocationMode, portfolio_backtest
+    from data.yahoo_finance import get_historical_data_batch
 
     tickers = parse_universe_file(args.universe_file)
     print(f"Cargando {args.period} de OHLCV para {len(tickers)} tickers (cache)...")
@@ -177,17 +176,19 @@ def main() -> int:
     t0 = time.time()
     print("Corrida BASELINE (sin breaker)...")
     base = portfolio_backtest(signal_fn, breaker_fn=None, **common_kw)
-    print(f"  baseline listo en {time.time() - t0:.0f}s "
-          f"(final ${base.final_equity:,.0f}, maxDD {base.max_drawdown * 100:.1f}%)")
+    print(
+        f"  baseline listo en {time.time() - t0:.0f}s "
+        f"(final ${base.final_equity:,.0f}, maxDD {base.max_drawdown * 100:.1f}%)"
+    )
 
     t1 = time.time()
     print("Corrida BREAKER (DD ≥ 15% / peak rolling 90d)...")
-    brk = portfolio_backtest(
-        signal_fn, breaker_fn=make_breaker(THRESHOLD_PCT, WINDOW_DAYS), **common_kw
+    brk = portfolio_backtest(signal_fn, breaker_fn=make_breaker(THRESHOLD_PCT, WINDOW_DAYS), **common_kw)
+    print(
+        f"  breaker listo en {time.time() - t1:.0f}s "
+        f"(final ${brk.final_equity:,.0f}, maxDD {brk.max_drawdown * 100:.1f}%, "
+        f"steps suprimidos={brk.n_breaker_suppressed})"
     )
-    print(f"  breaker listo en {time.time() - t1:.0f}s "
-          f"(final ${brk.final_equity:,.0f}, maxDD {brk.max_drawdown * 100:.1f}%, "
-          f"steps suprimidos={brk.n_breaker_suppressed})")
 
     # ── Métricas por sub-período ──────────────────────────────────────────────
     def window_rows(windows: dict[str, tuple[str, str]]) -> list[dict]:
@@ -196,12 +197,18 @@ def main() -> int:
             dd_b = _seg_dd(base.equity_curve, s, e)
             dd_k = _seg_dd(brk.equity_curve, s, e)
             rel = (1.0 - abs(dd_k) / abs(dd_b)) if dd_b != 0 else 0.0
-            rows.append({
-                "window": name, "start": s, "end": e,
-                "dd_baseline": dd_b, "dd_breaker": dd_k, "dd_rel_reduction": rel,
-                "ret_baseline": _seg_return(base.equity_curve, s, e),
-                "ret_breaker": _seg_return(brk.equity_curve, s, e),
-            })
+            rows.append(
+                {
+                    "window": name,
+                    "start": s,
+                    "end": e,
+                    "dd_baseline": dd_b,
+                    "dd_breaker": dd_k,
+                    "dd_rel_reduction": rel,
+                    "ret_baseline": _seg_return(base.equity_curve, s, e),
+                    "ret_breaker": _seg_return(brk.equity_curve, s, e),
+                }
+            )
         return rows
 
     stress_rows = window_rows(STRESS_WINDOWS)
@@ -229,30 +236,37 @@ def main() -> int:
     print(f"R1 DRAWDOWN BREAKER — umbral {THRESHOLD_PCT:.0%} / peak rolling {WINDOW_DAYS}d")
     print("=" * 72)
     print("\nVentanas de STRESS (queremos MENOS drawdown con breaker):")
-    print(f"  {'ventana':<20}{'DD base':>10}{'DD brk':>10}{'reducc.':>10}"
-          f"{'ret base':>10}{'ret brk':>10}")
+    print(f"  {'ventana':<20}{'DD base':>10}{'DD brk':>10}{'reducc.':>10}{'ret base':>10}{'ret brk':>10}")
     for r in stress_rows:
-        print(f"  {r['window']:<20}{r['dd_baseline'] * 100:>9.1f}%"
-              f"{r['dd_breaker'] * 100:>9.1f}%{r['dd_rel_reduction'] * 100:>9.1f}%"
-              f"{r['ret_baseline'] * 100:>9.1f}%{r['ret_breaker'] * 100:>9.1f}%")
-    print(f"  {'MEDIA':<20}{-mean_dd_base * 100:>9.1f}%{-mean_dd_brk * 100:>9.1f}%"
-          f"{stress_rel_reduction * 100:>9.1f}%")
+        print(
+            f"  {r['window']:<20}{r['dd_baseline'] * 100:>9.1f}%"
+            f"{r['dd_breaker'] * 100:>9.1f}%{r['dd_rel_reduction'] * 100:>9.1f}%"
+            f"{r['ret_baseline'] * 100:>9.1f}%{r['ret_breaker'] * 100:>9.1f}%"
+        )
+    print(
+        f"  {'MEDIA':<20}{-mean_dd_base * 100:>9.1f}%{-mean_dd_brk * 100:>9.1f}%"
+        f"{stress_rel_reduction * 100:>9.1f}%"
+    )
 
     print("\nVentanas NORMALES (queremos P/L ~intacto con breaker):")
-    print(f"  {'ventana':<20}{'DD base':>10}{'DD brk':>10}"
-          f"{'ret base':>10}{'ret brk':>10}")
+    print(f"  {'ventana':<20}{'DD base':>10}{'DD brk':>10}{'ret base':>10}{'ret brk':>10}")
     for r in normal_rows:
-        print(f"  {r['window']:<20}{r['dd_baseline'] * 100:>9.1f}%"
-              f"{r['dd_breaker'] * 100:>9.1f}%"
-              f"{r['ret_baseline'] * 100:>9.1f}%{r['ret_breaker'] * 100:>9.1f}%")
-    print(f"  {'MEDIA ret':<20}{'':>20}{mean_ret_base * 100:>9.1f}%"
-          f"{mean_ret_brk * 100:>9.1f}%")
+        print(
+            f"  {r['window']:<20}{r['dd_baseline'] * 100:>9.1f}%"
+            f"{r['dd_breaker'] * 100:>9.1f}%"
+            f"{r['ret_baseline'] * 100:>9.1f}%{r['ret_breaker'] * 100:>9.1f}%"
+        )
+    print(f"  {'MEDIA ret':<20}{'':>20}{mean_ret_base * 100:>9.1f}%{mean_ret_brk * 100:>9.1f}%")
 
     print("\n" + "-" * 72)
-    print(f"Kill-criteria STRESS: reducción media de DD {stress_rel_reduction * 100:.1f}% "
-          f"(≥ {STRESS_MIN_REL_DD_REDUCTION * 100:.0f}%?) → {'PASS' if stress_pass else 'FAIL'}")
-    print(f"Kill-criteria NORMAL: recorte medio de P/L {normal_pl_cut * 100:+.2f} pts "
-          f"(≤ {NORMAL_MAX_PL_CUT_PTS * 100:.1f} pts?) → {'PASS' if normal_pass else 'FAIL'}")
+    print(
+        f"Kill-criteria STRESS: reducción media de DD {stress_rel_reduction * 100:.1f}% "
+        f"(≥ {STRESS_MIN_REL_DD_REDUCTION * 100:.0f}%?) → {'PASS' if stress_pass else 'FAIL'}"
+    )
+    print(
+        f"Kill-criteria NORMAL: recorte medio de P/L {normal_pl_cut * 100:+.2f} pts "
+        f"(≤ {NORMAL_MAX_PL_CUT_PTS * 100:.1f} pts?) → {'PASS' if normal_pass else 'FAIL'}"
+    )
     print(f"\nVEREDICTO: {verdict}")
     print("=" * 72)
 
@@ -262,18 +276,25 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     summary = {
         "generated_at": datetime.now().isoformat(),
-        "threshold_pct": THRESHOLD_PCT, "window_days": WINDOW_DAYS,
-        "universe": list(data.keys()), "step": args.step,
-        "max_positions": args.max_positions, "initial_capital": args.initial_capital,
+        "threshold_pct": THRESHOLD_PCT,
+        "window_days": WINDOW_DAYS,
+        "universe": list(data.keys()),
+        "step": args.step,
+        "max_positions": args.max_positions,
+        "initial_capital": args.initial_capital,
         "signal": "analyze_single (enable_xgboost=False)",
         "breaker_semantics": "stateful; arm on DD>=thr, rearm on new window peak",
-        "baseline": {"final_equity": base.final_equity,
-                     "max_drawdown": base.max_drawdown,
-                     "total_return_pct": base.total_return_pct},
-        "breaker": {"final_equity": brk.final_equity,
-                    "max_drawdown": brk.max_drawdown,
-                    "total_return_pct": brk.total_return_pct,
-                    "n_breaker_suppressed": brk.n_breaker_suppressed},
+        "baseline": {
+            "final_equity": base.final_equity,
+            "max_drawdown": base.max_drawdown,
+            "total_return_pct": base.total_return_pct,
+        },
+        "breaker": {
+            "final_equity": brk.final_equity,
+            "max_drawdown": brk.max_drawdown,
+            "total_return_pct": brk.total_return_pct,
+            "n_breaker_suppressed": brk.n_breaker_suppressed,
+        },
         "stress_windows": stress_rows,
         "normal_windows": normal_rows,
         "kill_criteria": {
@@ -286,9 +307,7 @@ def main() -> int:
         },
         "verdict": verdict,
     }
-    (out_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2, default=str), encoding="utf-8"
-    )
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     print(f"\nResumen persistido en {out_dir / 'summary.json'}")
     return 0 if verdict == "PASS" else 1
 

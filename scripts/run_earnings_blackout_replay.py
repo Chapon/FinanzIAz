@@ -34,6 +34,7 @@ Uso (Windows)
     python scripts/run_earnings_blackout_replay.py --account-id 1
     python scripts/run_earnings_blackout_replay.py --db backups\finanzias_2026-06-23_09-56-44_daily.db
 """
+
 from __future__ import annotations
 
 import argparse
@@ -154,12 +155,14 @@ def run(round_trips, earnings_by_ticker, windows=DEFAULT_WINDOWS) -> list[dict]:
     for n_days in windows:
         near, far = classify_round_trips(round_trips, earnings_by_ticker, n_days)
         cf = counterfactual_delta(near, far)
-        results.append({
-            "window_days": n_days,
-            "near": summarize(near),
-            "far": summarize(far),
-            "counterfactual": cf,
-        })
+        results.append(
+            {
+                "window_days": n_days,
+                "near": summarize(near),
+                "far": summarize(far),
+                "counterfactual": cf,
+            }
+        )
     return results
 
 
@@ -178,8 +181,8 @@ def _format_report(results: list[dict], n_total: int, n_tickers: int) -> str:
         ne, fa, cf = r["near"], r["far"], r["counterfactual"]
         lines.append(
             f"| {r['window_days']} | {ne['n']} | {ne['total_pnl']:+.2f} | "
-            f"{ne['mean_pnl_pct']*100:+.2f}% | {ne['win_rate']*100:.0f}% | "
-            f"{fa['mean_pnl_pct']*100:+.2f}% | {cf['delta']:+.2f} |"
+            f"{ne['mean_pnl_pct'] * 100:+.2f}% | {ne['win_rate'] * 100:.0f}% | "
+            f"{fa['mean_pnl_pct'] * 100:+.2f}% | {cf['delta']:+.2f} |"
         )
     lines += [
         "",
@@ -197,7 +200,12 @@ def main(argv=None) -> int:
     ap.add_argument("--db", type=str, default=str(ROOT / "finanzias.db"), help="Ruta a la DB (read-only).")
     ap.add_argument("--account-id", type=int, default=1)
     ap.add_argument("--windows", type=str, default="1,2,3,5", help="Ventanas ±días, coma-separadas.")
-    ap.add_argument("--out", type=str, default=None, help="Ruta del informe .md (default: docs/earnings_blackout_replay_<fecha>.md).")
+    ap.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Ruta del informe .md (default: docs/earnings_blackout_replay_<fecha>.md).",
+    )
     args = ap.parse_args(argv)
 
     windows = tuple(int(x) for x in args.windows.split(",") if x.strip())
@@ -219,7 +227,11 @@ def main(argv=None) -> int:
     report = _format_report(results, len(round_trips), len(tickers))
     print(report)
 
-    out = Path(args.out) if args.out else ROOT / "docs" / f"earnings_blackout_replay_{date.today().isoformat()}.md"
+    out = (
+        Path(args.out)
+        if args.out
+        else ROOT / "docs" / f"earnings_blackout_replay_{date.today().isoformat()}.md"
+    )
     out.write_text(report, encoding="utf-8")
     print(f"Informe escrito en {out}", file=sys.stderr)
     return 0

@@ -28,7 +28,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import (  # noqa: E402
+from analysis.exit_replay import (
     AtrParams,
     Bar,
     ReplayReport,
@@ -36,7 +36,7 @@ from analysis.exit_replay import (  # noqa: E402
     build_report,
     simulate_variant,
 )
-from scripts.baseline_metrics import fifo_match, load_fills, load_snapshots  # noqa: E402
+from scripts.baseline_metrics import fifo_match, load_fills, load_snapshots
 
 DEFAULT_DB = "finanzias.db"
 
@@ -44,6 +44,7 @@ DEFAULT_DB = "finanzias.db"
 def _atr_params_from_settings() -> AtrParams:
     try:
         from config.settings_manager import settings  # type: ignore
+
         return AtrParams(
             period=max(2, int(settings.get("atr_period", 14))),
             stop_mult=max(0.0, float(settings.get("atr_stop_mult", 2.0))),
@@ -74,7 +75,7 @@ def make_bar_loader(con: sqlite3.Connection):
                 names = [c[0] if isinstance(c, list) else c for c in d["columns"]]
                 io_, ih, il, ic = (names.index(k) for k in ("Open", "High", "Low", "Close"))
                 tmp: list[Bar] = []
-                for ts, vals in zip(d["index"], d["data"]):
+                for ts, vals in zip(d["index"], d["data"], strict=False):
                     o, h, l, c = vals[io_], vals[ih], vals[il], vals[ic]
                     if None in (o, h, l, c) or float(c) <= 0:
                         continue
@@ -95,9 +96,7 @@ def build_sell_events(con: sqlite3.Connection, account_id: int) -> list[SellEven
     trades, _ = fifo_match(fills)
     sell_fills = [f for f in sorted(fills, key=lambda x: x.filled_at) if f.side == "SELL"]
     if len(trades) != len(sell_fills):
-        raise RuntimeError(
-            f"FIFO mismatch: {len(trades)} trades vs {len(sell_fills)} SELL fills"
-        )
+        raise RuntimeError(f"FIFO mismatch: {len(trades)} trades vs {len(sell_fills)} SELL fills")
 
     # reason/score por order_id
     meta = {
@@ -110,27 +109,31 @@ def build_sell_events(con: sqlite3.Connection, account_id: int) -> list[SellEven
     }
 
     events: list[SellEvent] = []
-    for f, t in zip(sell_fills, trades):
+    # strict=True: el cuerpo ya levanta RuntimeError si el orden FIFO no calza,
+    # asi que un largo distinto tambien tiene que gritar en vez de truncar.
+    for f, t in zip(sell_fills, trades, strict=True):
         if t.ticker != f.ticker:
             raise RuntimeError(f"FIFO order mismatch: {t.ticker} != {f.ticker}")
         reason, score = meta.get(f.order_id, ("", None))
         avg_cost = t.cost_basis / t.shares if t.shares > 0 else 0.0
-        events.append(SellEvent(
-            order_id=f.order_id,
-            ticker=f.ticker,
-            sell_date=f.filled_at.strftime("%Y-%m-%d"),
-            sell_price=f.price,
-            reason=reason or "",
-            signal_score=float(score) if score is not None else None,
-            shares=t.shares,
-            avg_cost=avg_cost,
-            entry_date=t.open_date.strftime("%Y-%m-%d"),
-            # seed del HWM: aproximamos el fill del BUY con el costo por share
-            # (incluye fees: diferencia ~bps, irrelevante para el trail)
-            entry_price=avg_cost,
-            sell_commission=f.commission,
-            sell_slippage=f.slippage,
-        ))
+        events.append(
+            SellEvent(
+                order_id=f.order_id,
+                ticker=f.ticker,
+                sell_date=f.filled_at.strftime("%Y-%m-%d"),
+                sell_price=f.price,
+                reason=reason or "",
+                signal_score=float(score) if score is not None else None,
+                shares=t.shares,
+                avg_cost=avg_cost,
+                entry_date=t.open_date.strftime("%Y-%m-%d"),
+                # seed del HWM: aproximamos el fill del BUY con el costo por share
+                # (incluye fees: diferencia ~bps, irrelevante para el trail)
+                entry_price=avg_cost,
+                sell_commission=f.commission,
+                sell_slippage=f.slippage,
+            )
+        )
     return events
 
 
@@ -157,11 +160,10 @@ def run(db_path: Path, account_id: int, cap_days: int) -> tuple[list[ReplayRepor
 
         reports: list[ReplayReport] = []
         for label, variant, kw in VARIANTS:
-            sims = simulate_variant(events, bar_loader, variant,
-                                    cap_days=cap_days, atr_p=atr_p, **kw)
-            rep = build_report(variant, sims, real_curve,
-                               initial_capital=initial_capital,
-                               bar_loader=bar_loader)
+            sims = simulate_variant(events, bar_loader, variant, cap_days=cap_days, atr_p=atr_p, **kw)
+            rep = build_report(
+                variant, sims, real_curve, initial_capital=initial_capital, bar_loader=bar_loader
+            )
             rep.variant = label
             reports.append(rep)
 
@@ -181,7 +183,7 @@ def run(db_path: Path, account_id: int, cap_days: int) -> tuple[list[ReplayRepor
 
 
 def _fmt_pct(x, d=2):
-    return "—" if x is None else f"{100*x:+.{d}f}%"
+    return "—" if x is None else f"{100 * x:+.{d}f}%"
 
 
 def render_table(reports: list[ReplayReport], ctx: dict) -> str:
@@ -197,8 +199,8 @@ def render_table(reports: list[ReplayReport], ctx: dict) -> str:
     for r in reports:
         lines.append(
             f"{r.variant:<24} {r.n_modified:>4} {r.pnl_delta_total:>+10.2f} "
-            f"{r.pnl_delta_pts:>+9.2f} {100*r.max_dd_real:>7.2f}% "
-            f"{100*r.max_dd_sim:>7.2f}% {r.dd_ratio:>6.2f} "
+            f"{r.pnl_delta_pts:>+9.2f} {100 * r.max_dd_real:>7.2f}% "
+            f"{100 * r.max_dd_sim:>7.2f}% {r.dd_ratio:>6.2f} "
             f"{_fmt_pct(r.median_extra_return):>10} "
             f"{_fmt_pct(r.capture_ratio_median, 0):>8} "
             f"{'✅' if r.passes_kill_criteria else '—':>5}"
@@ -226,8 +228,14 @@ def main(argv: list[str] | None = None) -> int:
     reports, ctx = run(db_path, args.account, args.cap_days)
 
     if args.json:
-        print(json.dumps({"context": ctx, "reports": [r.to_dict() for r in reports]},
-                         ensure_ascii=False, indent=2, default=str))
+        print(
+            json.dumps(
+                {"context": ctx, "reports": [r.to_dict() for r in reports]},
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
     else:
         print(render_table(reports, ctx))
     return 0

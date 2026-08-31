@@ -93,8 +93,7 @@ def _run_ticker_job(job: tuple) -> tuple:
     """Envoltorio picklable para el pool. Devuelve (ticker, computed, total, error)."""
     ticker, period, warmup, save_every = job
     try:
-        computed, total = run_ticker(ticker, period, warmup,
-                                     save_every=save_every, verbose=False)
+        computed, total = run_ticker(ticker, period, warmup, save_every=save_every, verbose=False)
         return (ticker, computed, total, None)
     except Exception as exc:
         return (ticker, 0, 0, f"{type(exc).__name__}: {exc}")
@@ -118,8 +117,7 @@ def _load_existing(path: Path) -> dict:
     return blob
 
 
-def _save(path: Path, ticker: str, period: str, warmup: int,
-          rows: dict, n_bars: int, done: bool) -> None:
+def _save(path: Path, ticker: str, period: str, warmup: int, rows: dict, n_bars: int, done: bool) -> None:
     """Escritura atómica (tmp + replace) para que un Ctrl-C no deje JSON truncado."""
     path.parent.mkdir(parents=True, exist_ok=True)
     blob = {
@@ -163,11 +161,10 @@ def parse_universe_file(path: Path) -> list[str]:
     return out
 
 
-def run_ticker(ticker: str, period: str, warmup: int, *,
-               save_every: int, verbose: bool) -> tuple[int, int]:
+def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int, verbose: bool) -> tuple[int, int]:
     """Devuelve (evaluadas_ahora, total_en_artefacto). No lanza: loguea y sigue."""
-    from data import parquet_cache
     from analysis.technical import analyze
+    from data import parquet_cache
 
     path = _out_path(ticker, period, warmup)
     prev = _load_existing(path)
@@ -215,15 +212,14 @@ def run_ticker(ticker: str, period: str, warmup: int, *,
                 el = time.perf_counter() - t0
                 rate = computed / el if el > 0 else 0
                 left = (n - warmup - len(rows)) / rate if rate > 0 else 0
-                print(f"    {ticker} {len(rows)}/{n - warmup} "
-                      f"({rate:.1f}/s, faltan ~{left/60:.1f} min)")
+                print(f"    {ticker} {len(rows)}/{n - warmup} ({rate:.1f}/s, faltan ~{left / 60:.1f} min)")
 
     _save(path, ticker, period, warmup, rows, n, done=True)
     el = time.perf_counter() - t0
     counts: dict = {}
     for v in rows.values():
         counts[v[0]] = counts.get(v[0], 0) + 1
-    print(f"  {ticker:<6} OK {len(rows)} barras (+{computed} nuevas) en {el/60:5.1f} min  {counts}")
+    print(f"  {ticker:<6} OK {len(rows)} barras (+{computed} nuevas) en {el / 60:5.1f} min  {counts}")
     return computed, len(rows)
 
 
@@ -234,8 +230,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--period", default="10y")
     p.add_argument("--warmup", type=int, default=250)
     p.add_argument("--save-every", type=int, default=100)
-    p.add_argument("--workers", type=int, default=max(1, min(10, (os.cpu_count() or 2) // 2)),
-                   help="procesos en paralelo (1 = serial). Default: cores/2, tope 10.")
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=max(1, min(10, (os.cpu_count() or 2) // 2)),
+        help="procesos en paralelo (1 = serial). Default: cores/2, tope 10.",
+    )
     p.add_argument("--dry-run", action="store_true", help="solo inventario y estimación")
     p.add_argument("--quiet", action="store_true")
     args = p.parse_args(argv)
@@ -269,9 +269,11 @@ def main(argv: list[str] | None = None) -> int:
     # ~330 ms/eval medidos con XGBoost usando todos los núcleos; con los threads
     # pineados a 1 cada eval es más lenta, pero corren N en paralelo.
     est_serial_h = total_pending * 0.330 / 3600
-    print(f"Barras PIT pendientes: {total_pending:,}  →  ~{est_serial_h:.2f} h serial"
-          f" · ~{est_serial_h / max(1, args.workers) * 1.6:.2f} h con {args.workers} workers"
-          f" (estimación gruesa)")
+    print(
+        f"Barras PIT pendientes: {total_pending:,}  →  ~{est_serial_h:.2f} h serial"
+        f" · ~{est_serial_h / max(1, args.workers) * 1.6:.2f} h con {args.workers} workers"
+        f" (estimación gruesa)"
+    )
     if args.dry_run:
         return 0
 
@@ -283,8 +285,9 @@ def main(argv: list[str] | None = None) -> int:
         for k, t in enumerate(tickers, 1):
             print(f"[{k}/{len(tickers)}] {t}", flush=True)
             try:
-                done, _ = run_ticker(t, args.period, args.warmup,
-                                     save_every=args.save_every, verbose=not args.quiet)
+                done, _ = run_ticker(
+                    t, args.period, args.warmup, save_every=args.save_every, verbose=not args.quiet
+                )
                 grand += done
             except KeyboardInterrupt:
                 print("\ninterrumpido — el progreso quedó persistido (resumable)")
@@ -297,8 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         jobs = [(t, args.period, args.warmup, args.save_every) for t in tickers]
         print(f"Paralelo: {args.workers} workers (1 thread c/u)", flush=True)
         try:
-            with ProcessPoolExecutor(max_workers=args.workers,
-                                     initializer=_init_worker) as pool:
+            with ProcessPoolExecutor(max_workers=args.workers, initializer=_init_worker) as pool:
                 futures = {pool.submit(_run_ticker_job, j): j[0] for j in jobs}
                 for k, fut in enumerate(as_completed(futures), 1):
                     ticker, computed, total, err = fut.result()
@@ -307,14 +309,16 @@ def main(argv: list[str] | None = None) -> int:
                     if err:
                         print(f"[{k}/{len(jobs)}] {ticker:<6} ERROR {err}", flush=True)
                     else:
-                        print(f"[{k}/{len(jobs)}] {ticker:<6} {total:5d} barras "
-                              f"(+{computed}) · {el:5.1f} min transcurridos", flush=True)
+                        print(
+                            f"[{k}/{len(jobs)}] {ticker:<6} {total:5d} barras "
+                            f"(+{computed}) · {el:5.1f} min transcurridos",
+                            flush=True,
+                        )
         except KeyboardInterrupt:
             print("\ninterrumpido — el progreso quedó persistido (resumable)")
             return 130
 
-    print(f"\nListo: {grand:,} evaluaciones nuevas en "
-          f"{(time.perf_counter() - t_start)/3600:.2f} h")
+    print(f"\nListo: {grand:,} evaluaciones nuevas en {(time.perf_counter() - t_start) / 3600:.2f} h")
     return 0
 
 

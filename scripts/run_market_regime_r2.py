@@ -34,8 +34,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from analysis.exit_replay import AtrParams  # noqa: E402
-from analysis.harness_config import (  # noqa: E402
+from analysis.exit_replay import AtrParams
+from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -43,29 +43,29 @@ from analysis.harness_config import (  # noqa: E402
     announce,
     artifact_window,
 )
-from analysis.market_regime import build_regime_series, make_entry_filter  # noqa: E402
-from analysis.portfolio_sim import PortfolioResult, simulate_portfolio  # noqa: E402
-from analysis.scaleout_replay import CostModel, ScaleOutParams  # noqa: E402
-from analysis.walkforward_power import STRESS_REGIMES, regime_for_date  # noqa: E402
-from scripts.precompute_pit_signals import parse_universe_file  # noqa: E402
-from scripts.run_scaleout_replay_t7 import build_entries, load_bars_and_signals  # noqa: E402
+from analysis.market_regime import build_regime_series, make_entry_filter
+from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
+from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.walkforward_power import STRESS_REGIMES, regime_for_date
+from scripts.precompute_pit_signals import parse_universe_file
+from scripts.run_scaleout_replay_t7 import build_entries, load_bars_and_signals
 
 DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
 
 # Brazos pre-registrados (§4). El baseline es el engine de hoy.
 ARMS: dict[str, dict] = {
-    "B0_baseline":        {"mode": "off"},
-    "R2a_hard_gate":      {"mode": "hard"},
-    "R2b_half_size":      {"mode": "half"},
-    "R2c_confirm_5d":     {"mode": "confirm", "confirm_days": 5},
+    "B0_baseline": {"mode": "off"},
+    "R2a_hard_gate": {"mode": "hard"},
+    "R2b_half_size": {"mode": "half"},
+    "R2c_confirm_5d": {"mode": "confirm", "confirm_days": 5},
 }
 PRIMARY_ARM = "R2a_hard_gate"
 BASELINE_ARM = "B0_baseline"
 
 # Kill-criteria (§7) — congelados.
-KILL_MIN_PL_PTS = 1.5          # OR: mejora de P/L
-KILL_MIN_DD_RELIEF = 0.20      # OR: reduccion relativa de max DD en stress
-KILL_MAX_NORMAL_COST = 1.0     # AND: tope de recorte en ventanas normales
+KILL_MIN_PL_PTS = 1.5  # OR: mejora de P/L
+KILL_MIN_DD_RELIEF = 0.20  # OR: reduccion relativa de max DD en stress
+KILL_MAX_NORMAL_COST = 1.0  # AND: tope de recorte en ventanas normales
 
 
 def load_spy_bars(period: str = "10y"):
@@ -78,8 +78,7 @@ def load_spy_bars(period: str = "10y"):
     bars = []
     for ts, row in df.iterrows():
         try:
-            o, h, lo, c = (float(row["Open"]), float(row["High"]),
-                           float(row["Low"]), float(row["Close"]))
+            o, h, lo, c = (float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"]))
         except (KeyError, TypeError, ValueError):
             continue
         bars.append((ts.strftime("%Y-%m-%d"), o, h, lo, c))
@@ -92,8 +91,7 @@ def stress_window_metrics(res: PortfolioResult) -> dict:
     names = [r.name for r in STRESS_REGIMES] + ["bull_normal"]
     for name in names:
         tr = [t for t in res.trades if t.regime == name]
-        seg = [(d, v) for d, v in res.equity_curve
-               if regime_for_date(d) == name]
+        seg = [(d, v) for d, v in res.equity_curve if regime_for_date(d) == name]
         dd = 0.0
         if seg:
             peak = seg[0][1]
@@ -159,8 +157,7 @@ def summarise(name: str, res: PortfolioResult, base: PortfolioResult | None) -> 
     out["normal_cost_pts"] = (
         breg["bull_normal"]["mean_ret_pts"] - out["by_regime"]["bull_normal"]["mean_ret_pts"]
     )
-    benefit = (out["delta_pl_pts"] >= KILL_MIN_PL_PTS
-               or out["stress_dd_relief"] >= KILL_MIN_DD_RELIEF)
+    benefit = out["delta_pl_pts"] >= KILL_MIN_PL_PTS or out["stress_dd_relief"] >= KILL_MIN_DD_RELIEF
     constraint = out["normal_cost_pts"] <= KILL_MAX_NORMAL_COST
     out["passes"] = bool(benefit and constraint)
     ok, detail = check_exit_invariant(base, res)
@@ -178,46 +175,57 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
-    p.add_argument("--fill-mode", choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
-                   default=HARNESS_FILL_MODE,
-                   help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
-                        f"(look-ahead en el fill de la barrera — Tarea 33)")
+    p.add_argument(
+        "--fill-mode",
+        choices=(HARNESS_FILL_MODE, LEGACY_FILL_MODE),
+        default=HARNESS_FILL_MODE,
+        help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
+        f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     spy = load_spy_bars(args.period)
     if not spy:
-        print("SPY sin cache 10y. Traelo con get_historical_data('SPY', period='10y').",
-              file=sys.stderr)
+        print("SPY sin cache 10y. Traelo con get_historical_data('SPY', period='10y').", file=sys.stderr)
         return 1
     series = build_regime_series(spy)
     n_off = sum(1 for x in series.risk_off if x)
-    print(f"SPY: {len(spy)} barras ({spy[0][0]} → {spy[-1][0]}) · "
-          f"días risk-off: {n_off} ({100*n_off/len(spy):.1f}%)")
+    print(
+        f"SPY: {len(spy)} barras ({spy[0][0]} → {spy[-1][0]}) · "
+        f"días risk-off: {n_off} ({100 * n_off / len(spy):.1f}%)"
+    )
 
     tickers = parse_universe_file(_HERE.parent / args.universe)
-    bars_by, sigs_by, missing, incomplete = load_bars_and_signals(
-        tickers, args.period, args.warmup
-    )
+    bars_by, sigs_by, missing, incomplete = load_bars_and_signals(tickers, args.period, args.warmup)
     if incomplete or missing:
-        print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos",
-              file=sys.stderr)
+        print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos", file=sys.stderr)
     if not bars_by:
-        print("Sin datos: corré scripts/precompute_pit_signals.py primero.",
-              file=sys.stderr)
+        print("Sin datos: corré scripts/precompute_pit_signals.py primero.", file=sys.stderr)
         return 1
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
-    announce(args.max_positions, args.universe, len(bars_by),
-             window=artifact_window(bars_by),
-             verdict_max_positions=LEGACY_MAX_POSITIONS, fill_mode=args.fill_mode)
-    print(f"Tickers: {len(bars_by)} · entradas candidatas: {len(entries)} · "
-          f"max_positions={args.max_positions} · capital={args.capital:,.0f}\n")
+    announce(
+        args.max_positions,
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        verdict_max_positions=LEGACY_MAX_POSITIONS,
+        fill_mode=args.fill_mode,
+    )
+    print(
+        f"Tickers: {len(bars_by)} · entradas candidatas: {len(entries)} · "
+        f"max_positions={args.max_positions} · capital={args.capital:,.0f}\n"
+    )
 
     common = dict(
-        max_positions=args.max_positions, initial_capital=args.capital,
-        cap_days=args.cap_days, atr_p=AtrParams(), so_params=ScaleOutParams(),
-        costs=CostModel(), regime_of=regime_for_date,
+        max_positions=args.max_positions,
+        initial_capital=args.capital,
+        cap_days=args.cap_days,
+        atr_p=AtrParams(),
+        so_params=ScaleOutParams(),
+        costs=CostModel(),
+        regime_of=regime_for_date,
         # La Tarea 9 corrigió el simulador para que, como el engine, no reabra un
         # ticker que ya está en cartera — y ese es su default nuevo. Acá se pinea
         # el comportamiento viejo a propósito: R2 ya está cerrado y publicado
@@ -229,10 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     results: dict[str, PortfolioResult] = {}
     for name, cfg in ARMS.items():
-        filt = make_entry_filter(series, mode=cfg["mode"],
-                                 confirm_days=cfg.get("confirm_days", 5))
-        results[name] = simulate_portfolio(entries, bars_by, sigs_by,
-                                           entry_filter=filt, **common)
+        filt = make_entry_filter(series, mode=cfg["mode"], confirm_days=cfg.get("confirm_days", 5))
+        results[name] = simulate_portfolio(entries, bars_by, sigs_by, entry_filter=filt, **common)
 
     base = results[BASELINE_ARM]
     summaries = [summarise(BASELINE_ARM, base, None)]
@@ -242,34 +248,41 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "n_entries": len(entries), "n_tickers": len(bars_by),
-        "max_positions": args.max_positions, "capital": args.capital,
+        "n_entries": len(entries),
+        "n_tickers": len(bars_by),
+        "max_positions": args.max_positions,
+        "capital": args.capital,
         "risk_off_share": n_off / len(spy),
-        "kill_criteria": {"min_pl_pts": KILL_MIN_PL_PTS,
-                          "min_dd_relief": KILL_MIN_DD_RELIEF,
-                          "max_normal_cost_pts": KILL_MAX_NORMAL_COST},
+        "kill_criteria": {
+            "min_pl_pts": KILL_MIN_PL_PTS,
+            "min_dd_relief": KILL_MIN_DD_RELIEF,
+            "max_normal_cost_pts": KILL_MAX_NORMAL_COST,
+        },
     }
     if args.json:
-        print(json.dumps({"context": ctx, "summaries": summaries},
-                         ensure_ascii=False, indent=2, default=str))
+        print(json.dumps({"context": ctx, "summaries": summaries}, ensure_ascii=False, indent=2, default=str))
         return 0
 
-    hdr = (f"{'brazo':<18}{'P/L total':>11}{'Δ P/L':>9}{'max DD':>9}"
-           f"{'DD stress':>11}{'alivio':>9}{'tomadas':>9}{'filtr.':>8}"
-           f"{'expos.':>8}{'PASS':>6}")
+    hdr = (
+        f"{'brazo':<18}{'P/L total':>11}{'Δ P/L':>9}{'max DD':>9}"
+        f"{'DD stress':>11}{'alivio':>9}{'tomadas':>9}{'filtr.':>8}"
+        f"{'expos.':>8}{'PASS':>6}"
+    )
     print(hdr)
     print("-" * len(hdr))
     for s in summaries:
         d = s.get("delta_pl_pts")
         rel = s.get("stress_dd_relief")
         sdd = max((s["by_regime"][r.name]["max_dd"] for r in STRESS_REGIMES), default=0.0)
-        print(f"{s['arm']:<18}{s['total_return_pts']:>10.2f}%"
-              f"{('—' if d is None else f'{d:+.2f}'):>9}"
-              f"{100*s['max_dd']:>8.1f}%{100*sdd:>10.1f}%"
-              f"{('—' if rel is None else f'{100*rel:+.1f}%'):>9}"
-              f"{s['n_taken']:>9}{s['n_filtered']:>8}"
-              f"{100*s['exposure']:>7.0f}%"
-              f"{('' if s.get('passes') is None else ('SI' if s['passes'] else 'no')):>6}")
+        print(
+            f"{s['arm']:<18}{s['total_return_pts']:>10.2f}%"
+            f"{('—' if d is None else f'{d:+.2f}'):>9}"
+            f"{100 * s['max_dd']:>8.1f}%{100 * sdd:>10.1f}%"
+            f"{('—' if rel is None else f'{100 * rel:+.1f}%'):>9}"
+            f"{s['n_taken']:>9}{s['n_filtered']:>8}"
+            f"{100 * s['exposure']:>7.0f}%"
+            f"{('' if s.get('passes') is None else ('SI' if s['passes'] else 'no')):>6}"
+        )
 
     print("\nPor régimen — retorno medio por trade (pts) / n trades:")
     names = ["bull_normal"] + [r.name for r in STRESS_REGIMES]
@@ -283,12 +296,16 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nCosto en ventanas normales (tope +1.0 pt) e invariante de exits:")
     for s in summaries[1:]:
-        print(f"  {s['arm']:<18} costo bull_normal = {s['normal_cost_pts']:+.2f} pts"
-              f"  ·  exits: {'OK' if s['exit_invariant_ok'] else 'ROTO'}"
-              f" ({s['exit_invariant_detail']})")
+        print(
+            f"  {s['arm']:<18} costo bull_normal = {s['normal_cost_pts']:+.2f} pts"
+            f"  ·  exits: {'OK' if s['exit_invariant_ok'] else 'ROTO'}"
+            f" ({s['exit_invariant_detail']})"
+        )
 
-    print(f"\nKill-criteria: (Δ P/L ≥ +{KILL_MIN_PL_PTS} pts  O  alivio de DD en stress "
-          f"≥ {100*KILL_MIN_DD_RELIEF:.0f}%)  Y  costo en normales ≤ {KILL_MAX_NORMAL_COST} pt")
+    print(
+        f"\nKill-criteria: (Δ P/L ≥ +{KILL_MIN_PL_PTS} pts  O  alivio de DD en stress "
+        f"≥ {100 * KILL_MIN_DD_RELIEF:.0f}%)  Y  costo en normales ≤ {KILL_MAX_NORMAL_COST} pt"
+    )
     return 0
 
 

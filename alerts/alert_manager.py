@@ -37,11 +37,7 @@ class AlertManager:
         with session_scope() as session:
             # Pausadas (is_paused=True) no se evalúan: no consultan precio ni
             # disparan popup/Slack (ALRT1). Comparten el query con NOTIF1.
-            query = (
-                session.query(Alert)
-                .filter(Alert.is_active.is_(True))
-                .filter(Alert.is_paused.is_(False))
-            )
+            query = session.query(Alert).filter(Alert.is_active.is_(True)).filter(Alert.is_paused.is_(False))
             if portfolio_id is not None:
                 query = query.filter(Alert.portfolio_id == portfolio_id)
             alerts = query.all()

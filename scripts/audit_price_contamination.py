@@ -38,7 +38,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from data.yahoo_finance import is_price_out_of_band  # noqa: E402
+from data.yahoo_finance import is_price_out_of_band
 
 DEFAULT_DB = "finanzias.db"
 DEFAULT_BAND = 0.5
@@ -77,7 +77,7 @@ def _load_closes_by_date(con: sqlite3.Connection, ticker: str) -> dict[str, floa
             return {}
         ci = cols.index("Close")
         out: dict[str, float] = {}
-        for ts, vals in zip(d["index"], d["data"]):
+        for ts, vals in zip(d["index"], d["data"], strict=False):
             day = str(ts)[:10]
             close = vals[ci]
             if close is not None and close > 0:
@@ -137,8 +137,7 @@ def find_contaminated(
 
 def _has_open_position(con: sqlite3.Connection, account_id: int, ticker: str) -> bool:
     row = con.execute(
-        "SELECT COALESCE(SUM(shares), 0) FROM paper_positions "
-        "WHERE account_id = ? AND ticker = ?",
+        "SELECT COALESCE(SUM(shares), 0) FROM paper_positions WHERE account_id = ? AND ticker = ?",
         (account_id, ticker),
     ).fetchone()
     return bool(row and row[0] and row[0] > 1e-9)
@@ -184,17 +183,14 @@ def apply_void(
         by_acct.setdefault(o.account_id, []).append(o)
     for acct_id, acc_orders in by_acct.items():
         net = _net_cash_effect(acc_orders)
-        con.execute(
-            "UPDATE paper_accounts SET cash = cash - ? WHERE id = ?", (net, acct_id)
-        )
+        con.execute("UPDATE paper_accounts SET cash = cash - ? WHERE id = ?", (net, acct_id))
         for o in acc_orders:
             note = (
                 f"\n[E5 audit {stamp}] anulada: precio {o.fill_price:.2f} fuera de "
                 f"banda vs close {o.ref_close:.2f} ({o.deviation:+.0%}); caja revertida."
             )
             con.execute(
-                "UPDATE paper_orders SET status = 'voided', "
-                "notes = COALESCE(notes, '') || ? WHERE id = ?",
+                "UPDATE paper_orders SET status = 'voided', notes = COALESCE(notes, '') || ? WHERE id = ?",
                 (note, o.order_id),
             )
     return voided, skipped
@@ -225,9 +221,7 @@ def _print_report(orders: list[ContamOrder], band: float) -> None:
             print(f"       reason: {o.reason[:70]}")
 
 
-def run(
-    db_path: Path, *, band: float, account_id: int | None, apply: bool, yes: bool, as_json: bool
-) -> int:
+def run(db_path: Path, *, band: float, account_id: int | None, apply: bool, yes: bool, as_json: bool) -> int:
     con = sqlite3.connect(str(db_path))
     try:
         orders = find_contaminated(con, band=band, account_id=account_id)
@@ -262,9 +256,7 @@ def run(
         for o in voided:
             print(f"    voided #{o.order_id} {o.side} {o.ticker}")
         if skipped:
-            print(
-                f"⚠ {len(skipped)} orden(es) NO tocadas (posición abierta, manejo manual):"
-            )
+            print(f"⚠ {len(skipped)} orden(es) NO tocadas (posición abierta, manejo manual):")
             for o in skipped:
                 print(f"    skip  #{o.order_id} {o.side} {o.ticker}")
         return 0

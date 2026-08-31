@@ -35,9 +35,9 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-from data.edgar_fundamentals import get_fundamental_facts  # noqa: E402
-from paper_trading.gates import recent_adv_dollars  # noqa: E402
-from paper_trading.universe import (  # noqa: E402
+from data.edgar_fundamentals import get_fundamental_facts
+from paper_trading.gates import recent_adv_dollars
+from paper_trading.universe import (
     REASON_ADV,
     UniverseThresholds,
     screen_candidate,
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         get_historical_data_batch(tickers, period=args.period)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"warm-up batch falló ({e}); sigo per-ticker", file=sys.stderr)
 
     results = []

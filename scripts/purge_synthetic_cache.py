@@ -26,6 +26,7 @@ Uso (Windows — NO correr desde Linux/sandbox; corrompe la DB vía mounts)
 Tras correr con --apply, reanalizá los tickers afectados: la app verá el cache
 vacío y volverá a bajar la serie real de yfinance.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,8 +67,7 @@ def _is_synthetic(data_json: str) -> bool:
 def find_synthetic(con: sqlite3.Connection) -> list[tuple]:
     con.row_factory = sqlite3.Row
     rows = con.execute(
-        "SELECT id, ticker, period, interval, data_json, fetched_at "
-        "FROM historical_data_cache"
+        "SELECT id, ticker, period, interval, data_json, fetched_at FROM historical_data_cache"
     ).fetchall()
     return [
         (r["id"], r["ticker"], r["period"], r["interval"], r["fetched_at"])

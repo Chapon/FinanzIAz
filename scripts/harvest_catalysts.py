@@ -42,9 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config.logging_config import get_logger  # noqa: E402
-from data.news_sources import collect_all  # noqa: E402
-from database.models import (  # noqa: E402
+from config.logging_config import get_logger
+from data.news_sources import collect_all
+from database.models import (
     AnalystEstimateSnapshot,
     NewsEvent,
     session_scope,
@@ -119,7 +119,10 @@ def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
     from paper_trading.models import PaperPosition, PaperWatchlistItem
 
     with session_scope() as s:
-        watch = {w.ticker for w in s.query(PaperWatchlistItem).filter(PaperWatchlistItem.account_id == account_id).all()}
+        watch = {
+            w.ticker
+            for w in s.query(PaperWatchlistItem).filter(PaperWatchlistItem.account_id == account_id).all()
+        }
         pos = {
             p.ticker
             for p in s.query(PaperPosition)
@@ -282,8 +285,15 @@ def harvest(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="T-CAT-0 catalyst harvester (point-in-time ingest).")
-    p.add_argument("--account-id", type=int, default=DEFAULT_ACCOUNT_ID, help="Paper account whose watchlist to harvest.")
-    p.add_argument("--universe", choices=["sim", "sp500"], default="sim", help="sim = account watchlist; sp500 = full index.")
+    p.add_argument(
+        "--account-id", type=int, default=DEFAULT_ACCOUNT_ID, help="Paper account whose watchlist to harvest."
+    )
+    p.add_argument(
+        "--universe",
+        choices=["sim", "sp500"],
+        default="sim",
+        help="sim = account watchlist; sp500 = full index.",
+    )
     p.add_argument("--tickers", type=str, default=None, help="Comma-separated override, e.g. NVDA,PLTR,RKLB.")
     p.add_argument(
         "--sources",

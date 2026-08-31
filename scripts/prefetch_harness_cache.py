@@ -63,21 +63,24 @@ def main():
         help="Path to a file with one ticker per line (comments with # OK).",
     )
     parser.add_argument(
-        "-p", "--period",
+        "-p",
+        "--period",
         default="2y",
         help="Data period to fetch (default: 2y, matches the harness default).",
     )
     parser.add_argument(
-        "-i", "--interval",
+        "-i",
+        "--interval",
         default="1d",
         help="Bar interval (default: 1d).",
     )
     parser.add_argument(
-        "-b", "--batch-size",
+        "-b",
+        "--batch-size",
         type=int,
         default=20,
         help="Tickers por descarga agrupada (default: 20). Agrupar reutiliza un "
-             "único crumb de Yahoo y reduce los 401 'Invalid Crumb'.",
+        "único crumb de Yahoo y reduce los 401 'Invalid Crumb'.",
     )
     args = parser.parse_args()
 
@@ -123,7 +126,9 @@ def main():
         print(f"  Rows range: {min_rows} - {max_rows}")
         if min_rows < 200:
             short = [t for t, n in rows_per_ticker.items() if n < 200]
-            print(f"  WARNING: tickers with <200 rows (insufficient for stacking meta-learner): {', '.join(short)}")
+            print(
+                f"  WARNING: tickers with <200 rows (insufficient for stacking meta-learner): {', '.join(short)}"
+            )
 
     if failures:
         print(f"\nFAILED tickers: {', '.join(failures)}")

@@ -80,20 +80,21 @@ def parse_universe_file(path: Path) -> list[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("universe_file", type=Path)
-    parser.add_argument("-p", "--period", default="5y",
-                        help="Cache period to load (default: 5y).")
-    parser.add_argument("--n-windows", type=int, default=4,
-                        help="Number of non-overlapping windows (default: 4).")
+    parser.add_argument("-p", "--period", default="5y", help="Cache period to load (default: 5y).")
+    parser.add_argument(
+        "--n-windows", type=int, default=4, help="Number of non-overlapping windows (default: 4)."
+    )
     args = parser.parse_args()
 
     # Imports inside main() so --help works without yfinance.
-    from data.yahoo_finance import get_historical_data_batch
-    from analysis.harness import ExperimentConfig, HarnessRunner
     from analysis.backtest import signal_from_analyze_stacked
+    from analysis.harness import ExperimentConfig, HarnessRunner
     from analysis.regime_detector import RegimeConfig, detect_regime_series
+    from data.yahoo_finance import get_historical_data_batch
     from paper_trading.feature_switch import (
         policy_from_attribution_2026_06_01,
         validate_policy_coverage,
@@ -113,8 +114,7 @@ def main():
         else:
             full_data[t] = df
     if failed:
-        print(f"  WARNING: skipping {len(failed)} tickers without data: "
-              f"{', '.join(failed)}")
+        print(f"  WARNING: skipping {len(failed)} tickers without data: {', '.join(failed)}")
     print(f"  Loaded {len(full_data)}/{len(tickers)} tickers")
     if len(full_data) < 5:
         print("Error: not enough tickers loaded.")
@@ -126,8 +126,7 @@ def main():
         common_idx = df.index if common_idx is None else common_idx.intersection(df.index)
     common_idx = common_idx.sort_values()
     n_bars = len(common_idx)
-    print(f"  Common index: {n_bars} bars  "
-          f"({common_idx[0].date()} -> {common_idx[-1].date()})")
+    print(f"  Common index: {n_bars} bars  ({common_idx[0].date()} -> {common_idx[-1].date()})")
 
     # Build a market proxy from equal-weighted ticker returns over the FULL
     # period (not per-window — see T-régimen-2 docs for why per-window
@@ -141,17 +140,16 @@ def main():
     )
     proxy_rets = rets_frame.mean(axis=1).dropna()
     proxy_close = 100.0 * (1.0 + proxy_rets).cumprod()
-    regime_df = detect_regime_series(pd.DataFrame({"Close": proxy_close}),
-                                     RegimeConfig())
+    regime_df = detect_regime_series(pd.DataFrame({"Close": proxy_close}), RegimeConfig())
     regime_series = regime_df["regime"]
     from analysis.regime_detector import REGIME_WARMUP
+
     non_warmup = regime_series[regime_series != REGIME_WARMUP]
-    print(f"  Global régime series: {len(regime_series)} bars  "
-          f"non-warmup={len(non_warmup)}")
+    print(f"  Global régime series: {len(regime_series)} bars  non-warmup={len(non_warmup)}")
     dist = non_warmup.value_counts(normalize=True).to_dict()
-    print(f"  Distribution: " + "  ".join(
-        f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1])
-    ))
+    print(
+        "  Distribution: " + "  ".join(f"{k}={v:.1%}" for k, v in sorted(dist.items(), key=lambda kv: -kv[1]))
+    )
 
     # Build the policy and sanity-check coverage.
     policy = policy_from_attribution_2026_06_01()
@@ -162,14 +160,13 @@ def main():
             print(f"  - {w}")
 
     # Build N non-overlapping windows
-    edges = [int(round(i * n_bars / args.n_windows)) for i in range(args.n_windows + 1)]
+    edges = [round(i * n_bars / args.n_windows) for i in range(args.n_windows + 1)]
     windows: dict[str, tuple[int, int]] = {}
     for i in range(args.n_windows):
         lo, hi = edges[i], edges[i + 1]
-        name = f"w{i+1}" if args.n_windows > 2 else ("early_12m" if i == 0 else "late_12m")
+        name = f"w{i + 1}" if args.n_windows > 2 else ("early_12m" if i == 0 else "late_12m")
         windows[name] = (lo, hi)
-        print(f"  Window {name}: bars [{lo}:{hi}]  "
-              f"({common_idx[lo].date()} -> {common_idx[hi-1].date()})")
+        print(f"  Window {name}: bars [{lo}:{hi}]  ({common_idx[lo].date()} -> {common_idx[hi - 1].date()})")
 
     # Output directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -183,28 +180,45 @@ def main():
     # we may pass a régime series + policy to HarnessRunner to wire the
     # régime-aware vol_overlay closure.
     variants: list[tuple[str, ExperimentConfig, bool]] = [
-        ("baseline", ExperimentConfig(
-            name="baseline",
-            hmm_enabled=True, stacking_enabled=True,
-            xgb_signal_enabled=True, vol_overlay_enabled=True,
-            description="Production-as-of-2026-06-01: all features ON",
-        ), False),  # régime-aware mode OFF
-        ("kill_only", ExperimentConfig(
-            name="kill_only",
-            hmm_enabled=False, stacking_enabled=False,
-            xgb_signal_enabled=True, vol_overlay_enabled=True,
-            description="Kills only (HMM/Stacking off, XGB+vol_overlay always on)",
-        ), False),
-        ("full_switcher", ExperimentConfig(
-            name="full_switcher",
-            hmm_enabled=False, stacking_enabled=False,
-            xgb_signal_enabled=True,
-            # vol_overlay_enabled is IGNORED in régime-aware mode; the policy
-            # decides per bar. We set it to True so the legacy path would
-            # also evaluate the overlay if the régime-aware wiring failed.
-            vol_overlay_enabled=True,
-            description="Kills + régime-aware vol_overlay",
-        ), True),  # régime-aware mode ON
+        (
+            "baseline",
+            ExperimentConfig(
+                name="baseline",
+                hmm_enabled=True,
+                stacking_enabled=True,
+                xgb_signal_enabled=True,
+                vol_overlay_enabled=True,
+                description="Production-as-of-2026-06-01: all features ON",
+            ),
+            False,
+        ),  # régime-aware mode OFF
+        (
+            "kill_only",
+            ExperimentConfig(
+                name="kill_only",
+                hmm_enabled=False,
+                stacking_enabled=False,
+                xgb_signal_enabled=True,
+                vol_overlay_enabled=True,
+                description="Kills only (HMM/Stacking off, XGB+vol_overlay always on)",
+            ),
+            False,
+        ),
+        (
+            "full_switcher",
+            ExperimentConfig(
+                name="full_switcher",
+                hmm_enabled=False,
+                stacking_enabled=False,
+                xgb_signal_enabled=True,
+                # vol_overlay_enabled is IGNORED in régime-aware mode; the policy
+                # decides per bar. We set it to True so the legacy path would
+                # also evaluate the overlay if the régime-aware wiring failed.
+                vol_overlay_enabled=True,
+                description="Kills + régime-aware vol_overlay",
+            ),
+            True,
+        ),  # régime-aware mode ON
     ]
 
     all_sharpe: dict[str, dict[str, float]] = {w: {} for w in windows}
@@ -243,16 +257,19 @@ def main():
             all_sharpe[w_name][variant_label] = float(m.sharpe_annual)
             all_return[w_name][variant_label] = float(m.period_return)
             all_maxdd[w_name][variant_label] = float(m.max_drawdown)
-            print(f"    sharpe={m.sharpe_annual:+.3f}  return={m.period_return:+.2f}%  "
-                  f"maxdd={m.max_drawdown:.2f}%  ({time.time()-v_start:.0f}s)")
+            print(
+                f"    sharpe={m.sharpe_annual:+.3f}  return={m.period_return:+.2f}%  "
+                f"maxdd={m.max_drawdown:.2f}%  ({time.time() - v_start:.0f}s)"
+            )
 
-        print(f"Window {w_name} total: {(time.time()-t_start)/60:.1f} min")
+        print(f"Window {w_name} total: {(time.time() - t_start) / 60:.1f} min")
 
     # ── Consolidated summary ──────────────────────────────────────────────
     variant_labels = [v[0] for v in variants]
     w_names = list(windows.keys())
 
     summary_lines: list[str] = []
+
     def emit(s=""):
         print(s)
         summary_lines.append(s)
@@ -267,8 +284,7 @@ def main():
 
     emit(f"\n{'=' * 76}\nΔSharpe vs baseline  (positive = improvement)\n{'=' * 76}")
     for v in variant_labels[1:]:  # skip baseline
-        deltas = [all_sharpe[w].get(v, 0.0) - all_sharpe[w].get("baseline", 0.0)
-                  for w in w_names]
+        deltas = [all_sharpe[w].get(v, 0.0) - all_sharpe[w].get("baseline", 0.0) for w in w_names]
         cells = " | ".join(f"{d:>+10.3f}" for d in deltas)
         mean_delta = sum(deltas) / len(deltas) if deltas else 0.0
         # Verdict: all same sign + mean ≥ 0.3 → SOLID. Mixed → check breakdown.
@@ -287,10 +303,13 @@ def main():
             verdict = "MIXED"
         emit(f"{v:<18} | {cells} | mean={mean_delta:+.3f}  {verdict}")
 
-    emit(f"\n{'=' * 76}\nΔSharpe full_switcher vs kill_only  "
-         f"(positive = switching adds value beyond kills)\n{'=' * 76}")
-    deltas_switch = [all_sharpe[w].get("full_switcher", 0.0)
-                     - all_sharpe[w].get("kill_only", 0.0) for w in w_names]
+    emit(
+        f"\n{'=' * 76}\nΔSharpe full_switcher vs kill_only  "
+        f"(positive = switching adds value beyond kills)\n{'=' * 76}"
+    )
+    deltas_switch = [
+        all_sharpe[w].get("full_switcher", 0.0) - all_sharpe[w].get("kill_only", 0.0) for w in w_names
+    ]
     cells = " | ".join(f"{d:>+10.3f}" for d in deltas_switch)
     mean_d = sum(deltas_switch) / len(deltas_switch) if deltas_switch else 0.0
     emit(f"switching delta    | {cells} | mean={mean_d:+.3f}")
@@ -300,15 +319,19 @@ def main():
     summary_txt.write_text("\n".join(summary_lines), encoding="utf-8")
     summary_json = out_root / "summary.json"
     with open(summary_json, "w") as f:
-        json.dump({
-            "sharpe": all_sharpe,
-            "period_return": all_return,
-            "max_drawdown": all_maxdd,
-            "windows": {n: [int(lo), int(hi)] for n, (lo, hi) in windows.items()},
-        }, f, indent=2)
+        json.dump(
+            {
+                "sharpe": all_sharpe,
+                "period_return": all_return,
+                "max_drawdown": all_maxdd,
+                "windows": {n: [int(lo), int(hi)] for n, (lo, hi) in windows.items()},
+            },
+            f,
+            indent=2,
+        )
     emit(f"\nWrote {summary_txt}")
     emit(f"Wrote {summary_json}")
-    print(f"\nDone.  Total time: see per-window readouts above.")
+    print("\nDone.  Total time: see per-window readouts above.")
 
 
 if __name__ == "__main__":

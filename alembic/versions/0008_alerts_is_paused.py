@@ -38,9 +38,7 @@ def upgrade() -> None:
     if _has_column("alerts", "is_paused"):
         return
     with op.batch_alter_table("alerts") as batch_op:
-        batch_op.add_column(
-            sa.Column("is_paused", sa.Boolean(), nullable=False, server_default=sa.false())
-        )
+        batch_op.add_column(sa.Column("is_paused", sa.Boolean(), nullable=False, server_default=sa.false()))
 
 
 def downgrade() -> None:

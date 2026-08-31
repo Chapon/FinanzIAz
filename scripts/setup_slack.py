@@ -42,11 +42,11 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from integrations.slack import (  # noqa: E402
+from integrations.slack import (
+    NOTIFY_ON_CHOICES,
     SLACK_CHANNEL_ENV,
     SLACK_POST_MESSAGE_URL,
     SLACK_TOKEN_ENV,
-    NOTIFY_ON_CHOICES,
 )
 
 
@@ -83,7 +83,7 @@ def _send_test(token: str, channel: str) -> tuple[bool, str]:
             json={"channel": channel, "text": text},
             timeout=10,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, f"error de red: {exc}"
 
     try:

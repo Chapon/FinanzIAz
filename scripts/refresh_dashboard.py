@@ -32,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO))
 
-from scripts.dashboard_data import build_payload, _json_default, DEFAULT_ACCOUNT_ID  # noqa: E402
+from scripts.dashboard_data import DEFAULT_ACCOUNT_ID, _json_default, build_payload
 
 DEFAULT_ARTIFACT = Path(
     r"C:\Users\chapa\Documents\Claude\Artifacts"
