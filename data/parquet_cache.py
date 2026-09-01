@@ -243,6 +243,29 @@ def all_1d(ticker: str) -> list[pd.DataFrame]:
     return out
 
 
+def labelled_1d(ticker: str) -> list[tuple[str, pd.DataFrame]]:
+    """``(etiqueta, frame)`` para cada parquet ``1d`` del ticker, del más fresco al más viejo.
+
+    El par etiquetado de ``all_1d``, para la tarea **64**: cuando dos frames del
+    mismo ticker discrepan en la escala, el aviso tiene que poder **nombrar cuál**
+    — decir *"algo no cierra en NEE"* sin decir entre qué períodos deja al operador
+    sin por dónde empezar.
+
+    La etiqueta sale del **nombre del archivo** y por eso es el token sanitizado,
+    no el ``period`` canónico (ver ``_safe``): para los periods que se usan acá
+    —``1y``, ``2y``, ``5y``, ``10y``— coinciden, y aunque no coincidieran sirve
+    igual para lo único que hace, que es identificar el archivo en un log.
+    """
+    out: list[tuple[str, pd.DataFrame]] = []
+    for path in _candidates_1d(ticker):
+        df = _restore_frame(path)
+        if df is None:
+            continue
+        parts = path.stem.split("__")
+        out.append((parts[1] if len(parts) > 2 else path.stem, df))
+    return out
+
+
 def invalidate(ticker: str) -> None:
     """Borra todos los parquets del ticker (cualquier period/interval)."""
     d = get_parquet_dir()

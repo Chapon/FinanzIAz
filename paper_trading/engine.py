@@ -104,16 +104,52 @@ def _price_out_of_band(ticker: str, price: float | None, side: str | None = None
       (``paper_history_period`` = ``2y``, el frame que en AVB quedó 2.793× fuera
       de escala), así que la posición entraría con un stop calculado en otra
       escala. Entrar es opcional; salir no.
+
+    **Y la zona muerta DEBAJO de la banda (tarea 64): la misma asimetría.** Todo lo
+    de arriba arranca cuando el precio vivo se sale de la banda del 50%. Una
+    corrupción **menor** —un split fantasma de 1.3— deja el histórico fuera de
+    escala con el precio **adentro**, así que nada de esto llega a correr y el ATR
+    igual sale del frame podrido. Con los frames ``1d`` en desacuerdo por encima de
+    la tolerancia calibrada (``scale_drift``, 10% — ver el bloque de la 64 en
+    ``data/yahoo_finance``), **la entrada se bloquea y la salida no**, por el mismo
+    argumento: entrar es opcional, salir no.
+
+    **Lo que NO se hace, y es deliberado.** *No* se excluye al ticker del universo:
+    eso lo volvería invisible, que es exactamente el modo de falla que la 63 vino a
+    arreglar. *No* se elige el frame que coincide con la cotización: darle a la
+    cotización el rol de árbitro es lo que hizo E5, y la 63 mostró que ese lado
+    también se pudre. Con los dos frames en desacuerdo el cache **no puede
+    arbitrar**, y la conducta correcta es no apostar plata nueva sobre él.
     """
     from data.yahoo_finance import (
         is_price_out_of_band,
         reference_close,
+        scale_drift,
         unreliable_reference,
     )
 
+    entrando = str(side or "").upper() == "BUY"
     ref = reference_close(ticker)
     if not is_price_out_of_band(price, ref):
-        return False
+        # T64 — el precio está en banda, pero los frames del histórico pueden no
+        # estar en la misma escala. Sólo importa para ENTRAR (el ATR sale de ahí).
+        drift = scale_drift(ticker)
+        if drift is None:
+            return False
+        from config.logging_config import get_logger
+
+        get_logger(__name__).warning(
+            "El precio de %s está EN banda pero los frames del histórico NO coinciden — %s. %s",
+            ticker.upper(),
+            drift,
+            (
+                "La ENTRADA se bloquea: el ATR y las barreras saldrían de un histórico "
+                "cuya escala el cache no puede arbitrar."
+                if entrando
+                else "La SALIDA no se bloquea: quedar trapeado es peor que salir con un histórico en duda."
+            ),
+        )
+        return entrando
     reason = unreliable_reference(ticker, price, ref, allow_network=False)
     if reason is None:
         return True
@@ -123,7 +159,6 @@ def _price_out_of_band(ticker: str, price: float | None, side: str | None = None
     # Llegado aca `is_price_out_of_band` devolvio True, y eso exige que los dos
     # sean no-None (si falta cualquiera, hace fail-open y no llega).
     assert price is not None and ref is not None
-    entrando = str(side or "").upper() == "BUY"
     get_logger(__name__).error(
         "%s: %.4f fuera de banda vs el histórico (%.4f), pero la referencia NO es confiable — %s. %s",
         ticker.upper(),
@@ -197,6 +232,44 @@ def _warm_up_history_cache(tickers: list[str]) -> None:
             get_historical_data(BENCHMARK_TICKER, period=period)
         except Exception:
             get_logger(__name__).exception("SPY benchmark fallback fetch failed")
+
+
+def _declare_scale_drift(tickers: list[str]) -> list[str]:
+    """Declara los tickers cuyos frames ``1d`` NO están en la misma escala (T64).
+
+    Corre **incondicional** y después del warm-up —o sea sobre el cache más fresco
+    que va a haber este scan—, que es lo que lo distingue de la **63**: aquélla
+    cruza los frames sólo cuando el precio vivo ya salió de la banda del 50%, así
+    que una corrupción **menor** nunca la despierta. Y una corrupción menor igual
+    duele: el ATR y las barreras salen del histórico, así que un frame 1,3× chico
+    da un stop 1,3× más ajustado que el que la política dice.
+
+    **Declara, no decide** — la política vive en ``_price_out_of_band``, que es el
+    punto donde hay un lado (BUY/SELL) que mirar. Es offline (no pega a la red) y
+    barato: 130 tickers en 0,6 s. Best-effort: nunca corta un scan.
+    """
+    out: list[str] = []
+    try:
+        from config.logging_config import get_logger
+        from data.yahoo_finance import scale_drift
+
+        log = get_logger(__name__)
+        for ticker in tickers:
+            drift = scale_drift(ticker)
+            if drift is None:
+                continue
+            msg = (
+                f"{drift} — el ATR y las barreras salen de ese histórico, así que "
+                f"las ENTRADAS de {drift.ticker} quedan bloqueadas hasta que los "
+                f"frames coincidan (las SALIDAS no)"
+            )
+            log.warning("DRIFT DE ESCALA — %s", msg)
+            out.append(msg)
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception("scale drift declaration failed")
+    return out
 
 
 def _is_market_open_safe() -> bool:
@@ -692,6 +765,9 @@ def run_scan(
         missing_tickers = [t for t in tickers if t not in prices]
         held_without_price = sorted(p.ticker for p in positions if p.ticker not in prices)
         scan_warnings: list[str] = []
+        # T64 — drift de escala por DEBAJO de la banda: acá, después del warm-up,
+        # porque es el cache más fresco que va a haber este scan.
+        scan_warnings.extend(_declare_scale_drift(tickers))
         if missing_tickers:
             from config.logging_config import get_logger
 

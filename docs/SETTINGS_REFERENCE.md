@@ -57,6 +57,7 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 | Flag | Default | Qué hace |
 |------|---------|----------|
 | `price_sanity_band_pct` | `0.5` | Descarta cotizaciones cuya escala difiera del último close diario cacheado por > esta fracción (0.5 = ±50%). Ataca la basura ~10× de Yahoo (KLAC 2026-06-01). Guard en `data/yahoo_finance` (fetch) + `paper_trading/engine` (antes de fillar). `0` desactiva. Fail-open si no hay histórico de referencia. |
+| `scale_drift_tolerance_pct` | `0.10` | **(T64)** Desvío relativo entre dos frames `1d` cacheados del mismo ticker a partir del cual se declara **drift de escala**. Cubre la zona muerta **debajo** de la banda de arriba: un split fantasma chico (1.3) deja el histórico fuera de escala con el precio **adentro** de la banda, y el ATR sale de ahí. Se compara sobre las fechas que **solapan**. Declara en cada scan (`_declare_scale_drift`) y **bloquea la ENTRADA, no la salida** (`_price_out_of_band`). **Calibrado**, no elegido: sobre 365 pares del cache real el drift legítimo llega a 1,72% y el único caso real está en 64,2% (`docs/scale_drift_t64_2026-09-01.md`). `0` desactiva. |
 
 ## Stops ATR (T01) — opt-in
 | Flag | Default | Qué hace |

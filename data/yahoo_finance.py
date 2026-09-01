@@ -19,6 +19,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import TypeVar
@@ -747,6 +748,170 @@ def scale_is_disputed(price: float | None, ticker: str, band: float | None = Non
     if len(refs) < 2:
         return False
     return len({is_price_out_of_band(price, r, band) for r in refs}) > 1
+
+
+# ── Drift de escala por DEBAJO de la banda — Tarea 64 (SCALEDRIFT) ───────────
+#
+# Todo el aparato de escala —E5 y la **63** encima— se dispara **sólo cuando el
+# precio vivo sale de la banda** (``price_sanity_band_pct``, 50%). Un ajuste
+# espurio **menor** —un split fantasma de 1.3, un re-ajuste mal conciliado— deja
+# el histórico fuera de escala con el precio vivo **adentro** de la banda: no hay
+# WARNING, no se evalúa disputa, no corre nada. Y la cotización no es lo único que
+# se usa: el **ATR y las barreras** salen del histórico (``paper_history_period``,
+# default ``2y``), así que un histórico 1,3× chico da un stop 1,3× más ajustado que
+# el que la política dice, sin que nada lo declare.
+#
+# ACÁ NO SIRVE EL TRUCO DE LA 63, y por eso hizo falta un umbral propio. Aquélla
+# define la disputa por el **veredicto** (un frame dice "en banda", otro dice
+# "fuera") y así no necesita ningún porcentaje. Sin rechazo previo no hay veredicto
+# que comparar: hay que mirar la **magnitud** de la diferencia entre frames.
+#
+# EL UMBRAL ESTÁ CALIBRADO SOBRE LOS FRAMES REALES, no elegido de memoria
+# (``docs/scale_drift_t64_2026-09-01.md``). Barrido del cache vivo: **514** tickers
+# con parquet ``1d``, **140** con dos o más frames ⇒ **365** pares comparables.
+#
+#   * El drift **legítimo** (re-ajuste por dividendos entre dos fetches separados)
+#     llega hasta **1,719%** (PFE). p50 **0,000%** · p90 **0,741%** · p99 **1,702%**.
+#   * El único par por encima del 2% es **AVB**, con **64,196%** — el split fantasma
+#     de 2.793 que destapó la 63.
+#   * **Entre 1,72% y 64,2% no hay NADA.** El hueco es de 37×.
+#
+# ⇒ ``10%`` es **5,8×** el máximo legítimo observado y queda **muy** por debajo del
+# split más chico que existe en la práctica (3:2 ⇒ 33% de desvío). Falsos positivos
+# medidos sobre el cache real: **0 de 364** pares legítimos.
+#
+# Y LO QUE LA MEDICIÓN CORRIGIÓ DEL ENUNCIADO: el backlog daba por sentado que
+# *"por debajo de ~10% el drift legítimo se vuelve indistinguible de una
+# corrupción"*. **No se sostiene**: el drift legítimo se termina en 1,72%, así que
+# el 10% no está al filo de nada. Lo que sí se midió y **no** discrimina es la
+# **dispersión**: el ratio entre frames es constante por fecha en los 365 pares
+# (spread máx **1,0140**), legítimos incluidos. Un re-ajuste por dividendos también
+# es un re-escalado; la única diferencia es el tamaño.
+_DEFAULT_SCALE_DRIFT_TOLERANCE = 0.10
+
+# Con menos fechas solapadas, un par de días raros pesarían como si fueran la
+# escala. AVB —el único caso real— solapa 16.
+_SCALE_DRIFT_MIN_DATES = 5
+
+
+def _scale_drift_tolerance() -> float:
+    """Desvío relativo entre frames ``1d`` a partir del cual se declara drift. 0 = off."""
+    try:
+        from config.settings_manager import settings
+
+        tol = float(settings.get("scale_drift_tolerance_pct", _DEFAULT_SCALE_DRIFT_TOLERANCE))
+    except Exception:
+        tol = _DEFAULT_SCALE_DRIFT_TOLERANCE
+    return tol if tol > 0 else 0.0
+
+
+@dataclass(frozen=True)
+class ScaleDrift:
+    """Dos frames ``1d`` del mismo ticker que no están en la misma escala."""
+
+    ticker: str
+    factor: float
+    n_dates: int
+    fresh_label: str
+    other_label: str
+
+    @property
+    def deviation(self) -> float:
+        """Cuánto se apartan, en fracción. Es lo que se compara contra la tolerancia."""
+        return abs(self.factor - 1.0)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.ticker}: los frames 1d '{self.fresh_label}' y '{self.other_label}' "
+            f"difieren por un factor de {self.factor:.4f} ({100 * self.deviation:.2f}%) "
+            f"sobre {self.n_dates} fechas solapadas"
+        )
+
+
+def _labelled_1d_frames(ticker_upper: str) -> list[tuple[str, pd.DataFrame]]:
+    """``(etiqueta, frame)`` de cada ``1d`` cacheado según el backend activo (ARQ1)."""
+    backend = _historical_cache_backend()
+    if backend in ("parquet", "dual"):
+        try:
+            from data import parquet_cache
+
+            frames = parquet_cache.labelled_1d(ticker_upper)
+        except Exception:
+            log.exception("parquet labelled_1d failed for %s", ticker_upper)
+            frames = []
+        if frames or backend == "parquet":
+            return frames
+    out: list[tuple[str, pd.DataFrame]] = []
+    with session_scope() as session:
+        rows = (
+            session.query(HistoricalDataCache)
+            .filter(HistoricalDataCache.ticker == ticker_upper)
+            .filter(HistoricalDataCache.interval == "1d")
+            .order_by(HistoricalDataCache.fetched_at.desc())
+            .all()
+        )
+        for row in rows:
+            try:
+                out.append((str(row.period), pd.read_json(StringIO(row.data_json), orient="split")))
+            except Exception:
+                log.exception("cache 1d ilegible para %s", ticker_upper)
+    return out
+
+
+def scale_drift(ticker: str, tol: float | None = None) -> ScaleDrift | None:
+    """El peor desalineamiento de escala entre los frames ``1d`` del ticker, o None.
+
+    Compara el frame **más fresco** contra cada uno de los otros sobre las fechas
+    que **solapan** —el mismo cruce intra-proveedor de la 63, pero sin necesitar un
+    rechazo previo que lo dispare— y devuelve el par que más se aparta, si supera
+    la tolerancia.
+
+    Se compara sobre fechas solapadas y no sobre el último close de cada frame **a
+    propósito**: los frames se bajan en momentos distintos, así que sus últimos
+    closes difieren por el movimiento real del precio. Sobre las mismas fechas, lo
+    único que puede quedar es la escala.
+
+    No dice **cuál** de los dos está mal, y no hace falta: la política que cuelga de
+    esto (bloquear la entrada, dejar salir) es la misma sea cual sea. Es pura: no
+    pega a la red. Fail-open ante cualquier problema — un guard nuevo que rompe un
+    scan es peor que el problema que resuelve.
+    """
+    t = _scale_drift_tolerance() if tol is None else float(tol)
+    if t <= 0:
+        return None
+    try:
+        frames = _labelled_1d_frames(ticker.upper())
+        if len(frames) < 2:
+            return None
+        fresh_label, fresh = frames[0]
+        fresh_close = fresh.get("Close")
+        if fresh_close is None:
+            return None
+        peor: ScaleDrift | None = None
+        for label, other in frames[1:]:
+            other_close = other.get("Close")
+            if other_close is None:
+                continue
+            common = fresh_close.index.intersection(other_close.index)
+            if len(common) < _SCALE_DRIFT_MIN_DATES:
+                continue
+            ratio = (fresh_close.loc[common] / other_close.loc[common]).dropna()
+            ratio = ratio[ratio > 0]
+            if len(ratio) < _SCALE_DRIFT_MIN_DATES:
+                continue
+            cand = ScaleDrift(
+                ticker=ticker.upper(),
+                factor=float(ratio.median()),
+                n_dates=len(ratio),
+                fresh_label=fresh_label,
+                other_label=label,
+            )
+            if cand.deviation > t and (peor is None or cand.deviation > peor.deviation):
+                peor = cand
+        return peor
+    except Exception:
+        log.exception("scale_drift failed for %s", ticker)
+        return None
 
 
 def _invalidate_history_cache(ticker_upper: str) -> None:
