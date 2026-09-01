@@ -552,7 +552,12 @@ class PaperScheduler(QObject):
         self._launch_surprise_build()
 
     def _launch_surprise_build(self) -> None:
-        account_id = int(settings.get("surprise_build_account_id", 1) or 1)
+        # T70: se resuelve contra `is_active`. El literal `1` de antes hacía que el
+        # rebuild corriera sobre la cuenta pausada — `surprise_profiles.json` tenía
+        # 52 tickers en vez de los 128 del universo vivo.
+        account_id = self._job_account_id("surprise_build_account_id")
+        if account_id is None:
+            return
         worker = SurpriseBuildWorker(account_id, parent=self)
         worker.build_completed.connect(self._on_surprise_completed)
         worker.build_failed.connect(self._on_surprise_failed)
@@ -688,8 +693,18 @@ class PaperScheduler(QObject):
 
     # ── Daily dashboard refresh (trigger 7) ────────────────────────────────────
 
-    def _dashboard_account_id(self) -> int:
-        return int(settings.get("dashboard_refresh_account_id", 1) or 1)
+    def _job_account_id(self, setting_key: str) -> int | None:
+        """La cuenta viva para un job de fondo, o ``None`` si no hay (T70).
+
+        Resuelve contra ``is_active`` en vez de caer a un literal, y grita si un
+        flag seteado a mano apunta a una cuenta pausada. ``None`` ⇒ el job **no
+        corre**: un job que no sabe sobre qué cuenta opera no debe elegir una."""
+        from paper_trading.account import live_account_id
+
+        return live_account_id(setting_key)
+
+    def _dashboard_account_id(self) -> int | None:
+        return self._job_account_id("dashboard_refresh_account_id")
 
     def _maybe_refresh_dashboard(self) -> None:
         """Refresca el dashboard 1×/día (al abrir / tick diario). Gate por día
@@ -721,7 +736,10 @@ class PaperScheduler(QObject):
         except Exception:
             log.exception("dashboard targets_ready check failed")
             return
-        worker = DashboardRefreshWorker(self._dashboard_account_id(), parent=self)
+        account_id = self._dashboard_account_id()
+        if account_id is None:
+            return
+        worker = DashboardRefreshWorker(account_id, parent=self)
         worker.refresh_completed.connect(self._on_dashboard_completed)
         worker.refresh_failed.connect(self._on_dashboard_failed)
         worker.finished.connect(self._reap_dashboard_worker)

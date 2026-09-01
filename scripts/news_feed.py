@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
 
 from database.models import NewsEvent, session_scope
 
-DEFAULT_ACCOUNT_ID = 1  # "Sim Principal"
+DEFAULT_ACCOUNT_ID = None  # T70: se resuelve contra `is_active`, no un literal
 
 FeedRow = namedtuple("FeedRow", "ticker published_at source title url event_type")
 
@@ -66,7 +66,7 @@ def recent_news(
         return [FeedRow(r.ticker, r.published_at, r.source, r.title, r.url, r.event_type) for r in q.all()]
 
 
-def _watchlist_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
+def _watchlist_universe(account_id: int | None = None) -> list[str]:
     """Reuse the harvester's universe resolver (watchlist ∪ open positions)."""
     from scripts.harvest_catalysts import resolve_universe
 
@@ -84,7 +84,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Per-ticker catalyst feed (read-only).")
     p.add_argument("--ticker", type=str, default=None, help="Single ticker, e.g. NVDA.")
     p.add_argument("--watchlist", action="store_true", help="All tickers in account watchlist ∪ positions.")
-    p.add_argument("--account-id", type=int, default=DEFAULT_ACCOUNT_ID, help="Account for --watchlist.")
+    p.add_argument("--account-id", type=int, default=None, help="Account for --watchlist.")
     p.add_argument("--source", type=str, default=None, help="Filter by source tag, e.g. sec_8k, yahoo_rss.")
     p.add_argument("--limit", type=int, default=20, help="Max rows.")
     return p.parse_args(argv)

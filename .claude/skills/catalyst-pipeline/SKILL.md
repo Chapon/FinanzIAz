@@ -12,12 +12,14 @@ Pipeline append-only point-in-time: recolecta noticias → clasifica → aliment
 `scripts/harvest_catalysts.py` — idempotente (UPDATE in-place, re-correr es no-op). Fuentes: yfinance, SEC 8-K (EDGAR), RSS por-ticker, Finnhub. Dedup por URL canónica.
 
 ```
-python scripts/harvest_catalysts.py --account-id 1
+python scripts/harvest_catalysts.py                 # la cuenta VIVA (T70), no un literal
 python scripts/harvest_catalysts.py --universe sp500
 python scripts/harvest_catalysts.py --tickers NVDA,PLTR,RKLB
 python scripts/harvest_catalysts.py --sources yfinance,sec,finnhub
 python scripts/harvest_catalysts.py --dry-run    # recolecta y reporta, sin escribir
 ```
+
+**Sin `--account-id` el harvest resuelve la cuenta viva contra `is_active` (tarea 70).** Este bloque decía `--account-id 1` y esa cuenta está pausada desde el 2026-07-01: el harvest —y el que corre el scheduler cada hora, que llama sin flag— recolectaba para los **52** tickers de la cuenta 1 en vez de los **128** de la viva. Pasarle un id explícito sigue funcionando, y ahora avisa fuerte si apunta a una cuenta pausada.
 
 Finnhub requiere `FINNHUB_API_KEY` en el entorno (source tag `finnhub:<Outlet>`).
 

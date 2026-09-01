@@ -17,7 +17,7 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 
 - App: `python main.py`
 - Tests: `python -m pytest tests/ -ra -m "not network" --tb=short`
-- Harvest de catalysts: `python scripts/harvest_catalysts.py --account-id 1` (ver skill `catalyst-pipeline`)
+- Harvest de catalysts: `python scripts/harvest_catalysts.py` (ver skill `catalyst-pipeline`). **Sin `--account-id`**: desde la tarea 70 el default es la cuenta **viva**, resuelta contra `is_active`. Decía `--account-id 1` y esa cuenta está pausada, así que recolectaba para 52 tickers en vez de 128.
 
 ## Mapa rápido
 

@@ -95,7 +95,10 @@ def test_refresh_no_data_line_is_not_fatal(tmp_path, monkeypatch):
     monkeypatch.setattr(rd, "build_payload", lambda db_path, account_id: {"positions": []})
     monkeypatch.setattr(rd, "REPO", tmp_path)
 
-    res = rd.refresh_dashboard(artifact=artifact, db_path=db)
+    # T70: `account_id` explícito. Sin él el refresh resuelve la cuenta VIVA contra
+    # `is_active` y en esta DB de test no hay ninguna, así que saldría por ese
+    # early-return antes de llegar a lo que este test mide (la línea DATA ausente).
+    res = rd.refresh_dashboard(artifact=artifact, db_path=db, account_id=1)
     assert res["ok"] is False
     assert "esperaba 1" in res["reason"]
     assert artifact.read_text(encoding="utf-8") == original  # no lo tocó

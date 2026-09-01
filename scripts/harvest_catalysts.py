@@ -53,7 +53,21 @@ from database.models import (
 
 log = get_logger(__name__)
 
-DEFAULT_ACCOUNT_ID = 1  # "Sim Principal"
+# T70: era `1` ("Sim Principal"), pausada desde el 2026-07-01 — el harvest
+# recolectaba para 52 tickers en vez de los 128 del universo vivo, y esa cobertura
+# NO se recupera (la fuente consulta `days_back=7`). Ahora se resuelve contra
+# `is_active` en tiempo de ejecución, no en el import: un default de argparse que
+# pega a la DB al importar el módulo rompe el `--help` y los tests.
+DEFAULT_ACCOUNT_ID = None  # se resuelve con `resolve_account_id()`
+
+
+def resolve_account_id(account_id: int | None = None) -> int | None:
+    """El id explícito, o la cuenta viva. ``None`` ⇒ no hay sobre qué correr (T70)."""
+    if account_id is not None:
+        return int(account_id)
+    from paper_trading.account import live_account_id
+
+    return live_account_id()
 
 
 @dataclass
@@ -114,9 +128,16 @@ def canonical_url(url: str | None) -> str | None:
         return raw.lower()
 
 
-def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
-    """Watchlist ∪ open positions for the account (mirrors engine.py)."""
+def resolve_universe(account_id: int | None = None) -> list[str]:
+    """Watchlist ∪ open positions for the account (mirrors engine.py).
+
+    ``account_id=None`` ⇒ la **cuenta viva** (T70), no la 1 hardcodeada.
+    """
     from paper_trading.models import PaperPosition, PaperWatchlistItem
+
+    account_id = resolve_account_id(account_id)
+    if account_id is None:
+        return []
 
     with session_scope() as s:
         watch: set[str] = {
@@ -206,7 +227,7 @@ def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
 def harvest(
     tickers: list[str] | None = None,
     *,
-    account_id: int = DEFAULT_ACCOUNT_ID,
+    account_id: int | None = None,
     sources: set[str] | None = None,
     collector=collect_all,
     now: datetime | None = None,
@@ -287,9 +308,7 @@ def harvest(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="T-CAT-0 catalyst harvester (point-in-time ingest).")
-    p.add_argument(
-        "--account-id", type=int, default=DEFAULT_ACCOUNT_ID, help="Paper account whose watchlist to harvest."
-    )
+    p.add_argument("--account-id", type=int, default=None, help="Paper account whose watchlist to harvest.")
     p.add_argument(
         "--universe",
         choices=["sim", "sp500"],

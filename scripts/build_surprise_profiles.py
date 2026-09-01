@@ -77,7 +77,7 @@ def _payload(profiles: dict[str, dict], n_tickers: int) -> dict:
 
 
 def run_build(
-    account_id: int = DEFAULT_ACCOUNT_ID,
+    account_id: int | None = DEFAULT_ACCOUNT_ID,  # T70: None => la cuenta viva
     limit: int = 16,
     out: str | Path = DEFAULT_OUT,
 ) -> dict:

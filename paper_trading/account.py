@@ -359,3 +359,103 @@ def count_orders(account_id: int, status: str | None = None) -> int:
 
 def get_pending_orders(account_id: int) -> list[PaperOrder]:
     return get_orders(account_id, status="pending")
+
+
+# ── La cuenta VIVA para los jobs de fondo — Tarea 70 (CUENTA-VIVA-APP) ───────
+#
+# Por qué existe
+# --------------
+# Hasta el 2026-09-01, **todos** los jobs de fondo con alcance de cuenta tenían
+# el literal ``1`` como default —dashboard, rebuild de ``surprise_profiles``,
+# harvest de catalysts y sus cuatro herederos— y **ninguno miraba ``is_active``**.
+# La cuenta 1 está pausada desde el 2026-07-01, así que durante dos meses:
+#
+# * el dashboard se re-estampó **todos los días** con fecha fresca mostrando una
+#   cartera congelada (verificado: ``generated_at`` de hoy, ``last trade``
+#   2026-07-01, las 5 posiciones zombie), y la cuenta viva no aparecía nunca;
+# * el harvest recolectó noticias para los **52** tickers de la cuenta 1 en vez
+#   de los **128** de la 2 — **79** nombres del universo vivo sin *una sola*
+#   noticia en 45 días, y esa cobertura **no se recupera**: la fuente consulta
+#   ``days_back=7`` (``data/news_sources.py:477``) y las noticias de yfinance son
+#   sólo recientes.
+#
+# Del lado **harness** esto ya estaba resuelto desde la tarea 27
+# (``analysis/harness_config.LIVE_ACCOUNT_ID``, con banner y tests). Del lado app
+# no existía el equivalente, y **poner ``2`` en los siete lugares habría sido el
+# mismo defecto con otro número**: el próximo cambio de cuenta lo reabre igual.
+# Por eso esto **resuelve contra la DB**, no contra un literal.
+#
+# Las tres decisiones de diseño
+# -----------------------------
+# 1. **Un flag explícito se respeta, pero se GRITA si apunta a una pausada.** Si
+#    el operador lo seteó, mandó él — pero el silencio es lo que dejó correr esto
+#    dos meses, así que no puede quedarse callado.
+# 2. **Sin flag, el default deja de ser un literal y pasa a ser "la activa".** Es
+#    el corazón del arreglo: hoy ninguno de los flags está seteado, así que todos
+#    tomaban el ``1`` hardcodeado.
+# 3. **Devuelve ``None`` cuando no hay cuenta viva, y el caller SALTEA.** Un job
+#    de fondo que no sabe sobre qué cuenta corre no debe elegir una: no correr es
+#    la respuesta correcta. Y ante cualquier error de DB devuelve ``None`` en vez
+#    de romper el scan (fail-safe, mismo criterio que los guards de la 59 y la 64).
+
+
+def live_account_id(setting_key: str | None = None) -> int | None:
+    """El id de la cuenta **viva** para un job de fondo, o ``None`` si no hay.
+
+    ``setting_key`` es el flag que puede pisar la resolución automática (p. ej.
+    ``"dashboard_refresh_account_id"``). Si está seteado se respeta **aunque
+    apunte a una cuenta pausada**, pero en ese caso se loguea un WARNING: la
+    decisión es del operador, el silencio no.
+
+    Sin flag —que es el caso de **todos** los jobs hoy— se resuelve contra
+    ``is_active``: una sola activa ⇒ ésa; varias ⇒ la de menor id, con aviso
+    (ambigüedad, no error); ninguna ⇒ ``None``, y el job no corre.
+    """
+    from config.logging_config import get_logger
+
+    log = get_logger(__name__)
+    try:
+        if setting_key:
+            from config.settings_manager import settings
+
+            crudo = settings.get(setting_key, None)
+            if crudo:
+                pedida = int(crudo)
+                acct = get_account(pedida)
+                if acct is None:
+                    log.warning(
+                        "%s=%s pero esa cuenta no existe — se resuelve la cuenta activa",
+                        setting_key,
+                        pedida,
+                    )
+                elif not acct.is_active:
+                    log.warning(
+                        "%s=%s apunta a una cuenta PAUSADA (%s, is_active=0). Se respeta "
+                        "porque está seteado a mano, pero el job va a correr sobre una "
+                        "cuenta que no opera (tarea 70).",
+                        setting_key,
+                        pedida,
+                        acct.name,
+                    )
+                    return pedida
+                else:
+                    return pedida
+
+        activas = list_accounts(active_only=True)
+        if not activas:
+            log.warning("no hay ninguna cuenta con is_active=1: el job de fondo no corre (tarea 70)")
+            return None
+        if len(activas) > 1:
+            elegida = min(activas, key=lambda a: int(a.id))
+            log.warning(
+                "hay %d cuentas activas (%s): el job de fondo corre sobre la de menor id "
+                "(%s). Seteá el flag correspondiente si querés otra (tarea 70).",
+                len(activas),
+                ", ".join(f"{a.id}:{a.name}" for a in activas),
+                elegida.id,
+            )
+            return int(elegida.id)
+        return int(activas[0].id)
+    except Exception:
+        log.exception("live_account_id falló — el job de fondo no corre (fail-safe, tarea 70)")
+        return None

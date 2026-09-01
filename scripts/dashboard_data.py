@@ -75,7 +75,9 @@ from scripts.baseline_metrics import (
 )
 
 DEFAULT_DB = "finanzias.db"
-DEFAULT_ACCOUNT_ID = 1
+# T70: era `1` (pausada). Séptimo call site de la misma familia — no estaba
+# en el enunciado de la tarea, apareció al cablear los otros seis.
+DEFAULT_ACCOUNT_ID = None  # None ⇒ la cuenta viva
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -790,7 +792,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Dump dashboard JSON for the live HTML artifact.")
     p.add_argument("--db", default=None, help="Path to finanzias.db (default: repo root)")
-    p.add_argument("--account", type=int, default=DEFAULT_ACCOUNT_ID, help="Account id (default: 1)")
+    p.add_argument("--account", type=int, default=None, help="Account id (default: 1)")
     args = p.parse_args(argv)
 
     if args.db is None:
