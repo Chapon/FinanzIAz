@@ -17,7 +17,9 @@ Qué hace (fiel al pre-registro)
    + ``live_gates=True`` (T34). La T21 no tenía ninguno de los tres.
 4. **Seis criterios en AND** (§6) con cada caso partido resuelto ex ante, y siete
    sanity (§5) — incluido el de **reproducción** de la línea publicada por la T33
-   (``B1_score`` = 1.97% en su config), que valida población y cañería.
+   (``B1_score``, cuyo valor vive en ``SANITY_T33_CAGR`` — **re-anclado por la 68**;
+   no se repite acá el número para que el docstring no caduque), que valida
+   población y cañería.
 
 Sin red, sin tocar ``finanzias.db``. No toca ``engine.py``/``strategies.py``.
 """

@@ -539,16 +539,21 @@ def main(argv: list[str] | None = None) -> int:
             "t33_state": states["t33"][0],
             "reasons": {k: why for k, (_, why) in states.items()},
         }
+        # T71: los "esperado" salen de la CONSTANTE, no de un literal. Cuando la 68
+        # re-ancló estos tres números, el print siguió diciendo los viejos y una
+        # corrida imprimía `E_analyze 3.47% (esperado 3.71%) · OK` — el runner se
+        # contradecía a sí mismo y el OK se leía como un bug de cañería.
         print(
             f"Reproducción 45 (cap_days=20, pool unido, prioridad binaria): "
-            f"E_analyze {100 * r_analyze['cagr']:.2f}% (esperado 3.71%) · "
-            f"E_merged_prio {100 * r_merged['cagr']:.2f}% (esperado 7.92%) · "
+            f"E_analyze {100 * r_analyze['cagr']:.2f}% (esperado {100 * SANITY_T45_ANALYZE:.2f}%) · "
+            f"E_merged_prio {100 * r_merged['cagr']:.2f}% "
+            f"(esperado {100 * SANITY_T45_MERGED_PRIO:.2f}%) · "
             f"{repro['t45_state']}",
             file=log,
         )
         print(
             f"Reproducción T33 (close/sin gates): {100 * t33['cagr']:.2f}% "
-            f"(esperado 1.97%) · {repro['t33_state']}",
+            f"(esperado {100 * SANITY_T33_CAGR:.2f}%) · {repro['t33_state']}",
             file=log,
         )
         for nombre, (st, why) in states.items():
