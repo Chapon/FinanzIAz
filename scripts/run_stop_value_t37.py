@@ -61,7 +61,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     CacheDirBusy,
     announce,
     artifact_window,
@@ -303,11 +303,25 @@ def is_shippable(stop: float, trail: float) -> bool:
 
 
 def _repro_targets() -> dict[str, float]:
-    """§7.7 — las tres celdas que la T34 publicó con esta misma config."""
+    """§7.7 — las tres celdas de la T34, **re-medidas sobre la ventana actual**.
+
+    **Re-ancladas en la tarea 68**, y el cambio de significado hay que decirlo: la
+    T34 publicó ``0.0201 / 0.0917 / 0.0952`` sobre la ventana
+    ``2016-07-11..2026-08-07``, y **esos números siguen siendo los suyos** — no se
+    re-publica ningún veredicto. Lo que estas constantes anclan es *"¿esta corrida
+    reproduce la cañería sobre la muestra de HOY?"*, así que cuando el cohorte de
+    artefactos se refresca hay que re-medirlas (T48 §4.2). Si se dejaran las viejas,
+    el sanity saldría ``FALLA`` acusando a la cañería por un refresh.
+
+    Los tres valores están cruzados con otros runners sobre la misma muestra y
+    coinciden a ocho decimales (``docs/reanchor_t68_2026-09-01.md`` §5): el
+    ``s2.0_t2.0`` con el ``alpha_cap250`` de la 51 y el ``soff_t2.0`` con el
+    baseline de la 54.
+    """
     return {
-        arm_name(2.0, 2.0): 0.0201,  # `touch_2.0` — el BASELINE, lo vivo
-        arm_name(NO_STOP, 2.0): 0.0917,  # `D1` (T34 §4) — stop off, trail 2.0
-        arm_name(NO_STOP, NO_STOP): 0.0952,  # `touch_off` — las dos apagadas
+        arm_name(2.0, 2.0): 0.0137,  # `touch_2.0` — el BASELINE, lo vivo (re-anclado T68, era 0.0201)
+        arm_name(NO_STOP, 2.0): 0.0798,  # `D1` (T34 §4) — stop off, trail 2.0 (re-anclado T68, era 0.0917)
+        arm_name(NO_STOP, NO_STOP): 0.0860,  # `touch_off` — las dos apagadas (re-anclado T68, era 0.0952)
     }
 
 
@@ -1045,7 +1059,7 @@ def _run(argv: list[str] | None = None) -> int:
             exp,
             tol=REPRO_TOL,
             current=window,
-            measured_on=WINDOW_REFRESH_2026_08_09,
+            measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
             population=pop,
             measured_over=POPULATION_LIVE_ACCT2,
         )

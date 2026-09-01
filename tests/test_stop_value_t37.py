@@ -67,9 +67,17 @@ def test_los_umbrales_y_la_rejilla_de_ruina_estan_congelados():
     assert C9_ESCALATION[0] in dict(RUIN_GRID)[C9_ESCALATION[1]]
 
 
-def test_las_anclas_de_reproduccion_son_las_tres_celdas_publicadas_por_la_t34():
+def test_las_anclas_de_reproduccion_son_las_tres_celdas_de_la_t34_re_medidas():
+    """Re-ancladas en la **tarea 68** tras el refresh del cohorte (tarea 30).
+
+    La T34 publicó ``0.0201 / 0.0917 / 0.0952`` sobre la ventana
+    ``2016-07-11..2026-08-07`` y **esos siguen siendo sus números**. Estas constantes
+    no son el veredicto: son el ancla de *reproducción*, o sea *"¿la cañería da lo
+    mismo sobre la muestra de HOY?"*. Dejarlas viejas después de un refresh haría
+    salir ``FALLA`` acusando a la cañería por un cambio de muestra (T48 §4.2).
+    """
     t = _repro_targets()
-    assert t == {"s2.0_t2.0": 0.0201, "soff_t2.0": 0.0917, "soff_toff": 0.0952}
+    assert t == {"s2.0_t2.0": 0.0137, "soff_t2.0": 0.0798, "soff_toff": 0.0860}
     for name in t:
         assert name in {arm_name(s, tr) for s, tr in grid_cells()}
 

@@ -42,7 +42,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     announce,
     artifact_window,
     reproduction_check,
@@ -94,7 +94,9 @@ KILL_REGIME_TOL = -0.0050  # C5: ≥ −0.50pp de retorno de cartera por régime
 # ── §5 — sanity del instrumento ──────────────────────────────────────────────
 SANITY_ORACLE_EDGE = 0.0500  # ORACULO ≥ B1 + 5.00pp (umbral de T21 §5.2)
 SANITY_MIN_TRADE_DIFF = 0.10  # ≥10% de trades distintos (umbral de T21 §5.4)
-SANITY_T33_CAGR = 0.0197  # docs/fill_lookahead_t33_2026-08-16.md §6
+SANITY_T33_CAGR = (
+    0.0081  # docs/fill_lookahead_t33_2026-08-16.md §6  # re-anclado 2026-09-01 (tarea 68), era 0.0197
+)
 SANITY_T33_TOL = 0.0005  # ±0.05pp (el publicado va a 2 decimales)
 
 BOOT_BLOCK = 20
@@ -471,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
         SANITY_T33_CAGR,
         tol=SANITY_T33_TOL,
         current=artifact_window(bars_by),
-        measured_on=WINDOW_REFRESH_2026_08_09,
+        measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
         population=cfg.population(len(entries)),
         measured_over=POPULATION_LIVE_ACCT2,
     )

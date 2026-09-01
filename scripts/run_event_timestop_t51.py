@@ -49,7 +49,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     announce,
     announce_grid,
     artifact_window,
@@ -122,9 +122,15 @@ SENS_MAX_POSITIONS = 5  # C7
 SANITY_MIN_POPULATION = 0.05  # el umbral de la T13 (§6.3), reusado tal cual
 SANITY_MIN_TRADE_DIFF = 0.10  # el tope muerde ≥10% de trades distintos
 SANITY_ORACLE_PCTILE = 95
-REPRO_BASE_CAGR = 0.0323  # `B1_score` cap 250 — la 49 §0 y la T39
-REPRO_ALPHA_CAP20 = 0.0371  # `E_analyze` de la 45 — la 49 §5.2
-REPRO_ALPHA_CAP250 = 0.0201  # `A_alpha` — la 49 §0 (cross-check, NO es gate)
+REPRO_BASE_CAGR = (
+    0.0202  # `B1_score` cap 250 — la 49 §0 y la T39  # re-anclado 2026-09-01 (tarea 68), era 0.0323
+)
+REPRO_ALPHA_CAP20 = (
+    0.0347  # `E_analyze` de la 45 — la 49 §5.2  # re-anclado 2026-09-01 (tarea 68), era 0.0371
+)
+REPRO_ALPHA_CAP250 = (
+    0.0137  # `A_alpha` — la 49 §0 (cross-check, NO es gate)  # re-anclado 2026-09-01 (tarea 68), era 0.0201
+)
 REPRO_TOL = 0.0005
 
 BOOT_BLOCK = 20
@@ -765,7 +771,7 @@ def main(argv: list[str] | None = None) -> int:
             exp,
             tol=REPRO_TOL,
             current=window,
-            measured_on=WINDOW_REFRESH_2026_08_09,
+            measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
             population=pop_run,
             measured_over=POPULATION_LIVE_ACCT2,
         )

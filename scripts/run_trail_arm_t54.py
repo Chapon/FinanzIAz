@@ -50,7 +50,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     EffectivePopulation,
     StaleArtifactError,
     announce,
@@ -118,11 +118,11 @@ ORACLE_MIN_SPREAD = 0.0100  # §5.4 (enmienda): oráculo − anti ≥ +1.00 pp
 
 # §5.2 — reproducción. El brazo vivo ya reprodujo los dos dígitos de la T37 §7.7
 # en la medición previa (9.17% / 28.2%), antes de congelar el pre-registro.
-REPRO_BASE_CAGR = 0.0917
+REPRO_BASE_CAGR = 0.0798  # re-anclado 2026-09-01 (tarea 68), era 0.0917
 REPRO_TOL = 0.0005
 # La fracción que nunca arma con el umbral vivo (T37 §7: 36,5%). No es un CAGR, así
 # que va con su propia tolerancia y NO pasa por `reproduction_check`.
-REPRO_NEVER_ARMED = 0.365
+REPRO_NEVER_ARMED = 0.372  # re-anclado 2026-09-01 (tarea 68), era 0.365
 REPRO_NEVER_ARMED_TOL = 0.005
 
 FOLDS: tuple[tuple[str, str, str], ...] = (
@@ -639,7 +639,7 @@ def main(argv: list[str] | None = None) -> int:
         REPRO_BASE_CAGR,
         tol=REPRO_TOL,
         current=window,
-        measured_on=WINDOW_REFRESH_2026_08_09,
+        measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
         population=pop_run,
         measured_over=POPULATION_LIVE_ACCT2,
     )

@@ -58,7 +58,8 @@ from analysis.harness_config import (
     REPRO_INDETERMINATE,
     REPRO_NA,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LEGACY,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     ArtifactPopulation,
     ArtifactWindow,
     HarnessConfig,
@@ -459,9 +460,35 @@ def test_a_missing_measurement_is_a_failure_not_an_indeterminate():
     assert st == REPRO_FAIL
 
 
-def test_the_anchor_constant_matches_the_measured_window():
-    """Las constantes de reproducción de los runners están ancladas a esta ventana."""
-    assert str(WINDOW_REFRESH_2026_08_09) == "2016-07-11..2026-08-07 (2514 barras)"
+def test_the_anchor_constants_match_the_measured_windows():
+    """Las constantes de reproducción de los runners están ancladas a estas ventanas.
+
+    **Son dos, una por universo (tarea 68).** El ancla anterior era una sola para
+    los dos, y después del refresh de la 30 quedó demostrado que no se sostiene: la
+    ventana viva y la legacy **difieren en el start**. Es el defecto que la 52
+    corrigió para la población, un eje más allá."""
+    assert str(WINDOW_REFRESH_2026_09_01_LIVE) == "2016-08-08..2026-09-01 (2514 barras)"
+    assert str(WINDOW_REFRESH_2026_09_01_LEGACY) == "2016-09-01..2026-09-01 (2513 barras)"
+    assert WINDOW_REFRESH_2026_09_01_LIVE != WINDOW_REFRESH_2026_09_01_LEGACY
+
+
+def test_every_runner_anchors_to_a_window_that_declares_its_universe():
+    """Regresión de la 68: ningún runner puede volver a importar un ancla de ventana
+    que no diga sobre qué universo se midió. El nombre viejo no existe más **a
+    propósito** — dejarlo como alias habría dejado pasar la elección equivocada en
+    silencio, que es justo el modo de falla."""
+    for script in sorted((_REPO / "scripts").glob("run_*.py")):
+        txt = script.read_text(encoding="utf-8")
+        assert "WINDOW_REFRESH_2026_08_09" not in txt, script.name
+
+
+def test_the_live_window_start_rides_on_the_declared_refresh_exception():
+    """El `start` de la ventana viva lo fija **AVB**, que a propósito no se refresca
+    (tarea 63, declarada en `ARTIFACT_REFRESH_EXCEPTIONS`). O sea que este ancla
+    depende de una excepción: si algún día AVB se refresca, se mueve **sola** y hay
+    que re-anclar de nuevo. Queda fijado acá para que no se re-descubra."""
+    assert "AVB" in ARTIFACT_REFRESH_EXCEPTIONS
+    assert WINDOW_REFRESH_2026_09_01_LIVE.start < WINDOW_REFRESH_2026_09_01_LEGACY.start
 
 
 # ── Población (Tarea 52 — REPRO-POP) ─────────────────────────────────────────

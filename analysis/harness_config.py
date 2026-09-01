@@ -1200,14 +1200,36 @@ def announce_effective(
     return pop
 
 
-# La ventana con la que se midieron TODAS las constantes de reproducción que hoy
-# viven en los runners (T39 §5.2, 47 §5.4, 45 §5.3, 49 §5.2). Medida el 2026-08-20
-# sobre los dos universos —vivo y legacy— con ``artifact_window``; los parquet se
-# refrescaron el **2026-08-09**. Cuando se los refresque de nuevo, esta constante
-# deja de coincidir y los sanity de reproducción pasan a ``REPRO_INDETERMINATE``:
-# la acción correcta ahí es **re-anclar las constantes** (re-correr y re-publicar
-# el número con la ventana nueva), no buscar un bug de cañería.
-WINDOW_REFRESH_2026_08_09 = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
+# ── Ventanas de los artefactos, POR UNIVERSO — re-ancladas en la Tarea 68 ────
+#
+# La ventana con la que se miden las constantes de reproducción de los runners
+# (T37, T39 §5.2, 45 §5.3, 47 §5.4, 49 §5.2, 51, 54). La ventana de los artefactos
+# es **RODANTE** —está anclada al refresh, no a una fecha fija—, así que cuando se
+# los refresca esta constante deja de coincidir y los sanity de reproducción pasan
+# a ``REPRO_INDETERMINATE``: la acción correcta ahí es **re-anclar** (re-correr y
+# re-publicar el número con la ventana nueva), **no** buscar un bug de cañería.
+#
+# **Son DOS, una por universo, y ésa es la lección de la 68.** El ancla anterior
+# —``WINDOW_REFRESH_2026_08_09`` = ``2016-07-11..2026-08-07``— era una sola para
+# los dos universos, y eso ya no se sostiene: medidas después del refresh de la 30,
+# la ventana viva y la legacy **difieren en el start**. Es exactamente el defecto
+# que la **52** corrigió para la población —un ancla tiene que declarar *sobre qué
+# universo* se midió— un eje más allá.
+#
+# **Y el ancla anterior estaba, además, construida sobre un artefacto CONGELADO**
+# (tarea 30): su ``end`` venía de los 503 artefactos sanos y su ``start`` del
+# ``10y`` de TSM, parado desde el 2026-07-09. ``artifact_window`` agrega
+# ``min(starts)..max(ends)``, y eso lo hacía invisible. De ahí sale el guard de
+# frescura (``announce_artifacts``), que ahora corre **antes** de cada harness.
+#
+# **OJO con el ``start`` de la ventana VIVA: lo fija AVB**, que es la excepción de
+# refresh declarada en ``ARTIFACT_REFRESH_EXCEPTIONS`` (su ``10y`` es la escala sana
+# contra la que se detecta el split fantasma del ``2y``). O sea que la ventana viva
+# depende a propósito de un artefacto que no se refresca. Queda dicho acá para que
+# no se re-descubra dentro de seis meses: si algún día AVB se refresca, este ancla
+# se mueve **sola** y hay que re-anclar de nuevo.
+WINDOW_REFRESH_2026_09_01_LIVE = ArtifactWindow("2016-08-08", "2026-09-01", 2514)
+WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-01", 2513)
 
 # Las POBLACIONES sobre las que se midieron esas mismas constantes (Tarea 52). La
 # ventana sola no alcanza para acusar a la cañería: el smoke de la 37 corrió sobre

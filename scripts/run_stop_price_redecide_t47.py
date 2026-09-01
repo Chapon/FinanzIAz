@@ -45,7 +45,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_08_09,
+    WINDOW_REFRESH_2026_09_01_LIVE,
     announce,
     artifact_window,
     reproduction_check,
@@ -89,7 +89,10 @@ STRESS_NAMES = tuple(r.name for r in STRESS_REGIMES)
 REGIMES = (BULL_NORMAL, *STRESS_NAMES)
 
 # §5.4 — el sanity de reproducción: los números publicados por la 26b, sin gates.
-REPRO_EXPECTED = {"close_2.0": 0.0780, "touch_2.0": 0.0441}
+REPRO_EXPECTED = {
+    "close_2.0": 0.0698,
+    "touch_2.0": 0.0358,
+}  # re-anclado 2026-09-01 (tarea 68), eran 0.0780 / 0.0441
 REPRO_TOL = 0.0005
 
 BOOT_BLOCK = 20
@@ -355,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
             REPRO_EXPECTED[n],
             tol=REPRO_TOL,
             current=win,
-            measured_on=WINDOW_REFRESH_2026_08_09,
+            measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
             population=pop,
             measured_over=POPULATION_LIVE_ACCT2,
         )
