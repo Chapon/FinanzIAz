@@ -229,7 +229,7 @@ def walk_forward(entries, bars_by, sigs_by, common: dict, ks: list[float], *, lo
         test = entries_between(entries, bars_by, test_lo, test_hi)
         print(f"    fold {fi}/{len(FOLDS)} — train {len(train)} · test {len(test)} …", file=log, flush=True)
 
-        train_cagr: dict[str, Any] = {
+        train_cagr: dict[float, Any] = {
             k: cagr(
                 _sim(
                     f"wf|{fi}|train|{k:.2f}",
@@ -569,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("\n  §6 — walk-forward que elige k* …", file=log, flush=True)
         wf = walk_forward(entries, bars_by, sigs_by, common, viables, log=log)
-        star = wf["star"]
+        star = float(wf["star"])  # `wf` es heterogeneo: el valor sale como object
     arm = arm_name(star)
     print(
         f"\n  k* = {star:.2f} ({wf['agreement']}/{len(FOLDS)} folds) · "

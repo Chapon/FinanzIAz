@@ -482,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
         else walk_forward(entries, bars_by, sigs_by, common)
     )
 
-    cand = arm_name(wf["m_star"])
+    cand = arm_name(float(wf["m_star"]))  # `wf` es heterogeneo; m_star ya es float
     regimes = {n: regime_trade_breakdown(results[n]) for n in (BASELINE_ARM, cand)}
     rets = aligned_returns(results, [BASELINE_ARM, cand])
     boot = paired_block_bootstrap(

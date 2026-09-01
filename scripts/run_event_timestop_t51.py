@@ -32,10 +32,11 @@ import argparse
 import json
 import statistics
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from itertools import pairwise
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -230,7 +231,10 @@ def population_share(base_res: PortfolioResult, n: int, keys: set[tuple[str, str
 # ── §4 — dosis-respuesta ─────────────────────────────────────────────────────
 
 
-def dose_response(deltas: dict[int, float], n_star: int) -> dict:
+_GridKey = TypeVar("_GridKey", int, float)
+
+
+def dose_response(deltas: Mapping[_GridKey, float], n_star: _GridKey) -> dict:
     """C6: la curva ΔCAGR vs N tiene que ser **unimodal** y sin **pico aislado**.
 
     Unimodal con tolerancia: un tramo con |Δ| ≤ ``UNIMODAL_TOL`` no cuenta como
@@ -280,7 +284,7 @@ def evaluate_b(base: dict, cand: dict, boot_base, c6: dict, c8: dict, sens: dict
     c3 = bool(cand["max_dd"] <= base["max_dd"] + KILL_DD_TOL)
     c4 = bool(boot_base is not None and boot_base.ci_low > 0.0)
     c6_ok = bool(c6["passes"])
-    c7 = bool(sens) and bool(sens.get("b_c1")) and bool(sens.get("b_c4"))
+    c7 = sens is not None and bool(sens.get("b_c1")) and bool(sens.get("b_c4"))
     c8_ok = bool(c8["passes"])
     ship = bool(c1 and c3 and c4 and c6_ok and c7 and c8_ok)
     return {
@@ -319,7 +323,7 @@ def evaluate_a(
     c4 = bool(boot_base is not None and boot_base.ci_low > 0.0)
     c5 = bool(boot_ctrl is not None and boot_ctrl.ci_low > 0.0)
     c6_ok = bool(c6["passes"])
-    c7 = bool(sens) and bool(sens.get("a_c1")) and bool(sens.get("a_c4"))
+    c7 = sens is not None and bool(sens.get("a_c1")) and bool(sens.get("a_c4"))
     c8_ok = bool(c8["passes"])
     c9 = bool(dover_b >= KILL_A_OVER_B and boot_b is not None and boot_b.ci_low > 0.0)
     ship = bool(c1 and c2 and c3 and c4 and c5 and c6_ok and c7 and c8_ok and c9)

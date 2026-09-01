@@ -221,7 +221,7 @@ def evaluate(
     c4 = bool(boot_base is not None and boot_base.ci_low > 0.0)
     c5 = bool(boot_ctrl is not None and boot_ctrl.ci_low > 0.0)
     c6_ok = bool(c6["passes"])
-    c7 = bool(sens) and bool(sens.get("c1")) and bool(sens.get("c2"))
+    c7 = sens is not None and bool(sens.get("c1")) and bool(sens.get("c2"))
 
     accounting = base["accounting_ok"] and cand["accounting_ok"]
     ship = bool(accounting and c1 and c2 and c3 and c4 and c5 and c6_ok and c7)

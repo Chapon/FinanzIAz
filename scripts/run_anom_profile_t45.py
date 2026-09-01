@@ -306,8 +306,8 @@ def evaluate(
     )
     c5_ok = bool(c5["passes"])
     c6 = bool(loto is not None and loto["survives"])
-    c7 = bool(sens) and bool(sens.get("c1")) and bool(sens.get("c2"))
-    c8_ok = bool(c8) and bool(c8.get("c8_cagr")) and bool(c8.get("c8_boot"))
+    c7 = sens is not None and bool(sens.get("c1")) and bool(sens.get("c2"))
+    c8_ok = c8 is not None and bool(c8.get("c8_cagr")) and bool(c8.get("c8_boot"))
 
     ship = bool(c1 and c2 and c3 and c4 and c5_ok and c6 and c7 and c8_ok)
 

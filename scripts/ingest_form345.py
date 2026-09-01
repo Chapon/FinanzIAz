@@ -289,7 +289,7 @@ def ingest_quarter(
             r = sess.get(url, timeout=60)
             r.raise_for_status()
             blob = r.content
-            if cached is not None:
+            if cached is not None and cache_dir is not None:
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 cached.write_bytes(blob)
         with zipfile.ZipFile(io.BytesIO(blob)) as zf:

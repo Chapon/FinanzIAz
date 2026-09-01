@@ -342,8 +342,9 @@ def main(argv: list[str] | None = None) -> int:
     repro_common = dict(common, live_gates=False)
     repro = {}
     for n in (BASELINE_ARM, CANDIDATE_ARM):
-        r = simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **repro_common)
-        repro[n] = summarise(r)["cagr"]
+        # `res` y no `r`: en esta funcion `r` ya es un str.
+        res = simulate_portfolio(entries, bars_by, sigs_by, **arms[n], **repro_common)
+        repro[n] = summarise(res)["cagr"]
     # Tarea 48: consciente de la ventana rodante de los artefactos. Tarea 52:
     # y de la población — las anclas de la 26b se midieron sobre el universo vivo.
     win = artifact_window(bars_by)

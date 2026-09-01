@@ -100,7 +100,9 @@ def build_sell_events(con: sqlite3.Connection, account_id: int) -> list[SellEven
         raise RuntimeError(f"FIFO mismatch: {len(trades)} trades vs {len(sell_fills)} SELL fills")
 
     # reason/score por order_id
-    meta: dict[str, Any] = {
+    # La clave es el order_id, que es INT. (La anotacion automatica del batch
+    # anterior habia puesto `str` por defecto.)
+    meta: dict[int, tuple] = {
         int(r[0]): (r[1], r[2])
         for r in con.execute(
             "SELECT id, reason, signal_score FROM paper_orders "
