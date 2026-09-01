@@ -25,7 +25,14 @@ El orden de la corrida:
 4. Escribí `docs/auditoria_<área>_<fecha>.md` con lo que sobrevivió, lo que se rechazó y con
    qué motivo, y el alcance que **no** se miró.
 5. Anotá cada hallazgo accionable como tarea en `docs/BACKLOG.md` (skill
-   `hallazgo-a-backlog`). Sin esto la auditoría no está cerrada.
+   `hallazgo-a-backlog`).
+6. **Cerrá con la tabla de mapeo `hallazgo → tarea`**, una fila por hallazgo publicado y
+   **ninguna vacía**. Verificala de a una contra el backlog, no de memoria. Ojo con los dos
+   casos que se escapan: un hallazgo agrupado como *"parte de"* otro tiene que aparecer en el
+   **enunciado** de esa tarea, y un hallazgo que **no pudiste verificar** igual va a la cola
+   si lo accionable es *"nadie lo re-chequeó"* (eso se verifica con `git log`, no midiendo).
+   **Sin esta tabla la auditoría no está cerrada** — en la primera corrida se publicaron 7
+   hallazgos con 3 tareas y dos quedaron sueltos.
 
 **Un barrido limpio es un resultado válido.** Si el área no tiene nada, decilo y cerrá — no
 llenes el informe.

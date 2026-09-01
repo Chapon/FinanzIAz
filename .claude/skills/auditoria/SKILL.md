@@ -211,3 +211,36 @@ El doc lleva: kill-criteria declarado (con la fecha en que se congeló), alcance
 `docs/BACKLOG.md`. Un `15_FINDINGS.md` que vive aparte del backlog es una **segunda cola**,
 y una segunda cola se pudre — la tarea 66 shipeó un guard justamente porque la primera se
 vació sin que nadie lo notara durante cuatro commits.
+
+## El cierre: mapeo UNO A UNO, no "ya anoté las tareas"
+
+Una corrida **no está cerrada** cuando se escribieron tareas: está cerrada cuando **cada
+hallazgo tiene la suya, verificada de a una**. El último paso es escribir en el informe la
+tabla `hallazgo → tarea`, con **una fila por hallazgo publicado y ninguna vacía**.
+
+**Pasó en la primera corrida de esta skill** (`docs/auditoria_claims_2026-09-01.md`): se
+publicaron **7 hallazgos y 3 tareas**, y **dos hallazgos quedaron sin cola**. Los encontró
+Chapa preguntando *"¿tenemos tareas para corregir los problemas?"* — o sea que una auditoría
+de **claims caducados** produjo su propio hallazgo sin cola, y no lo detectó ella. De ahí
+salen las dos reglas de abajo, que son las que ese cierre no tenía.
+
+### Un hallazgo declarado "parte de" otro igual tiene que estar en el ENUNCIADO de esa tarea
+
+Si el informe dice *"C-7 es parte de R-1"* y la tarea de R-1 no lo menciona, quien la ejecute
+**arregla la mitad**. La prueba concreta: arreglar los tres defaults de cuenta sin tocar
+`CLAUDE.md:20` deja la instrucción escrita mandándote a correr el job equivocado **a mano**.
+Agrupar hallazgos en una tarea está bien; **hacerlos desaparecer del enunciado, no**.
+
+### Un hallazgo que la auditoría NO pudo verificar igual va a la cola si es accionable
+
+Son dos afirmaciones distintas y sólo una necesita medición:
+
+- *"este número es falso"* — **exige medirlo**. Sin la medición no se publica: una auditoría
+  no puede afirmar lo que no midió.
+- *"nadie re-chequeó en tres meses el número que sostiene una regla no-negociable"* — es un
+  hecho **sobre el proceso**, verificable con `git log`, y **sí se publica**.
+
+Lo segundo va como **tarea de medición**, con el límite escrito adelante para que nadie lo
+lea mal: *no se afirma que caducó, se dice que **no se sabe***. El caso real es la tarea 73
+(el `buy_score` que justifica la regla 3 de `CLAUDE.md`): la corrida lo dejó explícitamente
+sin verificar y **por eso mismo** casi se queda afuera de la cola.
