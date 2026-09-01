@@ -530,16 +530,19 @@ class NumericSettingsRow(QWidget):
         top_row.addStretch()
 
         if self._is_int:
-            self.spin = QSpinBox()
+            self.spin: QSpinBox | QDoubleSpinBox = QSpinBox()
             self.spin.setRange(int(minimum), int(maximum))
             self.spin.setSingleStep(int(step))
             self.spin.setValue(int(value))
         else:
-            self.spin = QDoubleSpinBox()
-            self.spin.setDecimals(decimals)
-            self.spin.setRange(float(minimum), float(maximum))
-            self.spin.setSingleStep(float(step))
-            self.spin.setValue(float(value))
+            # Local con el tipo concreto: `setDecimals` solo existe en el Double, y
+            # el atributo es la union de los dos.
+            dspin = QDoubleSpinBox()
+            dspin.setDecimals(decimals)
+            dspin.setRange(float(minimum), float(maximum))
+            dspin.setSingleStep(float(step))
+            dspin.setValue(float(value))
+            self.spin = dspin
         if suffix:
             self.spin.setSuffix(f" {suffix}")
         self.spin.setFixedWidth(120)
@@ -564,7 +567,9 @@ class NumericSettingsRow(QWidget):
         # round-trip back into settings.set.
         self.spin.blockSignals(True)
         try:
-            if self._is_int:
+            # El `_is_int` ya eligio cual de los dos spin hay; el checker no puede
+            # atarlo al tipo, asi que se estrecha con isinstance (mismo camino).
+            if isinstance(self.spin, QSpinBox):
                 self.spin.setValue(int(value))
             else:
                 self.spin.setValue(float(value))

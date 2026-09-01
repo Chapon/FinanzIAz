@@ -8,6 +8,21 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayou
 
 from ui.styles import PALETTE
 
+
+def _repolish(widget) -> None:
+    """Re-aplica el QSS tras cambiar el objectName.
+
+    `widget.style()` esta tipada `QStyle | None` en los stubs, pero un widget
+    construido siempre tiene estilo. Con el helper la explicacion vive en un lugar
+    y no como guarda repetida en cada cambio de estado.
+    """
+    st = widget.style()
+    if st is None:  # pragma: no cover — Qt no devuelve None acá
+        return
+    st.unpolish(widget)
+    st.polish(widget)
+
+
 EXPANDED_WIDTH = 200
 COLLAPSED_WIDTH = 64
 
@@ -90,8 +105,7 @@ class NavButton(QPushButton):
             self.setObjectName("nav_item_active")
         else:
             self.setObjectName("nav_item")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        _repolish(self)
 
 
 class SubNavButton(QPushButton):
@@ -110,8 +124,7 @@ class SubNavButton(QPushButton):
     def _update_style(self, active: bool = False):
         obj = "nav_sub_active" if active else "nav_sub"
         self.setObjectName(obj)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        _repolish(self)
 
 
 class HelpCard(QFrame):

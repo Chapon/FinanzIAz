@@ -155,8 +155,11 @@ class Toast(QFrame):
         self._anim = QPropertyAnimation(self, b"windowOpacity")
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
+    # Choca a proposito con `QWidget.show()`: aca `show` es el CONSTRUCTOR del
+    # toast (classmethod), no el metodo de instancia de Qt. Renombrarlo tocaria
+    # todos los call sites de la app por una cuestion de nombre.
     @classmethod
-    def show(
+    def show(  # type: ignore[override]
         cls,
         parent: QWidget,
         message: str,

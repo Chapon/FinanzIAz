@@ -83,7 +83,7 @@ class ReportWorker(BaseWorker):
             positions = session.query(Position).filter(Position.portfolio_id == self.portfolio_id).all()
             session.expunge_all()
             portfolio_name = portfolio.name
-            portfolio_currency = portfolio.currency
+            portfolio_currency = portfolio.currency or "USD"  # la columna es nullable
 
         if self.report_type == "pdf":
             from reports.pdf_report import generate_portfolio_pdf

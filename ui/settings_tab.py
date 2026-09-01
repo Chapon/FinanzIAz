@@ -673,7 +673,9 @@ class SettingsTab(QWidget):
         defaults = settings.reset()
         # Update all toggle widgets to reflect defaults
         for key, row in self._rows.items():
-            row.toggle.setChecked(defaults.get(key, False))
+            # `set_checked`, no `setChecked`: ToggleSwitch es un QWidget propio,
+            # no un QCheckBox. Con el nombre de Qt esto reventaba con AttributeError.
+            row.toggle.set_checked(bool(defaults.get(key, False)))
         # Update all numeric widgets too
         for key, nrow in self._numeric_rows.items():
             nrow.set_value(defaults.get(key, 0))
@@ -686,7 +688,7 @@ class SettingsTab(QWidget):
     def reload_from_settings(self):
         """Sync all toggles + numeric + choice inputs with current saved values."""
         for key, row in self._rows.items():
-            row.toggle.setChecked(settings.get(key))
+            row.toggle.set_checked(bool(settings.get(key)))
         for key, nrow in self._numeric_rows.items():
             nrow.set_value(settings.get(key, 0))
         for key, crow in self._choice_rows.items():

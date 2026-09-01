@@ -475,9 +475,12 @@ class DropZone(QFrame):
         self._label.setStyleSheet("font-size: 14px; color: #8b949e;")
         layout.addWidget(self._label)
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
+    def dragEnterEvent(self, event: QDragEnterEvent | None):
+        # Qt declara el evento y su mimeData como Optional; se corta arriba en vez
+        # de asumirlo en cada acceso.
+        mime = event.mimeData() if event is not None else None
+        if mime is not None and mime.hasUrls():
+            urls = mime.urls()
             if any(u.toLocalFile().lower().endswith(".csv") for u in urls):
                 event.acceptProposedAction()
                 self.setStyleSheet(
@@ -487,9 +490,12 @@ class DropZone(QFrame):
     def dragLeaveEvent(self, event):
         self.setStyleSheet("")
 
-    def dropEvent(self, event: QDropEvent):
+    def dropEvent(self, event: QDropEvent | None):
         self.setStyleSheet("")
-        for url in event.mimeData().urls():
+        mime = event.mimeData() if event is not None else None
+        if mime is None:
+            return
+        for url in mime.urls():
             path = url.toLocalFile()
             if path.lower().endswith(".csv"):
                 self.file_dropped.emit(path)

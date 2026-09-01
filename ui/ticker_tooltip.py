@@ -79,7 +79,10 @@ class _TickerInfoCache(QObject):
         self._db_loaded = False
 
         # Limit how many parallel yfinance calls we run.
-        self._pool = QThreadPool.globalInstance()
+        pool = QThreadPool.globalInstance()
+        if pool is None:  # pragma: no cover — Qt siempre tiene pool global
+            raise RuntimeError("QThreadPool.globalInstance() devolvio None")
+        self._pool = pool
         # No more than 2 concurrent ticker info fetches — yfinance can be slow
         # and we don't want to compete with price/historical fetches.
         with contextlib.suppress(Exception):
