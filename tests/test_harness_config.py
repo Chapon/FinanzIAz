@@ -23,6 +23,10 @@ Cubre:
                                INERTES (el baseline con otro nombre) vs brazos «sin
                                población» (<5%, el umbral de la T13), que no son lo
                                mismo y no piden lo mismo
+  stale_artifacts            — la frescura del COHORTE de artefactos (T30): la ventana
+                               es min(starts)..max(ends), así que uno congelado entra
+                               en ella sin que nada lo declare — y uno refrescado de
+                               más la corre. Se miran los dos lados
   effective_population       — la población EFECTIVA (T62): cuántas salidas cambian
                                de verdad, contra las que el umbral toca. La cruzada
                                es una cota superior —la 54 la midió sobrestimando
@@ -39,6 +43,8 @@ from pathlib import Path
 import pytest
 
 from analysis.harness_config import (
+    ARTIFACT_MAX_LAG_DAYS,
+    ARTIFACT_REFRESH_EXCEPTIONS,
     GRID_MIN_POPULATION,
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
@@ -56,17 +62,21 @@ from analysis.harness_config import (
     ArtifactPopulation,
     ArtifactWindow,
     HarnessConfig,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
     announce_effective,
     announce_grid,
     artifact_population,
     artifact_window,
+    cohort_end,
     config_banner,
     deviations,
     effective_population,
     exit_rule_line,
     grid_population,
     reproduction_check,
+    stale_artifacts,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -828,3 +838,157 @@ def test_the_t54_descriptive_keeps_the_four_keys_it_published():
     d = changed_exits(base, cand, {("B", "d1")})
     assert set(d) == {"n_common", "n_changed", "share", "n_changed_in_diff_pop"}
     assert d == {"n_common": 2, "n_changed": 1, "share": 0.5, "n_changed_in_diff_pop": 1}
+
+
+# ── Frescura del cohorte de artefactos — Tarea 30 (DOC-SYNC) ─────────────────
+#
+# `artifact_window` declara min(starts)..max(ends), y esa agregación **esconde**
+# el defecto: un artefacto congelado no mueve el max(ends) —lo tapan los otros
+# 505— pero sí puede quedarse con el min(starts), y así entra en la ventana
+# publicada sin que nada lo declare.
+#
+# Eso ya había pasado: el ancla de la T48 (`2016-07-11..2026-08-07`) tenía el
+# **end** de los 503 artefactos sanos y el **start del artefacto congelado de
+# TSM**. Estos tests fijan las tres decisiones de diseño que salen de ahí.
+
+
+def _bars(fechas: list[str]) -> list[tuple]:
+    return [(f, 1.0, 1.0, 1.0, 1.0, 1000.0) for f in fechas]
+
+
+def _cohorte(n: int = 10, fin: str = "2026-08-07") -> dict[str, list]:
+    return {f"T{i}": _bars(["2016-01-04", fin]) for i in range(n)}
+
+
+def test_a_uniform_cohort_has_nothing_to_declare():
+    assert stale_artifacts(_cohorte()) == ()
+    assert cohort_end(_cohorte()) == "2026-08-07"
+
+
+def test_a_frozen_artifact_is_caught_even_though_the_window_hides_it():
+    """El caso literal de la 30: uno congelado entre 500 sanos. La ventana no se
+    entera —el max(ends) lo tapan los otros— y por eso hace falta esto."""
+    c = _cohorte()
+    c["VIEJO"] = _bars(["2016-01-04", "2026-06-02"])
+    fuera = stale_artifacts(c)
+    assert [s.ticker for s in fuera] == ["VIEJO"]
+    assert fuera[0].lag_days == 48 and not fuera[0].ahead
+
+    # y la ventana efectivamente NO lo delata
+    assert artifact_window(c).end == "2026-08-07"
+
+
+def test_an_artifact_refreshed_AHEAD_is_just_as_broken():
+    """La otra mitad, y es la que se destapó al refrescar TSM: un refresh **parcial**
+    rompe la uniformidad igual que uno faltante — y encima corre el max(ends), así
+    que es **más** visible en el resultado y **menos** en el diagnóstico."""
+    c = _cohorte()
+    c["NUEVO"] = _bars(["2016-01-04", "2026-09-01"])
+    fuera = stale_artifacts(c)
+    assert [s.ticker for s in fuera] == ["NUEVO"]
+    assert fuera[0].ahead and fuera[0].lag_days == -17
+    assert artifact_window(c).end == "2026-09-01"  # la ventana SÍ se movió
+
+
+def test_the_reference_is_the_MODE_not_the_max():
+    """Con el máximo, un solo artefacto refrescado de más haría aparecer a los otros
+    505 como atrasados y el aviso señalaría a todo el mundo menos al culpable."""
+    c = _cohorte(n=20)
+    c["NUEVO"] = _bars(["2016-01-04", "2026-09-01"])
+    assert cohort_end(c) == "2026-08-07"
+    assert [s.ticker for s in stale_artifacts(c)] == ["NUEVO"]
+
+
+def test_a_ticker_that_missed_a_day_is_not_a_stale_artifact():
+    """La tolerancia existe para el ticker que no operó (halt, feriado propio). Los
+    tres casos reales estaban a 14, 21 y 48 ruedas: muy lejos de este borde."""
+    c = _cohorte()
+    c["HALT"] = _bars(["2016-01-04", "2026-08-05"])  # 2 ruedas
+    assert stale_artifacts(c) == ()
+
+
+def test_the_tolerance_sits_between_a_missed_day_and_the_real_cases():
+    assert 2 < ARTIFACT_MAX_LAG_DAYS < 14
+
+
+def test_the_lag_is_counted_in_TRADING_days_not_calendar_days():
+    """21 ruedas entre el 2026-07-09 y el 2026-08-07 son **29 días** de calendario:
+    contar corridos haría que la tolerancia signifique otra cosa según el mes."""
+    c = _cohorte()
+    c["TSM"] = _bars(["2016-01-04", "2026-07-09"])
+    assert stale_artifacts(c)[0].lag_days == 21
+
+
+def test_announce_prints_and_raises_by_default(capsys):
+    """Política de la T22: fallar ruidoso, no degradar en silencio. Y **antes** de
+    pagar la corrida: si la muestra está torcida, no vale la pena esperar 4 minutos
+    para enterarse."""
+    c = _cohorte()
+    c["VIEJO"] = _bars(["2016-01-04", "2026-06-02"])
+    with pytest.raises(StaleArtifactError, match="VIEJO"):
+        announce_artifacts(c, file=None)
+    out = capsys.readouterr().out
+    assert "Frescura del cohorte" in out and "48 ruedas atrás del cohorte" in out
+
+
+def test_announce_can_be_told_to_only_declare(capsys):
+    """`strict=False` es para un harness que corre sobre un cohorte mezclado **a
+    propósito** y lo dice en su pre-registro — no para tapar el aviso."""
+    c = _cohorte()
+    c["VIEJO"] = _bars(["2016-01-04", "2026-06-02"])
+    fuera = announce_artifacts(c, strict=False, file=None)
+    assert len(fuera) == 1
+    assert "AVISO" in capsys.readouterr().out
+
+
+def test_a_clean_cohort_says_so_out_loud(capsys):
+    """Se imprime siempre, esté bien o mal — mismo precedente que la 48, la 52 y la
+    58: la muestra se declara, no sólo cuando hay un problema."""
+    announce_artifacts(_cohorte(), file=None)
+    assert "todos alineados" in capsys.readouterr().out
+
+
+def test_no_bars_is_not_an_accusation():
+    assert stale_artifacts({}) == () and cohort_end({}) == ""
+    assert stale_artifacts({"X": []}) == ()
+
+
+def test_a_declared_exception_does_not_abort_but_IS_announced(capsys):
+    """AVB no se refresca **a propósito** (tarea 63: su `10y` es la escala sana
+    contra la que se detecta el split fantasma del `2y`). Una excepción declarada
+    no puede abortar la corrida — pero tampoco puede quedarse callada, o vuelve a
+    ser el defecto que la 30 vino a arreglar."""
+    c = _cohorte()
+    c["AVB"] = _bars(["2016-01-04", "2026-06-02"])
+    assert stale_artifacts(c) == ()  # no acusa
+    announce_artifacts(c, file=None)  # y NO levanta
+    out = capsys.readouterr().out
+    assert "[excepción declarada] AVB" in out
+    assert "split FANTASMA" in out  # el motivo, no sólo el nombre
+
+
+def test_the_exception_is_a_dict_so_adding_one_forces_writing_the_reason():
+    """Una lista dejaría agregar un ticker sin explicar por qué, que es como se
+    empieza a acumular deuda invisible en un guard."""
+    assert isinstance(ARTIFACT_REFRESH_EXCEPTIONS, dict)
+    assert all(len(v) > 40 for v in ARTIFACT_REFRESH_EXCEPTIONS.values())
+    assert "AVB" in ARTIFACT_REFRESH_EXCEPTIONS
+
+
+def test_an_exception_that_is_ALIGNED_is_not_announced_as_one(capsys):
+    """Si el ticker exceptuado igual coincide con el cohorte, no hay nada que
+    declarar: el aviso es para la desalineación, no para la etiqueta."""
+    c = _cohorte()
+    c["AVB"] = _bars(["2016-01-04", "2026-08-07"])
+    announce_artifacts(c, file=None)
+    assert "excepción declarada" not in capsys.readouterr().out
+
+
+def test_the_exit_runner_checks_the_cohort_before_paying_for_the_run():
+    """Regresión del cableado (mismo criterio que la 58, la 62, la 64 y la 66), y
+    del **orden**: el chequeo tiene que ir antes de `announce`, o el harness ya
+    declaró una config que no va a poder honrar."""
+    txt = (_REPO / "scripts" / "run_trail_arm_t54.py").read_text(encoding="utf-8")
+    assert "announce_artifacts(" in txt
+    assert "--allow-stale-artifacts" in txt
+    assert txt.index("announce_artifacts(") < txt.index("cfg = announce(")

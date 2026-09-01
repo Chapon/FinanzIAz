@@ -58,9 +58,10 @@ import os
 import socket
 import statistics
 import sys
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -253,6 +254,204 @@ def artifact_window(bars_by: dict[str, list]) -> ArtifactWindow | None:
     if not starts:
         return None
     return ArtifactWindow(start=min(starts), end=max(ends), n_bars=n)
+
+
+# ── Frescura del cohorte de artefactos — Tarea 30 (DOC-SYNC) ─────────────────
+#
+# ``artifact_window`` declara ``min(starts)..max(ends)`` sobre el universo, y esa
+# agregación **esconde exactamente el defecto que la 30 vino a arreglar**: un solo
+# artefacto congelado no mueve el ``max(ends)`` —lo tapan los otros 505— pero sí
+# puede quedarse con el ``min(starts)``, y ahí entra en la ventana publicada sin
+# que nada lo declare.
+#
+# **Y eso ya había pasado, medido el 2026-09-01.** De los 506 artefactos ``10y``,
+# **503** terminaban el 2026-08-07 y tres estaban congelados: **SPY** (14 ruedas
+# atrás), **TSM** (21) y **MLTX** (48). El ancla publicada de la T48
+# —``WINDOW_REFRESH_2026_08_09`` = ``2016-07-11..2026-08-07``— tenía el **end** de
+# los 503 sanos y el **start del artefacto congelado de TSM**: al refrescarlo, el
+# start del universo se movió a **2016-08-08**. O sea que la ventana con la que se
+# declararon las corridas de la serie estaba **construida en parte sobre un
+# artefacto viejo**, y la agregación lo hacía invisible. Eso es el hallazgo, no un
+# efecto colateral del refresh.
+#
+# De ahí que este chequeo mire el **cohorte** y no un umbral absoluto de fecha: lo
+# que importa no es "¿está viejo?" sino "**¿está desalineado del resto?**". Y mira
+# los dos lados —atrasados y adelantados— porque un refresh **parcial** rompe la
+# uniformidad igual que uno faltante, que es justo el estado en que quedó TSM.
+#
+# La referencia es la **moda** de las últimas barras, no el máximo: con el máximo,
+# un solo artefacto refrescado de más haría aparecer a los otros 505 como
+# atrasados. La moda es el batch, que es lo que se quiere comparar.
+#
+# La tolerancia es **declarada, no calibrada** — no hay una población de "desvíos
+# legítimos" que medir como en la 64: un batch de refresh deja a todos en la misma
+# fecha. 5 ruedas es holgura para un ticker que no operó algún día (halt, feriado
+# propio) y queda muy por debajo de los tres casos reales (14, 21 y 48).
+ARTIFACT_MAX_LAG_DAYS = 5
+
+# Artefactos que **a propósito** no se refrescan, con su razón escrita. No es lo
+# mismo que uno que se quedó viejo sin que nadie lo note: acá la excepción está
+# declarada, se imprime **por nombre y con el motivo** en cada corrida, y por eso
+# no dispara el abort. Un dict y no una lista justamente para que agregar uno
+# obligue a escribir el porqué.
+ARTIFACT_REFRESH_EXCEPTIONS: dict[str, str] = {
+    "AVB": (
+        "tarea 63: Yahoo le aplica un split FANTASMA de 2.793 al frame 2y. El 10y "
+        "(bajado el 2026-08-09) es la escala sana contra la cual `scale_is_disputed` "
+        "detecta la disputa — refrescarlo lo pondría a la escala podrida, los dos "
+        "frames coincidirían y AVB pasaría de *vendible* a TRABADO. El caveat NO "
+        "caduca con la 63: vale mientras el proveedor siga reportando el split."
+    ),
+}
+
+
+class StaleArtifactError(RuntimeError):
+    """Un harness arrancó con el cohorte de artefactos desalineado (T30)."""
+
+
+@dataclass(frozen=True)
+class StaleArtifact:
+    """Un artefacto cuya última barra no está donde la del resto del cohorte."""
+
+    ticker: str
+    end: str
+    cohort_end: str
+    lag_days: int  # >0 atrasado, <0 adelantado (ruedas)
+
+    @property
+    def ahead(self) -> bool:
+        return self.lag_days < 0
+
+    def __str__(self) -> str:
+        lado = "ADELANTE del" if self.ahead else "atrás del"
+        return (
+            f"{self.ticker}: última barra {self.end}, {abs(self.lag_days)} ruedas "
+            f"{lado} cohorte ({self.cohort_end})"
+        )
+
+
+def _busday_lag(desde: str, hasta: str) -> int:
+    """Ruedas (lun-vie) entre dos fechas ISO-10. 0 si alguna no se puede parsear.
+
+    Sin numpy y sin calendario de feriados a propósito: este módulo no depende de
+    pandas ni toca el disco, y para lo único que se usa el número —comparar contra
+    una tolerancia de 5— un par de feriados no cambia ningún veredicto. Los tres
+    casos reales estaban a 14, 21 y 48 ruedas.
+    """
+    try:
+        d0 = date.fromisoformat(desde[:10])
+        d1 = date.fromisoformat(hasta[:10])
+    except ValueError:
+        return 0
+    signo = 1 if d1 >= d0 else -1
+    a, b = (d0, d1) if d1 >= d0 else (d1, d0)
+    semanas, resto = divmod((b - a).days, 7)
+    n = 5 * semanas + sum(1 for i in range(resto) if (a + timedelta(days=i)).weekday() < 5)
+    return signo * n
+
+
+def cohort_end(bars_by: dict[str, list]) -> str:
+    """La última barra **modal** del cohorte — la fecha del batch de refresh.
+
+    Moda y no máximo a propósito: un único artefacto refrescado de más haría que
+    todos los demás parecieran atrasados. Empate ⇒ gana la más nueva.
+    """
+    ends = [bars[-1][0] for bars in bars_by.values() if bars]
+    if not ends:
+        return ""
+    cuenta = Counter(ends)
+    top = max(cuenta.values())
+    return max(e for e, n in cuenta.items() if n == top)
+
+
+def stale_artifacts(
+    bars_by: dict[str, list], *, max_lag_days: int = ARTIFACT_MAX_LAG_DAYS
+) -> tuple[StaleArtifact, ...]:
+    """Los artefactos desalineados del cohorte, del más desviado al menos.
+
+    Mira **los dos lados**: un refresh parcial deja artefactos *adelantados*, que
+    rompen la uniformidad de la muestra igual que uno congelado — y encima mueven
+    el ``max(ends)`` de la ventana publicada, así que son **más** visibles en el
+    resultado y **menos** visibles en el diagnóstico.
+
+    Es pura: no toca el disco ni la red, y trabaja sobre las barras ya cargadas.
+    """
+    ref = cohort_end(bars_by)
+    if not ref:
+        return ()
+    fuera = [
+        StaleArtifact(ticker=t, end=bars[-1][0], cohort_end=ref, lag_days=_busday_lag(bars[-1][0], ref))
+        for t, bars in bars_by.items()
+        if bars
+        and t.upper() not in ARTIFACT_REFRESH_EXCEPTIONS
+        and abs(_busday_lag(bars[-1][0], ref)) > max_lag_days
+    ]
+    return tuple(sorted(fuera, key=lambda s: -abs(s.lag_days)))
+
+
+def declared_exceptions(bars_by: dict[str, list]) -> tuple[StaleArtifact, ...]:
+    """Los artefactos desalineados que están **declarados** como excepción (T30).
+
+    Se separan de ``stale_artifacts`` para que el banner pueda decirlos con su
+    motivo en vez de callarlos: una excepción silenciosa vuelve a ser el defecto
+    que la 30 vino a arreglar."""
+    ref = cohort_end(bars_by)
+    if not ref:
+        return ()
+    return tuple(
+        StaleArtifact(ticker=t, end=bars[-1][0], cohort_end=ref, lag_days=_busday_lag(bars[-1][0], ref))
+        for t, bars in sorted(bars_by.items())
+        if bars and t.upper() in ARTIFACT_REFRESH_EXCEPTIONS and bars[-1][0] != ref
+    )
+
+
+def announce_artifacts(
+    bars_by: dict[str, list],
+    *,
+    max_lag_days: int = ARTIFACT_MAX_LAG_DAYS,
+    strict: bool = True,
+    file: TextIO | None = None,
+) -> tuple[StaleArtifact, ...]:
+    """Declara la frescura del cohorte y **falla ruidoso** si está desalineado.
+
+    Misma política que la **T22**: un artefacto viejo no puede degradar en
+    silencio. Con ``strict=False`` sólo declara — para un harness que a propósito
+    corre sobre un cohorte mezclado y lo dice en su pre-registro.
+
+    Se llama **al arrancar**, junto a ``announce()``: si la muestra está torcida,
+    la corrida entera no vale y no tiene sentido pagarla antes de enterarse.
+    """
+    fuera = stale_artifacts(bars_by, max_lag_days=max_lag_days)
+    salida = file if file is not None else sys.stdout
+    ref = cohort_end(bars_by)
+    n = sum(1 for b in bars_by.values() if b)
+    print(
+        f"Frescura del cohorte — {n} artefactos, última barra modal {ref} "
+        f"(tolerancia {max_lag_days} ruedas):",
+        file=salida,
+    )
+    for exc in declared_exceptions(bars_by):
+        print(f"  [excepción declarada] {exc}", file=salida)
+        print(f"      {ARTIFACT_REFRESH_EXCEPTIONS[exc.ticker.upper()]}", file=salida)
+    if not fuera:
+        print("  todos alineados.\n", file=salida)
+        return fuera
+    for s in fuera:
+        print(f"  {s}", file=salida)
+    print(
+        f"  AVISO: {len(fuera)} artefacto(s) fuera del cohorte. La ventana que "
+        f"declara `artifact_window` es min(starts)..max(ends), así que uno solo "
+        f"puede correrla sin que se note (T30).\n",
+        file=salida,
+    )
+    if strict:
+        raise StaleArtifactError(
+            f"{len(fuera)} artefacto(s) fuera del cohorte ({ref}): "
+            + " · ".join(str(s) for s in fuera[:5])
+            + ". Refrescar el cohorte (y re-anclar las constantes de reproducción) "
+            "o correr con strict=False declarándolo en el pre-registro."
+        )
+    return fuera
 
 
 @dataclass(frozen=True)

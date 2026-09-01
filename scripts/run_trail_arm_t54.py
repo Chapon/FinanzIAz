@@ -52,7 +52,9 @@ from analysis.harness_config import (
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
     EffectivePopulation,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
     announce_effective,
     announce_grid,
     artifact_window,
@@ -495,6 +497,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-walkforward", action="store_true", help="sólo desarrollo")
     p.add_argument("--no-sensitivity", action="store_true", help="sólo desarrollo")
     p.add_argument("--cache-dir", default=None)
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="correr aunque el cohorte de artefactos esté desalineado (T30) — declararlo en el pre-registro",
+    )
     p.add_argument("--budget-seconds", type=float, default=None)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -521,6 +528,15 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("Sin entradas BUY.", file=sys.stderr)
         return 1
+
+    # T30 — frescura del cohorte, ANTES de pagar la corrida. `artifact_window`
+    # declara min(starts)..max(ends), así que un solo artefacto desalineado corre
+    # la ventana publicada sin que se note. Falla ruidoso (política de la T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
 
     window = artifact_window(bars_by)
     cfg = announce(
