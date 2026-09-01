@@ -171,7 +171,7 @@ def evaluate(summaries: dict, c5: dict, boot, sens: dict | None) -> dict:
     c4 = c_sh >= b_sh - KILL_SHARPE_TOL
     c5_ok = bool(c5["passes"])
     c6 = n_consistent >= KILL_MIN_CONSISTENT
-    c7 = bool(sens) and bool(sens.get("c1")) and bool(sens.get("c3"))
+    c7 = sens is not None and bool(sens.get("c1")) and bool(sens.get("c3"))
 
     accounting = base["accounting_ok"] and cand["accounting_ok"]
     ship = bool(accounting and c1 and c2 and c3 and c4 and c5_ok and c6 and c7)
@@ -308,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     port_levels = {n: regime_window_returns(daily[n]) for n in (BASELINE_ARM, CANDIDATE_ARM)}
 
     # C7 — sensibilidad a 5 slots (los dos brazos de decisión).
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         print(f"  [{args.sens_max_positions} slots] sensibilidad …", file=log, flush=True)
         s_common = dict(common, max_positions=args.sens_max_positions)
@@ -325,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
             n_resamples=args.resamples,
             seed=BOOT_SEED,
         )
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[CANDIDATE_ARM]["cagr"],

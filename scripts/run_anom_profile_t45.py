@@ -640,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
     regime_portfolio = regime_window_returns(daily_cand)
 
     # ── C7 — sensibilidad a 5 slots ──────────────────────────────────────────
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         s_common = _common(args.sens_max_positions, args.capital, args.cap_days)
 
@@ -650,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         s_sum = summarise(s_run(cand_entries))
         s_rb = _mc(s_run, bars_by, cand_entries, operable_by_month, k_random=args.k_random, seed=args.seed)
         s_sh = s_sum["sharpe"] if s_sum["sharpe"] is not None else -1e9
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": args.sens_max_positions,
             "cagr": s_sum["cagr"],
             "sharpe": s_sum["sharpe"],
@@ -660,7 +660,7 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     # ── C8 — additividad sobre el engine (población B) ───────────────────────
-    c8 = None
+    c8: dict[str, Any] | None = None
     if not args.no_additivity:
         analyze = buy_entries(bars_by, sigs_by, args.warmup)
         merged = merge_entries(analyze, cand_entries, bars_by)
@@ -689,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
         )
         dcagr = b_sum[COMBINED_ARM]["cagr"] - b_sum[ANALYZE_ARM]["cagr"]
-        c8: dict[str, Any] = {
+        c8 = {
             "n_analyze": len(analyze),
             "n_merged": len(merged),
             "summaries": b_sum,

@@ -35,7 +35,6 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Allow ``python scripts/harvest_catalysts.py`` from the repo root.
@@ -44,7 +43,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config.logging_config import get_logger
-from data.news_sources import collect_all
+from data.news_sources import _CollectResult, collect_all
 from database.models import (
     AnalystEstimateSnapshot,
     NewsEvent,
@@ -120,11 +119,11 @@ def resolve_universe(account_id: int = DEFAULT_ACCOUNT_ID) -> list[str]:
     from paper_trading.models import PaperPosition, PaperWatchlistItem
 
     with session_scope() as s:
-        watch: dict[str, Any] = {
+        watch: set[str] = {
             w.ticker
             for w in s.query(PaperWatchlistItem).filter(PaperWatchlistItem.account_id == account_id).all()
         }
-        pos: dict[str, Any] = {
+        pos: set[str] = {
             p.ticker
             for p in s.query(PaperPosition)
             .filter(PaperPosition.account_id == account_id)
@@ -243,7 +242,9 @@ def harvest(
     # lock-holder enorme que chocaba con el scan/bulk-fetch paralelo →
     # "database is locked" + agotamiento del QueuePool. Mismo patrón que
     # classify_events. Idéntico al camino dry_run, que ya recolecta sin sesión.
-    collected: list[tuple[str, object]] = []
+    # `_CollectResult` y no `object`: es lo que devuelve `collect_all`, y con
+    # `object` los accesos a `.news` y `.estimates` de mas abajo quedaban sin tipo.
+    collected: list[tuple[str, _CollectResult]] = []
     for t in universe:
         try:
             res = collector(t, sources)

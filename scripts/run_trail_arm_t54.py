@@ -651,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
     mixes = {n: exit_mix(results[n]) for n in (BASELINE_ARM, arm)}
 
     # ── 9. C7 — sensibilidad a 5 slots ───────────────────────────────────────
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log, flush=True)
         s_common = _common(SENS_MAX_POSITIONS, args.capital)
@@ -664,7 +664,7 @@ def main(argv: list[str] | None = None) -> int:
         s_sum = {n: summarise(r) for n, r in s_res.items()}
         s_daily = aligned_daily(s_res, [BASELINE_ARM, arm])
         s_boot = _boot(s_daily[BASELINE_ARM], s_daily[arm])
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": SENS_MAX_POSITIONS,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[arm]["cagr"],

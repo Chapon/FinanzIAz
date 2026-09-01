@@ -197,7 +197,7 @@ def evaluate(
     c4 = c_sh >= b_sh and c_sh > rb["sharpe_p95"]
     c5 = boot is not None and boot.ci_low > KILL_BOOT_FLOOR
     c6 = pbo_val is not None and pbo_val < KILL_MAX_PBO
-    c7 = bool(sens) and bool(sens.get("c1_sign")) and bool(sens.get("c2_bear"))
+    c7 = sens is not None and bool(sens.get("c1_sign")) and bool(sens.get("c2_bear"))
 
     accounting = base["accounting_ok"] and cand["accounting_ok"]
     ship = bool(accounting and c1 and c2 and c3 and c4 and c5 and c6 and c7)
@@ -379,8 +379,10 @@ def main(argv: list[str] | None = None) -> int:
         fill_mode=HARNESS_FILL_MODE,
     )
     op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0]))) for ti in operable]
-    op_scored = [(ti, r) for ti, r in op_scored if r is not None]
-    op_scored.sort(key=lambda x: x[1], reverse=True)
+    # Nombre nuevo: al re-bindear, el tipo declarado sigue siendo `float | None`
+    # aunque el filtro ya saco los None, y el sort queda sin clave ordenable.
+    scored = [(ti, r) for ti, r in op_scored if r is not None]
+    scored.sort(key=lambda x: x[1], reverse=True)
     top = sorted(
         (ti for ti, _ in op_scored[: len(entries)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
     )
@@ -411,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     pbo = pbo_cscv(rets_all, n_splits=10) if T >= 10 else None
 
     # C7 — sensibilidad a 5 slots (baseline + candidato).
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         print(f"  [{args.sens_max_positions} slots] sensibilidad …", file=log, flush=True)
         s_res: dict[str, Any] = {
@@ -422,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         s_reg = {n: regime_window_returns(s_daily[n]) for n in s_daily}
         s_sum = {n: summarise(r) for n, r in s_res.items()}
         bear = "stress_bear_2022"
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "cand_cagr": s_sum[CANDIDATE_ARM]["cagr"],

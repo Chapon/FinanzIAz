@@ -452,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     ctrl_diff_median = statistics.median(pair_diffs) if pair_diffs else 0.0
 
     # ── C7 — sensibilidad a 5 slots ──────────────────────────────────────────
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         s_common = _common(args.sens_max_positions, args.capital, CAP_DAYS)
 
@@ -472,7 +472,7 @@ def main(argv: list[str] | None = None) -> int:
             for k in range(args.seeds)
         ]
         s_p95 = _pct([c["cagr"] for c in s_ctrl], KILL_CONTROL_PCTILE)
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_base["cagr"],
             "cand_cagr": s_cand["cagr"],

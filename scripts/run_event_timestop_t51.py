@@ -808,7 +808,7 @@ def main(argv: list[str] | None = None) -> int:
     c8_e = regime_pooled(base_res, results[arm_e])
 
     # ── 9. C7 — sensibilidad a 5 slots ───────────────────────────────────────
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         print(f"  C7 — sensibilidad a {SENS_MAX_POSITIONS} slots …", file=log, flush=True)
         s_common = _common(SENS_MAX_POSITIONS, args.capital, rank_score=b1)
@@ -825,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
         s_daily = aligned_daily(s_res, [BASELINE_ARM, arm_u, arm_e])
         s_boot_u = _boot(s_daily[BASELINE_ARM], s_daily[arm_u])
         s_boot_e = _boot(s_daily[BASELINE_ARM], s_daily[arm_e])
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": SENS_MAX_POSITIONS,
             "base_cagr": s_sum[BASELINE_ARM]["cagr"],
             "u_cagr": s_sum[arm_u]["cagr"],

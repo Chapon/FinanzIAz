@@ -818,8 +818,11 @@ def evaluate(
     c6 = d_worst >= -KILL_TAIL_TOL_PTS and d_p1 >= -KILL_TAIL_TOL_PTS
 
     c7 = wf["agreement"] >= KILL_MIN_FOLD_AGREEMENT
-    c8a = bool(sens5) and sens5["dcagr"] >= 0.0
-    c8b = bool(sens_close) and sens_close["dcagr"] >= 0.0
+    # El `bool(...)` va PRIMERO a proposito: con un dict vacio conserva el
+    # cortocircuito, mientras que indexar levantaria KeyError. El `is not None`
+    # esta solo para que el tipo lo diga.
+    c8a = bool(sens5) and sens5 is not None and sens5["dcagr"] >= 0.0
+    c8b = bool(sens_close) and sens_close is not None and sens_close["dcagr"] >= 0.0
     c8 = c8a and c8b
 
     # C9 (+ C5′-bis): los dos puntos congelados, y el escalón si el régimen resolvió.
@@ -1114,7 +1117,8 @@ def _run(argv: list[str] | None = None) -> int:
     trailing_gap = {n: never_armed_trailing(results[n], bars_by) for n in (BASELINE_ARM, cand_arm)}
 
     # 5. C8 — especificación: 5 slots y modo `close`.
-    sens5 = sens_close = None
+    sens5: dict[str, Any] | None = None
+    sens_close: dict[str, Any] | None = None
     if cand_arm != BASELINE_ARM:
         print(f"  C8(a) — sensibilidad a {args.sens_max_positions} slots …", file=log, flush=True)
         s_common = dict(common, max_positions=args.sens_max_positions)
@@ -1134,7 +1138,7 @@ def _run(argv: list[str] | None = None) -> int:
             **arm_params(*cand_cell),
             **s_common,
         )
-        sens5: dict[str, Any] = {
+        sens5 = {
             "max_positions": args.sens_max_positions,
             "base_cagr": cagr(sb.equity_curve),
             "cand_cagr": cagr(sc.equity_curve),
@@ -1156,7 +1160,7 @@ def _run(argv: list[str] | None = None) -> int:
             **common,
         )
         cc = _sim(f"c8b|{cand_arm}|close|{run_tag}", entries, bars_by, sigs_by, **_close(cand_cell), **common)
-        sens_close: dict[str, Any] = {
+        sens_close = {
             "base_cagr": cagr(cb.equity_curve),
             "cand_cagr": cagr(cc.equity_curve),
             "dcagr": cagr(cc.equity_curve) - cagr(cb.equity_curve),

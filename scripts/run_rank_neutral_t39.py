@@ -264,7 +264,7 @@ def evaluate(base: dict, seeds: list[dict], boot, regime_delta: dict, sens: dict
     c3 = med_dd <= base["max_dd"] + KILL_DD_TOL
     c4 = boot is not None and boot.ci_low > 0.0
     c5 = bool(regime_delta) and all(d >= KILL_REGIME_TOL for d in regime_delta.values())
-    c6 = bool(sens) and bool(sens.get("c1_sign")) and bool(sens.get("c2"))
+    c6 = sens is not None and bool(sens.get("c1_sign")) and bool(sens.get("c2"))
 
     accounting = base["accounting_ok"] and all(s["accounting_ok"] for s in seeds)
     ship = bool(accounting and c1 and c2 and c3 and c4 and c5 and c6)
@@ -430,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
     regime_delta = {k: reg_pol[k] - reg_base[k] for k in reg_base}
 
     # C6 — sensibilidad a 5 slots sobre los brazos de decisión.
-    sens = None
+    sens: dict[str, Any] | None = None
     if not args.no_sensitivity:
         sens_common = dict(common, max_positions=args.sens_max_positions)
         sens_arms = {n: arms[n] for n in [BASELINE_ARM, *rot_names]}
@@ -446,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         sens_sum = {n: summarise(r) for n, r in sens_res.items()}
         s_base = sens_sum[BASELINE_ARM]["cagr"]
         s_cagrs = sorted(sens_sum[n]["cagr"] for n in rot_names)
-        sens: dict[str, Any] = {
+        sens = {
             "max_positions": args.sens_max_positions,
             "base_cagr": s_base,
             "median_cagr": statistics.median(s_cagrs),

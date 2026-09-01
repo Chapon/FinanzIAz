@@ -125,6 +125,8 @@ def main():
     common_idx = None
     for df in full_data.values():
         common_idx = df.index if common_idx is None else common_idx.intersection(df.index)
+    if common_idx is None:  # `full_data` vacio: no hay indice comun que ordenar
+        raise SystemExit("sin datos: no hay indice comun entre los tickers")
     common_idx = common_idx.sort_values()
     n_bars = len(common_idx)
     print(f"  Common index: {n_bars} bars  ({common_idx[0].date()} -> {common_idx[-1].date()})")
