@@ -161,6 +161,25 @@ def parse_universe_file(path: Path) -> list[str]:
     return out
 
 
+def pending_dates(df, rows: dict, warmup: int) -> list[str]:
+    """Las fechas del frame (desde ``warmup``) que **no** están en el store.
+
+    **Tarea 69 (PITROLL).** Antes esto se decidía por CANTIDAD —``len(rows) >= n -
+    warmup``— y con la ventana **rodante** de los artefactos eso miente en las dos
+    direcciones: al refrescar, el frame **suelta barras por la cabeza y agrega por
+    la cola**, así que ``len(df)`` casi no se mueve mientras las **fechas** cambian;
+    y el store **acumula** fechas de ventanas anteriores, o sea que termina con
+    *más* filas de las que el frame necesita. Medido el 2026-09-01 sobre AAPL
+    después del refresh de la tarea 30: ``len(rows)=2284`` contra ``n-warmup=2263``
+    ⇒ la guarda decía **"ya completo"** con **17 fechas faltando**.
+
+    Es la misma familia de defecto que la **48** (la ventana, no el largo) y que la
+    **52** (la población, no la ventana), un nivel más abajo: un chequeo por
+    cantidad que es ciego a **cuáles** son las barras.
+    """
+    return [d.strftime("%Y-%m-%d") for d in df.index[warmup:] if d.strftime("%Y-%m-%d") not in rows]
+
+
 def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int, verbose: bool) -> tuple[int, int]:
     """Devuelve (evaluadas_ahora, total_en_artefacto). No lanza: loguea y sigue."""
     from analysis.technical import analyze
@@ -182,7 +201,10 @@ def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int, verbos
         return 0, 0
 
     rows: dict = dict(prev.get("signals") or {})
-    if prev.get("complete") and len(rows) >= n - warmup:
+    # T69: por FECHAS, no por cantidad. ``complete`` sigue mirándose porque marca
+    # un barrido que terminó bien, pero ya no alcanza solo.
+    faltan = pending_dates(df, rows, warmup)
+    if prev.get("complete") and not faltan:
         print(f"  {ticker:<6} ya completo ({len(rows)} barras) — se saltea")
         return 0, len(rows)
 
@@ -262,8 +284,10 @@ def main(argv: list[str] | None = None) -> int:
             missing.append(t)
             continue
         prev = _load_existing(_out_path(t, args.period, args.warmup))
-        have = len(prev.get("signals") or {})
-        total_pending += max(0, len(df) - args.warmup - have)
+        # T69: contar las fechas que faltan, no restar cantidades. Con la ventana
+        # rodante, `len(df) - warmup - len(rows)` daba **negativo** (⇒ 0 pendientes)
+        # justo cuando el store estaba atrasado.
+        total_pending += len(pending_dates(df, dict(prev.get("signals") or {}), args.warmup))
     if missing:
         print(f"SIN cache parquet ({len(missing)}): {', '.join(missing)}")
     # ~330 ms/eval medidos con XGBoost usando todos los núcleos; con los threads

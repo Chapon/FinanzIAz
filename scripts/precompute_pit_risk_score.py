@@ -36,7 +36,7 @@ _ROOT = _HERE.parent
 sys.path.insert(0, str(_ROOT))
 
 from analysis.harness_config import LIVE_UNIVERSE_FILE
-from scripts.precompute_pit_signals import parse_universe_file
+from scripts.precompute_pit_signals import parse_universe_file, pending_dates
 
 OUT_DIR = _ROOT / "data" / "pit_risk"
 SCHEMA_VERSION = 1
@@ -92,7 +92,10 @@ def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int) -> tup
         return 0, 0
 
     rows: dict = dict(prev.get("risk") or {})
-    if prev.get("complete") and len(rows) >= n - warmup:
+    # T69: por FECHAS, no por cantidad. La ventana de los artefactos es rodante, así
+    # que `len(rows) >= n - warmup` decía "completo" con la cola sin computar — el
+    # mismo defecto que tenía `precompute_pit_signals`, en el script hermano.
+    if prev.get("complete") and not pending_dates(df, rows, warmup):
         print(f"  {ticker:<6} ya completo ({len(rows)}) — se saltea")
         return 0, len(rows)
 
