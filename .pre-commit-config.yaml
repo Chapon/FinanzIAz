@@ -24,5 +24,23 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
+  # Integridad del backlog (tarea 66). Corre SOLO si el commit toca
+  # `docs/BACKLOG.md`, que es el único momento en que puede romperlo.
+  #
+  # El 2026-08-31 un commit de cierre le sacó 767 líneas —todas las tareas y
+  # cinco secciones enteras— y pasó invisible durante cuatro commits: nada en la
+  # suite cubría ese archivo, `git status` salía limpio y el CI estaba verde. El
+  # `--staged` es la mitad que sólo se puede ver acá: mirando el diff contra el
+  # índice, no leyendo el archivo. La otra mitad (secciones, punteros) corre
+  # además en la suite, o sea en el CI, por si alguien no instaló pre-commit.
+  - repo: local
+    hooks:
+      - id: backlog-integrity
+        name: docs/BACKLOG.md no perdió secciones ni media cola
+        entry: python scripts/check_backlog_integrity.py --staged
+        language: system
+        files: ^docs/BACKLOG\.md$
+        pass_filenames: false
+
   # mypy is intentionally NOT in pre-commit by default — it's slow and
   # currently best-effort. Run manually with `mypy .` or via CI.

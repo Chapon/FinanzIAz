@@ -31,6 +31,8 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 
 **Al empezar una sesión, leé `docs/BACKLOG.md`** (qué sigue, priorizado). Al cerrar una tarea (suite Windows verde + commit) movela a *Hecho reciente* con el hash. *En curso* máximo 1 ítem.
 
+**El backlog tiene un guard (tarea 66): editalo, no lo reescribas.** El 2026-08-31 un commit de cierre le borró **767 líneas** —todas las tareas y cinco secciones— y pasó invisible cuatro commits, porque el archivo truncado se lee entero como un backlog válido. Ahora `scripts/check_backlog_integrity.py` corre en la suite y en `pre-commit`: verifica que estén las secciones que el propio header declara obligatorias, que ninguna quede vacía, que todo *«la próxima es la NN»* apunte a una tarea que existe, y frena un commit que le saque más de 60 líneas netas. **Si se renombra o agrega una sección, se actualiza la lista en el header del backlog.**
+
 ## Documentación de referencia
 
 - `docs/BACKLOG.md` — tareas operativas (el qué sigue).
