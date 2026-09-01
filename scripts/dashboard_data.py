@@ -636,7 +636,10 @@ def _hit_rate_panel(con: sqlite3.Connection, account_id: int, fills) -> dict:
             # Normalizar el timestamp igual que fifo_match (que parsea con
             # _parse_dt) — el filled_at crudo de la DB usa espacio, no "T".
             try:
-                key = (ticker, _parse_dt(str(dt)).isoformat())
+                parsed = _parse_dt(str(dt))
+                if parsed is None:  # el except de abajo ya lo tomaba igual
+                    raise ValueError("timestamp sin parsear")
+                key = (ticker, parsed.isoformat())
             except Exception:
                 key = (ticker, str(dt))
             lst = realized_by_key.get(key)

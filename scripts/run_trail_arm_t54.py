@@ -565,7 +565,7 @@ def main(argv: list[str] | None = None) -> int:
     # ── 3. k* por WALK-FORWARD sobre la grilla CON POBLACIÓN ─────────────────
     if args.no_walkforward:
         star = max(viables, key=lambda k: summaries[arm_name(k)]["cagr"])
-        wf = {"star": star, "agreement": 0, "SMOKE": True, "per_fold": [], "picks": []}
+        wf: dict[str, Any] = {"star": star, "agreement": 0, "SMOKE": True, "per_fold": [], "picks": []}
     else:
         print("\n  §6 — walk-forward que elige k* …", file=log, flush=True)
         wf = walk_forward(entries, bars_by, sigs_by, common, viables, log=log)

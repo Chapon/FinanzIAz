@@ -384,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
     scored = [(ti, r) for ti, r in op_scored if r is not None]
     scored.sort(key=lambda x: x[1], reverse=True)
     top = sorted(
-        (ti for ti, _ in op_scored[: len(entries)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
+        (ti for ti, _ in scored[: len(entries)]),
+        key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0]),
     )
     results[ORACLE_ARM] = run_plain(top)
     summaries[ORACLE_ARM] = summarise(results[ORACLE_ARM])

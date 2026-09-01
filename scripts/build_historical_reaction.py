@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +38,7 @@ log = get_logger(__name__)
 DEFAULT_OUT = ROOT / "data" / "catalyst" / "historical_reaction.json"
 
 
-def _load_classified_events() -> list[tuple[str, str, object]]:
+def _load_classified_events() -> list[tuple[str, str, datetime | None]]:
     with session_scope() as s:
         rows = (
             s.query(NewsEvent)
@@ -45,7 +46,9 @@ def _load_classified_events() -> list[tuple[str, str, object]]:
             .filter(NewsEvent.published_at.isnot(None))
             .all()
         )
-        return [(r.ticker, r.event_type, r.published_at) for r in rows]
+        # `event_type` es nullable en el modelo, pero la query de arriba filtra
+        # `isnot(None)`: el str(...) lo declara sin cambiar nada.
+        return [(r.ticker, str(r.event_type), r.published_at) for r in rows]
 
 
 def _price_loader(period: str = "2y"):

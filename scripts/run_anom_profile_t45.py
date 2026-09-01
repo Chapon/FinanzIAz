@@ -588,10 +588,13 @@ def main(argv: list[str] | None = None) -> int:
         eval_mode=EVAL_MODE,
     )
     scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0]))) for ti in operable]
-    scored = [(ti, r) for ti, r in scored if r is not None]
-    scored.sort(key=lambda x: x[1], reverse=True)
+    # Nombre nuevo: al re-bindear, el tipo declarado sigue siendo `float | None`
+    # aunque el filtro ya saco los None.
+    scored_ok = [(ti, r) for ti, r in scored if r is not None]
+    scored_ok.sort(key=lambda x: x[1], reverse=True)
     oracle_entries = sorted(
-        (ti for ti, _ in scored[: len(cand_entries)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
+        (ti for ti, _ in scored_ok[: len(cand_entries)]),
+        key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0]),
     )
     results[ORACLE_ARM] = run(oracle_entries)
     oracle_sum = summarise(results[ORACLE_ARM])

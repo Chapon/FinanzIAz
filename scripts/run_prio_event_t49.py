@@ -38,6 +38,7 @@ import argparse
 import json
 import statistics
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -162,7 +163,7 @@ def count_by_date(keys: set[tuple[str, str]]) -> dict[str, int]:
     return out
 
 
-def make_prio(prio_keys: set[tuple[str, str]], score_by) -> object:
+def make_prio(prio_keys: set[tuple[str, str]], score_by) -> Callable[[str, str], float]:
     """``rank_score`` = ``PRIO_BOOST + score`` si está priorizado, si no ``score``.
 
     El fondo sigue siendo el ``buy_score`` vivo **en todos los brazos de este
@@ -176,7 +177,7 @@ def make_prio(prio_keys: set[tuple[str, str]], score_by) -> object:
     return rank
 
 
-def make_binary_prio(prio_keys: set[tuple[str, str]]) -> object:
+def make_binary_prio(prio_keys: set[tuple[str, str]]) -> Callable[[str, str], float]:
     """La prioridad **binaria** con desempate alfabético — la de la 45 (§5.2)."""
 
     def rank(ticker: str, date_iso10: str) -> float:
@@ -524,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             for k, (got, exp) in checks.items()
         }
-        repro: dict[str, Any] = {
+        repro = {
             "t45_analyze": r_analyze["cagr"],
             "t45_merged_prio": r_merged["cagr"],
             "t45_ok": all(states[k][0] == REPRO_OK for k in ("t45_analyze", "t45_merged_prio")),
@@ -546,9 +547,9 @@ def main(argv: list[str] | None = None) -> int:
             f"(esperado 1.97%) · {repro['t33_state']}",
             file=log,
         )
-        for k, (st, why) in states.items():
+        for nombre, (st, why) in states.items():
             if st != REPRO_OK:
-                print(f"  → {k}: {why}", file=log)
+                print(f"  → {nombre}: {why}", file=log)
         print("", file=log)
 
     sanity = evaluate_sanity(summaries, controls, trade_diff, ctrl_diff_median, repro)

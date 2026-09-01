@@ -469,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
         for n in [BASELINE_ARM] + [arm_name(m) for m in MULTS]
     }
 
-    wf = (
+    wf: dict[str, Any] = (
         {
             "m_star": LIVE_MULT,
             "agreement": 0,

@@ -95,7 +95,9 @@ def main() -> int:
         ]
 
     # Override del dispatcher de estrategia y relax de gates que tapan el BUY.
-    engine.get_strategy_fn = lambda _name: _buy_strategy
+    # Monkeypatch deliberado para el smoke: se fuerza la estrategia sin importar
+    # el nombre. La firma no coincide con la real a proposito.
+    engine.get_strategy_fn = lambda _name: _buy_strategy  # type: ignore[assignment]
     settings.set("paper_enforce_market_hours", False)
     settings.set("earnings_blackout_days", 0)
 

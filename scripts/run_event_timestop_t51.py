@@ -684,13 +684,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_walkforward:
         star_u = max(GRID_N, key=lambda n: summaries[uncond_name(n)]["cagr"])
         star_e = max(GRID_N, key=lambda n: summaries[event_name(n)]["cagr"])
-        wf_u = {"star": star_u, "agreement": 0, "SMOKE": True, "per_fold": []}
-        wf_e = {"star": star_e, "agreement": 0, "SMOKE": True, "per_fold": []}
+        wf_u: dict[str, Any] = {"star": star_u, "agreement": 0, "SMOKE": True, "per_fold": []}
+        wf_e: dict[str, Any] = {"star": star_e, "agreement": 0, "SMOKE": True, "per_fold": []}
     else:
         print("\n  §6 — walk-forward que elige N* …", file=log, flush=True)
         wf_u = walk_forward(entries, bars_by, sigs_by, common, caps_uncond, tag="U", log=log)
         wf_e = walk_forward(entries, bars_by, sigs_by, common, caps_event, tag="E", log=log)
-        star_u, star_e = wf_u["star"], wf_e["star"]
+        star_u, star_e = int(wf_u["star"]), int(wf_e["star"])
     arm_u, arm_e = uncond_name(star_u), event_name(star_e)
     print(
         f"\n  N* incondicional = {star_u} ({wf_u['agreement']}/{len(FOLDS)} folds) · "
