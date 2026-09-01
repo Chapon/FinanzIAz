@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
 from data import failed_tickers as registry
 from ui.styles import PALETTE
 from ui.time_utils import fmt_local
-from ui.widgets import HSeparator, SectionHeader
+from ui.widgets import HSeparator, SectionHeader, table_header, table_vheader
 
 _STATUS_LABELS = {
     registry.STATUS_FAILING: ("Fallando", PALETTE["red"]),
@@ -79,11 +79,11 @@ class FailedTickersTab(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["Ticker", "Estado", "Operación", "Fallos", "Último error", "Última falla"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         root.addWidget(self.table)
 
         # Botonera inferior
@@ -185,7 +185,7 @@ class FailedTickersTab(QWidget):
             self.table.setItem(row, 5, cell(last))
 
         self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
 
     # ── Acciones ──────────────────────────────────────────────────────────────
 

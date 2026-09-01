@@ -25,6 +25,7 @@ from data.csv_importer import ImportResult, ImportRow, parse_csv_file
 from data.yahoo_finance import get_company_info
 from database.models import Position, Transaction, session_scope, utcnow_naive
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
+from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
 
 
@@ -156,10 +157,10 @@ class ImportDialog(QDialog):
         self.table.setHorizontalHeaderLabels(
             ["Ticker", "Empresa", "Sector", "Cantidad", "Precio Compra", "Comisión"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked
         )
@@ -273,7 +274,7 @@ class ImportDialog(QDialog):
             self.table.setItem(r, 5, fee_item)
 
         self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
         # Start background validation
         self._start_validation()

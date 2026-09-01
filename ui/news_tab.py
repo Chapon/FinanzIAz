@@ -54,6 +54,7 @@ from analysis.news_digest import (
 )
 from config.logging_config import get_logger
 from ui.styles import PALETTE
+from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
 
 log = get_logger(__name__)
@@ -228,7 +229,7 @@ class NewsTab(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
 
         for i, (label, tooltip) in enumerate(COLUMNS):
@@ -236,7 +237,7 @@ class NewsTab(QWidget):
             header_item.setToolTip(tooltip)
             self.table.setHorizontalHeaderItem(i, header_item)
 
-        header_widget = self.table.horizontalHeader()
+        header_widget = table_header(self.table)
         header_widget.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header_widget.setStretchLastSection(True)  # Titular absorbe el resto
         header_widget.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -358,7 +359,7 @@ class NewsTab(QWidget):
     def _auto_fit_columns(self):
         """Mismo approach que LeadsTab: max(header bold, contenido) + padding."""
         self.table.resizeColumnsToContents()
-        header = self.table.horizontalHeader()
+        header = table_header(self.table)
         bold_font = header.font()
         bold_font.setBold(True)
         fm = QFontMetrics(bold_font)

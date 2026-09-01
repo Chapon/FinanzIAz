@@ -35,7 +35,7 @@ from ui.dialogs import (
 from ui.import_dialog import ImportDialog
 from ui.styles import PALETTE, SIGNAL_COLORS
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
-from ui.widgets import MetricCard, SectionHeader
+from ui.widgets import MetricCard, SectionHeader, table_header, table_vheader
 from ui.workers import BaseWorker
 
 log = get_logger(__name__)
@@ -320,11 +320,11 @@ class PortfolioTab(QWidget):
                 "Señal Técnica",
             ]
         )
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         self.table.setShowGrid(False)
         self.table.itemSelectionChanged.connect(self._on_row_selected)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -558,7 +558,7 @@ class PortfolioTab(QWidget):
             self.table.setRowHeight(row, 48)
 
         self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
     def _update_cards(self):
         total_invested = sum(p.quantity * p.avg_buy_price for p in self._positions)

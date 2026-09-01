@@ -44,6 +44,7 @@ from database.models import DB_PATH
 from paper_trading.account import list_accounts
 from ui.dashboard_charts import KpiCard, _apply_chart_rcparams
 from ui.styles import CHART_STYLE, PALETTE
+from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
 
 log = get_logger(__name__)
@@ -540,16 +541,16 @@ class MetricsTab(QWidget):
             table.setMinimumHeight(fixed_height)
             table.setMaximumHeight(fixed_height)
             table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-            table.horizontalHeader().setStretchLastSection(False)
+            table_header(table).setStretchLastSection(False)
         if col_tips:
             for c, tip in enumerate(col_tips):
                 item = table.horizontalHeaderItem(c)
                 if item is not None:
                     item.setToolTip(tip)
-        table.verticalHeader().setVisible(False)
+        table_vheader(table).setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        table.horizontalHeader().setStretchLastSection(fixed_height is None)
+        table_header(table).setStretchLastSection(fixed_height is None)
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         if section_tip:
             frame.setToolTip(section_tip)
@@ -757,8 +758,8 @@ class MetricsTab(QWidget):
             return
         table.resizeRowsToContents()
         rows = table.rowCount()
-        header_h = table.horizontalHeader().height()
-        row_h = table.verticalHeader().defaultSectionSize() if rows else 0
+        header_h = table_header(table).height()
+        row_h = table_vheader(table).defaultSectionSize() if rows else 0
         visible = min(rows, max_rows) if rows else 0
         height = header_h + visible * row_h + 4
         table.setMinimumHeight(max(height, header_h + 8))

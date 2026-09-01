@@ -48,7 +48,7 @@ from config.logging_config import get_logger
 from ui.styles import PALETTE
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.time_utils import fmt_local as _fmt_local
-from ui.widgets import HSeparator, MetricCard
+from ui.widgets import HSeparator, MetricCard, table_header, table_vheader
 
 log = get_logger(__name__)
 
@@ -307,13 +307,11 @@ class PaperTradingTab(QWidget):
         self.watchlist_table.setHorizontalHeaderLabels(["Ticker", "Precio", ""])
         self.watchlist_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.watchlist_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.watchlist_table.verticalHeader().setVisible(False)
-        self.watchlist_table.verticalHeader().setDefaultSectionSize(40)
-        self.watchlist_table.horizontalHeader().setStretchLastSection(False)
-        self.watchlist_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.watchlist_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
-        )
+        table_vheader(self.watchlist_table).setVisible(False)
+        table_vheader(self.watchlist_table).setDefaultSectionSize(40)
+        table_header(self.watchlist_table).setStretchLastSection(False)
+        table_header(self.watchlist_table).setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table_header(self.watchlist_table).setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.watchlist_table.setColumnWidth(2, 44)
         # Tooltip on hover over Ticker column (col 0)
         install_ticker_tooltips(self.watchlist_table, 0)
@@ -392,7 +390,7 @@ class PaperTradingTab(QWidget):
         # width for both buttons. Keep the global minimum section small so the
         # other columns can collapse to their (now word-wrapped) headers
         # instead of all being forced to a wide floor.
-        self.pending_table.horizontalHeader().setMinimumSectionSize(46)
+        table_header(self.pending_table).setMinimumSectionSize(46)
         self.pending_table.setColumnWidth(7, 150)  # R:R / niveles (V2)
         self.pending_table.setColumnWidth(8, 240)  # Acciones
         # Tooltip on hover over Ticker column (col 2)
@@ -449,7 +447,7 @@ class PaperTradingTab(QWidget):
     def _apply_table_style(self, table: QTableWidget, row_height: int = 44):
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        vh = table.verticalHeader()
+        vh = table_vheader(table)
         vh.setVisible(False)
         # Fixed mode: rows keep the height we set and don't auto-shrink to
         # text content (which clips embedded button widgets).
@@ -457,8 +455,8 @@ class PaperTradingTab(QWidget):
         vh.setDefaultSectionSize(row_height)
         vh.setMinimumSectionSize(row_height)
         table.setAlternatingRowColors(True)
-        table.horizontalHeader().setStretchLastSection(True)
-        header = table.horizontalHeader()
+        table_header(table).setStretchLastSection(True)
+        header = table_header(table)
         for i in range(table.columnCount() - 1):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         # Wrap multi-word headers so each column is only as wide as its widest
@@ -472,7 +470,7 @@ class PaperTradingTab(QWidget):
         section width then collapses to the longest single word, minimising
         column width. The header is given enough height to show every line.
         """
-        header = table.horizontalHeader()
+        header = table_header(table)
         max_lines = 1
         for col in range(table.columnCount()):
             item = table.horizontalHeaderItem(col)

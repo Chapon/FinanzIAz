@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
 from analysis.leads import LeadRow, filter_leads
 from data.ticker_universe import get_sp500_tickers
 from ui.leads.worker import LeadsScanWorker
+from ui.widgets import table_header, table_vheader
 
 # Color del veredicto por bucket — alineado al RecommendationsCard
 VERDICT_COLORS = {
@@ -183,7 +184,7 @@ class LeadsTab(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
 
         # Headers con tooltips explicativos. Usamos QTableWidgetItem en vez de
@@ -197,7 +198,7 @@ class LeadsTab(QWidget):
         # y nosotros auto-ajustamos después de cargar cada batch de filas (ver
         # ``_auto_fit_columns``). Así el título nunca queda cortado pero el
         # usuario puede agrandar columnas si quiere.
-        header_widget = self.table.horizontalHeader()
+        header_widget = table_header(self.table)
         header_widget.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header_widget.setStretchLastSection(False)
         header_widget.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -334,7 +335,7 @@ class LeadsTab(QWidget):
         """
         self.table.resizeColumnsToContents()
 
-        header = self.table.horizontalHeader()
+        header = table_header(self.table)
         bold_font = header.font()
         bold_font.setBold(True)
         fm = QFontMetrics(bold_font)

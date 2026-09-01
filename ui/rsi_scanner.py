@@ -23,6 +23,7 @@ from analysis.technical import compute_rsi
 from data.yahoo_finance import get_historical_data_batch
 from database.models import Position, session_scope
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
+from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
 
 
@@ -104,11 +105,11 @@ class RsiScanDialog(QDialog):
         self.table = QTableWidget()
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Ticker", "RSI", "Estado"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        table_header(self.table).setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         # Tooltip on hover over the Ticker column (col 0)
         install_ticker_tooltips(self.table, 0)

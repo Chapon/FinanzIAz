@@ -11,9 +11,11 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSpinBox,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -721,3 +723,25 @@ class HSeparator(QFrame):
         self.setObjectName("separator")
         self.setFrameShape(QFrame.Shape.HLine)
         self.setFixedHeight(1)
+
+
+def table_header(table: QTableWidget) -> QHeaderView:
+    """El header horizontal de una tabla, sin el ``Optional`` de los stubs.
+
+    ``horizontalHeader()`` está tipada ``QHeaderView | None`` porque la firma de Qt
+    lo permite, pero un ``QTableWidget`` construido **siempre** tiene header — Qt lo
+    crea junto con la tabla. Sin este helper cada uno de los 26 call sites del
+    proyecto necesitaba su propia guarda para decir lo mismo.
+    """
+    header = table.horizontalHeader()
+    if header is None:  # pragma: no cover — Qt no devuelve None acá
+        raise RuntimeError("QTableWidget sin header horizontal")
+    return header
+
+
+def table_vheader(table: QTableWidget) -> QHeaderView:
+    """El header vertical, con la misma historia que ``table_header``."""
+    header = table.verticalHeader()
+    if header is None:  # pragma: no cover — Qt no devuelve None acá
+        raise RuntimeError("QTableWidget sin header vertical")
+    return header

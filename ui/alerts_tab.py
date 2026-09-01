@@ -23,7 +23,7 @@ from database.models import Alert
 from ui.dialogs import AddAlertDialog
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.time_utils import fmt_local
-from ui.widgets import HSeparator, SectionHeader
+from ui.widgets import HSeparator, SectionHeader, table_header, table_vheader
 
 
 class AlertsTab(QWidget):
@@ -55,11 +55,11 @@ class AlertsTab(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["Ticker", "Tipo", "Precio Objetivo", "Estado", "Creada", "Disparada", "Mensaje"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        table_vheader(self.table).setVisible(False)
         # Tooltip on hover over the Ticker column (col 0)
         install_ticker_tooltips(self.table, 0)
         # ALRT1: menú contextual (Editar / Pausar / Eliminar) + doble-click = Editar.
@@ -139,7 +139,7 @@ class AlertsTab(QWidget):
             self.table.setItem(row, 6, cell(alert.message or "—"))
 
         self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
 
     def _add_alert(self):
         if self._portfolio_id is None:
