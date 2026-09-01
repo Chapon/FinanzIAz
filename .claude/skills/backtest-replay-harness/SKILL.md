@@ -163,9 +163,17 @@ y en un harness cuyo eje es *quién entra* eso es el eje mismo.
 
 Medido en la T39: con `touch` + `live_gates` el ranking vivo pasa de estar **por debajo de
 la banda entera** del azar (T21/T33) a caer **adentro** de la banda, y el déficit se achica
-de −3.23 a −1.80 pp. Mismo runner, misma población (el sanity de reproducción devuelve el
-1.97% publicado al dígito). **Antes de re-leer un veredicto de ranking o selección,
-`live_gates` no es opcional.**
+de −3.23 a −1.80 pp. Mismo runner, misma población, con el sanity de reproducción en `OK`.
+**Antes de re-leer un veredicto de ranking o selección, `live_gates` no es opcional.**
+
+> **Los dos números de arriba son de la corrida de la T39** y siguen bien atribuidos a **su**
+> muestra: aquella corrida fue limpia y la **68** declara que **ningún veredicto se
+> re-publica**. Lo que caducó es la cifra que esta skill daba como referencia *en presente*
+> —decía que el sanity *"devuelve el 1.97% al dígito"*, y hoy devuelve **0.81%**—. Por eso ya
+> no se repite acá ningún valor: **el número vive en la constante** (`SANITY_T33_CAGR`), que
+> es lo único que no puede caducar. Es la lección de la tarea 72: un doc de veredicto cita su
+> muestra y envejece bien; **una skill afirma en presente y se lee cada sesión**, así que
+> cuando su número deja de valer, **dirige mal**.
 
 ## "El brazo muerde": cómo especificarlo cuando el brazo ESCALA (T38 — costó una corrida)
 
@@ -433,10 +441,23 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
   sabe cuál era ⇒ **re-anclar la constante**, no buscar un bug). `INDETERMINADO` sigue
   bloqueando el veredicto, pero con el diagnóstico correcto.
 - Toda constante de reproducción **declara sobre qué ventana y sobre qué población se midió**
-  (`measured_on=WINDOW_REFRESH_2026_08_09`, `measured_over=POPULATION_LIVE_ACCT2`). Sin las
-  dos, un desajuste es `INDETERMINADO`: **no se acusa a la cañería sin evidencia**. La
+  (`measured_on=WINDOW_REFRESH_2026_09_01_LIVE`, `measured_over=POPULATION_LIVE_ACCT2`). Sin
+  las dos, un desajuste es `INDETERMINADO`: **no se acusa a la cañería sin evidencia**. La
   población de la corrida sale de `cfg.population(len(entries))` — `announce()` devuelve el
   `cfg`, así que es una línea.
+- **La ventana es POR UNIVERSO (tarea 68), y elegir mal es un error silencioso.** Hay dos
+  constantes y **ninguna es el default**: `WINDOW_REFRESH_2026_09_01_LIVE`
+  (`2016-08-08..2026-09-01`, 2514 barras) para el universo vivo y
+  `WINDOW_REFRESH_2026_09_01_LEGACY` (`2016-09-01..2026-09-01`, 2513) para el de 41. Difieren
+  en el `start`, así que una sola no puede anclar a las dos — es el defecto que la 52 corrigió
+  para la *población*, un eje más allá. El nombre viejo (`..._2026_08_09`) **no existe ni como
+  alias, a propósito**: dejarlo habría permitido elegir mal en silencio, y hay un test que lo
+  prohíbe en todos los `scripts/run_*.py`.
+- **Ojo, y esto no se re-descubre solo:** el `start` de la ventana **viva** lo fija **AVB**,
+  que es la excepción de refresh declarada en `ARTIFACT_REFRESH_EXCEPTIONS` (tarea 63: su
+  `10y` es la escala sana contra la que se detecta el split fantasma del `2y`). O sea que ese
+  ancla **depende a propósito de un artefacto que no se refresca**. Si algún día AVB se
+  refresca, la ventana viva se mueve **sola** y hay que re-anclar de nuevo.
 - **El caso que motivó la T52:** el smoke de la 37 corrió sobre el universo legacy (41
   tickers) contra anclas medidas sobre el vivo (127) **con la misma ventana**, y los tres
   chequeos salieron `FALLA — MISMA ventana ⇒ cambió la cañería`. No había cambiado una línea.

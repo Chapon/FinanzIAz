@@ -82,8 +82,8 @@ reproducción de los runners.
 **Por qué rinde acá.** El backlog acusaba a `CLAUDE.md` de decir la cuenta 1 como viva
 cuando `019de1c` lo había arreglado **tres semanas antes**, y la tarea nunca se actualizó
 (tarea 30). `CLAUDE.md` sigue citando *"buy_score no predice el fwd5 — auditoría
-2026-06-17"* como hecho vivo. Y el ancla `WINDOW_REFRESH` se usó en siete runners durante
-semanas estando construida sobre un artefacto congelado.
+2026-06-17"* como hecho vivo. Y el ancla de ventana (hoy `WINDOW_REFRESH_2026_09_01_LIVE`) se usó en siete
+runners durante semanas estando construida sobre un artefacto congelado.
 
 **Cómo se audita.** Por cada claim: ¿dónde está escrito? ¿sobre qué muestra/ventana/fecha se
 midió? ¿esa muestra todavía existe? ¿alguien lo está usando **como si fuera actual**? Ojo
@@ -108,12 +108,19 @@ pretenden decidir *"esto ya está / esto es la muestra"*. La pregunta siempre es
 
 ### C. Desvíos harness↔engine no declarados
 
-**Qué.** ¿Hay un séptimo desvío que `analysis/harness_config.deviations()` no nombra?
+**Qué.** ¿Hay un **octavo** desvío que `analysis/harness_config.deviations()` no nombra?
 
-**Por qué rinde acá.** Es el riesgo central del proyecto y los seis declarados salieron de
-auditorías previas, **uno por uno**: slots, tamaño de universo, ventana de `analyze()`,
-precio de decisión de las barreras (T32), fill de esa barrera (T33) y gates de re-entrada
-(T34). Cada uno estuvo sin declarar hasta que alguien lo miró.
+**Por qué rinde acá.** Es el riesgo central del proyecto y los **siete** declarados
+salieron de auditorías previas, **uno por uno**: slots, tamaño de universo, ventana de
+`analyze()`, precio de decisión de las barreras (T32), fill de esa barrera (T33), gates
+de re-entrada (T34) y la ventana **rodante** de los artefactos (T48). Cada uno estuvo sin
+declarar hasta que alguien lo miró.
+
+**Y el número de esta frase ya caducó una vez, en 20 minutos.** La primera versión de
+esta skill preguntaba por un *«séptimo»* cuando el fuente ya numeraba siete, y lo cazó su
+propio primer barrido (hallazgo A-1). Antes de usar esta categoría, **contá los desvíos
+en el fuente** en vez de confiar en este párrafo — que es, literalmente, la lección de la
+categoría A aplicada a sí misma.
 
 **Cómo se audita.** Poner al lado la config del engine (`paper_trading/engine.py`,
 `~/.finanzias/settings.json`, la cuenta viva) y la del harness

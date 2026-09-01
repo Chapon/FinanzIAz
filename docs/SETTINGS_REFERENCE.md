@@ -1,8 +1,8 @@
 # Referencia de settings — FinanzIAs
 
-Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tipo, default, ...)` con `doc=`). Acceso vía `settings.get("clave")`. Esta tabla es un resumen; la fuente de verdad es el código.
+Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tipo, default, ...)` con `doc=`). Acceso vía `settings.get("clave")`. **Los marcados como *sin spec* NO están en el `SCHEMA`**: sólo existen como `settings.get(clave, default)` en el código, se pueden setear igual —las claves desconocidas se aceptan— pero **no están validadas** (tarea 72). Esta tabla es un resumen; la fuente de verdad es el código.
 
-> **kill_only pisa defaults.** La cuenta activa "Sim Principal" corre en modo kill_only: aunque `hmm_enabled` y `stacking_enabled` tengan default `True` en el spec, en kill_only quedan **OFF**. XGBoost y vol_overlay quedan **ON**.
+> **kill_only pisa defaults.** El perfil vivo corre en modo kill_only: aunque `hmm_enabled` y `stacking_enabled` tengan default `True` en el spec, en kill_only quedan **OFF**. XGBoost y vol_overlay quedan **ON**.
 
 ## Scheduler
 | Flag | Default | Qué hace |
@@ -92,8 +92,8 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 Regenera el snapshot del artifact del dashboard (`scripts/refresh_dashboard.py`) leyendo `finanzias.db`. Reemplaza la tarea del Windows Task Scheduler que lo corría a las 8:00 (removida 2026-07-12): ahora **solo corre con la app abierta**. Puramente local (sin red); no-op si la DB o el artifact no existen.
 | Flag | Default | Qué hace |
 |------|---------|----------|
-| `dashboard_refresh_enabled` | `True` | Master switch del trigger 7. "Ambos" (Chapa 2026-07-12): refresca 1×/día calendario al abrir la app **y** tras cada scan de la cuenta del dashboard. |
-| `dashboard_refresh_account_id` | `1` | Cuenta cuyo snapshot se regenera (Sim Principal). Solo dispara el refresh post-scan de esa cuenta. |
+| `dashboard_refresh_enabled` *(sin spec)* | `True` | Master switch del trigger 7. "Ambos" (Chapa 2026-07-12): refresca 1×/día calendario al abrir la app **y** tras cada scan de la cuenta del dashboard. |
+| `dashboard_refresh_account_id` *(sin spec)* | *(la cuenta viva)* | Cuenta cuyo snapshot se regenera. **Sin setear ⇒ se resuelve contra `is_active`** (tarea 70): el default era `1`, que está pausada desde el 2026-07-01, y el dashboard se re-estampaba a diario con una cartera congelada. Si se setea a mano y apunta a una cuenta pausada, se respeta pero **se loguea un WARNING**. Solo dispara el refresh post-scan de esa cuenta. |
 
 ## Catalyst exit-veto (T-CAT-4, Gate 2c) — DEFAULT OFF
 Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no superado (ver skill `backtest-replay-harness`):
