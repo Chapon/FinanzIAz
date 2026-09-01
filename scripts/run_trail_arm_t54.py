@@ -51,9 +51,12 @@ from analysis.harness_config import (
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
     WINDOW_REFRESH_2026_08_09,
+    EffectivePopulation,
     announce,
+    announce_effective,
     announce_grid,
     artifact_window,
+    effective_population,
     reproduction_check,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
@@ -304,26 +307,40 @@ def exit_mix(res: PortfolioResult) -> dict:
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
-def changed_exits(base_res: PortfolioResult, cand_res: PortfolioResult, keys: set) -> dict:
-    """Cuántos trades **cambian de salida** de verdad — descriptivo, NO gate.
+def exit_sig(res: PortfolioResult) -> dict:
+    """La firma de salida de cada trade: ``(fecha, motivo)``, la más estricta de la
+    serie. Cambiar de fecha **o** de motivo cuenta como cambiar de salida."""
+    return {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason) for t in res.trades}
+
+
+def effective_pop(base_res: PortfolioResult, cand_res: PortfolioResult, keys: set) -> EffectivePopulation:
+    """La población **efectiva** del brazo — descriptivo, NO gate (T62).
 
     Cambiar el *estado de armado* del trailing no es cambiar la salida: un trailing
     armado sólo importa si llega a **disparar**. El smoke de cañería lo mostró con
     el anti-oráculo, que quedó idéntico al baseline dígito por dígito. Así que la
     población del §5.3 —los trades que cruzan el umbral— es una **cota superior** de
     lo que un brazo mueve, y este número dice cuánto de esa cota se realiza.
+
+    El cómputo vive en ``analysis.harness_config`` desde la **62**: es de esta
+    familia entera —el TP que no se toca, el stop que no se perfora, el cap al que
+    otra salida se adelanta— y no de este runner.
     """
-    b = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason) for t in base_res.trades}
-    c = {(t.ticker, t.entry_date): (t.exit_date, t.exit_reason) for t in cand_res.trades}
-    comunes = [k for k in b if k in c]
-    if not comunes:
-        return {"n_common": 0, "n_changed": 0, "share": 0.0, "n_changed_in_diff_pop": 0}
-    cambiados = [k for k in comunes if b[k] != c[k]]
+    return effective_population(exit_sig(base_res), exit_sig(cand_res), crossed=keys)
+
+
+def changed_exits(base_res: PortfolioResult, cand_res: PortfolioResult, keys: set) -> dict:
+    """El descriptivo tal como lo publicó la 54, ahora sobre el helper compartido.
+
+    Se mantiene con sus cuatro claves exactas para que el JSON de la corrida
+    publicada siga leyéndose igual; lo nuevo va en ``effective_population``.
+    """
+    pop = effective_pop(base_res, cand_res, keys)
     return {
-        "n_common": len(comunes),
-        "n_changed": len(cambiados),
-        "share": len(cambiados) / len(comunes),
-        "n_changed_in_diff_pop": sum(1 for k in cambiados if k in keys),
+        "n_common": pop.n_common,
+        "n_changed": pop.n_changed,
+        "share": pop.share,
+        "n_changed_in_diff_pop": pop.n_changed_in_crossed,
     }
 
 
@@ -648,6 +665,9 @@ def main(argv: list[str] | None = None) -> int:
     # ── 8. C9 — el resultado, no la etiqueta ─────────────────────────────────
     diff_ret = differential_return(base_res, results[arm], keys_star)
     realized_change = changed_exits(base_res, results[arm], keys_star)
+    # T62 — el TERCER banner, y el único que no se puede adelantar: la población
+    # efectiva no existe hasta que el brazo corrió.
+    eff_pop = announce_effective(exit_sig(base_res), exit_sig(results[arm]), crossed=keys_star, file=log)
     mixes = {n: exit_mix(results[n]) for n in (BASELINE_ARM, arm)}
 
     # ── 9. C7 — sensibilidad a 5 slots ───────────────────────────────────────
@@ -719,6 +739,7 @@ def main(argv: list[str] | None = None) -> int:
         "diff_return": diff_ret,
         "exit_mix": mixes,
         "changed_exits": realized_change,
+        "effective_population": eff_pop.as_dict(),
         "verdict": v,
         "outcome": outcome,
         "cache": {"hits": _CACHE.hits, "misses": _CACHE.misses},
@@ -786,6 +807,16 @@ def _report(ctx: dict) -> None:
         f"{ce['n_changed_in_diff_pop']} dentro de la población del §5.3 "
         f"(descriptivo, no gate)"
     )
+    ep = ctx.get("effective_population")
+    if ep:
+        pop = EffectivePopulation(
+            n_common=ep["n_common"],
+            n_changed=ep["n_changed"],
+            n_crossed=ep["n_crossed"],
+            n_changed_in_crossed=ep["n_changed_in_crossed"],
+            min_share=ep["min_share"],
+        )
+        print("\n  " + "\n  ".join(pop.lines()))
 
     dr = ctx["diff_return"]
     print(

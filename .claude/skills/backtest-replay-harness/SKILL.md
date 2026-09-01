@@ -327,7 +327,7 @@ trades toca — marcando **INERTE** (0 trades: es el baseline con otro nombre) y
 éste declara la **muestra de la grilla** antes de elegir el brazo. Sólo imprime: no filtra la grilla
 sola, porque sacar brazos después de congelar el pre-registro sería re-especificar.
 
-**Y su límite, medido (T54 — tarea 62 abierta): cruzar el umbral NO es cambiar de comportamiento.**
+**Y su límite, medido (T54) y tapado (tarea 62): cruzar el umbral NO es cambiar de comportamiento.**
 La población que mide `grid_population` es una **cota superior**, y puede estar muy por encima de la
 efectiva. En la 54, sobre la misma corrida: **336** trades cambian de estado de armado del trailing
 (17,98% — pasa el ≥5% con holgura) y **25** cambian de fecha o de motivo de salida. **Trece veces
@@ -335,9 +335,38 @@ menos.** Un trailing armado que nunca dispara deja la salida idéntica, y la mis
 cualquier barrera condicional (el TP que no se toca, el stop que no se perfora, el cap al que otra
 salida se adelanta). O sea que un brazo puede pasar el sanity **con holgura** y no tener población
 efectiva ninguna — y su Δ chico se leería como *"el mecanismo no sirve"* cuando lo que pasa es que
-**casi no se ejecutó**. Al leer un Δ chico, contar también **las salidas que cambian** (`changed_exits`
-en `scripts/run_trail_arm_t54.py`). Ojo con el orden: eso **exige haber corrido el brazo**, así que
-es un chequeo **post-corrida** y no puede usarse para fijar la grilla antes de congelar.
+**casi no se ejecutó**.
+
+```python
+from analysis.harness_config import announce_effective
+
+# el TERCER banner, YA con el brazo corrido
+eff = announce_effective(exit_sig(base_res), exit_sig(cand_res), crossed=keys_star, file=log)
+eff.realization   # qué fracción de la cota se realiza (la 54: 25/336 ⇒ sobrestima 13×)
+eff.inert         # no cambia NI UNA salida ⇒ un veredicto ahí es sobre nada
+```
+
+`exit_sig` es del runner a propósito: mapea `(ticker, entrada) → firma de la salida`, y **qué cuenta
+como cambiar de salida lo decide el runner** — la `(fecha, motivo)` de la 54 es la más estricta que
+se usó. El banner declara **las dos** poblaciones (cruzada y efectiva) más el factor de
+sobrestimación.
+
+**La decisión de la 62, que es la parte que hay que respetar al escribir el próximo pre-registro:**
+
+1. **El gate sigue siendo la cruzada**, con el `≥5%` de la T13. Ese umbral **se calibró sobre la
+   cruzada**; leerlo sobre la efectiva sería mover el listón con un número que nadie midió, y encima
+   hacia atrás sobre veredictos ya publicados.
+2. **La efectiva se DECLARA, no gatea** — con una sola excepción, que no necesita calibración
+   ninguna: **efectiva cero**. Un brazo que no cambia ni una salida no es "no significativo", es el
+   baseline con otro nombre en la punta que importa (`eff.inert`).
+3. **Un umbral positivo sobre la efectiva pide medir su poder primero** —cuántas salidas cambiadas
+   hacen falta para detectar un efecto de tamaño dado—, y eso no está medido para este eje. Sin esa
+   medición cualquier número sería especulativo (regla 2).
+
+**Y el orden, que es lo que más fácil se rompe:** la cruzada se computa sobre el **baseline**, así
+que se puede mirar *antes* de congelar y por eso **fija la grilla**. La efectiva **exige haber
+corrido el brazo**: es un sanity **post-corrida**. Un pre-registro que la pida como criterio de
+grilla está pidiendo un número que todavía no existe.
 
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 

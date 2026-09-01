@@ -23,6 +23,11 @@ Cubre:
                                INERTES (el baseline con otro nombre) vs brazos «sin
                                población» (<5%, el umbral de la T13), que no son lo
                                mismo y no piden lo mismo
+  effective_population       — la población EFECTIVA (T62): cuántas salidas cambian
+                               de verdad, contra las que el umbral toca. La cruzada
+                               es una cota superior —la 54 la midió sobrestimando
+                               13×— y esto declara cuánto de esa cota se realiza.
+                               Sanity POST-CORRIDA: no puede fijar la grilla
 """
 
 from __future__ import annotations
@@ -52,11 +57,13 @@ from analysis.harness_config import (
     ArtifactWindow,
     HarnessConfig,
     announce,
+    announce_effective,
     announce_grid,
     artifact_population,
     artifact_window,
     config_banner,
     deviations,
+    effective_population,
     exit_rule_line,
     grid_population,
     reproduction_check,
@@ -676,3 +683,148 @@ def test_the_grid_runner_declares_its_grid_population():
     51 llegó a correr dos brazos inertes."""
     txt = (_REPO / "scripts" / "run_event_timestop_t51.py").read_text(encoding="utf-8")
     assert "announce_grid(" in txt
+
+
+# ── Población EFECTIVA — Tarea 62 (EXITPOP) ──────────────────────────────────
+#
+# La cruzada (58) es una **cota superior**: cuenta los trades que el umbral toca,
+# no los que terminan saliendo distinto. La 54 midió las dos sobre la misma corrida
+# y la brecha fue de 13×. Estos tests fijan las dos mitades de la decisión de la
+# 62: qué se declara (las dos poblaciones y el factor de sobrestimación) y qué NO
+# se convierte en gate (todo, menos la efectiva CERO).
+
+
+def _sig(**por_trade):
+    """``{clave: firma_de_salida}`` — ``T1="a|stop"`` ⇒ salida (a, stop)."""
+    return {(k, "d1"): tuple(v.split("|")) for k, v in por_trade.items()}
+
+
+def test_crossing_the_threshold_is_not_changing_the_exit():
+    """El hallazgo de la 54: un trailing armado que **nunca dispara** deja la salida
+    idéntica. Los tres cruzan el umbral; uno solo cambia de salida."""
+    base = _sig(T1="a|stop", T2="b|tp", T3="c|signal")
+    cand = _sig(T1="a|stop", T2="b|tp", T3="z|trail")
+    pop = effective_population(base, cand, crossed=base.keys())
+    assert pop.n_crossed == 3 and pop.n_changed == 1
+    assert pop.crossed_share == 1.0 and pop.share == 1 / 3
+    assert pop.realization == 1 / 3
+    assert any("SOBRESTIMA 3.0×" in w for w in pop.warnings())
+
+
+def test_an_arm_that_changes_no_exit_is_inert_not_insignificant():
+    """El único estado terminante de la 62, y no necesita umbral: si no cambia NI
+    UNA salida, es el baseline con otro nombre en la punta que importa."""
+    base = _sig(T1="a|stop", T2="b|tp")
+    pop = effective_population(base, dict(base), crossed=base.keys())
+    assert pop.inert and not pop.thin
+    assert pop.share == 0.0
+    ws = pop.warnings()
+    assert any("NI UNA salida" in w for w in ws)
+    # y el factor de sobrestimación no explota en el borde: cruzan dos, realiza cero
+    assert pop.realization == 0.0
+    assert any("cota superior de cero" in w for w in ws)
+
+
+def test_the_effective_population_is_an_aviso_and_the_crossed_one_stays_the_gate():
+    """La decisión de la 62 escrita como test: el ≥5% se calibró sobre la cruzada,
+    así que leerlo sobre la efectiva es un **aviso**, no un criterio. El aviso usa
+    la misma constante a propósito — es el listón que la corrida declaró pasar."""
+    base = {(f"T{i}", "d1"): ("a", "stop") for i in range(100)}
+    cand = dict(base)
+    cand[("T0", "d1")] = ("z", "trail")  # 1 de 100 = 1% efectiva
+    pop = effective_population(base, cand, crossed=[(f"T{i}", "d1") for i in range(40)])
+    assert pop.crossed_share == 0.40  # la cruzada pasa el gate con holgura
+    assert pop.share == 0.01 and pop.thin and not pop.inert
+    assert pop.min_share == GRID_MIN_POPULATION
+    aviso = next(w for w in pop.warnings() if "EFECTIVA" in w)
+    assert "NO es un gate" in aviso and "casi no se ejecutó" in aviso
+
+
+def test_a_trade_the_arm_never_took_is_not_a_changed_exit():
+    """Sólo se comparan los trades **comunes**: en los que el brazo no tomó no hay
+    con qué comparar, y contarlos como *cambiados* inflaría la efectiva justo
+    donde la cascada de slots ya mueve la cartera entera."""
+    base = _sig(T1="a|stop", T2="b|tp", T3="c|signal")
+    cand = _sig(T1="a|stop", T3="z|trail")
+    pop = effective_population(base, cand)
+    assert pop.n_common == 2 and pop.n_changed == 1
+    assert pop.realization is None  # sin cruzada declarada, sin factor
+
+
+def test_the_crossed_population_only_counts_keys_both_sides_took():
+    """Una clave cruzada que el brazo no tomó no es población de nada: el factor de
+    sobrestimación se mide sobre lo comparable, o mentiría hacia arriba."""
+    base = _sig(T1="a|stop", T2="b|tp")
+    cand = _sig(T1="z|trail")
+    pop = effective_population(base, cand, crossed=[("T1", "d1"), ("T2", "d1")])
+    assert pop.n_crossed == 1 and pop.n_changed_in_crossed == 1
+    assert pop.realization == 1.0
+
+
+def test_no_common_trades_says_it_cannot_be_measured():
+    """El borde: sin trades comunes la efectiva **no se puede medir**, y decir 0%
+    la haría pasar por *inerte* — que es una afirmación mucho más fuerte."""
+    pop = effective_population(_sig(T1="a|stop"), _sig(T9="b|tp"))
+    assert pop.n_common == 0 and not pop.inert and not pop.thin
+    assert any("NINGÚN trade en común" in w for w in pop.warnings())
+
+
+def test_announce_effective_prints_both_populations(capsys):
+    """El banner declara **las dos**: la cota y lo que se realizó. Es el tercer
+    momento del harness y el único que no se puede adelantar."""
+    base = _sig(T1="a|stop", T2="b|tp", T3="c|signal", T4="d|tp")
+    cand = _sig(T1="a|stop", T2="b|tp", T3="c|signal", T4="z|trail")
+    pop = announce_effective(base, cand, crossed=base.keys(), file=None)
+    out = capsys.readouterr().out
+    assert "Población EFECTIVA" in out and "POST-CORRIDA" in out
+    assert "cruzada (cota sup.)" in out and "efectiva" in out
+    assert pop.n_changed == 1 and pop.n_crossed == 4
+
+
+def test_the_effective_population_cannot_be_computed_before_the_arm_runs():
+    """La regla de orden, fijada donde se puede fijar: ``announce_grid`` sólo pide
+    la cartera del **baseline** (se puede llamar antes de congelar el pre-registro)
+    y ``announce_effective`` pide **las dos**, o sea el brazo ya corrido. Si alguien
+    le sacara el segundo argumento, un pre-registro podría pedirla como criterio de
+    grilla — que es el error que la 62 vino a dejar por escrito."""
+    import inspect
+
+    grid_args = list(inspect.signature(announce_grid).parameters)
+    eff_args = list(inspect.signature(announce_effective).parameters)
+    assert grid_args[:2] == ["per_trade", "grid"]
+    assert eff_args[:2] == ["base_exits", "cand_exits"]
+
+
+def test_the_exit_runner_declares_its_effective_population():
+    """Regresión del cableado de la 62, con el mismo criterio que la 58: si el
+    instrumento existe pero no lo llama nadie, la próxima corrida vuelve a publicar
+    la cota superior como si fuera la muestra."""
+    txt = (_REPO / "scripts" / "run_trail_arm_t54.py").read_text(encoding="utf-8")
+    assert "announce_effective(" in txt
+    assert '"effective_population": eff_pop.as_dict()' in txt
+
+
+def test_the_t54_descriptive_keeps_the_four_keys_it_published():
+    """El cómputo se subió a ``harness_config``, pero el JSON publicado de la 54 se
+    sigue leyendo igual: mover una clave rompería la lectura del artefacto sin que
+    ningún número haya cambiado."""
+    from dataclasses import dataclass
+
+    from scripts.run_trail_arm_t54 import changed_exits
+
+    @dataclass
+    class _T:
+        ticker: str
+        entry_date: str
+        exit_date: str
+        exit_reason: str
+
+    @dataclass
+    class _R:
+        trades: list
+
+    base = _R([_T("A", "d1", "x", "stop"), _T("B", "d1", "y", "tp")])
+    cand = _R([_T("A", "d1", "x", "stop"), _T("B", "d1", "z", "trail")])
+    d = changed_exits(base, cand, {("B", "d1")})
+    assert set(d) == {"n_common", "n_changed", "share", "n_changed_in_diff_pop"}
+    assert d == {"n_common": 2, "n_changed": 1, "share": 0.5, "n_changed_in_diff_pop": 1}

@@ -58,7 +58,7 @@ import os
 import socket
 import statistics
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -773,6 +773,230 @@ def announce_grid(
     siempre, no sólo cuando hay un problema.
     """
     pop = grid_population(per_trade, grid, label=label, min_share=min_share)
+    print("\n".join(pop.lines()) + "\n", file=file if file is not None else sys.stdout)
+    return pop
+
+
+# ── Población EFECTIVA — Tarea 62 (EXITPOP) ──────────────────────────────────
+#
+# La 58 dejó el instrumento para la población **cruzada**: a cuántos trades del
+# baseline llega a tocar cada valor de la grilla. La 54 midió las dos cosas sobre
+# la MISMA corrida y la brecha es de **trece veces**: 336 trades cruzan el umbral
+# de armado del trailing (17,98% — pasa el ≥5% de la T13 con holgura) y **25**
+# cambian de fecha o de motivo de salida (``docs/trail_arm_t54_2026-08-28.md`` §7).
+#
+# La causa no es de la 54: es de cualquier familia donde la regla es una **barrera
+# condicional**. Un trailing armado que nunca dispara deja la salida idéntica, y
+# lo mismo vale para el take-profit que no se toca (T23), el stop que no se perfora
+# (T26/T34/T37) y el cap de tenencia al que otra salida se adelanta (T51). La
+# cruzada es una **cota superior** de la efectiva, y hasta acá nada decía cuán
+# floja es esa cota en cada corrida.
+#
+# EL ORDEN IMPORTA, y es la parte fina. La cruzada se computa sobre el **baseline**
+# ⇒ se puede mirar *antes* de congelar el pre-registro, y por eso la 58 la usa para
+# FIJAR la grilla (``announce_grid``). La efectiva exige **haber corrido el brazo**
+# ⇒ es un sanity **post-corrida** y no puede fijar nada: un pre-registro que la pida
+# como criterio de grilla está pidiendo un número que todavía no existe.
+#
+# LA DECISIÓN DE LA 62, escrita para que no quede implícita:
+#
+#   * El **gate sigue siendo la cruzada**, con el ≥5% de la T13. Ese umbral se
+#     calibró sobre la cruzada; leerlo sobre la efectiva sería mover el listón con
+#     un número que nadie midió, y encima hacia atrás sobre veredictos publicados.
+#   * La efectiva entra como **AVISO declarado**, no como criterio — con UNA
+#     excepción que no necesita calibración ninguna: la **efectiva CERO**. Un brazo
+#     que no cambia NI UNA salida no es "no significativo": es el baseline con otro
+#     nombre en la única punta que importa, y un veredicto ahí sería sobre nada.
+#     Es el mismo ``inert`` de la 58 un nivel más abajo, y por eso ``inert`` es la
+#     única propiedad de acá que se puede leer como terminante.
+#   * Poner un umbral **positivo** sobre la efectiva exige medir antes su **poder**
+#     —cuántas salidas cambiadas hacen falta para detectar un efecto de tamaño
+#     dado—, que no está medido para este eje. Sin esa medición cualquier número
+#     sería especulativo, que es justo lo que la regla 2 prohíbe. Queda dicho como
+#     lo que falta, no como lo que se hizo.
+#
+# El aviso de "flaca" reusa ``GRID_MIN_POPULATION`` **a propósito y como aviso**:
+# es el listón que la corrida ya declaró haber pasado por la cruzada, así que
+# medirlo también sobre la efectiva es la comparación que hace visible la brecha,
+# sin introducir una constante nueva.
+
+
+@dataclass(frozen=True)
+class EffectivePopulation:
+    """Cuántas salidas cambia **de verdad** un brazo, contra cuántas podría tocar.
+
+    ``n_common`` son los trades que el baseline y el brazo comparten (misma clave
+    ``(ticker, entrada)``): los únicos sobre los que la pregunta *"¿cambió la
+    salida?"* tiene sentido, porque en los demás no hay con qué comparar.
+    ``n_crossed`` es la población **cruzada** del brazo —los trades que el umbral
+    alcanza— y ``n_changed_in_crossed`` cuántos de ésos cambiaron: la razón entre
+    los dos es lo que la 54 midió como 13×."""
+
+    n_common: int
+    n_changed: int
+    n_crossed: int = 0
+    n_changed_in_crossed: int = 0
+    min_share: float = GRID_MIN_POPULATION
+    label: str = "salidas"
+
+    @property
+    def share(self) -> float:
+        """Población **efectiva**: la fracción de trades comunes que cambia de salida."""
+        return self.n_changed / self.n_common if self.n_common else 0.0
+
+    @property
+    def crossed_share(self) -> float:
+        """La **cota superior**: la fracción de comunes que el umbral alcanza a tocar."""
+        return self.n_crossed / self.n_common if self.n_common else 0.0
+
+    @property
+    def realization(self) -> float | None:
+        """Qué fracción de la cota se **realiza**. ``None`` si no se declaró cruzada.
+
+        Es el número de la 54 dado vuelta: 25/336 = 7,4% ⇒ la cota sobrestima 13×."""
+        if not self.n_crossed:
+            return None
+        return self.n_changed_in_crossed / self.n_crossed
+
+    @property
+    def inert(self) -> bool:
+        """No cambia **ninguna** salida ⇒ el baseline con otro nombre. Es el único
+        estado de acá que se puede leer como terminante (ver el bloque de arriba)."""
+        return self.n_common > 0 and self.n_changed == 0
+
+    @property
+    def thin(self) -> bool:
+        """Cambia algo, pero menos que el listón que la cruzada ya declaró pasar.
+
+        **No es un gate**: el ≥5% se calibró sobre la cruzada. Es el aviso que hace
+        visible la brecha entre las dos poblaciones. Sin trades comunes es ``False``:
+        ahí no hay muestra flaca, hay muestra inexistente, y lo dice el otro aviso."""
+        return self.n_common > 0 and not self.inert and self.share < self.min_share
+
+    def warnings(self) -> list[str]:
+        """Los avisos que el banner grita. Vacío ⇒ el brazo mueve lo que toca."""
+        if not self.n_common:
+            return [
+                "AVISO: NINGÚN trade en común entre el baseline y el brazo — la "
+                "población efectiva no se puede medir (T62)."
+            ]
+        out: list[str] = []
+        if self.inert:
+            out.append(
+                "AVISO: el brazo no cambia NI UNA salida — es el baseline con otro "
+                "nombre en la punta que importa, y un veredicto sería sobre nada "
+                "(T62; el INERTE de la 58 un nivel más abajo)."
+            )
+        elif self.thin:
+            out.append(
+                f"AVISO: población EFECTIVA {100 * self.share:.2f}% — por debajo del "
+                f"{100 * self.min_share:.0f}% que la cruzada declara pasar. NO es un "
+                f"gate (ese umbral se calibró sobre la cruzada), pero un Δ chico acá "
+                f"se lee *casi no se ejecutó*, no *el mecanismo no sirve* (T62)."
+            )
+        r = self.realization
+        if r == 0.0:
+            out.append(
+                f"AVISO: de los {self.n_crossed} trades que CRUZAN el umbral no cambia "
+                f"de salida NINGUNO — la población cruzada de este brazo es cota "
+                f"superior de cero (T62)."
+            )
+        elif r is not None and r < 1.0:
+            out.append(
+                f"AVISO: la población cruzada SOBRESTIMA {1 / r:.1f}× lo que el brazo "
+                f"mueve ({self.n_changed_in_crossed} de {self.n_crossed} cruzados "
+                f"cambian de salida) — es una cota superior, no la muestra efectiva (T62)."
+            )
+        return out
+
+    def lines(self) -> list[str]:
+        out = [
+            f"Población EFECTIVA — {self.label} que cambian, sobre "
+            f"{self.n_common} trades comunes (sanity POST-CORRIDA, T62):",
+            f"  cruzada (cota sup.) {self.n_crossed:>6}  {100 * self.crossed_share:>7.2f}%",
+            f"  efectiva            {self.n_changed:>6}  {100 * self.share:>7.2f}%",
+        ]
+        r = self.realization
+        if r is not None:
+            out.append(
+                f"  realizada           {self.n_changed_in_crossed:>6}  {100 * r:>7.2f}% de la cruzada"
+            )
+        out.extend("  " + w for w in self.warnings())
+        return out
+
+    def as_dict(self) -> dict[str, Any]:
+        """El descriptivo, para el JSON de la corrida."""
+        return {
+            "n_common": self.n_common,
+            "n_changed": self.n_changed,
+            "share": self.share,
+            "n_crossed": self.n_crossed,
+            "n_changed_in_crossed": self.n_changed_in_crossed,
+            "realization": self.realization,
+            "inert": self.inert,
+            "thin": self.thin,
+            "min_share": self.min_share,
+            "warnings": self.warnings(),
+        }
+
+    def __str__(self) -> str:
+        return "\n".join(self.lines())
+
+
+def effective_population(
+    base_exits: Mapping[Any, Any],
+    cand_exits: Mapping[Any, Any],
+    *,
+    crossed: Iterable[Any] = (),
+    min_share: float = GRID_MIN_POPULATION,
+    label: str = "salidas",
+) -> EffectivePopulation:
+    """La población **efectiva** de un brazo: cuántas salidas cambia de verdad.
+
+    ``base_exits`` y ``cand_exits`` mapean la clave del trade —``(ticker, entrada)``
+    en todos los runners de la serie— a la **firma de la salida** que el runner
+    considere: la ``(fecha, motivo)`` de la 54 es la más estricta que se usó. Se
+    comparan con ``!=``, así que qué cuenta como *cambiar de salida* lo decide el
+    runner y queda visible en su código, no acá.
+
+    ``crossed`` son las claves de la población **cruzada** (las que el umbral toca),
+    para poder reportar cuánto de esa cota se realiza. Es opcional: sin ella el
+    helper igual da la efectiva, sólo que sin el factor de sobrestimación.
+
+    Es pura: no importa ``portfolio_sim``, no toca el disco y no pega a la red.
+    """
+    keys = set(crossed)
+    comunes = [k for k in base_exits if k in cand_exits]
+    cambiados = [k for k in comunes if base_exits[k] != cand_exits[k]]
+    return EffectivePopulation(
+        n_common=len(comunes),
+        n_changed=len(cambiados),
+        n_crossed=sum(1 for k in keys if k in base_exits and k in cand_exits),
+        n_changed_in_crossed=sum(1 for k in cambiados if k in keys),
+        min_share=min_share,
+        label=label,
+    )
+
+
+def announce_effective(
+    base_exits: Mapping[Any, Any],
+    cand_exits: Mapping[Any, Any],
+    *,
+    crossed: Iterable[Any] = (),
+    min_share: float = GRID_MIN_POPULATION,
+    label: str = "salidas",
+    file: TextIO | None = None,
+) -> EffectivePopulation:
+    """Mide la población efectiva, **la imprime** y la devuelve.
+
+    Es el **tercer** momento del harness, y va en ese orden a propósito:
+    ``announce()`` declara la config antes de simular, ``announce_grid()`` declara
+    la muestra de la grilla apenas hay baseline y **antes** de correr los brazos, y
+    éste declara —ya con el brazo corrido— cuánto de esa muestra se realizó. No se
+    puede adelantar: la efectiva **no existe** hasta que el brazo corrió, y por eso
+    no puede entrar como criterio de un pre-registro congelado.
+    """
+    pop = effective_population(base_exits, cand_exits, crossed=crossed, min_share=min_share, label=label)
     print("\n".join(pop.lines()) + "\n", file=file if file is not None else sys.stdout)
     return pop
 
