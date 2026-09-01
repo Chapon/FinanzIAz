@@ -16,6 +16,9 @@ Optionally integrates:
 
 from __future__ import annotations
 
+import hashlib
+import uuid
+
 import numpy as np
 import pandas as pd
 
@@ -164,12 +167,52 @@ def compute_volume_sma(df: pd.DataFrame, period: int = 20) -> pd.Series:
 # ── Indicator LRU cache ───────────────────────────────────────────────────────
 
 _INDICATOR_CACHE: OrderedDict = OrderedDict()
-_INDICATOR_CACHE_MAX = 50  # max cached (ticker, dataset) combinations
+_INDICATOR_CACHE_STATS = {"hits": 0, "misses": 0}
+
+# Tarea 29(a) — era 50, contra **128 tickers distintos por scan** en la cuenta 2.
+# Con LRU de 50 y barrido secuencial de 128, ninguna entrada sobrevive una pasada:
+# **hit rate 0%**, y RSI + MACD + Bollinger + SMA20/50/200 se recalculaban enteros
+# en cada scan. Es el defecto (b) de la T24 otra vez, así que el cap sale del mismo
+# criterio y del mismo número: ``_XGB_CACHE_MAX`` = 192, holgado sobre los 128 del
+# universo vivo para que la pestaña Análisis y los leads no desalojen el scan.
+_INDICATOR_CACHE_MAX = 192
 
 
 def _df_fingerprint(df: pd.DataFrame) -> tuple:
-    """Cheap key that identifies a specific OHLCV dataset."""
-    return (len(df), str(df.index[-1]) if len(df) > 0 else "")
+    """Huella del dataset OHLCV — **incluye los closes**, no sólo su forma.
+
+    Tarea 29(b), y es la mitad que hace segura a la (a). La huella era
+    ``(len(df), último timestamp)``: durante la rueda la **barra parcial de hoy**
+    cambia de valor pero **no** de largo ni de fecha, así que dos frames con
+    precios distintos daban la **misma clave**. Hoy eso está enmascarado porque el
+    cache nunca acierta; **subir el cap solo habría congelado los indicadores del
+    día en la primera lectura de la mañana** mientras el precio se mueve. Es el
+    defecto (a) de la T24 en el otro sentido, y por eso las dos patas van juntas.
+
+    El digest cubre la serie de closes **entera**, no su cola, por el mismo
+    argumento que ``_xgb_cache_key``: una corrección retroactiva más atrás —un
+    split, un re-ajuste por dividendos— no movería ni el largo ni la última fecha,
+    y serviría indicadores calculados sobre una historia que ya no existe. Medido
+    en **55 µs** para un frame de 2.448 barras contra los **2,08 ms** de recomputar
+    los seis indicadores que protege: la garantía fuerte cuesta **2,7%** de lo que
+    ahorra (medido, no estimado).
+
+    Si los closes no son numéricos se devuelve una huella **imposible de igualar**
+    (un uuid): mejor no cachear que una clave que no distingue dos datasets.
+    """
+    if len(df) == 0:
+        return (0, "", "")
+    last_ts = str(df.index[-1])
+    close = df["Close"].squeeze() if "Close" in df.columns else None
+    if close is None:
+        return (len(df), last_ts, "")
+    try:
+        closes = np.ascontiguousarray(np.asarray(close, dtype="float64").ravel()).round(4)
+    except (TypeError, ValueError):
+        return (len(df), last_ts, uuid.uuid4().hex)
+    # tobytes() compara por patrón de bits, así que un NaN dentro de la muestra no
+    # rompe la igualdad de la clave consigo misma (mismo cuidado que en garch).
+    return (len(df), last_ts, hashlib.sha256(closes.tobytes()).hexdigest()[:16])
 
 
 def get_cached_indicators(ticker: str, df: pd.DataFrame) -> dict:
@@ -185,7 +228,9 @@ def get_cached_indicators(ticker: str, df: pd.DataFrame) -> dict:
     key = (ticker.upper(), *_df_fingerprint(df))
     if key in _INDICATOR_CACHE:
         _INDICATOR_CACHE.move_to_end(key)  # mark as recently used
+        _INDICATOR_CACHE_STATS["hits"] += 1
         return _INDICATOR_CACHE[key]
+    _INDICATOR_CACHE_STATS["misses"] += 1
 
     result = {
         "rsi": compute_rsi(df),
@@ -201,6 +246,22 @@ def get_cached_indicators(ticker: str, df: pd.DataFrame) -> dict:
 
     _INDICATOR_CACHE[key] = result
     return result
+
+
+def indicator_cache_stats() -> dict:
+    """``{hits, misses, size, max}`` del cache de indicadores (tarea 29).
+
+    El kill-criteria de la tarea pide **hit rate medido > 0 en un scan real**, y
+    para eso hay que poder medirlo: hasta acá el cache no llevaba la cuenta, que es
+    parte de por qué un hit rate de **0%** pudo pasar desapercibido desde siempre.
+    """
+    return dict(_INDICATOR_CACHE_STATS, size=len(_INDICATOR_CACHE), max=_INDICATOR_CACHE_MAX)
+
+
+def clear_indicator_cache() -> None:
+    """Vacía el cache y sus contadores (tests y mediciones)."""
+    _INDICATOR_CACHE.clear()
+    _INDICATOR_CACHE_STATS.update(hits=0, misses=0)
 
 
 # ── Signal generators ─────────────────────────────────────────────────────────

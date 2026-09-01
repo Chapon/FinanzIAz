@@ -1213,7 +1213,12 @@ STACKING_FEATURE_COLS = [
 # A trained ``dict`` *and* a ``None`` outcome (e.g. too few rows) are both cached,
 # so the expensive feature build isn't repeated just to re-learn it's a no-go.
 _STACK_CACHE: OrderedDict[str, object] = OrderedDict()
-_STACK_CACHE_MAX = 64
+# Tarea 29(d) — era 64, contra 128 tickers por scan: el mismo thrashing que la
+# T24 midió en el XGB y que la 29(a) acaba de sacar del cache de indicadores.
+# Hoy no molesta porque `stacking_enabled=False` (kill_only), así que esto es
+# **latente**: se alinea al mismo 192 ahora, para que prenderlo no traiga de
+# regalo un cache que nunca acierta.
+_STACK_CACHE_MAX = 192
 _STACK_MISS = object()  # sentinel: distinguishes "not cached" from "cached None"
 
 
