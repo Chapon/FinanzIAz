@@ -44,7 +44,7 @@ DEFAULT_DB = "finanzias.db"
 
 def _atr_params_from_settings() -> AtrParams:
     try:
-        from config.settings_manager import settings  # type: ignore
+        from config.settings_manager import settings
 
         return AtrParams(
             period=max(2, int(settings.get("atr_period", 14))),

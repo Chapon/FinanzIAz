@@ -104,7 +104,7 @@ def summarize(res: dict) -> dict:
     }
 
 
-def _load_orders(db: str, account: int) -> list[dict]:
+def _load_orders(db: str, account: int) -> tuple[list[dict], float]:
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
     init_cap = float(

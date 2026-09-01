@@ -136,6 +136,19 @@ class AccountResult:
 # ── DB loading ───────────────────────────────────────────────────────────────
 
 
+def _parse_dt_req(value: str | None) -> datetime:
+    """Como ``_parse_dt`` pero **exige** el valor.
+
+    Las queries que lo usan filtran ``IS NOT NULL``, asi que un None ahi seria un
+    desvio del SQL —no un dato faltante— y conviene que grite en vez de propagar
+    un None a un dataclass que no lo admite.
+    """
+    dt = _parse_dt(value)
+    if dt is None:
+        raise ValueError("fecha nula donde el SQL garantiza NOT NULL")
+    return dt
+
+
 def _parse_dt(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -173,7 +186,7 @@ def load_fills(con: sqlite3.Connection, account_id: int) -> list[Fill]:
             price=float(row[4]),
             commission=float(row[5]),
             slippage=float(row[6]),
-            filled_at=_parse_dt(row[7]),
+            filled_at=_parse_dt_req(row[7]),
         )
         for row in cur.fetchall()
     ]
@@ -188,7 +201,7 @@ def load_snapshots(con: sqlite3.Connection, account_id: int) -> list[AccountSnap
     )
     return [
         AccountSnapshot(
-            snapshot_at=_parse_dt(row[0]),
+            snapshot_at=_parse_dt_req(row[0]),
             total_equity=float(row[1]),
             cash=float(row[2]),
             positions_value=float(row[3]),

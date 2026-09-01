@@ -37,7 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config.logging_config import get_logger
-from data.catalyst_classifier import classify
+from data.catalyst_classifier import Classification, classify
 from database.models import NewsEvent, session_scope, utcnow_naive
 
 log = get_logger(__name__)
@@ -134,7 +134,10 @@ def classify_events(
     # Fase 2 — clasificar FUERA de toda sesión (acá viven las llamadas al LLM).
     # Acumulamos los updates a aplicar; los contadores del report se mantienen
     # idénticos a la versión anterior (se incrementan incluso en dry_run).
-    pending: list[tuple[int, object]] = []
+    # `Classification` y no `object`: lo que se acumula aca es el resultado del
+    # clasificador, y con `object` los siete accesos a sus campos de mas abajo
+    # quedaban sin tipo.
+    pending: list[tuple[int, Classification]] = []
     for ev_id, title, content, src, ticker in candidates:
         report.scanned += 1
         try:

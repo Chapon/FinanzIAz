@@ -87,7 +87,8 @@ def is_near_earnings(buy_day: date | None, earnings_dates, window_days: int) -> 
 
 def classify_round_trips(round_trips, earnings_by_ticker, window_days: int):
     """Parte los round-trips en (near_earnings, far) según el día de COMPRA."""
-    near, far = [], []
+    near: list = []
+    far: list = []
     for rt in round_trips:
         dates = earnings_by_ticker.get(rt["ticker"], ())
         (near if is_near_earnings(rt.get("buy_day"), dates, window_days) else far).append(rt)

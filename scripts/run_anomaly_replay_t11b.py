@@ -430,10 +430,13 @@ def main(argv: list[str] | None = None) -> int:
         fill_mode=args.fill_mode,
     )
     op_scored = [(ti, oracle_ret.get((ti[0], bars_by[ti[0]][ti[1]][0]))) for ti in operable]
-    op_scored = [(ti, r) for ti, r in op_scored if r is not None]
-    op_scored.sort(key=lambda x: x[1], reverse=True)
+    # Nombre nuevo y no `op_scored` otra vez: al re-bindear, el tipo declarado
+    # sigue siendo `float | None` aunque el filtro ya saco los None, y el sort
+    # queda con una clave que no se puede ordenar.
+    scored = [(ti, r) for ti, r in op_scored if r is not None]
+    scored.sort(key=lambda x: x[1], reverse=True)
     oracle_entries = sorted(
-        (ti for ti, _ in op_scored[: len(prim)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
+        (ti for ti, _ in scored[: len(prim)]), key=lambda ti: (bars_by[ti[0]][ti[1]][0], ti[0])
     )
 
     # correr todos los brazos + oráculo

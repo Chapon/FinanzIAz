@@ -77,7 +77,7 @@ def _veto_settings() -> dict:
         "veto_min_score": 0.30,  # paper_catalyst_veto_min_score
     }
     try:
-        from config.settings_manager import settings  # type: ignore
+        from config.settings_manager import settings
 
         g["gray_low"] = float(settings.get("paper_signal_sell_bypass_score", g["gray_low"]))
         g["gray_high"] = float(settings.get("paper_catalyst_veto_gray_high", g["gray_high"]))

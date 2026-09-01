@@ -168,7 +168,7 @@ def simulate(bars, e_idx, tp_mult):
 
 def composite_dd(trades):
     """Max DD de la curva compuesta equal-weight (media diaria de posiciones abiertas)."""
-    by_day = {}
+    by_day: dict[str, list] = {}
     for tr in trades:
         for d, r in tr["daily"]:
             by_day.setdefault(d, []).append(r)
@@ -200,7 +200,7 @@ def main():
     for name, tp in TP_ARMS.items():
         rets, holds, reasons = [], [], []
         trades_full = []
-        reg_rets = {}
+        reg_rets: dict[str, list] = {}
         for t, e in entries:
             r = simulate(barcache[t], e, tp)
             if r is None:
