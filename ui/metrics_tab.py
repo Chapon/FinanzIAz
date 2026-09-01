@@ -155,14 +155,14 @@ class EffectivenessChart(QFrame):
         sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
         root.addWidget(sub)
         self.figure = Figure(figsize=(7.4, 3.0), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         root.addWidget(self.canvas, stretch=1)
 
     def update_chart(self, timeline: list[dict], markers: list[dict]) -> None:
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        ax.set_facecolor(CHART_STYLE["axes.facecolor"])
+        ax.set_facecolor(str(CHART_STYLE["axes.facecolor"]))
         if not timeline:
             ax.text(
                 0.5,

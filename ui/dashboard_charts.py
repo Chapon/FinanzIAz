@@ -50,7 +50,10 @@ CATEGORICAL_COLORS = [
 def _apply_chart_rcparams() -> None:
     for k, v in CHART_STYLE.items():
         with contextlib.suppress(Exception):
-            matplotlib.rcParams[k] = v
+            # matplotlib tipa las claves con un Literal de ~300 valores; las de
+            # CHART_STYLE salen de un dict propio y el suppress de arriba ya cubre
+            # una clave invalida.
+            matplotlib.rcParams[k] = v  # type: ignore[index]
 
 
 def _gradient_under_line(ax, x_num, ys, color, alpha_top: float = 0.38) -> None:
@@ -96,7 +99,7 @@ class AreaChartHero(QWidget):
         super().__init__(parent)
         _apply_chart_rcparams()
         self.figure = Figure(figsize=(10, height_in), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -106,12 +109,12 @@ class AreaChartHero(QWidget):
         self._render_empty()
 
     def _style_axes(self) -> None:
-        self.ax.set_facecolor(CHART_STYLE["axes.facecolor"])
+        self.ax.set_facecolor(str(CHART_STYLE["axes.facecolor"]))
         self.ax.tick_params(colors=CHART_STYLE["xtick.color"], labelsize=9)
         for spine in ("top", "right"):
             self.ax.spines[spine].set_visible(False)
         for spine in ("bottom", "left"):
-            self.ax.spines[spine].set_color(CHART_STYLE["axes.edgecolor"])
+            self.ax.spines[spine].set_color(str(CHART_STYLE["axes.edgecolor"]))
         self.ax.grid(True, color=CHART_STYLE["grid.color"], alpha=CHART_STYLE["grid.alpha"], linewidth=0.5)
 
     def _render_empty(self) -> None:
@@ -174,7 +177,7 @@ class _Sparkline(QWidget):
         self._kind = kind
         self._color = color or PALETTE["accent"]
         self.figure = Figure(figsize=(3.0, 0.85), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         self.setFixedHeight(58)
         layout = QVBoxLayout(self)
@@ -305,7 +308,7 @@ class DonutChart(QFrame):
         root.addWidget(self.title_lbl)
 
         self.figure = Figure(figsize=(3.2, 2.4), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_aspect("equal")
@@ -320,7 +323,7 @@ class DonutChart(QFrame):
     def _clear_legend(self) -> None:
         while self.legend_box.count():
             item = self.legend_box.takeAt(0)
-            w = item.widget()
+            w = item.widget() if item is not None else None
             if w is not None:
                 w.deleteLater()
 

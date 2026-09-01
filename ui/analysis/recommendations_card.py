@@ -157,7 +157,9 @@ class RecommendationsCard(QFrame):
         title.setStyleSheet("font-weight: 600; font-size: 13px;")
         title.setCursor(Qt.CursorShape.PointingHandCursor)
         # Hacer que click en el título también haga toggle
-        title.mousePressEvent = lambda _ev: self._toggle()
+        # Monkeypatch a proposito sobre la INSTANCIA: el label no tiene subclase
+        # propia y solo se le quiere enganchar el click.
+        title.mousePressEvent = lambda _ev: self._toggle()  # type: ignore[method-assign]
         header.addWidget(title)
         header.addStretch()
 
@@ -237,7 +239,7 @@ class RecommendationsCard(QFrame):
         # Limpiar filas previas
         while self._bars_layout.count():
             item = self._bars_layout.takeAt(0)
-            w = item.widget()
+            w = item.widget() if item is not None else None
             if w is not None:
                 w.deleteLater()
 

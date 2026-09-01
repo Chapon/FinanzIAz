@@ -422,7 +422,7 @@ QFrame#vline     {{ background-color: {BORDER}; max-width: 1px; }}
 """
 
 # ── Chart style (passed to matplotlib rcParams) ────────────────────────────
-CHART_STYLE = {
+CHART_STYLE: dict[str, str | float] = {
     "figure.facecolor": BG_CARD,
     "axes.facecolor": BG_CARD,
     "axes.edgecolor": BORDER,
@@ -450,7 +450,7 @@ SIGNAL_COLORS = {
 }
 
 # Export palette for use in widgets
-PALETTE = {
+PALETTE: dict[str, str] = {
     "bg": BG_BASE,
     "sidebar": BG_SIDEBAR,
     "card": BG_CARD,

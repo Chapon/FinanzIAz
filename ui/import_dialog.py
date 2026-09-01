@@ -333,19 +333,26 @@ class ImportDialog(QDialog):
         rows_to_import = []
         price_zero = []
         for r in range(self.table.rowCount()):
-            ticker = self.table.item(r, 0).text().strip().upper()
-            try:
-                qty = float(self.table.item(r, 3).text().replace(",", ""))
-            except (ValueError, AttributeError):
-                qty = 0.0
-            try:
-                price = float(self.table.item(r, 4).text().replace(",", ""))
-            except (ValueError, AttributeError):
-                price = 0.0
-            try:
-                fee = float(self.table.item(r, 5).text().replace(",", ""))
-            except (ValueError, AttributeError):
-                fee = 0.0
+            cell_ticker = self.table.item(r, 0)
+            if cell_ticker is None:
+                # Fila sin celda de ticker: antes reventaba con AttributeError, y
+                # tolerarla con "" importaria una posicion sin ticker (no hay
+                # filtro de ticker vacio mas abajo). Se saltea.
+                continue
+            ticker = cell_ticker.text().strip().upper()
+
+            def _num(col: int, row: int = r) -> float:
+                cell = self.table.item(row, col)
+                if cell is None:
+                    return 0.0
+                try:
+                    return float(cell.text().replace(",", ""))
+                except ValueError:
+                    return 0.0
+
+            qty = _num(3)
+            price = _num(4)
+            fee = _num(5)
 
             if qty <= 0:
                 continue

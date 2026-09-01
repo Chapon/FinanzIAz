@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QTextEdit,
     QVBoxLayout,
 )
@@ -24,6 +25,19 @@ from config.settings_manager import settings
 from data.yahoo_finance import get_company_info, validate_ticker
 from database.models import Alert, Portfolio, Position, Transaction, session_scope, utcnow_naive
 from ui.validators import TickerValidator, is_valid_ticker
+
+
+def _ok_button(box: QDialogButtonBox) -> QPushButton:
+    """El boton OK de un QDialogButtonBox, sin el ``Optional`` de los stubs.
+
+    ``button()`` devuelve None cuando ese StandardButton no se pidio al construir
+    la caja. Todos los usos de este archivo lo piden, asi que la explicacion vive
+    aca y no repetida como guarda en cada dialogo.
+    """
+    btn = box.button(QDialogButtonBox.StandardButton.Ok)
+    if btn is None:  # pragma: no cover — la caja siempre se construye con Ok
+        raise RuntimeError("QDialogButtonBox sin boton Ok")
+    return btn
 
 
 class AddPortfolioDialog(QDialog):
@@ -219,7 +233,7 @@ class AddPositionDialog(QDialog):
         layout.addWidget(self.status_label)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
+        self.ok_btn = _ok_button(btns)
         self.ok_btn.setText("Agregar")
         self.ok_btn.setObjectName("primary")
         btns.accepted.connect(self._accept)
@@ -362,8 +376,8 @@ class AddAlertDialog(QDialog):
         layout.addLayout(form)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Guardar" if editing else "Crear Alerta")
-        btns.button(QDialogButtonBox.StandardButton.Ok).setObjectName("primary")
+        _ok_button(btns).setText("Guardar" if editing else "Crear Alerta")
+        _ok_button(btns).setObjectName("primary")
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
@@ -464,8 +478,8 @@ class SellPositionDialog(QDialog):
         layout.addLayout(form)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Confirmar Venta")
-        btns.button(QDialogButtonBox.StandardButton.Ok).setObjectName("danger")
+        _ok_button(btns).setText("Confirmar Venta")
+        _ok_button(btns).setObjectName("danger")
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)

@@ -47,7 +47,7 @@ from ui.styles import CHART_STYLE
 def _apply_style(ax):
     for k, v in CHART_STYLE.items():
         with contextlib.suppress(Exception):
-            plt.rcParams[k] = v
+            plt.rcParams[k] = v  # type: ignore[index]  # matplotlib tipa las claves con un Literal
     ax.set_facecolor(CHART_STYLE["axes.facecolor"])
     ax.tick_params(colors=CHART_STYLE["xtick.color"])
     ax.spines["bottom"].set_color(CHART_STYLE["axes.edgecolor"])
@@ -66,7 +66,7 @@ class ChartWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.figure = Figure(figsize=(10, 7), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

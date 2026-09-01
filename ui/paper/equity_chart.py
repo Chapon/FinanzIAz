@@ -90,9 +90,9 @@ class EquityCurveChart(QWidget):
         super().__init__(parent)
         for k, v in CHART_STYLE.items():
             with contextlib.suppress(Exception):
-                matplotlib.rcParams[k] = v
+                matplotlib.rcParams[k] = v  # type: ignore[index]  # matplotlib tipa las claves con un Literal
         self.figure = Figure(figsize=(8, 3), tight_layout=True)
-        self.figure.patch.set_facecolor(CHART_STYLE["figure.facecolor"])
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
         self.canvas = FigureCanvas(self.figure)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -109,12 +109,12 @@ class EquityCurveChart(QWidget):
 
     # ── Styling helpers ──────────────────────────────────────────────────────
     def _style_axes(self) -> None:
-        self.ax.set_facecolor(CHART_STYLE["axes.facecolor"])
+        self.ax.set_facecolor(str(CHART_STYLE["axes.facecolor"]))
         self.ax.tick_params(colors=CHART_STYLE["xtick.color"], labelsize=9)
         for spine in ("top", "right"):
             self.ax.spines[spine].set_visible(False)
         for spine in ("bottom", "left"):
-            self.ax.spines[spine].set_color(CHART_STYLE["axes.edgecolor"])
+            self.ax.spines[spine].set_color(str(CHART_STYLE["axes.edgecolor"]))
         self.ax.grid(
             True,
             color=CHART_STYLE["grid.color"],

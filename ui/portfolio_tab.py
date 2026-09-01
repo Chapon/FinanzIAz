@@ -736,6 +736,8 @@ class PortfolioTab(QWidget):
         menu.addSeparator()
 
         delete_action = menu.addAction(f"🗑  Eliminar {position.ticker}")
+        if delete_action is None:  # pragma: no cover — addAction con texto no devuelve None
+            return
         delete_action.setToolTip("Elimina la posición y todo su historial de transacciones")
         # Style the delete action in red
         delete_action.triggered.connect(lambda: self._delete_pos_at_row(row))
