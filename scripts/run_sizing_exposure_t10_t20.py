@@ -43,7 +43,9 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
     artifact_window,
 )
 from analysis.market_regime import build_regime_series, make_entry_filter
@@ -204,6 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
         f"(look-ahead en el fill de la barrera — Tarea 33)",
     )
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -229,6 +236,15 @@ def main(argv: list[str] | None = None) -> int:
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     sigma_by = build_sigma_map(entries, bars_by)
     oracle_ret = precompute_oracle_returns(entries, bars_by, sigs_by, fill_mode=args.fill_mode)
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
+
     announce(
         args.max_positions,
         args.universe,

@@ -1011,11 +1011,51 @@ def test_an_exception_that_is_ALIGNED_is_not_announced_as_one(capsys):
     assert "excepción declarada" not in capsys.readouterr().out
 
 
-def test_the_exit_runner_checks_the_cohort_before_paying_for_the_run():
-    """Regresión del cableado (mismo criterio que la 58, la 62, la 64 y la 66), y
-    del **orden**: el chequeo tiene que ir antes de `announce`, o el harness ya
-    declaró una config que no va a poder honrar."""
-    txt = (_REPO / "scripts" / "run_trail_arm_t54.py").read_text(encoding="utf-8")
-    assert "announce_artifacts(" in txt
-    assert "--allow-stale-artifacts" in txt
-    assert txt.index("announce_artifacts(") < txt.index("cfg = announce(")
+def _runners_que_leen_el_cohorte() -> list[tuple[str, str]]:
+    """Los ``run_*.py`` que arman su muestra del cohorte de artefactos.
+
+    El predicado es *"lee el sustrato compartido"*, no *"es un runner"*: de los 32
+    ``run_*.py``, **21** construyen ``bars_by`` desde el Parquet (vía uno de los
+    ``load_bars_*`` o leyendo ``parquet_cache`` a mano) o declaran su ventana con
+    ``artifact_window``. Los otros 11 no tocan el cohorte y quedan afuera **a
+    propósito** — exigirles el guard sería ruido.
+    """
+    import re as _re
+
+    out = []
+    for p in sorted((_REPO / "scripts").glob("run_*.py")):
+        txt = p.read_text(encoding="utf-8")
+        if _re.search(
+            r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt
+        ):
+            out.append((p.name, txt))
+    return out
+
+
+def test_the_cohort_runners_are_a_real_population():
+    """Sanity: si el barrido diera 0 o 1, los dos tests de abajo pasarían vacíos."""
+    assert len(_runners_que_leen_el_cohorte()) >= 20
+
+
+def test_every_cohort_runner_checks_freshness_before_paying_for_the_run():
+    """**Todos** los que leen el cohorte lo chequean — no sólo el que tenía la pregunta viva.
+
+    El guard de la T30 es sobre el **sustrato compartido**: los runners leen el
+    mismo cohorte de artefactos, así que cablearlo en uno solo no protege nada,
+    sólo hace creer que sí (tarea 76). Es distinto del ``announce_grid`` de la 58,
+    que sí es sobre la grilla **de ese** runner — el precedente no transfiere.
+    """
+    faltan = [
+        n
+        for n, txt in _runners_que_leen_el_cohorte()
+        if "announce_artifacts(" not in txt or "--allow-stale-artifacts" not in txt
+    ]
+    assert faltan == [], f"leen el cohorte y no lo chequean: {faltan}"
+
+
+def test_the_cohort_check_comes_before_announce():
+    """Y va **antes** de `announce`, o el harness ya declaró una config que no va a honrar."""
+    for n, txt in _runners_que_leen_el_cohorte():
+        if "announce(" not in txt:
+            continue  # no declara config (p.ej. el T7): igual chequea, pero no hay orden que fijar
+        assert txt.index("announce_artifacts(") < txt.index("announce("), n

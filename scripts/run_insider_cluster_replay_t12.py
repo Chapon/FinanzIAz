@@ -82,7 +82,9 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
     artifact_window,
 )
 from analysis.insider_cluster import (
@@ -450,6 +452,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
         f"(look-ahead en el fill de la barrera — Tarea 33)",
     )
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -473,6 +480,15 @@ def main(argv: list[str] | None = None) -> int:
     if not bars_by:
         print("Sin barras en Parquet: precargá el cache del universo primero.", file=sys.stderr)
         return 1
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
+
     announce(
         args.max_positions,
         args.universe,

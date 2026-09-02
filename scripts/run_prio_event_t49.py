@@ -54,8 +54,10 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
+    StaleArtifactError,
     WINDOW_REFRESH_2026_09_01_LIVE,
     announce,
+    announce_artifacts,
     artifact_window,
     reproduction_check,
 )
@@ -344,6 +346,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--no-sensitivity", action="store_true")
     p.add_argument("--no-repro", action="store_true", help="sólo para desarrollo")
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -367,6 +374,15 @@ def main(argv: list[str] | None = None) -> int:
     prio_keys = keys_of(anom_in_pool, bars_by)
     n_by_date = count_by_date(prio_keys)
     cands_by_date = candidates_by_date(entries, bars_by)
+
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
 
     cfg = announce(
         args.max_positions,

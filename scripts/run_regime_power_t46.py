@@ -49,7 +49,9 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
 from analysis.rank_policy import neutral_rank
@@ -283,12 +285,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--seed", type=int, default=BOOT_SEED)
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     log = sys.stderr if args.json else sys.stdout
     cap_days = args.cap_days if args.population == "anomaly" else 250
     common = _common(args.max_positions, cap_days, args.capital)
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
+
     announce(
         args.max_positions,
         args.universe,

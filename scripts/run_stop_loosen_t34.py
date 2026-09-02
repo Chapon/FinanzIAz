@@ -55,7 +55,9 @@ from analysis.exit_replay import (
 from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    StaleArtifactError,
     announce,
+    announce_artifacts,
     artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
@@ -399,6 +401,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="saltea el walk-forward (§6) — deja la corrida SIN veredicto",
     )
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -414,6 +421,15 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("Sin entradas BUY — nada que evaluar.", file=sys.stderr)
         return 1
+
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
 
     announce(
         args.max_positions,

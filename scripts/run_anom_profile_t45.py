@@ -55,6 +55,7 @@ sys.path.insert(0, str(_HERE.parent))
 from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries
 from analysis.exit_replay import AtrParams
 from analysis.harness_config import (
+    ArtifactPopulation,
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -63,10 +64,11 @@ from analysis.harness_config import (
     POPULATION_LEGACY_41,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
+    StaleArtifactError,
     WINDOW_REFRESH_2026_09_01_LEGACY,
     WINDOW_REFRESH_2026_09_01_LIVE,
-    ArtifactPopulation,
     announce,
+    announce_artifacts,
     artifact_window,
     reproduction_check,
 )
@@ -516,6 +518,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--no-repro-legacy", action="store_true", help="saltea el sanity §5.3(b) — sólo para desarrollo"
     )
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -529,6 +536,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if incomplete or missing:
         print(f"AVISO: {len(incomplete)} incompletos, {len(missing)} sin datos", file=sys.stderr)
+
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
 
     cfg = announce(
         args.max_positions,

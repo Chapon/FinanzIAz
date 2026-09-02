@@ -57,13 +57,15 @@ sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, max_drawdown
 from analysis.harness_config import (
+    CacheDirBusy,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
+    StaleArtifactError,
     WINDOW_REFRESH_2026_09_01_LIVE,
-    CacheDirBusy,
     announce,
+    announce_artifacts,
     artifact_window,
     lock_cache_dir,
     reproduction_check,
@@ -950,6 +952,11 @@ def _run(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--no-ruin", action="store_true", help="SMOKE: saltea el §3 (invalida C9 y el sanity §7.5)"
     )
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -1003,6 +1010,15 @@ def _run(argv: list[str] | None = None) -> int:
         f"|mp{args.max_positions}|cap{args.cap_days}|cap${args.capital:.2f}"
         f"|{EVAL_MODE}|{FILL_MODE}|g{int(LIVE_GATES)}"
     )
+    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
+    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
+    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    except StaleArtifactError as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
+
     cfg = announce(
         args.max_positions,
         args.universe,
