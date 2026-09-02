@@ -43,6 +43,7 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     StaleArtifactError,
     announce_artifacts,
+    artifact_window,
     exit_rule_line,
 )
 from analysis.scaleout_replay import (
@@ -305,9 +306,15 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     costs = CostModel(commission=args.commission, slippage=args.slippage)
+    # Declara la VENTANA de su muestra (tarea 83). No llama `announce()` como los
+    # otros 20 y eso es deliberado: `announce` declara **slots de cartera** y este
+    # harness no simula cartera —es un replay por trade, con `--notional` fijo—,
+    # así que tendría que inventar un `max_positions` que no usa. Lo que sí
+    # necesita declarar es la ventana: sin ella, su resultado no se puede
+    # reproducir después de un refresh del cohorte (la ventana es RODANTE, T48).
     print(
         f"Tickers: {len(bars_by)} · entradas BUY point-in-time: {len(entries)} "
-        f"(spacing {args.spacing}, cap {args.cap_days}d)"
+        f"(spacing {args.spacing}, cap {args.cap_days}d) · ventana {artifact_window(bars_by)}"
     )
     print(exit_rule_line(fill_mode=args.fill_mode))
 

@@ -1059,3 +1059,62 @@ def test_the_cohort_check_comes_before_announce():
         if "announce(" not in txt:
             continue  # no declara config (p.ej. el T7): igual chequea, pero no hay orden que fijar
         assert txt.index("announce_artifacts(") < txt.index("announce("), n
+
+
+def test_every_cohort_runner_declares_its_window():
+    """La tercera pata (tarea 83): el que lee el cohorte **dice sobre qué ventana corrió**.
+
+    La ventana de los artefactos es **rodante** (T48), así que un veredicto que no
+    la declara **no se puede reproducir después de un refresh** — no porque el
+    número esté mal, sino porque no hay contra qué compararlo. Es lo que obligó a
+    la 68 a re-anclar 17 constantes.
+
+    Esta pata **no existía** cuando se cableó la 76: dos runners la incumplían (el
+    T46 llamaba `announce` con `0` tickers y sin ventana, el T7 no declaraba
+    nada), y escribirla entonces habría sido escribirla con dos excepciones
+    adentro.
+    """
+    faltan = [n for n, txt in _runners_que_leen_el_cohorte() if "artifact_window(" not in txt]
+    assert faltan == [], f"leen el cohorte y no declaran su ventana: {faltan}"
+
+
+def test_the_cohort_check_sees_a_cohort_that_actually_exists():
+    """El guard tiene que estar donde `bars_by` **está en alcance**, no donde se lee lindo.
+
+    Regresión de un defecto que introdujo la propia 76: en `run_regime_power_t46`
+    el bloque quedó en `main`, donde `bars_by` **no existe** —el cohorte lo arma
+    la función de población, más abajo—, así que el runner moría con `NameError`
+    al correrlo. El chequeo textual de la 76 no podía verlo: el nombre aparecía
+    antes **en el archivo**, en otra función.
+    """
+    import ast
+
+    rotos = []
+    for n, txt in _runners_que_leen_el_cohorte():
+        if "announce_artifacts(" not in txt:
+            continue
+        for fn in ast.walk(ast.parse(txt)):
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            llamadas = [
+                c
+                for c in ast.walk(fn)
+                if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Name)
+                and c.func.id == "announce_artifacts"
+            ]
+            if not llamadas:
+                continue
+            asignada = any(
+                isinstance(nodo, ast.Assign)
+                and nodo.lineno < llamadas[-1].lineno
+                and any(
+                    x.id == "bars_by"
+                    for t in nodo.targets
+                    for x in ([t] if isinstance(t, ast.Name) else [e for e in getattr(t, "elts", []) if isinstance(e, ast.Name)])
+                )
+                for nodo in ast.walk(fn)
+            )
+            if not asignada:
+                rotos.append(f"{n}:{fn.name}")
+    assert rotos == [], f"llaman announce_artifacts sin bars_by en alcance: {rotos}"

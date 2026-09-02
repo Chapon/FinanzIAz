@@ -218,7 +218,9 @@ def _summarise_samples(samples: list[float], observed: float) -> dict:
 # ── Poblaciones ──────────────────────────────────────────────────────────────
 
 
-def population_anomaly(universe: str, period: str, warmup: int, common: dict):
+def population_anomaly(
+    universe: str, period: str, warmup: int, common: dict, *, strict: bool = True, log=None
+):
     """Entradas del detector de ruptura (T11b/T38). Contraste: con gate de régimen."""
     from analysis.market_regime import build_regime_series, make_entry_filter
     from scripts.run_anomaly_replay_t11b import load_bars_signals_volume
@@ -226,6 +228,10 @@ def population_anomaly(universe: str, period: str, warmup: int, common: dict):
 
     tickers = parse_universe_file(_HERE.parent / universe)
     bars_by, sigs_by, vol_by, _m, _i = load_bars_signals_volume(tickers, period, warmup)
+    # El cohorte se arma ACÁ, no en `main`, así que el guard de la T30 vive acá
+    # (tarea 83). Sigue corriendo antes de pagar la corrida: las simulaciones
+    # están abajo.
+    announce_artifacts(bars_by, strict=strict, file=log)
     entries = build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=2.0, m=1.5), warmup=warmup)
     series = build_regime_series(load_spy_bars(period) or [])
     a = simulate_portfolio(entries, bars_by, sigs_by, **common)
@@ -239,17 +245,26 @@ def population_anomaly(universe: str, period: str, warmup: int, common: dict):
     return (
         a,
         b,
-        {"n_tickers": len(bars_by), "n_entries": len(entries), "arm_a": "U_ungated", "arm_b": "G_hard"},
+        {
+            "n_tickers": len(bars_by),
+            "n_entries": len(entries),
+            "arm_a": "U_ungated",
+            "arm_b": "G_hard",
+            "window": artifact_window(bars_by),
+        },
     )
 
 
-def population_analyze(universe: str, period: str, warmup: int, common: dict):
+def population_analyze(
+    universe: str, period: str, warmup: int, common: dict, *, strict: bool = True, log=None
+):
     """Eventos ``analyze BUY`` PIT (26b/34/T39). Contraste: ranking aleatorio rotado."""
     from scripts.run_ranking_t21 import load_bars_signals_scores
     from scripts.run_tp_cal_replay_t23 import buy_entries
 
     tickers = parse_universe_file(_HERE.parent / universe)
     bars_by, sigs_by, score_by, _missing = load_bars_signals_scores(tickers, period, warmup)
+    announce_artifacts(bars_by, strict=strict, file=log)
     entries = buy_entries(bars_by, sigs_by, warmup)
     a = simulate_portfolio(
         entries,
@@ -264,7 +279,13 @@ def population_analyze(universe: str, period: str, warmup: int, common: dict):
     return (
         a,
         b,
-        {"n_tickers": len(bars_by), "n_entries": len(entries), "arm_a": "B1_score", "arm_b": "N_rot_0"},
+        {
+            "n_tickers": len(bars_by),
+            "n_entries": len(entries),
+            "arm_a": "B1_score",
+            "arm_b": "N_rot_0",
+            "window": artifact_window(bars_by),
+        },
     )
 
 
@@ -296,11 +317,22 @@ def main(argv: list[str] | None = None) -> int:
     log = sys.stderr if args.json else sys.stdout
     cap_days = args.cap_days if args.population == "anomaly" else 250
     common = _common(args.max_positions, cap_days, args.capital)
-    # T30 — frescura del cohorte, ANTES de pagar la corrida (tarea 76). La ventana
-    # que declara `artifact_window` es min(starts)..max(ends), así que un solo
-    # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
+    print(f"Población: {args.population} · cap_days={cap_days}\n", file=log)
+
+    # La población carga el cohorte y chequea su frescura ADENTRO (T30 / tarea 83):
+    # acá arriba `bars_by` todavía no existe — es el único de los 21 runners al que
+    # la muestra le llega recién en este punto. Por eso `announce` va DESPUÉS, y
+    # recién ahí puede declarar `n_tickers` y la ventana de verdad, en vez del 0
+    # que declaraba antes.
     try:
-        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+        res_a, res_b, meta = POPULATIONS[args.population](
+            args.universe,
+            args.period,
+            args.warmup,
+            common,
+            strict=not args.allow_stale_artifacts,
+            log=log,
+        )
     except StaleArtifactError as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3
@@ -308,15 +340,13 @@ def main(argv: list[str] | None = None) -> int:
     announce(
         args.max_positions,
         args.universe,
-        0,
+        meta["n_tickers"],
+        window=meta["window"],
         eval_mode=EVAL_MODE,
         fill_mode=HARNESS_FILL_MODE,
         live_gates=LIVE_GATES,
         file=log,
     )
-    print(f"Población: {args.population} · cap_days={cap_days}\n", file=log)
-
-    res_a, res_b, meta = POPULATIONS[args.population](args.universe, args.period, args.warmup, common)
     print(
         f"{meta['n_tickers']} tickers · {meta['n_entries']} entradas · "
         f"brazos {meta['arm_a']} vs {meta['arm_b']}\n",
