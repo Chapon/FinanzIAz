@@ -52,6 +52,53 @@ NOISY_LIBS = (
 
 _INITIALIZED = False
 
+# Cada cuántas repeticiones idénticas se emite un resumen. Ver ``_RepeatFilter``.
+REPEAT_SUMMARY_EVERY = 25
+
+
+class _RepeatFilter(logging.Filter):
+    """Colapsa mensajes **idénticos** repetidos de una librería ruidosa (tarea 85).
+
+    Medido sobre el log limpio (la ventana posterior al arreglo de la tarea 78,
+    que sacó a la suite del log de producción): de **100 ERROR**, **98** eran la
+    misma línea de ``yfinance`` —``$AVB: possibly delisted; no price data found
+    (period=5d)``— repetida **2 veces por scan durante 4h18m**. Un ticker era el
+    **99%** de los ERROR del log.
+
+    Eso no es un defecto de producción: es una condición conocida repetida. Pero
+    entrena a saltear los ERROR, y este proyecto **usa el log como evidencia para
+    priorizar** (las tareas 18, 19 y 25 salieron de triagear logs). Es el mismo
+    problema que la 25 resolvió por dedup, un nivel más abajo.
+
+    Qué hace: deja pasar la **primera** ocurrencia intacta y después una cada
+    ``REPEAT_SUMMARY_EVERY``, anotando el conteo. **No se pierde información**: el
+    mensaje sigue estando y ahora además dice cuántas veces pasó — que es el dato
+    que antes había que contar a mano con ``grep -c``.
+
+    Sólo se aplica a ``NOISY_LIBS``, que ya están declaradas como ruidosas. El log
+    de la app **no se toca**: una línea nuestra repetida es una señal, no ruido.
+    """
+
+    def __init__(self, cada: int = REPEAT_SUMMARY_EVERY) -> None:
+        super().__init__()
+        self._cada = max(2, int(cada))
+        self._vistos: dict[tuple[str, str], int] = {}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            clave = (record.name, record.levelno, record.getMessage())
+        except Exception:  # pragma: no cover — un %-format roto no puede tapar el log
+            return True
+        n = self._vistos.get(clave, 0) + 1
+        self._vistos[clave] = n
+        if n == 1:
+            return True
+        if n % self._cada == 0:
+            record.msg = f"{clave[2]}  [repetido {n} veces]"
+            record.args = ()
+            return True
+        return False
+
 
 def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -> None:
     """
@@ -122,8 +169,16 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
         root.addHandler(h)
 
     # Quiet noisy libraries by default.
+    # Un filtro COMPARTIDO: así el conteo es por mensaje y no por librería, y dos
+    # libs que emitan la misma línea no se cuentan por separado.
+    repetidos = _RepeatFilter()
     for name in NOISY_LIBS:
-        logging.getLogger(name).setLevel(logging.WARNING)
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        # Nivel y filtro son cosas distintas y hacen falta las dos: el nivel no
+        # alcanza para esto porque el ruido medido venía en **ERROR**, que está
+        # por encima de WARNING y pasa igual (tarea 85).
+        lg.addFilter(repetidos)
 
     # Apply user-configured per-module overrides if available.
     try:
