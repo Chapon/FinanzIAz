@@ -76,7 +76,17 @@ ganancia grande de E4 se materializa cuando el cómputo de features pase a DuckD
    _(ya corrido el 2026-07-12: 288/288 filas → `data/parquet/`, 0 fallidas)._
 2. Activar en `~/.finanzias/settings.json`: `"historical_cache_backend": "parquet"`
    (o `"dual"` para transición: escribe a ambos, lee parquet con fallback a SQLite).
-3. **Rollback:** volver el flag a `"sqlite"`. La tabla SQLite queda intacta.
+3. **Rollback: CADUCADO el 2026-09-02 (tarea 77).** Volver el flag a `"sqlite"` ya **no**
+   restaura el estado previo: las 288 filas de `historical_data_cache` (22,7 MB, el 24% del
+   archivo de DB) estaban congeladas en el **2026-07-11** —el día anterior a activar Parquet—
+   y se borraron en la revisión alembic `0011`. Parquet corre en vivo desde el 2026-07-12 sin
+   incidentes, así que lo que ese rollback ofrecía era volver a **julio**, no volver atrás.
+   Borrarlas además cierra un agujero: `_read_latest_1d_frame` y `_read_all_1d_frames` no
+   tienen TTL y alimentan el guard de sanity E5 y el detector de split de la T63 — con backend
+   `sqlite` habrían usado el close del 2026-07-11 como referencia. Ahora devuelven vacío, que
+   es fail-open ruidoso en vez de una referencia vieja disfrazada de actual.
+   **Si alguna vez hace falta el backend SQLite, se re-puebla desde Parquet**, que es donde
+   están los frames vivos. La tabla sigue existiendo; lo que no existe es su contenido viejo.
 
 Default de ship: `"sqlite"` (paridad, cero cambio de comportamiento — mismo patrón
 que E1b). `data/parquet/` está gitignoreado (cache regenerable).

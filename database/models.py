@@ -235,18 +235,29 @@ class PriceCache(Base):
     """Cache for recently fetched prices to reduce API calls."""
 
     __tablename__ = "price_cache"
-    __table_args__ = (
-        # Hot path: lookup latest entry per ticker within TTL window.
-        Index("ix_price_cache_ticker_fetched", "ticker", "fetched_at"),
-    )
+    # UN solo índice, y está medido (tarea 81). El compuesto sirve a los tres
+    # consumidores reales: ``get_current_price`` (ticker + ventana de TTL,
+    # ordenado por fecha), el batch (``ticker IN`` + ventana) y el delete por
+    # ticker de ``market_data_service`` — este último con COVERING INDEX, o sea
+    # sin tocar la tabla.
+    #
+    # Los otros dos que se declaraban se sacaron porque **nadie los usaba**, y no
+    # por criterio: se midió el plan con y sin ellos. ``ix_price_cache_ticker``
+    # (4,6 MB) es prefijo del compuesto, así que su único plan lo cubre el
+    # compuesto igual. ``ix_price_cache_fetched_at`` (13,5 MB) parecía tener un
+    # consumidor nuevo —el archivador de la 81, que filtra por ``fetched_at <
+    # corte``— y **no lo tiene**: SQLite escanea igual, con la tabla entera y con
+    # la tabla podada, porque el rango selecciona demasiado. 18,1 MB sobre una
+    # tabla que crece ~125k filas/mes.
+    __table_args__ = (Index("ix_price_cache_ticker_fetched", "ticker", "fetched_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ticker: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
-    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive, index=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f"<PriceCache({self.ticker} @ {self.price})>"

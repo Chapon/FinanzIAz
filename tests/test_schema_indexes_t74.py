@@ -66,8 +66,14 @@ def _strip_indexes(engine) -> int:
 
 
 def test_hay_indices_declarados():
-    """Sanity: si esto da 0, los tests de abajo pasarían vacíos y no dirían nada."""
-    assert len(_declared()) >= 40
+    """Sanity: si esto diera 0, los tests de abajo pasarían vacíos y no dirían nada.
+
+    Es un **piso contra la vacuidad**, no un conteo de la verdad: el número real
+    se mueve cuando se agrega o se saca un índice (la tarea 81 sacó dos de
+    ``price_cache`` que nadie usaba), y un test que haya que ir subiendo o
+    bajando a mano no es un invariante.
+    """
+    assert len(_declared()) > 20
 
 
 def test_el_barrido_incluye_las_tablas_paper():
