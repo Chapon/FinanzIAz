@@ -129,6 +129,78 @@ def _close_series(df: pd.DataFrame) -> pd.Series:
 #   3. **La huella nunca puede tirar.** Si no se puede calcular (frame raro), se
 #      devuelve None y se saltea el cache: fitear de más es barato, romper el scan no.
 
+# ── Telemetría del NO-FIT — Tarea 67 (GARCH-FRAGIL) ─────────────────────────
+#
+# ``fit_garch_forecast`` devuelve ``None`` por **ocho** razones distintas —sin
+# ``arch``, pocos datos, el optimizador que no converge, σ o varianza degeneradas,
+# parámetros fuera de la región estacionaria, o una excepción— y todas colapsan al
+# mismo ``None`` en el borde. Los ``log.debug`` que las distinguen son invisibles
+# en operación normal.
+#
+# Eso importa porque el consumidor (``train_garch_signal``) no puede distinguir
+# *"este ticker no tiene régimen que reportar"* de *"el fit se cayó"*, así que la
+# señal GARCH **entra o no entra en la mezcla de ``analyze()`` sin que nada lo
+# declare**. La 29(c) midió el caso extremo: en **3 de 133** tickers el fit
+# converge o no según el valor del close parcial —o sea que de qué lado cae lo
+# decide el precio del momento— sin dejar rastro.
+#
+# Mismo patrón que la telemetría de entrenamiento de la **25a**: se acumula acá por
+# motivo y el engine emite **una** línea resumen por scan. Es telemetría de log, no
+# contabilidad, y **no cambia ninguna decisión**: sólo hace visible algo que ya
+# estaba pasando.
+_no_fit_lock = threading.Lock()
+_no_fit_tally: dict[str, int] = {}
+
+# Los motivos, como constantes para que el tally y los tests no diverjan.
+NO_FIT_SIN_ARCH = "sin_arch"
+NO_FIT_POCOS_DATOS = "pocos_datos"
+NO_FIT_NO_CONVERGE = "no_converge"
+NO_FIT_SIGMA_DEGENERADA = "sigma_degenerada"
+NO_FIT_VARIANZA_INVALIDA = "varianza_invalida"
+NO_FIT_FORECAST_DEGENERADO = "forecast_degenerado"
+NO_FIT_PARAMS_FUERA_REGION = "params_fuera_region"
+# α+β ≥ 1 con el resto de los parámetros sanos: el fit CONVERGIÓ y el resultado es
+# que esa serie no es estacionaria en la ventana. Es el motivo dominante (181 de
+# 183 en el barrido de 60 sesiones) y **no** se arregla con más iteraciones.
+NO_FIT_NO_ESTACIONARIO = "no_estacionario"
+NO_FIT_EXCEPCION = "excepcion"
+
+
+def _note_no_fit(motivo: str) -> None:
+    """Registra un no-fit por motivo, para el resumen por scan (T67)."""
+    with _no_fit_lock:
+        _no_fit_tally[motivo] = _no_fit_tally.get(motivo, 0) + 1
+
+
+def drain_no_fit_summary() -> str | None:
+    """Resumen de los no-fit acumulados, y resetea. ``None`` si fitearon todos.
+
+    El caso normal es ``None``: en el barrido de la 29(c), 130 de 133 tickers
+    fitearon sin problema. Que aparezca una línea es la señal de que hay tickers
+    al filo — y **cuál** motivo distingue *"no hay datos"* de *"no converge"*, que
+    es justamente lo que el ``None`` del borde no dejaba ver.
+    """
+    with _no_fit_lock:
+        if not _no_fit_tally:
+            return None
+        detalle = " ".join(f"{k}={v}" for k, v in sorted(_no_fit_tally.items()))
+        total = sum(_no_fit_tally.values())
+        _no_fit_tally.clear()
+    return f"GARCH sin fit={total} ({detalle})"
+
+
+def no_fit_counts() -> dict[str, int]:
+    """Copia del tally **sin** resetear — para mediciones, no para el log."""
+    with _no_fit_lock:
+        return dict(_no_fit_tally)
+
+
+def reset_no_fit_counts() -> None:
+    """Vacía el tally sin emitir resumen (tests y mediciones)."""
+    with _no_fit_lock:
+        _no_fit_tally.clear()
+
+
 _GARCH_CACHE_MAXSIZE = 256
 _garch_cache: OrderedDict[tuple, GarchForecast | None] = OrderedDict()
 _garch_cache_lock = threading.Lock()
@@ -232,6 +304,7 @@ def fit_garch_forecast(
     the optimiser fails to converge.
     """
     if not _ARCH_OK:
+        _note_no_fit(NO_FIT_SIN_ARCH)
         return None
 
     key = _fingerprint(df, horizon)
@@ -254,6 +327,7 @@ def _fit_garch_forecast_uncached(
     """El fit real. Separado para que TODOS sus ``return`` pasen por el memo."""
     returns = _log_returns(df)
     if len(returns) < GARCH_MIN_ROWS:
+        _note_no_fit(NO_FIT_POCOS_DATOS)
         return None
 
     try:
@@ -280,6 +354,7 @@ def _fit_garch_forecast_uncached(
                 conv_flag,
                 len(returns),
             )
+            _note_no_fit(NO_FIT_NO_CONVERGE)
             return None
 
         # Conditional σ series is in %-per-day (matches the input scale)
@@ -289,6 +364,7 @@ def _fit_garch_forecast_uncached(
         cond_vol_daily = float(cond_vol.iloc[-1])
         if not np.isfinite(cond_vol_daily) or cond_vol_daily <= 0:
             log.debug("GARCH conditional vol non-finite/non-positive (%s)", cond_vol_daily)
+            _note_no_fit(NO_FIT_SIGMA_DEGENERADA)
             return None
 
         # h-step-ahead variance forecast; take the mean across the horizon
@@ -296,9 +372,11 @@ def _fit_garch_forecast_uncached(
         var_path = np.asarray(fc.variance.iloc[-1].values, dtype=float)
         if var_path.size == 0 or not np.all(np.isfinite(var_path)) or np.any(var_path <= 0):
             log.debug("GARCH forecast variance invalid: %s", var_path.tolist())
+            _note_no_fit(NO_FIT_VARIANZA_INVALIDA)
             return None
         forecast_vol_daily = float(np.sqrt(np.mean(var_path)))
         if not np.isfinite(forecast_vol_daily) or forecast_vol_daily <= 0:
+            _note_no_fit(NO_FIT_FORECAST_DEGENERADO)
             return None
 
         # Parameter extraction (keys can vary slightly across arch versions)
@@ -311,7 +389,18 @@ def _fit_garch_forecast_uncached(
         # Sanity-check parameters: a usable GARCH(1,1) needs ω>0, α≥0, β≥0,
         # and α+β<1 for stationarity. Anything else means the optimiser
         # parked on a corner of the parameter space and the forecast is junk.
-        if not (
+        # T67: el motivo se parte en dos porque **no piden el mismo remedio**. La
+        # medición sobre 60 sesiones × 133 tickers dio 181 rechazos por esta guarda
+        # contra 2 por no-convergencia, así que agruparlos todos en
+        # "parámetros fuera de región" dejaba el diagnóstico a medias:
+        #
+        #   * **no estacionario** (α+β ≥ 1): el optimizador **convergió**, y ese es
+        #     el resultado — esa serie no tiene volatilidad que revierta a una media
+        #     en la ventana mirada. Más iteraciones u otro solver **no lo cambian**.
+        #   * **degenerado** (ω≤0, α<0, β<0 o no finitos): el optimizador sí paró
+        #     en una esquina inválida.
+        no_estacionario = np.isfinite(persistence) and persistence >= 1.0
+        region_ok = (
             np.isfinite(omega)
             and omega > 0
             and np.isfinite(alpha)
@@ -319,7 +408,8 @@ def _fit_garch_forecast_uncached(
             and np.isfinite(beta)
             and beta >= 0
             and persistence < 1.0
-        ):
+        )
+        if not region_ok:
             log.debug(
                 "GARCH parameters out of valid region (ω=%.4g α=%.4g β=%.4g α+β=%.4g)",
                 omega,
@@ -327,6 +417,20 @@ def _fit_garch_forecast_uncached(
                 beta,
                 persistence,
             )
+            # Sólo es "no estacionario" si TODO lo demás está sano: si además hay
+            # un ω≤0 o un α<0, el fit está degenerado y ése es el diagnóstico.
+            resto_sano = (
+                np.isfinite(omega)
+                and omega > 0
+                and np.isfinite(alpha)
+                and alpha >= 0
+                and np.isfinite(beta)
+                and beta >= 0
+            )
+            motivo = (
+                NO_FIT_NO_ESTACIONARIO if (no_estacionario and resto_sano) else NO_FIT_PARAMS_FUERA_REGION
+            )
+            _note_no_fit(motivo)
             return None
 
         # Unconditional σ (daily) if the model is stationary (α+β<1)
@@ -345,6 +449,7 @@ def _fit_garch_forecast_uncached(
 
     except Exception as exc:
         log.warning("GARCH fit error: %s", exc)
+        _note_no_fit(NO_FIT_EXCEPCION)
         return None
 
     return GarchForecast(

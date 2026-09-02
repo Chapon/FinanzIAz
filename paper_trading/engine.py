@@ -683,6 +683,13 @@ class ScanResult:
     # el cache sobrevive (tarea 24).
     ml_training: str | None = None
 
+    # GARCH-FRAGIL (tarea 67) — resumen de los NO-FIT de GARCH de este scan.
+    # ``None`` cuando fitearon todos, que es el caso normal (130 de 133 en el
+    # barrido de la 29c). Que aparezca es la señal de que hay tickers al filo de
+    # la convergencia, y el motivo distingue "no hay datos" de "no converge" —
+    # justo lo que el `None` del borde no dejaba ver.
+    garch_no_fit: str | None = None
+
     def summary(self) -> str:
         base = (
             f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
@@ -695,6 +702,8 @@ class ScanResult:
             base += f"  · {self.scan_seconds:.2f}s ({phases})"
         if self.ml_training:
             base += f"  · {self.ml_training}"
+        if self.garch_no_fit:
+            base += f"  · {self.garch_no_fit}"
         return base
 
 
@@ -819,6 +828,14 @@ def run_scan(
         except Exception:
             ml_training = None
 
+        # T67: mismo patrón, y también best-effort.
+        try:
+            from analysis.garch_signals import drain_no_fit_summary
+
+            garch_no_fit = drain_no_fit_summary()
+        except Exception:
+            garch_no_fit = None
+
         result = ScanResult(
             account_id=account_id,
             scan_at=utcnow_naive(),
@@ -831,6 +848,7 @@ def run_scan(
             equity_before=float(equity_before),
             warnings=list(scan_warnings),
             ml_training=ml_training,
+            garch_no_fit=garch_no_fit,
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
