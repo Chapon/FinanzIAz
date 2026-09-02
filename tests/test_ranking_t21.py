@@ -18,6 +18,7 @@ Cubre:
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -161,14 +162,15 @@ def test_partial_risk_coverage_disables_b2(tmp_path, monkeypatch):
 
     (tmp_path / "AAA.json").write_text(json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8")
 
-    partial, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
+    pares = [(t, _d(1)) for t in ("AAA", "BBB", "CCC")]
+    partial, cov, _crudo = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250, pares)
     assert partial == {} and cov == pytest.approx(1 / 3)
 
     for t in ("BBB", "CCC"):
         (tmp_path / f"{t}.json").write_text(
             json.dumps({"complete": True, "risk": {_d(1): 0.5}}), encoding="utf-8"
         )
-    full, cov = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250)
+    full, cov, _crudo = mod.load_risk_scores(["AAA", "BBB", "CCC"], "10y", 250, pares)
     assert set(full) == {"AAA", "BBB", "CCC"} and cov == 1.0
 
 
@@ -186,8 +188,86 @@ def test_incomplete_artifact_does_not_count_as_coverage(tmp_path, monkeypatch):
     (tmp_path / "AAA.json").write_text(
         json.dumps({"complete": False, "risk": {_d(1): 0.5}}), encoding="utf-8"
     )
-    out, cov = mod.load_risk_scores(["AAA"], "10y", 250)
+    out, cov, _crudo = mod.load_risk_scores(["AAA"], "10y", 250, [("AAA", _d(1))])
     assert out == {} and cov == 0.0
+
+
+# ── Tarea 75: la cobertura se mide sobre (ticker, fecha), no sobre tickers ────
+
+
+def _risk_store(tmp_path, monkeypatch, contenido: dict):
+    """Fabrica el store de riesgo en disco y devuelve el módulo apuntando ahí."""
+    import json
+
+    import scripts.run_ranking_t21 as mod
+
+    monkeypatch.setattr(mod, "_risk_path", lambda t, p, w: tmp_path / f"{t}.json")
+    monkeypatch.setattr(
+        mod,
+        "_load_risk",
+        lambda path: json.loads(path.read_text(encoding="utf-8")) if path.exists() else {},
+    )
+    for t, risk in contenido.items():
+        (tmp_path / f"{t}.json").write_text(
+            json.dumps({"complete": True, "risk": risk}), encoding="utf-8"
+        )
+    return mod
+
+
+def test_coverage_counts_pairs_not_tickers(tmp_path, monkeypatch):
+    """EL CASO REAL: **todos** los archivos presentes y completos, faltando la cola.
+
+    Es el modo de falla que abrió la tarea 75: 127 de 127 archivos ⇒ la cuenta por
+    ticker daba **100%** y el banner lo imprimía, mientras ``b2()`` caía al
+    baseline en cada fecha sin ``risk_score``. La cuenta por par lo ve.
+    """
+    tickers = ["AAA", "BBB"]
+    fechas = [_d(i) for i in range(1, 11)]  # 10 ruedas con señal
+    # El store tiene los DOS tickers (cobertura por ticker = 100%) pero le faltan
+    # las 3 últimas ruedas a cada uno.
+    mod = _risk_store(tmp_path, monkeypatch, {t: {d: 0.5 for d in fechas[:7]} for t in tickers})
+    pares = [(t, d) for t in tickers for d in fechas]
+
+    _out, cov, _crudo = mod.load_risk_scores(tickers, "10y", 250, pares)
+    assert cov == pytest.approx(0.7), "la cobertura por par tiene que ver el hueco de cola"
+
+
+def test_the_tail_gap_is_declared_apart_from_the_percentage(tmp_path, monkeypatch):
+    """Una cola faltante puede pasar el umbral: por eso se declara aparte.
+
+    Con 200 ruedas y 1 faltante la cobertura es 99,5% —pasa el 99%— pero esa rueda
+    es **la última**, o sea de donde sale toda decisión reciente. El porcentaje
+    solo no lo dice.
+    """
+    fechas = [_d(i) for i in range(1, 201)]
+    mod = _risk_store(tmp_path, monkeypatch, {"AAA": {d: 0.5 for d in fechas[:-1]}})
+    pares = [("AAA", d) for d in fechas]
+
+    risk_by, cov, _crudo = mod.load_risk_scores(["AAA"], "10y", 250, pares)
+    assert cov > mod.MIN_RISK_COVERAGE and risk_by, "el umbral pasa: por eso hace falta el aviso"
+
+    gap = mod.risk_tail_gap(risk_by, pares)
+    assert gap == (fechas[-2], fechas[-1], 1)
+
+
+def test_no_gap_when_the_store_reaches_the_signals(tmp_path, monkeypatch):
+    """Y en el caso sano el aviso **no aparece** — que aparezca es la señal."""
+    fechas = [_d(i) for i in range(1, 6)]
+    mod = _risk_store(tmp_path, monkeypatch, {"AAA": {d: 0.5 for d in fechas}})
+    pares = [("AAA", d) for d in fechas]
+
+    risk_by, cov, _crudo = mod.load_risk_scores(["AAA"], "10y", 250, pares)
+    assert cov == 1.0
+    assert mod.risk_tail_gap(risk_by, pares) == (fechas[-1], fechas[-1], 0)
+
+
+def test_the_banner_says_pairs_and_names_the_gap():
+    """El texto del banner es parte del arreglo: decía «100% de cobertura» a secas."""
+    txt = (Path(__file__).resolve().parent.parent / "scripts" / "run_ranking_t21.py").read_text(
+        encoding="utf-8"
+    )
+    assert "de cobertura (ticker, fecha)" in txt
+    assert "SIN risk_score" in txt and "risk_tail_gap(" in txt
 
 
 def test_oracle_and_anti_oracle_look_at_the_future():

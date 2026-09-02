@@ -139,15 +139,35 @@ def load_bars_signals_scores(tickers, period: str, warmup: int):
     return bars_by, sigs_by, score_by, missing
 
 
-# El brazo B2 sólo es válido si el precómputo cubre **todo** el universo: con
-# cobertura parcial rankearía unos tickers por ``raw_prob`` y otros por ``score``,
-# o sea un brazo que no es ni uno ni otro. Ante duda, no existe.
+# El brazo B2 sólo es válido si el precómputo cubre **toda la población que el
+# brazo rankea**: con cobertura parcial rankearía unos pares por ``raw_prob`` y
+# otros por ``score``, o sea un brazo que no es ni uno ni otro. Ante duda, no existe.
 MIN_RISK_COVERAGE = 0.99
 
 
-def load_risk_scores(tickers, period: str, warmup: int) -> tuple[dict[str, dict], float]:
-    """({ticker: {iso: risk_score}}, cobertura). Devuelve ``({}, cob)`` si la
-    cobertura no alcanza — ver ``MIN_RISK_COVERAGE``."""
+def load_risk_scores(
+    tickers, period: str, warmup: int, pares
+) -> tuple[dict[str, dict], float, dict[str, dict]]:
+    """({usable}, cobertura, {crudo}). ``usable`` va vacío si la cobertura no
+    alcanza — ver ``MIN_RISK_COVERAGE``.
+
+    El tercer elemento es **el store tal cual se leyó**, y existe para que el
+    diagnóstico no se apague justo cuando hace falta: con el gate cortando,
+    ``usable`` queda vacío y ``risk_tail_gap`` sobre él no podría decir **por qué**
+    faltó la cobertura — si fue una cola o ruido repartido.
+
+    **La cobertura se mide sobre los pares (ticker, fecha) que el brazo consulta,
+    no sobre tickers** (tarea 75). Contarla por ticker era ciego a la **ventana**:
+    con 127 de 127 archivos presentes pero 17 ruedas faltando al final daba
+    **100%** y el banner lo imprimía — mientras ``b2()`` caía al baseline
+    (``if r is None: return float(s)``) en cada fecha sin ``risk_score``, **en
+    silencio**. Es exactamente el modo de falla que este umbral existe para
+    evitar, en el otro eje.
+
+    ``pares`` son las **entradas BUY point-in-time**: la población real de
+    ``b2()``, que sólo se llama sobre candidatos. Un ``risk_score`` para un par
+    que el ranker nunca mira no cuenta ni a favor ni en contra.
+    """
     out: dict[str, dict] = {}
     for t in tickers:
         blob = _load_risk(_risk_path(t, period, warmup))
@@ -156,10 +176,35 @@ def load_risk_scores(tickers, period: str, warmup: int) -> tuple[dict[str, dict]
         rows = (blob or {}).get("risk") or {}
         if rows:
             out[t] = {d: v for d, v in rows.items() if v is not None}
-    coverage = (len(out) / len(tickers)) if tickers else 0.0
+    pares = list(pares)
+    cubiertos = sum(1 for t, d in pares if d in out.get(t, {}))
+    coverage = (cubiertos / len(pares)) if pares else 0.0
     if coverage < MIN_RISK_COVERAGE:
-        return {}, coverage
-    return out, coverage
+        return {}, coverage, out
+    return out, coverage, out
+
+
+def candidate_pairs(entries, bars_by) -> list[tuple[str, str]]:
+    """Los ``(ticker, fecha)`` que el ranker puede consultar = las entradas BUY."""
+    return [(t, bars_by[t][i][0]) for t, i in entries]
+
+
+def risk_tail_gap(risk_by: dict, pares) -> tuple[str, str, int] | None:
+    """``(última fecha con risk, última fecha de la población, pares sin cubrir al final)``.
+
+    Existe porque **la fracción sola puede esconder un hueco de cola**, que es el
+    caso real: sobre diez años, 17 ruedas seguidas sin ``risk_score`` son un
+    puñado de puntos porcentuales y pasan cualquier umbral razonable — pero no son
+    ruido repartido, son **el final de la muestra**, que es de donde sale toda
+    decisión reciente. Se declara aparte del porcentaje, a propósito.
+    """
+    pares = list(pares)
+    ultima_risk = max((d for ds in risk_by.values() for d in ds), default=None)
+    if not pares or ultima_risk is None:
+        return None
+    ultima_pob = max(d for _t, d in pares)
+    faltan = sum(1 for _t, d in pares if d > ultima_risk)
+    return ultima_risk, ultima_pob, faltan
 
 
 # ── Brazos ───────────────────────────────────────────────────────────────────
@@ -387,18 +432,30 @@ def main(argv: list[str] | None = None) -> int:
         live_gates=args.live_gates,
         file=log,
     )
-    risk_by, risk_cov = load_risk_scores(list(bars_by), args.period, args.warmup)
+    _pares = candidate_pairs(entries, bars_by)
+    risk_by, risk_cov, _risk_crudo = load_risk_scores(list(bars_by), args.period, args.warmup, _pares)
     print(
         f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
-        f"risk_score PIT: {100 * risk_cov:.0f}% de cobertura"
+        f"risk_score PIT: {100 * risk_cov:.2f}% de cobertura (ticker, fecha)"
         + (
             ""
             if risk_by
             else f"  (< {100 * MIN_RISK_COVERAGE:.0f}% → SIN brazo B2: con cobertura parcial "
-            "rankearía unos tickers por raw_prob y otros por score)"
+            "rankearía unos pares por raw_prob y otros por score)"
         ),
         file=log,
     )
+    # El hueco de COLA se declara aparte del porcentaje: 17 ruedas seguidas sobre
+    # diez años dan 99,4% y pasan el umbral, pero no son ruido repartido — son el
+    # final de la muestra (tarea 75).
+    _gap = risk_tail_gap(_risk_crudo, _pares)
+    if _gap and _gap[2]:
+        print(
+            f"  AVISO: risk_score llega hasta {_gap[0]} y la población hasta {_gap[1]} "
+            f"— {_gap[2]} entrada(s) del final SIN risk_score: ahí el brazo "
+            f"{DIAGNOSTIC_ARM} es el baseline. Corré scripts/precompute_pit_risk_score.py.",
+            file=log,
+        )
 
     common: dict[str, Any] = dict(
         max_positions=args.max_positions,
