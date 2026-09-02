@@ -16,14 +16,24 @@ Key concerns
 
 from __future__ import annotations
 
+import os
 import sys
-from collections.abc import Iterator
-from pathlib import Path
-from unittest.mock import MagicMock
 
-import numpy as np
-import pandas as pd
-import pytest
+# La suite NO escribe en el log de producción (tarea 78). Va **antes** de
+# cualquier import del proyecto: el primer ``get_logger`` que corra instala el
+# ``RotatingFileHandler`` sobre ``~/.finanzias/finanzias.log`` y a partir de ahí
+# cada traceback de un test queda ahí como si fuera un defecto de la app —
+# medido, **551 líneas por corrida**. ``setdefault`` a propósito: se puede
+# exportar la variable con una ruta para depurar una corrida puntual.
+os.environ.setdefault("FINANZIAS_LOG_FILE", "")
+
+from collections.abc import Iterator  # noqa: E402
+from pathlib import Path  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
 
 # Make ``import database.models`` etc. work when pytest is invoked from the
 # repo root via ``pytest`` (no editable install needed).

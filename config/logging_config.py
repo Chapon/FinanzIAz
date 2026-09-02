@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 
@@ -56,18 +57,38 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
     """
     Initialize the root logger. Idempotent — safe to call multiple times.
     Should be invoked exactly once from ``main.py`` before any logger is used.
+
+    Dónde escribe, por precedencia (tarea 78):
+
+    1. el argumento ``log_file``, si viene;
+    2. la variable de entorno ``FINANZIAS_LOG_FILE`` — una ruta, o **vacía para
+       no escribir ningún archivo** (sólo consola);
+    3. ``~/.finanzias/finanzias.log``.
+
+    El (2) existe porque la **suite escribía en el log de producción**: 551
+    líneas por corrida, con tracebacks de `tests/` que se leen como defectos de
+    la app. Eso es una fábrica de falsos positivos para cualquier triage que use
+    el log como evidencia — y este proyecto lo usa (de ahí salieron las tareas
+    18, 19 y 25). ``tests/conftest.py`` la setea vacía.
     """
     global _INITIALIZED
     if _INITIALIZED:
         return
 
-    log_file = log_file or LOG_FILE
-    try:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        # ~/.finanzias/ should always be creatable, but if not, fall back to
-        # console-only logging instead of crashing the app on startup.
-        log_file = None
+    if log_file is None:
+        env = os.environ.get("FINANZIAS_LOG_FILE")
+        if env is not None:
+            # Vacía = a propósito sin archivo. Es distinto de "no seteada".
+            log_file = Path(env) if env.strip() else None
+        else:
+            log_file = LOG_FILE
+    if log_file is not None:
+        try:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # ~/.finanzias/ should always be creatable, but if not, fall back to
+            # console-only logging instead of crashing the app on startup.
+            log_file = None
 
     formatter = logging.Formatter(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT)
 
