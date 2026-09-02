@@ -2,7 +2,7 @@
 Alerts tab: manage price alerts and view history.
 """
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -20,10 +20,63 @@ from PyQt6.QtWidgets import (
 
 from alerts.alert_manager import AlertManager, alert_row_actions, alert_status
 from database.models import Alert
+from integrations.slack import AlertNotice
 from ui.dialogs import AddAlertDialog
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.time_utils import fmt_local
 from ui.widgets import HSeparator, SectionHeader, table_header, table_vheader
+from ui.workers import BaseWorker
+
+
+class AlertCheckWorker(BaseWorker):
+    """Corre ``check_alerts`` fuera del hilo de la GUI (tarea 80).
+
+    Adentro, ``AlertManager.check_alerts`` pide precio **por ticker en serie**, y
+    con ``PRICE_CACHE_TTL_MINUTES = 5`` contra un timer de 120 s alrededor de un
+    tercio de las corridas encuentra el cache vencido y **sale a la red** — que
+    con el breaker de throttle haciendo backoff son decenas de segundos, no
+    décimas. Antes eso pasaba con la UI congelada.
+
+    Emite **valores planos**, no objetos ORM: ``check_alerts`` devuelve
+    ``Alert``es que quedan detachados al cerrar la sesión, y mandarlos por una
+    señal entre hilos es pedir un ``DetachedInstanceError`` el día que alguien
+    toque un atributo que no estaba cargado. ``AlertNotice`` ya existe para
+    exactamente esto (lo usa el aviso de Slack) y tiene todo lo que muestra el
+    popup.
+    """
+
+    result_ready = pyqtSignal(list)  # list[AlertNotice]
+
+    def __init__(self, portfolio_id=None, parent=None):
+        super().__init__(parent)
+        self._portfolio_id = portfolio_id
+        self._notices: list[AlertNotice] = []
+
+    def _collect(self, alert: Alert, price: float) -> None:
+        """Callback de ``on_triggered``: corre en el hilo del worker.
+
+        Copia a valores planos **mientras el ORM sigue attachado** y no toca la
+        UI — el popup lo abre el slot, ya en el hilo de la GUI.
+        """
+        self._notices.append(
+            AlertNotice(
+                ticker=alert.ticker,
+                alert_type=alert.alert_type,
+                target_value=alert.target_value,
+                current_price=price,
+                message=alert.message or "",
+            )
+        )
+
+    def do_work(self) -> list[AlertNotice]:
+        # Manager propio, con el callback que sólo acumula: el de la pestaña
+        # abre un QMessageBox y desde acá sería una llamada a la UI desde otro
+        # hilo.
+        AlertManager(on_triggered=self._collect).check_alerts(self._portfolio_id)
+        return self._notices
+
+    def on_success(self, result: list[AlertNotice]) -> None:
+        self.result_ready.emit(result)
 
 
 class AlertsTab(QWidget):
@@ -31,7 +84,7 @@ class AlertsTab(QWidget):
         super().__init__(parent)
         self._portfolio_id = None
         self._alerts = []
-        self._alert_manager = AlertManager(on_triggered=self._on_alert_triggered)
+        self._check_worker = None
         self._build_ui()
 
         # Check alerts every 2 minutes
@@ -206,21 +259,39 @@ class AlertsTab(QWidget):
         self._load_alerts()
 
     def _check_alerts(self):
+        """Lanza el chequeo en un worker. **No bloquea el hilo de la GUI** (tarea 80)."""
+        if self._check_worker is not None and self._check_worker.isRunning():
+            # El timer es de 120 s y una corrida con la red lenta puede pasarse:
+            # sin esto se apilarían workers pidiendo los mismos precios.
+            return
         self.check_btn.setEnabled(False)
         self.status_label.setText("Verificando alertas...")
-        triggered = self._alert_manager.check_alerts(self._portfolio_id)
+        self._check_worker = AlertCheckWorker(self._portfolio_id, self)
+        self._check_worker.result_ready.connect(self._on_check_done)
+        self._check_worker.error.connect(self._on_check_error)
+        self._check_worker.start()
+
+    def _on_check_done(self, notices: list):
+        """Slot: corre en el hilo de la GUI, que es donde se puede abrir el popup."""
         self._load_alerts()
-        if triggered:
-            self.status_label.setText(f"⚡ {len(triggered)} alerta(s) disparada(s).")
+        if notices:
+            self.status_label.setText(f"⚡ {len(notices)} alerta(s) disparada(s).")
         else:
             self.status_label.setText("Sin alertas disparadas.")
         self.check_btn.setEnabled(True)
+        for notice in notices:
+            self._on_alert_triggered(notice)
 
-    def _on_alert_triggered(self, alert: Alert, price: float):
+    def _on_check_error(self, exc: Exception):
+        """Fail-open, como el resto de los workers: se avisa y se sigue."""
+        self.status_label.setText(f"Error al verificar alertas: {exc}")
+        self.check_btn.setEnabled(True)
+
+    def _on_alert_triggered(self, notice: AlertNotice):
         QMessageBox.information(
             self,
             "🔔 Alerta Disparada",
-            f"<b>{alert.ticker}</b> alcanzó ${price:,.4f}<br>"
-            f"Objetivo: {alert.alert_type} ${alert.target_value:,.4f}<br>"
-            f"{alert.message or ''}",
+            f"<b>{notice.ticker}</b> alcanzó ${notice.current_price:,.4f}<br>"
+            f"Objetivo: {notice.alert_type} ${notice.target_value:,.4f}<br>"
+            f"{notice.message or ''}",
         )
