@@ -507,10 +507,27 @@ def main(argv: list[str] | None = None) -> int:
         f"Universo: {len(tickers)} tickers · con barras: {len(bars_by)} · "
         f"con transacciones: {sum(1 for t in bars_by if txs_by.get(t))}"
     )
+    # Tarea 88 — se dice "tickers", NO "cobertura". El número es una fracción por
+    # TICKER, y ése es el eje correcto para lo que mide: en este runner un ticker
+    # sin artefacto **no se excluye** —a diferencia de los otros loaders, que lo
+    # mandan a `missing`— sino que corre **ATR-only en silencio**, y por ticker es
+    # donde eso se ve. Llamarlo "cobertura" invitaba a leerlo como cobertura de
+    # las decisiones del brazo, que es exactamente el defecto que cerró la 75.
+    #
+    # La otra mitad —un artefacto que existe pero **no cubre todas las fechas**—
+    # ya no depende de este número: la cubre `announce_signal_store` (tarea 86),
+    # que corre arriba y **aborta**. Las dos juntas son el cuadro completo.
+    #
+    # Por qué no se porta el patrón de pares del t21: allá la población son las
+    # entradas BUY, porque `b2()` se llama sobre candidatos. Acá `sigs_by` va a
+    # `simulate_portfolio` y la señal se consulta **durante la tenencia**, que no
+    # se conoce antes de simular. La población no transfiere.
+    sin_senal = len(bars_by) - n_sig
     print(
         f"Modo de exit: {args.signals_mode}"
         + (
-            f" · {n_sig} tickers con señal PIT ({100 * n_sig / max(1, len(bars_by)):.0f}% cobertura)"
+            f" · {n_sig} de {len(bars_by)} tickers CON artefacto de señal utilizable"
+            + (f"; los otros {sin_senal} corren ATR-only" if sin_senal else "")
             if args.signals_mode == "analyze_flip"
             else ""
         )
