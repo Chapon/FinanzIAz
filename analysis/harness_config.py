@@ -62,8 +62,13 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, TextIO
+
+# Raíz del repo — para resolver los archivos de universo, que se declaran
+# relativos a ella (`data/harness_universe_*.txt`).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # ── Cuenta viva (verificado 2026-08-12 contra paper_accounts) ────────────────
 LIVE_ACCOUNT_ID = 2
@@ -71,6 +76,12 @@ LIVE_ACCOUNT_NAME = "Sim Segundo"
 LIVE_MAX_POSITIONS = 10
 LIVE_MODE = "auto"
 LIVE_ALLOCATION_MODE = "equal_weight"
+# Tamaño de la watchlist de la cuenta viva. Es un número **declarado**, no
+# derivado: `deviations()` es pura y la watchlist vive en la DB, así que leerla acá
+# sería meterle I/O a una función que hoy no lo tiene. Lo que lo sostiene es un
+# test que lo **re-verifica contra la DB** cuando hay DB
+# (`tests/test_watchlist_size_t89.py`), en vez de que envejezca solo — que es lo
+# que pasaba: era un entero hardcodeado que nada re-chequeaba (tarea 89).
 LIVE_WATCHLIST_SIZE = 128
 
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
@@ -565,6 +576,7 @@ class ArtifactPopulation:
     universe_file: str
     n_tickers: int
     n_entries: int | None = None
+    tickers_fp: str | None = None
 
     def __str__(self) -> str:
         entradas = f", {self.n_entries} entradas" if self.n_entries is not None else ""
@@ -574,8 +586,25 @@ class ArtifactPopulation:
         """¿Las dos corridas miraron el **mismo conjunto de tickers**?
 
         Es el eje categórico: si difiere, el ancla se midió sobre otra cosa y no
-        hay nada que reproducir (``REPRO_NA``)."""
-        return self.universe_file == other.universe_file and self.n_tickers == other.n_tickers
+        hay nada que reproducir (``REPRO_NA``).
+
+        **Compara el CONJUNTO cuando puede, y el conteo sólo si no puede**
+        (tarea 87). El nombre de esta función siempre prometió *"el mismo conjunto
+        de tickers"* y lo que comparaba era **un string de path y un entero**:
+        con eso, cambiar un ticker por otro dejaba ``127 == 127`` y la corrida
+        seguía afirmando *"MISMA muestra"*. Y no es hipotético —
+        ``scripts/refresh_live_universe.py`` regenera el archivo **en el lugar**,
+        con el mismo nombre.
+
+        ``tickers_fp`` es la huella del conjunto efectivo. Si **las dos** la
+        declaran, manda ella; si alguna no, se cae al par (archivo, conteo) —
+        más débil, y por eso las anclas compartidas la declaran.
+        """
+        if self.universe_file != other.universe_file:
+            return False
+        if self.tickers_fp is not None and other.tickers_fp is not None:
+            return self.tickers_fp == other.tickers_fp
+        return self.n_tickers == other.n_tickers
 
     def matches(self, other: ArtifactPopulation) -> bool:
         """Misma muestra: mismo universo y —cuando **las dos** lo declaran— mismas
@@ -588,6 +617,54 @@ class ArtifactPopulation:
         return self.n_entries == other.n_entries
 
 
+def tickers_fingerprint(tickers) -> str:
+    """Huella corta y estable del **conjunto** de tickers (tarea 87).
+
+    Doce hex de un SHA-256 sobre los nombres ordenados. Corta a propósito: entra
+    en una línea de banner y en una constante sin volverla ilegible, y para lo que
+    hace —distinguir un conjunto de otro— doce hex son de sobra.
+
+    Estable a propósito: **ordenada**, así que no depende del orden en que el
+    loader haya recorrido el universo, y sobre los nombres en mayúscula, así que
+    no depende de cómo los haya escrito el archivo.
+    """
+    import hashlib
+
+    nombres = sorted({str(t).strip().upper() for t in tickers if str(t).strip()})
+    return hashlib.sha256(",".join(nombres).encode("utf-8")).hexdigest()[:12]
+
+
+@lru_cache(maxsize=32)
+def universe_fingerprint(universe_file: str) -> str | None:
+    """Huella del **archivo de universo**, o ``None`` si no se puede leer.
+
+    **Una sola semántica, a propósito** (tarea 87): la huella es del universo
+    *declarado* —el archivo—, no del conjunto que efectivamente cargó. Las dos
+    tentaciones se descartaron por esto:
+
+    * el conjunto **cargado** cambiaría con una falla transitoria de carga, y eso
+      no es un cambio de universo — es un hipo. El eje "qué cargó" ya lo lleva
+      ``n_tickers``, por separado.
+    * tener **las dos** huellas sería dos fuentes de verdad para la misma
+      pregunta, que es justo el defecto que esta tarea vino a cerrar.
+
+    Fail-open a ``None`` (archivo inexistente, permisos): sin huella el chequeo
+    cae al conteo, que es el comportamiento previo. Un guard que revienta por no
+    poder leer un archivo de universo sería peor que el defecto.
+    """
+    try:
+        raw = (_REPO_ROOT / universe_file).read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    tickers = [
+        ln.split("#", 1)[0].strip()
+        for ln in raw.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    tickers = [t for t in tickers if t]
+    return tickers_fingerprint(tickers) if tickers else None
+
+
 def artifact_population(
     universe_file: str,
     bars_by: dict[str, list] | None = None,
@@ -595,14 +672,25 @@ def artifact_population(
     n_tickers: int | None = None,
     n_entries: int | None = None,
 ) -> ArtifactPopulation:
-    """Población de una corrida — pura, sin I/O.
+    """Población de una corrida.
+
+    Lee el archivo de universo para la huella (cacheado, y fail-open a ``None`` si
+    no se puede leer); el resto es puro. Decía *"pura, sin I/O"* y dejó de serlo
+    en la tarea 87 — se corrige acá en vez de dejar el claim viejo.
 
     ``n_tickers`` sale de ``bars_by`` si no se lo pasa explícito (los tickers que
     efectivamente cargaron, que es lo que ``announce()`` ya imprime, y no los que
-    el archivo de universo pretendía)."""
+    el archivo de universo pretendía).
+
+    Y con ``bars_by`` se calcula además la **huella del conjunto** (tarea 87): es
+    la de los tickers que **efectivamente cargaron**, no la del archivo — misma
+    lógica que ``n_tickers``, y es la que corresponde porque la muestra de la
+    corrida son los que cargaron. Sigue siendo pura: la huella sale de las claves
+    que ya están en memoria.
+    """
     if n_tickers is None:
         n_tickers = len(bars_by or {})
-    return ArtifactPopulation(universe_file, n_tickers, n_entries)
+    return ArtifactPopulation(universe_file, n_tickers, n_entries, universe_fingerprint(universe_file))
 
 
 # Estados de ``reproduction_check``.
@@ -670,9 +758,29 @@ def reproduction_check(
         population is not None and measured_over is not None and population.matches(measured_over)
     )
     detail = f"{measured:.4f} vs {expected:.4f} esperado (tol {tol:.4f})"
-    if same_window and same_population:
+    # Para ACUSAR a la cañería hacen falta las dos mitades de "misma muestra", y
+    # la de entradas tiene que haberse podido **comparar de verdad** (tarea 87).
+    # `matches()` devuelve True cuando alguna de las dos no declara `n_entries`
+    # —"no se puede acusar por un dato que nadie publicó"—, pero ese True entraba
+    # acá como si fuera evidencia: no-declarar volvía al chequeo **más** confiado,
+    # exactamente al revés de su objetivo. Y las dos anclas compartidas no lo
+    # declaran, así que ésta era la rama por default.
+    entradas_comparables = (
+        population is not None
+        and measured_over is not None
+        and population.n_entries is not None
+        and measured_over.n_entries is not None
+    )
+    if same_window and same_population and entradas_comparables:
         return REPRO_FAIL, (
             f"{detail} — MISMA muestra (ventana {current} · población {population}) ⇒ cambió la cañería"
+        )
+    if same_window and same_population:
+        return REPRO_INDETERMINATE, (
+            f"{detail} — misma ventana ({current}) y mismo universo ({population}), pero "
+            f"la referencia NO declara sus entradas, así que no se puede confirmar que la "
+            f"muestra sea la misma (tarea 87). Para poder acusar a la cañería, el ancla "
+            f"tiene que declarar `n_entries`."
         )
     if not same_window:
         movida = (
@@ -725,8 +833,18 @@ class HarnessConfig:
         """La población de esta corrida (Tarea 52), para el sanity de reproducción.
 
         Sale de lo que el banner ya declara —universo y tickers cargados— más las
-        entradas, que el runner recién conoce después de armarlas."""
-        return ArtifactPopulation(self.universe_file, self.n_tickers, n_entries)
+        entradas, que el runner recién conoce después de armarlas.
+
+        Lleva además la **huella del universo** (tarea 87). Sin esto el arreglo
+        quedaba **inerte en producción**: cuatro de los ocho call sites del sanity
+        construyen su población por acá, y sin huella `same_universe_as` cae al
+        conteo — o sea al defecto que la tarea vino a cerrar."""
+        return ArtifactPopulation(
+            self.universe_file,
+            self.n_tickers,
+            n_entries,
+            universe_fingerprint(self.universe_file),
+        )
 
 
 def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE) -> str:
@@ -752,8 +870,20 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     out: list[str] = []
     if cfg.max_positions != LIVE_MAX_POSITIONS:
         out.append(f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta {LIVE_ACCOUNT_ID}")
-    if cfg.n_tickers < LIVE_WATCHLIST_SIZE:
-        out.append(f"universo {cfg.n_tickers} tickers vs {LIVE_WATCHLIST_SIZE} de la watchlist viva")
+    # Bilateral a propósito (tarea 89). Era `<`, así que un universo de harness
+    # MÁS GRANDE que la watchlist viva no declaraba nada — y un desvío es un
+    # desvío para los dos lados, igual que en `stale_artifacts` (T30), que mira
+    # los dos porque un refresh parcial rompe la uniformidad tanto como uno
+    # faltante. Lo que este chequeo NO puede ver, y queda dicho: compara
+    # **tamaños**, no conjuntos, porque el conjunto vivo está en la DB y esta
+    # función es pura. El eje del conjunto lo cubre `tickers_fp` del lado de la
+    # población (tarea 87).
+    if cfg.n_tickers != LIVE_WATCHLIST_SIZE:
+        lado = "menos" if cfg.n_tickers < LIVE_WATCHLIST_SIZE else "MÁS"
+        out.append(
+            f"universo {cfg.n_tickers} tickers vs {LIVE_WATCHLIST_SIZE} de la watchlist "
+            f"viva ({lado} que la cuenta {LIVE_ACCOUNT_ID})"
+        )
     # La ventana de señal siempre difiere mientras los artefactos PIT sean los
     # actuales — se declara siempre, no es condicional.
     out.append(f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo")
@@ -1330,13 +1460,34 @@ WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-01", 25
 # — misma ventana, otra muestra. Cada ancla declara ahora también su universo, y un
 # desajuste sobre otro universo sale `REPRO_NA` en vez de invalidar la corrida.
 #
-# No declaran ``n_entries`` a propósito: las entradas dependen de la config del
-# runner (``cap_days``, gates, filtros del brazo), así que compararlas contra un
-# número compartido acusaría por un desvío de config y no de muestra. Cada corrida
-# declara las suyas —``cfg.population(len(entries))``— y el helper sólo las compara
-# cuando las dos puntas las publican.
-POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 127)
-POPULATION_LEGACY_41 = ArtifactPopulation(LEGACY_UNIVERSE_FILE, 41)
+# No declaran ``n_entries``, y la razón CORREGIDA es ésta (tarea 87). El comentario
+# que estaba acá decía que compararlas *"acusaría por un desvío de config y no de
+# muestra"*, y **eso es falso en las dos mitades**:
+#
+#   1. **Comparar no puede acusar nunca.** Un desajuste de entradas hace
+#      ``same_population=False`` y cae en ``INDETERMINADO``. Declarar ``n_entries``
+#      sólo puede mover **FALLA → INDETERMINADO**, jamás al revés. La mitigación
+#      iba exactamente al revés de su objetivo declarado.
+#   2. **"Las entradas dependen de `cap_days`/gates" es falso en 6 de los 8 sitios**:
+#      ahí ``entries = buy_entries(bars_by, sigs_by, warmup)`` depende sólo de
+#      barras, señales y warmup; ``cap_days``/``max_positions``/``capital`` van a la
+#      **simulación**, no a la construcción de entradas.
+#
+# La razón real por la que siguen sin declararlas es de **implementación**: siete
+# runners con construcciones de entrada distintas comparten ``POPULATION_LIVE_ACCT2``,
+# así que no hay un número compartido correcto — habría que declararlas **por
+# runner**, al lado de cada ``REPRO_*_CAGR``. Mientras tanto, la consecuencia
+# peligrosa está tapada por los dos lados: ``reproduction_check`` **ya no acusa** sin
+# poder comparar entradas (tarea 87) y el escenario que llegaba hasta acá —store de
+# señales corto— **aborta antes** (tarea 86).
+#
+# Sí declaran la **huella del conjunto**, que es la otra mitad del defecto: sin ella,
+# cambiar un ticker por otro dejaba ``127 == 127`` y la corrida seguía afirmando
+# "MISMA muestra". Medidas el 2026-09-02 sobre los archivos de universo, que no se
+# tocan desde `c40482a` (tarea 27) — o sea, los mismos con los que se midieron las
+# constantes de reproducción en la 68.
+POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 127, None, "b88c89385ebc")
+POPULATION_LEGACY_41 = ArtifactPopulation(LEGACY_UNIVERSE_FILE, 41, None, "dc8e4d0e59ec")
 
 
 # ── Un solo dueño por cache-dir — Tarea 59 (HARNESS-CONCURRENT) ──────────────

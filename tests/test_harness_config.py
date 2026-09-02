@@ -411,6 +411,9 @@ _W_HOY = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
 _W_VIEJA = ArtifactWindow("2016-06-20", "2026-07-19", 2514)
 _LIVE_U = "data/harness_universe_live_acct2.txt"
 _P_VIVO = ArtifactPopulation(_LIVE_U, 127)
+# Con entradas en las DOS puntas: la única forma de que el sanity pueda acusar
+# a la cañería (tarea 87).
+_P_VIVO_CON_ENTRADAS = ArtifactPopulation(_LIVE_U, 127, 142_670)
 _P_LEGACY = ArtifactPopulation("data/harness_universe_41_10y.txt", 41)
 
 
@@ -429,11 +432,35 @@ def test_reproduction_fails_only_when_the_whole_sample_is_the_same():
         tol=0.0005,
         current=_W_HOY,
         measured_on=_W_HOY,
-        population=_P_VIVO,
-        measured_over=_P_VIVO,
+        population=_P_VIVO_CON_ENTRADAS,
+        measured_over=_P_VIVO_CON_ENTRADAS,
     )
     assert st == REPRO_FAIL
     assert "cañería" in why
+
+
+def test_no_acusa_a_la_caneria_sin_poder_comparar_las_entradas():
+    """**Tarea 87.** Misma ventana y mismo universo, pero el ancla NO declara sus
+    entradas ⇒ no se puede confirmar que la muestra sea la misma, así que no se
+    acusa.
+
+    `matches()` devuelve `True` cuando alguna de las dos puntas no declara
+    `n_entries` —*"no se puede acusar por un dato que nadie publicó"*—, pero ese
+    `True` entraba como si fuera evidencia: **no declarar volvía al chequeo más
+    confiado, exactamente al revés de su objetivo**. Y las dos anclas compartidas
+    no lo declaran, así que ésta era la rama por default de los 8 call sites."""
+    st, why = reproduction_check(
+        0.1277,
+        0.1289,
+        tol=0.0005,
+        current=_W_HOY,
+        measured_on=_W_HOY,
+        population=ArtifactPopulation(_LIVE_U, 127, 138_000),
+        measured_over=_P_VIVO,  # el ancla no declara entradas
+    )
+    assert st == REPRO_INDETERMINATE
+    assert "no se puede confirmar" in why
+    assert "cañería" not in why or "acusar a la cañería" in why
 
 
 def test_a_moved_window_is_indeterminate_not_a_failure():
