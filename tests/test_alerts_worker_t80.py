@@ -41,25 +41,6 @@ def qapp():
     yield app
 
 
-@pytest.fixture(autouse=True)
-def _sin_tooltips(monkeypatch):
-    """Neutraliza los tooltips de ticker — **no es cosmética, evita un crash ajeno**.
-
-    Pintar una fila de la tabla llama ``apply_ticker_tooltip``, que encola un
-    ``QRunnable`` en el ``QThreadPool`` global para buscar el nombre de la
-    empresa. Ese runnable sobrevive al final del test y **el proceso muere al
-    salir** (exit 127) aunque los tests hayan pasado. Verificado: es
-    **anterior** a esta tarea (pasa igual con `ui/alerts_tab.py` stasheado) y
-    con estos dos stubs el mismo test sale 0. Queda como tarea **82**; acá se
-    neutraliza a propósito y con nombre, para no atribuirle a la 80 un crash
-    que no es suyo ni esconderlo.
-    """
-    import ui.alerts_tab as mod
-
-    monkeypatch.setattr(mod, "apply_ticker_tooltip", lambda *a, **k: None)
-    monkeypatch.setattr(mod, "install_ticker_tooltips", lambda *a, **k: None)
-
-
 @pytest.fixture
 def portfolio_id(test_db):
     with session_scope() as s:

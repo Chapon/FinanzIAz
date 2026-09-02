@@ -63,7 +63,20 @@ def main():
     window = MainWindow()
     window.show()
 
-    sys.exit(app.exec())
+    code = app.exec()
+
+    # Los fetch de tooltip corren run-and-forget en el QThreadPool global. Cerrar
+    # con uno en vuelo mata el proceso (medido: exit 127, 3 de 3 — tarea 82), así
+    # que se drenan acá, después del event loop y antes de salir. Fail-open: un
+    # problema drenando no puede cambiar el código de salida de la app.
+    try:
+        from ui.ticker_tooltip import shutdown as _tooltip_shutdown
+
+        _tooltip_shutdown()
+    except Exception:
+        log.exception("Tooltip shutdown failed")
+
+    sys.exit(code)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ ticker without rebuilding the whole table.
 from __future__ import annotations
 
 import contextlib
+import os
 
 from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
@@ -35,6 +36,19 @@ class _FetchSignals(QObject):
     fetched = pyqtSignal(str, dict)  # ticker, info_dict
 
 
+# Los fetch de tooltip están apagados: los runnables vuelven sin trabajar y, sobre
+# todo, **sin emitir**. Se prende solo al cerrar (``shutdown()``) y arranca prendido
+# si ``FINANZIAS_DISABLE_TICKER_FETCH`` está en el entorno — que es lo que hace la
+# suite: un fetch de tooltip necesita red (bloqueada en tests) y toca la DB desde un
+# hilo del pool mientras los tests la rebindean. Tarea 82.
+_SHUTTING_DOWN = os.environ.get("FINANZIAS_DISABLE_TICKER_FETCH", "").strip().lower() not in (
+    "",
+    "0",
+    "false",
+    "no",
+)  # "0" apaga el apagado; con bool() lo habría prendido
+
+
 class _FetchRunnable(QRunnable):
     """Fetches company info for a single ticker via yfinance."""
 
@@ -46,6 +60,10 @@ class _FetchRunnable(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
+        # Secundaria: si el pool tenía cola, los que no arrancaron salen sin
+        # gastar una llamada de red. La que evita el crash es la de abajo.
+        if _SHUTTING_DOWN:
+            return
         info: dict = {}
         try:
             # Imported inside run() so that import-time errors in yfinance
@@ -56,6 +74,12 @@ class _FetchRunnable(QRunnable):
         except Exception as e:
             log.warning("fetch failed for %s: %s", self.ticker, e)
             info = {}
+        if _SHUTTING_DOWN:
+            # LA LÍNEA QUE ARREGLA LA TAREA 82. El destructor del QThreadPool
+            # global espera a los runnables, así que éste despierta cuando el
+            # intérprete ya está bajando: emitir acá es tocar un QObject a medio
+            # destruir, y el proceso muere con exit 127 (medido, 6 de 6).
+            return
         info.setdefault("name", self.ticker)
         info["source"] = "yfinance"
         self.signals.fetched.emit(self.ticker, info)
@@ -166,6 +190,56 @@ class _TickerInfoCache(QObject):
 
 # Module-level singleton
 ticker_cache = _TickerInfoCache()
+
+
+# Cuánto se espera a los fetch en vuelo al cerrar. **No es lo que evita el
+# crash** (ver ``shutdown``), así que no hay nada que calibrar: es sólo cuánto se
+# tolera antes de dejar constancia de que el cierre se está demorando.
+SHUTDOWN_DRAIN_MS = 5000
+
+
+def shutdown(timeout_ms: int = SHUTDOWN_DRAIN_MS) -> bool:
+    """Corta los fetch de tooltip antes de que el proceso termine (tarea 82).
+
+    **El diagnóstico, medido 2×2 con tres corridas por celda** (fetch en vuelo,
+    `QApplication` real, cierre por ``app.quit()``):
+
+    ==========================  ============  ============
+    modo                        n=2           n=8
+    ==========================  ============  ============
+    sin nada                    **127 ×3**    **127 ×3**
+    sólo la bandera             0 ×3          0 ×3
+    bandera + ``waitForDone``   0 ×3          0 ×3
+    ==========================  ============  ============
+
+    O sea que **lo que mata al proceso es el `emit`**, no los hilos corriendo: el
+    destructor del `QThreadPool` global espera igual a los runnables, así que
+    despiertan cuando el intérprete ya está bajando y emiten sobre un `QObject`
+    a medio destruir. La bandera —que los hace volver **sin emitir**— es la que
+    arregla; el drenado **no era necesario**, contra lo que suponía el enunciado
+    de la tarea.
+
+    **Y el drenado tampoco cuesta nada**, que es la otra mitad de por qué se deja:
+    medido, el cierre tarda ~3,1 s con y sin él (el fetch simulado dura 2 s)
+    porque *Qt ya estaba esperando*. Lo que agrega es **visibilidad**: si el
+    cierre se demora, queda una línea en el log en vez de un silencio.
+
+    Devuelve ``True`` si el pool terminó dentro del plazo.
+    """
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = True
+    pool = QThreadPool.globalInstance()
+    if pool is None:  # pragma: no cover — Qt siempre tiene pool global
+        return True
+    ok = pool.waitForDone(timeout_ms)
+    if not ok:
+        log.warning(
+            "cierre: %d fetch(es) de tooltip siguen en vuelo tras %d ms — "
+            "el cierre se demora hasta que terminen (tarea 82)",
+            pool.activeThreadCount(),
+            timeout_ms,
+        )
+    return ok
 
 
 # ── Tooltip formatting ────────────────────────────────────────────────────────

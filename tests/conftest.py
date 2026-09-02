@@ -27,6 +27,13 @@ import sys
 # exportar la variable con una ruta para depurar una corrida puntual.
 os.environ.setdefault("FINANZIAS_LOG_FILE", "")
 
+# Los fetch de tooltip no corren en la suite (tarea 82). No es sólo por el crash
+# de salida: el runnable pide **red** —bloqueada acá— y toca la **DB** desde un
+# hilo del pool mientras los tests la rebindean a memoria; con eso la suite entera
+# se murió a los ~35 tests. Es el mismo aislamiento que ya se hace con la red, la
+# DB y el log, y va acá por el mismo motivo: antes de cualquier import.
+os.environ.setdefault("FINANZIAS_DISABLE_TICKER_FETCH", "1")
+
 from collections.abc import Iterator  # noqa: E402
 from pathlib import Path  # noqa: E402
 from unittest.mock import MagicMock  # noqa: E402
@@ -40,6 +47,27 @@ import pytest  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cortar_fetches_de_tooltip():
+    """Red de contención al final de la sesión (tarea 82).
+
+    Con ``FINANZIAS_DISABLE_TICKER_FETCH`` puesto arriba, ningún runnable de
+    tooltip llega a trabajar, así que **normalmente esto no tiene nada que
+    hacer**. Existe para el test que apaga esa variable a propósito: si dejara un
+    fetch en vuelo, el destructor del ``QThreadPool`` global lo despierta con el
+    intérprete ya bajando, emite sobre un ``QObject`` a medio destruir y el
+    proceso muere con **exit 127 después de que todos los tests pasaron** — el
+    peor síntoma posible, porque no señala a nada.
+
+    Se mira ``sys.modules`` en vez de importar: la mayoría de los tests no toca
+    Qt y no hay por qué cargarlo.
+    """
+    yield
+    mod = sys.modules.get("ui.ticker_tooltip")
+    if mod is not None:
+        mod.shutdown()
 
 
 @pytest.fixture
