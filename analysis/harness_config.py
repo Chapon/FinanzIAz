@@ -454,6 +454,99 @@ def announce_artifacts(
     return fuera
 
 
+# ── Cobertura del store de señales PIT — Tarea 86 (PITCOV-CONSUMIDOR) ────────
+#
+# ``announce_artifacts`` mira **las barras**. El store de señales es el **otro**
+# sustrato compartido, y hasta la 86 nadie lo miraba desde el lado del consumidor:
+# la tarea 69 arregló el **productor** —``pending_dates`` decide por fechas, y su
+# docstring dice que ``complete`` "ya no alcanza solo"— pero esa función vive sólo
+# en los dos ``precompute_*``. Los seis sitios consumidores hacían
+# ``if not blob.get("complete")`` y nada más.
+#
+# El flag **sí puede quedar corto**: se escribe al terminar un barrido y nada lo
+# invalida cuando el frame rueda. Así que un runner podía **pasar el guard del
+# cohorte y correr igual sobre una muestra encogida** — que es lo que pasó el
+# 2026-09-01 (el universo vivo se movió de 141.777 a 142.670 entradas y hubo que
+# re-medir 17 constantes publicadas, tarea 68).
+
+
+class SignalStoreGapError(RuntimeError):
+    """Un harness arrancó con el store de señales PIT más corto que su cohorte (T86)."""
+
+
+def signal_store_gaps(
+    bars_by: dict[str, list], period: str, warmup: int
+) -> dict[str, tuple[int, str]]:
+    """``{ticker: (fechas sin cubrir, la última que sí)}`` — vacío si el store cubre todo.
+
+    Compara contra las **fechas crudas** del artefacto, no contra las señales que
+    el loader se queda: los loaders filtran a señal *truthy*
+    (``if sv[0]``), así que una fecha evaluada sin señal **no está** en su
+    ``sigs_by``. Compararlo contra eso reportaría un hueco por cada día sin BUY —
+    o sea, casi todos.
+
+    Y compara contra **las barras que el runner va a usar**, no contra el Parquet:
+    es la muestra real de la corrida, y así el chequeo no depende de que el loader
+    haya descartado alguna fila malformada.
+    """
+    from scripts.precompute_pit_signals import _load_existing, _out_path
+
+    faltantes: dict[str, tuple[int, str]] = {}
+    for t, bars in bars_by.items():
+        if not bars or len(bars) <= warmup:
+            continue
+        blob = _load_existing(_out_path(t, period, warmup))
+        cubiertas = set(blob.get("signals") or {})
+        if not cubiertas:
+            continue  # sin artefacto: el loader ya lo excluye y lo reporta como `missing`
+        sin_cubrir = [b[0] for b in bars[warmup:] if b[0] not in cubiertas]
+        if sin_cubrir:
+            faltantes[t] = (len(sin_cubrir), max(cubiertas))
+    return faltantes
+
+
+def announce_signal_store(
+    bars_by: dict[str, list],
+    period: str,
+    warmup: int,
+    *,
+    strict: bool = True,
+    file: TextIO | None = None,
+) -> dict[str, tuple[int, str]]:
+    """Declara la cobertura del store de señales y **falla ruidoso** si está corto.
+
+    Se llama **al arrancar**, junto a ``announce_artifacts``: los dos preguntan lo
+    mismo —*¿la muestra es la que digo que es?*— sobre los dos sustratos
+    compartidos. En el caso sano imprime una línea y sigue.
+    """
+    salida = file if file is not None else sys.stdout
+    faltantes = signal_store_gaps(bars_by, period, warmup)
+    n = sum(1 for b in bars_by.values() if b)
+    if not faltantes:
+        print(f"Cobertura del store de señales — {n} tickers, sin fechas pendientes.\n", file=salida)
+        return faltantes
+    peor = sorted(faltantes.items(), key=lambda kv: -kv[1][0])
+    print(
+        f"Cobertura del store de señales — {len(faltantes)} de {n} tickers con fechas "
+        f"SIN señal precomputada:",
+        file=salida,
+    )
+    for t, (cuantas, ultima) in peor[:5]:
+        print(f"  {t}: faltan {cuantas} fecha(s); el store llega al {ultima}", file=salida)
+    print(
+        "  AVISO: esas fechas quedan sin señal, así que la corrida mide sobre una "
+        "muestra MÁS CHICA que la que declara. Corré scripts/precompute_pit_signals.py.\n",
+        file=salida,
+    )
+    if strict:
+        raise SignalStoreGapError(
+            f"{len(faltantes)} ticker(s) con el store de señales corto "
+            f"(peor: {peor[0][0]} con {peor[0][1][0]} fechas). Correr "
+            "scripts/precompute_pit_signals.py, o strict=False declarándolo en el pre-registro."
+        )
+    return faltantes
+
+
 @dataclass(frozen=True)
 class ArtifactPopulation:
     """La **muestra** sobre la que corrió un harness — **Tarea 52 (REPRO-POP)**.

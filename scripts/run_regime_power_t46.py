@@ -49,9 +49,12 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    SignalStoreGapError,
     StaleArtifactError,
     announce,
     announce_artifacts,
+    announce_signal_store,
+    artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
 from analysis.rank_policy import neutral_rank
@@ -232,6 +235,7 @@ def population_anomaly(
     # (tarea 83). Sigue corriendo antes de pagar la corrida: las simulaciones
     # están abajo.
     announce_artifacts(bars_by, strict=strict, file=log)
+    announce_signal_store(bars_by, period, warmup, strict=strict, file=log)
     entries = build_anomaly_entries(bars_by, vol_by, AnomalyParams(k=2.0, m=1.5), warmup=warmup)
     series = build_regime_series(load_spy_bars(period) or [])
     a = simulate_portfolio(entries, bars_by, sigs_by, **common)
@@ -265,6 +269,7 @@ def population_analyze(
     tickers = parse_universe_file(_HERE.parent / universe)
     bars_by, sigs_by, score_by, _missing = load_bars_signals_scores(tickers, period, warmup)
     announce_artifacts(bars_by, strict=strict, file=log)
+    announce_signal_store(bars_by, period, warmup, strict=strict, file=log)
     entries = buy_entries(bars_by, sigs_by, warmup)
     a = simulate_portfolio(
         entries,
@@ -309,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--allow-stale-artifacts",
         action="store_true",
-        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+        help="no abortar si el cohorte de artefactos está desalineado (T30) NI si el "
+        "store de señales PIT está corto (T86) — declararlo en el pre-registro",
     )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -333,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             strict=not args.allow_stale_artifacts,
             log=log,
         )
-    except StaleArtifactError as exc:
+    except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3
 

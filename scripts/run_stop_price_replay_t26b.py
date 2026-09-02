@@ -44,9 +44,11 @@ from analysis.exit_replay import AtrParams
 from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    SignalStoreGapError,
     StaleArtifactError,
     announce,
     announce_artifacts,
+    announce_signal_store,
     artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
@@ -249,7 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--allow-stale-artifacts",
         action="store_true",
-        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+        help="no abortar si el cohorte de artefactos está desalineado (T30) NI si el "
+        "store de señales PIT está corto (T86) — declararlo en el pre-registro",
     )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -273,7 +276,10 @@ def main(argv: list[str] | None = None) -> int:
     # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
-    except StaleArtifactError as exc:
+        announce_signal_store(
+            bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts
+        )
+    except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3
 

@@ -64,11 +64,13 @@ from analysis.harness_config import (
     POPULATION_LEGACY_41,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
+    SignalStoreGapError,
     StaleArtifactError,
     WINDOW_REFRESH_2026_09_01_LEGACY,
     WINDOW_REFRESH_2026_09_01_LIVE,
     announce,
     announce_artifacts,
+    announce_signal_store,
     artifact_window,
     reproduction_check,
 )
@@ -521,7 +523,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--allow-stale-artifacts",
         action="store_true",
-        help="no abortar si el cohorte de artefactos está desalineado (T30)",
+        help="no abortar si el cohorte de artefactos está desalineado (T30) NI si el "
+        "store de señales PIT está corto (T86) — declararlo en el pre-registro",
     )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
@@ -542,7 +545,10 @@ def main(argv: list[str] | None = None) -> int:
     # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
-    except StaleArtifactError as exc:
+        announce_signal_store(
+            bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts, file=log
+        )
+    except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3
 

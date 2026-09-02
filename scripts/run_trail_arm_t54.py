@@ -52,11 +52,13 @@ from analysis.harness_config import (
     REPRO_OK,
     WINDOW_REFRESH_2026_09_01_LIVE,
     EffectivePopulation,
+    SignalStoreGapError,
     StaleArtifactError,
     announce,
     announce_artifacts,
     announce_effective,
     announce_grid,
+    announce_signal_store,
     artifact_window,
     effective_population,
     reproduction_check,
@@ -534,7 +536,10 @@ def main(argv: list[str] | None = None) -> int:
     # la ventana publicada sin que se note. Falla ruidoso (política de la T22).
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
-    except StaleArtifactError as exc:
+        announce_signal_store(
+            bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts, file=log
+        )
+    except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3
 
