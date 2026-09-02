@@ -81,8 +81,9 @@ reproducción de los runners.
 
 **Por qué rinde acá.** El backlog acusaba a `CLAUDE.md` de decir la cuenta 1 como viva
 cuando `019de1c` lo había arreglado **tres semanas antes**, y la tarea nunca se actualizó
-(tarea 30). `CLAUDE.md` sigue citando *"buy_score no predice el fwd5 — auditoría
-2026-06-17"* como hecho vivo. Y el ancla de ventana (hoy `WINDOW_REFRESH_2026_09_01_LIVE`) se usó en siete
+(tarea 30). `CLAUDE.md` citó durante **tres meses** un *"buy_score no predice el fwd5"*
+de junio como hecho vivo; al re-medirlo (tarea 73) resultó que la muestra original (n=21)
+**no podía sostener esa afirmación** — sólo detectaba |r| > 0.58. Y el ancla de ventana (hoy `WINDOW_REFRESH_2026_09_01_LIVE`) se usó en siete
 runners durante semanas estando construida sobre un artefacto congelado.
 
 **Cómo se audita.** Por cada claim: ¿dónde está escrito? ¿sobre qué muestra/ventana/fecha se

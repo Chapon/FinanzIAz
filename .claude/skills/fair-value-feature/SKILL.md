@@ -7,7 +7,7 @@ description: Guía para implementar el "valor estimado" (fair value) en la pesta
 
 **Objetivo**: mostrar tres números lado a lado —**precio actual / fair value propio / target de consenso**— para que el usuario triangule el upside esperado y un precio máximo de entrada. Decidido 2026-06-24, profundidad "Fase 1" (múltiplos, sin DCF completo).
 
-**Restricción dura**: entra como **feature de DISPLAY**, NO cableada a sizing ni a los gates hasta backtestear. Razón medida: `buy_score` no predice el fwd5 (auditoría 2026-06-17). Ver skill `finanzias-conventions`.
+**Restricción dura**: entra como **feature de DISPLAY**, NO cableada a sizing ni a los gates hasta backtestear. La razón **no es un coeficiente**: es que no se cablea lo que no se backtesteó. La evidencia que se citaba (*«`buy_score` no predice el fwd5»*, auditoría 2026-06-17, **n=21**) se re-midió en la tarea 73 y **no alcanzaba para afirmar eso** — con n=21 sólo se detecta |r| > 0.58. Hoy, con n=85: `r = −0.05`, IC95% [−0.26, +0.17], sin relación detectada pero **sin poder para descartar |r| = 0.15**. La restricción sigue igual de dura. Ver skill `finanzias-conventions`.
 
 ## Lo que YA existe (no reconstruir)
 
