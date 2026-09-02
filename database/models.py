@@ -510,18 +510,58 @@ class FailedTicker(Base):
         return f"<FailedTicker({self.ticker} status={self.status} count={self.fail_count})>"
 
 
-def init_db():
-    """Create all tables, sync the alembic timeline, and seed default portfolio."""
-    # Register paper-trading models so their tables are included in create_all.
-    # Import here (not at module top) to avoid a circular import.
+def _register_paper_models() -> None:
+    """Mete las tablas ``paper_*`` en ``Base.metadata``.
+
+    Import acá adentro (no en el top del módulo) para evitar el import
+    circular. **Todo barrido de metadata tiene que llamar a esto primero**:
+    sin el import, las cinco tablas ``paper_*`` no están en ``Base.metadata``
+    y el barrido cuenta de menos **en silencio** (tarea 79).
+    """
     try:
         import paper_trading.models  # noqa: F401
     except Exception:
         from config.logging_config import get_logger
 
         get_logger(__name__).exception("paper_trading.models import failed")
+
+
+def missing_declared_indexes(engine=None) -> list[tuple[str, str]]:
+    """Índices declarados en los models que **no existen** en la DB (tarea 74).
+
+    Devuelve ``[(tabla, índice), …]`` ordenado. Vacío = el esquema real coincide
+    con el declarado.
+
+    Existe porque ``Base.metadata.create_all(checkfirst=True)`` **saltea entera**
+    una tabla que ya existe, índices incluidos: un índice agregado a un model
+    después de que su tabla existiera **nunca se crea** y nada lo nota — el
+    código dice que está y un test que mire el ORM lo confirma. La DB viva tenía
+    24 de 41 declarados faltando, en 11 tablas, algunos desde 2026-05-06.
+
+    Las tablas que **no existen** en la DB no se reportan: eso es otro problema
+    (falta la tabla, no el índice) y mezclarlos haría ruidoso el caso normal.
+    """
+    from sqlalchemy import inspect as _sa_inspect
+
+    _register_paper_models()
+    insp = _sa_inspect(engine if engine is not None else ENGINE)
+    tablas = set(insp.get_table_names())
+    faltan: list[tuple[str, str]] = []
+    for t in Base.metadata.sorted_tables:
+        if not t.indexes or t.name not in tablas:
+            continue
+        reales = {i["name"] for i in insp.get_indexes(t.name) if i.get("name")}
+        faltan.extend((t.name, i.name) for i in t.indexes if i.name not in reales)
+    return sorted(faltan)
+
+
+def init_db():
+    """Create all tables, sync the alembic timeline, and seed default portfolio."""
+    # Register paper-trading models so their tables are included in create_all.
+    _register_paper_models()
     Base.metadata.create_all(ENGINE)
     _alembic_sync()
+    _warn_on_index_drift()
     with session_scope() as session:
         if session.query(Portfolio).count() == 0:
             default = Portfolio(name="Mi Portafolio", description="Portafolio principal", currency="USD")
@@ -570,6 +610,36 @@ def _alembic_sync(engine=None, db_path: str | None = None):
         command.upgrade(cfg, "head")
     else:
         command.stamp(cfg, "head")
+
+
+def _warn_on_index_drift(engine=None) -> list[tuple[str, str]]:
+    """Una línea de WARNING si el esquema real no tiene los índices declarados.
+
+    Corre **después** de ``_alembic_sync``, o sea que en un arranque sano **no
+    imprime nada** — que aparezca es la señal (mismo estilo que la telemetría
+    de la 25 y la 67). El caso que caza y el test no puede: una DB restaurada
+    de un backup viejo, o stampeada a mano en una revisión que no le
+    corresponde. Fail-open: nunca frena el arranque.
+    """
+    try:
+        faltan = missing_declared_indexes(engine)
+    except Exception:  # pragma: no cover — un barrido de esquema no tumba el arranque
+        from config.logging_config import get_logger
+
+        get_logger(__name__).debug("chequeo de índices declarados falló", exc_info=True)
+        return []
+    if faltan:
+        from config.logging_config import get_logger
+
+        detalle = ", ".join(f"{t}.{i}" for t, i in faltan[:5])
+        extra = f" (+{len(faltan) - 5})" if len(faltan) > 5 else ""
+        get_logger(__name__).warning(
+            "esquema: %d índice(s) declarado(s) en los models no existen en la DB: %s%s",
+            len(faltan),
+            detalle,
+            extra,
+        )
+    return faltan
 
 
 def get_session() -> SASession:

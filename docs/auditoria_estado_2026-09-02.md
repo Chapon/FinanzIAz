@@ -45,9 +45,19 @@ ORDER BY`. Medido: **38,5 ms** por lookup.
 tres índices para esa tabla —incluido el compuesto `ix_price_cache_ticker_fetched`— y **ninguno
 existe en la DB**. Barrido completo `Base.metadata` vs `sqlite_master`:
 
-> **18 índices declarados en `models.py` que no existen en la DB, en 7 tablas.**
-> `alerts` (5) · `price_cache` (3) · `positions` (3) · `transactions` (3) · `dividend_cache` (2) ·
-> `failed_tickers` (1) · `historical_data_cache` (1). De 35 declarados, en la DB hay 17.
+> **24 índices declarados en los models que no existen en la DB, en 11 tablas.**
+> `alerts` (5) · `price_cache` (3) · `positions` (3) · `transactions` (3) · `paper_orders` (3) ·
+> `dividend_cache` (2) · `failed_tickers` (1) · `historical_data_cache` (1) ·
+> `paper_positions` (1) · `paper_watchlist` (1) · `paper_equity_snapshots` (1).
+> De **41** declarados, en la DB hay 17.
+
+> **CORRECCIÓN 2026-09-02 (tarea 79).** Este bloque decía originalmente *"18 en 7 tablas, de 35
+> declarados"*, y el §5 usaba ese número para corregir al verificador. **El equivocado era yo.** Mi
+> barrido recorrió `Base.metadata` **sin importar `paper_trading.models`**, así que las cinco tablas
+> `paper_*` ni estaban en la metadata y sus 6 índices eran invisibles. El verificador decía 24 en 11
+> y tenía razón. Verificado al abrir la tarea 74: `import paper_trading.models` mueve el conteo de
+> 35 a 41 declarados. Es —incómodamente— el mismo defecto que esta auditoría fue a buscar: **un
+> chequeo que mide la cosa equivocada y reporta un número limpio**.
 
 **Causa raíz:** `alembic/versions/0001_baseline.py` es un no-op a propósito y el esquema lo crea
 `Base.metadata.create_all` — que con `checkfirst=True` **saltea entera** una tabla que ya existe,
@@ -146,16 +156,41 @@ trabajo.**
 es la excepción **declarada** de `ARTIFACT_REFRESH_EXCEPTIONS` (tarea 63), con su motivo y con el
 banner diciéndolo en cada corrida.
 
-## 5. Dónde el verificador se equivocó, y por qué se publica mi número
+## 5. Dónde me equivoqué yo, corrigiendo al verificador
 
-Reportó *"faltan **24** índices en **11** tablas"* e incluyó `paper_orders` (3),
-`paper_positions` (1), `paper_watchlist` (1) y `paper_equity_snapshots` (1). **Esas tablas no
-declaran ningún índice**: el conteo correcto es **18 en 7 tablas**, verificado
-independientemente recorriendo `Base.metadata.sorted_tables` contra `sqlite_master`.
+> **Reescrito el 2026-09-02 al abrir la tarea 74 (⇒ tarea 79).** Lo que decía antes está citado
+> abajo, porque borrarlo sería la forma más cómoda de perder la lección.
 
-Se deja escrito porque es el punto de la fase adversarial: **corre en las dos direcciones**. El
-verificador me refutó dos framings y me encontró dos hallazgos; yo le corregí un número. Ninguno de
-los dos lados se toma al otro por buena fe.
+**Lo que este §5 afirmaba:** que el verificador se había equivocado al reportar *"faltan 24 índices
+en 11 tablas"*, porque incluía `paper_orders` (3), `paper_positions` (1), `paper_watchlist` (1) y
+`paper_equity_snapshots` (1), y *"esas tablas no declaran ningún índice"*; que el número correcto era
+**18 en 7 tablas**, *"verificado independientemente recorriendo `Base.metadata.sorted_tables` contra
+`sqlite_master`"*.
+
+**Es falso, y el verificador tenía razón.** Esas cuatro tablas declaran **6** índices entre
+`paper_trading/models.py:115-230`. Mi barrido recorrió `Base.metadata` **sin importar
+`paper_trading.models`**, y sin ese import las cinco tablas `paper_*` **no están en la metadata**:
+no aparecen como "0 índices declarados", **no aparecen**. Medido al abrir la 74:
+
+```
+SIN import de paper_trading.models: 13 tablas,  35 índices declarados
+CON import:                         18 tablas,  41 índices declarados
+```
+
+35 + 6 = 41, y 18 + 6 = 24. La diferencia entera era mi import faltante.
+
+**Lo incómodo, y por eso se publica en vez de corregirse en silencio: es exactamente el defecto que
+esta auditoría salió a buscar.** Un chequeo que **mide la cosa equivocada y devuelve un número
+limpio** — el mismo patrón de E-1 (cobertura por ticker que reporta 100% con 17 fechas faltando) y
+de la familia 48/52/62/69. Lo cometí en el mismo documento en el que lo denuncio, y encima lo usé
+para desautorizar al que tenía razón.
+
+**Qué queda en pie de la idea original.** La fase adversarial sí corre en las dos direcciones: el
+verificador me refutó dos framings, me encontró dos hallazgos y me corrigió el conteo. Lo que no
+queda en pie es el *"yo le corregí un número"*. **Ninguno de los dos lados se toma al otro por buena
+fe — y eso incluye no tomarme a mí por buena fe.** El barrido quedó como código con test
+(`missing_declared_indexes`, tarea 74), que es la única forma de que este número no dependa de que
+alguien se acuerde del import.
 
 ## 6. Alcance NO mirado
 
@@ -164,6 +199,6 @@ los dos lados se toma al otro por buena fe.
 - **`data/parquet/` como store**: la frescura del cohorte ya la cubre el guard de la 30 (y su
   cableado es N-1); no se miró el crecimiento en disco (60 MB, 752 archivos) ni si algo lo poda.
 - **`dashboard_snapshot.json`** y el artifact: los tocó la 70; no se re-auditaron.
-- **Los índices que faltan en las otras 6 tablas** no se midieron en costo — sólo los de
+- **Los índices que faltan en las otras 10 tablas** no se midieron en costo — sólo los de
   `price_cache`, que es la que tiene el consumidor caliente.
 - Las otras tres áreas de la skill: `muestra`, `desvios`, `guards`.
