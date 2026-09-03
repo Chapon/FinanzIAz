@@ -124,7 +124,7 @@ def test_legacy_config_declares_slots_and_universe():
 
 
 def test_live_config_only_declares_the_structural_deviations():
-    """Con la config viva quedan **seis** desvíos estructurales: la ventana de
+    """Con la config viva quedan **nueve** desvíos estructurales: la ventana de
     ``analyze()`` (T27), el precio de evaluación de las barreras (T32), el precio al
     que se llena esa barrera (T33), los gates de re-entrada (T34), la ventana
     RODANTE de los artefactos (T48) y la **política de salida** (T92: la cuenta
@@ -132,8 +132,12 @@ def test_live_config_only_declares_the_structural_deviations():
     Son los que se declaran en vez de corregirse."""
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
     devs = deviations(cfg)
-    assert len(devs) == 6
+    assert len(devs) == 9
     assert any("stop duro" in d for d in devs)
+    # +3 (T94/95/96): overlay de vol, escalado por régimen y blackout de earnings
+    assert any("overlay de volatilidad" in d for d in devs)
+    assert any("escalado por régimen" in d for d in devs)
+    assert any("blackout de earnings" in d for d in devs)
     assert any("ventana de analyze()" in d for d in devs)
     assert any("barreras ATR" in d for d in devs)
     assert any("fill de la barrera" in d for d in devs)
@@ -158,7 +162,7 @@ def test_modelling_the_reentry_gates_removes_the_deviation():
     on = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, live_gates=True)
     devs = deviations(on)
     assert not any("gates de re-entrada" in d for d in devs)
-    assert len(devs) == 5  # +1: la política de salida (T92)
+    assert len(devs) == 8  # +1 la política de salida (T92), +3 sizing y gates (T94/95/96)
 
 
 def test_signal_window_deviation_is_always_declared():

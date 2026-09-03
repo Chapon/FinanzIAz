@@ -112,6 +112,38 @@ LIVE_TRAIL_MULT = 2.0  # `atr_trail_mult` — el candidato `soff_t2.0` de la tar
 # comparación de `deviations()` pueda cruzarlas.
 NO_STOP_MULT = 1e9
 
+# ── Sizing y gates vivos que el harness NO modela — Tareas 94, 95 y 96 ───────
+#
+# Las tres son perillas **encendidas en la cuenta 2** que ningún runner modela.
+# Hasta la auditoría `desvios` del 2026-09-02 la declaración dependía de que el
+# autor del pre-registro se acordara de escribirla a mano: el escalado por régimen
+# aparecía en **14** pre-registros y el blackout de earnings en **7**, y el overlay
+# de volatilidad **en ninguno**. Y el pre-registro más nuevo (T51) dejó de
+# enumerarlos y delegó en esta función — o sea que **lo que acá no se diga, no lo
+# dice nadie**.
+#
+# Verificadas contra `~/.finanzias/settings.json` el 2026-09-02.
+
+# Overlay de σ de cartera (tarea 94). `strategies.py:525` lo aplica a **todas** las
+# BUY nuevas. Es el que más muerde: **dispara todos los días** (medido en el log:
+# `σ=15.8% > target 12.0% … ×0.76`, y `σ=37.2% … ×0.32`).
+LIVE_VOL_OVERLAY_ENABLED = True
+LIVE_VOL_TARGET_ANNUAL = 0.12
+
+# Escalado por régimen R2b (tarea 95). En risk-off las BUY entran a la mitad.
+# **Nunca disparó en vivo** —0 de 62 BUY filled— pero **15,96%** de las ruedas de
+# la ventana del harness son risk-off, así que sí muerde en backtest. Medido por
+# la T20: ΔCAGR **+0,59 pp** y maxDD **21,6% → 19,1%**.
+LIVE_REGIME_SCALE_ENABLED = True
+LIVE_REGIME_SCALE_FACTOR = 0.5
+
+# Blackout de earnings, Gate 6 (tarea 96). Bloquea **BUY** con earnings dentro de
+# ±N días. **No se puede modelar con los datos que hay**: no existen fechas de
+# earnings point-in-time a 10 años (`earnings_cache` arranca el 2026-06-26). Por
+# eso se declara en vez de modelarse. Población medida sobre los round-trips
+# reales: **15,8%** son near-earnings (`docs/earnings_blackout_replay_2026-06-25.md`).
+LIVE_EARNINGS_BLACKOUT_DAYS = 2
+
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
 LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
@@ -862,6 +894,13 @@ class HarnessConfig:
     # lo que hace que el desvío se declare **sin tocar los 21 runners**.
     atr_stop_mult: float = 2.0
     atr_trail_mult: float | None = None
+    # Sizing y gates vivos que el runner declara modelar (Tareas 94, 95, 96). El
+    # default es ``False`` porque **ningún runner los modela hoy**, así que un
+    # runner que no diga nada declara exactamente lo que corre — mismo criterio
+    # que ``live_gates``.
+    models_vol_overlay: bool = False
+    models_regime_scale: bool = False
+    models_earnings_blackout: bool = False
 
     @property
     def effective_trail_mult(self) -> float:
@@ -996,6 +1035,28 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             f"trailing {cfg.effective_trail_mult:.1f}×ATR en el harness vs "
             f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}"
         )
+    # Tarea 94 — el que más muerde de los tres: dispara TODOS los días.
+    if LIVE_VOL_OVERLAY_ENABLED and not cfg.models_vol_overlay:
+        out.append(
+            f"NO se modela el overlay de volatilidad de cartera (target "
+            f"{100 * LIVE_VOL_TARGET_ANNUAL:.0f}% anual), que en vivo recorta **todas** las "
+            f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)"
+        )
+    # Tarea 95 — nunca disparó en vivo, pero sí muerde en la ventana del harness.
+    if LIVE_REGIME_SCALE_ENABLED and not cfg.models_regime_scale:
+        out.append(
+            f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
+            f"risk-off): 0 de 62 BUY vivas lo dispararon, pero el 15.96% de las ruedas de "
+            f"la ventana son risk-off. Vale +0.59pp de CAGR y −2.5pp de maxDD (T20)"
+        )
+    # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
+    if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
+        out.append(
+            f"NO se modela el blackout de earnings (Gate 6, ±{LIVE_EARNINGS_BLACKOUT_DAYS}d, "
+            f"bloquea BUY): el harness entra en trades que el engine habría frenado. El "
+            f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
+            f"hay fechas de earnings point-in-time a 10 años"
+        )
     if not cfg.live_gates:
         out.append(
             f"NO se modelan los gates de re-entrada del engine — Gate 5 "
@@ -1047,6 +1108,9 @@ def announce(
     window: ArtifactWindow | None = None,
     atr_stop_mult: float = 2.0,
     atr_trail_mult: float | None = None,
+    models_vol_overlay: bool = False,
+    models_regime_scale: bool = False,
+    models_earnings_blackout: bool = False,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -1057,6 +1121,9 @@ def announce(
     cfg = HarnessConfig(
         atr_stop_mult=atr_stop_mult,
         atr_trail_mult=atr_trail_mult,
+        models_vol_overlay=models_vol_overlay,
+        models_regime_scale=models_regime_scale,
+        models_earnings_blackout=models_earnings_blackout,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,
