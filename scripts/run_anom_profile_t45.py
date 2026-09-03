@@ -55,7 +55,6 @@ sys.path.insert(0, str(_HERE.parent))
 from analysis.anomaly_signal import AnomalyParams, build_anomaly_entries
 from analysis.exit_replay import AtrParams
 from analysis.harness_config import (
-    ArtifactPopulation,
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
@@ -64,10 +63,11 @@ from analysis.harness_config import (
     POPULATION_LEGACY_41,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    SignalStoreGapError,
-    StaleArtifactError,
     WINDOW_REFRESH_2026_09_01_LEGACY,
     WINDOW_REFRESH_2026_09_01_LIVE,
+    ArtifactPopulation,
+    SignalStoreGapError,
+    StaleArtifactError,
     announce,
     announce_artifacts,
     announce_signal_store,

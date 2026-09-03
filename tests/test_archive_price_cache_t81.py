@@ -84,7 +84,9 @@ def test_no_se_pierde_una_sola_fila(tmp_path):
     archivos = list((tmp_path / "price_tape").glob("*.parquet"))
     assert archivos, "no escribió ningún archivo"
     df = pq.read_table(archivos[0]).to_pandas()
-    assert dict(zip(df["id"], df["price"])) == antes
+    # `strict=True` a propósito: las dos columnas salen del mismo Parquet, así que
+    # un largo distinto sería el archivo mal escrito — justo lo que el test mira.
+    assert dict(zip(df["id"], df["price"], strict=True)) == antes
 
 
 def test_es_idempotente(tmp_path):

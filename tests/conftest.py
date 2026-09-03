@@ -34,13 +34,13 @@ os.environ.setdefault("FINANZIAS_LOG_FILE", "")
 # DB y el log, y va acá por el mismo motivo: antes de cualquier import.
 os.environ.setdefault("FINANZIAS_DISABLE_TICKER_FETCH", "1")
 
-from collections.abc import Iterator  # noqa: E402
-from pathlib import Path  # noqa: E402
-from unittest.mock import MagicMock  # noqa: E402
+from collections.abc import Iterator
+from pathlib import Path
+from unittest.mock import MagicMock
 
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-import pytest  # noqa: E402
+import numpy as np
+import pandas as pd
+import pytest
 
 # Make ``import database.models`` etc. work when pytest is invoked from the
 # repo root via ``pytest`` (no editable install needed).

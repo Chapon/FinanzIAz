@@ -1059,9 +1059,7 @@ def _runners_que_leen_el_cohorte() -> list[tuple[str, str]]:
     out = []
     for p in sorted((_REPO / "scripts").glob("run_*.py")):
         txt = p.read_text(encoding="utf-8")
-        if _re.search(
-            r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt
-        ):
+        if _re.search(r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt):
             out.append((p.name, txt))
     return out
 
@@ -1145,7 +1143,11 @@ def test_the_cohort_check_sees_a_cohort_that_actually_exists():
                 and any(
                     x.id == "bars_by"
                     for t in nodo.targets
-                    for x in ([t] if isinstance(t, ast.Name) else [e for e in getattr(t, "elts", []) if isinstance(e, ast.Name)])
+                    for x in (
+                        [t]
+                        if isinstance(t, ast.Name)
+                        else [e for e in getattr(t, "elts", []) if isinstance(e, ast.Name)]
+                    )
                 )
                 for nodo in ast.walk(fn)
             )

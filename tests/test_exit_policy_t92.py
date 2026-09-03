@@ -150,7 +150,6 @@ def test_el_t61_traduce_el_flag_al_multiplo(monkeypatch, hard_stop, esperado):
     """El harness no tiene flag: expresa "apagado" con un múltiplo que nunca
     dispara. La traducción tiene que ser explícita, no implícita."""
     from config.settings_manager import settings
-
     from scripts.run_exit_replay_t61 import _atr_params_from_settings
 
     monkeypatch.setattr(settings, "get", lambda k, d=None: hard_stop if k == "atr_hard_stop_enabled" else d)

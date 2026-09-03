@@ -221,9 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
-        announce_signal_store(
-            bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts
-        )
+        announce_signal_store(bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts)
     except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3

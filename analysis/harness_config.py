@@ -545,9 +545,7 @@ class SignalStoreGapError(RuntimeError):
     """Un harness arrancó con el store de señales PIT más corto que su cohorte (T86)."""
 
 
-def signal_store_gaps(
-    bars_by: dict[str, list], period: str, warmup: int
-) -> dict[str, tuple[int, str]]:
+def signal_store_gaps(bars_by: dict[str, list], period: str, warmup: int) -> dict[str, tuple[int, str]]:
     """``{ticker: (fechas sin cubrir, la última que sí)}`` — vacío si el store cubre todo.
 
     Compara contra las **fechas crudas** del artefacto, no contra las señales que

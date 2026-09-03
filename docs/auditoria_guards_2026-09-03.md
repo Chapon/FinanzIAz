@@ -179,7 +179,7 @@ que la 70 no los tocó.
 
 **Severidad: MEDIA · Confianza: ALTA · Categoría: guard que se auto-satisface**
 
-**Ubicación.** `analysis/harness_config.py:665-667` (`same_universe_as`) · `:707` (docstring de `universe_fingerprint`) · `:915-930` (`HarnessConfig.population`) · `:1623-1624` (anclas)
+**Ubicación.** `analysis/harness_config.py:663-665` (`same_universe_as`) · `:707` (docstring de `universe_fingerprint`) · `:915-930` (`HarnessConfig.population`) · `:1621-1622` (anclas)
 
 **Lo que NO es el hallazgo, y por qué.** Que la huella sea del **archivo** de universo y no
 del conjunto que cargó **no es un defecto**: es una decisión deliberada, documentada en
@@ -192,10 +192,10 @@ por `tickers_fp`, **borró la única comparación de `n_tickers` que existía**,
 justificación escrita para elegir la semántica del archivo se apoya **explícitamente** en que
 ese eje lo sigue llevando `n_tickers`:
 
-> `analysis/harness_config.py:707` — *"…eso no es un cambio de universo, es un hipo. **El eje «qué cargó» ya lo lleva `n_tickers`, por separado.**"*
+> `analysis/harness_config.py:705` — *"…eso no es un cambio de universo, es un hipo. **El eje «qué cargó» ya lo lleva `n_tickers`, por separado.**"*
 
 **Ese enunciado hoy es falso.** Los únicos dos sitios que comparan `n_tickers` son
-`harness_config.py:667` —**inalcanzable en producción**, porque `HarnessConfig.population()`
+`harness_config.py:665` —**inalcanzable en producción**, porque `HarnessConfig.population()`
 siempre setea `tickers_fp` y las dos anclas compartidas lo traen hardcodeado— y
 `deviations():964`, que sólo imprime.
 
@@ -384,7 +384,7 @@ WARNING.
 
 **Severidad: BAJA-MEDIA · Confianza: ALTA · Categoría: `except`/skip justificado por un claim falso**
 
-**Ubicación.** `analysis/harness_config.py:572` · `scripts/run_insider_cluster_replay_t12.py:161-197`, `:492`, `:513-517`
+**Ubicación.** `analysis/harness_config.py:570` · `scripts/run_insider_cluster_replay_t12.py:161-197`, `:492`, `:513-517`
 
 **Evidencia.** El guard saltea:
 
@@ -420,13 +420,13 @@ guard en vez de delegarlo.
 
 **Severidad: BAJA-MEDIA · Confianza: ALTA · Categoría: claim caducado dentro de un guard**
 
-**Ubicación.** `analysis/harness_config.py:659` · `:744-748` · `:700-707` · `:753`
+**Ubicación.** `analysis/harness_config.py:657` · `:742-746` · `:698-705` · `:751`
 
 **Evidencia.**
 
-- `:659` (`same_universe_as`): *"`tickers_fp` es la huella del **conjunto efectivo**"* — **falso**.
-- `:744-748` (`artifact_population`): *"con `bars_by` se calcula además la huella del conjunto: es la de los tickers que **efectivamente cargaron**, no la del archivo"* — **falso**; el código de `:753` llama `universe_fingerprint(universe_file)` **ignorando `bars_by`** para la huella.
-- `:700-707` (`universe_fingerprint`): dice lo contrario, y es lo que el código hace.
+- `:657` (`same_universe_as`): *"`tickers_fp` es la huella del **conjunto efectivo**"* — **falso**.
+- `:742-746` (`artifact_population`): *"con `bars_by` se calcula además la huella del conjunto: es la de los tickers que **efectivamente cargaron**, no la del archivo"* — **falso**; el código de `:751` llama `universe_fingerprint(universe_file)` **ignorando `bars_by`** para la huella.
+- `:698-705` (`universe_fingerprint`): dice lo contrario, y es lo que el código hace.
 
 **Impacto.** Dos de las tres puntas mandan al próximo lector a arreglar la punta equivocada de
 G-4. Y es reincidencia declarada: `tests/test_watchlist_size_t89.py:78` existe justamente para

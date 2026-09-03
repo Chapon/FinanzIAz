@@ -78,9 +78,7 @@ def test_un_ticker_cambiado_por_otro_ya_NO_pasa_por_el_mismo_universo():
 
 def test_el_mismo_conjunto_sigue_siendo_el_mismo_universo():
     fp = tickers_fingerprint(["AAPL", "MSFT", "KO"])
-    assert ArtifactPopulation("u.txt", 3, None, fp).same_universe_as(
-        ArtifactPopulation("u.txt", 3, 999, fp)
-    )
+    assert ArtifactPopulation("u.txt", 3, None, fp).same_universe_as(ArtifactPopulation("u.txt", 3, 999, fp))
 
 
 def test_sin_huella_en_alguna_punta_cae_al_conteo():

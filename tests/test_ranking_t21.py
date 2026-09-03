@@ -208,9 +208,7 @@ def _risk_store(tmp_path, monkeypatch, contenido: dict):
         lambda path: json.loads(path.read_text(encoding="utf-8")) if path.exists() else {},
     )
     for t, risk in contenido.items():
-        (tmp_path / f"{t}.json").write_text(
-            json.dumps({"complete": True, "risk": risk}), encoding="utf-8"
-        )
+        (tmp_path / f"{t}.json").write_text(json.dumps({"complete": True, "risk": risk}), encoding="utf-8")
     return mod
 
 

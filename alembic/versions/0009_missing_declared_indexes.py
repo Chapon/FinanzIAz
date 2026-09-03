@@ -130,4 +130,3 @@ def downgrade() -> None:
     El costo de no bajar es cero: un índice de más es performance, no datos, y
     esta revisión no mueve ni una fila.
     """
-

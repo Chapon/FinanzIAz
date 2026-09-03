@@ -73,9 +73,7 @@ def test_la_pestana_no_llama_check_alerts_en_su_hilo(qapp, portfolio_id, monkeyp
     es lo único que lo dice.
     """
     llamadas: list = []
-    monkeypatch.setattr(
-        AlertManager, "check_alerts", lambda self, pid=None: llamadas.append(pid) or []
-    )
+    monkeypatch.setattr(AlertManager, "check_alerts", lambda self, pid=None: llamadas.append(pid) or [])
     arrancados: list = []
     monkeypatch.setattr(AlertCheckWorker, "start", lambda self: arrancados.append(self))
 

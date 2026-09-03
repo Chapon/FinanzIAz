@@ -93,6 +93,7 @@ def test_esta_cableado_a_las_librerias_ruidosas_y_NO_al_log_de_la_app():
     import config.logging_config as lc
 
     fuente = (lc.__file__ or "").replace(".pyc", ".py")
-    txt = open(fuente, encoding="utf-8").read()
+    with open(fuente, encoding="utf-8") as fh:
+        txt = fh.read()
     assert "lg.addFilter(repetidos)" in txt
     assert "root.addFilter" not in txt

@@ -141,9 +141,7 @@ def test_los_indices_unicos_siguen_siendo_unicos(tmp_path):
     """
     path = tmp_path / "uniq.db"
     engine = _full_db(path)
-    unicos = {
-        (t.name, i.name) for t in Base.metadata.sorted_tables for i in t.indexes if i.unique
-    }
+    unicos = {(t.name, i.name) for t in Base.metadata.sorted_tables for i in t.indexes if i.unique}
     assert unicos, "el test se quedó sin población"
 
     _strip_indexes(engine)

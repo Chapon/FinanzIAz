@@ -108,7 +108,6 @@ def test_varios_tickers_se_reportan_por_separado(store):
     assert set(gaps) == {"BBB"} and gaps["BBB"][0] == 2
 
 
-
 def test_un_artefacto_con_schema_viejo_cuenta_como_ausente(store):
     """`_load_existing` descarta un blob de otra `schema_version`, así que el guard
     lo ve como *sin artefacto* — no como un hueco. Es lo correcto: el loader
@@ -131,9 +130,7 @@ def test_falla_ruidoso_y_nombra_al_peor(store, capsys):
     store("AAA", _dias(6))
     store("BBB", _dias(3))
     with pytest.raises(SignalStoreGapError) as exc:
-        announce_signal_store(
-            {"AAA": _bars(_dias(9)), "BBB": _bars(_dias(9))}, "10y", 2, strict=True
-        )
+        announce_signal_store({"AAA": _bars(_dias(9)), "BBB": _bars(_dias(9))}, "10y", 2, strict=True)
     salida = capsys.readouterr().out
     assert "BBB" in str(exc.value)  # el peor va en el mensaje del error
     assert "precompute_pit_signals" in salida  # y el aviso dice qué correr
@@ -154,9 +151,7 @@ def _runners_del_cohorte() -> list[tuple[str, str]]:
     out = []
     for p in sorted((_REPO / "scripts").glob("run_*.py")):
         txt = p.read_text(encoding="utf-8")
-        if re.search(
-            r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt
-        ):
+        if re.search(r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt):
             out.append((p.name, txt))
     return out
 
