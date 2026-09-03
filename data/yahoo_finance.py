@@ -1187,6 +1187,20 @@ def _fetch_ticker_info(ticker: str, *, timeout: float = HARD_TIMEOUT_SECONDS) ->
     On failure (None / exception), registra el ticker en ``failed_tickers``
     para que la UI lo muestre y los próximos bulk fetch lo salteen. ``timeout``
     es parametrizable para el probe canario de NET1 (sondeo corto de 1 ticker).
+
+    **Una línea de ERROR de ``yfinance`` NO significa que este fetch falló**
+    (tarea 91). ``fast_info`` intenta varias fuentes y **loguea la que falla**
+    antes de caer a la que funciona. El caso medido el 2026-09-02: AVB emite
+    ``$AVB: possibly delisted; no price data found (period=5d)`` **dos veces por
+    scan** y este fetch devuelve ``price=184.06`` igual — o sea que es un
+    **éxito** con ruido adentro, y por eso el ticker **no aparece** en
+    ``failed_tickers``: no hay nada que registrar, y el circuito de tickers
+    muertos está haciendo exactamente lo que tiene que hacer.
+
+    Se escribe acá porque la inferencia contraria —*"hay un ERROR repetido ⇒ el
+    circuito no lo está viendo"*— es la que hizo la auditoría `estado`, y el
+    atajo que sugería (`record_failure`) habría **envenenado el failing set con un
+    ticker que funciona**, sacándolo del universo sin motivo.
     """
 
     last_exc: list[str] = []
