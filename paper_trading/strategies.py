@@ -463,9 +463,32 @@ def generate_trades_analyze_single(
     ranked.sort(reverse=True)
     scores = {t: s for s, t in ranked}
 
-    # Slots available after processing forced exits
-    held_after = held_tickers - forced_exits
-    free_slots = max(0, account.max_positions - len(held_after))
+    # Slots libres — se cuentan sobre lo que está EN CARTERA, no sobre lo que se
+    # espera vender (tarea 93).
+    #
+    # Esto decía ``held_tickers - forced_exits``: descontaba las ventas de esta
+    # misma pasada, dando por hecho que iban a ejecutarse. **No siempre se
+    # ejecutan.** ``forced_exits`` acá contiene *sólo* ``analyze SELL`` (`:406`),
+    # que es exactamente la clase que el Gate 2 (min holding) y el Gate 2b
+    # (histéresis de score, `paper_signal_sell_min_age_bdays=3`) pueden **frenar**
+    # río abajo, en `engine.py`. Cuando la venta se frenaba, la compra ya se había
+    # llevado el slot.
+    #
+    # Medido sobre `paper_orders` de la cuenta 2: **9 episodios**, pico de **12
+    # posiciones con `max_positions=10`**, **269 horas** acumuladas en exceso y
+    # hasta **$51.093** de exposición al costo sobre $50.000 de capital inicial.
+    # El último terminó el 2026-09-02 — era conducta actual, no historia.
+    #
+    # El costo de la corrección es que una rotación tarda **un scan más** (~6 min):
+    # la venta sale en éste y la compra en el siguiente. A cambio, la cuenta deja
+    # de pasarse de su propio límite declarado.
+    #
+    # Y no hace falta backtestearlo: **el harness siempre modeló esto**
+    # (`analysis/portfolio_sim.py:385-388`, `free_slots = max_positions -
+    # len(open_positions)`, estricto y sin descontar ventas propuestas). O sea que
+    # esta corrección **acerca el motor vivo a lo que ya asumían todas las
+    # corridas publicadas**, en vez de alejarlo.
+    free_slots = max(0, account.max_positions - len(held_tickers))
     # Correlation gate removed in Sprint 3 (2026-05-29). The gate never rejected
     # a candidate in any realistic harness setup because analyze_stacked produces
     # 1-2 BUYs per step. Picks now come straight from the ranked list, truncated
