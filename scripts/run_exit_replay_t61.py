@@ -43,14 +43,31 @@ DEFAULT_DB = "finanzias.db"
 
 
 def _atr_params_from_settings() -> AtrParams:
+    from analysis.harness_config import NO_STOP_MULT
+
     try:
         from config.settings_manager import settings
 
+        # Tarea 92: este era el ÚNICO runner que armaba sus `AtrParams` leyendo la
+        # config viva… y leía tres claves ignorando **las dos que cambiaron** el
+        # 2026-08-27 (`atr_hard_stop_enabled` y `atr_trail_mult`). O sea que el
+        # camino "leo lo que corre en vivo" mentía en silencio, que es peor que no
+        # leerlo: el que lo usa cree que está mirando la política real.
+        #
+        # El harness no tiene flag para apagar el stop duro — lo expresa con un
+        # múltiplo que nunca dispara (`paper_trading/gates.py:113-117` documenta
+        # que las dos formas son equivalentes dígito por dígito).
+        hard_stop = bool(settings.get("atr_hard_stop_enabled", True))
+        stop_mult = max(0.0, float(settings.get("atr_stop_mult", 2.0))) if hard_stop else NO_STOP_MULT
+        trail_raw = float(settings.get("atr_trail_mult", 0.0))
         return AtrParams(
             period=max(2, int(settings.get("atr_period", 14))),
-            stop_mult=max(0.0, float(settings.get("atr_stop_mult", 2.0))),
+            stop_mult=stop_mult,
             tp_mult=max(0.0, float(settings.get("atr_tp_mult", 4.0))),
             trail_enabled=bool(settings.get("atr_trail_enabled", True)),
+            # 0.0 es el default del engine y significa "usá `stop_mult`", que es
+            # exactamente lo que `AtrParams` expresa con `None`.
+            trail_mult=trail_raw if trail_raw > 0 else None,
         )
     except Exception:
         return AtrParams()

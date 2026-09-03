@@ -84,6 +84,34 @@ LIVE_ALLOCATION_MODE = "equal_weight"
 # que pasaba: era un entero hardcodeado que nada re-chequeaba (tarea 89).
 LIVE_WATCHLIST_SIZE = 128
 
+# ── Política de SALIDA de la cuenta viva — Tarea 92 (EXITPOL-HARNESS) ────────
+#
+# Vive acá y no duplicada en cada runner por el mismo motivo que los slots y el
+# universo: hasta la 92 estaba repartida en constantes por script —`LIVE_STOP`,
+# `LIVE_TRAIL`, `LIVE_MULT`, `NO_STOP`— en **cinco** archivos, y cuando Chapa
+# cambió la política en vivo el **2026-08-27** ninguna se enteró. Peor:
+# `run_stop_value_t37.py:116` define `LIVE_STOP, LIVE_TRAIL = 2.0, 2.0`, o sea que
+# **la constante que se llama "LIVE" quedó falsa el mismo día que esa tarea
+# shipeó**.
+#
+# El costo de que nadie lo declarara está medido por el propio proyecto
+# (`docs/stop_value_t37_2026-08-27.md` §2): el default del harness —stop 2.0,
+# trail 2.0— da **2,01%** de CAGR y lo vivo —stop OFF, trail 2.0— da **9,17%**.
+# **7,16 pp**, más que el look-ahead del fill (5,01 pp) que se ganó la tarea 33.
+#
+# Verificado contra `~/.finanzias/settings.json` el 2026-09-02, con el rastro del
+# flip en `backups/settings_pre_soff_t2.0_20260827_195731.json`, que difiere de la
+# config actual **exactamente** en estas dos claves.
+LIVE_HARD_STOP_ENABLED = False  # `atr_hard_stop_enabled` — apagado desde 2026-08-27
+LIVE_STOP_MULT = 2.0  # `atr_stop_mult` (el valor sigue, pero el stop está apagado)
+LIVE_TRAIL_MULT = 2.0  # `atr_trail_mult` — el candidato `soff_t2.0` de la tarea 37
+
+# El harness no tiene un flag para apagar el stop duro: lo expresa con un múltiplo
+# que nunca dispara. `paper_trading/gates.py:113-117` documenta que las dos formas
+# son "equivalentes dígito por dígito", y esta constante es la que hace que la
+# comparación de `deviations()` pueda cruzarlas.
+NO_STOP_MULT = 1e9
+
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
 LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
@@ -828,6 +856,22 @@ class HarnessConfig:
     # Ventana efectiva de los artefactos (Tarea 48). ``None`` ⇒ el runner no la
     # declaró, y el banner lo dice en vez de callarse.
     window: ArtifactWindow | None = None
+    # Política de salida simulada (Tarea 92). Los defaults **espejan los de
+    # ``AtrParams``**, así que un runner que no los pase declara exactamente lo que
+    # corre — mismo criterio que ``eval_mode``/``fill_mode``/``live_gates``. Eso es
+    # lo que hace que el desvío se declare **sin tocar los 21 runners**.
+    atr_stop_mult: float = 2.0
+    atr_trail_mult: float | None = None
+
+    @property
+    def effective_trail_mult(self) -> float:
+        """Espeja ``AtrParams.effective_trail_mult``: sin trail propio, manda el stop."""
+        return self.atr_stop_mult if self.atr_trail_mult is None else self.atr_trail_mult
+
+    @property
+    def hard_stop_on(self) -> bool:
+        """¿El stop duro puede disparar? El harness lo apaga con un múltiplo enorme."""
+        return self.atr_stop_mult < NO_STOP_MULT
 
     def population(self, n_entries: int | None = None) -> ArtifactPopulation:
         """La población de esta corrida (Tarea 52), para el sanity de reproducción.
@@ -933,6 +977,25 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             "el runner NO declara la ventana efectiva de los artefactos — es "
             "RODANTE, así que no se sabe contra qué muestra se midió (tarea 48)"
         )
+    # OCTAVO desvío (Tarea 92): la política de SALIDA. La cuenta viva apagó el stop
+    # duro el 2026-08-27 (`soff_t2.0`) y el default de ``AtrParams`` lo dejó
+    # encendido a 2.0×ATR. Vale **7,16 pp de CAGR** medidos por el propio T37
+    # (2,01% con el default vs 9,17% con lo vivo) — más que el look-ahead del fill.
+    # Se compara contra la config viva, igual que slots y universo, en vez de
+    # depender de que el autor del pre-registro se acuerde de escribirlo a mano.
+    if cfg.hard_stop_on != LIVE_HARD_STOP_ENABLED:
+        estado_h = f"ENCENDIDO a {cfg.atr_stop_mult:.1f}×ATR" if cfg.hard_stop_on else "APAGADO"
+        estado_v = f"ENCENDIDO a {LIVE_STOP_MULT:.1f}×ATR" if LIVE_HARD_STOP_ENABLED else "APAGADO"
+        out.append(
+            f"stop duro {estado_h} en el harness vs {estado_v} en la cuenta "
+            f"{LIVE_ACCOUNT_ID} (desde el 2026-08-27, `soff_t2.0` de la T37): "
+            f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)"
+        )
+    if abs(cfg.effective_trail_mult - LIVE_TRAIL_MULT) > 1e-9:
+        out.append(
+            f"trailing {cfg.effective_trail_mult:.1f}×ATR en el harness vs "
+            f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}"
+        )
     if not cfg.live_gates:
         out.append(
             f"NO se modelan los gates de re-entrada del engine — Gate 5 "
@@ -982,6 +1045,8 @@ def announce(
     fill_mode: str = HARNESS_FILL_MODE,
     live_gates: bool = False,
     window: ArtifactWindow | None = None,
+    atr_stop_mult: float = 2.0,
+    atr_trail_mult: float | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -990,6 +1055,8 @@ def announce(
     desvíos no depende de que quien escriba el próximo harness se acuerde.
     """
     cfg = HarnessConfig(
+        atr_stop_mult=atr_stop_mult,
+        atr_trail_mult=atr_trail_mult,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,

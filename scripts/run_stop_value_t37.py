@@ -113,7 +113,21 @@ LIVE_GATES = True
 # ── §5 — la rejilla 2-D CONGELADA ────────────────────────────────────────────
 STOP_MULTS: tuple[float, ...] = (2.0, 3.0, 4.0, 6.0, NO_STOP)
 TRAIL_MULTS: tuple[float, ...] = (2.0, 3.0, NO_STOP)
-LIVE_STOP, LIVE_TRAIL = 2.0, 2.0
+# El BASELINE de esta comparación pre-registrada: la política que estaba viva
+# **cuando esta tarea corrió** (2026-08-27, antes del flip). Se llamaba
+# `LIVE_STOP`/`LIVE_TRAIL` y ese nombre **quedó falso el mismo día que la tarea
+# shipeó**: Chapa apagó el stop duro en vivo ese 2026-08-27, así que la política
+# viva pasó a ser `soff_t2.0` — que es, justamente, **el candidato que esta
+# corrida eligió**.
+#
+# Se RENOMBRA, no se re-apunta (tarea 92). Apuntarlo a la política de hoy haría
+# que `BASELINE_ARM` fuera `soff_t2.0` y el runner compararía el candidato contra
+# sí mismo: el veredicto publicado dejaría de reproducir. El baseline de una
+# comparación congelada es historia, no configuración.
+#
+# La política viva de HOY vive en `analysis/harness_config.py`
+# (`LIVE_HARD_STOP_ENABLED`, `LIVE_TRAIL_MULT`) y `deviations()` la compara sola.
+BASELINE_STOP, BASELINE_TRAIL = 2.0, 2.0
 
 ORACLE_ARM = "ORACULO_STOP"
 RANDOM_KEEP_ARM = "AZAR_MISMA_TASA"
@@ -268,7 +282,7 @@ def arm_name(stop: float, trail: float) -> str:
     return f"s{_m(stop)}_t{_m(trail)}"
 
 
-BASELINE_ARM = arm_name(LIVE_STOP, LIVE_TRAIL)
+BASELINE_ARM = arm_name(BASELINE_STOP, BASELINE_TRAIL)
 
 
 def grid_cells() -> list[tuple[float, float]]:
@@ -291,7 +305,7 @@ def build_arms() -> dict[str, dict]:
     """Los 15 de la rejilla + los 2 de sanity."""
     arms = {arm_name(s, t): arm_params(s, t) for s, t in grid_cells()}
     base: dict[str, Any] = {
-        "atr_p": AtrParams(stop_mult=LIVE_STOP, trail_mult=LIVE_TRAIL),
+        "atr_p": AtrParams(stop_mult=BASELINE_STOP, trail_mult=BASELINE_TRAIL),
         "eval_mode": EVAL_MODE,
         "fill_mode": FILL_MODE,
         "live_gates": LIVE_GATES,
@@ -529,7 +543,7 @@ def walk_forward(entries, bars_by, sigs_by, common: dict, *, tag: str = "", log=
             test,
             bars_by,
             sigs_by,
-            **arm_params(LIVE_STOP, LIVE_TRAIL),
+            **arm_params(BASELINE_STOP, BASELINE_TRAIL),
             **{**common, "initial_capital": base_eq},
         )
         proc_curve.extend(r_proc.equity_curve)
@@ -591,7 +605,7 @@ def ruin_sweep(
     all_seeds = ruin_seeds()
     if n_seeds_used:
         all_seeds = all_seeds[:n_seeds_used]
-    base_p = arm_params(LIVE_STOP, LIVE_TRAIL)
+    base_p = arm_params(BASELINE_STOP, BASELINE_TRAIL)
     cand_p = arm_params(*candidate)
     ty = ticker_years(bars_by)
     out: dict[str, dict] = {}
@@ -1163,7 +1177,7 @@ def _run(argv: list[str] | None = None) -> int:
             entries,
             bars_by,
             sigs_by,
-            **arm_params(LIVE_STOP, LIVE_TRAIL),
+            **arm_params(BASELINE_STOP, BASELINE_TRAIL),
             **s_common,
         )
         sc = _sim(
@@ -1192,7 +1206,7 @@ def _run(argv: list[str] | None = None) -> int:
             entries,
             bars_by,
             sigs_by,
-            **_close((LIVE_STOP, LIVE_TRAIL)),
+            **_close((BASELINE_STOP, BASELINE_TRAIL)),
             **common,
         )
         cc = _sim(f"c8b|{cand_arm}|close|{run_tag}", entries, bars_by, sigs_by, **_close(cand_cell), **common)
