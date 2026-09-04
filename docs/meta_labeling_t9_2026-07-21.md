@@ -399,6 +399,29 @@ Tres cosas, todas con **n = 26.988** (no con n=27):
 
 ### 13.6 EL HALLAZGO QUE VALE MÁS QUE LA FEATURE
 
+> **NOTA DE CORRECCIÓN 2026-09-04 (Tarea 43, ref `docs/rank_neutral_t39_2026-08-19.md` §2 y §6).**
+> **La MAGNITUD de esta sección caducó; el mecanismo no.** Los **8 puntos de CAGR** de abajo se
+> midieron a **5 slots, 41 tickers, fill `close` (legacy) y sin los gates de re-entrada**, y contra
+> el **orden alfabético** — que la **T21** después mostró que **no era un baseline neutro**: ganó
+> por suerte, **+3.10 pp** sobre la mediana de las semillas aleatorias. O sea que la brecha se midió
+> contra un rival afortunado, con la config que la T39 demostró que **exagera los efectos de
+> ranking**.
+>
+> **El mismo eje, medido con la config honesta** (`touch` + `live_gates`, 20 semillas): cambiarle el
+> ranking al motor vale **+1.80 pp** con IC95% **[−3.88, +7.61]**, p=0.282 — y **+0.10 pp** a 5
+> slots. Entre **cuatro y ochenta veces** menos que los 8 pp de abajo, y **no significativo**.
+>
+> **Lo que NO caduca, y es lo que hace transferible al hallazgo:** el **mecanismo** —repartir vs
+> concentrar— sigue siendo la mejor explicación disponible, y la T39 lo midió por primera vez de
+> forma **directa y aislada**: persistir el orden, por sí solo, cuesta **1.21 pp**. También se
+> sostiene que el score **no tiene alpha** (cinco mediciones convergentes: corr −0.0259, AUC 0.4980,
+> quintiles, `val_acc` 0.5076, análisis profundo), que es distinto de decir que **tiene alpha
+> negativo** — la T39 cerró esa puerta por medición: invertirlo empata con la mediana del azar.
+>
+> **Consecuencia práctica:** el corolario *«un score sin alpha que igual decide es activamente
+> caro»* **se sostiene en su dirección** pero vale **~1.8 pp no significativos**, no 8. Cualquier
+> repriorización que se apoye en la magnitud tiene que usar el número de la T39, no éste.
+
 > **Un AUC de 0.498 no se comporta como elegir al azar. Se comporta mucho peor.**
 
 Es contraintuitivo y es el resultado más transferible de la tarea. La intuición dice
