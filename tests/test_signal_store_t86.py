@@ -147,13 +147,41 @@ def test_sin_strict_declara_pero_no_aborta(store, capsys):
 # ── El cableado ──────────────────────────────────────────────────────────────
 
 
+# Lee el cohorte de BARRAS pero **no** el store de señales: son dos sustratos, y
+# hasta la 102 ninguno los usaba por separado, así que el predicado de las barras
+# alcanzaba como proxy del store. Dejó de alcanzar — y la exclusión va con motivo
+# escrito, no por prefijo (mismo criterio que la 101).
+_NO_LEE_EL_STORE = {
+    "run_exit_replay_t61.py": (
+        "Replaya SELL fills REALES de la DB, no señales precomputadas: cero "
+        "referencias a `data/pit_signals/` en todo el archivo. Sí lee las barras, "
+        "así que le corresponde `announce_artifacts` — y lo llama."
+    ),
+}
+
+
 def _runners_del_cohorte() -> list[tuple[str, str]]:
     out = []
     for p in sorted((_REPO / "scripts").glob("run_*.py")):
+        if p.name in _NO_LEE_EL_STORE:
+            continue
         txt = p.read_text(encoding="utf-8")
         if re.search(r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt):
             out.append((p.name, txt))
     return out
+
+
+def test_lo_excluido_del_store_sigue_sin_leerlo():
+    """Una exclusión escrita a mano caduca sola. Ésta se re-verifica contra el
+    archivo: si el runner empieza a leer señales PIT, vuelve a la población."""
+    for nombre, motivo in _NO_LEE_EL_STORE.items():
+        ruta = _REPO / "scripts" / nombre
+        assert ruta.exists(), f"excluido inexistente: {nombre}"
+        assert len(motivo) > 40, f"exclusión sin motivo escrito: {nombre}"
+        txt = ruta.read_text(encoding="utf-8")
+        codigo = "\n".join(ln for ln in txt.splitlines() if not ln.lstrip().startswith("#"))
+        assert "pit_signals" not in codigo, f"{nombre} empezó a leer el store: sacarlo de la lista"
+        assert "load_bars_signals" not in codigo, f"{nombre} empezó a leer el store"
 
 
 def test_hay_poblacion_de_runners():
