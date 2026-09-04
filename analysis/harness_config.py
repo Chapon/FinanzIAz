@@ -739,6 +739,16 @@ class SignalStoreGapError(RuntimeError):
     """Un harness arrancó con el store de señales PIT más corto que su cohorte (T86)."""
 
 
+# Los dos motivos por los que un ticker de `bars_by` no tiene señal precomputada.
+# Van separados del "el store llega hasta X" porque **la acción es distinta**: uno se
+# arregla corriendo `precompute_pit_signals.py` y el otro migrando o borrando el
+# archivo. `_load_existing` devuelve `{}` por tres causas —archivo ausente, JSON
+# ilegible y `schema_version` distinta— y las últimas dos son indistinguibles desde
+# afuera, así que se agrupan y se nombran por lo que se puede afirmar (tarea 105).
+SIN_ARTEFACTO = "no hay artefacto"
+ARTEFACTO_ILEGIBLE = "el artefacto existe pero no se puede leer (JSON roto o schema viejo)"
+
+
 def signal_store_gaps(bars_by: dict[str, list], period: str, warmup: int) -> dict[str, tuple[int, str]]:
     """``{ticker: (fechas sin cubrir, la última que sí)}`` — vacío si el store cubre todo.
 
@@ -758,10 +768,30 @@ def signal_store_gaps(bars_by: dict[str, list], period: str, warmup: int) -> dic
     for t, bars in bars_by.items():
         if not bars or len(bars) <= warmup:
             continue
-        blob = _load_existing(_out_path(t, period, warmup))
+        ruta = _out_path(t, period, warmup)
+        blob = _load_existing(ruta)
         cubiertas = set(blob.get("signals") or {})
         if not cubiertas:
-            continue  # sin artefacto: el loader ya lo excluye y lo reporta como `missing`
+            # **NO se saltea (tarea 105).** El `continue` que había acá decía
+            # *«sin artefacto: el loader ya lo excluye y lo reporta como missing»*, y
+            # ese razonamiento **se refuta solo**: si el ticker llegó hasta acá es
+            # porque está en `bars_by`, o sea que el loader **no** lo excluyó. El
+            # skip sólo se dispara en el único caso donde su premisa es falsa.
+            #
+            # Y no es hipotético: `run_insider_cluster_replay_t12.load_bars` deja el
+            # ticker en `bars_by` con `sigs_by[t] = {}` y lo corre **ATR-only en
+            # silencio** — lo dice su propio comentario de la 88, veinte líneas más
+            # abajo, en sentido contrario a éste.
+            #
+            # El motivo se distingue porque la acción es distinta: sin archivo hay
+            # que correr el precompute; con archivo ilegible (JSON roto o
+            # `schema_version` vieja, las otras dos causas por las que
+            # `_load_existing` devuelve `{}`) hay que migrar o borrar.
+            faltantes[t] = (
+                len(bars) - warmup,
+                SIN_ARTEFACTO if not ruta.exists() else ARTEFACTO_ILEGIBLE,
+            )
+            continue
         sin_cubrir = [b[0] for b in bars[warmup:] if b[0] not in cubiertas]
         if sin_cubrir:
             faltantes[t] = (len(sin_cubrir), max(cubiertas))
@@ -794,8 +824,11 @@ def announce_signal_store(
         f"SIN señal precomputada:",
         file=salida,
     )
-    for t, (cuantas, ultima) in peor[:5]:
-        print(f"  {t}: faltan {cuantas} fecha(s); el store llega al {ultima}", file=salida)
+    for t, (cuantas, detalle) in peor[:5]:
+        # El segundo campo es una fecha ("el store llega al …") o un motivo, según
+        # si hay artefacto o no. Distinguirlos importa porque la acción difiere.
+        como = detalle if detalle in (SIN_ARTEFACTO, ARTEFACTO_ILEGIBLE) else f"el store llega al {detalle}"
+        print(f"  {t}: faltan {cuantas} fecha(s); {como}", file=salida)
     print(
         "  AVISO: esas fechas quedan sin señal, así que la corrida mide sobre una "
         "muestra MÁS CHICA que la que declara. Corré scripts/precompute_pit_signals.py.\n",

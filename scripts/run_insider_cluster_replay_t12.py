@@ -488,12 +488,16 @@ def main(argv: list[str] | None = None) -> int:
     # artefacto desalineado la corre sin que se note. Falla ruidoso (política T22).
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
-        announce_signal_store(
-            bars_by,
-            args.period,
-            args.warmup,
-            strict=not args.allow_stale_artifacts and args.signals_mode == "analyze_flip",
-        )
+        # El store de senales es sustrato de este run SOLO en `analyze_flip`: en
+        # `atr_only` no se lee un artefacto (tarea 105). Antes eso se expresaba
+        # relajando el `strict` con una condicion que ningun otro runner tiene, y
+        # quedaba no-estricto sin que nadie pasara el flag. Ahora es explicito: si el
+        # modo no usa el store, el guard no corre --- y si lo usa, corre estricto como
+        # en los demas. Ademas, desde que `signal_store_gaps` dejo de saltear al
+        # ticker sin artefacto, llamarlo en `atr_only` listaria los 127 como huecos
+        # de algo que ese modo no consulta.
+        if args.signals_mode == "analyze_flip":
+            announce_signal_store(bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts)
     except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3

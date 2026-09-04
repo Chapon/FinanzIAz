@@ -20,6 +20,8 @@ from pathlib import Path
 import pytest
 
 from analysis.harness_config import (
+    ARTEFACTO_ILEGIBLE,
+    SIN_ARTEFACTO,
     SignalStoreGapError,
     announce_signal_store,
     signal_store_gaps,
@@ -95,10 +97,21 @@ def test_el_warmup_no_cuenta(store):
     assert signal_store_gaps({"AAA": _bars(_dias(6))}, "10y", 2) == {}
 
 
-def test_un_ticker_sin_artefacto_no_es_hueco(store):
-    """El loader ya lo excluye y lo reporta como `missing`: contarlo acá sería
-    reportar dos veces la misma cosa, y encima como si fuera otra."""
-    assert signal_store_gaps({"ZZZ": _bars(_dias(6))}, "10y", 2) == {}
+def test_un_ticker_sin_artefacto_SI_es_hueco(store):
+    """**Tarea 105 — este test decía lo contrario, y su motivo se refutaba solo.**
+
+    Decía: *«el loader ya lo excluye y lo reporta como `missing`, contarlo acá sería
+    reportar dos veces»*. Pero si el ticker llegó hasta acá es porque **está en
+    `bars_by`** — o sea que el loader **no** lo excluyó. El skip sólo se disparaba en
+    el único caso donde su premisa era falsa.
+
+    Y no es hipotético: `run_insider_cluster_replay_t12.load_bars` deja el ticker en
+    `bars_by` con `sigs_by[t] = {}` y lo corre **ATR-only en silencio**, cosa que su
+    propio comentario de la 88 dice por escrito, veinte líneas debajo del que estaba
+    acá."""
+    gaps = signal_store_gaps({"ZZZ": _bars(_dias(6))}, "10y", 2)
+    assert set(gaps) == {"ZZZ"}
+    assert gaps["ZZZ"] == (4, SIN_ARTEFACTO), gaps  # 6 días − 2 de warmup
 
 
 def test_varios_tickers_se_reportan_por_separado(store):
@@ -108,13 +121,35 @@ def test_varios_tickers_se_reportan_por_separado(store):
     assert set(gaps) == {"BBB"} and gaps["BBB"][0] == 2
 
 
-def test_un_artefacto_con_schema_viejo_cuenta_como_ausente(store):
-    """`_load_existing` descarta un blob de otra `schema_version`, así que el guard
-    lo ve como *sin artefacto* — no como un hueco. Es lo correcto: el loader
-    tampoco lo va a cargar, y reportarlo como cobertura faltante mandaría a
-    re-correr el precompute cuando lo que hay que hacer es migrar el esquema."""
+def test_un_schema_viejo_se_reporta_APARTE_de_uno_ausente(store):
+    """La mitad de la versión anterior de este test que **sí** era correcta: mandar a
+    re-correr el precompute cuando lo que hay que hacer es **migrar el esquema** es
+    un consejo equivocado. Lo que estaba mal era la conclusión (*«entonces no se
+    reporta»*): se reporta, con el motivo que corresponde a cada acción.
+
+    `_load_existing` devuelve `{}` por tres causas —ausente, JSON roto y
+    `schema_version` distinta—. Las últimas dos son indistinguibles desde afuera, así
+    que se agrupan bajo lo único que se puede afirmar: **el archivo está y no se
+    puede leer**."""
     store("AAA", _dias(6), schema="viejo")
-    assert signal_store_gaps({"AAA": _bars(_dias(9))}, "10y", 2) == {}
+    gaps = signal_store_gaps({"AAA": _bars(_dias(9))}, "10y", 2)
+    assert gaps["AAA"] == (7, ARTEFACTO_ILEGIBLE), gaps
+    assert gaps["AAA"][1] != SIN_ARTEFACTO, "la acción es distinta: migrar, no precomputar"
+
+
+def test_los_tres_estados_son_DISTINGUIBLES(store):
+    """Los tres desenlaces que antes se leían igual (los dos primeros salteados, el
+    tercero reportado), ahora cada uno con su motivo. Sin este test, agrupar los tres
+    bajo un mismo string pasaría inadvertido."""
+    store("CUBRE", _dias(6))
+    store("CORTO", _dias(4))
+    store("VIEJO", _dias(6), schema="viejo")
+    bars = _bars(_dias(6))
+    gaps = signal_store_gaps({"CUBRE": bars, "CORTO": bars, "VIEJO": bars, "AUSENTE": bars}, "10y", 2)
+    assert "CUBRE" not in gaps
+    assert gaps["CORTO"][1] not in (SIN_ARTEFACTO, ARTEFACTO_ILEGIBLE), "es una fecha"
+    assert gaps["VIEJO"][1] == ARTEFACTO_ILEGIBLE
+    assert gaps["AUSENTE"][1] == SIN_ARTEFACTO
 
 
 # ── El anuncio ───────────────────────────────────────────────────────────────
@@ -134,6 +169,27 @@ def test_falla_ruidoso_y_nombra_al_peor(store, capsys):
     salida = capsys.readouterr().out
     assert "BBB" in str(exc.value)  # el peor va en el mensaje del error
     assert "precompute_pit_signals" in salida  # y el aviso dice qué correr
+
+
+def test_el_banner_no_concatena_el_motivo_como_si_fuera_una_fecha(store, capsys):
+    """El segundo campo de la tupla es una fecha **o** un motivo, y el banner los
+    imprimía con el mismo prefijo. Sin esta distinción salía la frase *«el store
+    llega al no hay artefacto»*, que además de ilegible sugiere la acción
+    equivocada (tarea 105)."""
+    with pytest.raises(SignalStoreGapError):
+        announce_signal_store({"ZZZ": _bars(_dias(6))}, "10y", 2, strict=True)
+    salida = capsys.readouterr().out
+    assert SIN_ARTEFACTO in salida
+    assert f"llega al {SIN_ARTEFACTO}" not in salida
+
+
+def test_el_banner_SI_dice_la_fecha_cuando_el_store_esta_corto(store, capsys):
+    """El control del de arriba: para un store corto el prefijo con la fecha es el
+    correcto y tiene que seguir saliendo."""
+    store("AAA", _dias(6))
+    with pytest.raises(SignalStoreGapError):
+        announce_signal_store({"AAA": _bars(_dias(9))}, "10y", 2, strict=True)
+    assert "llega al 2026-01-06" in capsys.readouterr().out
 
 
 def test_sin_strict_declara_pero_no_aborta(store, capsys):
