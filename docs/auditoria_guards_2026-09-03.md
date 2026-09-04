@@ -429,7 +429,7 @@ guard en vez de delegarlo.
 - `:698-705` (`universe_fingerprint`): dice lo contrario, y es lo que el código hace.
 
 **Impacto.** Dos de las tres puntas mandan al próximo lector a arreglar la punta equivocada de
-G-4. Y es reincidencia declarada: `tests/test_watchlist_size_t89.py:78` existe justamente para
+G-4. Y es reincidencia declarada: `tests/test_watchlist_size_t89.py:164` existe justamente para
 fijar que *"lo que un chequeo no puede ver tiene que estar escrito al lado del código — si no,
 el próximo lo lee como si comparara el conjunto (que es exactamente lo que pasó con
 `same_universe_as`)"*. Volvió a pasar, en el mismo archivo y en el mismo commit.
