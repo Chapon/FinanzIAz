@@ -508,12 +508,160 @@ def cohort_bars(tickers: list[str], period: str, interval: str = "1d") -> dict[s
     return bars_by
 
 
+# ── Continuidad del cohorte — Tarea 110 (BARRA-INTERIOR) ────────────────────
+#
+# ``stale_artifacts`` y ``artifact_window`` miran **las puntas**: la primera barra y
+# la última. Una rueda faltante **en el medio** no mueve ninguna de las dos, así que
+# pasa entera. Medido el 2026-09-04: el **2026-08-28** —viernes hábil— está en **49
+# de 506** artefactos ``10y`` (9,7%) mientras sus fechas vecinas están en 99,4-99,6%,
+# y el banner de frescura decía *«todos alineados»* porque los 506 terminan igual.
+#
+# **Por qué NO se deriva el calendario del propio cohorte, que fue el primer intento
+# y estaba mal.** La regla *"una fecha es rueda si la tiene la mayoría de los frames
+# que la cubren"* **no puede ver** una fecha que falta en el 90%: por construcción la
+# declara "no rueda" y reporta cero huecos. Corrido así, el 2026-08-28 desaparecía
+# del informe. La fuente de verdad tiene que ser **independiente del cohorte que se
+# chequea**.
+#
+# La que hay sin red y sin dependencias nuevas: **el mismo ticker en otro período**.
+# Es el sanity bilateral de la 63/64 —dos frames del mismo ticker que no coinciden—
+# un nivel más abajo: en vez de discrepar en la **escala**, discrepan en **qué días
+# existen**. Y trae de arrastre la propiedad que importa: un ticker sin otro frame
+# (los sintéticos de los tests, un ticker nuevo) simplemente **no es comparable** y
+# queda afuera, sin umbrales inventados.
+
+
+@dataclass(frozen=True)
+class MissingSession:
+    """Una rueda que otro frame del mismo ticker tiene y éste no."""
+
+    ticker: str
+    date: str
+    reference: str  # etiqueta del frame que sí la tiene (p.ej. "2y")
+
+    def __str__(self) -> str:
+        return f"{self.ticker}: falta la rueda {self.date} (el frame {self.reference} la tiene)"
+
+
+def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
+    """Ruedas que le faltan a ``bars_by`` y otro frame ``1d`` del mismo ticker tiene.
+
+    Sólo se compara el **solape** de las dos ventanas: fuera de ahí la ausencia no
+    es un hueco, es que el frame no llega. El import va adentro porque este módulo
+    no toca el disco al importarse.
+    """
+    from data import parquet_cache
+
+    # El directorio se lista **una vez por llamada**, no una vez por ticker.
+    # ``labelled_1d`` hace un glob adentro, así que pedírselo a los 506 serían 506
+    # escaneos de un directorio de ~750 archivos (medido: ~1,5 ms cada uno ⇒ ~0,8 s
+    # por corrida, sólo en listar). Con el índice, un ticker sin otro frame se saltea
+    # **sin tocar el disco** — el caso de todos los sintéticos de los tests.
+    #
+    # OJO con el número: **en la suite esto no costaba nada**. Medido A/B con el
+    # chequeo apagado y prendido, 74,40 s vs 73,54 s. Un comentario anterior acá decía
+    # "+40 s en la suite" y era **falso**: salía de comparar dos corridas con barridos
+    # pesados de Parquet en paralelo. El índice se justifica por la corrida de 506
+    # tickers, no por los tests.
+    #
+    # No se cachea entre llamadas a propósito: el cache de Parquet se refresca
+    # mientras la app corre.
+    directorio = parquet_cache.get_parquet_dir()
+    cuantos: dict[str, int] = {}
+    if directorio.exists():
+        for archivo in directorio.glob("*__*__1d.parquet"):
+            clave = archivo.name.split("__")[0]
+            cuantos[clave] = cuantos.get(clave, 0) + 1
+
+    fuera: list[MissingSession] = []
+    for ticker, bars in sorted(bars_by.items()):
+        if not bars:
+            continue
+        # Con un solo frame no hay contra qué cruzar: la comparación es bilateral.
+        if cuantos.get(ticker.upper(), 0) < 2:
+            continue
+        propias = {b[0] for b in bars}
+        lo_p, hi_p = min(propias), max(propias)
+        # {fecha: primer frame que la tiene}. Es un dict y no una lista porque un
+        # ticker suele tener VARIOS frames de referencia (2y, 5y, 10y) y todos
+        # reportarían la misma rueda faltante: sin esto el banner cuenta el mismo
+        # hueco 2-3 veces y dice "falta en 4 tickers" sobre 2. Lo cazó el fixture al
+        # pasar a escribir parquets de verdad — con `labelled_1d` monkeypatcheado a
+        # un solo frame el defecto era invisible.
+        faltan: dict[str, str] = {}
+        for etiqueta, df in parquet_cache.labelled_1d(ticker):
+            if df is None or df.empty:
+                continue
+            otras = {str(x)[:10] for x in df.index}
+            if not otras:
+                continue
+            lo = max(lo_p, min(otras))
+            hi = min(hi_p, max(otras))
+            if lo > hi:
+                continue  # sin solape: no hay nada que comparar
+            for f in otras:
+                if lo <= f <= hi and f not in propias:
+                    faltan.setdefault(f, etiqueta)
+        fuera.extend(MissingSession(ticker, f, faltan[f]) for f in sorted(faltan))
+    return tuple(fuera)
+
+
+def announce_continuity(
+    bars_by: dict[str, list],
+    *,
+    strict: bool = False,
+    file: TextIO | None = None,
+) -> tuple[MissingSession, ...]:
+    """Declara los huecos **interiores** del cohorte. Agrega por fecha, no por ticker.
+
+    **``strict=False`` por default, y el motivo va escrito.** Con el cohorte de hoy
+    esto acusa el 2026-08-28 en la mayoría de los ``10y``, así que ponerlo en `True`
+    abortaría **las 26 corridas** por un defecto cuyo impacto todavía **no está
+    medido** — y arreglar el dato re-baja la ventana, que obliga a re-anclar las
+    constantes de reproducción (lo que costó la tarea 68). Esa es una decisión de
+    política y de plata, no algo que se cambia de paso. Lo que sí hace falta hoy es
+    que **deje de ser invisible**, y eso es lo que hace este banner.
+    """
+    fuera = cross_period_gaps(bars_by)
+    salida = file if file is not None else sys.stdout
+    comparables = sorted({s.ticker for s in fuera})
+    if not fuera:
+        print("Continuidad del cohorte — sin ruedas faltantes comparables.\n", file=salida)
+        return fuera
+
+    por_fecha: dict[str, list[str]] = {}
+    for s in fuera:
+        por_fecha.setdefault(s.date, []).append(s.ticker)
+    print(
+        f"Continuidad del cohorte — {len(fuera)} rueda(s) faltante(s) en {len(comparables)} ticker(s):",
+        file=salida,
+    )
+    for fecha, tickers in sorted(por_fecha.items(), key=lambda kv: -len(kv[1])):
+        muestra = ", ".join(tickers[:5]) + (" …" if len(tickers) > 5 else "")
+        print(f"  {fecha}: falta en {len(tickers)} ticker(s) — {muestra}", file=salida)
+    print(
+        "  AVISO: `stale_artifacts` y `artifact_window` miran las PUNTAS, así que un "
+        "hueco interior no las mueve y el cohorte se declara alineado igual (T110).\n",
+        file=salida,
+    )
+    if strict:
+        raise StaleArtifactError(
+            f"{len(fuera)} rueda(s) faltante(s) en el cohorte: "
+            + " · ".join(str(s) for s in fuera[:5])
+            + ". Re-bajar los artefactos afectados (y re-anclar las constantes de "
+            "reproducción) o correr con strict=False declarándolo en el pre-registro."
+        )
+    return fuera
+
+
 def announce_artifacts(
     bars_by: dict[str, list],
     *,
     max_lag_days: int = ARTIFACT_MAX_LAG_DAYS,
     strict: bool = True,
     file: TextIO | None = None,
+    continuity: bool = True,
+    strict_continuity: bool = False,
 ) -> tuple[StaleArtifact, ...]:
     """Declara la frescura del cohorte y **falla ruidoso** si está desalineado.
 
@@ -523,6 +671,16 @@ def announce_artifacts(
 
     Se llama **al arrancar**, junto a ``announce()``: si la muestra está torcida,
     la corrida entera no vale y no tiene sentido pagarla antes de enterarse.
+
+    **Arrastra el chequeo de continuidad (T110)**, y por eso va acá adentro y no
+    como una llamada nueva: los **26** lectores del cohorte ya llaman a esta
+    función, así que el guard llega a los 26 sin depender de que alguien se acuerde
+    de cablear un segundo. Es la lección de la 97 y de la 101 aplicada al diseño en
+    vez de al after.
+
+    Las dos preguntas son distintas y por eso las dos ``strict`` lo son: la frescura
+    mira **las puntas** (aborta por default, T30) y la continuidad mira **el medio**
+    (sólo declara por default — ver ``announce_continuity``).
     """
     fuera = stale_artifacts(bars_by, max_lag_days=max_lag_days)
     salida = file if file is not None else sys.stdout
@@ -537,7 +695,9 @@ def announce_artifacts(
         print(f"  [excepción declarada] {exc}", file=salida)
         print(f"      {ARTIFACT_REFRESH_EXCEPTIONS[exc.ticker.upper()]}", file=salida)
     if not fuera:
-        print("  todos alineados.\n", file=salida)
+        print("  todos alineados (en las PUNTAS: ver la continuidad abajo).\n", file=salida)
+        if continuity:
+            announce_continuity(bars_by, strict=strict_continuity, file=salida)
         return fuera
     for s in fuera:
         print(f"  {s}", file=salida)
@@ -547,6 +707,8 @@ def announce_artifacts(
         f"puede correrla sin que se note (T30).\n",
         file=salida,
     )
+    if continuity:
+        announce_continuity(bars_by, strict=strict_continuity, file=salida)
     if strict:
         raise StaleArtifactError(
             f"{len(fuera)} artefacto(s) fuera del cohorte ({ref}): "
