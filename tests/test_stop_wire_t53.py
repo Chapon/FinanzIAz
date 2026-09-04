@@ -557,9 +557,16 @@ class TestEngineWiring:
 
     def test_la_nota_de_riesgo_de_la_buy_no_inventa_stop(self, test_db):
         """`_buy_risk_note` es display-only (regla 3) pero tiene que leer el
-        switch: sin stop duro no puede seguir mostrando un R:R de 2.0."""
+        switch: sin stop duro no puede seguir mostrando un R:R de 2.0.
+
+        **El `atr_stops_enabled=True` lo agregó la 55**, y su ausencia era el
+        defecto: este test corría con el master en su default `False` —o sea, con
+        `_atr_exit_trades` devolviendo `[]` y ninguna barrera existiendo— y aun así
+        afirmaba que la nota salía. Probaba el recorte del stop duro sobre un plan
+        de salida que el motor no tenía."""
         from paper_trading.engine import _buy_risk_note
 
+        settings.set("atr_stops_enabled", True)
         settings.set("atr_stop_mult", 2.0)
         settings.set("atr_tp_mult", 4.0)
         settings.set("atr_hard_stop_enabled", False)
@@ -569,8 +576,11 @@ class TestEngineWiring:
         assert "sin stop duro" in nota
 
     def test_la_nota_de_riesgo_por_default_no_cambia(self, test_db):
+        """ "Por default" es el default de la 53 (`atr_hard_stop_enabled`), con el
+        master prendido — que es la config de la cuenta viva. Ver la 55."""
         from paper_trading.engine import _buy_risk_note
 
+        settings.set("atr_stops_enabled", True)
         settings.set("atr_stop_mult", 2.0)
         settings.set("atr_tp_mult", 4.0)
         df = _make_ohlcv([100.0] * 60)

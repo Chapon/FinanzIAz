@@ -56,6 +56,11 @@ def _isolate_other_gates() -> None:
     settings.set("atr_period", 14)
     settings.set("atr_stop_mult", 2.0)
     settings.set("atr_tp_mult", 4.0)
+    # Tarea 55 — el MASTER SWITCH, explícito. Estos tests corrían sin ponerlo, o
+    # sea con el default `False`, y aun así afirmaban que la nota se estampaba:
+    # **codificaban el defecto**. El valor de la cuenta viva es `True`, que es lo
+    # que hay que poner para probar el camino donde la nota tiene sentido.
+    settings.set("atr_stops_enabled", True)
 
 
 def _buy_strategy(ticker: str, dollars: float):
@@ -155,6 +160,70 @@ def test_no_history_no_note_failopen(test_db, monkeypatch):
     )
 
     assert result is not None and result.queued == 1
+    with session_scope() as s:
+        order = s.query(PaperOrder).filter(PaperOrder.id == result.pending_orders[0]).first()
+        assert order.notes is None
+
+
+# ── El master switch: sin barreras no hay nota (tarea 55) ───────────────────
+
+
+def test_con_el_master_APAGADO_no_hay_nota(test_db, monkeypatch):
+    """**El defecto que arregla la 55.** Con `atr_stops_enabled=False`
+    `_atr_exit_trades` devuelve `[]`: no hay stop, ni TP, ni trailing. Estampar
+    "stop $X · TP $Y" es dibujar un plan de salida que el motor no tiene.
+
+    Y no es una config exótica: `False` es el **default** del setting."""
+    a = create_account(name="RRoff", initial_capital=100_000.0, mode="manual")
+    _isolate_other_gates()
+    settings.set("atr_stops_enabled", False)
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    result = _run(
+        monkeypatch, a, ticker="AAPL", price=100.0, history=_history_varying(100.0), buy_dollars=10_000.0
+    )
+
+    assert result is not None and result.queued == 1, "la orden se crea igual (display-only)"
+    with session_scope() as s:
+        order = s.query(PaperOrder).filter(PaperOrder.id == result.pending_orders[0]).first()
+        assert order.notes is None, f"nota fantasma con el master apagado: {order.notes!r}"
+
+
+def test_con_el_master_PRENDIDO_la_nota_vuelve(test_db, monkeypatch):
+    """El control positivo del de arriba: si el guard nuevo silenciara la nota
+    siempre, el test anterior pasaría igual y no probaría nada."""
+    a = create_account(name="RRon", initial_capital=100_000.0, mode="manual")
+    _isolate_other_gates()
+    settings.set("atr_stops_enabled", True)
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    result = _run(
+        monkeypatch, a, ticker="AAPL", price=100.0, history=_history_varying(100.0), buy_dollars=10_000.0
+    )
+
+    with session_scope() as s:
+        order = s.query(PaperOrder).filter(PaperOrder.id == result.pending_orders[0]).first()
+        assert order.notes and "stop $" in order.notes and "TP $" in order.notes
+
+
+def test_el_TP_tampoco_sobrevive_al_master(test_db, monkeypatch):
+    """La diferencia con la 53, escrita. Ahí, apagar **el stop duro** dejaba el TP
+    en pie —existe y no cambió— así que la nota se conservaba sin stop ni R:R. Acá
+    el master apaga `_atr_exit_trades` **entera**: no queda barrera de ninguna
+    clase, y por eso no hay nota en vez de una nota recortada."""
+    a = create_account(name="RRtp", initial_capital=100_000.0, mode="manual")
+    _isolate_other_gates()
+    settings.set("atr_stops_enabled", False)
+    settings.set("atr_hard_stop_enabled", True)  # el de la 53, prendido: no alcanza
+    with session_scope() as s:
+        s.add(PaperWatchlistItem(account_id=a.id, ticker="AAPL"))
+
+    result = _run(
+        monkeypatch, a, ticker="AAPL", price=100.0, history=_history_varying(100.0), buy_dollars=10_000.0
+    )
+
     with session_scope() as s:
         order = s.query(PaperOrder).filter(PaperOrder.id == result.pending_orders[0]).first()
         assert order.notes is None

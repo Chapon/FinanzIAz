@@ -583,12 +583,26 @@ def _buy_risk_note(ticker: str, entry_price: float, history_provider) -> str | N
     niveles de riesgo ex-ante que el engine enforcearía sobre la posición, para
     estamparlos en ``PaperOrder.notes`` y mostrarlos en la UI de Paper. NO toca
     ninguna decisión (regla 3). Devuelve ``None`` si no se puede computar (sin
-    historia/ATR) — la orden se crea igual.
+    historia/ATR) **o si las barreras no existen** (``atr_stops_enabled=False``,
+    tarea 55) — la orden se crea igual.
     """
     try:
         from analysis.atr import compute_atr
         from paper_trading.gates import entry_risk_levels, format_entry_risk_note
 
+        # Tarea 55 — el MASTER SWITCH primero. Con `atr_stops_enabled=False`
+        # (que es el **default**) `_atr_exit_trades` devuelve `[]` y no hay stop,
+        # ni TP, ni trailing: **ninguna** de las barreras que esta nota dibuja se
+        # puede disparar. Estamparlas igual es mostrar un plan de salida que el
+        # motor no tiene.
+        #
+        # Es el mismo defecto que la 53 arregló un escalón adentro —con el stop
+        # duro apagado, `entry_risk_levels` deja de proyectar un stop y devuelve
+        # `rr=None`, porque el trailing todavía no está armado— y que quedó sin
+        # arreglar del lado del master. Acá no sobrevive ni el TP: con el switch
+        # en `False` no queda barrera de ninguna clase, así que no hay nota.
+        if not bool(settings.get("atr_stops_enabled", False)):
+            return None
         if entry_price is None or not np.isfinite(entry_price) or entry_price <= 0:
             return None
         period = max(2, int(settings.get("atr_period", 14)))
