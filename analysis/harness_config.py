@@ -646,23 +646,42 @@ class ArtifactPopulation:
         Es el eje categórico: si difiere, el ancla se midió sobre otra cosa y no
         hay nada que reproducir (``REPRO_NA``).
 
-        **Compara el CONJUNTO cuando puede, y el conteo sólo si no puede**
-        (tarea 87). El nombre de esta función siempre prometió *"el mismo conjunto
-        de tickers"* y lo que comparaba era **un string de path y un entero**:
-        con eso, cambiar un ticker por otro dejaba ``127 == 127`` y la corrida
-        seguía afirmando *"MISMA muestra"*. Y no es hipotético —
-        ``scripts/refresh_live_universe.py`` regenera el archivo **en el lugar**,
-        con el mismo nombre.
+        **Compara los DOS ejes, y ninguno reemplaza al otro** (tareas 87 y 100).
+        Son preguntas distintas sobre la misma muestra:
 
-        ``tickers_fp`` es la huella del conjunto efectivo. Si **las dos** la
-        declaran, manda ella; si alguna no, se cae al par (archivo, conteo) —
-        más débil, y por eso las anclas compartidas la declaran.
+        * ``tickers_fp`` — *¿el universo DECLARADO es el mismo?* Es la huella del
+          **archivo** (ver ``universe_fingerprint``, que documenta por qué esa y no
+          otra). La agregó la 87: sin ella, cambiar un ticker por otro dejaba
+          ``127 == 127`` y la corrida seguía afirmando *"MISMA muestra"*. Y no es
+          hipotético — ``scripts/refresh_live_universe.py`` regenera el archivo
+          **en el lugar**, con el mismo nombre.
+        * ``n_tickers`` — *¿cargó la misma cantidad?* Es el eje que ve un
+          **encogimiento de carga**: el archivo intacto, pero 98 de 127 tickers
+          efectivamente cargados (un Parquet faltante, un artefacto PIT incompleto).
+          La huella **no puede verlo**, porque sale del archivo.
+
+        **Por qué esto es un arreglo y no una preferencia (tarea 100).** La 87 puso
+        la huella en un ``if`` que **devolvía** — o sea que cuando las dos partes la
+        declaran, el conteo **no se mira**. Y las dos siempre la declaran:
+        ``HarnessConfig.population()`` la setea siempre y las anclas compartidas la
+        traen hardcodeada, así que el ``return self.n_tickers == other.n_tickers``
+        de abajo quedó **inalcanzable en el camino vivo**. Peor: la justificación
+        escrita para elegir la semántica del archivo se apoya explícitamente en que
+        *"el eje «qué cargó» ya lo lleva ``n_tickers``, por separado"* — y eso dejó
+        de ser cierto **en el mismo commit**. Medido: una corrida sobre 98 tickers
+        contra el ancla de 127 daba ``same_universe_as → True`` y
+        ``reproduction_check → REPRO_OK``; antes de la 87 daba ``REPRO_NA``.
+
+        El fallback al conteo sigue existiendo para cuando **alguna** de las dos no
+        declara huella (poblaciones armadas a mano en tests, anclas viejas).
         """
         if self.universe_file != other.universe_file:
             return False
+        if self.n_tickers != other.n_tickers:
+            return False
         if self.tickers_fp is not None and other.tickers_fp is not None:
             return self.tickers_fp == other.tickers_fp
-        return self.n_tickers == other.n_tickers
+        return True
 
     def matches(self, other: ArtifactPopulation) -> bool:
         """Misma muestra: mismo universo y —cuando **las dos** lo declaran— mismas
@@ -740,11 +759,18 @@ def artifact_population(
     efectivamente cargaron, que es lo que ``announce()`` ya imprime, y no los que
     el archivo de universo pretendía).
 
-    Y con ``bars_by`` se calcula además la **huella del conjunto** (tarea 87): es
-    la de los tickers que **efectivamente cargaron**, no la del archivo — misma
-    lógica que ``n_tickers``, y es la que corresponde porque la muestra de la
-    corrida son los que cargaron. Sigue siendo pura: la huella sale de las claves
-    que ya están en memoria.
+    La **huella** (tarea 87) sale del **archivo de universo**, NO de ``bars_by``.
+    Ese es el punto: son dos ejes distintos y cada uno contesta lo suyo — la huella
+    dice *"¿el universo declarado es el mismo?"* y ``n_tickers`` dice *"¿cargó la
+    misma cantidad?"*. ``same_universe_as`` compara **los dos**.
+
+    **CORREGIDO 2026-09-03 (tarea 100).** Acá decía que la huella era *"la de los
+    tickers que **efectivamente cargaron**, no la del archivo"*, y era **falso**: la
+    línea de abajo llama ``universe_fingerprint(universe_file)`` **ignorando
+    ``bars_by``** para la huella. La semántica correcta —y deliberada— está
+    documentada en ``universe_fingerprint``; este docstring y el de
+    ``same_universe_as`` decían lo contrario, así que dos de las tres puntas
+    mandaban al próximo lector a arreglar la punta equivocada.
     """
     if n_tickers is None:
         n_tickers = len(bars_by or {})
