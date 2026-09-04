@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 56 — Tarea 112 (CIERRE-PROVISORIO) CERRADA 2026-09-04 — declarada, no corregida, y el enunciado decía mal la mitad** (`data/yahoo_finance.py`, `tests/test_cierre_provisorio_t112.py`). Suite Windows **2702 passed, 3 skipped** (10 tests nuevos), ruff limpio. La próxima es la **36**.
+- **WIP 56 — Tarea 112 (CIERRE-PROVISORIO) CERRADA 2026-09-04 — declarada, no corregida, y el enunciado decía mal la mitad** (`dbbc361`, `data/yahoo_finance.py`, `tests/test_cierre_provisorio_t112.py`). Suite Windows **2702 passed, 3 skipped** (10 tests nuevos), ruff limpio y **corrida #259 del CI en `success`**. La próxima es la **36**.
   - **El enunciado afirmaba que el cierre provisorio mueve el ATR. Es FALSO, medido: 0,00%.** El True Range de la última barra usa su High/Low y el cierre **anterior**, así que su propio Close no entra hasta la barra siguiente. Corregido en el enunciado y escrito al lado del código, porque es contraintuitivo y el próximo lo va a suponer igual.
   - **Lo que sí mueve, y es peor de lo que decía el enunciado: la SEÑAL.** Con el error mediano medido (0,32%), sobre los 127 tickers de la watchlist viva **cambian 9 (7,1%)** — y dos dan vuelta el signo entero (**BKR `BUY→SELL`**, **MPC `SELL→BUY`**), no se van a HOLD. Además 11 cambian de fuerza. O sea que el defecto **sí toca decisiones**, por otro camino.
   - **Y el scan corre justo ahí:** `paper_daily_scan_time_et = "16:05"`, cinco minutos después del cierre — exactamente la ventana donde se midió el 93% de error.
