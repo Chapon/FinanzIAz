@@ -60,7 +60,7 @@ from analysis.exit_replay import (
     max_drawdown,
     replay_event,
 )
-from scripts.baseline_metrics import load_snapshots
+from scripts.baseline_metrics import load_snapshots, resolve_account_id
 from scripts.run_exit_replay_t61 import (
     build_sell_events,
     make_bar_loader,
@@ -105,6 +105,11 @@ def _approval_delays(con: sqlite3.Connection, account_id: int) -> dict[int, floa
 def run(db_path: Path, account_id: int, cap_days: int):
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
+        # contra `is_active`), no el literal 1. La 1 está pausada desde el
+        # 2026-07-01 y tiene 91 fills congelados, así que el default viejo no
+        # fallaba: medía una cuenta muerta y devolvía una tabla creíble.
+        account_id = resolve_account_id(con, account_id)
         all_events = build_sell_events(con, account_id)
         risk_events = [e for e in all_events if is_risk_exit(e.reason)]
         bar_loader = make_bar_loader(con)
@@ -230,7 +235,12 @@ def render(replays: list[RiskExitReplay], agg: dict, ctx: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Replay auto-fill de risk-exits (tarea ①)")
     p.add_argument("--db", default=None)
-    p.add_argument("--account", type=int, default=1)
+    p.add_argument(
+        "--account",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)

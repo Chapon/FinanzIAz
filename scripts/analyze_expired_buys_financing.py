@@ -37,6 +37,9 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
+# Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
+from scripts.baseline_metrics import resolve_account_id
+
 DEFAULT_DB = "finanzias.db"
 
 CAUSE_CASH = "cash o shares insuficientes"
@@ -64,6 +67,11 @@ def _cause(notes: str | None) -> str:
 def run(db_path: Path, account_id: int):
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
+        # contra `is_active`), no el literal 1. La 1 está pausada desde el
+        # 2026-07-01 y tiene 91 fills congelados, así que el default viejo no
+        # fallaba: medía una cuenta muerta y devolvía una tabla creíble.
+        account_id = resolve_account_id(con, account_id)
         c = con.cursor()
         exp = c.execute(
             "SELECT id,ticker,target_dollars,created_at,notes FROM paper_orders "
@@ -166,7 +174,12 @@ def render(rows, agg, ctx) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Análisis de BUYs expiradas vs encadenado")
     p.add_argument("--db", default=None)
-    p.add_argument("--account", type=int, default=1)
+    p.add_argument(
+        "--account",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 

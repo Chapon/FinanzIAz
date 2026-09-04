@@ -20,7 +20,14 @@ import argparse
 import glob
 import os
 import sqlite3
+import sys
 from collections import defaultdict, deque
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
+from scripts.baseline_metrics import resolve_account_id
 
 # Nombres de referencia del kill-criteria.
 WORST_NAME = "MLTX"
@@ -104,9 +111,20 @@ def summarize(res: dict) -> dict:
     }
 
 
-def _load_orders(db: str, account: int) -> tuple[list[dict], float]:
+def _load_orders(db: str, account: int | None) -> tuple[list[dict], float, int]:
+    """Órdenes, capital inicial y **el id de cuenta efectivamente usado**.
+
+    Devuelve el id resuelto —y no lo deja implícito— porque este runner lo
+    **imprime** en su encabezado: si el default se resuelve solo, lo que se imprime
+    tiene que ser lo que se midió, no el ``None`` que pasó el operador (tarea 99).
+    """
     con = sqlite3.connect(db)
     con.row_factory = sqlite3.Row
+    # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta contra
+    # `is_active`), no el literal 1. La 1 está pausada desde el 2026-07-01 y tiene
+    # 91 fills congelados, así que el default viejo no fallaba: medía una cuenta
+    # muerta y devolvía una tabla creíble.
+    account = resolve_account_id(con, account)
     init_cap = float(
         con.execute("SELECT initial_capital FROM paper_accounts WHERE id=?", (account,)).fetchone()[0]
     )
@@ -117,22 +135,27 @@ def _load_orders(db: str, account: int) -> tuple[list[dict], float]:
         (account,),
     ).fetchall()
     con.close()
-    return [dict(r) for r in rows], init_cap
+    return [dict(r) for r in rows], init_cap, account
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="E1a exposure-cap replay")
     ap.add_argument("--db", default=None, help="ruta al backup (default: el más nuevo en backups/)")
-    ap.add_argument("--account", type=int, default=1)
+    ap.add_argument(
+        "--account",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     ap.add_argument("--caps", default="0.20,0.25,0.33", help="grid de cap_pct, coma-separado")
     args = ap.parse_args()
 
     db = args.db or sorted(glob.glob("backups/*.db"), key=os.path.getmtime)[-1]
-    orders, init_cap = _load_orders(db, args.account)
+    orders, init_cap, account = _load_orders(db, args.account)
     caps = [float(x) for x in args.caps.split(",")]
 
     print(f"db: {db}")
-    print(f"account={args.account}  initial_capital=${init_cap:,.0f}  n_filled={len(orders)}\n")
+    print(f"account={account}  initial_capital=${init_cap:,.0f}  n_filled={len(orders)}\n")
 
     base = summarize(replay_exposure_cap(orders, 0.0, init_cap))
     print(

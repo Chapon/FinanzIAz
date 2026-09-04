@@ -55,7 +55,7 @@ from analysis.exit_replay import (
 )
 from analysis.impact_score import exit_veto_block, imminent_catalyst
 from analysis.surprise_score import make_surprise_loader
-from scripts.baseline_metrics import load_snapshots
+from scripts.baseline_metrics import load_snapshots, resolve_account_id
 
 # reutilizamos la infraestructura ya probada del runner T6.1
 from scripts.run_exit_replay_t61 import (
@@ -155,6 +155,11 @@ def make_earnings_loader_asof(calendar: dict[str, list[datetime]], asof: datetim
 def run(db_path: Path, account_id: int, cap_days: int, horizon: int):
     con = sqlite3.connect(str(db_path))
     try:
+        # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
+        # contra `is_active`), no el literal 1. La 1 está pausada desde el
+        # 2026-07-01 y tiene 91 fills congelados, así que el default viejo no
+        # fallaba: medía una cuenta muerta y devolvía una tabla creíble.
+        account_id = resolve_account_id(con, account_id)
         events = build_sell_events(con, account_id)
         bar_loader = make_bar_loader(con)
         snaps = load_snapshots(con, account_id)
@@ -356,7 +361,12 @@ def render_md(report, diagnostics, ctx) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="T-CAT-6 re-eval del exit-veto con surprise direction.")
     p.add_argument("--db", default=DEFAULT_DB, help="Path a la DB (usar un BACKUP limpio).")
-    p.add_argument("--account", type=int, default=1)
+    p.add_argument(
+        "--account",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--horizon", type=int, default=3, help="Días hábiles de imminencia.")
     p.add_argument("--json", action="store_true", help="Emite JSON en vez de markdown.")

@@ -42,6 +42,7 @@ import argparse
 import json
 import math
 import sqlite3
+import sys
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -164,6 +165,73 @@ def load_accounts(con: sqlite3.Connection) -> list[dict[str, Any]]:
     )
     cols = [c[0] for c in cur.description]
     return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+# ── Qué cuenta mira un runner — Tarea 99 (ACCT1-DEFAULTS) ────────────────────
+#
+# Siete runners tenían ``--account`` con ``default=1``, y la cuenta 1 está
+# **pausada** desde el 2026-07-01. La forma peligrosa es que **no fallan**: la
+# cuenta 1 tiene **91 fills reales** congelados en esa fecha, así que producían un
+# replay completo y plausible de una cuenta muerta, sin un error ni un aviso.
+#
+# Es el defecto que cerró la **tarea 70** para los jobs de fondo, un directorio
+# más allá: la 70 arregló el harvest y el dashboard con
+# ``paper_trading.account.live_account_id()``, y estos siete quedaron afuera
+# porque su población se definió por *dónde* se encontró el defecto («los jobs de
+# fondo») y no por la propiedad que lo hace un defecto («elige cuenta con un
+# literal»).
+#
+# **Por qué no se reusa ``live_account_id()``:** ése resuelve contra la sesión
+# SQLAlchemy de la app, y estos runners abren ``sqlite3`` contra el ``--db`` que
+# les pasan —que puede ser un backup o una copia—. Resolver contra otra base que
+# la que se está midiendo sería un defecto peor que el que se arregla. Mismas tres
+# decisiones de diseño que la 70, sobre la conexión que el runner ya tiene.
+
+
+class NoLiveAccount(RuntimeError):
+    """No hay ninguna cuenta con ``is_active=1`` en esta base (tarea 99)."""
+
+
+def resolve_account_id(con: sqlite3.Connection, pedido: int | None = None) -> int:
+    """El id de cuenta sobre el que corre un runner: el pedido, o la **viva**.
+
+    * ``pedido`` explícito se **respeta**, incluso si apunta a una cuenta pausada
+      — mandó el operador. Pero **grita**: el silencio es lo que dejó correr el
+      defecto de la 70 durante dos meses.
+    * Sin ``pedido``, se resuelve contra ``is_active``: una sola activa ⇒ ésa;
+      varias ⇒ la de menor id, con aviso; ninguna ⇒ ``NoLiveAccount``.
+    * **Levanta en vez de adivinar.** Un runner que no sabe sobre qué cuenta mide
+      no debe elegir una — devolver un default acá sería reintroducir el defecto
+      con otro número.
+    """
+    cuentas = {int(a["id"]): a for a in load_accounts(con)}
+
+    if pedido is not None:
+        acct = cuentas.get(int(pedido))
+        if acct is None:
+            raise NoLiveAccount(f"--account {pedido} no existe en esta base (hay: {sorted(cuentas)})")
+        if not acct["is_active"]:
+            print(
+                f"AVISO: --account {pedido} apunta a una cuenta PAUSADA "
+                f"({acct['name']}, is_active=0). Se respeta porque lo pediste a mano, "
+                f"pero vas a medir una cuenta que no opera (tarea 99).",
+                file=sys.stderr,
+            )
+        return int(pedido)
+
+    activas = sorted(int(a["id"]) for a in cuentas.values() if a["is_active"])
+    if not activas:
+        raise NoLiveAccount(
+            "no hay ninguna cuenta con is_active=1 en esta base: pasá --account "
+            "explícito si querés medir una pausada (tarea 99)"
+        )
+    if len(activas) > 1:
+        print(
+            f"AVISO: hay {len(activas)} cuentas activas ({activas}); se corre sobre la de "
+            f"menor id ({activas[0]}). Pasá --account si querés otra (tarea 99).",
+            file=sys.stderr,
+        )
+    return activas[0]
 
 
 def load_fills(con: sqlite3.Connection, account_id: int) -> list[Fill]:

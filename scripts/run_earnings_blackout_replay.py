@@ -48,6 +48,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
+from scripts.baseline_metrics import resolve_account_id
+
 # Ventanas de ±días a evaluar.
 DEFAULT_WINDOWS = (1, 2, 3, 5)
 
@@ -144,6 +147,11 @@ def load_round_trips(db_path: Path, account_id: int) -> list[dict]:
 
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
+        # contra `is_active`), no el literal 1. La 1 está pausada desde el
+        # 2026-07-01 y tiene 91 fills congelados, así que el default viejo no
+        # fallaba: medía una cuenta muerta y devolvía una tabla creíble.
+        account_id = resolve_account_id(con, account_id)
         orders = _filled_orders(con, account_id)
     finally:
         con.close()
@@ -199,7 +207,12 @@ def _format_report(results: list[dict], n_total: int, n_tickers: int) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Replay del earnings blackout sobre BUYs reales.")
     ap.add_argument("--db", type=str, default=str(ROOT / "finanzias.db"), help="Ruta a la DB (read-only).")
-    ap.add_argument("--account-id", type=int, default=1)
+    ap.add_argument(
+        "--account-id",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     ap.add_argument("--windows", type=str, default="1,2,3,5", help="Ventanas ±días, coma-separadas.")
     ap.add_argument(
         "--out",

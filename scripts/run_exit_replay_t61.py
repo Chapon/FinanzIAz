@@ -37,7 +37,7 @@ from analysis.exit_replay import (
     build_report,
     simulate_variant,
 )
-from scripts.baseline_metrics import fifo_match, load_fills, load_snapshots
+from scripts.baseline_metrics import fifo_match, load_fills, load_snapshots, resolve_account_id
 
 DEFAULT_DB = "finanzias.db"
 
@@ -168,6 +168,11 @@ VARIANTS: list[tuple[str, str, dict]] = [
 def run(db_path: Path, account_id: int, cap_days: int) -> tuple[list[ReplayReport], dict]:
     con = sqlite3.connect(str(db_path))
     try:
+        # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
+        # contra `is_active`), no el literal 1. La 1 está pausada desde el
+        # 2026-07-01 y tiene 91 fills congelados, así que el default viejo no
+        # fallaba: medía una cuenta muerta y devolvía una tabla creíble.
+        account_id = resolve_account_id(con, account_id)
         events = build_sell_events(con, account_id)
         bar_loader = make_bar_loader(con)
         snaps = load_snapshots(con, account_id)
@@ -235,7 +240,12 @@ def render_table(reports: list[ReplayReport], ctx: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="T6.1 exit replay harness")
     p.add_argument("--db", default=None)
-    p.add_argument("--account", type=int, default=1)
+    p.add_argument(
+        "--account",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     p.add_argument("--cap-days", type=int, default=20)
     p.add_argument("--json", action="store_true", help="dump JSON a stdout")
     args = p.parse_args(argv)
