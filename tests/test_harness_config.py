@@ -1049,25 +1049,49 @@ def test_an_exception_that_is_ALIGNED_is_not_announced_as_one(capsys):
     assert "excepción declarada" not in capsys.readouterr().out
 
 
-def test_un_cohorte_SINTETICO_con_un_ticker_real_se_compara_contra_el_disco(capsys):
+def test_un_cohorte_SINTETICO_con_un_ticker_del_cache_se_compara_contra_el(tmp_path, monkeypatch, capsys):
     """**El footgun de la 110, fijado para que no sorprenda.** `cross_period_gaps`
-    busca los otros frames del ticker **en el cache real**. Un test que arma un
-    cohorte sintético con un símbolo que existe en disco —AVB, AAPL— compara dos
-    barras inventadas contra diez años reales y reporta cientos de huecos falsos.
+    busca los otros frames del ticker **en el cache**. Un cohorte sintético que use un
+    símbolo que existe en disco compara dos barras inventadas contra diez años reales
+    y reporta cientos de huecos falsos. No es un defecto del guard —es lo que tiene
+    que hacer en producción— pero hay que saberlo al escribir un test.
 
-    No es un defecto del guard: es lo que tiene que hacer en producción. La forma de
-    aislarlo en un test es `continuity=False` (acá) o redirigir el directorio de
-    parquets (lo que hace `tests/test_cohorte_continuidad_t110.py`)."""
-    c = _cohorte()
-    c["AVB"] = _bars(["2016-01-04", "2026-08-07"])
-    announce_artifacts(c, file=None, continuity=False, strict=False)
-    limpio = capsys.readouterr().out
-    assert "Continuidad del cohorte" not in limpio
+    **Este test se escribió primero apoyándose en el cache de la máquina y el CI lo
+    cazó**: en un checkout limpio no hay parquets, así que la mitad que demuestra el
+    footgun pasaba vacía. Ahora se escribe **su propio** frame en un tmp, que es la
+    única forma de que demuestre lo mismo en las dos máquinas — y de paso es el
+    remedio que el propio docstring recomienda."""
+    import pandas as pd
 
-    announce_artifacts(c, file=None, strict=False, strict_continuity=False)
-    con_disco = capsys.readouterr().out
-    assert "Continuidad del cohorte" in con_disco
-    assert "AVB" in con_disco, "compara contra el frame real del ticker"
+    from data import parquet_cache
+
+    monkeypatch.setattr(parquet_cache, "_parquet_dir_override", tmp_path, raising=False)
+    parquet_cache.set_parquet_dir(tmp_path)
+    try:
+        fechas = ["2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"]
+        # DOS frames: el guard es bilateral y con uno solo no compara nada.
+        for period in ("2y", "10y"):
+            parquet_cache.write(
+                "ZZTOP",
+                period,
+                "1d",
+                pd.DataFrame(
+                    {"Open": 1.0, "High": 1.0, "Low": 1.0, "Close": 1.0, "Volume": 1},
+                    index=pd.to_datetime(fechas),
+                ),
+            )
+        c = _cohorte()
+        c["ZZTOP"] = _bars(["2026-08-03", "2026-08-07"])  # sintético: le faltan tres
+
+        announce_artifacts(c, file=None, continuity=False, strict=False)
+        assert "Continuidad del cohorte" not in capsys.readouterr().out
+
+        announce_artifacts(c, file=None, strict=False, strict_continuity=False)
+        con_cache = capsys.readouterr().out
+        assert "Continuidad del cohorte" in con_cache
+        assert "ZZTOP" in con_cache, "compara contra el frame que hay en el cache"
+    finally:
+        parquet_cache.set_parquet_dir(None)
 
 
 # Los que leen el cohorte y **no** tienen que chequearlo, cada uno con su motivo.
