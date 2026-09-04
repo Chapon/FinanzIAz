@@ -13,15 +13,25 @@ retros. Saltó de casualidad, porque el *"la próxima es la 62"* no tenía a dó
 apuntar.
 
 Este archivo es la mitad que corre en el **CI** (el job de pytest gatea). La otra
-mitad —*"este commit le saca N líneas"*— necesita el diff y vive en el hook de
-``pre-commit``; acá se testea su lógica, no el hook.
+mitad —*"este commit le saca N líneas"*— necesita el diff contra el índice, así que
+no puede correr acá sola: su cableado operativo es el **paso 3a de ``/ship``**.
 
-El test que más vale es el último: el guard se corre contra **el commit real que
-rompió el archivo** y tiene que gritar.
+**CORREGIDO 2026-09-03 (tarea 97).** Acá decía que esa mitad *"vive en el hook de
+``pre-commit``"* y que *"acá se testea su lógica"*. **Las dos cosas eran falsas.**
+El hook nunca se instaló —``.git/hooks/`` tiene sólo ``.sample``— así que estuvo
+declarado y sin correr desde el 2026-09-01; y de su lógica no había **ningún**
+test: uno cubría el fail-open fuera de un repo y el otro una propiedad de la
+constante. El parseo del ``--numstat``, la resta y el umbral entraban al CI sin
+cubrir. Ahora se ejercitan contra un repo git de verdad
+(``test_el_borrado_grande_*``).
+
+El test que más vale sigue siendo el último: el guard se corre contra **el commit
+real que rompió el archivo** y tiene que gritar.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -150,12 +160,138 @@ def test_the_shrink_threshold_is_far_below_what_actually_happened():
     assert 0 < MAX_LINES_LOST < 767
 
 
-def test_the_precommit_hook_is_wired():
-    """Regresión del cableado, mismo criterio que la 58, la 62 y la 64: si el
-    instrumento existe y no lo llama nadie, el archivo se sigue pudiendo vaciar."""
-    cfg = (_REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    assert "check_backlog_integrity.py --staged" in cfg
-    assert "backlog-integrity" in cfg
+# ── La lógica del borrado grande, contra un repo git de verdad (tarea 97) ─────
+#
+# Hasta el 2026-09-03 esto NO estaba cubierto por nada: el parseo del `--numstat`,
+# la resta `borradas - agregadas` y la comparación contra el umbral entraban al CI
+# sin un solo test. Los dos que existían cubrían el fail-open fuera de un repo y una
+# propiedad de la constante — ninguno ejercitaba la función con un índice cargado.
+
+
+def _git(repo: Path, *args: str):
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=False)
+
+
+@pytest.fixture
+def repo_con_backlog(tmp_path, monkeypatch):
+    """Un repo git real con un backlog de 200 líneas ya commiteado.
+
+    Se re-apunta ``REPO`` del módulo porque la función lo usa para **las dos** cosas:
+    el ``cwd`` del ``git diff`` y el ``relative_to`` del path. Sin eso, el test miraría
+    el índice del repo de verdad — que es justo lo que no se puede tocar desde un test.
+    """
+    import scripts.check_backlog_integrity as guard
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "test@finanzias.local")
+    _git(tmp_path, "config", "user.name", "test")
+    doc = tmp_path / "docs" / "BACKLOG.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("\n".join(f"linea {i}" for i in range(200)) + "\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    monkeypatch.setattr(guard, "REPO", tmp_path)
+    return tmp_path, doc
+
+
+def test_el_borrado_grande_frena_el_commit(repo_con_backlog):
+    """El caso de la 66: se stagea un archivo mutilado y el guard tiene que gritar."""
+    repo, doc = repo_con_backlog
+    doc.write_text("linea 0\n", encoding="utf-8")  # 200 → 1
+    _git(repo, "add", "docs/BACKLOG.md")
+
+    problemas = check_staged_shrink(doc)
+
+    assert len(problemas) == 1
+    # El mensaje tiene que llevar los NÚMEROS, no un "algo pasó": es lo que deja
+    # decidir si el borrado fue a propósito.
+    assert "199" in problemas[0]
+    assert "docs/BACKLOG.md" in problemas[0]
+
+
+def test_el_borrado_chico_pasa(repo_con_backlog):
+    """Sacar un ítem viejo es trabajo normal y no puede frenar un commit."""
+    repo, doc = repo_con_backlog
+    quedan = doc.read_text(encoding="utf-8").split("\n")[: 200 - (MAX_LINES_LOST - 10)]
+    doc.write_text("\n".join(quedan) + "\n", encoding="utf-8")
+    _git(repo, "add", "docs/BACKLOG.md")
+
+    assert check_staged_shrink(doc) == []
+
+
+def test_lo_que_cuenta_es_el_NETO_no_las_borradas(repo_con_backlog):
+    """Reescribir el archivo entero borra 200 y agrega 200: no perdió nada.
+
+    Si el guard mirara sólo las borradas, un reordenamiento grande —o un cierre que
+    reescribe media cola sin perderla— frenaría el commit. La resta es lo que
+    distingue *«lo reescribí»* de *«me lo llevé puesto»*.
+    """
+    repo, doc = repo_con_backlog
+    doc.write_text("\n".join(f"otra linea {i}" for i in range(200)) + "\n", encoding="utf-8")
+    _git(repo, "add", "docs/BACKLOG.md")
+
+    assert check_staged_shrink(doc) == []
+
+
+def test_sin_nada_staged_no_dice_nada(repo_con_backlog):
+    """El archivo mutilado en el working tree pero NO en el índice: no hay commit
+    que frenar todavía, y acusar acá sería ruido en cada edición a medio hacer."""
+    _repo, doc = repo_con_backlog
+    doc.write_text("linea 0\n", encoding="utf-8")
+
+    assert check_staged_shrink(doc) == []
+
+
+def test_el_cableado_operativo_es_ship_y_no_el_yaml():
+    """Regresión del cableado **operativo** — tarea 97.
+
+    Este test antes leía ``.pre-commit-config.yaml`` y asserteaba que el string
+    estuviera ahí. Eso verifica **la declaración**, no la condición que hace que el
+    guard corra: el hook nunca se instaló (``.git/hooks/`` tiene sólo ``.sample``,
+    ``core.hooksPath`` vacío en los tres niveles), así que pasaba en verde mientras
+    la mitad ``--staged`` no se ejecutaba **ni una vez**. Su propio docstring lo
+    decía sin darse cuenta: *"si el instrumento existe y no lo llama nadie, el
+    archivo se sigue pudiendo vaciar"*.
+
+    Ahora se fija el camino que **sí** se recorre: el paso 3a de ``/ship``.
+    """
+    ship = (_REPO / ".claude" / "commands" / "ship.md").read_text(encoding="utf-8")
+    assert "check_backlog_integrity.py --staged" in ship, (
+        "el guard del backlog salió del paso 3a de /ship — es su único cableado operativo"
+    )
+    # Y su hermano de la 98, que vive en el mismo paso por la misma razón.
+    assert "check_repo_health.py --staged" in ship
+
+
+def test_ningun_doc_afirma_que_el_hook_corre_solo():
+    """El claim que la 97 vino a borrar, fijado para que no vuelva.
+
+    ``CLAUDE.md`` y el header del backlog decían *"corre en la suite y en
+    `pre-commit`"* en presente indicativo, sobre un hook no instalado. El costo de
+    ese tipo de frase no es cosmético: se lee cada sesión y manda a **no** verificar.
+
+    **Busca la AFIRMACIÓN, no el string** — y esa distinción se pagó escribiéndolo mal
+    primero. La versión inicial asserteaba ``"y en `pre-commit`" not in txt`` y se puso
+    roja contra los propios retros que **citan** la frase para decir que se corrigió:
+    un chequeo que mide el string en vez de lo que el string afirma, que es justo la
+    familia de defecto de la auditoría que lo motivó. Por eso se descartan los tramos
+    entre ``«»``, que en este corpus son **citas**, no afirmaciones del documento.
+
+    **Lo que este test NO puede ver, dicho acá al lado (criterio de la 89):** una
+    paráfrasis. *"El hook de pre-commit lo chequea"* pasa limpio. Cubre la reincidencia
+    literal, que es la que ya ocurrió tres veces en tres archivos.
+    """
+    citas = re.compile(r"«[^»]*»")
+    afirmacion = re.compile(r"corre[^.\n]{0,60}en `pre-commit`", re.IGNORECASE)
+
+    for rel in ("CLAUDE.md", "docs/BACKLOG.md"):
+        txt = citas.sub("", (_REPO / rel).read_text(encoding="utf-8"))
+        m = afirmacion.search(txt)
+        assert m is None, (
+            f"{rel} vuelve a afirmar que el guard corre en pre-commit "
+            f"({m.group(0)!r}); en este repo no hay hooks de git instalados y su "
+            "cableado operativo es el paso 3a de /ship (tarea 97)"
+        )
 
 
 # ── La validación que importa: el commit real que rompió el archivo ──────────

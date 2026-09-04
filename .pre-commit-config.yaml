@@ -24,8 +24,19 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
-  # Integridad del backlog (tarea 66). Corre SOLO si el commit toca
-  # `docs/BACKLOG.md`, que es el único momento en que puede romperlo.
+  # Integridad del backlog (tarea 66).
+  #
+  # OJO — ESTE HOOK NO ES EL CABLEADO OPERATIVO (tarea 97). Nadie corrió
+  # `pre-commit install` en este repo: `.git/hooks/` tiene sólo archivos `.sample`
+  # y `core.hooksPath` está vacío en los tres niveles, así que entre el 2026-09-01
+  # y el 2026-09-03 esta declaración **no se ejecutó ni una vez** mientras
+  # `CLAUDE.md` y el backlog afirmaban que sí. Desde el 2026-09-03 el guard vive
+  # en el **paso 3a de `/ship`**, al lado de `check_repo_health.py --staged`.
+  # Esta entrada queda como conveniencia para quien SÍ instale pre-commit — no
+  # como la red de la que depende el backlog.
+  #
+  # Corre SOLO si el commit toca `docs/BACKLOG.md`, que es el único momento en
+  # que puede romperlo.
   #
   # El 2026-08-31 un commit de cierre le sacó 767 líneas —todas las tareas y
   # cinco secciones enteras— y pasó invisible durante cuatro commits: nada en la

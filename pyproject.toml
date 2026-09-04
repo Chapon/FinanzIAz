@@ -49,7 +49,14 @@ extend-exclude = [
 #   UP    pyupgrade (modern Python syntax)
 #   SIM   flake8-simplify (idiomatic refactors)
 #   RUF   ruff-native rules
-select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+#   T10   flake8-debugger (pdb / breakpoint() olvidados)
+#
+# T10 entra en la tarea 97, y con un motivo puntual: el `breakpoint()` olvidado lo
+# cubría el hook `debug-statements` de `.pre-commit-config.yaml`, y ese hook **no
+# corre** — nadie ejecutó `pre-commit install` y el cableado operativo del proyecto
+# es `/ship`, no un hook de git. Ruff sí corre (CI + criterio de "done"), así que
+# la regla se muda acá en vez de quedar declarada en un archivo inerte.
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "T10"]
 
 # Pragmatic ignores for this codebase (mostly UI-heavy PyQt + analytics code):
 ignore = [

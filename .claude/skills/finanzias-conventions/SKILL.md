@@ -11,13 +11,18 @@ App de paper-trading en Python (PyQt6 + SQLite + yfinance). El usuario, Chapa, t
 
 Una tarea NO está terminada hasta que:
 
-1. **La suite completa pasa en Windows.** El entorno real es Windows con Anaconda. Comando:
-   `python -m pytest tests/ -ra -m "not network" --tb=short`
+1. **Los TRES comandos pasan en Windows.** El entorno real es Windows con Anaconda:
+   ```
+   python -m pytest tests/ -ra -m "not network" --tb=short
+   python -m ruff check .
+   python -m ruff format --check .
+   ```
    Los tests marcados `network` pegan a Yahoo de verdad y se saltean (ver `pyproject.toml`). `tests/conftest.py` bloquea cualquier llamada de red accidental en unit tests.
-2. **Se commiteó** con mensaje descriptivo en español (`feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`).
+   **Ruff entra acá el 2026-09-03 (tarea 106) y no es burocracia:** el done era la suite sola, el job `lint` del CI quedó en rojo el 2026-09-02, y **trece tareas se cerraron declarando "suite verde"** sin enterarse. No mentían — la suite estaba verde; el criterio estaba incompleto, y el único lugar donde ruff corría era un CI que nadie lee.
+2. **Se commiteó** con mensaje descriptivo en español (`feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`), pasando antes los dos guards de `--staged` del paso 3a de `/ship` (`check_repo_health.py` y `check_backlog_integrity.py`) — que son **manuales**, ver *Trampas conocidas*.
 3. Si hay GUI, **revisión visual** antes de cerrar.
 
-Nunca declarar "listo" con tests rojos, implementación parcial o sin correr la suite en Windows.
+Nunca declarar "listo" con tests rojos, ruff en rojo, implementación parcial o sin correr los tres comandos en Windows.
 
 ## Metodología: kill-criteria upfront
 
@@ -31,7 +36,22 @@ Features nuevas de scoring/valuación entran primero como **display-only**, NO c
 - **No escribir la DB desde Linux/sandbox.** `finanzias.db` devuelve "malformed" intermitente vía mounts de Linux mientras el engine de Windows escribe. Para leerla desde un entorno no-Windows: copiar a /tmp primero. Backup sano en `backups/`.
 - **Null-byte padding tras edits grandes.** Las ediciones que achican un archivo pueden dejar nulls al final. Verificar con `read_bytes().count(b'\x00')`.
 
-**Guard automático:** `python scripts/check_repo_health.py` chequea las tres trampas de arriba (CRLF en .bat, null-bytes, DB desde no-Windows). Corré `--staged` antes de commitear (lo hace el comando `/ship`).
+**Guard MANUAL, y la palabra importa (tarea 98):** `python scripts/check_repo_health.py` chequea
+las tres trampas de arriba (CRLF en .bat, null-bytes, DB desde no-Windows). Acá decía *"Guard
+automático"* y **era falso**: no está en `.pre-commit-config.yaml`, no está en el CI y no lo
+llama ningún test. Su único invocador es el **paso 3a de `/ship`**, o sea que depende de que
+alguien lo corra. Un adjetivo equivocado en una skill que se lee cada sesión no es cosmético:
+manda activamente a **no** verificar.
+
+**Lo mismo vale para el guard del backlog.** `python scripts/check_backlog_integrity.py --staged`
+es la mitad de la tarea 66 que **necesita el diff** —frena un commit que le saque más de 60
+líneas netas a `docs/BACKLOG.md`— y también vive sólo en el paso 3a de `/ship`. Estuvo
+declarada en `.pre-commit-config.yaml` desde el 2026-09-01 sin correr **ni una vez**, porque
+en este repo **no hay ningún hook de git instalado** (tarea 97). La otra mitad (secciones,
+punteros) sí corre sola, en la suite.
+
+**Regla que sale de las dos:** en este proyecto **un guard declarado no es un guard cableado**.
+Antes de escribir que algo "corre automáticamente", verificá quién lo llama.
 
 ## Arquitectura del motor (5+ gates)
 

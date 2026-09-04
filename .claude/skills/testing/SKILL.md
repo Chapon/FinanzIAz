@@ -5,10 +5,12 @@ description: Cómo escribir y correr tests en FinanzIAs — fixtures de conftest
 
 # Testing — FinanzIAs
 
-Suite con pytest. Comando canónico (lo que define "done", ver `finanzias-conventions`):
+Suite con pytest. Comando canónico (ver `finanzias-conventions`):
 ```
 python -m pytest tests/ -ra -m "not network" --tb=short
 ```
+**La suite sola NO define "done"** — son tres comandos, y esa distinción costó plata de
+atención: ver *Antes de declarar "done"*, abajo.
 Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`, `addopts="-ra --strict-markers"`. **`--strict-markers`** = un marker no declarado hace fallar la corrida; declarar markers nuevos en `pyproject.toml`.
 
 ## Reglas de oro
@@ -51,4 +53,24 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
 
 ## Antes de declarar "done"
 
-Correr la suite completa **en Windows** (entorno real, Anaconda) y que pase. Reportar el conteo (`NNN passed, M skipped`) en el cuerpo del commit (ver skill `git-workflow`).
+Son **tres** comandos, todos en **Windows** (entorno real, Anaconda), y los tres tienen que pasar:
+
+```
+python -m pytest tests/ -ra -m "not network" --tb=short
+python -m ruff check .
+python -m ruff format --check .
+```
+
+Reportar el conteo (`NNN passed, M skipped`) en el cuerpo del commit (ver skill `git-workflow`).
+
+**Por qué ruff está acá y no sólo en el CI (tarea 106).** Hasta el 2026-09-03 el done era la
+suite sola. El 2026-09-02 el job `lint` del CI quedó en **rojo** —15 errores de ruff y 18
+archivos sin formatear, introducidos por los tests y el cableado de las tareas 74, 76, 81, 83,
+85, 86 y 92— y **trece tareas se cerraron declarando "suite verde"** sin que nadie se enterara.
+No estaban mintiendo: la suite **estaba** verde. El criterio era el que estaba incompleto, y el
+único lugar donde ruff corría era un CI que nadie lee. Es el mismo diagnóstico de la tarea 65
+(*"el pipeline nunca estuvo en verde, así que no avisa de nada"*), cuatro días después de
+cerrarla.
+
+Si ruff falla: `ruff check --fix .` y `ruff format .`, **revisando el diff** — no es
+auto-aceptar. El procedimiento y el pin de versión están en `requirements-dev.txt:16`.
