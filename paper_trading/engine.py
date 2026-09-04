@@ -910,6 +910,12 @@ def run_scan(
 
         # Memoize OHLCV history within this scan (used by the T10 ADV cap below).
         # Fail-open: a provider that raises yields None and the cap is skipped.
+        #
+        # Tarea 103: fallar abierto está bien —es la política— pero **en silencio no**.
+        # El `except` de acá no logueaba nada, así que un scan que no podía medir la
+        # liquidez quedaba indistinguible de uno donde todas las órdenes entraban bajo
+        # el techo. El Gate 6, veinte líneas más arriba y en el mismo scan, ya hacía
+        # lo correcto: falla abierto **y lo dice**. Éste ahora también.
         _history_seen: dict[str, pd.DataFrame | None] = {}
 
         def _history_for(ticker: str) -> pd.DataFrame | None:
@@ -917,6 +923,13 @@ def run_scan(
                 try:
                     _history_seen[ticker] = history_provider(ticker)
                 except Exception:
+                    from config.logging_config import get_logger
+
+                    get_logger(__name__).warning(
+                        "adv gate: history provider failed for %s — failing open (no cap).",
+                        ticker,
+                        exc_info=True,
+                    )
                     _history_seen[ticker] = None
             return _history_seen[ticker]
 
@@ -1120,7 +1133,22 @@ def run_scan(
             if trade.side == "BUY" and adv_cap_pct > 0 and trade.target_dollars:
                 adv = recent_adv_dollars(_history_for(trade.ticker), adv_lookback_days)
                 capped, was_capped = adv_capped_notional(float(trade.target_dollars), adv, adv_cap_pct)
-                if was_capped:
+                if adv is None or adv <= 0:
+                    # Tarea 103: `was_capped=False` es AMBIGUO — vale igual para
+                    # "la orden entraba bajo el techo" que para "no pude medir la
+                    # liquidez, así que no apliqué el gate". Sin este rastro, después
+                    # del hecho no hay forma de saber cuál de las dos fue, y el caso
+                    # que importa es justo el segundo: una BUY a tamaño completo sobre
+                    # un nombre cuya liquidez no se pudo medir, o sea los más
+                    # propensos a ser finos. La condición es la misma que la de
+                    # `adv_capped_notional` para fallar abierto, escrita acá al lado
+                    # para que no puedan derivar por separado.
+                    result.warnings.append(
+                        f"{trade.ticker} BUY SIN cap por ADV: no se pudo medir la liquidez "
+                        f"({adv_lookback_days} ruedas) — gate 3b NO evaluado, orden intacta "
+                        f"por ${float(trade.target_dollars):,.0f}."
+                    )
+                elif was_capped:
                     result.warnings.append(
                         f"{trade.ticker} BUY recortado por ADV: "
                         f"${float(trade.target_dollars):,.0f} → ${capped:,.0f} "
