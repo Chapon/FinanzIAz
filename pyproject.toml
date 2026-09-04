@@ -135,5 +135,5 @@ addopts = "-ra --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "network: tests that hit the real Yahoo Finance API (skip in CI)",
-    "real_db: opt-out del guard autouse — deja que el test use la finanzias.db real (usar con mucho cuidado)",
+    "real_db: opt-out del rebind in-memory del guard autouse — desde la tarea 108 el test cae en la DB de archivo de la sesión (FINANZIAS_DB_PATH), NO en producción. Hoy no lo usa nadie",
 ]

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 # La suite NO escribe en el log de producción (tarea 78). Va **antes** de
 # cualquier import del proyecto: el primer ``get_logger`` que corra instala el
@@ -34,6 +35,26 @@ os.environ.setdefault("FINANZIAS_LOG_FILE", "")
 # DB y el log, y va acá por el mismo motivo: antes de cualquier import.
 os.environ.setdefault("FINANZIAS_DISABLE_TICKER_FETCH", "1")
 
+# La suite tampoco toca la ``finanzias.db`` de producción **desde un subproceso**
+# (tarea 108). Va acá, con las otras dos, por la misma razón y con la misma forma:
+# ``database.models`` fija ``DB_PATH`` **al importarse**, así que después es tarde.
+#
+# ``_guard_real_db`` (más abajo) rebindea ``ENGINE`` a una in-memory, pero rebindea
+# **en este proceso**: un test que abre un subproceso —el escenario de la 82— importa
+# los módulos de la app sin conftest y se queda con la ruta de producción. Medido: en
+# un checkout limpio **crea** ``finanzias.db``, vacía, en la raíz del repo, y eso tuvo
+# el job ``pytest`` del CI **rojo 12 corridas** (tarea 107). El entorno es lo único que
+# un subproceso hereda solo, así que es acá donde el aislamiento deja de depender de
+# que cada test futuro se acuerde.
+#
+# El pid en el nombre aísla dos corridas simultáneas de la suite entre sí; el archivo
+# lo borra ``_borrar_la_db_de_la_suite`` al final de la sesión.
+os.environ.setdefault(
+    "FINANZIAS_DB_PATH",
+    os.path.join(tempfile.gettempdir(), f"finanzias_suite_{os.getpid()}.db"),
+)
+
+import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -47,6 +68,28 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _borrar_la_db_de_la_suite():
+    """Se lleva el archivo que la suite haya dejado en ``FINANZIAS_DB_PATH`` (108).
+
+    Normalmente **no existe**: `_guard_real_db` rebindea todo a memoria y nada lo
+    escribe. Aparece cuando un **subproceso** de la suite conecta —que es el caso
+    entero de esta tarea—, y entonces queda un archivo por corrida en el temp del
+    sistema. Se borra acá y no en el propio test porque el que lo crea es un proceso
+    hijo que ya terminó.
+
+    Sólo borra si la ruta es la que puso el conftest: exportar ``FINANZIAS_DB_PATH``
+    a mano para depurar una corrida **no** puede terminar en un archivo borrado.
+    """
+    yield
+    ruta = os.environ.get("FINANZIAS_DB_PATH", "")
+    if f"finanzias_suite_{os.getpid()}.db" not in ruta:
+        return
+    for sufijo in ("", "-wal", "-shm"):
+        with contextlib.suppress(OSError):
+            Path(ruta + sufijo).unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -153,6 +196,16 @@ def ohlcv_factory():
 def _guard_real_db(request, monkeypatch):
     """Red de seguridad (bug B4): ningún test debe tocar la ``finanzias.db`` real.
 
+    **Alcance real, que hasta la 108 este docstring no decía.** Esto aísla **este
+    proceso**: lo que hace es monkeypatchear ``ENGINE``/``SessionLocal``, así que
+    protege al código que corre acá adentro y **nada más**. Un test que abre un
+    **subproceso** importa ``database.models`` sin pasar por el conftest, se queda con
+    la ruta de producción y toca la DB real — pasaba con el escenario de la 82, que
+    en un checkout limpio dejaba una ``finanzias.db`` vacía en la raíz del repo. Esa
+    mitad la cubre ``FINANZIAS_DB_PATH``, seteada arriba de todo, porque el entorno es
+    lo único que un hijo hereda solo. Las dos hacen falta: sin el rebind, cada test
+    compartiría un archivo; sin la variable, cada subproceso se escapa.
+
     Rebindea ``database.models.ENGINE``/``SessionLocal`` a una SQLite in-memory
     por test (con todas las tablas creadas), de modo que cualquier writer de
     cache (``get_historical_data_batch`` → ``_finalize_historical`` →
@@ -164,7 +217,9 @@ def _guard_real_db(request, monkeypatch):
     - ``StaticPool`` + ``check_same_thread=False`` comparten la conexión
       in-memory entre threads — los fetch de yfinance escriben cache desde el
       ``ThreadPoolExecutor`` de ``_run_with_timeout``, en otro thread.
-    - Opt-out explícito: ``@pytest.mark.real_db`` (registrado en pyproject).
+    - Opt-out explícito: ``@pytest.mark.real_db`` (registrado en pyproject) — saltea
+      **el rebind**, no el aislamiento: desde la 108 el test cae en la DB de archivo
+      de la sesión (``FINANZIAS_DB_PATH``), no en producción. Hoy **no lo usa nadie**.
     - Si el test ya pide el fixture ``test_db``, ese aísla por su cuenta; no se
       duplica el rebind.
     """

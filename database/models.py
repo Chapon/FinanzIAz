@@ -46,7 +46,21 @@ from sqlalchemy.orm import (
     Session as SASession,
 )
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db")
+_DB_DEFAULT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "finanzias.db")
+# ``FINANZIAS_DB_PATH`` redirige la DB entera (tarea 108). Existe por una razón
+# concreta: ``_guard_real_db`` (el fixture autouse de la suite) rebindea ``ENGINE``
+# **en este proceso**, y un test que abre un **subproceso** —el escenario de la 82 es
+# el que hay hoy— importa este módulo sin conftest, se queda con la ruta de acá y
+# **toca la ``finanzias.db`` real**. Medido: en un checkout limpio la crea, vacía, en
+# la raíz del repo; y eso fue lo que tuvo el job ``pytest`` del CI rojo 12 corridas
+# (tarea 107). El entorno es lo único que un subproceso hereda solo.
+#
+# ``or`` y no ``os.environ.get(..., default)``, a propósito: la variable **vacía**
+# tiene que caer al default. Es el borde exacto que se arregló en la 82 —donde
+# ``FINANZIAS_DISABLE_TICKER_FETCH=0`` *prendía* el apagado— y acá una ruta vacía no
+# significa nada útil: siempre hace falta una DB. (Distinto de ``FINANZIAS_LOG_FILE``,
+# donde el vacío **sí** significa algo: "sin archivo".)
+DB_PATH = os.environ.get("FINANZIAS_DB_PATH") or _DB_DEFAULT
 # ``check_same_thread=False`` permits a single connection to be reused across
 # threads — safe for SQLite as long as we serialise writes (which SQLAlchemy's
 # default transactional flow does). Required by the paper-trading scheduler
