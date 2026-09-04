@@ -1933,6 +1933,58 @@ def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
     return results
 
 
+_TZ_FALLO_AVISADO = False
+
+
+def market_timezone():
+    """La zona de NYSE/NASDAQ, o ``None`` si no se puede resolver — **y lo dice**.
+
+    **La cadena estaba mal cableada (tarea 104).** Atrapaba ``ImportError``, pero el
+    fallo realista en Windows no es que falte el módulo: es que
+    ``ZoneInfo("America/New_York")`` no encuentre la base IANA, y eso levanta
+    ``ZoneInfoNotFoundError``, que es subclase de **``KeyError``** — verificado:
+    ``ZoneInfoNotFoundError.__mro__`` es ``(…, KeyError, LookupError, Exception)``.
+    O sea que la rama de ``pytz`` —la que existe justamente para ese caso— era
+    **inalcanzable**, y el ``except Exception`` de más afuera se comía todo.
+
+    Vivía duplicada en ``is_market_open`` y en ``scheduler._now_et``, con un
+    comentario en el scheduler que decía *«reuse the same logic as
+    is_market_open»* mientras la copiaba. Ahora es una sola.
+
+    El aviso sale **una vez por proceso**: lo llaman el scheduler en cada tick y la
+    UI en cada refresh, así que un WARNING por llamada sería spam — y un guard que
+    hace ruido se termina apagando.
+    """
+    global _TZ_FALLO_AVISADO
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo("America/New_York")
+    except (ImportError, KeyError):
+        # KeyError cubre ZoneInfoNotFoundError, que es lo que pasa sin `tzdata`.
+        pass
+
+    try:
+        import pytz
+
+        return pytz.timezone("America/New_York")
+    except Exception:
+        pass
+
+    if not _TZ_FALLO_AVISADO:
+        _TZ_FALLO_AVISADO = True
+        # Sin `settings` a proposito: este modulo es la capa de datos y no lee
+        # config. El numero concreto (16:05 ET por default) vive en el scheduler.
+        log.warning(
+            "No se pudo resolver la zona horaria 'America/New_York' (ni zoneinfo/tzdata "
+            "ni pytz). Todo lo que dependa de la hora de Nueva York cae a UTC, ~4 h "
+            "adelantado: el scan diario configurado para despues del cierre se "
+            "disparia en pleno mercado. Instalar `tzdata` o `pytz`."
+        )
+    return None
+
+
 def is_market_open() -> tuple[bool, str]:
     """
     Returns (is_open: bool, label: str).
@@ -1940,14 +1992,12 @@ def is_market_open() -> tuple[bool, str]:
     Does not account for US market holidays.
     """
     try:
-        try:
-            from zoneinfo import ZoneInfo
-
-            tz = ZoneInfo("America/New_York")
-        except ImportError:
-            import pytz
-
-            tz = pytz.timezone("America/New_York")
+        tz = market_timezone()
+        if tz is None:
+            # Falla CERRADO, que es la dirección segura para trading, y el porqué
+            # ya lo avisó `market_timezone`. El "—" de antes salía igual pero sin
+            # que nada dijera que la causa era la zona horaria (tarea 104).
+            return False, "—"
 
         now_et = datetime.now(tz)
         weekday = now_et.weekday()  # 0=Mon … 6=Sun

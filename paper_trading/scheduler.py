@@ -93,18 +93,24 @@ log = get_logger(__name__)
 
 
 def _now_et() -> datetime:
-    try:
-        try:
-            from zoneinfo import ZoneInfo
+    """La hora de Nueva York, o UTC si la zona no resuelve — **avisando** (tarea 104).
 
-            tz = ZoneInfo("America/New_York")
-        except ImportError:
-            import pytz
+    El fallback a UTC no es cosmético: de acá sale el disparo del **scan diario**
+    (`paper_daily_scan_time_et`, default 16:05 = después del cierre). Con UTC, esas
+    16:05 caen **12:05 ET** — el scan se dispara en pleno mercado y, como
+    `_last_daily_run` marca el día como hecho, **el de las 16:05 ET ya no corre**.
+    Antes eso pasaba en silencio: un `except Exception: return utcnow_naive()` sin
+    una línea de log.
 
-            tz = pytz.timezone("America/New_York")
-        return datetime.now(tz)
-    except Exception:
+    La resolución (y el aviso) viven en `market_timezone`, compartida con
+    `is_market_open` — que es lo que el comentario de arriba decía y no era.
+    """
+    from data.yahoo_finance import market_timezone
+
+    tz = market_timezone()
+    if tz is None:
         return utcnow_naive()
+    return datetime.now(tz)
 
 
 def _parse_hhmm(raw: str, default: tuple[int, int] = (16, 5)) -> tuple[int, int]:
