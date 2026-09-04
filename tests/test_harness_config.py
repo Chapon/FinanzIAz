@@ -1022,7 +1022,11 @@ def test_a_declared_exception_does_not_abort_but_IS_announced(capsys):
     c = _cohorte()
     c["AVB"] = _bars(["2016-01-04", "2026-06-02"])
     assert stale_artifacts(c) == ()  # no acusa
-    announce_artifacts(c, file=None)  # y NO levanta
+    # `continuity=False` porque este test es del guard de **frescura**, y usa un
+    # ticker REAL con barras sintéticas: el de continuidad (T110) compararía esas dos
+    # barras contra el `10y` de AVB que está en disco y reportaría cientos de huecos
+    # inexistentes. Aislar el guard bajo prueba, no medir el cache de la máquina.
+    announce_artifacts(c, file=None, continuity=False)  # y NO levanta
     out = capsys.readouterr().out
     assert "[excepción declarada] AVB" in out
     assert "split FANTASMA" in out  # el motivo, no sólo el nombre
@@ -1041,8 +1045,29 @@ def test_an_exception_that_is_ALIGNED_is_not_announced_as_one(capsys):
     declarar: el aviso es para la desalineación, no para la etiqueta."""
     c = _cohorte()
     c["AVB"] = _bars(["2016-01-04", "2026-08-07"])
-    announce_artifacts(c, file=None)
+    announce_artifacts(c, file=None, continuity=False)  # ver el test de arriba
     assert "excepción declarada" not in capsys.readouterr().out
+
+
+def test_un_cohorte_SINTETICO_con_un_ticker_real_se_compara_contra_el_disco(capsys):
+    """**El footgun de la 110, fijado para que no sorprenda.** `cross_period_gaps`
+    busca los otros frames del ticker **en el cache real**. Un test que arma un
+    cohorte sintético con un símbolo que existe en disco —AVB, AAPL— compara dos
+    barras inventadas contra diez años reales y reporta cientos de huecos falsos.
+
+    No es un defecto del guard: es lo que tiene que hacer en producción. La forma de
+    aislarlo en un test es `continuity=False` (acá) o redirigir el directorio de
+    parquets (lo que hace `tests/test_cohorte_continuidad_t110.py`)."""
+    c = _cohorte()
+    c["AVB"] = _bars(["2016-01-04", "2026-08-07"])
+    announce_artifacts(c, file=None, continuity=False, strict=False)
+    limpio = capsys.readouterr().out
+    assert "Continuidad del cohorte" not in limpio
+
+    announce_artifacts(c, file=None, strict=False, strict_continuity=False)
+    con_disco = capsys.readouterr().out
+    assert "Continuidad del cohorte" in con_disco
+    assert "AVB" in con_disco, "compara contra el frame real del ticker"
 
 
 # Los que leen el cohorte y **no** tienen que chequearlo, cada uno con su motivo.

@@ -165,13 +165,45 @@ def test_announce_artifacts_ARRASTRA_la_continuidad(referencia, capsys):
     """Va adentro del guard que los 26 lectores ya llaman, en vez de ser una segunda
     llamada que hay que acordarse de cablear — la lección de la 97 y la 101 aplicada
     al diseño. Y el texto de las puntas lo dice, para que «todos alineados» no se
-    vuelva a leer como «el cohorte está sano»."""
+    vuelva a leer como «el cohorte está sano».
+
+    **El `strict=False` lo agregó la 111**: desde que el cohorte quedó sin huecos, la
+    continuidad **aborta** con el default. Acá sólo se mira el banner."""
     referencia({"AAA": _SEMANA})
-    announce_artifacts({"AAA": _bars(_CON_HUECO)})
+    announce_artifacts({"AAA": _bars(_CON_HUECO)}, strict=False)
     salida = capsys.readouterr().out
     assert "en las PUNTAS" in salida
     assert "Continuidad del cohorte" in salida
     assert "2026-08-28" in salida
+
+
+def test_la_continuidad_ABORTA_con_el_default(referencia):
+    """**Tarea 111, paso 5.** Con el cohorte reparado (0 ruedas faltantes) el guard
+    pasa de declarar a **frenar**: un hueco nuevo ya no deja correr el harness."""
+    from analysis.harness_config import StaleArtifactError
+
+    referencia({"AAA": _SEMANA})
+    with pytest.raises(StaleArtifactError, match="rueda"):
+        announce_artifacts({"AAA": _bars(_CON_HUECO)})
+
+
+def test_la_bandera_que_ya_existia_cubre_las_DOS(referencia, capsys):
+    """`strict_continuity` era un parámetro aparte que **ningún runner podía pasar**:
+    prenderlo habría dejado a los 26 sin escape. Ahora cuelga de `strict`, o sea que
+    `--allow-stale-artifacts` —la bandera de *«corro sobre un sustrato torcido y lo
+    declaro»*— sirve para las puntas **y** para el medio."""
+    referencia({"AAA": _SEMANA})
+    fuera = announce_artifacts({"AAA": _bars(_CON_HUECO)}, strict=False)
+    assert fuera == (), "las puntas están sanas: el que acusa es el de continuidad"
+    assert "Continuidad del cohorte — 1 rueda" in capsys.readouterr().out
+
+
+def test_se_puede_forzar_una_sin_la_otra(referencia, capsys):
+    """El override explícito sigue existiendo, para el harness que a propósito corre
+    sobre un cohorte con huecos pero exige frescura en las puntas."""
+    referencia({"AAA": _SEMANA})
+    announce_artifacts({"AAA": _bars(_CON_HUECO)}, strict=True, strict_continuity=False)
+    assert "Continuidad del cohorte" in capsys.readouterr().out
 
 
 def test_se_puede_apagar_para_el_que_no_lo_quiera(referencia, capsys):

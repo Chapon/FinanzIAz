@@ -661,7 +661,7 @@ def announce_artifacts(
     strict: bool = True,
     file: TextIO | None = None,
     continuity: bool = True,
-    strict_continuity: bool = False,
+    strict_continuity: bool | None = None,
 ) -> tuple[StaleArtifact, ...]:
     """Declara la frescura del cohorte y **falla ruidoso** si está desalineado.
 
@@ -678,10 +678,19 @@ def announce_artifacts(
     de cablear un segundo. Es la lección de la 97 y de la 101 aplicada al diseño en
     vez de al after.
 
-    Las dos preguntas son distintas y por eso las dos ``strict`` lo son: la frescura
-    mira **las puntas** (aborta por default, T30) y la continuidad mira **el medio**
-    (sólo declara por default — ver ``announce_continuity``).
+    Las dos preguntas son distintas —la frescura mira **las puntas** (T30) y la
+    continuidad mira **el medio** (T110)— pero son sobre **el mismo sustrato**, así
+    que **comparten la bandera**: ``strict_continuity=None`` (el default) sigue a
+    ``strict``. Eso es lo que la **tarea 111** cambió, y el motivo es concreto:
+    ``strict_continuity`` era un parámetro aparte que **ningún runner podía pasar**,
+    o sea que prenderlo habría dejado a los 26 sin escape. Con esto,
+    ``--allow-stale-artifacts`` —la bandera que ya existe para *"corro sobre un
+    sustrato torcido y lo declaro en el pre-registro"*— cubre las dos.
+
+    Se puede forzar una u otra pasando el booleano explícito.
     """
+    if strict_continuity is None:
+        strict_continuity = strict
     fuera = stale_artifacts(bars_by, max_lag_days=max_lag_days)
     salida = file if file is not None else sys.stdout
     ref = cohort_end(bars_by)
