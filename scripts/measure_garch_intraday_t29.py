@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from analysis import garch_signals as G
+from analysis.harness_config import announce_artifacts, artifact_window
 from data import parquet_cache
 
 PERIOD = "2y"  # el frame que pide el engine (`paper_history_period`)
@@ -102,10 +103,20 @@ def _forecast_of(df: pd.DataFrame):
     return G.fit_garch_forecast(df)
 
 
-def measure(limit: int | None = None) -> dict:
+def measure(limit: int | None = None, *, strict_artifacts: bool = True) -> dict:
+    # Frescura del cohorte ANTES de pagar los fits (tarea 101). El `bars_by` sale de
+    # los frames que `_frames` ya cargó —incluido su filtro de <260 barras—, así que
+    # el guard mira **exactamente** la muestra que se va a medir y no re-lee el disco.
+    frames = _frames(limit)
+    bars_by = {
+        t: [(str(ts)[:10], float(c)) for ts, c in zip(df.index, df["Close"], strict=True)] for t, df in frames
+    }
+    announce_artifacts(bars_by, strict=strict_artifacts)
+    ventana = artifact_window(bars_by)
+
     filas: list[dict[str, Any]] = []
     t0 = time.perf_counter()
-    for ticker, df in _frames(limit):
+    for ticker, df in frames:
         try:
             primero = _variant(df, "Open")  # primer scan del día
             ultimo = df  # último scan: el close real
@@ -149,6 +160,7 @@ def measure(limit: int | None = None) -> dict:
         return xs[min(int(p * len(xs)), len(xs) - 1)] if xs else 0.0
 
     return {
+        "ventana_artefactos": str(ventana) if ventana else None,
         "n_tickers": len(ok),
         "n_errores": len(filas) - len(ok),
         "segundos": time.perf_counter() - t0,
@@ -170,13 +182,18 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="GARCH intradía (tarea 29c)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="Sigue aunque el cohorte esté desalineado (hay que declararlo en el pre-registro).",
+    )
     args = ap.parse_args(argv)
 
     if not G._ARCH_OK:
         print("arch no está instalado: no hay nada que medir", file=sys.stderr)
         return 2
 
-    m = measure(args.limit)
+    m = measure(args.limit, strict_artifacts=not args.allow_stale_artifacts)
     if args.json:
         print(json.dumps(m, indent=2, default=str))
         return 0

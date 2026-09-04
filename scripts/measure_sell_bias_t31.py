@@ -44,6 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
 
 HORIZONTES = (5, 10, 20)  # ruedas hábiles
@@ -105,11 +106,17 @@ def _ventas(db: Path) -> list[dict]:
     ]
 
 
-def measure(db: Path | None = None) -> dict:
+def measure(db: Path | None = None, *, strict_artifacts: bool = True) -> dict:
     db = db or (Path(__file__).resolve().parent.parent / "finanzias.db")
     todas = _ventas(db)
     senal = [o for o in todas if o["reason"].strip().lower().startswith("analyze")]
     barreras = len(todas) - len(senal)
+
+    # Frescura del cohorte ANTES de medir (tarea 101): lee el mismo sustrato
+    # compartido que los 21 runners, así que le corre el mismo guard.
+    bars_by = cohort_bars([o["ticker"] for o in senal], PERIODO)
+    announce_artifacts(bars_by, strict=strict_artifacts)
+    ventana = artifact_window(bars_by)
 
     for o in senal:
         for h in HORIZONTES:
@@ -123,6 +130,7 @@ def measure(db: Path | None = None) -> dict:
         return out
 
     return {
+        "ventana_artefactos": str(ventana) if ventana else None,
         "n_sell_total": len(todas),
         "n_sell_senal": len(senal),
         "n_sell_barrera_excluidas": barreras,
@@ -143,9 +151,14 @@ def measure(db: Path | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Sesgo del analyze SELL (tarea 31)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="Sigue aunque el cohorte esté desalineado (hay que declararlo en el pre-registro).",
+    )
     args = ap.parse_args(argv)
 
-    m = measure()
+    m = measure(strict_artifacts=not args.allow_stale_artifacts)
     if args.json:
         print(json.dumps(m, indent=2, default=str))
         return 0
@@ -157,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         f"\nSELL llenadas: {m['n_sell_total']} · de señal: {m['n_sell_senal']} · "
         f"por barrera (excluidas): {m['n_sell_barrera_excluidas']}"
     )
+    print(f"Ventana de los artefactos: {m['ventana_artefactos']}")
     print("\nForward POSITIVO = el precio siguió subiendo = la venta fue prematura = pesimismo.")
 
     for b in m["bloques"]:

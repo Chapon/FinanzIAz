@@ -45,6 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from analysis import garch_signals as G
+from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
 
 PERIODO = "2y"
@@ -73,7 +74,14 @@ def _serie_de_fits(df, ruedas: int) -> list[tuple[bool, str | None]]:
     return out
 
 
-def measure(ruedas: int = 60, limit: int | None = None) -> dict:
+def measure(ruedas: int = 60, limit: int | None = None, *, strict_artifacts: bool = True) -> dict:
+    # Frescura del cohorte ANTES de pagar los fits (tarea 101). Acá el guard vale
+    # doble: la población son **todos** los `*__2y__1d.parquet` del disco, o sea el
+    # cohorte entero y no un subconjunto del universo vivo.
+    bars_by = cohort_bars(_tickers(limit), PERIODO)
+    announce_artifacts(bars_by, strict=strict_artifacts)
+    ventana = artifact_window(bars_by)
+
     t0 = time.perf_counter()
     filas = []
     for ticker in _tickers(limit):
@@ -109,6 +117,7 @@ def measure(ruedas: int = 60, limit: int | None = None) -> dict:
             total_motivos[k] = total_motivos.get(k, 0) + v
 
     return {
+        "ventana_artefactos": str(ventana) if ventana else None,
         "ruedas_pedidas": ruedas,
         "segundos": time.perf_counter() - t0,
         "n_tickers": len(filas),
@@ -128,13 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ruedas", type=int, default=60)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="Sigue aunque el cohorte esté desalineado (hay que declararlo en el pre-registro).",
+    )
     args = ap.parse_args(argv)
 
     if not G._ARCH_OK:
         print("arch no está instalado: no hay nada que medir", file=sys.stderr)
         return 2
 
-    m = measure(args.ruedas, args.limit)
+    m = measure(args.ruedas, args.limit, strict_artifacts=not args.allow_stale_artifacts)
     if args.json:
         print(json.dumps(m, indent=2, default=str))
         return 0

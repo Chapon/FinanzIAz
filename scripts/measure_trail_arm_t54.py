@@ -56,6 +56,7 @@ from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
     announce,
+    announce_artifacts,
     announce_grid,
     artifact_window,
 )
@@ -159,6 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-positions", type=int, default=LIVE_MAX_POSITIONS)
     p.add_argument("--capital", type=float, default=50_000.0)
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="Sigue aunque el cohorte esté desalineado (hay que declararlo en el pre-registro).",
+    )
     args = p.parse_args(argv)
 
     log = sys.stderr if args.json else sys.stdout
@@ -169,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     entries = buy_entries(bars_by, sigs_by, args.warmup)
 
+    # Frescura del cohorte, antes de `announce` (tarea 101): si la muestra está
+    # torcida el harness no puede declarar una config que no va a honrar.
+    announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
     window = artifact_window(bars_by)
     announce(
         args.max_positions,

@@ -1045,31 +1045,77 @@ def test_an_exception_that_is_ALIGNED_is_not_announced_as_one(capsys):
     assert "excepción declarada" not in capsys.readouterr().out
 
 
-def _runners_que_leen_el_cohorte() -> list[tuple[str, str]]:
-    """Los ``run_*.py`` que arman su muestra del cohorte de artefactos.
+# Los que leen el cohorte y **no** tienen que chequearlo, cada uno con su motivo.
+# Es la única forma de que la lista no vuelva a ser "los que se llaman `run_`": el
+# predicado es una propiedad del archivo, y lo que queda afuera queda afuera escrito.
+_NO_LE_CORRESPONDE_EL_GUARD = {
+    "precompute_pit_signals.py": (
+        "PRODUCTOR del sustrato: es el que arregla el cohorte. Abortar porque el "
+        "cohorte está desalineado sería abortar justo al que lo viene a alinear."
+    ),
+    "precompute_pit_risk_score.py": "PRODUCTOR, igual que precompute_pit_signals.py.",
+    "benchmark_historical_cache.py": (
+        "Mide COSTO DE I/O, no produce un número de trading. Un cohorte torcido no "
+        "invalida un benchmark de lectura; le cambia los milisegundos y nada más."
+    ),
+}
 
-    El predicado es *"lee el sustrato compartido"*, no *"es un runner"*: de los 32
-    ``run_*.py``, **21** construyen ``bars_by`` desde el Parquet (vía uno de los
-    ``load_bars_*`` o leyendo ``parquet_cache`` a mano) o declaran su ventana con
-    ``artifact_window``. Los otros 11 no tocan el cohorte y quedan afuera **a
-    propósito** — exigirles el guard sería ruido.
+
+def _scripts_que_leen_el_cohorte() -> list[tuple[str, str]]:
+    """Los scripts que arman su muestra del cohorte de artefactos.
+
+    **El predicado es *"lee el sustrato compartido"*, y desde la 101 el barrido
+    también lo es.** Decía eso mismo y barría ``run_*.py``, que es una **convención
+    de nombre**: quedaron afuera **cinco** lectores del mismo cohorte —los
+    ``measure_*`` de las tareas 73, 31, 67, 29 y 54—, incluido el que produjo el
+    número que sostiene la **regla 3 de CLAUDE.md**. Un guard de sustrato cableado
+    sobre media población no protege la otra media; sólo hace creer que sí.
+
+    Lo que no le corresponde el guard queda afuera **por motivo escrito**, no por
+    prefijo: ver ``_NO_LE_CORRESPONDE_EL_GUARD``.
     """
     import re as _re
 
     out = []
-    for p in sorted((_REPO / "scripts").glob("run_*.py")):
+    for p in sorted((_REPO / "scripts").glob("*.py")):
+        if p.name in _NO_LE_CORRESPONDE_EL_GUARD:
+            continue
         txt = p.read_text(encoding="utf-8")
         if _re.search(r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt):
             out.append((p.name, txt))
     return out
 
 
-def test_the_cohort_runners_are_a_real_population():
-    """Sanity: si el barrido diera 0 o 1, los dos tests de abajo pasarían vacíos."""
-    assert len(_runners_que_leen_el_cohorte()) >= 20
+def test_the_cohort_readers_are_a_real_population():
+    """Sanity: si el barrido diera 0 o 1, los tests de abajo pasarían vacíos."""
+    assert len(_scripts_que_leen_el_cohorte()) >= 26
 
 
-def test_every_cohort_runner_checks_freshness_before_paying_for_the_run():
+def test_the_population_is_not_chosen_by_NAME():
+    """**El guard del guard** (tarea 101). Si el barrido volviera a filtrar por
+    ``run_*``, todos los tests de abajo seguirían **verdes** —los 21 runners cumplen—
+    y los cinco ``measure_*`` volverían a caerse afuera sin que nada lo dijera. Que es
+    exactamente lo que pasó entre la 76 y la 101.
+
+    Por eso se afirma la **composición**, no sólo el tamaño."""
+    nombres = [n for n, _ in _scripts_que_leen_el_cohorte()]
+    assert [n for n in nombres if n.startswith("run_")], "no hay runners: el barrido se rompió"
+    fuera_del_prefijo = [n for n in nombres if not n.startswith("run_")]
+    assert fuera_del_prefijo, (
+        "la población volvió a ser 'los que se llaman run_*'. El predicado es "
+        "'lee el cohorte', y hay lectores que no empiezan con run_."
+    )
+
+
+def test_lo_que_queda_afuera_esta_declarado_y_sigue_existiendo():
+    """Una exclusión que apunta a un archivo borrado es una exclusión que ya no dice
+    nada — y peor, tapa que el barrido dejó de encontrarlo."""
+    for nombre, motivo in _NO_LE_CORRESPONDE_EL_GUARD.items():
+        assert (_REPO / "scripts" / nombre).exists(), f"excluido inexistente: {nombre}"
+        assert len(motivo) > 40, f"exclusión sin motivo escrito: {nombre}"
+
+
+def test_every_cohort_reader_checks_freshness_before_paying_for_the_run():
     """**Todos** los que leen el cohorte lo chequean — no sólo el que tenía la pregunta viva.
 
     El guard de la T30 es sobre el **sustrato compartido**: los runners leen el
@@ -1079,7 +1125,7 @@ def test_every_cohort_runner_checks_freshness_before_paying_for_the_run():
     """
     faltan = [
         n
-        for n, txt in _runners_que_leen_el_cohorte()
+        for n, txt in _scripts_que_leen_el_cohorte()
         if "announce_artifacts(" not in txt or "--allow-stale-artifacts" not in txt
     ]
     assert faltan == [], f"leen el cohorte y no lo chequean: {faltan}"
@@ -1087,13 +1133,13 @@ def test_every_cohort_runner_checks_freshness_before_paying_for_the_run():
 
 def test_the_cohort_check_comes_before_announce():
     """Y va **antes** de `announce`, o el harness ya declaró una config que no va a honrar."""
-    for n, txt in _runners_que_leen_el_cohorte():
+    for n, txt in _scripts_que_leen_el_cohorte():
         if "announce(" not in txt:
             continue  # no declara config (p.ej. el T7): igual chequea, pero no hay orden que fijar
         assert txt.index("announce_artifacts(") < txt.index("announce("), n
 
 
-def test_every_cohort_runner_declares_its_window():
+def test_every_cohort_reader_declares_its_window():
     """La tercera pata (tarea 83): el que lee el cohorte **dice sobre qué ventana corrió**.
 
     La ventana de los artefactos es **rodante** (T48), así que un veredicto que no
@@ -1106,7 +1152,7 @@ def test_every_cohort_runner_declares_its_window():
     nada), y escribirla entonces habría sido escribirla con dos excepciones
     adentro.
     """
-    faltan = [n for n, txt in _runners_que_leen_el_cohorte() if "artifact_window(" not in txt]
+    faltan = [n for n, txt in _scripts_que_leen_el_cohorte() if "artifact_window(" not in txt]
     assert faltan == [], f"leen el cohorte y no declaran su ventana: {faltan}"
 
 
@@ -1122,7 +1168,7 @@ def test_the_cohort_check_sees_a_cohort_that_actually_exists():
     import ast
 
     rotos = []
-    for n, txt in _runners_que_leen_el_cohorte():
+    for n, txt in _scripts_que_leen_el_cohorte():
         if "announce_artifacts(" not in txt:
             continue
         for fn in ast.walk(ast.parse(txt)):

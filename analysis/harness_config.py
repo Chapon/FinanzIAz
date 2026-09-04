@@ -476,6 +476,38 @@ def declared_exceptions(bars_by: dict[str, list]) -> tuple[StaleArtifact, ...]:
     )
 
 
+def cohort_bars(tickers: list[str], period: str, interval: str = "1d") -> dict[str, list]:
+    """``{ticker: [(iso10, close)]}`` desde el cache Parquet, para pasarle el cohorte
+    a ``announce_artifacts`` / ``artifact_window`` (tarea 101).
+
+    **Por qué existe.** Los runners arman su ``bars_by`` con ``load_bars_signals``,
+    que además exige el artefacto PIT completo — los ``measure_*`` no lo necesitan y
+    por eso leían el Parquet a mano, ticker por ticker, sin quedarse nunca con el
+    cohorte entero. Sin cohorte no hay a qué llamarle el guard, y así fue como cuatro
+    lectores del mismo sustrato quedaron sin chequeo.
+
+    **La forma es la mínima que los guards consumen**, no un ``Bar`` de cinco campos:
+    de cada barra sólo se miran ``[0]`` (la fecha, para la ventana y el desalineo) y
+    el largo. Poner OHLC de relleno haría creer que esto sirve para simular.
+
+    El import va adentro **a propósito**: este módulo no toca el disco al importarse
+    —``artifact_window`` declara justamente eso— y ``parquet_cache`` arrastra pandas.
+    Mismo patrón que ``load_bars_signals``.
+    """
+    from data import parquet_cache
+
+    bars_by: dict[str, list] = {}
+    for t in sorted(set(tickers)):
+        df = parquet_cache.read(t, period, interval, ttl_hours=None)
+        if df is None or df.empty or "Close" not in df:
+            continue
+        df = df.sort_index()
+        bars = [(str(ts)[:10], float(c)) for ts, c in zip(df.index, df["Close"], strict=True)]
+        if bars:
+            bars_by[t] = bars
+    return bars_by
+
+
 def announce_artifacts(
     bars_by: dict[str, list],
     *,

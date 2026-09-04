@@ -46,6 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
 
 HORIZONTE = 5  # ruedas hábiles, igual que el fwd5 del original
@@ -120,12 +121,21 @@ def _muestra(db: Path) -> list[dict]:
     ]
 
 
-def measure(db: Path | None = None) -> dict:
+def measure(db: Path | None = None, *, strict_artifacts: bool = True) -> dict:
     db = db or (Path(__file__).resolve().parent.parent / "finanzias.db")
     crudo = _muestra(db)
     # el fallback de `_default_strength`: 1.0 puede ser "sin score", no convicción
     fallback = [o for o in crudo if abs(o["score"] - 1.0) < 1e-9]
     utiles = [o for o in crudo if abs(o["score"] - 1.0) >= 1e-9]
+
+    # Frescura del cohorte ANTES de medir (tarea 101). Este script lee el mismo
+    # sustrato compartido que los 21 runners, y el número que produce es el que
+    # sostiene la regla 3 de CLAUDE.md — con el cohorte desalineado la corrida no
+    # vale, que es exactamente lo que la 30 declaró. Va acá y no en `main` porque
+    # `measure()` es el que se puede llamar desde afuera.
+    bars_by = cohort_bars([o["ticker"] for o in utiles], PERIODO)
+    announce_artifacts(bars_by, strict=strict_artifacts)
+    ventana = artifact_window(bars_by)
 
     filas, sin_barras = [], []
     for o in utiles:
@@ -152,6 +162,7 @@ def measure(db: Path | None = None) -> dict:
 
     return {
         "horizonte_ruedas": HORIZONTE,
+        "ventana_artefactos": str(ventana) if ventana else None,
         "n_ordenes_con_score": len(crudo),
         "n_excluidas_fallback_1.0": len(fallback),
         "n_sin_barras": len(sin_barras),
@@ -168,9 +179,14 @@ def measure(db: Path | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="buy_score vs fwd5 (tarea 73)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--allow-stale-artifacts",
+        action="store_true",
+        help="Sigue aunque el cohorte esté desalineado (hay que declararlo en el pre-registro).",
+    )
     args = ap.parse_args(argv)
 
-    m = measure()
+    m = measure(strict_artifacts=not args.allow_stale_artifacts)
     if args.json:
         print(json.dumps(m, indent=2, default=str))
         return 0
@@ -188,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         f"excluidas por el fallback 1.0: {m['n_excluidas_fallback_1.0']} · "
         f"sin barras: {m['n_sin_barras']}"
     )
+    print(f"Ventana de los artefactos: {m['ventana_artefactos']}")
 
     print(f"\n  {'muestra':<18} {'n':>4} {'r':>8} {'IC95%':>18} {'detect.80%':>11} {'fwd5 medio':>11}")
     for b in m["bloques"]:

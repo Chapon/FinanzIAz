@@ -251,15 +251,15 @@ archivo, distinto `n_tickers`".
 
 ---
 
-### [G-5] El guard de frescura del cohorte se cableó por PREFIJO DE NOMBRE, y quedaron afuera los cuatro `measure_*` — incluido el que produjo el número de la regla 3 de CLAUDE.md
+### [G-5] El guard de frescura del cohorte se cableó por PREFIJO DE NOMBRE, y quedaron afuera los ~~cuatro~~ **cinco** `measure_*` — incluido el que produjo el número de la regla 3 de CLAUDE.md
 
 **Severidad: MEDIA · Confianza: ALTA · Categoría: guard cableado a medias**
 
-**Ubicación.** `scripts/measure_buyscore_fwd5_t73.py:57` · `scripts/measure_sell_bias_t31.py:55` · `scripts/measure_garch_fragil_t67.py:80` · `scripts/measure_garch_intraday_t29.py:75`
+**Ubicación.** `scripts/measure_buyscore_fwd5_t73.py:57` · `scripts/measure_sell_bias_t31.py:55` · `scripts/measure_garch_fragil_t67.py:80` · `scripts/measure_garch_intraday_t29.py:75` · `scripts/measure_trail_arm_t54.py:166`
 
 **Evidencia.** Barrido por AST sobre `scripts/`: los `run_*.py` que leen el cohorte son **21 de
 32** y **los 21** llaman `announce_artifacts` — el número de la 76 reproduce exacto. Pero
-además del prefijo `run_` hay **siete** lectores del mismo cohorte, y ninguno lo chequea:
+además del prefijo `run_` hay ~~siete~~ **ocho** lectores del mismo cohorte, y ninguno lo chequea:
 
 | script | qué es | ¿en alcance? |
 |---|---|---|
@@ -267,11 +267,31 @@ además del prefijo `run_` hay **siete** lectores del mismo cohorte, y ninguno l
 | `measure_sell_bias_t31.py` | instrumento de `docs/sell_bias_t31_2026-09-01.md` | **sí** |
 | `measure_garch_fragil_t67.py` | instrumento de `docs/garch_fragil_t67_2026-09-01.md` | **sí** |
 | `measure_garch_intraday_t29.py` | instrumento de `docs/garch_intraday_t29_2026-09-01.md` | **sí** |
+| `measure_trail_arm_t54.py` | instrumento de `docs/trail_arm_t54_2026-08-28.md` | **sí** — **agregado al cerrar la 101**, ver la corrección de abajo |
 | `precompute_pit_signals.py`, `precompute_pit_risk_score.py` | **productores** del store | no — son los que arreglan el cohorte |
 | `benchmark_historical_cache.py` | mide costo de I/O por backend | no — no produce un número de trading |
 
 Los cuatro leen con `ttl_hours=None`, o sea sin ningún chequeo de frescura, y ninguno declara
 su ventana (lo que la 83 cableó a los 21).
+
+> **CORRECCIÓN 2026-09-04, al cerrar la 101 — este barrido contó de menos.** Los lectores
+> `measure_*` son **cinco**, no cuatro: falta `measure_trail_arm_t54.py`. Se le escapó porque
+> **no llega al cohorte por `parquet_cache.read`**: importa `load_bars_signals` del runner de
+> la T23 (`measure_trail_arm_t54.py:68`) y ya llamaba `artifact_window` (`:172`) — o sea que
+> declaraba su ventana pero **no chequeaba la frescura**. Un barrido que busca la llamada al
+> cache dentro del propio archivo no puede verlo. Es el mismo tipo de error que el hallazgo
+> denuncia, una vuelta más arriba: elegir la población por **cómo se ve el archivo** en vez de
+> por la propiedad que importa. La población correcta —y la que fija ahora el test— es
+> **26 scripts**: 21 `run_*` + 5 `measure_*`.
+>
+> **Y el «0 desalineados» del alcance de abajo tampoco cubre a estos cinco.** Se midió sobre
+> los 127 tickers del **universo vivo**; los `measure_*` leen el cohorte de **todo lo que
+> tiene órdenes en la historia**, que incluye tickers que ya salieron del universo. Ahí sí
+> hay desalineados: **AAPL y MLTX**, con el `2y` congelado el 2026-07-12 y **46 ruedas** atrás
+> del cohorte. Medido el impacto: **ningún número publicado se mueve** (las 3 ventas afectadas
+> tienen 30-42 ruedas posteriores disponibles y el horizonte más largo es 20), pero la premisa
+> *«el cohorte está sano hoy»* con la que se acotó la tarea **es falsa para esta población**.
+> Queda como **tarea 109**.
 
 **Razonamiento.** La 76 cerró con este argumento, textual: *"el `announce_artifacts` de la 30
 es sobre el **sustrato compartido**: los runners leen **el mismo cohorte de artefactos**. Un
