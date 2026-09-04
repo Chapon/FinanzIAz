@@ -1453,6 +1453,59 @@ def _normalize_ohlcv(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df
 
 
+# ── Barra provisoria — Tarea 112 (CIERRE-PROVISORIO) ────────────────────────
+#
+# El refresh del cohorte corrió el 2026-09-01 a las 20:03-20:07 UTC, con el cierre de
+# NYSE a las 20:00, y guardó como cierre del día el precio **al momento del fetch**.
+# Medido sobre 45 tickers: **42 de 45 (93%)** tenían mal el cierre, mediana 0,32%, máx
+# 2,07%. Y quedó así **tres días**, porque nada volvió a bajar el `10y`.
+#
+# **Qué mueve y qué no, medido y no supuesto** (127 tickers de la watchlist viva, con
+# el error mediano de 0,32%):
+#
+#   * el **ATR** no se mueve: **0,00%**. El True Range de la última barra usa su
+#     High/Low y el cierre **anterior**, así que su propio Close no entra hasta la
+#     barra siguiente. (El enunciado de la tarea decía lo contrario; se corrigió.)
+#   * la **señal** sí: cambia en **9 de 127 (7,1%)**, y dos dan vuelta el signo entero
+#     —BKR `BUY→SELL`, MPC `SELL→BUY`— en vez de irse a HOLD.
+#
+# **Esto DECLARA y no corrige**, a propósito. Las dos formas de corregirlo tocan
+# decisiones y ninguna se puede elegir sin un número que todavía no está medido:
+# descartar la barra mueve el ATR **1,92% mediana** (más que el defecto), y el margen
+# de asentamiento —cuánto hay que esperar después del cierre— no se midió: lo único
+# que se sabe es que **3-7 minutos NO alcanzan**.
+_SETTLE_MARGIN_MIN = 30
+_PROVISIONAL_AVISADO: set[str] = set()
+
+
+def last_bar_is_provisional(df, now_et=None) -> bool:
+    """¿La última barra del frame es de una sesión que todavía no asentó?
+
+    Verdadero cuando esa barra es **de hoy** (hora de Nueva York) y todavía no
+    pasaron ``_SETTLE_MARGIN_MIN`` minutos desde el cierre. Fuera de eso —fin de
+    semana, pre-market, una barra de ayer— es falso.
+
+    Devuelve ``False`` si la zona horaria no resuelve: sin hora confiable no se puede
+    afirmar que una barra sea provisoria, y acusar sin poder saberlo sería el ruido
+    que hace que un guard se termine apagando (el aviso de eso ya lo da
+    ``market_timezone``, tarea 104).
+    """
+    if df is None or len(df) == 0:
+        return False
+    tz = market_timezone()
+    if tz is None:
+        return False
+    ahora = now_et or datetime.now(tz)
+    try:
+        ultima = str(df.index[-1])[:10]
+    except Exception:
+        return False
+    if ultima != ahora.strftime("%Y-%m-%d"):
+        return False
+    cierre = ahora.replace(hour=MARKET_CLOSE_HOUR_ET, minute=MARKET_CLOSE_MINUTE, second=0, microsecond=0)
+    return (ahora - cierre).total_seconds() < _SETTLE_MARGIN_MIN * 60
+
+
 def _finalize_historical(
     ticker_upper: str, df: pd.DataFrame | None, period: str, interval: str
 ) -> pd.DataFrame | None:
@@ -1481,6 +1534,20 @@ def _finalize_historical(
         return None
     if report.has_issues():
         log.info("Historical data for %s: %s", ticker_upper, report.summary())
+
+    if last_bar_is_provisional(df) and ticker_upper not in _PROVISIONAL_AVISADO:
+        # Una vez por ticker y por proceso: esto corre por cada uno del universo.
+        _PROVISIONAL_AVISADO.add(ticker_upper)
+        log.warning(
+            "%s (%s/%s): la ultima barra es de la sesion de HOY y todavia no asento "
+            "(faltan %d min desde el cierre). Se cachea igual, pero el cierre puede "
+            "moverse: medido, un error de 0,32%% cambia la señal en el 7%% de los "
+            "tickers. Tarea 112.",
+            ticker_upper,
+            period,
+            interval,
+            _SETTLE_MARGIN_MIN,
+        )
 
     _write_historical_cache(ticker_upper, period, interval, df)
     # Descarga exitosa — limpiar registro de fallos previos si existía.
