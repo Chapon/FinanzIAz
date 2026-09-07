@@ -275,6 +275,20 @@ REENTRY_GATES_COST_DESC = (
 # ése: los gates cambian **quién** entra, que ahí es el eje mismo, y eso ya movió el
 # hallazgo central de un veredicto publicado (T39 sobre la T21). Ver
 # `docs/reentry_decl_t36_2026-09-07.md`.
+REENTRY_GATES_NO_CARTERA_DESC = (
+    "NO se modelan los gates de re-entrada del engine — Gate 5 (anti-whipsaw) y "
+    "Gate 5b (anti-churn) — y acá **no es que falte cablearlos: no son modelables**. "
+    "El enabler `live_gates` vive en `portfolio_sim.simulate_portfolio` y este harness "
+    "no simula cartera: replaya cada entrada por separado, a notional fijo y con "
+    "capital ilimitado, así que no hay slot que liberar ni candidato que se lo lleve "
+    "— que es la mitad del mecanismo del gate. Re-leerlo con gates pide CODIGO NUEVO, "
+    "no una corrida (tarea 116; la T34 declaró que el costo restante era 'de análisis, "
+    "no de código', cierto para los otros diez harness). Lo que sí se puede afirmar y "
+    "está medido: con las entradas espaciadas de este harness **Gate 5b no puede "
+    "disparar** (tarea 119) y Gate 5 alcanza sobre todo a los brazos de tenencia "
+    "larga, o sea que el desvío **sesga a favor del ganador** (docs/reentry_decl_t36_2026-09-07.md §3)"
+)
+
 REENTRY_GATES_READING_DESC = (
     "Cómo leerlo depende del eje de TUS brazos (tarea 36): si deciden CUÁNDO SALIR, "
     "aplicá el criterio de la T33 —si los brazos cierran ciclos a tasas parecidas es "
@@ -1226,7 +1240,8 @@ def reproduction_check(
 class HarnessConfig:
     """La config con la que efectivamente corre un harness."""
 
-    max_positions: int
+    # ``None`` ⇒ el harness no simula cartera (ver ``per_trade``, tarea 116).
+    max_positions: int | None
     universe_file: str
     n_tickers: int
     # Config con la que corrió el veredicto ya publicado de esa tarea, si lo hay.
@@ -1263,6 +1278,13 @@ class HarnessConfig:
     # para ellos. Sólo lo pasan los que usan ``build_entries``, porque es ahí donde
     # el costo declarado de los gates deja de ser el suyo.
     entry_spacing: int | None = None
+
+    # Harness SIN cartera — Tarea 116. `run_scaleout_replay_t7` replaya cada entrada
+    # con `replay_cycle` a `--notional` fijo y capital ilimitado: no hay slots, ni
+    # cash, ni competencia por el turno. Con `True` el banner **saltea** los desvíos
+    # que sólo existen si hay cartera y **cambia** el de los gates de re-entrada, que
+    # ahí no es "no se modela" sino "no es modelable" — y esa diferencia es el punto.
+    per_trade: bool = False
 
     @property
     def effective_trail_mult(self) -> float:
@@ -1336,7 +1358,7 @@ def _reentry_population_note(cfg: HarnessConfig) -> str:
 def deviations(cfg: HarnessConfig) -> list[str]:
     """Desvíos de ``cfg`` respecto de la cuenta viva, en prosa."""
     out: list[str] = []
-    if cfg.max_positions != LIVE_MAX_POSITIONS:
+    if not cfg.per_trade and cfg.max_positions != LIVE_MAX_POSITIONS:
         out.append(f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta {LIVE_ACCOUNT_ID}")
     # Bilateral a propósito (tarea 89). Era `<`, así que un universo de harness
     # MÁS GRANDE que la watchlist viva no declaraba nada — y un desvío es un
@@ -1444,7 +1466,9 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
             f"hay fechas de earnings point-in-time a 10 años"
         )
-    if not cfg.live_gates:
+    if cfg.per_trade:
+        out.append(REENTRY_GATES_NO_CARTERA_DESC)
+    elif not cfg.live_gates:
         out.append(
             f"NO se modelan los gates de re-entrada del engine — Gate 5 "
             f"(anti-whipsaw: cualquier pérdida dentro de {LIVE_WHIPSAW_LOOKBACK_DAYS}d "
@@ -1464,7 +1488,8 @@ def config_banner(cfg: HarnessConfig) -> str:
     no rompe la reproducibilidad en silencio.
     """
     lines = [
-        f"Config: max_positions={cfg.max_positions} · universo={cfg.universe_file} ({cfg.n_tickers} tickers)",
+        f"Config: {'replay POR TRADE, sin cartera' if cfg.per_trade else f'max_positions={cfg.max_positions}'}"
+        f" · universo={cfg.universe_file} ({cfg.n_tickers} tickers)",
         f"Cuenta viva de referencia: {LIVE_ACCOUNT_NAME} (id={LIVE_ACCOUNT_ID}, "
         f"{LIVE_MODE}, {LIVE_ALLOCATION_MODE}, {LIVE_MAX_POSITIONS} slots)",
         exit_rule_line(cfg.eval_mode, cfg.fill_mode),
@@ -1482,6 +1507,46 @@ def config_banner(cfg: HarnessConfig) -> str:
             f"--max-positions {cfg.verdict_max_positions}."
         )
     return "\n".join(lines)
+
+
+def announce_per_trade(
+    universe_file: str,
+    n_tickers: int,
+    *,
+    window: ArtifactWindow | None = None,
+    eval_mode: str = "close",
+    fill_mode: str = HARNESS_FILL_MODE,
+    entry_spacing: int | None = None,
+    atr_stop_mult: float = 2.0,
+    atr_trail_mult: float | None = None,
+    file: TextIO | None = None,
+) -> HarnessConfig:
+    """Banner para un harness **sin cartera** — Tarea 116.
+
+    Hermano de ``announce`` para los replays por trade (hoy sólo el T7). Existe
+    porque hasta ahora un harness sin cartera **no tenía forma de declarar sus
+    desvíos**: ``announce`` pide ``max_positions`` y el T7 no tiene slots, así que
+    imprimía su ventana y su regla de salida y **nada más** — ni el stop duro contra
+    la cuenta, ni el overlay, ni el blackout, ni los gates.
+
+    Declara todo lo que **no** depende de tener cartera, y para lo que sí depende
+    dice que no aplica en vez de callarse. La diferencia que importa: los gates de
+    re-entrada pasan de *"no se modelan"* a *"no son modelables acá"*, con el porqué.
+    """
+    cfg = HarnessConfig(
+        max_positions=None,
+        universe_file=universe_file,
+        n_tickers=n_tickers,
+        eval_mode=eval_mode,
+        fill_mode=fill_mode,
+        window=window,
+        entry_spacing=entry_spacing,
+        atr_stop_mult=atr_stop_mult,
+        atr_trail_mult=atr_trail_mult,
+        per_trade=True,
+    )
+    print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
+    return cfg
 
 
 def announce(

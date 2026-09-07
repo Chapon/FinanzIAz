@@ -44,9 +44,9 @@ from analysis.harness_config import (
     SignalStoreGapError,
     StaleArtifactError,
     announce_artifacts,
+    announce_per_trade,
     announce_signal_store,
     artifact_window,
-    exit_rule_line,
 )
 from analysis.scaleout_replay import (
     CostModel,
@@ -310,17 +310,25 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = build_entries(bars_by, sigs_by, spacing=args.spacing, warmup=args.warmup)
     costs = CostModel(commission=args.commission, slippage=args.slippage)
-    # Declara la VENTANA de su muestra (tarea 83). No llama `announce()` como los
-    # otros 20 y eso es deliberado: `announce` declara **slots de cartera** y este
-    # harness no simula cartera —es un replay por trade, con `--notional` fijo—,
-    # así que tendría que inventar un `max_positions` que no usa. Lo que sí
-    # necesita declarar es la ventana: sin ella, su resultado no se puede
-    # reproducir después de un refresh del cohorte (la ventana es RODANTE, T48).
+    # Declara sus desvíos con `announce_per_trade` (tarea 116), el hermano de
+    # `announce` para harness **sin cartera**. Hasta la 116 esto imprimía la ventana
+    # y la regla de salida y **nada más** —ni el stop duro contra la cuenta, ni el
+    # overlay, ni el blackout, ni los gates— porque `announce` pide `max_positions`
+    # y acá no hay slots: es un replay por trade con `--notional` fijo.
+    # El desvío que más importa acá es el de los gates de re-entrada, y el banner
+    # dice lo que corresponde: **no son modelables** en un harness sin cartera, no
+    # es que falte cablearlos.
+    announce_per_trade(
+        args.universe,
+        len(bars_by),
+        window=artifact_window(bars_by),
+        fill_mode=args.fill_mode,
+        entry_spacing=args.spacing,
+    )
     print(
         f"Tickers: {len(bars_by)} · entradas BUY point-in-time: {len(entries)} "
         f"(spacing {args.spacing}, cap {args.cap_days}d) · ventana {artifact_window(bars_by)}"
     )
-    print(exit_rule_line(fill_mode=args.fill_mode))
 
     per_arm: dict[str, list[CycleResult]] = {}
     for name, (params, atr_p) in ARMS.items():

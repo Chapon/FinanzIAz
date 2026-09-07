@@ -1397,3 +1397,67 @@ def test_los_runners_espaciados_declaran_su_spacing(script):
         if kw.arg == "entry_spacing"
     ]
     assert pasado, f"{script} no le declara su spacing a announce()"
+
+
+# ── Un harness SIN cartera también declara — Tarea 116 ───────────────────────
+
+
+def _cfg_pt(**kw) -> HarnessConfig:
+    return HarnessConfig(None, "x.txt", LIVE_WATCHLIST_SIZE, per_trade=True, **kw)
+
+
+def test_el_harness_sin_cartera_declara_los_desvios_que_SI_le_aplican():
+    """Tarea 116 — el T7 imprimia su ventana y su regla de salida y **nada mas**.
+
+    `announce` pide `max_positions` y un replay por trade no tiene slots, asi que
+    quedaba sin declarar el stop duro contra la cuenta, el overlay, el blackout y
+    los gates. Ninguno de esos depende de tener cartera.
+    """
+    devs = deviations(_cfg_pt())
+    texto = " · ".join(devs)
+    for esperado in ("stop duro", "overlay de volatilidad", "blackout de earnings", "escalado por régimen"):
+        assert esperado in texto, f"un harness sin cartera dejo de declarar: {esperado}"
+
+
+def test_sin_cartera_NO_declara_slots_porque_no_los_tiene():
+    """La contraprueba del otro lado: declarar `slots None vs 10` seria ruido, y un
+    banner con ruido es un banner que se deja de leer."""
+    assert not any(d.startswith("slots ") for d in deviations(_cfg_pt()))
+    # Y con cartera si los declara, para que esto no pase en verde por accidente.
+    con = HarnessConfig(5, "x.txt", LIVE_WATCHLIST_SIZE)
+    assert any(d.startswith("slots ") for d in deviations(con))
+
+
+def test_los_gates_pasan_de_NO_SE_MODELAN_a_NO_SON_MODELABLES():
+    """El punto de la tarea. En un harness con cartera el desvio de los gates es
+    *"falta cablearlo"* — el enabler existe. En uno sin cartera **no hay enabler
+    posible**: no hay slot que liberar ni candidato que se lo lleve, que es la mitad
+    del mecanismo. Confundir las dos cosas fue lo que dejo a la T34 declarando que el
+    costo restante era "de analisis, no de codigo" — cierto para los otros diez.
+    """
+    dev = next(d for d in deviations(_cfg_pt()) if "gates de re-entrada" in d)
+    assert "no son modelables" in dev
+    assert "CODIGO NUEVO" in dev
+    # Y el harness CON cartera sigue diciendo lo otro: son dos mensajes distintos.
+    con = next(d for d in deviations(HarnessConfig(10, "x.txt", LIVE_WATCHLIST_SIZE)) if "gates" in d)
+    assert "no son modelables" not in con
+
+
+def test_el_banner_sin_cartera_no_miente_con_un_max_positions_inventado():
+    """La razon por la que el T7 no llamaba a `announce`: habria tenido que inventar
+    un `max_positions` que no usa. El banner nuevo dice lo que es."""
+    txt = config_banner(_cfg_pt())
+    assert "replay POR TRADE, sin cartera" in txt
+    assert "max_positions=" not in txt.splitlines()[0]
+
+
+def test_el_T7_usa_el_anuncio_sin_cartera():
+    """Fijado por AST: si alguien vuelve a dejarlo imprimiendo dos prints sueltos,
+    el T7 vuelve a no declarar nada."""
+    txt = (_REPO / "scripts" / "run_scaleout_replay_t7.py").read_text(encoding="utf-8")
+    llamadas = [
+        n
+        for n in ast.walk(ast.parse(txt))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "announce_per_trade"
+    ]
+    assert llamadas, "el T7 dejo de declarar sus desvios"
