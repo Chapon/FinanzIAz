@@ -234,11 +234,17 @@ SCHEMA: dict[str, SettingSpec] = {
     # `f025` además fue el brazo que el harness seleccionó en las **tres** corridas
     # (julio, la re-lectura de la T33 en agosto, y hoy).
     #
-    # **Lo que NO está validado, dicho acá para que no se lea de más:** `f025` pasa
-    # el criterio en el marco publicado (5 slots, 41 tickers) y **no** en el de la
-    # cuenta viva (10 slots, 127 tickers), donde ningún factor pasa. Es una decisión
-    # NUEVA que no hereda la validación de la T20 — la validación sobre el marco vivo
-    # es la **tarea 121**. Ver `docs/t20_killgate_t115_2026-09-07.md`.
+    # **Qué está y qué no está validado — medido el 2026-09-07 (tarea 121, corrida
+    # VÁLIDA, 10 slots sobre los 127 tickers vivos, con los gates del engine):** en el
+    # marco de la cuenta `f025` **falla** C1 (ΔSharpe −0.00, ΔCAGR −0.34 pp) y C3
+    # (PBO 0.813), y **pasa** C2 y C4. O sea que **el factor vivo se sostiene por el
+    # alivio de drawdown —maxDD 28.9% vs 33.7%, −4.8 pp— y NO por el criterio de
+    # julio**, y eso es deliberado: fue la razón por la que Chapa lo eligió.
+    #
+    # El alivio viene de donde tiene que venir: **+3.93 pp en `2018Q4` y +4.27 pp en
+    # `covid_2020`**, con costo en `bull_normal` y neutro en `bear_2022`. Y es
+    # monótono en lo profundo del recorte — a 0.50 el alivio era de sólo −0.6 pp.
+    # Ver `docs/f025_validar_t121_2026-09-07.md`.
     "paper_regime_scale_enabled": SettingSpec(
         bool,
         True,
