@@ -83,3 +83,62 @@ def test_clean_ohlcv_returns_none_for_unusable_input():
 
     _cleaned2, rep2 = clean_ohlcv(pd.DataFrame())
     assert not rep2.is_usable
+
+
+# ── Un frame de UNA barra no puede reventar la QA — Tarea 114 ────────────────
+
+
+def _frame(n: int, close: float = 100.0) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Open": [close] * n,
+            "High": [close] * n,
+            "Low": [close] * n,
+            "Close": [close] * n,
+            "Volume": [1000] * n,
+        },
+        index=pd.date_range("2026-01-01", periods=n, freq="B"),
+    )
+
+
+def test_una_sola_barra_devuelve_reporte_y_no_revienta():
+    """Tarea 114 — `df["Close"].squeeze()` devuelve un **escalar** con una fila, y
+    `.dropna()` explotaba con AttributeError.
+
+    Es alcanzable por la puerta de adelante: el docstring de `get_historical_data`
+    lista `period="1d"` como valido, y `clean_ohlcv` se llama desde
+    `_finalize_historical` **fuera de todo try**, asi que la excepcion se propagaba
+    al caller en vez de fallar suave como el resto de la QA.
+    """
+    rep = check_ohlcv(_frame(1))  # antes: AttributeError
+    assert rep.rows == 1
+    assert rep.is_usable, "una barra con Close valido es poca, pero no es inusable"
+
+
+def test_lo_dice_en_vez_de_reportar_CERO_saltos():
+    """Un `suspicious_jumps = 0` sobre una sola barra se lee como *"revisado y
+    limpio"* y en realidad es *"no habia nada que revisar"*. La diferencia importa
+    porque este reporte es lo que decide si un frame entra."""
+    rep = check_ohlcv(_frame(1))
+    assert any("Single-bar" in n for n in rep.notes)
+    assert rep.suspicious_jumps == 0
+
+
+def test_con_DOS_barras_vuelve_a_evaluar_los_saltos():
+    """Contraprueba: la rama nueva no puede tragarse el caso normal. Sin esto,
+    saltear siempre la evaluacion pasaria en verde."""
+    df = _frame(2)
+    df.iloc[1, df.columns.get_loc("Close")] = 300.0  # +200%
+    rep = check_ohlcv(df)
+    assert rep.suspicious_jumps == 1
+    assert not any("Single-bar" in n for n in rep.notes)
+
+
+def test_close_duplicado_sigue_aplanandose():
+    """`squeeze()` estaba ahi para aplanar un frame con la columna `Close` repetida.
+    El reemplazo tiene que conservar eso, o el arreglo cambia un bug por otro."""
+    df = _frame(3)
+    df = pd.concat([df, df["Close"]], axis=1)
+    assert list(df.columns).count("Close") == 2
+    rep = check_ohlcv(df)
+    assert rep.rows == 3 and rep.is_usable

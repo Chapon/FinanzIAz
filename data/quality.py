@@ -115,6 +115,27 @@ def _detect_calendar_gaps(
     return gaps
 
 
+def _serie(df: pd.DataFrame, col: str) -> pd.Series:
+    """Una columna SIEMPRE como Series — Tarea 114.
+
+    ``df["Close"].squeeze()`` —que era el idiom acá— devuelve un **escalar** cuando el
+    frame tiene **una sola fila**, y ahí `.dropna()` explota con ``AttributeError``.
+    No es hipotético: el docstring de ``get_historical_data`` lista ``period="1d"``
+    como válido, y ``clean_ohlcv`` se llama desde ``_finalize_historical`` **fuera de
+    todo `try`**, así que la excepción se propaga al caller en vez de fallar suave
+    como el resto de la QA.
+
+    Es una **copia** de ``analysis.garch_signals._close_series`` (tarea 19) y no un
+    import, a propósito: ``data/`` no depende de ``analysis/`` y invertir esa
+    dirección por cinco líneas sería peor que duplicarlas. Si aparece un tercero,
+    ahí sí conviene un módulo común.
+    """
+    s = df[col]
+    if isinstance(s, pd.DataFrame):
+        s = s.iloc[:, 0]
+    return pd.Series(s)
+
+
 def check_ohlcv(
     df: pd.DataFrame | None,
     *,
@@ -140,9 +161,9 @@ def check_ohlcv(
     # NaN counts per column
     for col in PRICE_COLS:
         if col in df.columns:
-            rep.nan_counts[col] = int(df[col].isna().sum())
+            rep.nan_counts[col] = int(_serie(df, col).isna().sum())
     if "Volume" in df.columns:
-        rep.nan_counts["Volume"] = int(df["Volume"].isna().sum())
+        rep.nan_counts["Volume"] = int(_serie(df, "Volume").isna().sum())
 
     # Duplicate index entries (yfinance has been known to emit these)
     if isinstance(df.index, pd.DatetimeIndex):
@@ -151,7 +172,8 @@ def check_ohlcv(
     # Zero / negative price values (always wrong on equities)
     for col in PRICE_COLS:
         if col in df.columns:
-            bad = ((df[col] <= 0) & df[col].notna()).sum()
+            s = _serie(df, col)
+            bad = ((s <= 0) & s.notna()).sum()
             if bad:
                 rep.zero_or_negative[col] = int(bad)
 
@@ -165,14 +187,20 @@ def check_ohlcv(
 
     # Suspicious single-bar jumps
     if "Close" in df.columns:
-        close = df["Close"].squeeze().dropna()
+        close = pd.to_numeric(_serie(df, "Close"), errors="coerce").dropna()
         if len(close) > 1:
             rets = close.pct_change().abs()
             rep.suspicious_jumps = int((rets > jump_threshold).sum())
+        elif len(df.index) == 1:
+            # Tarea 114 — un frame de UNA barra no es inusable, es insuficiente para
+            # esta pregunta: no hay un retorno que juzgar. Se dice en vez de callarse,
+            # porque `suspicious_jumps = 0` en un frame de una fila se lee como
+            # "revisado y limpio" y es "no había nada que revisar".
+            rep.notes.append("Single-bar frame: no return to judge, suspicious_jumps not evaluated")
 
     # Usability gate: at least one Close value
     if "Close" in df.columns:
-        if df["Close"].dropna().empty:
+        if _serie(df, "Close").dropna().empty:
             rep.is_usable = False
             rep.notes.append("All Close values are NaN")
     else:
