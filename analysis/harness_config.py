@@ -642,13 +642,23 @@ def announce_continuity(
 ) -> tuple[MissingSession, ...]:
     """Declara los huecos **interiores** del cohorte. Agrega por fecha, no por ticker.
 
-    **``strict=False`` por default, y el motivo va escrito.** Con el cohorte de hoy
-    esto acusa el 2026-08-28 en la mayoría de los ``10y``, así que ponerlo en `True`
-    abortaría **las 26 corridas** por un defecto cuyo impacto todavía **no está
-    medido** — y arreglar el dato re-baja la ventana, que obliga a re-anclar las
-    constantes de reproducción (lo que costó la tarea 68). Esa es una decisión de
-    política y de plata, no algo que se cambia de paso. Lo que sí hace falta hoy es
-    que **deje de ser invisible**, y eso es lo que hace este banner.
+    **El default propio es ``strict=False``, pero en producción manda el del caller:**
+    ``announce_artifacts`` pasa ``strict_continuity``, que sigue a ``strict``, así que
+    los 26 lectores del cohorte **sí abortan** salvo con ``--allow-stale-artifacts``.
+    Eso lo cambió la **tarea 111** cuando reparó el hueco; hasta entonces el default
+    suelto era lo único que había y se dejaba en `False` a propósito, porque prenderlo
+    habría frenado las 26 corridas por un defecto sin impacto medido.
+
+    **Si acusa un hueco y lo vas a reparar, leé esto antes (tarea 117).** Reparar
+    inserta barras **hacia atrás**, y eso deja desalineado a todo lo que se DERIVA del
+    cohorte — en particular el store de señales PIT, que se computó cuando esa fecha no
+    existía. La 111 reparó el 2026-08-28 en 457 artefactos y no recomputó: durante tres
+    días **ningún harness del repo pudo correr**, porque el guard de cobertura (T86) lo
+    acusaba como *«el store llega al …»*, que se lee como atraso de cola y no como lo
+    que era. El costo real de recomputar fue de segundos (102 evaluaciones); el costo
+    de no hacerlo fue que nadie pudo medir nada hasta que alguien lo encontró de casualidad.
+    **Reparar el cohorte incluye correr ``scripts/precompute_pit_signals.py`` sobre los
+    universos afectados y declarar la muestra resultante.**
     """
     fuera = cross_period_gaps(bars_by)
     salida = file if file is not None else sys.stdout
@@ -784,10 +794,22 @@ class SignalStoreGapError(RuntimeError):
 # afuera, así que se agrupan y se nombran por lo que se puede afirmar (tarea 105).
 SIN_ARTEFACTO = "no hay artefacto"
 ARTEFACTO_ILEGIBLE = "el artefacto existe pero no se puede leer (JSON roto o schema viejo)"
+# Cuarto estado — tarea 117. Si el store llega hasta la ÚLTIMA barra y aun así
+# faltan fechas, el hueco es **interior**: no viene corriendo detrás, le metieron
+# una barra HACIA ATRÁS. Es lo que dejó la reparación de la 111 al insertar el
+# 2026-08-28 en 457 artefactos sin recomputar la señal. Decir "el store llega al
+# …" ahí manda a leerlo como atraso de cola y tapa la causa.
+HUECO_INTERIOR = "HUECO INTERIOR"
 
 
 def signal_store_gaps(bars_by: dict[str, list], period: str, warmup: int) -> dict[str, tuple[int, str]]:
-    """``{ticker: (fechas sin cubrir, la última que sí)}`` — vacío si el store cubre todo.
+    """``{ticker: (fechas sin cubrir, motivo)}`` — vacío si el store cubre todo.
+
+    El segundo campo es **la última fecha cubierta** cuando el store viene corriendo
+    detrás, y un **motivo** en los otros tres casos: sin artefacto, artefacto
+    ilegible, o ``HUECO_INTERIOR`` (tarea 117) cuando el store llega hasta la última
+    barra y aun así faltan fechas — o sea que a alguien le insertaron una barra
+    vieja después del precómputo. Los cuatro piden acciones distintas.
 
     Compara contra las **fechas crudas** del artefacto, no contra las señales que
     el loader se queda: los loaders filtran a señal *truthy*
@@ -831,7 +853,19 @@ def signal_store_gaps(bars_by: dict[str, list], period: str, warmup: int) -> dic
             continue
         sin_cubrir = [b[0] for b in bars[warmup:] if b[0] not in cubiertas]
         if sin_cubrir:
-            faltantes[t] = (len(sin_cubrir), max(cubiertas))
+            ultima = max(cubiertas)
+            # Atraso de cola vs hueco interior (tarea 117): los separa comparar el
+            # final del store contra la última barra, y la distinción importa porque
+            # la CAUSA es otra — atrás es "no se corrió el precómputo todavía";
+            # agujereado es "alguien insertó una barra vieja después del precómputo".
+            if ultima >= bars[-1][0]:
+                faltantes[t] = (
+                    len(sin_cubrir),
+                    f"{HUECO_INTERIOR} desde {sin_cubrir[0]} — el store llega al {ultima}, "
+                    f"o sea hasta la última barra: esa fecha se insertó DESPUÉS del precómputo",
+                )
+            else:
+                faltantes[t] = (len(sin_cubrir), ultima)
     return faltantes
 
 
@@ -864,7 +898,8 @@ def announce_signal_store(
     for t, (cuantas, detalle) in peor[:5]:
         # El segundo campo es una fecha ("el store llega al …") o un motivo, según
         # si hay artefacto o no. Distinguirlos importa porque la acción difiere.
-        como = detalle if detalle in (SIN_ARTEFACTO, ARTEFACTO_ILEGIBLE) else f"el store llega al {detalle}"
+        es_motivo = detalle in (SIN_ARTEFACTO, ARTEFACTO_ILEGIBLE) or detalle.startswith(HUECO_INTERIOR)
+        como = detalle if es_motivo else f"el store llega al {detalle}"
         print(f"  {t}: faltan {cuantas} fecha(s); {como}", file=salida)
     print(
         "  AVISO: esas fechas quedan sin señal, así que la corrida mide sobre una "

@@ -21,6 +21,7 @@ import pytest
 
 from analysis.harness_config import (
     ARTEFACTO_ILEGIBLE,
+    HUECO_INTERIOR,
     SIN_ARTEFACTO,
     SignalStoreGapError,
     announce_signal_store,
@@ -261,3 +262,53 @@ def test_el_abort_cubre_las_dos_excepciones():
         if "announce_signal_store(" in txt and "SignalStoreGapError" not in txt
     ]
     assert malos == [], f"no atrapan SignalStoreGapError: {malos}"
+
+
+# ── Hueco interior vs atraso de cola — Tarea 117 ─────────────────────────────
+
+
+def test_el_hueco_INTERIOR_no_se_reporta_como_atraso_de_cola(store):
+    """Tarea 117 — los dos casos se veían iguales y piden lo mismo por casualidad.
+
+    La 111 reparó 457 artefactos `10y` **insertando** el 2026-08-28, una rueda que
+    faltaba, y nadie recomputó la señal. Resultado: el store llega hasta la última
+    barra y **aun así** falta una fecha, adentro. El mensaje viejo decía *"el store
+    llega al <última>"*, que se lee como *"viene corriendo detrás"* — y ahí la causa
+    es la contraria: le metieron una barra vieja **después** del precómputo.
+    """
+    # El store cubre todo MENOS un día del medio, y llega hasta el final.
+    fechas = _dias(6)
+    store("AAA", [d for d in fechas if d != "2026-01-04"])
+    gaps = signal_store_gaps({"AAA": _bars(fechas)}, "10y", 2)
+    cuantas, detalle = gaps["AAA"]
+    assert cuantas == 1
+    assert detalle.startswith(HUECO_INTERIOR), detalle
+    assert "2026-01-04" in detalle, "tiene que nombrar la fecha del hueco, no sólo el estado"
+    # Y lo que NO puede decir: que el store venga atrasado, porque no lo está.
+    assert not detalle.startswith("2026-"), "un motivo, no una fecha suelta"
+
+
+def test_el_atraso_de_cola_SIGUE_reportandose_como_atraso(store):
+    """La contraprueba, que es la mitad que suele faltar: el caso de la 86 no cambia.
+
+    Sin esto, hacer que todo caiga en `HUECO_INTERIOR` pasaría en verde y el guard
+    diría la causa equivocada para el caso que originalmente vino a cubrir.
+    """
+    store("AAA", _dias(4))
+    cuantas, detalle = signal_store_gaps({"AAA": _bars(_dias(6))}, "10y", 2)["AAA"]
+    assert cuantas == 2
+    assert detalle == "2026-01-04", detalle  # la última cubierta, no un motivo
+    assert not detalle.startswith(HUECO_INTERIOR)
+
+
+def test_el_anuncio_no_dice_llega_al_cuando_el_hueco_es_INTERIOR(store, capsys):
+    """El formateo tiene su propio camino: `signal_store_gaps` puede estar bien y el
+    banner seguir imprimiendo *"el store llega al HUECO INTERIOR desde …"*, que es
+    exactamente el defecto de la 105 una vuelta más arriba."""
+    fechas = _dias(6)
+    store("AAA", [d for d in fechas if d != "2026-01-04"])
+    with pytest.raises(SignalStoreGapError):
+        announce_signal_store({"AAA": _bars(fechas)}, "10y", 2, strict=True)
+    salida = capsys.readouterr().out
+    assert HUECO_INTERIOR in salida
+    assert f"llega al {HUECO_INTERIOR}" not in salida
