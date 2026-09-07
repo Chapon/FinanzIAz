@@ -245,6 +245,24 @@ SCHEMA: dict[str, SettingSpec] = {
     # `covid_2020`**, con costo en `bull_normal` y neutro en `bear_2022`. Y es
     # monótono en lo profundo del recorte — a 0.50 el alivio era de sólo −0.6 pp.
     # Ver `docs/f025_validar_t121_2026-09-07.md`.
+    #
+    # **ESTE VALOR RESPONDE A UNA PREFERENCIA DE RIESGO DECLARADA, NO A UN CRITERIO
+    # CUANTITATIVO** (tarea 124, decisión de Chapa 2026-09-07). La preferencia, con
+    # los números que la sostienen: *pagar **0,29 pp de CAGR** a cambio de **4,2 pp
+    # menos de drawdown**.* Eso es política, no una hipótesis a testear — un harness
+    # puede decir si el alivio existe y de dónde viene (la 121 lo dijo), pero **no si
+    # vale la pena pagarlo**.
+    #
+    # **Y no se puede validar out-of-sample con la muestra que hay, medido:** el
+    # **99,2%** del beneficio está antes de 2022, porque las dos únicas caídas rápidas
+    # de los 10 años son `2018Q4` y `covid_2020` y las dos caen en la primera mitad;
+    # la única ventana de stress posterior (`bear_2022`, bajista lento) da −0.07 pp.
+    # Un hold-out temporal dejaría el test set **sin un solo evento del tipo que este
+    # flag existe para amortiguar**, y devolvería un *"no se detecta"* que NO es
+    # evidencia en contra. Ver `docs/f025_muestra_t124_2026-09-07.md`.
+    #
+    # **Lo que eso cuesta, dicho:** no hay nada que se dispare solo si el alivio
+    # desaparece. Se re-mide cuando la muestra incorpore una caída rápida nueva.
     "paper_regime_scale_enabled": SettingSpec(
         bool,
         True,

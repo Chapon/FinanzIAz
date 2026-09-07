@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from config.settings_manager import DEFAULTS, settings
+from config.settings_manager import DEFAULTS, SCHEMA, settings
 from paper_trading.strategies import (
     _regime_size_factor,
     generate_trades_analyze_single,
@@ -157,3 +157,27 @@ def test_un_settings_sin_la_clave_cae_al_default_del_SCHEMA(monkeypatch):
     f = _regime_size_factor(lambda _t: _spy_df(list(np.linspace(300.0, 100.0, 260))))
     assert f == pytest.approx(DEFAULTS["paper_regime_scale_factor"])
     assert f < 1.0, "la serie declinante tiene que dar risk-off; si no, el test no prueba nada"
+
+
+def test_el_factor_se_declara_como_PREFERENCIA_y_no_como_criterio():
+    """Tarea 124 — el valor 0.25 **no pasa** el kill-criteria de julio en el marco de
+    la cuenta (tarea 121: C1 y C3 fallan) y se sostiene por el alivio de drawdown.
+    Esa distinción tiene que estar escrita donde se lee, o el próximo que mire el flag
+    va a suponer que pasó un criterio.
+
+    Y no se puede validar out-of-sample: el 99,2% del beneficio es pre-2022 porque las
+    dos únicas caídas rápidas de la muestra caen en la primera mitad. Un test no puede
+    fijar una preferencia, pero **sí** puede fijar que esté declarada como tal.
+    """
+    doc = SCHEMA["paper_regime_scale_factor"].doc or ""
+    fuente = (Path(__file__).resolve().parent.parent / "config" / "settings_manager.py").read_text(
+        encoding="utf-8"
+    )
+    ref = (Path(__file__).resolve().parent.parent / "docs" / "SETTINGS_REFERENCE.md").read_text(
+        encoding="utf-8"
+    )
+    assert "0.25" in doc, "el doc del flag dejó de nombrar el valor vivo"
+    for texto in (fuente, ref):
+        assert "PREFERENCIA DE RIESGO" in texto, "no queda dicho que es preferencia y no criterio"
+    # Y la contraparte honesta: que se diga qué se pierde por no tener criterio.
+    assert "nada se dispara solo" in ref.lower() or "no hay nada que se dispare solo" in fuente.lower()
