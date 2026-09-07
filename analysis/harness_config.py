@@ -66,6 +66,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -680,6 +681,104 @@ def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
     return tuple(fuera)
 
 
+# ── Escala MIXTA adentro de un frame — Tarea 113 ────────────────────────────
+#
+# MNST tuvo un split 2:1 y su `10y` quedó con las barras **pre-split y post-split
+# intercaladas**: entre el 2026-07-20 y el 2026-08-11 el close alterna siete veces
+# entre ~47 y ~95. No es un escalón (eso sería un split sin ajustar): son las dos
+# escalas mezcladas.
+#
+# **Ningún guard anterior puede verlo, y son cuatro:** `stale_artifacts` mira **las
+# puntas** (la última barra está bien), `artifact_window` también, `cross_period_gaps`
+# (T110) mira **qué fechas existen** y no cuánto valen, y `scale_is_disputed` (T63/T64)
+# es **bilateral** —cruza dos frames del mismo ticker— y MNST tiene un solo `1d`.
+#
+# **Por qué el umbral de magnitud que el enunciado daba por calibrar NO sirve.**
+# Medido sobre los 506 frames: **110 tickers** tienen algún salto >30% y son casi
+# todos reales — MRVL +32,5% el 2026-06-02 coincide con el vivo al centavo. Y el
+# salto que **se deshace** tampoco alcanza: acusa a 9, y 8 son eventos reales (el
+# crash de COVID en NCLH/CVNA/DRI/MGM/OKE, PG&E 2018, el IPO de HOOD, el panel de
+# BIIB). Un −40% seguido de un +40% real existe.
+#
+# **Lo que sí discrimina es la conjunción de dos hechos mecánicos:**
+#   1. la serie **oscila**: hay >= ``MIXED_SCALE_MIN_PAIRS`` saltos que se deshacen
+#      entre sí en pocas barras — un precio real no vuelve al nivel anterior una y
+#      otra vez;
+#   2. todos los saltos son **el mismo factor**: el spread relativo de ``|log r||`` es
+#      chico, porque hay UNA razón de escala y no volatilidad.
+# Medido sobre los 506: MNST da **6** pares y spread **0.031**; el siguiente más alto
+# tiene **2** pares. La separación es de un factor 3 en el eje que decide.
+MIXED_SCALE_JUMP = 0.30  # qué cuenta como salto (mismo umbral que el triage del enunciado)
+MIXED_SCALE_WINDOW = 30  # barras dentro de las cuales un salto puede "deshacerse"
+MIXED_SCALE_UNDO_TOL = 0.10  # |log(r1*r2)| bajo esto ⇒ el segundo salto deshace al primero
+MIXED_SCALE_MIN_PAIRS = 3  # 1 par = crash y rebote; 2 = semana volátil; 3+ = oscila
+MIXED_SCALE_MAX_SPREAD = 0.10  # spread relativo de |log r| ⇒ un solo factor de escala
+
+
+@dataclass(frozen=True)
+class MixedScale:
+    """Un frame con dos escalas alternándose adentro (tarea 113)."""
+
+    ticker: str
+    n_pairs: int
+    factor: float
+    spread: float
+    first_date: str
+
+    def __str__(self) -> str:
+        return (
+            f"{self.ticker}: {self.n_pairs} saltos que se deshacen, todos a factor "
+            f"~{self.factor:.2f} (spread {self.spread:.3f}), desde {self.first_date}"
+        )
+
+
+def mixed_scale_frames(
+    bars_by: dict[str, list],
+    *,
+    jump: float = MIXED_SCALE_JUMP,
+    window: int = MIXED_SCALE_WINDOW,
+    undo_tol: float = MIXED_SCALE_UNDO_TOL,
+    min_pairs: int = MIXED_SCALE_MIN_PAIRS,
+    max_spread: float = MIXED_SCALE_MAX_SPREAD,
+) -> tuple[MixedScale, ...]:
+    """Los frames con dos escalas intercaladas — Tarea 113. Puro, sin disco ni red.
+
+    Hermano del guard de continuidad de la 110 por el otro eje: aquél cubre **qué
+    barras existen**, éste **cuánto valen**. Ver el bloque de arriba para por qué un
+    umbral de magnitud solo (o el round-trip solo) no distingue esto de un crash.
+    """
+    fuera: list[MixedScale] = []
+    umbral = math.log(1.0 + jump)
+    for t, bars in bars_by.items():
+        saltos: list[tuple[int, str, float]] = []
+        for i in range(1, len(bars)):
+            p0, p1 = bars[i - 1][1], bars[i][1]
+            if p0 > 0 and p1 > 0:
+                r = math.log(p1 / p0)
+                if abs(r) > umbral:
+                    saltos.append((i, bars[i][0], r))
+        if len(saltos) < min_pairs + 1:
+            continue
+        pares = [(a, z) for a, z in pairwise(saltos) if z[0] - a[0] <= window and abs(a[2] + z[2]) < undo_tol]
+        if len(pares) < min_pairs:
+            continue
+        mags = [abs(s[2]) for s in saltos]
+        media = statistics.fmean(mags)
+        spread = (statistics.pstdev(mags) / media) if media else 0.0
+        if spread > max_spread:
+            continue
+        fuera.append(
+            MixedScale(
+                ticker=t,
+                n_pairs=len(pares),
+                factor=math.exp(media),
+                spread=spread,
+                first_date=pares[0][0][1],
+            )
+        )
+    return tuple(sorted(fuera, key=lambda m: -m.n_pairs))
+
+
 def announce_continuity(
     bars_by: dict[str, list],
     *,
@@ -783,6 +882,50 @@ def retired_tickers(bars_by: dict[str, list], universe_file: str | None = None) 
     return frozenset(t for t in bars_by if t.upper() not in vivos)
 
 
+def announce_mixed_scale(
+    bars_by: dict[str, list],
+    *,
+    strict: bool = False,
+    file: TextIO | None = None,
+) -> tuple[MixedScale, ...]:
+    """Declara los frames con **dos escalas intercaladas** — Tarea 113.
+
+    Va pegado a ``announce_continuity`` y comparte su bandera porque son el mismo
+    par de preguntas sobre el medio del frame: aquélla cubre **qué barras existen**,
+    ésta **cuánto valen**. Y va adentro de ``announce_artifacts`` por el motivo de
+    siempre: los 26 lectores ya la llaman, así que el guard llega a los 26 sin que
+    nadie tenga que acordarse de cablear uno nuevo.
+
+    **Aborta con ``strict``**, y el impacto está medido antes de decidirlo: sobre los
+    506 frames ``10y`` acusa a **uno solo** (MNST, con su split 2:1 intercalado), que
+    **no está** en el universo vivo ni en el de 41 ni tuvo posición nunca. El único
+    lector que lo alcanza es el T12, vía ``sp500_universe.txt``. Un frame con dos
+    escalas usado en silencio es peor que una corrida frenada.
+    """
+    fuera = mixed_scale_frames(bars_by)
+    salida = file if file is not None else sys.stdout
+    if not fuera:
+        print("Escala del cohorte — sin frames con escalas mezcladas.\n", file=salida)
+        return fuera
+    print(f"Escala del cohorte — {len(fuera)} frame(s) con DOS escalas intercaladas:", file=salida)
+    for m in fuera:
+        print(f"  {m}", file=salida)
+    print(
+        "  AVISO: no es un split sin ajustar (eso sería un escalón): son las dos "
+        "escalas mezcladas adentro del mismo frame. Ningún otro guard puede verlo — "
+        "las puntas están bien, las fechas están todas, y no hay otro período contra "
+        "el cual cruzar la escala. Hay que RE-BAJAR el frame.\n",
+        file=salida,
+    )
+    if strict:
+        raise StaleArtifactError(
+            f"{len(fuera)} frame(s) con escalas mezcladas (peor: {fuera[0].ticker}, "
+            f"{fuera[0].n_pairs} saltos a factor ~{fuera[0].factor:.2f}). Re-bajar el "
+            "artefacto, o strict=False declarándolo en el pre-registro."
+        )
+    return fuera
+
+
 def announce_artifacts(
     bars_by: dict[str, list],
     *,
@@ -872,6 +1015,7 @@ def announce_artifacts(
         print("  todos alineados (en las PUNTAS: ver la continuidad abajo).\n", file=salida)
         if continuity:
             announce_continuity(bars_by, strict=strict_continuity, file=salida)
+            announce_mixed_scale(bars_by, strict=strict_continuity, file=salida)
         return fuera
     for s in fuera:
         print(f"  {s}", file=salida)
@@ -883,6 +1027,7 @@ def announce_artifacts(
     )
     if continuity:
         announce_continuity(bars_by, strict=strict_continuity, file=salida)
+        announce_mixed_scale(bars_by, strict=strict_continuity, file=salida)
     if strict:
         raise StaleArtifactError(
             f"{len(fuera)} artefacto(s) fuera del cohorte ({ref}): "

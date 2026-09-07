@@ -20,10 +20,13 @@ import pytest
 
 from analysis.harness_config import (
     MissingSession,
+    StaleArtifactError,
     announce_artifacts,
     announce_continuity,
+    announce_mixed_scale,
     artifact_window,
     cross_period_gaps,
+    mixed_scale_frames,
     stale_artifacts,
 )
 
@@ -210,3 +213,74 @@ def test_se_puede_apagar_para_el_que_no_lo_quiera(referencia, capsys):
     referencia({"AAA": _SEMANA})
     announce_artifacts({"AAA": _bars(_CON_HUECO)}, continuity=False)
     assert "Continuidad del cohorte" not in capsys.readouterr().out
+
+
+# ── Escala MIXTA adentro de un frame — Tarea 113 ─────────────────────────────
+
+
+def _serie(precios: list[float]) -> list[tuple]:
+    return [(f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}", p, p, p, p) for i, p in enumerate(precios)]
+
+
+def _mnst_sintetico() -> list[tuple]:
+    """La firma real de MNST: dos escalas (~47 y ~95) alternandose siete veces."""
+    base = [95.0] * 20
+    for _ in range(4):
+        base += [47.0, 95.0]
+    return _serie(base + [95.0] * 20)
+
+
+def _crash_y_rebote() -> list[tuple]:
+    """La firma de un evento REAL: cae fuerte y rebota UNA vez (COVID, un IPO, un
+    panel de FDA). Los 506 frames tienen 110 tickers con saltos >30% y casi todos
+    son esto."""
+    return _serie([100.0] * 20 + [55.0, 88.0] + [90.0] * 20)
+
+
+def test_acusa_a_la_escala_mixta():
+    fuera = mixed_scale_frames({"MNST": _mnst_sintetico()})
+    assert len(fuera) == 1
+    assert fuera[0].ticker == "MNST"
+    assert fuera[0].factor == pytest.approx(2.0, abs=0.05), "tiene que reconocer el split 2:1"
+
+
+def test_NO_acusa_a_un_crash_y_rebote_real():
+    """La contraprueba que define la tarea. El enunciado daba el umbral de magnitud
+    por calibrar; medido sobre los 506, un umbral de magnitud solo acusa a **110**
+    tickers y el round-trip solo a **9**, de los cuales **8 son reales** (COVID en
+    NCLH/CVNA/DRI/MGM/OKE, PG&E 2018, el IPO de HOOD, el panel de BIIB).
+
+    Lo que discrimina es la CONJUNCION: que la serie oscile varias veces **y** que
+    todos los saltos sean el mismo factor. Un crash y su rebote cumplen lo primero
+    una vez y no lo segundo.
+    """
+    assert mixed_scale_frames({"REAL": _crash_y_rebote()}) == ()
+
+
+def test_UN_solo_round_trip_no_alcanza():
+    """1 par = crash y rebote. 2 = semana volatil. Recien 3+ es "oscila". Sin este
+    test, bajar `min_pairs` a 1 pasaria en verde y acusaria a los ocho reales."""
+    dos_escalas_una_vez = _serie([95.0] * 20 + [47.0, 95.0] + [95.0] * 20)
+    assert mixed_scale_frames(dos_escalas_una_vez and {"X": dos_escalas_una_vez}) == ()
+
+
+def test_oscilar_con_MAGNITUDES_distintas_tampoco_alcanza():
+    """El otro lado de la conjuncion: si oscila pero cada salto es de otro tamaño, es
+    volatilidad, no una escala. Sin esto, sacar el chequeo de spread pasaria en verde.
+    """
+    caotico = _serie([100.0] * 20 + [50.0, 105.0, 62.0, 98.0, 40.0, 95.0] + [95.0] * 20)
+    assert mixed_scale_frames({"CAOS": caotico}) == ()
+
+
+def test_el_anuncio_aborta_con_strict_y_nombra_el_factor(capsys):
+    with pytest.raises(StaleArtifactError):
+        announce_mixed_scale({"MNST": _mnst_sintetico()}, strict=True)
+    salida = capsys.readouterr().out
+    assert "DOS escalas intercaladas" in salida
+    assert "RE-BAJAR" in salida, "tiene que decir cual es la accion"
+
+
+def test_el_caso_sano_lo_dice(capsys):
+    """Un guard que solo habla cuando acusa deja al lector sin saber si corrio."""
+    assert announce_mixed_scale({"REAL": _crash_y_rebote()}, strict=True) == ()
+    assert "sin frames con escalas mezcladas" in capsys.readouterr().out
