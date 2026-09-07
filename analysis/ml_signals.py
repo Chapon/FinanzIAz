@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import pandas as pd
 
+from analysis.frames import series
 from config.constants import (
     RSI_HIGH,
     RSI_LOW,
@@ -331,7 +332,7 @@ def detect_market_regime(df: pd.DataFrame) -> MarketContext:
 
     Pure pandas/numpy — no external ML dependency.
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     n = len(close)
     current = float(close.iloc[-1])
 
@@ -462,7 +463,7 @@ def _hmm_observation_matrix(df: pd.DataFrame) -> np.ndarray | None:
     -------
     np.ndarray of shape (n_obs, 2) or None if there is too little clean data.
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     ret = np.log(close / close.shift(1))
     vol = ret.rolling(5).std()
     X = pd.concat([ret.rename("ret"), vol.rename("vol")], axis=1).dropna()
@@ -627,7 +628,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
         compute_sma,
     )
 
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     n = len(close)
     feat = pd.DataFrame(index=df.index)
 
@@ -654,7 +655,7 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Volume ratio
     if "Volume" in df.columns:
-        vol = df["Volume"].squeeze().replace(0, np.nan)
+        vol = series(df, "Volume").replace(0, np.nan)
         vol_sma = vol.rolling(20).mean()
         feat["volume_ratio"] = vol / vol_sma
 
@@ -675,7 +676,7 @@ def _build_labels(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> pd.Ser
     Binary label: 1 if close[t + horizon] > close[t], else 0.
     The last `horizon` rows have NaN labels (future unknown).
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     future_close = close.shift(-horizon)
     result = pd.Series(np.nan, index=close.index, dtype=float)
     valid = future_close.notna()
@@ -1298,7 +1299,7 @@ def _bollinger_score_series(df: pd.DataFrame) -> pd.Series:
     from analysis.technical import compute_bollinger_bands
 
     upper, _, lower = compute_bollinger_bands(df)
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     conds = [
         close < lower * 0.99,  # deep below lower → BUY STRONG
         close <= lower,  # at/under lower   → BUY MODERATE
@@ -1333,10 +1334,10 @@ def _volume_score_series(df: pd.DataFrame) -> pd.Series:
     distribution (SELL); STRONG when the imbalance is ≥2×. Rows without a valid
     20-day volume baseline or without both up- and down-day volume score 0.
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     if "Volume" not in df.columns:
         return pd.Series(0.0, index=close.index)
-    volume = df["Volume"].squeeze().replace(0, np.nan)
+    volume = series(df, "Volume").replace(0, np.nan)
     vol_sma20 = volume.rolling(20).mean()
     ret = close.pct_change()
     pos_vol = volume.where(ret > 0)
@@ -1390,7 +1391,7 @@ def _garch_vol_ratio_series(df: pd.DataFrame) -> pd.Series:
     GARCH expand/contract signal carries, as a plain numeric feature the
     logistic standardises.
     """
-    ret = df["Close"].squeeze().pct_change()
+    ret = series(df, "Close").pct_change()
     short = ret.rolling(10).std()
     long = ret.rolling(60).std()
     return (short / long.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
@@ -1404,7 +1405,7 @@ def _hmm_bullish_series(df: pd.DataFrame) -> pd.Series:
     fails, so the column is always present (a constant column just gets a
     near-zero logistic coefficient).
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     if not _HMM_OK:
         return pd.Series(0.5, index=close.index)
     ret = np.log(close / close.shift(1))
@@ -1436,7 +1437,7 @@ def _xgb_oof_proba_series(df: pd.DataFrame) -> pd.Series:
     by the meta-feature builder. Returns a neutral 0.5 if xgboost/sklearn are
     unavailable.
     """
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     if not (_XGB_OK and _CALIBRATION_OK):
         return pd.Series(0.5, index=close.index)
     feats = _build_features(df)

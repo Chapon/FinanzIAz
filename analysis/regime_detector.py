@@ -37,6 +37,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from analysis.frames import series
+
 # Re-use the project-wide annualisation constant when available; fall back to
 # 252 so this module remains importable in isolation (e.g. notebooks).
 try:
@@ -195,7 +197,7 @@ def detect_regime_series(
     if cfg.sharpe_window < 2 or cfg.vol_window < 2:
         raise ValueError("sharpe_window and vol_window must be >= 2")
 
-    close = market_df["Close"].squeeze().astype(float)
+    close = series(market_df, "Close").astype(float)
     returns = close.pct_change()
 
     sqrt_year = float(cfg.trading_days_per_year) ** 0.5

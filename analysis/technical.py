@@ -22,6 +22,7 @@ import uuid
 import numpy as np
 import pandas as pd
 
+from analysis.frames import series
 from config.constants import (
     REGIME_WEIGHT_MULTIPLIERS,
     RSI_HIGH,
@@ -110,7 +111,7 @@ class AnalysisResult:
 
 def compute_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Relative Strength Index (Wilder smoothing)."""
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -131,7 +132,7 @@ def compute_macd(
     signal: int = 9,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Returns (macd_line, signal_line, histogram)."""
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     ema_fast = close.ewm(span=fast, adjust=False).mean()
     ema_slow = close.ewm(span=slow, adjust=False).mean()
     macd_line = ema_fast - ema_slow
@@ -146,22 +147,22 @@ def compute_bollinger_bands(
     std_dev: float = 2.0,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     """Returns (upper_band, middle_band, lower_band)."""
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     middle = close.rolling(window=period).mean()
     std = close.rolling(window=period).std()
     return middle + std * std_dev, middle, middle - std * std_dev
 
 
 def compute_sma(df: pd.DataFrame, period: int) -> pd.Series:
-    return df["Close"].squeeze().rolling(window=period).mean()
+    return series(df, "Close").rolling(window=period).mean()
 
 
 def compute_ema(df: pd.DataFrame, period: int) -> pd.Series:
-    return df["Close"].squeeze().ewm(span=period, adjust=False).mean()
+    return series(df, "Close").ewm(span=period, adjust=False).mean()
 
 
 def compute_volume_sma(df: pd.DataFrame, period: int = 20) -> pd.Series:
-    return df["Volume"].squeeze().rolling(window=period).mean()
+    return series(df, "Volume").rolling(window=period).mean()
 
 
 # ── Indicator LRU cache ───────────────────────────────────────────────────────
@@ -203,7 +204,7 @@ def _df_fingerprint(df: pd.DataFrame) -> tuple:
     if len(df) == 0:
         return (0, "", "")
     last_ts = str(df.index[-1])
-    close = df["Close"].squeeze() if "Close" in df.columns else None
+    close = series(df, "Close") if "Close" in df.columns else None
     if close is None:
         return (len(df), last_ts, "")
     try:
@@ -498,8 +499,8 @@ def _volume_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     if "Volume" not in df.columns or len(df) < 25:
         return None
 
-    close = df["Close"].squeeze()
-    volume = df["Volume"].squeeze().replace(0, np.nan)
+    close = series(df, "Close")
+    volume = series(df, "Volume").replace(0, np.nan)
     vol_sma = volume.rolling(20).mean()
 
     # Avoid division by zero
@@ -808,7 +809,7 @@ def get_support_resistance(df: pd.DataFrame, window: int = 20) -> dict:
     """Simple swing high/low support and resistance levels."""
     if len(df) < window * 2:
         return {}
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     recent = close.tail(window * 3)
     support = float(recent.rolling(window).min().iloc[-1])
     resistance = float(recent.rolling(window).max().iloc[-1])

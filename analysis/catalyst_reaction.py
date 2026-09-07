@@ -34,6 +34,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from analysis.frames import series
 from config.logging_config import get_logger
 
 log = get_logger(__name__)
@@ -50,7 +51,7 @@ PriceLoader = Callable[[str], "pd.DataFrame | None"]
 def _price_series(df: pd.DataFrame | None, col: str = "Close") -> pd.Series | None:
     if df is None or getattr(df, "empty", True) or col not in df.columns:
         return None
-    s = df[col].squeeze()
+    s = series(df, col)
     try:
         s = s.astype(float)
     except Exception:

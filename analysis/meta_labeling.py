@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from analysis.exit_replay import Bar, atr_series
+from analysis.frames import series
 
 # ── Parámetros de la barrera (§3 del pre-registro — CONGELADOS) ──────────────
 # Son los valores **vivos** del engine (``AtrParams``), no elegidos por
@@ -142,7 +143,7 @@ def _atr_rel(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
     """
     from analysis.atr import compute_atr_series
 
-    close = df["Close"].squeeze()
+    close = series(df, "Close")
     atr = compute_atr_series(df, period)
     if atr is None:
         return pd.Series(np.nan, index=df.index, dtype=float)
@@ -168,7 +169,7 @@ def build_pooled_features(df: pd.DataFrame) -> pd.DataFrame:
     from analysis.ml_signals import _build_features
 
     feat = _build_features(df)
-    close = df["Close"].squeeze().replace(0, np.nan)
+    close = series(df, "Close").replace(0, np.nan)
 
     for col in ("macd_hist", "macd_hist_chg"):
         if col in feat.columns:
@@ -258,7 +259,7 @@ def build_dataset(
 
         atrs = atr_series(bars, ATR_PERIOD)
         feats = build_pooled_features(df)
-        mom = momentum_12_1(df["Close"].squeeze())
+        mom = momentum_12_1(series(df, "Close"))
         # El frame y la lista de barras comparten fechas, pero ``load_bars_and_signals``
         # descarta barras con OHLC no finito → los índices pueden desalinearse.
         # Se indexa por fecha, que es la única clave común confiable.

@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from analysis.frames import series
 from config.constants import (
     GARCH_FORECAST_HORIZON as GARCH_FORECAST_H,
 )
@@ -101,17 +102,15 @@ class GarchForecast:
 
 
 def _close_series(df: pd.DataFrame) -> pd.Series:
-    """La columna ``Close`` SIEMPRE como Series.
+    """La columna ``Close`` SIEMPRE como Series, en ``float64``.
 
-    ``df["Close"].squeeze()`` —que era el idiom acá— devuelve un **escalar** cuando
-    el frame tiene una sola fila, y entonces `.shift`/`.pct_change`/`.head` explotan
-    con AttributeError en pleno scan. `squeeze` se usaba para aplanar el caso de
-    columnas ``Close`` duplicadas; eso se resuelve tomando la primera columna.
+    **Delega en ``analysis.frames.series`` desde la tarea 125.** Esta función es de
+    la tarea 19, que diagnosticó el footgun del ``squeeze()`` y lo arregló **sólo
+    acá**; quedaron 26 llamadas crudas en otros cinco módulos. Se mantiene el nombre
+    —tiene tres call sites en este archivo— y el ``float64``, que sus callers usan
+    (``np.asarray(..., dtype=float)``); lo que se saca es la copia de la lógica.
     """
-    close = df["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    return pd.Series(close, dtype="float64")
+    return series(df, "Close").astype("float64")
 
 
 # ── Memo del fit (GARCH2X) ───────────────────────────────────────────────────
