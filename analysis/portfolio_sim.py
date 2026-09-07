@@ -143,6 +143,10 @@ class PortfolioResult:
     n_no_slot: int = 0  # rechazadas por falta de slot
     n_filtered: int = 0  # rechazadas por el entry_filter (size 0)
     n_no_cash: int = 0  # rechazadas por falta de cash
+    # Entradas cuyo notional quedó TOPADO por el cash disponible (tarea 122). Es
+    # la CAUSA de `n_no_cash`, no el síntoma: cada una sobregira por el monto de
+    # los fees y deja el cash negativo hasta el próximo cierre.
+    n_cash_capped: int = 0
     n_already_open: int = 0  # rechazadas por tener ya el ticker en cartera
     n_gate5_blocked: int = 0  # rechazadas por Gate 5 vivo (anti-whipsaw), T34
     n_gate5b_blocked: int = 0  # rechazadas por Gate 5b vivo (anti-churn), T34
@@ -407,6 +411,8 @@ def simulate_portfolio(
             # Se invierte lo que hay: si el target supera el cash disponible se
             # recorta (no se rechaza — rechazar dejaría cash ocioso Y perdería la
             # entrada). Para el path R2 esto es no-op (notional ≤ base ≤ cash).
+            if notional > cash:
+                res.n_cash_capped += 1
             notional = min(notional, cash)
             if notional <= 0 or not math.isfinite(notional):
                 res.n_no_cash += 1
