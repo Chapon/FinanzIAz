@@ -62,7 +62,26 @@ def build_profiles(tickers: list[str], limit: int = 16) -> dict[str, dict]:
     return profiles
 
 
+def split_by_min_quarters(profiles: dict[str, dict]) -> tuple[dict[str, dict], dict[str, int]]:
+    """Separa los perfiles **usables** de los que no llegan al mínimo — Tarea 126.
+
+    El archivo declaraba ``min_quarters`` en su ``_meta`` y escribía igual los que no
+    lo alcanzan, **con todos los campos en cero**. Producción no se veía afectada —
+    ``SurpriseProfile.is_usable`` y el gate de ``imminent_catalyst`` los descartan y
+    caen al ``basis="reaction"``— pero **cualquier lectura ad-hoc del JSON** ve un
+    ``directional_score: 0.0`` que es indistinguible de un neutral medido sobre 24
+    trimestres. Un archivo que declara un filtro tiene que cumplirlo.
+
+    No se tiran: van a ``_meta.insufficient_history`` con su ``n_quarters``, para no
+    perder el *"se intentó y no había datos"* — que es distinto de *"no se intentó"*.
+    """
+    usables = {t: p for t, p in profiles.items() if p.get("n_quarters", 0) >= MIN_QUARTERS}
+    cortos = {t: int(p.get("n_quarters", 0)) for t, p in profiles.items() if t not in usables}
+    return usables, cortos
+
+
 def _payload(profiles: dict[str, dict], n_tickers: int) -> dict:
+    usables, cortos = split_by_min_quarters(profiles)
     return {
         "_meta": {
             "built_at": datetime.now(timezone.utc).isoformat(),
@@ -71,8 +90,13 @@ def _payload(profiles: dict[str, dict], n_tickers: int) -> dict:
             "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
             "min_quarters": MIN_QUARTERS,
             "n_tickers": n_tickers,
+            # `n_tickers` es cuántos se INTENTARON; `n_profiles` cuántos entraron.
+            # Antes coincidían porque entraban todos, incluidos los que no llegaban
+            # al mínimo — que es justo lo que la 126 vino a cerrar.
+            "n_profiles": len(usables),
+            "insufficient_history": cortos,
         },
-        "profiles": profiles,
+        "profiles": usables,
     }
 
 
