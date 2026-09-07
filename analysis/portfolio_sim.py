@@ -408,12 +408,23 @@ def simulate_portfolio(
                 # de lo abierto) — evita que una σ diminuta concentre la cartera.
                 equity_proxy = cash + sum(ec for _, _, _, ec in open_positions)
                 notional = min(notional, max_weight * equity_proxy)
-            # Se invierte lo que hay: si el target supera el cash disponible se
-            # recorta (no se rechaza — rechazar dejaría cash ocioso Y perdería la
-            # entrada). Para el path R2 esto es no-op (notional ≤ base ≤ cash).
-            if notional > cash:
+            # Se invierte lo que se puede PAGAR, no lo que se tiene — Tarea 123.
+            #
+            # La T10 cambió acá "rechazar" por "recortar" (rechazar dejaba cash ocioso
+            # Y perdía la entrada). El recorte quedó **corto por los fees**: topaba el
+            # *gross* al cash y `buy_cost` cobra comisión y slippage **encima**, así que
+            # una entrada topada gastaba `cash × (1+fees)` y dejaba el cash **negativo**
+            # hasta el próximo cierre, rechazando todo mientras tanto. Medido con un
+            # caso mínimo: capital 10.000 → invertido 10.015.
+            #
+            # No era un nivel común: muerde **sólo** a los brazos con `size_weight`
+            # (267 de 1283 entradas en `inverse_vol`, **301 en el oráculo**, 0 en el
+            # baseline y en los de régimen). Para el path R2 sigue siendo no-op
+            # (`notional ≤ base ≤ cash`).
+            asequible = cash / (1.0 + costs.commission + costs.slippage)
+            if notional > asequible:
                 res.n_cash_capped += 1
-            notional = min(notional, cash)
+            notional = min(notional, asequible)
             if notional <= 0 or not math.isfinite(notional):
                 res.n_no_cash += 1
                 continue

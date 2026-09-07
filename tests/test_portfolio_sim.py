@@ -560,3 +560,83 @@ def test_el_aviso_va_a_STDERR_y_no_ensucia_el_json(capsys):
     cap = capsys.readouterr()
     assert "tarea 118" in cap.err
     assert "tarea 118" not in cap.out
+
+
+# ── No se puede gastar plata que no hay — Tarea 123 ──────────────────────────
+
+
+def _bars_quietos(n: int, precio: float = 100.0) -> list[tuple]:
+    return [(_d(i), precio, precio, precio, precio) for i in range(n)]
+
+
+_FEES = CostModel(commission=0.001, slippage=0.0005)  # los del harness
+
+
+def test_una_entrada_topada_NO_puede_gastar_mas_que_el_capital():
+    """Tarea 123 — el defecto: `min(notional, cash)` topaba el **gross** y `buy_cost`
+    cobraba los fees **encima**, asi que una entrada topada gastaba `cash x (1+fees)`
+    y dejaba el cash NEGATIVO hasta el proximo cierre, rechazando todo mientras tanto.
+
+    Medido antes del arreglo con este mismo caso: capital 10.000 -> invertido 10.015.
+    """
+    bars = _bars_quietos(80)
+    bars_by = {t: bars for t in ("AAA", "BBB", "CCC")}
+    res = simulate_portfolio(
+        [("AAA", 30), ("BBB", 31), ("CCC", 32)],
+        bars_by,
+        {t: {} for t in bars_by},
+        max_positions=3,
+        initial_capital=10_000.0,
+        cap_days=40,
+        atr_p=NO_ATR,
+        so_params=ScaleOutParams(),
+        costs=_FEES,
+        size_weight=lambda _t, _d: 100.0,  # fuerza el tope por cash
+        max_weight=1e9,
+    )
+    assert res.n_cash_capped > 0, "el fixture tiene que topar; si no, no prueba nada"
+    invertido = sum(t.invested for t in res.trades)
+    assert invertido <= 10_000.0 + 1e-9, f"sobregiro de {invertido - 10_000.0:,.2f}"
+
+
+def test_topar_sigue_siendo_LEGITIMO_y_la_entrada_no_se_pierde():
+    """La contraprueba: el arreglo no es "rechazar cuando no alcanza" — eso es lo que
+    la T10 ya habia corregido una vez, porque dejaba cash ocioso Y perdia la entrada.
+    Se sigue invirtiendo lo que se puede pagar."""
+    bars = _bars_quietos(80)
+    res = simulate_portfolio(
+        [("AAA", 30)],
+        {"AAA": bars},
+        {"AAA": {}},
+        max_positions=3,
+        initial_capital=10_000.0,
+        cap_days=40,
+        atr_p=NO_ATR,
+        so_params=ScaleOutParams(),
+        costs=_FEES,
+        size_weight=lambda _t, _d: 100.0,
+        max_weight=1e9,
+    )
+    assert res.n_taken == 1, "la entrada topada se toma, no se descarta"
+    assert res.n_no_cash == 0
+    assert res.trades[0].invested > 9_900.0, "y se invierte casi todo, no una miseria"
+
+
+def test_sin_fees_el_tope_es_el_cash_entero():
+    """Sin costos, `cash / (1+0) == cash`: el arreglo no le saca nada a quien no paga
+    fees. Sin esto, dividir por una constante equivocada pasaria en verde."""
+    bars = _bars_quietos(80)
+    res = simulate_portfolio(
+        [("AAA", 30)],
+        {"AAA": bars},
+        {"AAA": {}},
+        max_positions=3,
+        initial_capital=10_000.0,
+        cap_days=40,
+        atr_p=NO_ATR,
+        so_params=ScaleOutParams(),
+        costs=NO_COST,
+        size_weight=lambda _t, _d: 100.0,
+        max_weight=1e9,
+    )
+    assert res.trades[0].invested == pytest.approx(10_000.0)
