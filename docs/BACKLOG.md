@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 63 — Tarea 122 (T10-NOCASH) CERRADA 2026-09-07 — la premisa era FALSA, y buscando por qué apareció un defecto mayor** (`analysis/portfolio_sim.py`, `scripts/run_sizing_exposure_t10_t20.py`). Suite Windows **2729 passed, 3 skipped**, ruff limpio. La próxima es la **123**.
+- **WIP 63 — Tarea 122 (T10-NOCASH) CERRADA 2026-09-07 — la premisa era FALSA, y buscando por qué apareció un defecto mayor** (`b846254`, `analysis/portfolio_sim.py`, `scripts/run_sizing_exposure_t10_t20.py`). Suite Windows **2729 passed, 3 skipped**, ruff limpio. La próxima es la **123**.
   - **La premisa no se sostiene: en el marco publicado `n_no_cash = 0` en los ocho brazos.** El veredicto de −3,76 pp de la T10 vive a **5 slots sobre 41 tickers**, y ahí ningún brazo perdió una sola entrada por falta de cash. Los 112 rechazos que vio la 118 son del marco **vivo** (10 slots, 127 tickers), que la T10 nunca usó. **La T10 no midió ningún brazo con handicap.**
   - **Es la segunda tarea seguida cuyo enunciado se cae al medirlo** (la 118 culpaba a `max_weight`, ésta al handicap de la T10). Las dos las escribí yo a partir de un síntoma, y en las dos el mecanismo real estaba un nivel más abajo.
   - **Y buscando por qué el rechazo aparecía a 10 slots y no a 5, salió el defecto de verdad → tarea 123, severidad ALTA.** `simulate_portfolio` topa el **gross** al cash (`notional = min(notional, cash)`) y después cobra los fees **encima**, así que una entrada topada gasta `cash × (1+fees)`. Probado con un caso mínimo: capital 10.000, invertido **10.015**. El cash queda **negativo** y rechaza todo hasta el próximo cierre — un solo sobregiro cascadea en los 112 rechazos.
