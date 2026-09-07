@@ -161,6 +161,11 @@ def summarise(name: str, res: PortfolioResult, base: PortfolioResult | None) -> 
         "n_taken": res.n_taken,
         "n_filtered": res.n_filtered,
         "n_no_slot": res.n_no_slot,
+        # Tarea 115 — el §5 del pre-registro los pide como sanity: que los gates
+        # MUERDAN (>0) y que muerdan IGUAL en los siete brazos, que es la prediccion
+        # falsable del §3 de la 36. Sin publicarlos no hay forma de verificarlo.
+        "n_gate5_blocked": res.n_gate5_blocked,
+        "n_gate5b_blocked": res.n_gate5b_blocked,
         "by_regime": regime_breakdown(res),
         "weights": weight_stats(res),
     }
@@ -207,6 +212,12 @@ def main(argv: list[str] | None = None) -> int:
         default=HARNESS_FILL_MODE,
         help=f"'{LEGACY_FILL_MODE}' reproduce el veredicto publicado "
         f"(look-ahead en el fill de la barrera — Tarea 33)",
+    )
+    p.add_argument(
+        "--live-gates",
+        action="store_true",
+        help="modela los gates de re-entrada del engine (Gate 5 anti-whipsaw + Gate 5b "
+        "anti-churn, T34). Default OFF ⇒ reproduce la corrida publicada. Tarea 115",
     )
     p.add_argument(
         "--allow-stale-artifacts",
@@ -256,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         window=artifact_window(bars_by),
         verdict_max_positions=LEGACY_MAX_POSITIONS,
         fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
     )
     print(
         f"Tickers: {len(bars_by)} · entradas: {len(entries)} · "
@@ -273,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
         regime_of=regime_for_date,
         allow_reentry_while_open=False,  # engine-faithful (tarea 9), §2 del pre-registro
         fill_mode=args.fill_mode,
+        live_gates=args.live_gates,
     )
 
     def build_arm(cfg: dict):
@@ -390,6 +403,23 @@ def main(argv: list[str] | None = None) -> int:
         f"{_f(o.get('delta_sharpe'), 8, 2)}{_f(o.get('delta_cagr'), 9, 2, '%')}"
         f"{_f(o['max_dd'], 8, 1, '%')}{'—':>7}{o['n_taken']:>7}{_f(o['exposure'], 7, 0, '%')}{'val':>7}"
     )
+
+    if args.live_gates:
+        # No es decorativo: un gate que no bloquea nada no esta midiendo su eje, y
+        # que los siete bloqueen DISTINTO refutaria el §3 del doc de la tarea 36.
+        print("\nGates de re-entrada (tarea 115) — bloqueos por brazo:")
+        for name in CANDIDATE_ARMS:
+            s = summaries[name]
+            print(f"  {name:<18} Gate 5: {s['n_gate5_blocked']:>5}   Gate 5b: {s['n_gate5b_blocked']:>5}")
+        g5 = {summaries[n]["n_gate5_blocked"] for n in CANDIDATE_ARMS}
+        g5b = {summaries[n]["n_gate5b_blocked"] for n in CANDIDATE_ARMS}
+        muerden = bool(g5 - {0})
+        mismo = len(g5) == 1 and len(g5b) == 1
+        print(f"  [{'OK  ' if muerden else 'FALLA'}] los gates muerden (§5.4 del pre-registro)")
+        print(
+            f"  [{'OK  ' if mismo else 'FALLA'}] los siete bloquean el MISMO conjunto "
+            f"(§5.5 — la prediccion falsable de la tarea 36)"
+        )
 
     print("\nInvariantes (deben pasar ANTES de leer el veredicto):")
     for name in CANDIDATE_ARMS:

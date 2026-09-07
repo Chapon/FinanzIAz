@@ -37,6 +37,13 @@ re-corrida que hubo desde entonces —la de la T33— quedó **por debajo del um
 los dos modos de fill**. Eso no lo destapó el criterio de esta tarea: apareció al ir a buscar el margen
 de cada veredicto. Va como **tarea 115**, y es lo que sube a T20 al tope.
 
+> **Nota del mismo día (2026-09-07): la 115 ya corrió** (`docs/t20_killgate_t115_2026-09-07.md`).
+> `R2b_f050` **no cumple** el kill-criteria congelado: ΔSharpe **+0.08** contra +0.10, con los gates
+> puestos y sin ellos. **Los gates no son la causa** — en este harness bloquean el **0,78%** de las
+> entradas, no el 21-36%, porque sus entradas están espaciadas 20 barras. La hipótesis del mecanismo
+> correlacionado del §3 queda **sin medir**, no refutada. Y el sanity que la 115 pre-registró sobre el
+> §3 de acá lo **refutó en parte**: ver la corrección en ese §3.
+
 ---
 
 ## 1. El criterio: son dos, no uno, y hay que saber cuál aplica
@@ -89,6 +96,10 @@ remanente.
 **Criterio A: NO se cancela.** El mejor brazo, `C_A4` (la señal no vende nada), sale por barrera mucho
 más que el baseline: **1280 stops + 996 trails + 782 TP contra 503/360/330** (T33 §3). Los brazos
 disparan a tasas muy distintas, así que el desvío no entra como nivel común.
+
+**Medido después (tarea 115), y refuerza la conclusión de abajo:** en los harness con `spacing` los
+gates casi no muerden — **0,78%** de las entradas (10 de 1283) en el T10/T20, contra el 21-36% que el
+banner declara desde la T34. El T7 comparte el `spacing=20`, así que su desvío es del mismo orden.
 
 **Y aun así no se re-lee, por dos razones que no se cancelan entre sí:**
 
@@ -160,7 +171,24 @@ que en ningún otro harness de la serie:**
 - `scale` nunca devuelve 0.0, así que `n_filtered` es 0 en los siete brazos.
 
 **Consecuencia:** entradas idénticas, fechas de salida idénticas y `ret` idéntico en los siete brazos.
-Los gates bloquearían **exactamente los mismos candidatos** en todos. No es "tasas parecidas": es el
+Los gates bloquearían **exactamente los mismos candidatos** en todos.
+
+> ### ⚠ Corrección posterior (2026-09-07, tarea 115): esto vale para los brazos de RÉGIMEN, no para todo el eje
+>
+> La tarea 115 lo puso como **sanity falsable** y lo midió. En la config publicada (5 slots, 41
+> tickers) da idéntico: **10 bloqueos de Gate 5 en los siete brazos**. En la config viva (10 slots,
+> 127 tickers) **no**: `S1_inverse_vol` bloquea **31** y los otros seis **32**, y el oráculo toma 2709
+> trades contra 2706. **El razonamiento estaba escrito más ancho de lo que aguanta.**
+>
+> Lo que falta arriba: con `size_weight` presente el simulador aplica además el **tope por nombre**
+> `min(notional, max_weight * equity_proxy)`, y `equity_proxy` **depende del path**. Cuando ese tope
+> muerde —más candidatos, más presión de cash— los brazos divergen y con ellos el historial de ciclos
+> cerrados que alimenta a Gate 5. La invariancia del `ret` al notional es cierta y **no alcanza**.
+>
+> **Qué sobrevive:** la identidad se sostiene para los brazos de **régimen puro** (`entry_filter` en
+> modo `scale`, sin `size_weight`), que son los que deciden sobre T20, así que **la conclusión de esta
+> tarea sobre T10/T20 no cambia**. Lo que no vale es la forma general *"los harness de sizing"*.
+> Detalle en `docs/t20_killgate_t115_2026-09-07.md` §4.1. No es "tasas parecidas": es el
 mismo conjunto. **T10 no se re-lee** — su NO-SHIP falla por −3.76 y −4.27 pp contra un umbral de
 +1.0 pp, y el desvío es literalmente común.
 

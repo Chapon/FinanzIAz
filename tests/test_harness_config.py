@@ -36,6 +36,7 @@ Cubre:
 
 from __future__ import annotations
 
+import ast
 import re
 import sqlite3
 from pathlib import Path
@@ -322,6 +323,54 @@ def test_runner_exposes_fill_mode_and_defaults_to_the_honest_one(script):
     assert '"--fill-mode"' in txt
     assert f"default={LEGACY_FILL_MODE!r}" not in txt
     assert 'default="resting"' not in txt
+
+
+# ── El flag de gates tiene que estar CABLEADO, no sólo parseado — Tarea 115 ──
+
+GATE_RUNNERS = (
+    "run_anomaly_replay_t11b.py",
+    "run_ranking_t21.py",
+    "run_sizing_exposure_t10_t20.py",
+    "run_stop_price_replay_t26b.py",
+)
+
+
+@pytest.mark.parametrize("script", GATE_RUNNERS)
+def test_live_gates_flag_is_off_by_default(script):
+    """El default OFF es lo que hace que agregar el flag no cambie ningún veredicto
+    publicado — mismo patrón que ``eval_mode`` (26b) y ``fill_mode`` (33)."""
+    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
+    assert '"--live-gates"' in txt
+    # `action="store_true"` ⇒ default False. Un `default=True` seria un cambio de
+    # comportamiento para todo lo publicado, silencioso.
+    assert "default=True" not in txt
+
+
+@pytest.mark.parametrize("script", GATE_RUNNERS)
+def test_live_gates_reaches_BOTH_the_sim_and_the_banner(script):
+    """El modo de fallar que este test cubre: un flag que **parsea y no llega**.
+
+    Si `--live-gates` no se pasa al simulador, el runner imprime "con gates" y corre
+    sin ellos — un numero etiquetado como lo que no es. Y si no se pasa a `announce`,
+    pasa lo contrario: modela los gates y el banner sigue declarandolos como desvio,
+    o sea que el banner **miente en la direccion opuesta**. Las dos mitades importan.
+
+    Por AST y no por grep: `ruff format` parte las llamadas en varias lineas y un
+    substring literal se rompe sin que nada deje de estar cableado (leccion de la 65).
+    """
+    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
+    pasado = [
+        nodo
+        for nodo in ast.walk(ast.parse(txt))
+        if isinstance(nodo, ast.Call)
+        for kw in nodo.keywords
+        if kw.arg == "live_gates" and isinstance(kw.value, ast.Attribute) and kw.value.attr == "live_gates"
+    ]
+    assert len(pasado) >= 2, (
+        f"{script}: `live_gates=args.live_gates` aparece {len(pasado)} vez/veces; "
+        f"hacen falta al menos dos (el simulador y `announce`), si no el banner y "
+        f"la corrida dicen cosas distintas"
+    )
 
 
 def test_replay_library_defaults_to_the_honest_fill():
