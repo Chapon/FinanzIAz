@@ -44,7 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
+from analysis.harness_config import COHORTE_HISTORICO, announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
 
 HORIZONTES = (5, 10, 20)  # ruedas hábiles
@@ -115,7 +115,11 @@ def measure(db: Path | None = None, *, strict_artifacts: bool = True) -> dict:
     # Frescura del cohorte ANTES de medir (tarea 101): lee el mismo sustrato
     # compartido que los 21 runners, así que le corre el mismo guard.
     bars_by = cohort_bars([o["ticker"] for o in senal], PERIODO)
-    announce_artifacts(bars_by, strict=strict_artifacts)
+    # Este instrumento lee una población MÁS ANCHA que el universo vivo (todo lo
+    # que alguna vez se operó), así que declara el cohorte HISTÓRICO: los tickers
+    # retirados están congelados por ciclo de vida, no por un refresh fallido, y
+    # se cuentan aparte en vez de abortar (tarea 109).
+    announce_artifacts(bars_by, strict=strict_artifacts, cohort=COHORTE_HISTORICO)
     ventana = artifact_window(bars_by)
 
     for o in senal:

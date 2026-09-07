@@ -62,7 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from analysis import garch_signals as G
-from analysis.harness_config import announce_artifacts, artifact_window
+from analysis.harness_config import COHORTE_HISTORICO, announce_artifacts, artifact_window
 from data import parquet_cache
 
 PERIOD = "2y"  # el frame que pide el engine (`paper_history_period`)
@@ -111,7 +111,11 @@ def measure(limit: int | None = None, *, strict_artifacts: bool = True) -> dict:
     bars_by = {
         t: [(str(ts)[:10], float(c)) for ts, c in zip(df.index, df["Close"], strict=True)] for t, df in frames
     }
-    announce_artifacts(bars_by, strict=strict_artifacts)
+    # Este instrumento lee una población MÁS ANCHA que el universo vivo (todo lo
+    # que alguna vez se operó), así que declara el cohorte HISTÓRICO: los tickers
+    # retirados están congelados por ciclo de vida, no por un refresh fallido, y
+    # se cuentan aparte en vez de abortar (tarea 109).
+    announce_artifacts(bars_by, strict=strict_artifacts, cohort=COHORTE_HISTORICO)
     ventana = artifact_window(bars_by)
 
     filas: list[dict[str, Any]] = []

@@ -45,7 +45,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from analysis import garch_signals as G
-from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
+from analysis.harness_config import COHORTE_HISTORICO, announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
 
 PERIODO = "2y"
@@ -79,7 +79,11 @@ def measure(ruedas: int = 60, limit: int | None = None, *, strict_artifacts: boo
     # doble: la población son **todos** los `*__2y__1d.parquet` del disco, o sea el
     # cohorte entero y no un subconjunto del universo vivo.
     bars_by = cohort_bars(_tickers(limit), PERIODO)
-    announce_artifacts(bars_by, strict=strict_artifacts)
+    # Este instrumento lee una población MÁS ANCHA que el universo vivo (todo lo
+    # que alguna vez se operó), así que declara el cohorte HISTÓRICO: los tickers
+    # retirados están congelados por ciclo de vida, no por un refresh fallido, y
+    # se cuentan aparte en vez de abortar (tarea 109).
+    announce_artifacts(bars_by, strict=strict_artifacts, cohort=COHORTE_HISTORICO)
     ventana = artifact_window(bars_by)
 
     t0 = time.perf_counter()

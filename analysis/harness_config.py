@@ -738,6 +738,51 @@ def announce_continuity(
     return fuera
 
 
+# ── Cohorte VIVO vs cohorte HISTÓRICO — Tarea 109 ───────────────────────────
+#
+# Un artefacto de un ticker que **salió del universo vivo** se congela, y eso no es
+# un refresh fallido: es el ciclo de vida del universo. Nada lo va a refrescar más.
+# Tratarlo como "desalineado" hace abortar a los tres `measure_*` que leen una
+# población **más ancha** que el universo vivo (los dos garch globean el disco; el de
+# sell_bias lee todo lo que tuvo órdenes).
+#
+# **Por qué NO se resolvió metiéndolos en ``ARTIFACT_REFRESH_EXCEPTIONS``:** ese dict
+# es **global** —los silenciaría para los 26 lectores— y sobre todo **crece con cada
+# rotación del universo**. Medido: el enunciado de la tarea nombraba **2** retirados
+# (AAPL, MLTX) y cuatro días después son **5** (se sumaron K, LIN, TEAM). Una lista
+# que hay que mantener a mano al ritmo de la rotación es una lista que se desactualiza.
+# Además el caveat que hay ahí (AVB) es una **patología de datos** que caduca; esto es
+# una **regla de ciclo de vida**, que es otra categoría.
+#
+# La solución es que el lector **declare de qué población habla**, que es lo que hace
+# ``COHORTE_VIVO`` / ``COHORTE_HISTORICO``.
+COHORTE_VIVO = "vivo"
+COHORTE_HISTORICO = "historico"
+
+
+def retired_tickers(bars_by: dict[str, list], universe_file: str | None = None) -> frozenset[str]:
+    """Los tickers de ``bars_by`` que **ya no están** en el universo vivo — Tarea 109.
+
+    Lee el archivo de universo (no la DB): es el mismo que ``universe_fingerprint``
+    ya consulta, así que no agrega una fuente de verdad nueva. Si no se puede leer,
+    devuelve vacío — **fail-open a propósito**: no saber quién se retiró tiene que
+    dejar el guard *más* estricto, no menos.
+    """
+    # El default se resuelve ACÁ y no en la firma: un `= LIVE_UNIVERSE_FILE` se liga
+    # al importar, así que apuntar el módulo a otro universo (tests, o un universo
+    # alternativo) no tendría efecto — y el guard estaría mirando un archivo distinto
+    # del que el llamador cree.
+    if universe_file is None:
+        universe_file = LIVE_UNIVERSE_FILE
+    try:
+        vivos = {t.strip().upper() for t in _leer_universo(universe_file)}
+    except OSError:
+        return frozenset()
+    if not vivos:
+        return frozenset()
+    return frozenset(t for t in bars_by if t.upper() not in vivos)
+
+
 def announce_artifacts(
     bars_by: dict[str, list],
     *,
@@ -746,6 +791,7 @@ def announce_artifacts(
     file: TextIO | None = None,
     continuity: bool = True,
     strict_continuity: bool | None = None,
+    cohort: str = COHORTE_VIVO,
 ) -> tuple[StaleArtifact, ...]:
     """Declara la frescura del cohorte y **falla ruidoso** si está desalineado.
 
@@ -772,10 +818,29 @@ def announce_artifacts(
     sustrato torcido y lo declaro en el pre-registro"*— cubre las dos.
 
     Se puede forzar una u otra pasando el booleano explícito.
+
+    ``cohort`` (**Tarea 109**) dice **de qué población habla el lector**:
+
+      * ``COHORTE_VIVO`` (default) — se mide el universo vivo. Un artefacto congelado
+        es un desalineado y aborta, como siempre. Si aparece un **retirado** acá, es
+        una señal de que la población no es la que el runner cree, y **también** aborta.
+      * ``COHORTE_HISTORICO`` — se mide todo lo que alguna vez se operó (los tres
+        `measure_*`). Los tickers **retirados del universo vivo** se declaran con su
+        fecha de congelamiento y **no** abortan: están congelados por diseño, no por
+        un refresh fallido. Los que **siguen** en el universo se chequean igual.
+
+    La diferencia no es de severidad sino de **causa**, y por eso no alcanzaba con
+    ``strict=False``: aquello apaga el guard entero, esto sólo reclasifica lo que
+    tiene otra explicación.
     """
     if strict_continuity is None:
         strict_continuity = strict
     fuera = stale_artifacts(bars_by, max_lag_days=max_lag_days)
+    retirados: tuple[StaleArtifact, ...] = ()
+    if cohort == COHORTE_HISTORICO:
+        fuera_del_universo = retired_tickers(bars_by)
+        retirados = tuple(s for s in fuera if s.ticker.upper() in fuera_del_universo)
+        fuera = tuple(s for s in fuera if s.ticker.upper() not in fuera_del_universo)
     salida = file if file is not None else sys.stdout
     ref = cohort_end(bars_by)
     n = sum(1 for b in bars_by.values() if b)
@@ -787,6 +852,22 @@ def announce_artifacts(
     for exc in declared_exceptions(bars_by):
         print(f"  [excepción declarada] {exc}", file=salida)
         print(f"      {ARTIFACT_REFRESH_EXCEPTIONS[exc.ticker.upper()]}", file=salida)
+    for r in retirados:
+        # Se declara, no se silencia: la muestra ES no uniforme y el lector tiene que
+        # saberlo. Lo que cambia es la CAUSA — congelado por ciclo de vida, no por un
+        # refresh fallido — y por eso no aborta (tarea 109).
+        print(
+            f"  [retirado del universo] {r.ticker}: última barra {r.end}, "
+            f"{abs(r.lag_days)} ruedas atrás del cohorte ({r.cohort_end})",
+            file=salida,
+        )
+    if retirados:
+        print(
+            f"      {len(retirados)} artefacto(s) congelados porque su ticker SALIÓ del "
+            f"universo vivo: nada los refresca más, y no es un refresh fallido. Este "
+            f"lector declaró `cohort=historico`, así que se cuentan aparte y NO abortan.",
+            file=salida,
+        )
     if not fuera:
         print("  todos alineados (en las PUNTAS: ver la continuidad abajo).\n", file=salida)
         if continuity:
@@ -1075,16 +1156,28 @@ def universe_fingerprint(universe_file: str) -> str | None:
     poder leer un archivo de universo sería peor que el defecto.
     """
     try:
-        raw = (_REPO_ROOT / universe_file).read_text(encoding="utf-8-sig")
+        tickers = _leer_universo(universe_file)
     except OSError:
         return None
-    tickers = [
-        ln.split("#", 1)[0].strip()
+    return tickers_fingerprint(tickers) if tickers else None
+
+
+def _leer_universo(universe_file: str) -> list[str]:
+    """Los tickers declarados en un archivo de universo. Levanta ``OSError`` si no
+    se puede leer — cada caller decide su fail-open, que no es el mismo para todos.
+
+    Se extrajo de ``universe_fingerprint`` cuando la tarea 109 necesitó el **conjunto**
+    y no la huella: tener el parseo dos veces era garantizar que se separaran (el
+    ``utf-8-sig`` de la 41 y el descarte de comentarios se habrían duplicado).
+    """
+    raw = (_REPO_ROOT / universe_file).read_text(encoding="utf-8-sig")
+    return [
+        limpio
         for ln in raw.splitlines()
         if ln.strip() and not ln.lstrip().startswith("#")
+        for limpio in (ln.split("#", 1)[0].strip(),)
+        if limpio
     ]
-    tickers = [t for t in tickers if t]
-    return tickers_fingerprint(tickers) if tickers else None
 
 
 def artifact_population(

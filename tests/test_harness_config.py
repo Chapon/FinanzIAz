@@ -40,6 +40,7 @@ import ast
 import re
 import sqlite3
 from dataclasses import replace
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -1461,3 +1462,112 @@ def test_el_T7_usa_el_anuncio_sin_cartera():
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "announce_per_trade"
     ]
     assert llamadas, "el T7 dejo de declarar sus desvios"
+
+
+# ── Cohorte vivo vs cohorte histórico — Tarea 109 ────────────────────────────
+
+
+def _bars_hasta(fecha: str, n: int = 30) -> list[tuple]:
+    """n barras hábiles que terminan en `fecha`."""
+    fin = date.fromisoformat(fecha)
+    dias, d = [], fin
+    while len(dias) < n:
+        if d.weekday() < 5:
+            dias.append(d.isoformat())
+        d -= timedelta(days=1)
+    return [(x, 1.0, 1.0, 1.0, 1.0) for x in reversed(dias)]
+
+
+@pytest.fixture
+def universo(tmp_path, monkeypatch):
+    """Un universo vivo de dos tickers, en un archivo temporal."""
+    import analysis.harness_config as hc
+
+    arch = tmp_path / "uni.txt"
+    arch.write_text("# comentario\nVIVO1\nVIVO2\n", encoding="utf-8")
+    monkeypatch.setattr(hc, "_REPO_ROOT", tmp_path)
+    return "uni.txt"
+
+
+def test_retired_tickers_marca_los_que_ya_no_estan(universo, monkeypatch):
+    import analysis.harness_config as hc
+
+    monkeypatch.setattr(hc, "LIVE_UNIVERSE_FILE", universo)
+    fuera = hc.retired_tickers({"VIVO1": [1], "VIEJO": [1], "vivo2": [1]})
+    assert fuera == frozenset({"VIEJO"}), fuera
+
+
+def test_sin_universo_legible_NO_marca_a_nadie(monkeypatch):
+    """Fail-open en la dirección estricta: no saber quién se retiró tiene que dejar
+    el guard **más** severo (todos siguen contando como desalineados), no menos."""
+    import analysis.harness_config as hc
+
+    monkeypatch.setattr(hc, "LIVE_UNIVERSE_FILE", "no_existe_este_archivo.txt")
+    assert hc.retired_tickers({"CUALQUIERA": [1]}) == frozenset()
+
+
+def test_el_cohorte_HISTORICO_declara_al_retirado_y_NO_aborta(universo, monkeypatch, capsys):
+    """Tarea 109 — un artefacto congelado porque su ticker **salió del universo** no
+    es un refresh fallido: es el ciclo de vida. Se declara con su fecha y se cuenta
+    aparte, que es distinto de silenciarlo."""
+    import analysis.harness_config as hc
+
+    monkeypatch.setattr(hc, "LIVE_UNIVERSE_FILE", universo)
+    bars = {
+        "VIVO1": _bars_hasta("2026-09-04"),
+        "VIVO2": _bars_hasta("2026-09-04"),
+        "VIEJO": _bars_hasta("2026-05-15"),
+    }
+    fuera = hc.announce_artifacts(bars, strict=True, cohort=hc.COHORTE_HISTORICO, continuity=False)
+    assert fuera == (), "el retirado no puede contar como desalineado acá"
+    salida = capsys.readouterr().out
+    assert "[retirado del universo] VIEJO" in salida
+    assert "2026-05-15" in salida, "tiene que decir DESDE CUÁNDO está congelado"
+    assert "SALIÓ del universo vivo" in salida
+
+
+def test_un_lector_del_cohorte_VIVO_SIGUE_fallando_con_un_retirado(universo, monkeypatch):
+    """La contraprueba que pide el enunciado, y es la mitad que importa: reclasificar
+    no puede volverse un pase libre. Si el lector declara que mide el universo vivo y
+    aparece un retirado adentro, la población **no es la que cree** y tiene que abortar.
+    """
+    import analysis.harness_config as hc
+
+    monkeypatch.setattr(hc, "LIVE_UNIVERSE_FILE", universo)
+    bars = {
+        "VIVO1": _bars_hasta("2026-09-04"),
+        "VIVO2": _bars_hasta("2026-09-04"),
+        "VIEJO": _bars_hasta("2026-05-15"),
+    }
+    with pytest.raises(hc.StaleArtifactError):
+        hc.announce_artifacts(bars, strict=True, continuity=False)  # default = COHORTE_VIVO
+
+
+def test_el_historico_NO_perdona_a_un_ticker_que_SIGUE_en_el_universo(universo, monkeypatch):
+    """El otro borde: declarar `historico` no apaga el guard. Un artefacto congelado
+    de un ticker que **sigue vivo** es un refresh fallido y aborta igual."""
+    import analysis.harness_config as hc
+
+    monkeypatch.setattr(hc, "LIVE_UNIVERSE_FILE", universo)
+    bars = {"VIVO1": _bars_hasta("2026-09-04"), "VIVO2": _bars_hasta("2026-05-15")}
+    with pytest.raises(hc.StaleArtifactError):
+        hc.announce_artifacts(bars, strict=True, cohort=hc.COHORTE_HISTORICO, continuity=False)
+
+
+@pytest.mark.parametrize(
+    "script",
+    ("measure_sell_bias_t31.py", "measure_garch_fragil_t67.py", "measure_garch_intraday_t29.py"),
+)
+def test_los_tres_measure_declaran_el_cohorte_historico(script):
+    """Los tres leen una población más ancha que el universo vivo. Si alguno deja de
+    declararlo, vuelve a abortar por default y a correrse con `--allow-stale-artifacts`,
+    que es apagar el guard entero en vez de reclasificar un caso."""
+    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
+    pasado = [
+        n
+        for n in ast.walk(ast.parse(txt))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "announce_artifacts"
+        for kw in n.keywords
+        if kw.arg == "cohort"
+    ]
+    assert pasado, f"{script} dejó de declarar su cohorte"
