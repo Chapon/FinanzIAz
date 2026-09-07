@@ -233,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         window=artifact_window(bars_by),
         verdict_max_positions=LEGACY_MAX_POSITIONS,
         fill_mode=args.fill_mode,
+        entry_spacing=args.spacing,
     )
     print(
         f"Tickers: {len(bars_by)} · entradas candidatas: {len(entries)} · "

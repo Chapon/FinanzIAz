@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 import re
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,7 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_ACCOUNT_ID,
+    LIVE_CHURN_LOOKBACK_DAYS,
     LIVE_MAX_POSITIONS,
     LIVE_WATCHLIST_SIZE,
     POPULATION_LEGACY_41,
@@ -1321,3 +1323,77 @@ def test_the_cohort_check_sees_a_cohort_that_actually_exists():
             if not asignada:
                 rotos.append(f"{n}:{fn.name}")
     assert rotos == [], f"llaman announce_artifacts sin bars_by en alcance: {rotos}"
+
+
+def _cfg_gates(**kw) -> HarnessConfig:
+    """Config minima para mirar la linea del sexto desvio (Tarea 119)."""
+    return HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, **kw)
+
+
+# ── El costo de los gates es de UNA población, no de todas — Tarea 119 ───────
+
+
+def test_sin_declarar_spacing_el_banner_dice_DE_DONDE_sale_el_21_36():
+    """Tarea 119 — el numero era correcto y estaba presentado como si fuera de todos.
+
+    El 21-36% lo midio la T34 sobre entradas SIN espaciar (`buy_entries`, toda barra
+    con BUY es candidata). Tres de los once harness publicados espacian, y ahi el
+    desvio es ~30x mas chico: medido 0,78%. Un harness espaciado que lea ese numero
+    como propio concluye que el desvio puede darle vuelta el veredicto, cuando en su
+    poblacion no puede mover nada. Mientras no declare su spacing, el banner tiene
+    que decir al menos de donde sale el numero.
+    """
+    dev = next(d for d in deviations(_cfg_gates()) if "gates de re-entrada" in d)
+    assert "21,15%-36,36%" in dev  # el numero sigue estando
+    assert "buy_entries" in dev, "no dice sobre que poblacion se midio"
+    assert "espacia" in dev, "no avisa que un harness espaciado tiene otro numero"
+
+
+def test_declarar_el_spacing_cambia_el_numero_que_el_banner_atribuye():
+    """Declarado el spacing, la linea deja de prestarle a este harness un numero de
+    otra corrida y dice el suyo — mas la cota dura sobre Gate 5b."""
+    dev = next(d for d in deviations(_cfg_gates(entry_spacing=20)) if "gates de re-entrada" in d)
+    assert "espaciadas 20 ruedas" in dev
+    assert "0,78%" in dev, "no da el numero medido sobre un harness espaciado"
+    assert "NO es el número de esta población" in dev
+    assert "Gate 5b no puede disparar" in dev, "falta la cota dura sobre el churn"
+
+
+def test_un_spacing_CORTO_no_se_lleva_la_excepcion():
+    """Contraprueba: la cota vale porque el espaciado supera la ventana del churn.
+    Con un spacing chico el harness vuelve a estar en el caso general, y decirle que
+    Gate 5b no puede disparar seria falso.
+
+    Sin este test, hacer que la rama se dispare SIEMPRE pasaria en verde.
+    """
+    corto = _cfg_gates(entry_spacing=LIVE_CHURN_LOOKBACK_DAYS - 1)
+    dev = next(d for d in deviations(corto) if "gates de re-entrada" in d)
+    assert "Gate 5b no puede disparar" not in dev
+    assert "buy_entries" in dev, "cae al texto general, que nombra la poblacion"
+
+
+def test_modelar_los_gates_saca_la_nota_de_poblacion_entera():
+    """Si el harness SI modela los gates no hay desvio, asi que tampoco hay nada que
+    atribuirle a ninguna poblacion."""
+    on = _cfg_gates(entry_spacing=20)
+    on = replace(on, live_gates=True)
+    assert not any("gates de re-entrada" in d for d in deviations(on))
+
+
+@pytest.mark.parametrize("script", ("run_market_regime_r2.py", "run_sizing_exposure_t10_t20.py"))
+def test_los_runners_espaciados_declaran_su_spacing(script):
+    """Los dos harness que arman con `build_entries` y llaman a `announce` tienen que
+    pasarle su `--spacing`; si no, el banner les sigue prestando el numero de la T34.
+
+    (El T7 tambien espacia y **no** esta en esta lista a proposito: no llama a
+    `announce` — no simula cartera, replaya por trade. Es la tarea 116.)
+    """
+    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
+    pasado = [
+        nodo
+        for nodo in ast.walk(ast.parse(txt))
+        if isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Name) and nodo.func.id == "announce"
+        for kw in nodo.keywords
+        if kw.arg == "entry_spacing"
+    ]
+    assert pasado, f"{script} no le declara su spacing a announce()"

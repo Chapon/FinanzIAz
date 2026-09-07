@@ -266,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         len(bars_by),
         window=artifact_window(bars_by),
         verdict_max_positions=LEGACY_MAX_POSITIONS,
+        entry_spacing=args.spacing,
         fill_mode=args.fill_mode,
         live_gates=args.live_gates,
     )

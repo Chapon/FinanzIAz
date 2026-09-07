@@ -285,6 +285,32 @@ REENTRY_GATES_READING_DESC = (
     "en forma pero no en exposición: el borrado es común, tu brazo no lo es"
 )
 
+# **De qué población sale ese 21-36%, que es lo que faltaba decir — Tarea 115/119.**
+# La rejilla de la T34 arma sus entradas con ``buy_entries``: **toda barra con BUY es
+# candidata**. Tres de los once harness publicados (T7, R2 y T10/T20) las arman con
+# ``build_entries`` y ``spacing`` — una entrada cada N ruedas por ticker — y ahí el
+# desvío es de otro orden: **0,78%** medido sobre el T10/T20 (10 bloqueos de 1283) y
+# 1,2% a 10 slots, o sea ~30× más chico. Con ese espaciado Gate 5 (7 días) casi no
+# alcanza y **Gate 5b es imposible**: pide ≥3 ciclos cerrados en 10 días y ahí cierra
+# como mucho uno cada ``spacing`` ruedas. Un harness espaciado que lea el número de la
+# T34 como propio concluye que el desvío puede darle vuelta el veredicto, cuando en su
+# población no puede mover nada.
+REENTRY_GATES_POPULATION_DESC = (
+    "ese rango se midió sobre la rejilla de la T34, que arma las entradas con "
+    "`buy_entries` (toda barra con BUY es candidata). Si tu harness las espacia "
+    "(`build_entries`), el desvío es ~30x más chico — medido 0,78% en el T10/T20 "
+    "(docs/t20_killgate_t115_2026-09-07.md §4.2) — y conviene declarar el spacing "
+    "para que esta línea diga el número de TU población"
+)
+REENTRY_GATES_SPACED_DESC = (
+    "las entradas de este harness están espaciadas {spacing} ruedas por ticker, así "
+    "que el 21-36% de la T34 NO es el número de esta población: ahí toda barra con "
+    "BUY es candidata. Medido sobre un harness espaciado: **0,78%** de los trades "
+    "(docs/t20_killgate_t115_2026-09-07.md §4.2). Y **Gate 5b no puede disparar acá**: "
+    "pide >={churn} ciclos cerrados en {lookback} días y con este espaciado cierra "
+    "como mucho uno por ventana"
+)
+
 
 # ── Ventana de los artefactos — el SÉPTIMO desvío (Tarea 48) ────────────────
 # Los artefactos del harness (``data/parquet/*__10y__1d.parquet`` y
@@ -1231,6 +1257,13 @@ class HarnessConfig:
     models_regime_scale: bool = False
     models_earnings_blackout: bool = False
 
+    # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
+    # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
+    # (una entrada por barra con BUY) **no tienen** espaciado y ``None`` es correcto
+    # para ellos. Sólo lo pasan los que usan ``build_entries``, porque es ahí donde
+    # el costo declarado de los gates deja de ser el suyo.
+    entry_spacing: int | None = None
+
     @property
     def effective_trail_mult(self) -> float:
         """Espeja ``AtrParams.effective_trail_mult``: sin trail propio, manda el stop."""
@@ -1275,6 +1308,29 @@ def exit_rule_line(eval_mode: str = "close", fill_mode: str = HARNESS_FILL_MODE)
         else "orden en reposo en el nivel (LEGACY)"
     )
     return f"Regla de salida simulada: barrera decidida al {decide} · fill {fill}"
+
+
+def _reentry_population_note(cfg: HarnessConfig) -> str:
+    """De qué población sale el costo de los gates, y si es la de ``cfg`` — Tarea 119.
+
+    El 21-36% de la T34 se midió sobre entradas **sin espaciar**. Un harness que las
+    espacia tiene un desvío ~30x más chico y **Gate 5b estructuralmente inerte**, así
+    que leer aquel número como propio lleva a la conclusión opuesta a la correcta.
+
+    La comparación ``entry_spacing >= LIVE_CHURN_LOOKBACK_DAYS`` es **conservadora**:
+    el espaciado está en **ruedas** y la ventana del churn en **días calendario**, y N
+    ruedas abarcan siempre >= N días. Así que cuando da True, que Gate 5b no pueda
+    disparar es una cota dura, no una estimación.
+    """
+    if cfg.entry_spacing is None:
+        return REENTRY_GATES_POPULATION_DESC
+    if cfg.entry_spacing >= LIVE_CHURN_LOOKBACK_DAYS:
+        return REENTRY_GATES_SPACED_DESC.format(
+            spacing=cfg.entry_spacing,
+            churn=LIVE_CHURN_MAX_CYCLES,
+            lookback=LIVE_CHURN_LOOKBACK_DAYS,
+        )
+    return REENTRY_GATES_POPULATION_DESC
 
 
 def deviations(cfg: HarnessConfig) -> list[str]:
@@ -1394,7 +1450,8 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             f"(anti-whipsaw: cualquier pérdida dentro de {LIVE_WHIPSAW_LOOKBACK_DAYS}d "
             f"bloquea el re-BUY, umbral vivo {LIVE_WHIPSAW_MIN_LOSS_PCT:.1f}%) y Gate 5b "
             f"(anti-churn: ≥{LIVE_CHURN_MAX_CYCLES} ciclos en {LIVE_CHURN_LOOKBACK_DAYS}d). "
-            f"Vale {REENTRY_GATES_COST_DESC}. {REENTRY_GATES_READING_DESC}"
+            f"Vale {REENTRY_GATES_COST_DESC}. {_reentry_population_note(cfg)}. "
+            f"{REENTRY_GATES_READING_DESC}"
         )
     return out
 
@@ -1442,6 +1499,7 @@ def announce(
     models_vol_overlay: bool = False,
     models_regime_scale: bool = False,
     models_earnings_blackout: bool = False,
+    entry_spacing: int | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
     """Arma la config, **imprime el banner** y la devuelve.
@@ -1463,6 +1521,7 @@ def announce(
         fill_mode=fill_mode,
         live_gates=live_gates,
         window=window,
+        entry_spacing=entry_spacing,
     )
     print(config_banner(cfg) + "\n", file=file if file is not None else sys.stdout)
     return cfg
