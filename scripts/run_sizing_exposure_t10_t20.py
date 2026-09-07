@@ -161,6 +161,8 @@ def summarise(name: str, res: PortfolioResult, base: PortfolioResult | None) -> 
         "n_taken": res.n_taken,
         "n_filtered": res.n_filtered,
         "n_no_slot": res.n_no_slot,
+        "n_no_cash": res.n_no_cash,  # tarea 118: el camino por el que los brazos divergen
+        "n_already_open": res.n_already_open,
         # Tarea 115 — el §5 del pre-registro los pide como sanity: que los gates
         # MUERDAN (>0) y que muerdan IGUAL en los siete brazos, que es la prediccion
         # falsable del §3 de la 36. Sin publicarlos no hay forma de verificarlo.

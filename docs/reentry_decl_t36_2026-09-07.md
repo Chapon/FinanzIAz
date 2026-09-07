@@ -180,15 +180,26 @@ Los gates bloquearían **exactamente los mismos candidatos** en todos.
 > 127 tickers) **no**: `S1_inverse_vol` bloquea **31** y los otros seis **32**, y el oráculo toma 2709
 > trades contra 2706. **El razonamiento estaba escrito más ancho de lo que aguanta.**
 >
-> Lo que falta arriba: con `size_weight` presente el simulador aplica además el **tope por nombre**
-> `min(notional, max_weight * equity_proxy)`, y `equity_proxy` **depende del path**. Cuando ese tope
-> muerde —más candidatos, más presión de cash— los brazos divergen y con ellos el historial de ciclos
-> cerrados que alimenta a Gate 5. La invariancia del `ret` al notional es cierta y **no alcanza**.
+> **El mecanismo, medido después (tarea 118) — y era un eslabón más abajo de donde lo puse primero.**
+> Esta nota decía *"el tope por nombre `max_weight`"*, y el tope no es el camino: el camino es
+> **`n_no_cash`**. Un `size_weight` cambia cuánto cash consume cada entrada, y cuando el brazo se queda
+> sin plata el candidato se rechaza — el único rechazo que **no** depende del `ret` y por lo tanto el
+> único que puede romper la identidad. Contado por brazo sobre la config viva: **112 rechazos en
+> `S1_inverse_vol`, 2 en el oráculo y 0 en los otros seis**.
 >
-> **Qué sobrevive:** la identidad se sostiene para los brazos de **régimen puro** (`entry_filter` en
-> modo `scale`, sin `size_weight`), que son los que deciden sobre T20, así que **la conclusión de esta
-> tarea sobre T10/T20 no cambia**. Lo que no vale es la forma general *"los harness de sizing"*.
-> Detalle en `docs/t20_killgate_t115_2026-09-07.md` §4.1. No es "tasas parecidas": es el
+> **Ni siquiera es "los harness de sizing":** `S2_vol_target` y `C_S2xf050` también llevan
+> `size_weight` y dan **0** — son idénticos al baseline. Es `inverse_vol`, que es el único cuyo peso
+> llega a agotar el cash.
+>
+> **Y `max_weight` NO es un desvío**, contra lo que esta nota sugería: el simulador lo aplica **sólo**
+> cuando hay `size_weight`, y producción lo aplica **sólo** bajo `vol_target`/`kelly_fractional`
+> (`_compute_target_weights` no capea `EQUAL_WEIGHT`). La cuenta viva es `equal_weight`, y el baseline
+> y los brazos de régimen del harness van por la rama sin tope: **coinciden**.
+>
+> **Qué sobrevive de la afirmación original:** la identidad se sostiene para los brazos de **régimen
+> puro** (`entry_filter` en modo `scale`, sin `size_weight`), que son los que deciden sobre T20, así
+> que **la conclusión de esta tarea sobre T10/T20 no cambia**. Detalle en
+> `docs/t20_killgate_t115_2026-09-07.md` §4.1. No es "tasas parecidas": es el
 mismo conjunto. **T10 no se re-lee** — su NO-SHIP falla por −3.76 y −4.27 pp contra un umbral de
 +1.0 pp, y el desvío es literalmente común.
 

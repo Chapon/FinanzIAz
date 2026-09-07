@@ -58,6 +58,7 @@ dict precomputado y el filtro como callable, así los tests corren offline.
 from __future__ import annotations
 
 import math
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -485,6 +486,25 @@ def simulate_portfolio(
     res.final_equity = cash
     res.equity_curve = _build_equity_curve(res.trades, initial_capital, bars_by)
     res._days_invested, res._days_invested_total = _exposure(res.trades, res.equity_curve)
+    # Tarea 118 — el rechazo por CASH era el único camino mudo que quedaba.
+    #
+    # `n_no_slot` y `n_already_open` son estructurales y esperados; `n_no_cash`
+    # significa que el brazo **se quedó sin plata** y perdió candidatos que otro
+    # brazo sí tomó, o sea que los brazos dejaron de compararse sobre la misma
+    # población. Medido sobre el T10/T20 a 10 slots: **112 rechazos en
+    # `S1_inverse_vol`** y **0 en los otros seis** — nadie lo estaba mirando, y es
+    # lo que rompió el sanity §5.5 de la tarea 115.
+    #
+    # Va acá y no en los runners porque éste es el punto **único** que los 26
+    # comparten: cablearlo arriba dependería de que cada autor se acuerde, que es
+    # el defecto de la 76 y de la 101. A stderr para no ensuciar el `--json`.
+    if res.n_no_cash:
+        print(
+            f"AVISO (tarea 118): {res.n_no_cash} candidato(s) rechazados por FALTA DE CASH "
+            f"sobre {res.n_taken} tomados. Este brazo NO se comparó sobre la misma población "
+            f"que uno que no se quedó sin plata — declararlo antes de leer cualquier Δ.",
+            file=sys.stderr,
+        )
     return res
 
 

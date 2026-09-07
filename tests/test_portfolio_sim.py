@@ -491,3 +491,72 @@ def test_a_nonsense_threshold_falls_back_to_the_global_one():
         )
         assert res.trades[0].held_days == ref.trades[0].held_days, bad
         assert res.trades[0].exit_reason == ref.trades[0].exit_reason, bad
+
+
+# ── El rechazo por CASH deja de ser mudo — Tarea 118 ─────────────────────────
+
+
+def _bars_planos(n: int, precio: float = 100.0) -> list[tuple]:
+    """n barras sin movimiento: el ciclo no dispara barreras y llega al cap."""
+    return [(f"2020-{1 + i // 28:02d}-{1 + i % 28:02d}", precio, precio, precio, precio) for i in range(n)]
+
+
+def test_quedarse_sin_cash_AVISA(capsys):
+    """Tarea 118 — `n_no_cash` era el único camino de rechazo que no avisaba nadie.
+
+    `n_no_slot` y `n_already_open` son estructurales y esperados. `n_no_cash`
+    significa que el brazo **se quedó sin plata** y perdió candidatos que otro brazo
+    sí tomó: los dos dejaron de compararse sobre la misma población, que es
+    justamente lo que rompió el sanity §5.5 de la tarea 115 (112 rechazos en
+    `S1_inverse_vol`, 0 en los otros seis, y nadie estaba mirando).
+    """
+    bars = _bars_planos(60)
+    bars_by = {"AAA": bars, "BBB": bars}
+    sigs = {"AAA": {}, "BBB": {}}
+    # Un `size_weight` gigante agota el cash en la primera entrada.
+    res = simulate_portfolio(
+        [("AAA", 5), ("BBB", 6)],
+        bars_by,
+        sigs,
+        max_positions=5,
+        initial_capital=1000.0,
+        size_weight=lambda _t, _d: 1e6,
+        max_weight=1e9,
+    )
+    assert res.n_no_cash > 0, "el fixture tiene que provocar el rechazo; si no, no prueba nada"
+    err = capsys.readouterr().err
+    assert "tarea 118" in err
+    assert "FALTA DE CASH" in err
+    assert str(res.n_no_cash) in err, "tiene que decir CUÁNTOS, no sólo que pasó"
+
+
+def test_sin_rechazos_por_cash_NO_avisa(capsys):
+    """Contraprueba: un guard que grita siempre se termina apagando. Sin este test,
+    imprimir el aviso incondicionalmente pasaría en verde."""
+    bars = _bars_planos(60)
+    res = simulate_portfolio(
+        [("AAA", 5)],
+        {"AAA": bars},
+        {"AAA": {}},
+        max_positions=5,
+        initial_capital=100_000.0,
+    )
+    assert res.n_no_cash == 0
+    assert "tarea 118" not in capsys.readouterr().err
+
+
+def test_el_aviso_va_a_STDERR_y_no_ensucia_el_json(capsys):
+    """Los runners tienen `--json`, y un aviso en stdout rompería el payload."""
+    bars = _bars_planos(60)
+    simulate_portfolio(
+        [("AAA", 5), ("BBB", 6)],
+        {"AAA": bars, "BBB": bars},
+        {"AAA": {}, "BBB": {}},
+        max_positions=5,
+        initial_capital=1000.0,
+        size_weight=lambda _t, _d: 1e6,
+        max_weight=1e9,
+    )
+    cap = capsys.readouterr()
+    assert "tarea 118" in cap.err
+    assert "tarea 118" not in cap.out
