@@ -29,7 +29,13 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    d. Commiteá siguiendo la skill `git-workflow`: subject `tipo(scope): ...` o `T<n>: ...` en español, cuerpo con qué/por qué + línea `Suite: NNN passed`, y trailer `Co-Authored-By`.
 4. **Si el cambio movió una CONSTANTE, un DEFAULT o el nombre de un símbolo, barré el corpus
    operativo antes de commitear** — `CLAUDE.md`, las skills de `.claude/`, los commands, los
-   agents y `docs/SETTINGS_REFERENCE.md`. El barrido **no termina en el código**: eso es lo
+   agents, `docs/SETTINGS_REFERENCE.md` **y la sección *Acciones manuales pendientes* de
+   `docs/BACKLOG.md`**. Esa última entró el 2026-09-07 y por un motivo concreto: al bajar
+   `paper_regime_scale_factor` de 0.50 a 0.25 el barrido cazó el `SettingSpec`, la referencia y
+   el espejo de `harness_config`, y **dejó pasar** la nota de verificación de R2b, que seguía
+   diciendo *"factor 0.50 · medio tamaño · ×0.5"*. Las acciones manuales **afirman en presente**
+   igual que una skill, y encima son las que Chapa ejecuta a mano: una nota caducada ahí no
+   confunde, **dirige mal**. El barrido **no termina en el código**: eso es lo
    que dejó la 68 mandando a usar una constante que ella misma había borrado, y a la 30
    corrigiendo su claim de "cuenta activa" en **dos de tres** lugares. Un test cubre la mitad
    mecánica (`tests/test_corpus_operativo_t72.py` caza un símbolo que no existe); lo que **no**
