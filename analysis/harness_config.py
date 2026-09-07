@@ -35,8 +35,11 @@ La T34 destapó el **sexto**, en la otra punta del ciclo: los **gates de re-entr
 ``portfolio_sim`` sólo rechaza un candidato si el ticker ya está abierto; el engine
 vivo además bloquea el re-BUY después de un ciclo perdedor reciente (Gate 5) o
 después de demasiados ciclos seguidos (Gate 5b). Medido: afecta al **21-36%** de las
-entradas tomadas, con **gradiente en el múltiplo del stop**, así que no es un nivel
-común y no se cancela solo en la comparación. Ver ``LIVE_WHIPSAW_LOOKBACK_DAYS``.
+entradas tomadas. **Si eso se cancela o no entre los brazos depende del eje del
+harness, y no de este número** — la T34 concluyó "no se cancela" para *su* rejilla de
+salida, y la Tarea 36 encontró que sobre los once publicados se cancela en dos y que
+para los harness de **selección** el criterio es otro (los gates cambian *quién*
+entra, que ahí es el eje). Ver ``REENTRY_GATES_READING_DESC``.
 
 Qué provee
 ----------
@@ -238,6 +241,10 @@ LOOKAHEAD_FILL_COST_DESC = (
 # común y no se cancela en la comparación**. Un stop ajustado cierra muchos ciclos
 # chicos en rojo y cada uno arma en vivo un cooldown de 7 días que el harness
 # ignora: le regala re-entradas a los brazos ajustados, y más cuanto más ajustado.
+#
+# **Eso vale para la rejilla de la T34, no para todo harness** (tarea 36): la
+# conclusión depende del eje de los brazos, y por eso el banner declara las dos
+# lecturas en ``REENTRY_GATES_READING_DESC`` en vez de exportar ésta.
 LIVE_WHIPSAW_LOOKBACK_DAYS = 7
 LIVE_WHIPSAW_MIN_LOSS_PCT = 0.0
 LIVE_CHURN_LOOKBACK_DAYS = 10
@@ -249,6 +256,27 @@ REENTRY_GATES_COST_DESC = (
     "TAMAÑO del desvío medido sobre el path sin gates, NO la tasa de bloqueo en "
     "régimen del path ya gateado — el gate es auto-extintivo y ahí da 2,44% "
     "(docs/stop_loosen_enmienda_t34_2026-08-18.md §1)"
+)
+# Cómo LEER ese número, que depende del eje de los brazos — Tarea 36.
+#
+# El texto de arriba salía de la T34, un harness de SALIDA, y el banner exportaba su
+# conclusión (*"no es un nivel común"*) como si valiera para cualquier harness. No
+# vale: sobre los once publicados el desvío **se cancela** en al menos dos —T10/T20
+# por construcción (los brazos de sizing no cambian ni el orden ni el filtro, y con
+# shares fraccionarias el `ret` es invariante al notional ⇒ los gates borrarían
+# exactamente los mismos candidatos en todos los brazos) y T23 por medición (win rate
+# idéntico, n dentro del 5,2%)—. Y para los de SELECCIÓN el criterio ni siquiera es
+# ése: los gates cambian **quién** entra, que ahí es el eje mismo, y eso ya movió el
+# hallazgo central de un veredicto publicado (T39 sobre la T21). Ver
+# `docs/reentry_decl_t36_2026-09-07.md`.
+REENTRY_GATES_READING_DESC = (
+    "Cómo leerlo depende del eje de TUS brazos (tarea 36): si deciden CUÁNDO SALIR, "
+    "aplicá el criterio de la T33 —si los brazos cierran ciclos a tasas parecidas es "
+    "un nivel común y se cancela entre brazos; si no, no—. Si deciden QUIÉN ENTRA "
+    "(orden o filtro de candidatos), ese criterio NO alcanza: los gates cambian quién "
+    "entra, que es tu eje, y eso ya dio vuelta un hallazgo publicado "
+    "(docs/rank_neutral_t39_2026-08-19.md §2). Si sólo mueven el TAMAÑO, se cancela "
+    "en forma pero no en exposición: el borrado es común, tu brazo no lo es"
 )
 
 
@@ -1323,7 +1351,7 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             f"(anti-whipsaw: cualquier pérdida dentro de {LIVE_WHIPSAW_LOOKBACK_DAYS}d "
             f"bloquea el re-BUY, umbral vivo {LIVE_WHIPSAW_MIN_LOSS_PCT:.1f}%) y Gate 5b "
             f"(anti-churn: ≥{LIVE_CHURN_MAX_CYCLES} ciclos en {LIVE_CHURN_LOOKBACK_DAYS}d). "
-            f"Vale {REENTRY_GATES_COST_DESC}"
+            f"Vale {REENTRY_GATES_COST_DESC}. {REENTRY_GATES_READING_DESC}"
         )
     return out
 

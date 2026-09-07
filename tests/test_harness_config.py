@@ -156,6 +156,29 @@ def test_reentry_gates_deviation_is_declared_unless_modelled():
     assert "gates de re-entrada" in config_banner(off)
 
 
+def test_reentry_gates_deviation_declares_both_readings_not_just_t34s():
+    """Tarea 36 — el número no dice solo lo que hay que hacer con él.
+
+    El texto viejo exportaba la conclusión de la T34 (*"no es un nivel común"*) como
+    si valiera para cualquier harness, y **no vale**: sobre los once publicados el
+    desvío se cancela en T10/T20 (por construcción) y en T23 (medido), y para los
+    harness de **selección** el criterio de la T33 ni siquiera es el que aplica — ahí
+    los gates cambian *quién* entra, que es el eje mismo, y eso ya movió el hallazgo
+    central de la T21 (T39 §2). Un banner que declare una sola lectura invita a
+    saltearse la que corresponde, que es exactamente el error que la 36 fue a buscar.
+    """
+    off = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
+    dev = next(d for d in deviations(off) if "gates de re-entrada" in d)
+    # Las tres clases, cada una con su lectura. Si alguien borra una, esto falla.
+    assert "CUÁNDO SALIR" in dev, "falta la lectura de los harness de salida (criterio T33)"
+    assert "QUIÉN ENTRA" in dev, "falta la lectura de los harness de selección (criterio T39)"
+    assert "TAMAÑO" in dev, "falta la lectura de los harness de sizing"
+    # Y que la de selección diga que el criterio de la T33 NO alcanza: sin eso, las
+    # dos lecturas se leen como la misma cosa dicha dos veces.
+    assert "NO alcanza" in dev
+    assert "rank_neutral_t39" in dev  # con la referencia medible, no una afirmación suelta
+
+
 def test_modelling_the_reentry_gates_removes_the_deviation():
     """Con ``live_gates=True`` el harness deja de desviarse en ese eje, así que el
     desvío **no** se anuncia — mismo patrón que ``fill_mode`` bajo ``touch``."""

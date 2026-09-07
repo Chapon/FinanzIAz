@@ -166,6 +166,23 @@ la banda entera** del azar (T21/T33) a caer **adentro** de la banda, y el défic
 de −3.23 a −1.80 pp. Mismo runner, misma población, con el sanity de reproducción en `OK`.
 **Antes de re-leer un veredicto de ranking o selección, `live_gates` no es opcional.**
 
+**Pero no al revés: que el desvío exista no quiere decir que muerda.** La tarea 36 aplicó
+el criterio a los once harness publicados (`docs/reentry_decl_t36_2026-09-07.md`) y hay
+**tres** clases, no dos, según qué kwarg difiera entre los brazos del runner:
+
+| si los brazos mueven… | clase | lectura |
+|---|---|---|
+| `so_params` / `atr_p` / `tp_mult` / `stop_mult` / `time_stop` | **salida** | criterio de la T33: ¿cierran ciclos a tasas parecidas? Si sí, nivel común |
+| `rank_score`, o un `entry_filter` que llega a 0 | **selección** | el criterio NO alcanza: `live_gates` obligatorio |
+| sólo `size_weight`, o un `entry_filter` que nunca llega a 0 | **sizing** | se cancela **en forma** pero no en **exposición** |
+
+La clase de sizing es la más limpia y conviene saber por qué: con `shares = notional /
+entry_price` sin redondeo y costos proporcionales, el `ret` de un ciclo es invariante al
+notional, y el cash **nunca** rechaza una entrada (`notional = min(notional, cash)`). O sea
+que los gates borrarían **exactamente los mismos candidatos** en todos los brazos. Lo que
+eso **no** garantiza es que los brazos estén igual de expuestos a ese borrado — que es
+justamente el eje —, y por eso T20 quedó como la única de las once que pide re-lectura.
+
 > **Los dos números de arriba son de la corrida de la T39** y siguen bien atribuidos a **su**
 > muestra: aquella corrida fue limpia y la **68** declara que **ningún veredicto se
 > re-publica**. Lo que caducó es la cifra que esta skill daba como referencia *en presente*
