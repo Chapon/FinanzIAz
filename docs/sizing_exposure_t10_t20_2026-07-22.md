@@ -26,6 +26,28 @@ Simulador de cartera real (`analysis/portfolio_sim.py`): `max_positions=5`, capi
 
 **Descuento por selección múltiple (7 brazos, T=2262 obs diarias):** PBO (CSCV) = **0.190**; brazo seleccionado por Sharpe = **R2b_f025**; DSR = 1.000 (SR0 esperado bajo el nulo = 0.0074).
 
+> ### ⚠ Corrección posterior (2026-09-07, tarea 120): el **cuarto** kill-criteria no se evaluó
+>
+> El §5 de este pre-registro congeló **cuatro** criterios y el veredicto se declaró sobre **tres**.
+> El cuarto —*"el signo del beneficio no puede venir enteramente de una sola ventana"*— **no estaba
+> cableado a la decisión** (`passes_local` miraba beneficio + riesgo + integridad) y **no se menciona
+> en ningún lado de este doc**: un grep por *"un solo régimen"*, *"criterio 4"* o *"régimen robusto"*
+> no devuelve nada. Se imprimía una tabla por régimen al costado, y esa tabla **tampoco podía
+> evaluarlo**: medía *retorno medio por trade*, y los brazos de sizing/régimen no cambian **qué**
+> trades se toman sino **cuánto** se invierte, así que salía idéntica en los siete brazos.
+>
+> **Qué se hizo (tarea 120):** la métrica por régimen pasa a reportar además la **contribución al
+> capital** (`pnl_pts`), que sí depende del tamaño; el criterio se implementa al pie de la letra del
+> texto congelado y **entra a `passes_local`**; y el runner **declara cuándo una métrica no
+> discrimina** en vez de imprimir una tabla que parece informativa.
+>
+> **Qué cambia del veredicto: nada.** Re-corrido con el criterio ya cableado, C4 **pasa** en los tres
+> brazos de régimen (incluido el `f050` que se cableó en su momento y el `f025` que lo reemplazó el
+> 2026-09-07) y en `S2_vol_target`/`C_S2xf050`, en los dos marcos. El único que lo falla es
+> `S1_inverse_vol` —positivo sólo en `stress_bear_2022`— y ése ya era NO-SHIP por −3.5 pp de CAGR.
+> O sea que el criterio ausente **no estaba tapando nada**; lo que estaba tapado era que faltaba.
+> Ver `docs/t20_killgate_t115_2026-09-07.md` §4.3.
+
 **Invariantes (verificados ANTES de leer el veredicto):** contabilidad equity-vs-cash OK en los 7 brazos; invariante de exits OK (ninguna variante cambió la salida de una posición abierta); baseline reproduce el equal-weight actual.
 
 ## El oráculo hizo su trabajo: atrapó un bug antes del veredicto

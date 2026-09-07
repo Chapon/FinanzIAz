@@ -94,20 +94,78 @@ KILL_MIN_DCAGR = 0.01  # OR: mejora de CAGR (1.0 punto porcentual)
 KILL_SIZING_DD_MULT = 1.5  # sizing: max DD no sube más de 1.5×
 # régimen: max DD de cartera no sube (tolerancia numérica chica)
 KILL_REGIME_DD_EPS = 1e-4
+_REG_NAMES = ["bull_normal"] + [r.name for r in STRESS_REGIMES]
 REGIME_ARMS = {"R2b_f025", "R2b_f050", "R2b_f075", "C_S2xf050"}
 
 
 def regime_breakdown(res: PortfolioResult) -> dict:
-    """Retorno medio por trade (pts) y n por régimen — descriptivo (no decide)."""
+    """Por régimen: retorno medio por trade, n, y **contribución al capital** — T120.
+
+    ``mean_ret_pts`` es la métrica histórica y **no puede discriminar brazos que sólo
+    cambian el TAMAÑO**: los trades son los mismos, así que sale idéntica en los
+    siete. Con ella el criterio 4 del pre-registro (*"el beneficio no puede venir de
+    una sola ventana"*) es inevaluable por construcción — y encima nunca estuvo
+    cableado a la decisión, así que nadie lo notó.
+
+    ``pnl_pts`` es la que sí discrimina: el P/L de esa ventana en **puntos del
+    capital inicial**, que depende del notional y por lo tanto del brazo. Es la
+    forma correcta de preguntar *"¿de qué régimen viene el beneficio?"* cuando el
+    eje del brazo es cuánto se invierte y no en qué se invierte.
+    """
     out: dict[str, dict] = {}
+    cap = res.initial_capital or 1.0
     names = ["bull_normal"] + [r.name for r in STRESS_REGIMES]
     for name in names:
         tr = [t for t in res.trades if t.regime == name]
         out[name] = {
             "n_trades": len(tr),
             "mean_ret_pts": 100.0 * statistics.fmean([t.ret for t in tr]) if tr else 0.0,
+            "pnl_pts": 100.0 * sum(t.pnl for t in tr) / cap,
         }
     return out
+
+
+def regime_source_ok(base: PortfolioResult, cand: PortfolioResult) -> tuple[bool, dict]:
+    """Criterio 4 del pre-registro, **implementado al pie de la letra** — Tarea 120.
+
+    Texto congelado (§5.4): *"el signo del beneficio no puede venir enteramente de
+    una sola ventana. Si el efecto es positivo **solo** en un régimen y negativo o
+    nulo en el resto, NO-SHIP"*. O sea que falla **exactamente** cuando hay un solo
+    régimen con Δ > 0 y todos los demás con Δ ≤ 0 — es un criterio deliberadamente
+    laxo, y se implementa así y no más estricto: aflojarlo o apretarlo en septiembre
+    un umbral congelado en julio es justo lo que la regla 2 prohíbe.
+
+    Se evalúa sobre ``pnl_pts`` porque es la única de las dos métricas que
+    **discrimina** cuando el brazo cambia el tamaño (ver ``regime_breakdown``).
+    """
+    b, c = regime_breakdown(base), regime_breakdown(cand)
+    return regime_source_ok_desde({n: c[n]["pnl_pts"] - b[n]["pnl_pts"] for n in c})
+
+
+def regime_source_ok_desde(deltas: dict[str, float]) -> tuple[bool, dict]:
+    """La regla del §5.4, aislada de cómo se calculen los Δ — Tarea 120.
+
+    Separada a propósito: el criterio es una **regla**, y una regla se testea con
+    números a mano. Enterrarla adentro del cálculo obliga a fabricar dos carteras
+    para probar un `if`, y ahí es donde un criterio termina no teniendo test.
+    """
+    positivos = [n for n, d in deltas.items() if d > 0.0]
+    # "positivo sólo en uno Y no-positivo en el resto" -> falla. Con 0 positivos no
+    # hay beneficio del que preguntar de dónde viene, y C1 ya lo habrá frenado;
+    # frenarlo también acá sería contar el mismo hecho dos veces.
+    ok = not (len(positivos) == 1 and len(deltas) > 1)
+    return ok, {"deltas": deltas, "solo_en": positivos[0] if len(positivos) == 1 else None}
+
+
+def regime_metric_discriminates(base: PortfolioResult, cand: PortfolioResult, key: str) -> bool:
+    """¿Esa métrica por régimen distingue a estos dos brazos? — Tarea 120.
+
+    Existe para que el runner **diga cuándo un criterio no es evaluable** en vez de
+    imprimir una tabla que parece informativa. Una tabla idéntica entre brazos no es
+    un resultado: es un instrumento que no mide el eje bajo test.
+    """
+    b, c = regime_breakdown(base), regime_breakdown(cand)
+    return any(abs(c[n][key] - b[n][key]) > 1e-9 for n in c)
 
 
 def accounting_ok(res: PortfolioResult) -> tuple[bool, float]:
@@ -193,9 +251,19 @@ def summarise(name: str, res: PortfolioResult, base: PortfolioResult | None) -> 
         risk_ok = out["dd_ratio"] <= KILL_SIZING_DD_MULT
     out["benefit"] = bool(benefit)
     out["risk_ok"] = bool(risk_ok)
-    # 'passes' local = beneficio + riesgo + invariante; el descuento por selección
-    # múltiple (DSR/PBO) se aplica al brazo seleccionado, aparte.
-    out["passes_local"] = bool(benefit and risk_ok and ok and acc_ok)
+    # Criterio 4 del pre-registro (§5.4). **Nunca había estado cableado** (tarea
+    # 120): `passes_local` miraba beneficio + riesgo + integridad y el régimen se
+    # imprimía al costado, así que la T20 declaró SHIP sobre cuatro criterios
+    # evaluando tres. Se implementa el texto congelado tal cual, sin re-decidirlo.
+    regime_ok, regime_detail = regime_source_ok(base, res)
+    out["regime_ok"] = bool(regime_ok)
+    out["regime_c4"] = regime_detail
+    out["regime_discriminates"] = {
+        k: regime_metric_discriminates(base, res, k) for k in ("mean_ret_pts", "pnl_pts")
+    }
+    # 'passes' local = beneficio + riesgo + régimen + invariante; el descuento por
+    # selección múltiple (DSR/PBO) se aplica al brazo seleccionado, aparte.
+    out["passes_local"] = bool(benefit and risk_ok and regime_ok and ok and acc_ok)
     return out
 
 
@@ -431,16 +499,36 @@ def main(argv: list[str] | None = None) -> int:
         acc = "OK" if s["accounting_ok"] else f"DESVÍO {s['accounting_dev']:.2e}"
         print(f"  {name:<18} exits: {inv:<5} contab: {acc}")
 
-    print("\nPor régimen — retorno medio por trade (pts) / n:")
-    names = ["bull_normal"] + [r.name for r in STRESS_REGIMES]
-    print(f"  {'brazo':<18}" + "".join(f"{n:>22}" for n in names))
+    print("\nPor régimen — Tarea 120. `ret medio/trade` NO discrimina brazos que sólo")
+    print("cambian el TAMAÑO (mismos trades); el criterio 4 se evalúa sobre `pnl pts`,")
+    print("que es el P/L de esa ventana en puntos del capital inicial.")
+    anchos = "  {:<20}" + "{:>22}" * len(_REG_NAMES)
+    print(anchos.format("brazo", *_REG_NAMES))
     for name in CANDIDATE_ARMS:
         s = summaries[name]
-        cells = "".join(
-            f"{s['by_regime'][n]['mean_ret_pts']:>+15.2f} (n={s['by_regime'][n]['n_trades']:>3})"
-            for n in names
-        )
-        print(f"  {name:<18}{cells}")
+        celdas = [
+            f"{s['by_regime'][n]['pnl_pts']:>+8.2f}pp  ret{s['by_regime'][n]['mean_ret_pts']:>+6.2f}"
+            for n in _REG_NAMES
+        ]
+        print(anchos.format(name, *celdas))
+
+    print("\n  ¿la métrica distingue este brazo del baseline?")
+    for name in CANDIDATE_ARMS:
+        if name == BASELINE_ARM:
+            continue
+        d = summaries[name].get("regime_discriminates") or {}
+        est = "sí" if d.get("mean_ret_pts") else "NO — tabla idéntica al baseline"
+        print(f"    {name:<20} ret medio/trade: {est:<32} pnl pts: {'sí' if d.get('pnl_pts') else 'NO'}")
+
+    print("\n  C4 (§5.4) — el beneficio no puede venir de UNA sola ventana:")
+    for name in CANDIDATE_ARMS:
+        if name == BASELINE_ARM:
+            continue
+        s = summaries[name]
+        marca = "PASA " if s.get("regime_ok") else "FALLA"
+        solo = (s.get("regime_c4") or {}).get("solo_en")
+        motivo = f" — positivo SÓLO en {solo}" if solo else ""
+        print(f"    [{marca}] {name}{motivo}")
 
     print(f"\nDescuento por selección múltiple ({len(cand)} brazos, T={T} obs):")
     print(f"  PBO (CSCV) = {pbo.pbo:.3f}  ({pbo.n_combos} combinaciones)")

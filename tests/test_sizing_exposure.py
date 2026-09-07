@@ -146,3 +146,107 @@ def test_make_entry_filter_scale_applies_factor_in_risk_off():
     f = make_entry_filter(s, mode="scale", factor=0.3)
     assert f("X", "2020-01-03") == pytest.approx(0.3)  # día previo risk-off
     assert f("X", "2019-12-31") == 1.0  # sin historia → risk-on
+
+
+from scripts.run_sizing_exposure_t10_t20 import (
+    regime_metric_discriminates,
+    regime_source_ok_desde,
+)
+
+
+def _bars_llanos(n: int, precio: float = 100.0) -> list[tuple]:
+    """n barras subiendo suave: el ciclo llega al cap con P/L != 0.
+
+    **Tiene que moverse.** Con barras planas el P/L es 0 en los dos brazos y
+    `pnl_pts` da 0 = 0: el test pasaria por degenerado, "demostrando" que la metrica
+    nueva tampoco discrimina. Es el mismo modo de fallar que el guard de la 110
+    (la referencia salia de la misma poblacion que chequeaba).
+    """
+    return [(_d(i), precio + i, precio + i, precio + i, precio + i) for i in range(n)]
+
+
+# ── El criterio 4 de la T20: ni evaluable ni evaluado — Tarea 120 ────────────
+
+
+def _dos_brazos():
+    """Baseline vs un brazo que sólo cambia el TAMAÑO. Mismos trades, mismo `ret`."""
+    bars = _bars_llanos(80)
+    bars_by = {"AAA": bars, "BBB": bars}
+    sigs = {"AAA": {}, "BBB": {}}
+    comun = dict(
+        max_positions=5,
+        initial_capital=100_000.0,
+        cap_days=20,
+        atr_p=NO_ATR,
+        so_params=ScaleOutParams(),
+        costs=NO_COST,
+        regime_of=lambda _d: "bull_normal",
+    )
+    base = simulate_portfolio([("AAA", 30), ("BBB", 31)], bars_by, sigs, **comun)
+    chico = simulate_portfolio(
+        [("AAA", 30), ("BBB", 31)], bars_by, sigs, size_weight=lambda _t, _d: 0.5, **comun
+    )
+    return base, chico
+
+
+def test_el_ret_medio_por_trade_NO_puede_discriminar_un_brazo_de_tamano():
+    """El corazón de la tarea 120: la métrica con la que el criterio 4 se reportaba es
+    ciega al eje que la T20 puso bajo test.
+
+    Los brazos de sizing/régimen no cambian **qué** trades se toman, cambian **cuánto**
+    se invierte. El `ret` de cada ciclo es invariante al notional, así que la tabla
+    sale idéntica en los siete brazos — y una tabla idéntica no es un resultado: es un
+    instrumento que no mide el eje.
+    """
+    base, chico = _dos_brazos()
+    assert base.trades and chico.trades
+    assert not regime_metric_discriminates(base, chico, "mean_ret_pts")
+
+
+def test_la_contribucion_al_capital_SI_discrimina():
+    """La contraprueba, y es la que hace que la tarea tenga sentido: si la métrica
+    nueva tampoco distinguiera, el criterio seguiría siendo inevaluable y sólo
+    habríamos cambiado el texto."""
+    base, chico = _dos_brazos()
+    assert regime_metric_discriminates(base, chico, "pnl_pts")
+
+
+def test_C4_implementa_el_texto_congelado_al_pie_de_la_letra():
+    """§5.4: falla **sólo** cuando el beneficio es positivo en UNA ventana y no
+    positivo en el resto. Es deliberadamente laxo y se implementa así: apretar en
+    septiembre un umbral congelado en julio es lo que la regla 2 prohíbe."""
+    ok, det = regime_source_ok_desde({"a": 1.0, "b": -1.0, "c": 0.0, "d": -2.0})
+    assert not ok and det["solo_en"] == "a"
+    # Positivo en dos ⇒ pasa (no viene de "una sola ventana").
+    ok, det = regime_source_ok_desde({"a": 1.0, "b": 2.0, "c": -1.0, "d": 0.0})
+    assert ok and det["solo_en"] is None
+    # Ningún positivo ⇒ pasa: no hay beneficio del que preguntar de dónde viene,
+    # y C1 ya lo habrá frenado. Que C4 lo frene también sería contarlo dos veces.
+    ok, _ = regime_source_ok_desde({"a": -1.0, "b": 0.0, "c": -2.0, "d": 0.0})
+    assert ok
+
+
+def test_C4_esta_CABLEADO_a_la_decision_y_no_solo_impreso():
+    """El hallazgo de la tarea: `passes_local` miraba beneficio + riesgo + integridad
+    y el régimen se imprimía al costado, así que la T20 declaró SHIP sobre cuatro
+    criterios **evaluando tres**. Este test fija que el cuarto entre a la decisión.
+    """
+    import ast
+    from pathlib import Path
+
+    txt = (Path(__file__).resolve().parent.parent / "scripts" / "run_sizing_exposure_t10_t20.py").read_text(
+        encoding="utf-8"
+    )
+    arbol = ast.parse(txt)
+    asignaciones = [
+        nodo
+        for nodo in ast.walk(arbol)
+        if isinstance(nodo, ast.Assign)
+        and any(
+            isinstance(t, ast.Subscript) and getattr(t.slice, "value", None) == "passes_local"
+            for t in nodo.targets
+        )
+    ]
+    assert asignaciones, "no encuentro la asignación de passes_local"
+    usados = {n.id for n in ast.walk(asignaciones[-1].value) if isinstance(n, ast.Name)}
+    assert "regime_ok" in usados, "el criterio 4 volvió a quedar fuera de la decisión"
