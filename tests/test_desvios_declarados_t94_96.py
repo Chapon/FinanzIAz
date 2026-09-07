@@ -68,7 +68,9 @@ def test_las_constantes_son_las_de_la_cuenta_viva():
     — que es exactamente lo que pasó con el stop duro entre el 2026-08-27 y la
     tarea 92."""
     assert LIVE_VOL_OVERLAY_ENABLED is True and LIVE_VOL_TARGET_ANNUAL == 0.12
-    assert LIVE_REGIME_SCALE_ENABLED is True and LIVE_REGIME_SCALE_FACTOR == 0.5
+    # 0.25 desde el 2026-09-07 (tarea 115). Este test **hizo su trabajo**: pinneaba
+    # el 0.5 y falló al cambiar el valor vivo, que es exactamente para lo que está.
+    assert LIVE_REGIME_SCALE_ENABLED is True and LIVE_REGIME_SCALE_FACTOR == 0.25
     assert LIVE_EARNINGS_BLACKOUT_DAYS == 2
 
 

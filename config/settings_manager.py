@@ -217,11 +217,28 @@ SCHEMA: dict[str, SettingSpec] = {
             "the E1b universe liquidity floor."
         ),
     ),
-    # R2b (tarea 20) — escalado de exposición por régimen de mercado. Validado por
-    # harness (docs/sizing_exposure_t10_t20_2026-07-22.md): en risk-off escalar las
-    # BUYs a medio tamaño mejora Sharpe/CAGR y baja el max DD de cartera (a
-    # diferencia de suprimirlas, que destruye el compounding — R2a). ON por default
-    # (decisión de Chapa 2026-07-22, tras pasar el kill-criteria pre-registrado).
+    # R2b (tarea 20) — escalado de exposición por régimen de mercado: en risk-off
+    # las BUYs nuevas entran a una fracción del tamaño (suprimirlas del todo
+    # destruye el compounding — R2a, −6.3 pts de CAGR). ON por default, decisión de
+    # Chapa 2026-07-22.
+    #
+    # **El factor bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115), y el motivo importa
+    # más que el número:** re-medido sobre la muestra de hoy, `f050` **ya no cumple**
+    # el kill-criteria congelado de la T20 (ΔSharpe +0.08 contra +0.10 y ΔCAGR
+    # +0.60 pp contra +1.0 pp — falla las dos patas del OR, con los gates de
+    # re-entrada modelados y sin ellos). Lo que sí sobrevive al cambio de población
+    # es **el alivio de drawdown, y es monótono en lo profundo del recorte**: −4.5 pp
+    # de maxDD a 0.25 contra −2.2 pp a 0.50 en el marco publicado, y −4.8 pp contra
+    # −0.6 pp en el marco de la cuenta viva. O sea que 0.50 era la peor de las tres
+    # posiciones: no capturaba el alivio de DD ni tenía ventaja de CAGR/Sharpe.
+    # `f025` además fue el brazo que el harness seleccionó en las **tres** corridas
+    # (julio, la re-lectura de la T33 en agosto, y hoy).
+    #
+    # **Lo que NO está validado, dicho acá para que no se lea de más:** `f025` pasa
+    # el criterio en el marco publicado (5 slots, 41 tickers) y **no** en el de la
+    # cuenta viva (10 slots, 127 tickers), donde ningún factor pasa. Es una decisión
+    # NUEVA que no hereda la validación de la T20 — la validación sobre el marco vivo
+    # es la **tarea 121**. Ver `docs/t20_killgate_t115_2026-09-07.md`.
     "paper_regime_scale_enabled": SettingSpec(
         bool,
         True,
@@ -235,12 +252,16 @@ SCHEMA: dict[str, SettingSpec] = {
     ),
     "paper_regime_scale_factor": SettingSpec(
         (int, float),
-        0.5,
+        0.25,
         min=0.0,
         max=1.0,
         doc=(
             "R2b size multiplier for new BUYs in a risk-off market (see "
-            "paper_regime_scale_enabled). 0.50 = half size (validated value). "
+            "paper_regime_scale_enabled). 0.25 = quarter size, the live value since "
+            "2026-09-07 (task 115): it is the arm the harness selected in all three "
+            "runs and the one that keeps the drawdown relief (−4.5pp of maxDD vs "
+            "−2.2pp at 0.50). NOT re-validated on the live frame — see task 121. "
+            "0.50 was the previous value and no longer meets the T20 kill-criteria. "
             "1.0 = no scaling. 0.0 = suppress BUYs entirely in risk-off — NOT "
             "recommended: R2a measured that binary suppression destroys "
             "compounding (−6.3 pts CAGR)."

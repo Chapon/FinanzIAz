@@ -9,13 +9,14 @@ close, con fail-open) y su integración en ``generate_trades_analyze_single``
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from config.settings_manager import settings
+from config.settings_manager import DEFAULTS, settings
 from paper_trading.strategies import (
     _regime_size_factor,
     generate_trades_analyze_single,
@@ -121,3 +122,38 @@ def test_analyze_single_no_scaling_when_disabled(monkeypatch):
     tr = next(t for t in trades if t.ticker == "AAA")
     assert tr.target_dollars == pytest.approx(100_000.0)  # equal-weight, 1 pick, sin escalar
     assert "risk-off" not in tr.reason
+
+
+# ── El default no se duplica en literales — Tarea 115 ────────────────────────
+
+
+def test_el_factor_vivo_es_el_del_SCHEMA_y_no_un_literal_pegado():
+    """El 2026-09-07 el factor bajó de 0.50 a 0.25 (tarea 115) y el valor estaba
+    escrito en **dos** lugares: el ``SettingSpec`` y un fallback literal en
+    ``_regime_size_factor``. Un literal duplicado no falla al cambiar: se queda con
+    el valor viejo, y sólo muerde cuando alguien inyecta un dict pelado — que es
+    exactamente lo que hacen los tests. Este test fija que haya **una** fuente.
+    """
+    txt = (Path(__file__).resolve().parent.parent / "paper_trading" / "strategies.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULTS[_SCALE_KEY]" in txt, "el fallback del factor volvió a ser un literal"
+    # Contraprueba: agregar el DEFAULTS y DEJAR el literal pasaría en verde sin esto.
+    ini = txt.find("def _regime_size_factor(")
+    fin = txt.find("\ndef ", ini + 1)
+    cuerpo = txt[ini:fin]
+    assert '", 0.5)' not in cuerpo and '", 0.25)' not in cuerpo, (
+        "quedó un default literal adentro de _regime_size_factor"
+    )
+
+
+def test_un_settings_sin_la_clave_cae_al_default_del_SCHEMA(monkeypatch):
+    """El camino donde el fallback SÍ se usa: un ``settings`` inyectado al que le
+    falta la clave. Antes devolvía el 0.5 pegado; ahora tiene que devolver lo que
+    diga el SCHEMA, sea cual sea."""
+    import paper_trading.strategies as st
+
+    monkeypatch.setattr(st, "settings", {"paper_regime_scale_enabled": True})
+    f = _regime_size_factor(lambda _t: _spy_df(list(np.linspace(300.0, 100.0, 260))))
+    assert f == pytest.approx(DEFAULTS["paper_regime_scale_factor"])
+    assert f < 1.0, "la serie declinante tiene que dar risk-off; si no, el test no prueba nada"

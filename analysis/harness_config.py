@@ -133,12 +133,18 @@ NO_STOP_MULT = 1e9
 LIVE_VOL_OVERLAY_ENABLED = True
 LIVE_VOL_TARGET_ANNUAL = 0.12
 
-# Escalado por régimen R2b (tarea 95). En risk-off las BUY entran a la mitad.
-# **Nunca disparó en vivo** —0 de 62 BUY filled— pero **15,96%** de las ruedas de
-# la ventana del harness son risk-off, así que sí muerde en backtest. Medido por
-# la T20: ΔCAGR **+0,59 pp** y maxDD **21,6% → 19,1%**.
+# Escalado por régimen R2b (tarea 95). En risk-off las BUY entran a un cuarto del
+# tamaño. **Nunca disparó en vivo** —0 de 62 BUY filled— pero **15,96%** de las
+# ruedas de la ventana del harness son risk-off, así que sí muerde en backtest.
+#
+# **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
+# Chapa)**, así que el número de la T20 que este comentario citaba (+0,59 pp de
+# CAGR, maxDD 21,6% → 19,1%) era el de `f050` y ya no describe lo que corre.
+# Re-medido hoy sobre la muestra viva del harness, con los gates modelados:
+# **ΔCAGR +0,93 pp, ΔSharpe +0,15 y maxDD 25,0% → 20,5%**
+# (`docs/t20_killgate_t115_2026-09-07.md` §1).
 LIVE_REGIME_SCALE_ENABLED = True
-LIVE_REGIME_SCALE_FACTOR = 0.5
+LIVE_REGIME_SCALE_FACTOR = 0.25
 
 # Blackout de earnings, Gate 6 (tarea 96). Bloquea **BUY** con earnings dentro de
 # ±N días. **No se puede modelar con los datos que hay**: no existen fechas de
@@ -1370,7 +1376,9 @@ def deviations(cfg: HarnessConfig) -> list[str]:
         out.append(
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
             f"risk-off): 0 de 62 BUY vivas lo dispararon, pero el 15.96% de las ruedas de "
-            f"la ventana son risk-off. Vale +0.59pp de CAGR y −2.5pp de maxDD (T20)"
+            f"la ventana son risk-off. Vale +0.93pp de CAGR y −4.5pp de maxDD (T115, el "
+            f"factor vivo desde el 2026-09-07; el +0.59pp/−2.5pp que decía antes era de "
+            f"×0.50, que ya no corre)"
         )
     # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:

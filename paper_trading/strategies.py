@@ -40,7 +40,7 @@ from analysis.portfolio_risk import (
     returns_frame,
 )
 from config.logging_config import get_logger
-from config.settings_manager import settings
+from config.settings_manager import DEFAULTS, settings
 from database.models import utcnow_naive
 from paper_trading.gates import (
     VOL_TRIM_REASON_PREFIX,
@@ -324,6 +324,9 @@ def _screen_out_candidate(ticker: str, df: pd.DataFrame, thresholds) -> bool:
         return False
 
 
+_SCALE_KEY = "paper_regime_scale_factor"
+
+
 def _regime_size_factor(history_provider: HistoryProvider) -> float:
     """Factor de tamaño para BUYs nuevas según el régimen de mercado (R2b, tarea 20).
 
@@ -334,7 +337,7 @@ def _regime_size_factor(history_provider: HistoryProvider) -> float:
     compra por falta del dato de régimen. Solo se consulta cuando ya hay picks, así
     que no agrega red a los scans sin BUYs (y SPY viene cacheado por el warm-up).
     """
-    if not bool(settings.get("paper_regime_scale_enabled", True)):
+    if not bool(settings.get("paper_regime_scale_enabled", DEFAULTS["paper_regime_scale_enabled"])):
         return 1.0
     try:
         from analysis.market_regime import build_regime_series
@@ -351,7 +354,11 @@ def _regime_size_factor(history_provider: HistoryProvider) -> float:
         ]
         series = build_regime_series(bars)
         if series.risk_off and series.risk_off[-1]:
-            f = float(settings.get("paper_regime_scale_factor", 0.5))
+            # El fallback sale del SCHEMA y no de un literal: un 0.5 duplicado acá
+            # se despega del default en silencio la próxima vez que el valor cambie,
+            # y ya cambió una (0.50 → 0.25, tarea 115). Con el manager real nunca se
+            # usa —`get` cae a DEFAULTS—; se usa cuando alguien inyecta un dict pelado.
+            f = float(settings.get(_SCALE_KEY, DEFAULTS[_SCALE_KEY]))
             return min(1.0, max(0.0, f))
     except Exception:
         get_logger(__name__).exception("R2b regime factor falló — tamaño pleno")
