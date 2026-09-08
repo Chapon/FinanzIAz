@@ -144,6 +144,14 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # Re-medido hoy sobre la muestra viva del harness, con los gates modelados:
 # **ΔCAGR +0,93 pp, ΔSharpe +0,15 y maxDD 25,0% → 20,5%**
 # (`docs/t20_killgate_t115_2026-09-07.md` §1).
+# Penalidad de volatilidad en la SELECCION (tarea 42). `compute_signal_probability`
+# le resta al score `risk_score x coef`. Se espeja aca —igual que el overlay y el
+# escalado— para que el harness de la T21 deje de duplicar el literal: lo tenia
+# hardcodeado con un comentario `# ml_signals.py:1147` que ya no apuntaba a ningun
+# lado. Un cambio del valor vivo ahora rompe el test de constantes en vez de
+# desincronizarse en silencio.
+LIVE_VOL_PENALTY_COEF = 0.08
+
 LIVE_REGIME_SCALE_ENABLED = True
 LIVE_REGIME_SCALE_FACTOR = 0.25
 

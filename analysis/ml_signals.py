@@ -55,6 +55,10 @@ if TYPE_CHECKING:
     from analysis.technical import TechnicalSignal
 
 log = get_logger(__name__)
+
+# Default de la penalidad de volatilidad en la SELECCION (tarea 42). El valor
+# vivo sale de `paper_vol_penalty_coef`; este es el fallback y el valor de hoy.
+VOL_PENALTY_COEF_DEFAULT = 0.08
 from dataclasses import dataclass
 
 # ── Optional XGBoost ──────────────────────────────────────────────────────────
@@ -1114,6 +1118,36 @@ def train_hmm_signal(df: pd.DataFrame, horizon: int = PREDICTION_HORIZON) -> Tec
 # ── 3. Overall probability score ──────────────────────────────────────────────
 
 
+def _vol_penalty_coef() -> float:
+    """El coeficiente de la penalidad de volatilidad, desde settings — Tarea 42.
+
+    Mismo patrón que ``technical._toggle``: envuelto en ``try/except`` para que un
+    test que importe este módulo sin el store de settings inicializado siga viendo el
+    default, y el camino del engine conserve el comportamiento salvo que alguien mueva
+    el flag a propósito.
+
+    **Por qué existe:** penalizar volatilidad es una decisión de *sizing*, y el sistema
+    ya la toma dos veces por otro lado (overlay de σ de cartera + escalado por régimen,
+    los dos ON). Este término la mete además en la *selección*, mezclando riesgo con
+    retorno esperado en la misma cifra.
+
+    **Y por qué el default NO cambia:** sacarla valía **+1,61 pp** de CAGR según la
+    T21 y **+1,57 pp** con el fill honesto de la T33; re-medido el 2026-09-07 con la
+    regla que el engine ejecuta (``touch`` + ``live_gates``, cobertura de
+    ``risk_score`` 100%) da **+0,29 pp** — 5,5× más chico y **adentro del ruido** (la
+    banda del azar de ese harness abarca ~7,7 pp). Lo que se shipea es la perilla, no
+    el cambio de política: patrón de la T53.
+    """
+    try:
+        from config.settings_manager import settings as _settings
+
+        val = _settings.get("paper_vol_penalty_coef", VOL_PENALTY_COEF_DEFAULT)
+        coef = float(val) if val is not None else VOL_PENALTY_COEF_DEFAULT
+    except Exception:
+        return VOL_PENALTY_COEF_DEFAULT
+    return coef if 0.0 <= coef <= 1.0 else VOL_PENALTY_COEF_DEFAULT
+
+
 def compute_signal_probability(signals, market_context: MarketContext) -> float:
     """
     Compute a regime-aware 0-1 probability that the current overall signal
@@ -1158,7 +1192,11 @@ def compute_signal_probability(signals, market_context: MarketContext) -> float:
     raw_prob = (buy_w - sell_w + total) / (2.0 * total)
 
     # Volatility reduces the edge for any direction
-    vol_penalty = market_context.risk_score * 0.08
+    # El coeficiente sale de settings desde la **tarea 42** y ya no es un literal:
+    # era el único número de la selección que ningún flag declaraba, y encima estaba
+    # duplicado a mano en el harness de la T21 con una referencia de línea caducada.
+    # El default (0.08) **no cambia el comportamiento**.
+    vol_penalty = market_context.risk_score * _vol_penalty_coef()
 
     return float(np.clip(raw_prob - vol_penalty, 0.05, 0.95))
 

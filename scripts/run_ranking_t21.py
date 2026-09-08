@@ -56,6 +56,7 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    LIVE_VOL_PENALTY_COEF,
     SignalStoreGapError,
     StaleArtifactError,
     announce,
@@ -81,7 +82,10 @@ from scripts.precompute_pit_signals import _load_existing, _out_path, parse_univ
 from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries
 
 CAP_DAYS = 250  # lección T13 §2 (el engine no tiene tope de tenencia)
-VOL_PENALTY_COEF = 0.08  # ml_signals.py:1147
+# Tarea 42: sale del espejo de la config viva, no de un literal con una referencia
+# de linea que ya habia caducado dos veces. El brazo B2 reconstruye el score SIN
+# la penalidad, asi que tiene que usar el MISMO coeficiente que el engine aplica.
+VOL_PENALTY_COEF = LIVE_VOL_PENALTY_COEF
 
 BASELINE_ARM = "B1_score"
 CANDIDATE_ARM = "B0_neutral"

@@ -263,6 +263,40 @@ SCHEMA: dict[str, SettingSpec] = {
     #
     # **Lo que eso cuesta, dicho:** no hay nada que se dispare solo si el alivio
     # desaparece. Se re-mide cuando la muestra incorpore una caída rápida nueva.
+    # VOLPEN (tarea 42) — la penalidad de volatilidad que entra en la SELECCIÓN.
+    #
+    # `calculate_buy_probability` le resta al score `risk_score × coef`. El argumento
+    # de diseño para sacarla no depende de ninguna medición: penalizar volatilidad es
+    # una decisión de **sizing**, y el sistema ya la toma **dos veces** por otro lado
+    # —el overlay de σ de cartera y el escalado por régimen (T20), los dos ON—. Meterla
+    # además en la selección mezcla riesgo con retorno esperado en la misma cifra.
+    #
+    # **Pero el número que justificaba sacarla se cayó, y por eso el default NO cambia.**
+    # La T21 midió que deshacerla valía **+1,61 pp** de CAGR y el fill honesto de la T33
+    # **+1,57 pp**; re-medido el 2026-09-07 con la regla que el engine ejecuta
+    # (`touch` + `live_gates`, cobertura de `risk_score` 100%) da **+0,29 pp** — 5,5×
+    # más chico y **adentro del ruido**: la banda del azar de ese harness abarca ~7,7 pp
+    # (T39, 20 semillas). Cambiar la política sobre un efecto así sería exactamente lo
+    # que la regla 2 prohíbe.
+    #
+    # Lo que se shipea es el **mecanismo**, no la política — patrón de la T53: el
+    # coeficiente deja de ser un literal escondido en `ml_signals` y pasa a ser un flag
+    # declarado, con su número medido al lado. **0.0 desactiva la penalidad.**
+    "paper_vol_penalty_coef": SettingSpec(
+        (int, float),
+        0.08,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "VOLPEN (task 42). Volatility penalty subtracted from the buy score in "
+            "SELECTION: score -= risk_score * coef. 0.08 = the live value, unchanged. "
+            "0.0 disables it. Removing it was measured at +0.29pp of CAGR on 2026-09-07 "
+            "(touch + live_gates) — down from the +1.61pp of T21 — which is inside the "
+            "noise of that harness, so the default does NOT change. The design argument "
+            "for removing it stands on its own: the system already prices volatility "
+            "twice (portfolio vol overlay + T20 regime scaling), both in SIZING."
+        ),
+    ),
     "paper_regime_scale_enabled": SettingSpec(
         bool,
         True,
