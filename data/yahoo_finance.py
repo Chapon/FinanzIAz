@@ -973,6 +973,77 @@ def _clear_out_of_band_streak(ticker_upper: str) -> None:
         _out_of_band_streak.pop(ticker_upper, None)
 
 
+# ── Segunda opinión sobre el precio — tarea 127 ──────────────────────────────
+#
+# Espeja el patrón de `recent_split_factor`, y no por estilo: va **adentro de
+# `unreliable_reference`**, que es la función que comparten el guard del fetch y el
+# del engine. Meterla en `_reject_if_out_of_band` (que sólo llama el fetch) habría
+# roto la simetría, y el invariante que el test de la 63 protege dice por qué: si el
+# fetch rechaza un precio que el engine acepta, el engine se queda **sin precio para
+# vender** y la posición queda trabada.
+#
+# Y por eso también se **memoiza**: el engine no puede pegar a la red en medio de un
+# fill, pero sí aprovechar lo que el fetch ya aprendió — exactamente como los splits.
+_SECOND_OPINION_TTL_S = 900.0
+_second_opinion_cache: dict[str, tuple[float, float | None]] = {}
+_second_opinion_lock = threading.Lock()
+
+
+def _second_opinion_enabled() -> bool:
+    try:
+        from config.settings_manager import settings as _settings
+
+        return bool(_settings.get("price_second_opinion_enabled", False))
+    except Exception:
+        return False
+
+
+def independent_price(ticker: str, *, allow_network: bool = True) -> float | None:
+    """Precio de una fuente **independiente** de Yahoo, memoizado. None si no hay.
+
+    ``allow_network=False`` responde **sólo con lo memoizado**, igual que
+    ``recent_split_factor``: es lo que usa el guard del engine.
+    """
+    key = ticker.upper()
+    now = time.time()
+    with _second_opinion_lock:
+        hit = _second_opinion_cache.get(key)
+        if hit is not None and now - hit[0] < _SECOND_OPINION_TTL_S:
+            return hit[1]
+    if not allow_network:
+        return None
+    try:
+        from data.providers import second_opinion
+
+        px = second_opinion(key)
+    except Exception:
+        log.exception("independent_price: falló la consulta de %s", key)
+        px = None
+    with _second_opinion_lock:
+        _second_opinion_cache[key] = (now, px)
+    return px
+
+
+def _clear_second_opinion_cache() -> None:
+    """Sólo para los tests: deja el memo vacío."""
+    with _second_opinion_lock:
+        _second_opinion_cache.clear()
+
+
+def _arbitrate_price(price: float, reference: float, independent: float | None) -> str:
+    """A quién respalda la fuente independiente. Delega la regla en `providers`.
+
+    Se envuelve acá para que un fallo de import (o de la banda) **no** cambie el
+    comportamiento: sin veredicto, el guard queda exactamente como estaba.
+    """
+    try:
+        from data.providers import arbitrate
+
+        return arbitrate(float(price), float(reference), independent, band=_price_sanity_band())
+    except Exception:
+        return "sin_opinion"
+
+
 def unreliable_reference(
     ticker: str, price: float | None, reference: float | None, *, allow_network: bool
 ) -> str | None:
@@ -995,6 +1066,34 @@ def unreliable_reference(
     if price is None or reference is None:
         return None
     if scale_is_disputed(price, ticker):
+        # Los frames cacheados discrepan, así que el guard sabe que **algo** está
+        # podrido pero no cuál — y por defecto acepta el precio, porque bloquear
+        # contra una referencia dudosa deja la posición sin salida.
+        #
+        # Con la segunda opinión (tarea 127) eso deja de ser un default y pasa a ser
+        # una decisión: si una fuente INDEPENDIENTE respalda a la referencia, la
+        # referencia **no** es dudosa — el podrido es el precio, y devolver None acá
+        # es lo que hace que el caller lo rechace. Es el caso KLAC.
+        if _second_opinion_enabled():
+            # Envuelto acá **además** de adentro de `independent_price`: esto corre en
+            # el camino de precios, y una excepción que suba desde una opinión
+            # *opcional* frenaría un fill. Defensa en profundidad a propósito.
+            try:
+                indep = independent_price(ticker, allow_network=allow_network)
+            except Exception:
+                log.exception("segunda opinión: falló la consulta de %s", ticker)
+                indep = None
+            veredicto = _arbitrate_price(price, reference, indep)
+            if veredicto == "reference":
+                log.error(
+                    "Segunda opinión para %s: la fuente independiente (%.4f) respalda "
+                    "la REFERENCIA (%.4f) y no el precio (%.4f) — el precio se rechaza.",
+                    ticker.upper(),
+                    indep,
+                    reference,
+                    price,
+                )
+                return None
         return "los frames 1d cacheados no coinciden sobre este precio (escala en disputa entre períodos)"
     ticker_upper = ticker.upper()
     factor = recent_split_factor(ticker_upper, allow_network=allow_network)

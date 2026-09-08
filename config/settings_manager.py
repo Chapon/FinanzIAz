@@ -282,6 +282,34 @@ SCHEMA: dict[str, SettingSpec] = {
     # Lo que se shipea es el **mecanismo**, no la política — patrón de la T53: el
     # coeficiente deja de ser un literal escondido en `ml_signals` y pasa a ser un flag
     # declarado, con su número medido al lado. **0.0 desactiva la penalidad.**
+    # Segunda opinión sobre el precio — tarea 127 (la mitad viable de ARQ3).
+    #
+    # El sanity E5 es **unilateral**: compara el precio contra el último close
+    # cacheado. Cuando discrepan sabe que algo está podrido pero **no cuál**, y por
+    # defecto **acepta el precio** — bloquear contra una referencia dudosa deja la
+    # posición sin salida. Con esto en `True`, ahí se consulta una fuente
+    # **independiente** (Finnhub `/quote`, que funciona con la key que ya existe) y,
+    # si respalda a la **referencia**, el precio se rechaza: es el caso KLAC, un
+    # precio ~10× corrupto que llegó a ejecutar un trade.
+    #
+    # **Default OFF** (patrón E1b): prenderlo cambia una decisión del guard de precios,
+    # así que es de Chapa. Sólo corre en el **camino de excepción** (un precio ya fuera
+    # de banda con los frames en disputa), así que no agrega latencia al scan normal, y
+    # el resultado se **memoiza** para que el guard del engine lo aproveche sin pegar a
+    # la red en medio de un fill.
+    "price_second_opinion_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "Task 127. When True, a price that is out of band against a DISPUTED cached "
+            "reference gets a second opinion from an independent provider before being "
+            "accepted. If the independent source backs the reference, the price is "
+            "rejected (the KLAC case). OFF = current behaviour: such a price is accepted, "
+            "because blocking on a doubtful reference leaves the position with no exit. "
+            "Only runs on the exception path; the result is memoised so the engine guard "
+            "benefits without hitting the network mid-fill."
+        ),
+    ),
     "paper_vol_penalty_coef": SettingSpec(
         (int, float),
         0.08,
