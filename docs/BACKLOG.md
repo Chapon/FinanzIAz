@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 76 — Tarea 127 (QUOTE-BILATERAL) CERRADA 2026-09-07 — la segunda opinión entra al guard, y entra donde NO rompe la simetría** (`data/yahoo_finance.py`, `config/settings_manager.py`, `tests/test_second_opinion_t127.py`). Suite Windows **2804 passed, 3 skipped** (9 tests nuevos, probados por mutación en 4 ejes), ruff limpio. **La cola queda vacía.**
+- **WIP 76 — Tarea 127 (QUOTE-BILATERAL) CERRADA 2026-09-07 — la segunda opinión entra al guard, y entra donde NO rompe la simetría** (`158a1f4`, `data/yahoo_finance.py`, `config/settings_manager.py`, `tests/test_second_opinion_t127.py`). Suite Windows **2804 passed, 3 skipped** (9 tests nuevos, probados por mutación en 4 ejes), ruff limpio. **La cola queda vacía.**
   - **El hazard que hizo diferir esto en la 14 era real, y el diseño se armó alrededor de él.** El punto obvio de inserción era `_reject_if_out_of_band`, pero **eso sólo lo llama el fetch**: si el fetch rechazara un precio que el engine acepta, el engine se queda **sin precio para vender** y la posición queda trabada. Hay un test de la 63 que fija ese invariante (`fetch_acepta == engine_acepta`).
   - **Por eso va adentro de `unreliable_reference`, que los DOS guards llaman.** La simetría se sostiene **por construcción**: la decisión es la misma función. Y hay un test que impide que alguien la mueva al guard del fetch, con el motivo escrito.
   - **Y por eso también se memoiza** — patrón de `recent_split_factor`: el engine no puede pegar a la red en medio de un fill, pero **sí aprovecha lo que el fetch ya aprendió**. Sin el memo los dos llegarían a veredictos distintos sobre el mismo precio, que es justo lo que había que evitar.
