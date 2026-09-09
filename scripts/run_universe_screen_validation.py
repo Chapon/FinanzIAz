@@ -8,7 +8,8 @@ reporta, nombre por nombre, si entraría o quedaría excluido y por qué.
 Kill-criteria (BACKLOG §E1b): el screen **excluye los nombres tipo MLTX** (biotech
 clínico pre-revenue, −89.9 %) **sin sacar nombres buenos**. Este script lo hace
 medible:
-  * ``--expect-fragile`` (default ``MLTX``): estos DEBEN quedar excluidos.
+  * ``--expect-fragile`` (default ``MLTX``): estos DEBEN quedar excluidos **si
+    están en el universo que se evalúa**.
   * el resto de la watchlist son los "nombres buenos": ninguno debería caer por
     fundamentals; si el piso de ADV$ excluye alguno, se lista para revisión
     humana (puede ser un ilíquido legítimo, no necesariamente un "bueno").
@@ -16,12 +17,23 @@ medible:
 Es **read-only** (no toca la DB ni el motor) y usa RED (yfinance + SEC). No corre
 en la suite. Uso típico en Windows:
 
-    python scripts/run_universe_screen_validation.py            # watchlist de Sim Principal
+    python scripts/run_universe_screen_validation.py            # watchlist de la cuenta VIVA
     python scripts/run_universe_screen_validation.py --min-adv 5000000
     python scripts/run_universe_screen_validation.py --tickers MLTX,AAPL,MU --json
 
 Los defaults aíslan la pata fundamental (la que agarra a MLTX): ADV$ floor en 0
 (solo informa el ADV$) salvo que pases ``--min-adv``.
+
+**Tarea 128 — dos defectos que hacían inservible al instrumento.** (1) ``--account-id``
+defaulteaba a ``DEFAULT_ACCOUNT_ID = 1``, la cuenta **pausada** desde el 2026-07-01,
+así que sin flag medía la watchlist de una cuenta muerta; ahora se resuelve contra
+``is_active`` como los siete runners de la tarea 99. (2) el ``--expect-fragile MLTX``
+por default daba ``fragile_missed=["MLTX"]`` contra cualquier universo que no lo
+tuviera —el de la cuenta viva, por ejemplo— y con eso ``kill_pass=False`` y **exit
+1**: un NO-SHIP falso. Ahora sólo se exige a los frágiles que **están** en el
+universo evaluado, y los que no están se declaran aparte, porque su ausencia
+significa que el lado *verdadero-positivo* del kill-criteria **no se ejercita** en
+esa corrida — que es distinto de que lo haya pasado.
 """
 
 from __future__ import annotations
@@ -42,22 +54,29 @@ from paper_trading.universe import (
     UniverseThresholds,
     screen_candidate,
 )
+from scripts.baseline_metrics import NoLiveAccount, resolve_account_id
 
 DEFAULT_DB = "finanzias.db"
-DEFAULT_ACCOUNT_ID = 1
 DEFAULT_ADV_LOOKBACK = 20
 
 
-def _load_watchlist(db: str, account_id: int) -> list[str]:
+def _load_watchlist(db: str, account_id: int | None) -> tuple[int, list[str]]:
+    """``(cuenta, tickers)``. Sin ``account_id`` se resuelve la **viva** (tarea 99).
+
+    La cuenta se resuelve con la misma conexión con la que después se lee la
+    watchlist: preguntarle a una base por la cuenta viva y leerle la watchlist a
+    otra es justo el desvío que este script existe para no tener.
+    """
     con = sqlite3.connect(db)
     try:
+        account_id = resolve_account_id(con, account_id)
         rows = con.execute(
             "SELECT ticker FROM paper_watchlist WHERE account_id = ? ORDER BY ticker",
             (account_id,),
         ).fetchall()
     finally:
         con.close()
-    return [r[0] for r in rows]
+    return account_id, [r[0] for r in rows]
 
 
 def _fmt_money(v: float | None) -> str:
@@ -73,9 +92,18 @@ def _fmt_ni(ni: list[float]) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Validación del screen de universo E1b (read-only, red).")
     p.add_argument("--db", default=DEFAULT_DB)
-    p.add_argument("--account-id", type=int, default=DEFAULT_ACCOUNT_ID)
+    p.add_argument(
+        "--account-id",
+        type=int,
+        default=None,
+        help="id de cuenta; sin esto se resuelve la cuenta VIVA contra is_active (tarea 99)",
+    )
     p.add_argument("--tickers", default="", help="CSV que sobreescribe la watchlist")
-    p.add_argument("--expect-fragile", default="MLTX", help="CSV de nombres que DEBEN quedar excluidos")
+    p.add_argument(
+        "--expect-fragile",
+        default="MLTX",
+        help="CSV de nombres que DEBEN quedar excluidos si están en el universo evaluado",
+    )
     p.add_argument("--min-adv", type=float, default=0.0, help="Piso de ADV$ (0 = pata de liquidez off)")
     p.add_argument("--revenue-floor", type=float, default=10_000_000.0)
     p.add_argument("--min-neg-years", type=int, default=2)
@@ -85,10 +113,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
+    account_id: int | None = args.account_id
     if args.tickers.strip():
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
     else:
-        tickers = _load_watchlist(args.db, args.account_id)
+        try:
+            account_id, tickers = _load_watchlist(args.db, args.account_id)
+        except NoLiveAccount as e:
+            print(f"No se pudo resolver la cuenta: {e}", file=sys.stderr)
+            return 2
     if not tickers:
         print("No hay tickers para evaluar (watchlist vacía o --tickers no dado).", file=sys.stderr)
         return 2
@@ -129,13 +162,25 @@ def main(argv: list[str] | None = None) -> int:
 
     excluded = [r for r in results if not r["included"]]
     excluded_names = {r["ticker"] for r in excluded}
-    fragile_caught = sorted(expect_fragile & excluded_names)
-    fragile_missed = sorted(expect_fragile - excluded_names)
+    # Tarea 128: a un frágil esperado sólo se le puede exigir que quede excluido si
+    # el screen llegó a mirarlo. Exigírselo cuando no está en el universo evaluado
+    # es lo que producía el NO-SHIP falso contra la cuenta viva (MLTX está en la
+    # watchlist de la 1 y no en la de la 2).
+    universo = {r["ticker"] for r in results}
+    fragile_evaluados = expect_fragile & universo
+    fragile_ausentes = sorted(expect_fragile - universo)
+    fragile_caught = sorted(fragile_evaluados & excluded_names)
+    fragile_missed = sorted(fragile_evaluados - excluded_names)
     # Exclusiones que NO son las esperadas → candidatas a "nombre bueno" recortado.
     other_exclusions = [r for r in excluded if r["ticker"] not in expect_fragile]
     other_by_fundamentals = [r for r in other_exclusions if r["reason"] != REASON_ADV]
 
     kill_pass = not fragile_missed and not other_by_fundamentals
+    # Y esto NO entra al veredicto: entra al lado del veredicto. Sin ningún frágil
+    # en el universo, la corrida mide el lado **falso-positivo** (no recortar
+    # buenos) y no ejercita el **verdadero-positivo** (agarrar a los tipo MLTX).
+    # Un PASS que no lo diga se lee como si hubiera medido las dos cosas.
+    true_positive_ejercitado = bool(fragile_evaluados)
 
     if args.json:
         print(
@@ -147,10 +192,13 @@ def main(argv: list[str] | None = None) -> int:
                         "min_negative_years": thresholds.min_negative_years,
                         "revenue_floor": thresholds.revenue_floor,
                     },
+                    "account_id": account_id,
                     "n": len(results),
                     "results": results,
                     "fragile_caught": fragile_caught,
                     "fragile_missed": fragile_missed,
+                    "fragile_not_in_universe": fragile_ausentes,
+                    "true_positive_exercised": true_positive_ejercitado,
                     "other_exclusions": [r["ticker"] for r in other_exclusions],
                     "kill_pass": kill_pass,
                 },
@@ -159,7 +207,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0 if kill_pass else 1
 
-    print(f"\nScreen de universo E1b — {len(results)} nombres  ·  DB={args.db} cuenta={args.account_id}")
+    cuenta_txt = "—(--tickers)" if account_id is None else str(account_id)
+    print(f"\nScreen de universo E1b — {len(results)} nombres  ·  DB={args.db} cuenta={cuenta_txt}")
     print(
         f"thresholds: min_adv={_fmt_money(thresholds.min_adv_dollars)} "
         f"fundamentals={'on' if thresholds.fundamentals_enabled else 'off'} "
@@ -180,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  agarrados: {', '.join(fragile_caught) or '—'}")
     if fragile_missed:
         print(f"  NO agarrados (FALLA): {', '.join(fragile_missed)}")
+    if fragile_ausentes:
+        print(f"  fuera del universo evaluado (no se les puede exigir nada): {', '.join(fragile_ausentes)}")
     if other_exclusions:
         print("Otras exclusiones (revisar si son 'nombres buenos' recortados):")
         for r in other_exclusions:
@@ -188,10 +239,16 @@ def main(argv: list[str] | None = None) -> int:
         print("Otras exclusiones: ninguna")
     print(f"\nVEREDICTO PROVISIONAL: {'PASS' if kill_pass else 'REVISAR/NO-SHIP'}")
     print(
-        "  (PASS = todos los frágiles esperados excluidos y ningún nombre excluido "
-        "por fundamentals fuera de los esperados. El ADV floor puede excluir "
-        "ilíquidos legítimos — revisar a mano.)"
+        "  (PASS = todos los frágiles esperados **presentes en este universo** "
+        "excluidos, y ningún nombre excluido por fundamentals fuera de los "
+        "esperados. El ADV floor puede excluir ilíquidos legítimos — revisar a mano.)"
     )
+    if not true_positive_ejercitado:
+        print(
+            "  ALCANCE: ningún frágil esperado está en este universo, así que esta "
+            "corrida mide el lado FALSO-POSITIVO (no recortar nombres buenos) y NO "
+            "ejercita el verdadero-positivo (agarrar a los tipo MLTX)."
+        )
     return 0 if kill_pass else 1
 
 
