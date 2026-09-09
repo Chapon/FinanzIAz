@@ -1782,18 +1782,30 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
     # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
     # depende del brazo es de qué lado del engine cae el desvío.
+    # Tarea 151: con el master switch APAGADO, el lado «en vivo» de estas dos
+    # comparaciones no existe. No se suprimen —el harness **sí** simula barreras, y
+    # cómo las evalúa y las llena sigue siendo un hecho suyo que hay que declarar—
+    # pero la comparación se corrige, o el banner afirma que en vivo se decide al
+    # precio corriente algo que en vivo no se decide nunca.
+    _sin_barreras_vivas = (
+        " — OJO: hoy `atr_stops_enabled` está APAGADO, así que en vivo NO hay barreras "
+        "ATR y esta comparación no tiene lado derecho (ver el desvío `atr_master_off`)"
+        if not LIVE_ATR_STOPS_ENABLED
+        else ""
+    )
     if cfg.eval_mode == "close":
         _add(
             "barrier_eval",
             f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} "
             f"en vivo (cota INFERIOR de frecuencia de disparo: mide +3.39pp de CAGR "
-            f"de más que la regla viva, T26b §1)",
+            f"de más que la regla viva, T26b §1){_sin_barreras_vivas}",
         )
     else:
         _add(
             "barrier_eval",
             f"barreras ATR decididas al {TOUCH_EXIT_EVAL_DESC} vs "
-            f"{LIVE_EXIT_EVAL_DESC} en vivo (cota SUPERIOR de frecuencia de disparo)",
+            f"{LIVE_EXIT_EVAL_DESC} en vivo (cota SUPERIOR de frecuencia de "
+            f"disparo){_sin_barreras_vivas}",
         )
     # Y el fill de esa barrera, que es el quinto desvío (T33). El caso legacy en
     # modo ``close`` no es un desvío: es un defecto, y se anuncia como tal.
@@ -1809,7 +1821,8 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
         _add(
             "barrier_fill",
             f"fill de la barrera al close que la decidió vs {LIVE_FILL_DESC} en vivo "
-            f"(desvío conservador: el harness cobra el peor de los dos precios)",
+            f"(desvío conservador: el harness cobra el peor de los dos "
+            f"precios){_sin_barreras_vivas}",
         )
     # Bajo ``touch`` los dos fill_mode coinciden **y coinciden con el engine** (el
     # precio que decide es el nivel), así que ahí no hay nada que declarar.

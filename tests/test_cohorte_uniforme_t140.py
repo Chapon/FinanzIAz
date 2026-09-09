@@ -38,6 +38,9 @@ import pytest
 import analysis.harness_config as hc
 from analysis.harness_config import (
     ARTIFACT_MAX_LAG_DAYS,
+    LIVE_MAX_POSITIONS,
+    LIVE_WATCHLIST_SIZE,
+    HarnessConfig,
     StaleArtifactError,
     announce_continuity,
     stale_artifacts,
@@ -149,6 +152,30 @@ def test_el_mensaje_dice_QUE_hacer_y_que_la_ventana_se_mueve(cohorte_atrasado):
 
 
 # ── El límite declarado ──────────────────────────────────────────────────────
+
+
+def test_con_el_switch_apagado_los_OTROS_dos_desvios_de_barreras_lo_dicen(monkeypatch):
+    """Tarea 151 — el resto de la familia, que la 132 había dejado afuera.
+
+    Los desvíos de la **T32** (precio de evaluación) y la **T33** (fill) comparan el
+    harness *«vs en vivo»*, y con `atr_stops_enabled` apagado **el lado vivo no
+    existe**. No se suprimen —el harness sí simula barreras, y cómo las evalúa sigue
+    siendo un hecho suyo— pero la comparación se corrige, o el banner afirma que en
+    vivo se decide al precio corriente algo que en vivo no se decide nunca.
+
+    Apareció escribiendo el test de la 132: filtré por `"barreras ATR"` y me trajo
+    **tres** líneas de tres ejes distintos. El filtro estaba mal; la pregunta, no.
+    """
+    from analysis.harness_config import deviations_keyed
+
+    cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE)
+    por_clave = {d.clave: d.texto for d in deviations_keyed(cfg)}
+    assert "no tiene lado derecho" not in por_clave["barrier_eval"]  # hoy el switch está ON
+
+    monkeypatch.setattr(hc, "LIVE_ATR_STOPS_ENABLED", False)
+    por_clave = {d.clave: d.texto for d in deviations_keyed(cfg)}
+    for clave in ("barrier_eval", "barrier_fill"):
+        assert "APAGADO" in por_clave[clave] and "atr_master_off" in por_clave[clave], clave
 
 
 def test_un_ticker_con_UN_SOLO_frame_queda_afuera(monkeypatch):
