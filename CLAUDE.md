@@ -39,4 +39,6 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 - `docs/BACKLOG.md` — tareas operativas (el qué sigue).
 - `docs/ARCHITECTURE.md` — flujo de datos y módulos.
 - `docs/SETTINGS_REFERENCE.md` — todos los flags `paper_*`/engine con defaults.
-- `docs/DB_SCHEMA.md` — dicc
+- `docs/DB_SCHEMA.md` — diccionario de tablas y columnas de `finanzias.db`.
+- `docs/schema_management.md` — cómo se migra el esquema (alembic; `init_db` → `_alembic_sync`).
+- `docs/roadmap_v3_2026-06-09.md` — el porqué estratégico detrás del backlog.

@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 92 — Tarea 136 (CLAUDEMD-TRUNCADO) CERRADA 2026-09-09 — el archivo de instrucciones deja de terminar a mitad de palabra, y el guard cubre los 137 `.md`** (`CLAUDE.md`, `tests/test_claude_md_completo_t136.py`). Suite Windows **2952 passed, 3 skipped**, ruff limpio. **La próxima es la 138.**
+  - **Completada la línea** (`— diccionario de tablas y columnas de finanzias.db.`) **y agregado el newline final**: 5.042 → 5.275 bytes.
+  - **La revisión de la lista dio dos faltantes**, que es la parte (b) del alcance: `docs/schema_management.md` —que el propio `CLAUDE.md` necesita para su sección de migraciones— y `docs/roadmap_v3_2026-06-09.md`, el porqué estratégico al que apunta el backlog.
+  - **Lo que no se puede saber sigue sin saberse, y va dicho:** si había entradas *después* de esa línea. El corte es anterior a toda la historia registrada del archivo.
+  - **El guard es del corpus entero y eso se decidió midiendo:** `CLAUDE.md` era **el único** de los **137** `.md` sin newline final, así que la propiedad ya se cumplía en todos lados y sostenerla no cuesta nada. Un guard de un archivo solo habría sido la lista de la 133 con otra ropa.
+  - **Tres ejes, no uno:** newline final en todo el corpus (la firma mecánica de una escritura cortada), que la última línea de `CLAUDE.md` siga siendo un ítem de lista **terminado en punto**, y que los cuatro docs que lista **existan** — porque mandar a leer un archivo inexistente en cada sesión hace el mismo daño que la línea cortada. Probado por mutación: truncar 30 bytes hace caer dos de los siete.
+
 - **WIP 91 — Tarea 137 (CORPUS-FACTOR-VIEJO) CERRADA 2026-09-09 — la línea manda a leer el valor del fuente, y la tabla de 49 flags pasa a contrastarse sola** (`.claude/skills/backtest-replay-harness/SKILL.md`, `tests/test_corpus_valores_vivos_t137.py`). Suite Windows **2945 passed, 3 skipped**, ruff limpio. Deja la tarea **154**. **La próxima es la 136.**
   - **El arreglo de la línea no es escribir 0.25:** es mandar a **leerlo** de `LIVE_REGIME_SCALE_FACTOR`, que el guard de la 130 ya compara contra el `settings.json` vivo. Escribir el valor de hoy sería reponer el mismo defecto con otro número.
   - **La parte mecánica quedó mecánica:** las **49 filas** de `SETTINGS_REFERENCE.md` se contrastan fila por fila contra `DEFAULTS`. Nadie tiene que leer esa tabla a ojo nunca más, que es el mismo criterio con el que la 130 cerró los espejos.
@@ -1934,7 +1941,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Gate técnico: la población pasa a derivarse del predicado y **acusa** a `measure_trail_arm_t54.py` antes del cableado, quedando verde después (probado por mutación). Y las exclusiones quedan con motivo escrito, re-verificado contra el archivo como ya hace `test_lo_excluido_del_store_sigue_sin_leerlo`. Suite Windows verde.
 - **Dependencias:** ninguna. Emparenta con la **128** y la **133**: las tres son *«la población del guard es una lista y no un predicado»*.
 
-### 136. CLAUDEMD-TRUNCADO — `CLAUDE.md` termina a mitad de palabra, y lo está desde su primer commit  ·  ref `docs/auditoria_claims_2026-09-08.md` §3 [C-1] · severidad **MEDIA**
+### 136. ~~CLAUDEMD-TRUNCADO — `CLAUDE.md` termina a mitad de palabra, y lo está desde su primer commit~~ · **CERRADA 2026-09-09 — completado, dos referencias que faltaban agregadas, y el guard es del corpus entero** · ref `docs/auditoria_claims_2026-09-08.md` §3 [C-1] · severidad **MEDIA**
 
 - **Qué pasa.** `CLAUDE.md` termina en `` - `docs/DB_SCHEMA.md` — dicc `` — **a mitad de la palabra «diccionario» y sin salto de línea final** (verificado con `od -c`; 5.042 bytes).
 - **No lo truncó ningún commit: nació así.** Los tamaños del blob a lo largo de su historia son 2.438 → 2.641 → 3.081 → 3.749 → 3.944 → 4.352 → 5.042, y **las siete versiones terminan en `— dicc`**. Creció monotónicamente y el corte estuvo siempre.
