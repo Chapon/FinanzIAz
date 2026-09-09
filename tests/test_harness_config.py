@@ -1226,7 +1226,14 @@ def test_a_declared_exception_does_not_abort_but_IS_announced(capsys):
     announce_artifacts(c, file=None, continuity=False)  # y NO levanta
     out = capsys.readouterr().out
     assert "[excepción declarada] AVB" in out
-    assert "split FANTASMA" in out  # el motivo, no sólo el nombre
+    # El motivo, no sólo el nombre — y **derivado del dict**, no una frase pinneada.
+    # Estaba escrito como `assert "split FANTASMA" in out` y lo rompió la tarea 156 al
+    # reescribir el motivo de AVB, que era exactamente lo que el dict tiene que dejar
+    # hacer: el texto de una excepción **debe** poder corregirse cuando su premisa
+    # cambia. Lo que este test cuida es que el motivo LLEGUE al banner, no cuál es.
+    motivo = ARTIFACT_REFRESH_EXCEPTIONS["AVB"]
+    assert motivo.split(":")[0] in out  # la referencia a la tarea
+    assert len(motivo) > 80 and motivo[:60] in out
 
 
 def test_the_exception_is_a_dict_so_adding_one_forces_writing_the_reason():

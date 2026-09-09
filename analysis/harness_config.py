@@ -479,11 +479,16 @@ ARTIFACT_MAX_LAG_DAYS = 5
 # obligue a escribir el porqué.
 ARTIFACT_REFRESH_EXCEPTIONS: dict[str, str] = {
     "AVB": (
-        "tarea 63: Yahoo le aplica un split FANTASMA de 2.793 al frame 2y. El 10y "
-        "(bajado el 2026-08-09) es la escala sana contra la cual `scale_is_disputed` "
-        "detecta la disputa — refrescarlo lo pondría a la escala podrida, los dos "
-        "frames coincidirían y AVB pasaría de *vendible* a TRABADO. El caveat NO "
-        "caduca con la 63: vale mientras el proveedor siga reportando el split."
+        "tarea 156 (2026-09-09): Yahoo CORROMPIÓ el registro entero de AVB — le reseteó "
+        "el firstTradeDate al 2026-07-17 y le aplicó un split fantasma de 2.793 el "
+        "2026-08-17. Hoy devuelve 27 filas para CUALQUIER período, así que no hay nada "
+        "que refrescar: bajarlo de nuevo no lo arregla. NO cambió de ticker (Yahoo "
+        "sigue diciendo AvalonBay Communities, NYSE). // Lo que este dict decía antes "
+        "—'el 10y es la escala sana contra la cual scale_is_disputed detecta la "
+        "disputa' (tarea 63)— DEJÓ DE SER CIERTO el 2026-09-09: ese frame se refrescó "
+        "por error durante la operación de la 140 y su histórico de ~2.500 barras se "
+        "perdió de forma irreversible. Es la razón de existir de scripts/refresh_cohort.py "
+        "(tarea 155)."
     ),
 }
 
