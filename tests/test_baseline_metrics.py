@@ -451,15 +451,47 @@ def test_compute_account_no_snapshots_no_fills():
 # ── end-to-end against a real backup (only runs if file exists) ──────────────
 
 
+def backup_mas_nuevo(directorio: Path) -> Path | None:
+    """El backup **más nuevo por mtime**, o ``None`` si no hay ninguno.
+
+    **Era ``sorted(...)[-1]``, o sea el último ALFABÉTICO** (tarea 142), y eso no es
+    un desfase pasajero sino estructural: los diarios se llaman
+    ``finanzias_YYYY-MM-DD_…`` y los manuales ``finanzias_pre_*`` / ``finanzias_post_*``,
+    y en ASCII **``p`` > ``2``**. Así que **cualquier manual le gana a todos los
+    fechados, para siempre** — el smoke test no volvía a ejercitar un backup diario
+    mientras existiera uno manual. Medido el 2026-09-08: elegía el `pre_t81` del 09-02,
+    o sea una DB con el esquema **anterior** a la migración de la tarea 81, mientras el
+    más nuevo de verdad era el diario de ese mismo día.
+    """
+    backups = list(directorio.glob("finanzias_*.db"))
+    return max(backups, key=lambda p: p.stat().st_mtime) if backups else None
+
+
 def test_run_against_backup_db(tmp_path):
-    """Smoke test: corrida contra el último backup. Verifica que
-    el JSON se escribe y que tiene la estructura esperada."""
+    """Smoke test end-to-end contra el backup MÁS NUEVO (tarea 142).
+
+    Se copia a ``tmp_path`` antes de abrirlo, y no es cosmético: abrir una base WAL
+    aunque sea en ``mode=ro`` **le crea el ``-shm`` al lado**, así que la suite estaba
+    escribiendo dentro de ``backups/``. Copiar primero es además lo que pide la regla 5
+    de `CLAUDE.md`. Se copian los side files si están, porque una base WAL son **tres**
+    archivos y llevarse uno solo puede perder las últimas transacciones (tarea 143).
+    """
+    import shutil
+
     repo_root = Path(__file__).resolve().parent.parent
-    backups = sorted((repo_root / "backups").glob("finanzias_*.db"))
-    if not backups:
+    elegido = backup_mas_nuevo(repo_root / "backups")
+    if elegido is None:
         pytest.skip("no backups available")
+
+    copia = tmp_path / elegido.name
+    shutil.copy2(elegido, copia)
+    for sufijo in ("-wal", "-shm"):
+        lado = elegido.with_name(elegido.name + sufijo)
+        if lado.exists():
+            shutil.copy2(lado, tmp_path / lado.name)
+
     out_dir = tmp_path / "baselines"
-    run(backups[-1], out_dir, write=True)
+    run(copia, out_dir, write=True)
     files = list(out_dir.glob("baseline_*.json"))
     assert len(files) == 1
     import json as _json
@@ -471,3 +503,28 @@ def test_run_against_backup_db(tmp_path):
     if payload["accounts"]:
         a = payload["accounts"][0]
         assert "overall" in a and "monthly" in a and "notes" in a
+
+
+def test_la_seleccion_del_backup_no_la_gana_un_MANUAL_por_orden_alfabetico(tmp_path):
+    """La mutación de la tarea 142, con el esquema de nombres real.
+
+    ``finanzias_pre_zzz_*`` ordena **último** en ASCII y es el más **viejo** por mtime.
+    Con el `sorted(...)[-1]` de antes ganaba siempre; con mtime pierde siempre, que es
+    lo que el docstring del smoke test venía afirmando desde el principio.
+    """
+    import os
+    import time
+
+    viejo = tmp_path / "finanzias_pre_zzz_20200101_000000.db"
+    nuevo = tmp_path / "finanzias_2026-09-08_19-20-55_daily.db"
+    for f in (viejo, nuevo):
+        f.write_bytes(b"")
+    os.utime(viejo, (time.time() - 86_400, time.time() - 86_400))
+
+    assert sorted(tmp_path.glob("finanzias_*.db"))[-1] == viejo  # el defecto viejo
+    assert backup_mas_nuevo(tmp_path) == nuevo  # el arreglo
+
+
+def test_sin_backups_no_inventa_ninguno(tmp_path):
+    """Contraprueba: la ausencia devuelve ``None`` y el smoke se saltea, no falla."""
+    assert backup_mas_nuevo(tmp_path) is None

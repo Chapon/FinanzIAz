@@ -108,6 +108,15 @@ def list_backups() -> list[Path]:
 def rotate_backups(keep: int = 7) -> int:
     """
     Delete oldest backups so at most ``keep`` remain. Returns number deleted.
+
+    **Una base SQLite en modo WAL son TRES archivos** (``.db``, ``.db-wal``,
+    ``.db-shm``) y esto borraba **uno** (tarea 143). Medido el 2026-09-08: **18 side
+    files huérfanos** de 9 backups que ya no existían. El daño directo era ~288 KB,
+    pero el mecanismo garantizaba que se acumulara sin techo — y **un ``-wal`` al lado
+    de una base no es inerte**: si algún día se restaura por copia, SQLite lo aplica.
+
+    El contador que se devuelve sigue siendo el de **bases** borradas, no el de
+    archivos: es lo que el llamador reporta y lo que sus tests fijan.
     """
     if keep <= 0:
         return 0
@@ -122,6 +131,15 @@ def rotate_backups(keep: int = 7) -> int:
             deleted += 1
         except Exception:
             log.exception("Could not delete backup %s", p)
+            continue
+        # Los side files van DESPUÉS de la base y con su propio try: si falla borrar
+        # un `-shm` no se pierde la rotación, que es lo que importa.
+        for sufijo in ("-wal", "-shm"):
+            lado = p.with_name(p.name + sufijo)
+            try:
+                lado.unlink(missing_ok=True)
+            except OSError:
+                log.warning("No se pudo borrar el side file %s", lado)
     if deleted:
         log.info("Rotated backups: deleted %d, kept %d", deleted, keep)
     return deleted

@@ -79,6 +79,40 @@ def test_rotate_backups_keeps_last_n(real_db):
     assert len(list_backups()) == 3
 
 
+def test_rotate_backups_se_lleva_los_SIDE_FILES(real_db):
+    """Tarea 143 — una base WAL son TRES archivos y esto borraba uno.
+
+    Medido en `backups/` el 2026-09-08: **18 side files huerfanos** de 9 backups que
+    ya no existian. El dano directo eran ~288 KB, pero el mecanismo garantizaba que se
+    acumulara sin techo -- y **un `-wal` al lado de una base no es inerte**: si algun
+    dia se restaura por copia, SQLite lo aplica.
+    """
+    from pathlib import Path
+
+    from database.backup import backup_database, list_backups, rotate_backups
+
+    creados = []
+    for i in range(5):
+        out = backup_database(reason=f"r{i}")
+        assert out is not None
+        base = Path(out)
+        creados.append(base)
+        for sufijo in ("-wal", "-shm"):
+            base.with_name(base.name + sufijo).write_bytes(b"x")
+
+    assert rotate_backups(keep=3) == 2
+    assert len(list_backups()) == 3
+
+    vivos = {b.name for b in list_backups()}
+    for base in creados:
+        for sufijo in ("-wal", "-shm"):
+            lado = base.with_name(base.name + sufijo)
+            if base.name in vivos:
+                assert lado.exists(), f"se llevo el side file de un backup VIVO: {lado.name}"
+            else:
+                assert not lado.exists(), f"quedo huerfano: {lado.name}"
+
+
 def test_rotate_backups_no_op_when_under_limit(real_db):
     from database.backup import backup_database, rotate_backups
 
