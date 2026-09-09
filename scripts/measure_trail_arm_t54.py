@@ -55,9 +55,12 @@ from analysis.exit_replay import AtrParams, atr_series
 from analysis.harness_config import (
     LIVE_MAX_POSITIONS,
     LIVE_UNIVERSE_FILE,
+    SignalStoreGapError,
+    StaleArtifactError,
     announce,
     announce_artifacts,
     announce_grid,
+    announce_signal_store,
     artifact_window,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
@@ -183,7 +186,21 @@ def main(argv: list[str] | None = None) -> int:
 
     # Frescura del cohorte, antes de `announce` (tarea 101): si la muestra está
     # torcida el harness no puede declarar una config que no va a honrar.
-    announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+    #
+    # Y la cobertura del **store de señales**, que faltaba (tarea 141). Son dos
+    # sustratos distintos: `announce_artifacts` mira las barras y no dice nada del
+    # store. Sin esto, cuando el store se queda corto `complete` sigue en `True` —el
+    # flag que el diseño de la T86 declara insuficiente— así que `sigs_by` no trae las
+    # fechas nuevas, `buy_entries` encuentra menos BUY, y este script publica números
+    # **sobre una muestra encogida, sin error y sin mensaje**. Los otros 21 abortan.
+    try:
+        announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
+        announce_signal_store(
+            bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts, file=log
+        )
+    except (StaleArtifactError, SignalStoreGapError) as exc:
+        print(f"*** ABORTA — {exc} ***", file=sys.stderr)
+        return 3
     window = artifact_window(bars_by)
     announce(
         args.max_positions,

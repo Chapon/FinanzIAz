@@ -214,13 +214,59 @@ _NO_LEE_EL_STORE = {
         "referencias a `data/pit_signals/` en todo el archivo. Sí lee las barras, "
         "así que le corresponde `announce_artifacts` — y lo llama."
     ),
+    # Los cinco que la tarea 141 destapó al pasar de `run_*` a `*`. Los cinco leen
+    # **barras** y ninguno toca el store: les corresponde `announce_artifacts`, igual
+    # que al T61. Se verifican contra el archivo abajo, no se creen.
+    "benchmark_historical_cache.py": (
+        "Benchmark de I/O del cache histórico: mide cuánto tarda leer, no decide "
+        "nada. No lee señales precomputadas."
+    ),
+    "measure_buyscore_fwd5_t73.py": (
+        "Mide corr(buy_score, fwd5) sobre barras: el score sale del cohorte de "
+        "barras, no del store PIT (tarea 73)."
+    ),
+    "measure_garch_fragil_t67.py": (
+        "Mide la fragilidad del fit de GARCH sobre las barras crudas (tarea 67); "
+        "no consulta señales precomputadas."
+    ),
+    "measure_garch_intraday_t29.py": (
+        "Compara el forecast de GARCH intradía contra el diario, sobre barras "
+        "(tarea 29); no consulta el store."
+    ),
+    "measure_sell_bias_t31.py": (
+        "Re-mide el sesgo de SELL sobre las órdenes reales de la DB más barras "
+        "(tarea 31); no consulta el store."
+    ),
+}
+
+# Los **productores** del store. No lo *consultan*: lo escriben, así que exigirles
+# `announce_signal_store` sería pedirle a un guard que valide su propia salida antes
+# de producirla. Van en un dict aparte porque su re-verificación es la **opuesta**: un
+# productor **tiene** que mencionar `pit_signals`, y el chequeo de los excluidos de
+# arriba exige justamente que **no** lo mencionen.
+_PRODUCTORES_DEL_STORE = {
+    "precompute_pit_signals.py": "ESCRIBE data/pit_signals/: es el productor del store.",
+    "precompute_pit_risk_score.py": "ESCRIBE el store de risk score PIT, el sustrato hermano.",
 }
 
 
 def _runners_del_cohorte() -> list[tuple[str, str]]:
+    """La población: **todo** `scripts/*.py` que lea el sustrato, menos lo excluido.
+
+    **Era `glob("run_*.py")` y ése es el defecto (tarea 141).** Este guard y el de
+    frescura del cohorte comparten el mismo regex de predicado, pero el hermano pasó a
+    `glob("*.py")` con exclusiones **por motivo escrito** en la tarea 101 y éste se
+    quedó con el prefijo. El comentario que la 101 dejó allá dice literalmente: *«es la
+    única forma de que la lista no vuelva a ser "los que se llaman `run_`"»*.
+
+    Y se le escapaba **el mismo archivo** que la 101 tuvo que cazar a mano —
+    `measure_trail_arm_t54.py`— **por la misma razón**: llega a `load_bars_signals` por
+    un **import** desde el runner de la T23, no por una llamada local. Un barrido que
+    mira *cómo se llama el archivo* nunca lo encuentra.
+    """
     out = []
-    for p in sorted((_REPO / "scripts").glob("run_*.py")):
-        if p.name in _NO_LEE_EL_STORE:
+    for p in sorted((_REPO / "scripts").glob("*.py")):
+        if p.name in _NO_LEE_EL_STORE or p.name in _PRODUCTORES_DEL_STORE:
             continue
         txt = p.read_text(encoding="utf-8")
         if re.search(r"load_bars_signals|load_bars_and_signals|parquet_cache\.read|artifact_window\(", txt):
@@ -239,6 +285,24 @@ def test_lo_excluido_del_store_sigue_sin_leerlo():
         codigo = "\n".join(ln for ln in txt.splitlines() if not ln.lstrip().startswith("#"))
         assert "pit_signals" not in codigo, f"{nombre} empezó a leer el store: sacarlo de la lista"
         assert "load_bars_signals" not in codigo, f"{nombre} empezó a leer el store"
+
+
+def test_cada_productor_del_store_SIGUE_siendo_un_productor():
+    """La re-verificación **opuesta** a la de arriba (tarea 141).
+
+    Un productor está excluido porque *escribe* el store, no porque no lo toque. Si
+    dejara de escribirlo —renombrado, partido en dos, reemplazado— la exclusión pasa a
+    ser falsa y el archivo tiene que volver a la población. Sin este test, la única
+    forma de enterarse sería que alguien lo leyera.
+    """
+    for nombre, motivo in _PRODUCTORES_DEL_STORE.items():
+        ruta = _REPO / "scripts" / nombre
+        assert ruta.exists(), f"productor inexistente: {nombre}"
+        assert len(motivo) > 30, f"exclusión sin motivo escrito: {nombre}"
+        codigo = "\n".join(
+            ln for ln in ruta.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#")
+        )
+        assert "pit_" in codigo, f"{nombre} dejó de producir el store: sacarlo de la lista"
 
 
 def test_hay_poblacion_de_runners():

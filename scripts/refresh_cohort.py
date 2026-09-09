@@ -111,7 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "\nDESPUÉS DE ESTO, y antes de correr cualquier harness:\n"
         "  1. El store de señales PIT quedó ATRÁS del cohorte (T111/T117). Correr\n"
-        "     `python scripts/precompute_pit_signals.py` sobre el universo afectado.\n"
+        f"     `python scripts/precompute_pit_signals.py --universe {LIVE_UNIVERSE_FILE}`.\n"
+        "     El `--universe` NO es opcional: el default de ese script apunta a un\n"
+        "     universo de 41 tickers, así que sin el flag deja 86 sin recomputar y el\n"
+        "     guard de cobertura sigue frenando las corridas (tarea 158).\n"
         "  2. La ventana se movió, así que las constantes de reproducción quedan\n"
         "     INDETERMINADAS (T48). Hay que re-medirlas y re-anclarlas TODAS en el\n"
         "     mismo commit (T68) — actualizar sólo la de ventana convierte un\n"
