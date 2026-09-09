@@ -32,11 +32,14 @@ Dos decisiones de diseño que vale la pena leer antes de tocar esto:
    147. Ver [[guard-no-puede-usar-de-verdad-lo-que-chequea]].
 
 **Lo que este guard NO puede ver, y va declarado.** Su población son los ``LIVE_*``
-que **existen**. Una perilla viva que **no tiene espejo** es invisible acá: hoy son
-``atr_stops_enabled`` (el master switch de las barreras ATR, tarea **132**) y
-``paper_universe_screen_enabled`` (encendido el 2026-09-07, tarea **131**). O sea que
-esto cierra *«el espejo dejó de seguir al vivo»* y **no** *«hay algo vivo sin
-espejo»*. Son dos agujeros distintos y éste tapa uno solo.
+que **existen**, así que una perilla viva que **no tiene espejo** le es invisible.
+Esto cierra *«el espejo dejó de seguir al vivo»* y **no** *«hay algo vivo sin
+espejo»*: son dos agujeros distintos y éste tapa uno solo.
+
+Las dos que estaban en esa situación se cerraron el mismo día —``atr_stops_enabled``
+(tarea **132**) y ``paper_universe_screen_enabled`` (tarea **131**)— y por eso hoy la
+tabla tiene **15** y no 13. Que hayan entrado sin fricción es el punto del test de
+población: nacieron con guard.
 """
 
 from __future__ import annotations
@@ -52,9 +55,11 @@ from config.settings_manager import DEFAULTS
 # ── La tabla: espejo → clave del settings vivo ───────────────────────────────
 
 ESPEJOS: tuple[tuple[str, str], ...] = (
+    ("LIVE_ATR_STOPS_ENABLED", "atr_stops_enabled"),
     ("LIVE_HARD_STOP_ENABLED", "atr_hard_stop_enabled"),
     ("LIVE_STOP_MULT", "atr_stop_mult"),
     ("LIVE_TRAIL_MULT", "atr_trail_mult"),
+    ("LIVE_UNIVERSE_SCREEN_ENABLED", "paper_universe_screen_enabled"),
     ("LIVE_VOL_OVERLAY_ENABLED", "vol_overlay_enabled"),
     ("LIVE_VOL_TARGET_ANNUAL", "vol_target_portfolio_annual"),
     ("LIVE_VOL_PENALTY_COEF", "paper_vol_penalty_coef"),

@@ -72,8 +72,17 @@ def watchlist_viva(db: Path, account_id: int = LIVE_ACCOUNT_ID) -> int | None:
 
 
 def _dev_universo(n_tickers: int) -> str | None:
+    """El desvío de **tamaño** del universo, y sólo ése.
+
+    El filtro era ``"universo" in d`` y lo rompió la tarea 131 al agregar el desvío
+    del *screen de universo* E1b: dos desvíos distintos con la misma palabra. Se
+    ancla en el prefijo real de la línea (``universo N tickers vs …``), que es lo que
+    distingue a éste. Es el mismo problema que tiene todo consumidor de
+    ``deviations()`` —filtra texto libre por substring— y queda anotado como la
+    tarea **152**.
+    """
     cfg = HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", n_tickers)
-    return next((d for d in deviations(cfg) if "universo" in d), None)
+    return next((d for d in deviations(cfg) if d.startswith("universo ")), None)
 
 
 def test_un_universo_mas_CHICO_declara_el_desvio():

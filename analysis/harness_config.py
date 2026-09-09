@@ -110,6 +110,20 @@ LIVE_HARD_STOP_ENABLED = False  # `atr_hard_stop_enabled` — apagado desde 2026
 LIVE_STOP_MULT = 2.0  # `atr_stop_mult` (el valor sigue, pero el stop está apagado)
 LIVE_TRAIL_MULT = 2.0  # `atr_trail_mult` — el candidato `soff_t2.0` de la tarea 37
 
+# El MASTER SWITCH de las tres de arriba — Tarea 132 (STOPSW-ESPEJO).
+#
+# `engine.py:491` y `:604` chequean `atr_stops_enabled` **antes que todo lo demás**
+# ("Tarea 55 — el MASTER SWITCH primero"), así que con esto en `False` las tres
+# constantes anteriores no significan nada: la cuenta no tendría barreras ATR **en
+# absoluto**. Era el único de la política de salida sin espejo, y su ausencia es el
+# modo de falla que la T92 existe para prevenir: `deviations()` seguiría declarando
+# *«stop duro APAGADO / trailing 2.0×ATR en la cuenta 2»* —o sea el desvío **al
+# revés**— sobre una cuenta que no corre ninguna de las dos cosas.
+#
+# Hoy está en `True`, así que los tres espejos de arriba significan lo que dicen.
+# Verificado contra `~/.finanzias/settings.json` (default del schema: `False`).
+LIVE_ATR_STOPS_ENABLED = True
+
 # El harness no tiene un flag para apagar el stop duro: lo expresa con un múltiplo
 # que nunca dispara. `paper_trading/gates.py:113-117` documenta que las dos formas
 # son "equivalentes dígito por dígito", y esta constante es la que hace que la
@@ -161,6 +175,21 @@ LIVE_REGIME_SCALE_FACTOR = 0.25
 # eso se declara en vez de modelarse. Población medida sobre los round-trips
 # reales: **15,8%** son near-earnings (`docs/earnings_blackout_replay_2026-06-25.md`).
 LIVE_EARNINGS_BLACKOUT_DAYS = 2
+
+# Screen de universo E1b, Gate de entrada — Tarea 131 (SCREEN-DESVIO).
+#
+# `paper_universe_screen_enabled` está en `True` **desde el 2026-09-07**, y
+# `strategies.py:290` (`_screen_out_candidate`) dropea **candidatos de BUY** — todos
+# los del universo, no sólo los de afuera de la watchlist. Ningún runner lo modela y
+# hasta acá nada lo declaraba: buscar `screen|E1b|fundamental` en este archivo, en
+# `portfolio_sim.py` y en `scaleout_replay.py` daba **vacío**.
+#
+# **El desvío de `n_tickers` NO lo cubre:** ése compara *tamaños* de universo; el
+# screen es un drop **dinámico por scan**. Y que hoy sea inerte no lo salva — el
+# estándar del propio repo declara igual el escalado por régimen con *«0 de 62 BUY
+# vivas lo dispararon»*. Medido por la tarea 129 el 2026-09-09: sobre los 128 del
+# universo vivo el screen **no excluye a nadie**, así que hoy la brecha es de cero.
+LIVE_UNIVERSE_SCREEN_ENABLED = True
 
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
 LEGACY_MAX_POSITIONS = 5
@@ -1517,6 +1546,9 @@ class HarnessConfig:
     models_vol_overlay: bool = False
     models_regime_scale: bool = False
     models_earnings_blackout: bool = False
+    # Tarea 131 — mismo criterio y mismo default: el screen E1b dropea candidatos de
+    # BUY en vivo desde el 2026-09-07 y ningún runner lo modela.
+    models_universe_screen: bool = False
 
     # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
     # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
@@ -1675,19 +1707,32 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # (2,01% con el default vs 9,17% con lo vivo) — más que el look-ahead del fill.
     # Se compara contra la config viva, igual que slots y universo, en vez de
     # depender de que el autor del pre-registro se acuerde de escribirlo a mano.
-    if cfg.hard_stop_on != LIVE_HARD_STOP_ENABLED:
-        estado_h = f"ENCENDIDO a {cfg.atr_stop_mult:.1f}×ATR" if cfg.hard_stop_on else "APAGADO"
-        estado_v = f"ENCENDIDO a {LIVE_STOP_MULT:.1f}×ATR" if LIVE_HARD_STOP_ENABLED else "APAGADO"
+    # Tarea 132 — el MASTER SWITCH va PRIMERO, igual que en el engine. Con
+    # `atr_stops_enabled` apagado, comparar múltiplos declara el desvío al revés:
+    # lo que hay que decir no es *«el harness usa otro número»* sino *«en vivo no
+    # hay barreras ATR y el harness simula dos»*.
+    if not LIVE_ATR_STOPS_ENABLED:
         out.append(
-            f"stop duro {estado_h} en el harness vs {estado_v} en la cuenta "
-            f"{LIVE_ACCOUNT_ID} (desde el 2026-08-27, `soff_t2.0` de la T37): "
-            f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)"
+            f"la cuenta {LIVE_ACCOUNT_ID} NO tiene barreras ATR — `atr_stops_enabled` "
+            f"está APAGADO (el master switch de `engine.py:491`, que se chequea antes "
+            f"que el stop duro y el trailing) — y el harness simula stop "
+            f"{cfg.atr_stop_mult:.1f}×ATR y trailing {cfg.effective_trail_mult:.1f}×ATR: "
+            f"ninguna de las dos existe en vivo"
         )
-    if abs(cfg.effective_trail_mult - LIVE_TRAIL_MULT) > 1e-9:
-        out.append(
-            f"trailing {cfg.effective_trail_mult:.1f}×ATR en el harness vs "
-            f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}"
-        )
+    else:
+        if cfg.hard_stop_on != LIVE_HARD_STOP_ENABLED:
+            estado_h = f"ENCENDIDO a {cfg.atr_stop_mult:.1f}×ATR" if cfg.hard_stop_on else "APAGADO"
+            estado_v = f"ENCENDIDO a {LIVE_STOP_MULT:.1f}×ATR" if LIVE_HARD_STOP_ENABLED else "APAGADO"
+            out.append(
+                f"stop duro {estado_h} en el harness vs {estado_v} en la cuenta "
+                f"{LIVE_ACCOUNT_ID} (desde el 2026-08-27, `soff_t2.0` de la T37): "
+                f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)"
+            )
+        if abs(cfg.effective_trail_mult - LIVE_TRAIL_MULT) > 1e-9:
+            out.append(
+                f"trailing {cfg.effective_trail_mult:.1f}×ATR en el harness vs "
+                f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}"
+            )
     # Tarea 94 — el que más muerde de los tres: dispara TODOS los días.
     if LIVE_VOL_OVERLAY_ENABLED and not cfg.models_vol_overlay:
         out.append(
@@ -1703,6 +1748,17 @@ def deviations(cfg: HarnessConfig) -> list[str]:
             f"la ventana son risk-off. Vale +0.93pp de CAGR y −4.5pp de maxDD (T115, el "
             f"factor vivo desde el 2026-09-07; el +0.59pp/−2.5pp que decía antes era de "
             f"×0.50, que ya no corre)"
+        )
+    # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
+    if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
+        out.append(
+            "NO se modela el screen de universo E1b (encendido en vivo el 2026-09-07): "
+            "en vivo dropea candidatos de BUY por ADV$/fragilidad fundamental antes de "
+            "que el motor los mire, y el harness entra en todos. Es un drop DINÁMICO "
+            "por scan, así que el desvío de tamaño del universo no lo cubre. Medido "
+            "sobre los 128 del universo vivo (T129, 2026-09-09): hoy no excluye a "
+            "nadie, así que la brecha es de CERO — pero eso depende de los datos de "
+            "EDGAR, no del código"
         )
     # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
