@@ -107,10 +107,14 @@ vez**. Es la única decisión de la serie cableada en la cuenta viva.
    se castiga si se pierde la recuperación.
 3. **Se reporta `n_trades` por régimen** junto al retorno, para que se vea si el brazo pasó
    porque le fue bien o porque no jugó.
-4. **Preferir el mecanismo ya validado.** Si existe un overlay shipeado (hoy: el factor 0.50 de
-   T20), el candidato primario es el que lo reusa — no pide flag nuevo ni mecanismo nuevo, y su
-   validación no se paga dos veces. Las variantes nuevas (hard gate, `confirm_days`) van como
-   secundarias.
+4. **Preferir el mecanismo ya validado.** Si existe un overlay shipeado —el escalado por
+   régimen, `paper_regime_scale_factor`— el candidato primario es el que lo reusa: no pide flag
+   nuevo ni mecanismo nuevo, y su validación no se paga dos veces. Las variantes nuevas (hard
+   gate, `confirm_days`) van como secundarias.
+   **El valor vivo se lee, no se recuerda:** `analysis.harness_config.LIVE_REGIME_SCALE_FACTOR`
+   (que el guard de la tarea 130 compara contra el `settings.json` vivo). Acá decía *«hoy: el
+   factor **0.50**»* y el vivo pasó a **0.25** el 2026-09-07 — o sea que esta línea estuvo
+   mandando a construir el candidato primario sobre un mecanismo que ya no corría (tarea 137).
 5. **El gate paga su costo de selección.** Agregar un eje condicional agranda el espacio de
    búsqueda: el brazo se pre-registra, no se retrofitea sobre un veredicto ya publicado.
 
