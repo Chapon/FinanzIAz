@@ -18,12 +18,7 @@ from __future__ import annotations
 import pytest
 
 from analysis.harness_config import (
-    LIVE_EARNINGS_BLACKOUT_DAYS,
     LIVE_MAX_POSITIONS,
-    LIVE_REGIME_SCALE_ENABLED,
-    LIVE_REGIME_SCALE_FACTOR,
-    LIVE_VOL_OVERLAY_ENABLED,
-    LIVE_VOL_TARGET_ANNUAL,
     LIVE_WATCHLIST_SIZE,
     HarnessConfig,
     config_banner,
@@ -63,15 +58,14 @@ def test_los_tres_llegan_al_banner():
         assert texto in banner
 
 
-def test_las_constantes_son_las_de_la_cuenta_viva():
-    """Si Chapa apaga alguna y esto no se actualiza, el desvío se declara al revés
-    — que es exactamente lo que pasó con el stop duro entre el 2026-08-27 y la
-    tarea 92."""
-    assert LIVE_VOL_OVERLAY_ENABLED is True and LIVE_VOL_TARGET_ANNUAL == 0.12
-    # 0.25 desde el 2026-09-07 (tarea 115). Este test **hizo su trabajo**: pinneaba
-    # el 0.5 y falló al cambiar el valor vivo, que es exactamente para lo que está.
-    assert LIVE_REGIME_SCALE_ENABLED is True and LIVE_REGIME_SCALE_FACTOR == 0.25
-    assert LIVE_EARNINGS_BLACKOUT_DAYS == 2
+# `test_las_constantes_son_las_de_la_cuenta_viva` vivía acá y **se reemplazó** por
+# `tests/test_espejos_vivos_t130.py` (tarea 130).
+#
+# Su comentario decía *«este test hizo su trabajo: pinneaba el 0.5 y falló al cambiar
+# el valor vivo»*, y era **falso**: `git show --stat 2a4404a` muestra que
+# `analysis/harness_config.py` y el assert cambiaron en el **mismo commit**. Disparó
+# sobre la edición del repo, nunca sobre la del `settings.json` — no podía, porque
+# comparaba contra un literal escrito en este mismo archivo.
 
 
 def test_apagar_la_perilla_viva_saca_el_desvio(monkeypatch):

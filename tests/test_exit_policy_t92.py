@@ -25,9 +25,7 @@ import pytest
 
 from analysis.exit_replay import AtrParams
 from analysis.harness_config import (
-    LIVE_HARD_STOP_ENABLED,
     LIVE_MAX_POSITIONS,
-    LIVE_STOP_MULT,
     LIVE_TRAIL_MULT,
     LIVE_WATCHLIST_SIZE,
     NO_STOP_MULT,
@@ -103,13 +101,12 @@ def test_el_banner_lo_dice():
 # ── Las constantes vivas ─────────────────────────────────────────────────────
 
 
-def test_la_politica_viva_es_la_de_la_cuenta_2():
-    """Las constantes tienen que ser las del settings vivo. Si Chapa vuelve a
-    cambiar la política y esto no se actualiza, el desvío se declara al revés —
-    que es exactamente lo que pasó entre el 2026-08-27 y hoy."""
-    assert LIVE_HARD_STOP_ENABLED is False
-    assert LIVE_TRAIL_MULT == 2.0
-    assert LIVE_STOP_MULT == 2.0  # el valor sigue; lo que está apagado es el gate
+# `test_la_politica_viva_es_la_de_la_cuenta_2` vivía acá y **se reemplazó** por
+# `tests/test_espejos_vivos_t130.py` (tarea 130). Pinneaba `LIVE_HARD_STOP_ENABLED`,
+# `LIVE_TRAIL_MULT` y `LIVE_STOP_MULT` contra literales escritos en este archivo, o
+# sea que comparaba el repo contra el repo: no podía enterarse de que Chapa moviera
+# la perilla, que es exactamente lo que decía estar cuidando. El reemplazo lee
+# `~/.finanzias/settings.json` y compara los 13 espejos de una.
 
 
 def test_la_constante_del_t37_se_renombro_en_vez_de_re_apuntarse():

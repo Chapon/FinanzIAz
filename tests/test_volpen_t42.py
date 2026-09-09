@@ -96,8 +96,14 @@ def test_el_harness_de_la_T21_NO_duplica_el_coeficiente():
     assert "VOL_PENALTY_COEF = 0.08" not in src, "volvio el literal duplicado"
 
 
-def test_el_espejo_del_harness_sigue_al_valor_vivo():
-    """Igual que `LIVE_REGIME_SCALE_FACTOR`: si alguien mueve el flag vivo y no
-    actualiza el espejo, esto falla en vez de desincronizarse en silencio."""
-    assert DEFAULTS["paper_vol_penalty_coef"] == LIVE_VOL_PENALTY_COEF
+def test_la_clave_esta_documentada_en_el_schema():
+    """La comparación de valor **se reemplazó** por `tests/test_espejos_vivos_t130.py`
+    (tarea 130). Comparaba `LIVE_VOL_PENALTY_COEF` contra `DEFAULTS`, o sea contra el
+    **schema del repo** y no contra el settings vivo — y acá acertaba **por
+    accidente**: `paper_vol_penalty_coef` no está escrita en el json, así que hoy el
+    default *es* el valor vivo. Bastaba que alguien la escribiera para que este test
+    siguiera verde con el espejo podrido.
+
+    Lo que queda acá es lo que sí es de este archivo: que la clave esté documentada.
+    """
     assert SCHEMA["paper_vol_penalty_coef"].doc
