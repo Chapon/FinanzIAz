@@ -450,7 +450,10 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
 **Qué hacer:**
 
 - `announce(..., window=artifact_window(bars_by))` — el banner declara la ventana efectiva.
-  Es el **séptimo desvío** y ya está cableado en los 16 runners de cartera.
+  Está cableado en **los runners de cartera** (sin número: el que había acá caducó — tarea
+  135; si lo necesitás, contalo por AST sobre `scripts/`). Es el **séptimo** desvío en la
+  numeración **histórica** —el orden en que se descubrieron, no cuántas líneas emite
+  `deviations()` hoy— y ese ordinal **no** caduca, así que no lo "arregles".
 - Un sanity de reproducción se escribe con `harness_config.reproduction_check(...)`, que
   devuelve **cuatro** estados: `OK`, `NO APLICA` (el ancla se midió sobre **otro universo**
   ⇒ no hay nada que reproducir; **no cuenta como OK**), `FALLA` (misma ventana **y** misma

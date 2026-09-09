@@ -57,10 +57,14 @@ miró poco, y esa presión es exactamente la que inventa hallazgos.
 
 ## Alcance: por área, nunca "exhaustiva"
 
-`/audit <área>`. El repo tiene ~330 archivos y 2.396 tests: un barrido completo en una
-pasada no es alcanzable, y **una auditoría que declara una exhaustividad que no puede
-entregar es ella misma un claim falso** — justo lo que venimos a cazar. Cada corrida declara
-qué miró y qué no.
+`/audit <área>`. El repo es de un tamaño en el que **un barrido completo en una pasada no
+es alcanzable**, y **una auditoría que declara una exhaustividad que no puede entregar es
+ella misma un claim falso** — justo lo que venimos a cazar. Cada corrida declara qué miró y
+qué no.
+
+*(Acá había un conteo de archivos y otro de tests. Los dos caducaron —tarea 135— y el
+argumento no dependía de ellos: sólo de que el repo sea grande, que lo es cada vez más. Si
+querés los de hoy, contalos: `git ls-files '*.py' | wc -l` y `pytest --collect-only -q`.)*
 
 Una corrida de auditoría **es una tarea del backlog**, con el WIP de 1. No se cuelga como
 paso extra de otra cosa ni se corre en un hook.
@@ -109,19 +113,28 @@ pretenden decidir *"esto ya está / esto es la muestra"*. La pregunta siempre es
 
 ### C. Desvíos harness↔engine no declarados
 
-**Qué.** ¿Hay un **octavo** desvío que `analysis/harness_config.deviations()` no nombra?
+**Qué.** ¿Hay un desvío que `analysis/harness_config.deviations()` **no nombra**?
 
-**Por qué rinde acá.** Es el riesgo central del proyecto y los **siete** declarados
-salieron de auditorías previas, **uno por uno**: slots, tamaño de universo, ventana de
-`analyze()`, precio de decisión de las barreras (T32), fill de esa barrera (T33), gates
-de re-entrada (T34) y la ventana **rodante** de los artefactos (T48). Cada uno estuvo sin
-declarar hasta que alguien lo miró.
+**Por qué rinde acá.** Es el riesgo central del proyecto, y **cada uno** de los declarados
+salió de una auditoría previa, **uno por uno**: slots, tamaño de universo, ventana de
+`analyze()`, precio de decisión de las barreras (T32), fill de esa barrera (T33), gates de
+re-entrada (T34), la ventana **rodante** de los artefactos (T48), la política de salida
+(T92), los tres de sizing y gates (T94/95/96) y el screen de universo (T131). Cada uno
+estuvo sin declarar hasta que alguien lo miró.
 
-**Y el número de esta frase ya caducó una vez, en 20 minutos.** La primera versión de
-esta skill preguntaba por un *«séptimo»* cuando el fuente ya numeraba siete, y lo cazó su
-propio primer barrido (hallazgo A-1). Antes de usar esta categoría, **contá los desvíos
-en el fuente** en vez de confiar en este párrafo — que es, literalmente, la lección de la
-categoría A aplicada a sí misma.
+**Sin ordinal, y a propósito (tarea 135).** Esta pregunta decía *«¿hay un **octavo**?»* y
+antes *«¿hay un **séptimo**?»*: **el número caducó dos veces**, la primera en 20 minutos, y
+la segunda pese a la advertencia que se agregó para evitarlo. El remedio de entonces —pedir
+que se contara en el fuente— funcionó (la corrida del 2026-09-08 lo detectó **contando**)
+pero no impidió la recurrencia. Así que el ordinal se fue: la pregunta es *«¿falta alguno?»*,
+que no caduca.
+
+**Ojo con dos números distintos.** El **ordinal histórico** de un desvío (T48 *es* el
+séptimo en el orden en que se descubrieron) y el **conteo vivo de líneas** que `deviations()`
+emite hoy son cosas diferentes, y confundirlas fabrica un hallazgo falso — casi pasó en la
+corrida del 2026-09-08. Desde la tarea **152** cada desvío tiene una **clave estable**
+(`deviations_keyed()`), así que para preguntar *«¿está declarado X?»* se compara la clave y
+no se cuenta nada.
 
 **Cómo se audita.** Poner al lado la config del engine (`paper_trading/engine.py`,
 `~/.finanzias/settings.json`, la cuenta viva) y la del harness
