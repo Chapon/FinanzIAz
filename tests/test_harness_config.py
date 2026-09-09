@@ -86,25 +86,60 @@ from analysis.harness_config import (
 
 _REPO = Path(__file__).resolve().parent.parent
 
+# ── Las poblaciones, DERIVADAS por AST — Tarea 133 ───────────────────────────
+#
+# `PORTFOLIO_RUNNERS` era una lista escrita a mano de **10** nombres, y los llamadores
+# reales de `simulate_portfolio` son **21**. No había defecto detrás del hueco —los 11
+# que faltaban cumplen— pero la lista **ya quedó atrás una vez**: el cierre de la
+# tarea 32 dice *«`PORTFOLIO_RUNNERS` de la T27 listaba 7 runners y no incluía ni
+# `run_ranking_t21.py` ni `run_stop_cal_replay_t26.py`»*. Pasó de 7 a 10 por edición
+# manual y de 10 a 21 por el mismo camino que no se recorrió.
+#
+# **El problema no es el contenido de la lista, es que sea una lista** — el mismo
+# defecto que la 101 cerró eligiendo por predicado en vez de por prefijo de nombre, y
+# el que siguen teniendo la 141 y la 147. Ver [[guard-no-puede-usar-de-verdad-lo-que-chequea]].
+
+
+def _llama_a(path: Path, nombre: str) -> bool:
+    """¿Este script llama a ``nombre``? Por **AST**, no por grep.
+
+    Con grep, una mención en un docstring o en un comentario cuenta como llamada — es
+    el modo de falla que me mordió escribiendo el guard de la tarea 128, donde un
+    assert de texto acusó a la prosa que **citaba** el defecto arreglado.
+    """
+    try:
+        arbol = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:  # pragma: no cover — un script roto ya lo caza la suite
+        return False
+    for n in ast.walk(arbol):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        if isinstance(f, ast.Name) and f.id == nombre:
+            return True
+        if isinstance(f, ast.Attribute) and f.attr == nombre:
+            return True
+    return False
+
+
+def _runners_que_llaman(nombre: str) -> list[str]:
+    return sorted(p.name for p in (_REPO / "scripts").glob("*.py") if _llama_a(p, nombre))
+
+
 # Los runners de la serie que simulan cartera (T7 no: corre con capital ilimitado,
-# es anterior a portfolio_sim).
-PORTFOLIO_RUNNERS = [
-    "run_market_regime_r2.py",
-    "run_meta_label_t9.py",
-    "run_sizing_exposure_t10_t20.py",
-    "run_anomaly_replay_t11b.py",
-    "run_insider_cluster_replay_t12.py",
-    "run_tp_cal_replay_t23.py",
-    "run_ent1_replay_t13.py",
-    "run_ranking_t21.py",
-    "run_stop_cal_replay_t26.py",
-    "run_stop_loosen_t34.py",
-]
+# es anterior a portfolio_sim — y por eso no aparece acá solo, sin excepción escrita).
+PORTFOLIO_RUNNERS = _runners_que_llaman("simulate_portfolio")
 
 # Todos los que corren sobre ``replay_cycle``, o sea los que heredaban el fill
-# look-ahead de la barrera decidida al close (T33). Suma el T7 —que no simula
-# cartera pero replaya ciclos— y el 26b, que es el que lo destapó.
-REPLAY_RUNNERS = [*PORTFOLIO_RUNNERS, "run_scaleout_replay_t7.py", "run_stop_price_replay_t26b.py"]
+# look-ahead de la barrera decidida al close (T33).
+#
+# También derivada (tarea 133), y con su propio predicado en vez de ser *la de arriba
+# más dos escritos a mano*: `simulate_portfolio` llama a `replay_cycle` adentro
+# (`portfolio_sim.py:460`), así que la población es **los que simulan cartera ∪ los
+# que llaman a `replay_cycle` directo**. Hoy el único que suma por la derecha es
+# `run_scaleout_replay_t7.py` —que no simula cartera pero replaya ciclos—; el 26b
+# entraba a mano y en realidad ya estaba, porque sí simula cartera.
+REPLAY_RUNNERS = sorted(set(PORTFOLIO_RUNNERS) | set(_runners_que_llaman("replay_cycle")))
 
 # Los runners que anclan un sanity de reproducción contra un número publicado, o
 # sea los que la tarea 52 barrió para que declaren también su POBLACIÓN.
@@ -297,6 +332,49 @@ def test_announce_prints_and_returns(capsys):
 # ── Regresión sobre los runners ──────────────────────────────────────────────
 
 
+def test_las_poblaciones_derivadas_no_estan_vacias_ni_encogieron():
+    """Contraprueba de las derivaciones: **un barrido que no miró nada pasa verde**.
+
+    Los números son cotas inferiores medidas el 2026-09-09, no igualdades: la
+    población **crece** con cada runner nuevo y eso es el punto. Lo que no puede es
+    encoger — si encoge, el barrido dejó de encontrar lo que buscaba (un `import`
+    que cambió, un `ruff format` que partió la llamada) y todos los tests
+    parametrizados de abajo pasan **sin mirar nada**.
+    """
+    assert len(PORTFOLIO_RUNNERS) >= 21, PORTFOLIO_RUNNERS
+    assert len(REPLAY_RUNNERS) >= 22, REPLAY_RUNNERS
+    assert set(PORTFOLIO_RUNNERS) <= set(REPLAY_RUNNERS)
+    # `simulate_portfolio` llama a `replay_cycle` adentro, así que el T7 —que replaya
+    # ciclos sin cartera— es el único que hoy suma por el otro lado.
+    assert set(REPLAY_RUNNERS) - set(PORTFOLIO_RUNNERS) == {"run_scaleout_replay_t7.py"}
+
+
+def test_mut_un_runner_nuevo_que_simula_cartera_ENTRA_a_la_poblacion(tmp_path, monkeypatch):
+    """La mutación de la 133: el defecto era que un runner nuevo **no entraba**.
+
+    Se fabrica uno que llama a ``simulate_portfolio`` y se verifica que el barrido lo
+    encuentre — y que **no** encuentre a uno que sólo la nombra en un comentario, que
+    es lo que pasaría con grep.
+    """
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "run_nuevo_t999.py").write_text(
+        "from analysis.portfolio_sim import simulate_portfolio\n\n"
+        "def main():\n    return simulate_portfolio(entries=[], max_positions=10)\n",
+        encoding="utf-8",
+    )
+    (scripts / "run_solo_lo_nombra_t998.py").write_text(
+        '"""Este runner NO llama a simulate_portfolio, sólo lo menciona."""\n'
+        "# ver simulate_portfolio(...) en portfolio_sim\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("tests.test_harness_config._REPO", tmp_path)
+
+    encontrados = _runners_que_llaman("simulate_portfolio")
+    assert "run_nuevo_t999.py" in encontrados
+    assert "run_solo_lo_nombra_t998.py" not in encontrados
+
+
 @pytest.mark.parametrize("script", PORTFOLIO_RUNNERS)
 def test_runner_defaults_to_the_live_slot_count(script):
     """El defecto que esta tarea arregla: siete harness con ``default=5`` heredado
@@ -318,16 +396,53 @@ def test_runner_announces_its_config(script):
     )
 
 
+def _fill_modes_pasados(path: Path) -> list[str]:
+    """Los ``fill_mode="..."`` que el script pasa **en código**, por AST.
+
+    Por AST y no por grep porque varios runners **nombran** el fill legacy en su
+    docstring para explicar por qué no lo usan.
+    """
+    try:
+        arbol = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:  # pragma: no cover
+        return []
+    return [
+        kw.value.value
+        for n in ast.walk(arbol)
+        if isinstance(n, ast.Call)
+        for kw in n.keywords
+        if kw.arg == "fill_mode" and isinstance(kw.value, ast.Constant)
+    ]
+
+
 @pytest.mark.parametrize("script", REPLAY_RUNNERS)
-def test_runner_exposes_fill_mode_and_defaults_to_the_honest_one(script):
-    """T33 — el defecto que esta tarea arregla: el fill legacy era el default y un
-    harness nuevo lo heredaba en silencio. Cada runner que corre sobre
-    ``replay_cycle`` tiene que poder elegirlo **y** arrancar en el honesto, para que
-    el veredicto publicado siga siendo reproducible sin volver a ser el default."""
-    txt = (_REPO / "scripts" / script).read_text(encoding="utf-8")
-    assert '"--fill-mode"' in txt
-    assert f"default={LEGACY_FILL_MODE!r}" not in txt
-    assert 'default="resting"' not in txt
+def test_ningun_runner_corre_con_el_fill_LEGACY(script):
+    """T33 — el fill legacy era el default y un harness nuevo lo heredaba en silencio.
+
+    **Reescrito con la tarea 133, y el cambio no es cosmético.** Antes esto exigía
+    ``'"--fill-mode"' in txt``: o sea la **herramienta**, no la **propiedad**. Por eso
+    su población tenía que ser una lista de los 12 runners que tenían el flag — los
+    otros 10 llamadores de ``replay_cycle`` la habrían hecho fallar **sin tener
+    ningún defecto**, porque el default del motor es ``"decision"`` desde la T33
+    (``scaleout_replay.py:238``) y un runner sin flag **hereda el honesto**.
+
+    El invariante que importa es *nadie corre con el fill legacy*, y escrito así la
+    población pasa a ser los **22** reales en vez de 12 elegidos a mano:
+
+    * el que expone el flag no puede arrancar en el legacy, y
+    * nadie puede pasarlo a mano.
+    """
+    path = _REPO / "scripts" / script
+    txt = path.read_text(encoding="utf-8")
+
+    if '"--fill-mode"' in txt:
+        assert f"default={LEGACY_FILL_MODE!r}" not in txt
+        assert 'default="resting"' not in txt
+
+    assert LEGACY_FILL_MODE not in _fill_modes_pasados(path), (
+        f"{script} pasa fill_mode={LEGACY_FILL_MODE!r} — el fill look-ahead que la "
+        "T33 midió en 5.01pp de CAGR"
+    )
 
 
 # ── El flag de gates tiene que estar CABLEADO, no sólo parseado — Tarea 115 ──
