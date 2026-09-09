@@ -28,6 +28,7 @@ Public surface
 ``format_scan_summary``  — the full per-scan message (pure).
 ``post_to_slack``        — the network boundary (fail-open).
 ``default_notifier``     — reads settings + env, posts to Slack.
+``slack_deshabilitado``  — el corte por entorno que usa la suite (tarea 148).
 """
 
 from __future__ import annotations
@@ -45,6 +46,18 @@ SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 SLACK_TOKEN_ENV = "SLACK_BOT_TOKEN"
 SLACK_CHANNEL_ENV = "SLACK_CHANNEL"
 _HTTP_TIMEOUT_SECONDS = 5.0
+
+# La suite NO manda mensajes al Slack de producción (tarea 148). ``tests/conftest.py``
+# pone esta variable antes de cualquier import del proyecto, con la misma forma que
+# el log (78), el fetch de tooltips (82) y la DB en subprocesos (108): el entorno es
+# lo único que un subproceso hereda solo, y se lee **en cada llamada** —no al
+# importar— para que un `monkeypatch.delenv` alcance para levantarlo.
+#
+# Va acá, en el límite de red, y no en cada productor: los tres que mandan
+# —``alerts.alert_manager``, ``data.yahoo_finance`` y el motor— caen todos en
+# ``default_notifier``, y cubrir el límite es un predicado; cubrir los tres es una
+# lista que el próximo productor no va a estar.
+SLACK_DISABLED_ENV = "FINANZIAS_DISABLE_SLACK"
 
 # Allowed values for the ``slack_notify_on`` setting.
 NOTIFY_PENDING = "pending"
@@ -254,6 +267,21 @@ def format_alert_message(triggered: Sequence[AlertNotice]) -> str:
 # ── Network boundary (fail-open) ─────────────────────────────────────────────────
 
 
+def slack_deshabilitado() -> bool:
+    """``True`` si el entorno prohíbe mandar (tarea 148).
+
+    Se lee **en cada llamada** y no al importar: así ``monkeypatch.delenv`` alcanza
+    para que un test específico de mensajería ejercite el camino real, y así un
+    subproceso lanzado por la suite lo hereda sin que nadie se acuerde de nada.
+
+    Cualquier valor que no sea ``"0"`` o vacío bloquea: el modo seguro es el que se
+    activa con una variable *presente*, no el que depende de que alguien haya
+    escrito exactamente ``1``.
+    """
+    valor = os.environ.get(SLACK_DISABLED_ENV, "")
+    return bool(valor) and valor != "0"
+
+
 def _resolve_token(token: str | None) -> str | None:
     return token or os.environ.get(SLACK_TOKEN_ENV) or None
 
@@ -286,8 +314,18 @@ def post_to_slack(
     non-OK Slack payload logs a warning and returns False — it never raises.
     The bot token comes from the ``SLACK_BOT_TOKEN`` env var unless passed
     explicitly; it is never read from settings.json.
+
+    Con ``FINANZIAS_DISABLE_SLACK=1`` **no sale nada** y devuelve ``False``
+    (tarea 148). Es lo que hace la suite: tres tests del worker de alertas
+    disparaban una alerta de MARA con un ``AlertManager`` sin notifier inyectado,
+    así que cada corrida le mandaba tres mensajes **reales** al canal de Chapa, con
+    precios de laboratorio y semanas de desfase contra el mercado.
     """
     if not text:
+        return False
+
+    if slack_deshabilitado():
+        _log().debug("Slack notify: bloqueado por %s — no se envía nada.", SLACK_DISABLED_ENV)
         return False
 
     resolved_token = _resolve_token(token)

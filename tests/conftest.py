@@ -54,6 +54,24 @@ os.environ.setdefault(
     os.path.join(tempfile.gettempdir(), f"finanzias_suite_{os.getpid()}.db"),
 )
 
+# La suite tampoco le manda mensajes al **Slack de producción** (tarea 148). Cuarto
+# aislamiento de la misma familia y por la misma razón que los tres de arriba: el
+# entorno es lo único que se hereda solo.
+#
+# El defecto no era teórico y está contado interceptando el POST: **9 mensajes por
+# corrida** al canal de Chapa. Tres son alertas de precio de MARA a $13 —
+# `test_alerts_worker_t80.py` llama a `AlertCheckWorker.do_work()`, que construye su
+# `AlertManager` **sin notifier inyectado** (`ui/alerts_tab.py:75`)— y seis son de
+# outage de datos por el mismo camino. Con `SLACK_BOT_TOKEN` y `SLACK_CHANNEL` en el
+# entorno, `default_notifier` postea de verdad. Lo reportó Chapa, no la suite: los
+# tests pasaban en verde, porque mandar un mensaje no es un fallo para nadie.
+#
+# Y el bloqueo va en el **límite de red** (`integrations.slack.post_to_slack`), no en
+# los tres productores, porque un guard por productor es una lista y el próximo
+# productor no va a estar en ella. Un test que necesite ejercitar el envío de verdad
+# lo levanta con `monkeypatch.delenv` — se lee en cada llamada, no al importar.
+os.environ.setdefault("FINANZIAS_DISABLE_SLACK", "1")
+
 import contextlib
 from collections.abc import Iterator
 from pathlib import Path
