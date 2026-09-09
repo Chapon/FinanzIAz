@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from paper_trading.account import create_account, live_account_id
 
 
@@ -116,22 +114,97 @@ def test_un_error_de_DB_no_rompe_el_scan(monkeypatch, caplog):
 # ── El cableado: los siete call sites ────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "modulo",
-    [
-        "scripts/harvest_catalysts.py",
-        "scripts/news_feed.py",
-        "scripts/dashboard_data.py",
-    ],
-)
-def test_ningun_script_defaultea_a_un_literal(modulo):
-    """Regresión del arreglo: `DEFAULT_ACCOUNT_ID = 1` es el defecto. Si vuelve,
-    vuelve el bug entero — y en `dashboard_data.py` estaba el **séptimo** call
-    site, que ni la auditoría había enumerado."""
+# Las dos únicas constantes de módulo con un id de cuenta que el proyecto acepta, con
+# su motivo. Cualquier otra es el defecto de la tarea 70 volviendo.
+_IDS_DECLARADOS: dict[str, str] = {
+    "LIVE_ACCOUNT_ID": (
+        "el espejo declarado de la cuenta viva; lo re-verifica contra `is_active` "
+        "`test_account_defaults_t99.py::test_el_espejo_de_la_cuenta_viva_es_la_activa`"
+    ),
+    "LEGACY_ACCOUNT_ID": (
+        "la cuenta 1 (PAUSADA), que es la que heredaron los harness T7→T13: es "
+        "**historia** de una comparación congelada, no configuración — mismo criterio "
+        "que los BASELINE_* de la tarea 134"
+    ),
+}
+
+_PAQUETES = ("scripts", "paper_trading", "analysis", "ui", "data", "config", "alerts", "database")
+
+
+def _constantes_de_cuenta() -> list[tuple[str, str, object]]:
+    """``(archivo, nombre, valor)`` de cada constante de módulo con ``ACCOUNT_ID``.
+
+    Por **AST** y sobre **todo** el proyecto, no por texto sobre tres archivos.
+    """
+    import ast
     from pathlib import Path
 
-    txt = (Path(__file__).resolve().parent.parent / modulo).read_text(encoding="utf-8")
-    assert "DEFAULT_ACCOUNT_ID = 1" not in txt
+    raiz = Path(__file__).resolve().parent.parent
+    out = []
+    for paquete in _PAQUETES:
+        for p in sorted((raiz / paquete).rglob("*.py")):
+            try:
+                arbol = ast.parse(p.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover
+                continue
+            for n in arbol.body:
+                if not isinstance(n, ast.Assign):
+                    continue
+                for t in n.targets:
+                    if isinstance(t, ast.Name) and "ACCOUNT_ID" in t.id:
+                        valor = n.value.value if isinstance(n.value, ast.Constant) else "<no-literal>"
+                        out.append((p.relative_to(raiz).as_posix(), t.id, valor))
+    return out
+
+
+def test_ninguna_constante_de_modulo_clava_un_id_de_cuenta():
+    """Regresión del arreglo de la 70, **reescrita como predicado** (tarea 147).
+
+    Estaba escrito ``assert "DEFAULT_ACCOUNT_ID = 1" not in txt`` sobre una lista
+    parametrizada de **tres** archivos, y fallaba en las dos direcciones:
+
+    * **falso negativo** — cualquier archivo nuevo nace afuera de la lista. Es por
+      donde pasó la tarea **128**: `run_universe_screen_validation.py` tenía ese
+      literal exacto y **no estaba** en los tres;
+    * **falso positivo** — el mismo patrón, escribiendo el docstring de la 128, acusó
+      a una línea de **prosa** que citaba el defecto arreglado. Grep no distingue
+      código de comentario.
+
+    Ahora es AST sobre ocho paquetes, y las dos constantes legítimas están declaradas
+    **por símbolo** con su motivo, no por archivo.
+    """
+    culpables = [
+        f"{arch}: {nombre} = {valor!r}"
+        for arch, nombre, valor in _constantes_de_cuenta()
+        if isinstance(valor, int) and not isinstance(valor, bool) and nombre not in _IDS_DECLARADOS
+    ]
+    assert not culpables, (
+        "estas constantes de módulo clavan un id de cuenta. El default tiene que ser "
+        "None y resolverse contra `is_active` (tareas 70, 99 y 147):\n  " + "\n  ".join(culpables)
+    )
+
+
+def test_los_tres_jobs_de_fondo_siguen_defaulteando_a_None():
+    """Contraprueba: que el de arriba no pase porque el barrido **no miró nada**.
+
+    Éstos son los tres que la 70 arregló, y el `None` es el arreglo. Si el barrido
+    dejara de encontrarlos —un rename, un `ast` que falla— el test de arriba pasaría
+    igual de verde sobre una población vacía.
+    """
+    encontrados = {
+        arch: valor for arch, nombre, valor in _constantes_de_cuenta() if nombre == "DEFAULT_ACCOUNT_ID"
+    }
+    for esperado in ("scripts/harvest_catalysts.py", "scripts/news_feed.py", "scripts/dashboard_data.py"):
+        assert esperado in encontrados, f"{esperado} dejó de declarar DEFAULT_ACCOUNT_ID"
+        assert encontrados[esperado] is None, f"{esperado} volvió a clavar un id"
+
+
+def test_cada_id_declarado_dice_por_que():
+    """Una excepción por símbolo sin motivo escrito es una lista disfrazada."""
+    nombres = {n for _, n, _ in _constantes_de_cuenta()}
+    for nombre, motivo in _IDS_DECLARADOS.items():
+        assert len(motivo) > 40, f"{nombre} sin motivo escrito"
+        assert nombre in nombres, f"{nombre} ya no existe: sacalo de _IDS_DECLARADOS"
 
 
 def test_el_scheduler_resuelve_los_dos_jobs_contra_is_active():
