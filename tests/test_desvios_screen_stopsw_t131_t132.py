@@ -37,7 +37,7 @@ from analysis.harness_config import (
     LIVE_WATCHLIST_SIZE,
     HarnessConfig,
     config_banner,
-    deviations,
+    deviations_keyed,
 )
 
 
@@ -46,21 +46,19 @@ def _cfg(**kw) -> HarnessConfig:
 
 
 def _screen(cfg) -> list[str]:
-    return [d for d in deviations(cfg) if "screen de universo" in d]
+    return [d.texto for d in deviations_keyed(cfg) if d.clave == "universe_screen"]
+
+
+# Por CLAVE (tarea 152). La primera version de esto filtraba `"barreras ATR" in d` y
+# me trajo TRES lineas: ese texto tambien aparece en el desvio de la **T32** (el
+# *precio de evaluacion* de la barrera) y en el de la **T33** (el *fill*), que son
+# otros ejes y siguen valiendo. El filtro estaba mal, pero la pregunta que abrio es
+# buena y quedo como tarea 151.
+_CLAVES_POLITICA_ATR = {"atr_master_off", "atr_hard_stop", "atr_trail"}
 
 
 def _atr(cfg) -> list[str]:
-    """Sólo las líneas de la **política** de barreras ATR.
-
-    El filtro no puede ser ``"barreras ATR" in d``, y me lo enseñó fallando: ese texto
-    también aparece en el desvío de la **T32**, que es el *precio de evaluación* de la
-    barrera, y en el de la **T33**, que es el *fill*. Son ejes distintos y siguen
-    valiendo. (Que esos dos describan barreras que con el master switch apagado no
-    existirían es real y queda anotado como tarea **151**; hoy no pasa porque el
-    switch está ON.)
-    """
-    claves = ("stop duro", "trailing", "NO tiene barreras ATR")
-    return [d for d in deviations(cfg) if any(k in d for k in claves)]
+    return [d.texto for d in deviations_keyed(cfg) if d.clave in _CLAVES_POLITICA_ATR]
 
 
 # ── 131 · el screen de universo ──────────────────────────────────────────────

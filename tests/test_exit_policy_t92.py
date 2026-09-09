@@ -31,7 +31,7 @@ from analysis.harness_config import (
     NO_STOP_MULT,
     HarnessConfig,
     announce,
-    deviations,
+    deviations_keyed,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -41,8 +41,14 @@ def _cfg(**kw) -> HarnessConfig:
     return HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE, **kw)
 
 
+# Por CLAVE y no por substring (tarea 152). Filtrar `"stop duro" in d` funcionaba
+# hasta que apareciera otro desvío con esas palabras — que es exactamente lo que le
+# pasó al helper de la 132, que filtraba por "barreras ATR" y se traía tres ejes.
+_CLAVES_SALIDA = {"atr_master_off", "atr_hard_stop", "atr_trail"}
+
+
 def _salida(cfg) -> list[str]:
-    return [d for d in deviations(cfg) if "stop duro" in d or "trailing" in d]
+    return [d.texto for d in deviations_keyed(cfg) if d.clave in _CLAVES_SALIDA]
 
 
 # ── El desvío ────────────────────────────────────────────────────────────────

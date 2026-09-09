@@ -68,7 +68,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, NamedTuple, TextIO
 
 # Raíz del repo — para resolver los archivos de universo, que se declaran
 # relativos a ella (`data/harness_universe_*.txt`).
@@ -1633,11 +1633,38 @@ def _reentry_population_note(cfg: HarnessConfig) -> str:
     return REENTRY_GATES_POPULATION_DESC
 
 
-def deviations(cfg: HarnessConfig) -> list[str]:
-    """Desvíos de ``cfg`` respecto de la cuenta viva, en prosa."""
-    out: list[str] = []
+class Deviation(NamedTuple):
+    """Un desvío: su **clave estable** y su prosa.
+
+    La clave existe por la tarea **152**. Antes ``deviations()`` devolvía sólo texto
+    y **todos** sus consumidores lo filtraban por substring, así que agregar un
+    desvío tenía radio de impacto desconocido: la línea del screen de universo
+    (tarea 131) dice *«screen de **universo**»* y con eso rompió
+    ``test_watchlist_size_t89.py``, cuyo filtro era ``"universo" in d`` y estaba
+    buscando el desvío de **tamaño** del universo, que es otro.
+
+    Los dos fallos de ese día se vieron porque eran tests. Un consumidor que **no**
+    falle —un filtro que empiece a agarrar de más y siga verde— declara el desvío
+    equivocado en un pre-registro, que es la clase de defecto que la tarea 92 costó
+    **7,16 pp de CAGR**.
+
+    La clave es parte del contrato: se elige una vez y no se toca. El texto puede
+    reescribirse libremente.
+    """
+
+    clave: str
+    texto: str
+
+
+def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
+    """Desvíos de ``cfg`` respecto de la cuenta viva, **con clave** (tarea 152)."""
+    out: list[Deviation] = []
+
+    def _add(clave: str, texto: str) -> None:
+        out.append(Deviation(clave, texto))
+
     if not cfg.per_trade and cfg.max_positions != LIVE_MAX_POSITIONS:
-        out.append(f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta {LIVE_ACCOUNT_ID}")
+        _add("slots", f"slots {cfg.max_positions} vs {LIVE_MAX_POSITIONS} de la cuenta {LIVE_ACCOUNT_ID}")
     # Bilateral a propósito (tarea 89). Era `<`, así que un universo de harness
     # MÁS GRANDE que la watchlist viva no declaraba nada — y un desvío es un
     # desvío para los dos lados, igual que en `stale_artifacts` (T30), que mira
@@ -1648,40 +1675,48 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # población (tarea 87).
     if cfg.n_tickers != LIVE_WATCHLIST_SIZE:
         lado = "menos" if cfg.n_tickers < LIVE_WATCHLIST_SIZE else "MÁS"
-        out.append(
+        _add(
+            "universo_size",
             f"universo {cfg.n_tickers} tickers vs {LIVE_WATCHLIST_SIZE} de la watchlist "
-            f"viva ({lado} que la cuenta {LIVE_ACCOUNT_ID})"
+            f"viva ({lado} que la cuenta {LIVE_ACCOUNT_ID})",
         )
     # La ventana de señal siempre difiere mientras los artefactos PIT sean los
     # actuales — se declara siempre, no es condicional.
-    out.append(f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo")
+    _add(
+        "analyze_window",
+        f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo",
+    )
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
     # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
     # depende del brazo es de qué lado del engine cae el desvío.
     if cfg.eval_mode == "close":
-        out.append(
+        _add(
+            "barrier_eval",
             f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} "
             f"en vivo (cota INFERIOR de frecuencia de disparo: mide +3.39pp de CAGR "
-            f"de más que la regla viva, T26b §1)"
+            f"de más que la regla viva, T26b §1)",
         )
     else:
-        out.append(
+        _add(
+            "barrier_eval",
             f"barreras ATR decididas al {TOUCH_EXIT_EVAL_DESC} vs "
-            f"{LIVE_EXIT_EVAL_DESC} en vivo (cota SUPERIOR de frecuencia de disparo)"
+            f"{LIVE_EXIT_EVAL_DESC} en vivo (cota SUPERIOR de frecuencia de disparo)",
         )
     # Y el fill de esa barrera, que es el quinto desvío (T33). El caso legacy en
     # modo ``close`` no es un desvío: es un defecto, y se anuncia como tal.
     if cfg.fill_mode == LEGACY_FILL_MODE and cfg.eval_mode == "close":
-        out.append(
+        _add(
+            "barrier_fill_lookahead",
             f"LOOK-AHEAD ACTIVO — la barrera se decide al {PIT_EXIT_EVAL_DESC} y se "
             f"llena en el NIVEL: un precio mejor que el close y tocado ANTES de la "
             f"información que decidió. Vale {LOOKAHEAD_FILL_COST_DESC}. "
-            f"Sólo para reproducir T7/T23/T13/T21/T26"
+            f"Sólo para reproducir T7/T23/T13/T21/T26",
         )
     elif cfg.eval_mode == "close":
-        out.append(
+        _add(
+            "barrier_fill",
             f"fill de la barrera al close que la decidió vs {LIVE_FILL_DESC} en vivo "
-            f"(desvío conservador: el harness cobra el peor de los dos precios)"
+            f"(desvío conservador: el harness cobra el peor de los dos precios)",
         )
     # Bajo ``touch`` los dos fill_mode coinciden **y coinciden con el engine** (el
     # precio que decide es el nivel), así que ahí no hay nada que declarar.
@@ -1691,15 +1726,17 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # todo número de esta corrida está atado a la muestra de hoy. Se declara
     # siempre: cuando el runner no la pasa, el banner dice que no la declaró.
     if cfg.window is not None:
-        out.append(
+        _add(
+            "artifact_window",
             f"ventana de los artefactos {ARTIFACT_PERIOD} = {cfg.window} — es "
             f"RODANTE (anclada al refresh, no a una fecha fija): estos números "
-            f"dejan de reproducir cuando se refresquen los parquet (tarea 48)"
+            f"dejan de reproducir cuando se refresquen los parquet (tarea 48)",
         )
     else:
-        out.append(
+        _add(
+            "artifact_window_undeclared",
             "el runner NO declara la ventana efectiva de los artefactos — es "
-            "RODANTE, así que no se sabe contra qué muestra se midió (tarea 48)"
+            "RODANTE, así que no se sabe contra qué muestra se midió (tarea 48)",
         )
     # OCTAVO desvío (Tarea 92): la política de SALIDA. La cuenta viva apagó el stop
     # duro el 2026-08-27 (`soff_t2.0`) y el default de ``AtrParams`` lo dejó
@@ -1712,74 +1749,93 @@ def deviations(cfg: HarnessConfig) -> list[str]:
     # lo que hay que decir no es *«el harness usa otro número»* sino *«en vivo no
     # hay barreras ATR y el harness simula dos»*.
     if not LIVE_ATR_STOPS_ENABLED:
-        out.append(
+        _add(
+            "atr_master_off",
             f"la cuenta {LIVE_ACCOUNT_ID} NO tiene barreras ATR — `atr_stops_enabled` "
             f"está APAGADO (el master switch de `engine.py:491`, que se chequea antes "
             f"que el stop duro y el trailing) — y el harness simula stop "
             f"{cfg.atr_stop_mult:.1f}×ATR y trailing {cfg.effective_trail_mult:.1f}×ATR: "
-            f"ninguna de las dos existe en vivo"
+            f"ninguna de las dos existe en vivo",
         )
     else:
         if cfg.hard_stop_on != LIVE_HARD_STOP_ENABLED:
             estado_h = f"ENCENDIDO a {cfg.atr_stop_mult:.1f}×ATR" if cfg.hard_stop_on else "APAGADO"
             estado_v = f"ENCENDIDO a {LIVE_STOP_MULT:.1f}×ATR" if LIVE_HARD_STOP_ENABLED else "APAGADO"
-            out.append(
+            _add(
+                "atr_hard_stop",
                 f"stop duro {estado_h} en el harness vs {estado_v} en la cuenta "
                 f"{LIVE_ACCOUNT_ID} (desde el 2026-08-27, `soff_t2.0` de la T37): "
-                f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)"
+                f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)",
             )
         if abs(cfg.effective_trail_mult - LIVE_TRAIL_MULT) > 1e-9:
-            out.append(
+            _add(
+                "atr_trail",
                 f"trailing {cfg.effective_trail_mult:.1f}×ATR en el harness vs "
-                f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}"
+                f"{LIVE_TRAIL_MULT:.1f}×ATR en la cuenta {LIVE_ACCOUNT_ID}",
             )
     # Tarea 94 — el que más muerde de los tres: dispara TODOS los días.
     if LIVE_VOL_OVERLAY_ENABLED and not cfg.models_vol_overlay:
-        out.append(
+        _add(
+            "vol_overlay",
             f"NO se modela el overlay de volatilidad de cartera (target "
             f"{100 * LIVE_VOL_TARGET_ANNUAL:.0f}% anual), que en vivo recorta **todas** las "
-            f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)"
+            f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)",
         )
     # Tarea 95 — nunca disparó en vivo, pero sí muerde en la ventana del harness.
     if LIVE_REGIME_SCALE_ENABLED and not cfg.models_regime_scale:
-        out.append(
+        _add(
+            "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
             f"risk-off): 0 de 62 BUY vivas lo dispararon, pero el 15.96% de las ruedas de "
             f"la ventana son risk-off. Vale +0.93pp de CAGR y −4.5pp de maxDD (T115, el "
             f"factor vivo desde el 2026-09-07; el +0.59pp/−2.5pp que decía antes era de "
-            f"×0.50, que ya no corre)"
+            f"×0.50, que ya no corre)",
         )
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
-        out.append(
+        _add(
+            "universe_screen",
             "NO se modela el screen de universo E1b (encendido en vivo el 2026-09-07): "
             "en vivo dropea candidatos de BUY por ADV$/fragilidad fundamental antes de "
             "que el motor los mire, y el harness entra en todos. Es un drop DINÁMICO "
             "por scan, así que el desvío de tamaño del universo no lo cubre. Medido "
             "sobre los 128 del universo vivo (T129, 2026-09-09): hoy no excluye a "
             "nadie, así que la brecha es de CERO — pero eso depende de los datos de "
-            "EDGAR, no del código"
+            "EDGAR, no del código",
         )
     # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
-        out.append(
+        _add(
+            "earnings_blackout",
             f"NO se modela el blackout de earnings (Gate 6, ±{LIVE_EARNINGS_BLACKOUT_DAYS}d, "
             f"bloquea BUY): el harness entra en trades que el engine habría frenado. El "
             f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
-            f"hay fechas de earnings point-in-time a 10 años"
+            f"hay fechas de earnings point-in-time a 10 años",
         )
     if cfg.per_trade:
-        out.append(REENTRY_GATES_NO_CARTERA_DESC)
+        _add("reentry_gates_no_cartera", REENTRY_GATES_NO_CARTERA_DESC)
     elif not cfg.live_gates:
-        out.append(
+        _add(
+            "reentry_gates",
             f"NO se modelan los gates de re-entrada del engine — Gate 5 "
             f"(anti-whipsaw: cualquier pérdida dentro de {LIVE_WHIPSAW_LOOKBACK_DAYS}d "
             f"bloquea el re-BUY, umbral vivo {LIVE_WHIPSAW_MIN_LOSS_PCT:.1f}%) y Gate 5b "
             f"(anti-churn: ≥{LIVE_CHURN_MAX_CYCLES} ciclos en {LIVE_CHURN_LOOKBACK_DAYS}d). "
             f"Vale {REENTRY_GATES_COST_DESC}. {_reentry_population_note(cfg)}. "
-            f"{REENTRY_GATES_READING_DESC}"
+            f"{REENTRY_GATES_READING_DESC}",
         )
     return out
+
+
+def deviations(cfg: HarnessConfig) -> list[str]:
+    """Los desvíos en prosa. Es lo que lee el banner y lo que siempre devolvió.
+
+    Se mantiene como API pública —y devolviendo exactamente lo mismo, byte por
+    byte— para que la tarea 152 no toque ni un runner: lo que cambia es que ahora
+    hay una versión con clave para el que necesite **identificar** un desvío en vez
+    de reconocerlo por cómo está escrito.
+    """
+    return [d.texto for d in deviations_keyed(cfg)]
 
 
 def config_banner(cfg: HarnessConfig) -> str:
