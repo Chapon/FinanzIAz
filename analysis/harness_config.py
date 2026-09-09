@@ -645,22 +645,52 @@ def cohort_bars(tickers: list[str], period: str, interval: str = "1d") -> dict[s
 
 @dataclass(frozen=True)
 class MissingSession:
-    """Una rueda que otro frame del mismo ticker tiene y éste no."""
+    """Una rueda que otro frame del mismo ticker tiene y éste no.
+
+    ``cola`` distingue las dos formas, y la distinción importa porque **la
+    remediación es distinta** (tarea 139): un hueco **interior** se repara —el frame
+    tiene la ventana pero le falta un día adentro— y un atraso de **cola** se
+    refresca. Mezclarlas en un solo mensaje manda a arreglar la cosa equivocada.
+    """
 
     ticker: str
     date: str
     reference: str  # etiqueta del frame que sí la tiene (p.ej. "2y")
+    cola: bool = False  # ¿es posterior a la última barra de este frame?
 
     def __str__(self) -> str:
+        if self.cola:
+            return (
+                f"{self.ticker}: este frame termina antes del {self.date}, que el frame "
+                f"{self.reference} sí tiene — está ATRASADO (refrescar, no reparar)"
+            )
         return f"{self.ticker}: falta la rueda {self.date} (el frame {self.reference} la tiene)"
 
 
 def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
     """Ruedas que le faltan a ``bars_by`` y otro frame ``1d`` del mismo ticker tiene.
 
-    Sólo se compara el **solape** de las dos ventanas: fuera de ahí la ausencia no
-    es un hueco, es que el frame no llega. El import va adentro porque este módulo
-    no toca el disco al importarse.
+    El borde **izquierdo** se clampea: un `2y` no llega diez años atrás, así que ahí
+    la ausencia no es un hueco sino que el frame no llega. El import va adentro porque
+    este módulo no toca el disco al importarse.
+
+    **El borde derecho NO se clampea (tarea 139), y antes sí.** El código hacía
+    ``hi = min(hi_p, max(otras))`` con la misma justificación, y ahí es **falsa**: un
+    hermano con barras más nuevas no es *«un frame que no llega»*, es evidencia
+    directa de que **este** frame está atrasado — exactamente el dato que el bloque de
+    diseño de la T110 declara estar buscando (*«la fuente de verdad tiene que ser
+    independiente del cohorte que se chequea»*). Medido el 2026-09-09: los 127 tickers
+    del universo vivo tenían un `2y` al **2026-09-08** y un `10y` al **2026-09-01**, y
+    esta función reportaba **cero**. La evidencia estaba en el disco y el guard la
+    tiraba.
+
+    Las ruedas posteriores al final del frame salen marcadas con ``cola=True``, porque
+    se remedian distinto: **refrescar**, no reparar.
+
+    Un ticker con una excepción de refresh **declarada** (``ARTIFACT_REFRESH_EXCEPTIONS``,
+    hoy AVB por la tarea 63) queda exento **sólo de la cola**: su `10y` está viejo a
+    propósito y refrescarlo lo rompería. Los huecos **interiores** se le siguen
+    reportando, porque ésos la excepción no los justifica.
     """
     from data import parquet_cache
 
@@ -701,6 +731,9 @@ def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
         # pasar a escribir parquets de verdad — con `labelled_1d` monkeypatcheado a
         # un solo frame el defecto era invisible.
         faltan: dict[str, str] = {}
+        # La excepción de refresh justifica que este frame esté VIEJO, no que le falte
+        # una rueda adentro. Por eso exime la cola y no el interior.
+        exento_de_cola = ticker.upper() in ARTIFACT_REFRESH_EXCEPTIONS
         for etiqueta, df in parquet_cache.labelled_1d(ticker):
             if df is None or df.empty:
                 continue
@@ -708,13 +741,16 @@ def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
             if not otras:
                 continue
             lo = max(lo_p, min(otras))
-            hi = min(hi_p, max(otras))
+            hi = max(otras)  # sin clamp derecho (tarea 139): la cola es la evidencia
             if lo > hi:
                 continue  # sin solape: no hay nada que comparar
             for f in otras:
-                if lo <= f <= hi and f not in propias:
-                    faltan.setdefault(f, etiqueta)
-        fuera.extend(MissingSession(ticker, f, faltan[f]) for f in sorted(faltan))
+                if not (lo <= f <= hi) or f in propias:
+                    continue
+                if f > hi_p and exento_de_cola:
+                    continue
+                faltan.setdefault(f, etiqueta)
+        fuera.extend(MissingSession(ticker, f, faltan[f], cola=f > hi_p) for f in sorted(faltan))
     return tuple(fuera)
 
 
@@ -842,12 +878,38 @@ def announce_continuity(
     **Reparar el cohorte incluye correr ``scripts/precompute_pit_signals.py`` sobre los
     universos afectados y declarar la muestra resultante.**
     """
-    fuera = cross_period_gaps(bars_by)
+    todas = cross_period_gaps(bars_by)
     salida = file if file is not None else sys.stdout
+
+    # Tarea 139: la cola se declara **aparte** y NO cambia qué aborta.
+    #
+    # Es deliberado y acotado. Des-recortar el borde derecho hizo visible que 125 de
+    # los 127 tickers tienen el `10y` atrasado contra su `2y`; si eso entrara al
+    # `strict`, los 26 lectores del cohorte **abortarían hoy**, y esta tarea es un
+    # gate técnico que no re-corre ni re-publica nada. Que el atraso uniforme llegue a
+    # ser un fallo es la decisión de la **tarea 140**, y tiene dos caminos.
+    fuera = tuple(s for s in todas if not s.cola)
+    cola = tuple(s for s in todas if s.cola)
+
+    if cola:
+        atrasados = sorted({s.ticker for s in cola})
+        ultima_hermano = max(s.date for s in cola)
+        print(
+            f"Continuidad del cohorte — {len(atrasados)} ticker(s) con el frame ATRASADO: "
+            f"otro frame del mismo ticker llega hasta el {ultima_hermano} y éste no "
+            f"({len(cola)} rueda(s) de cola en total).",
+            file=salida,
+        )
+        print(
+            "  Es ATRASO, no hueco: se refresca, no se repara. NO aborta la corrida "
+            "(tarea 139); que un cohorte uniformemente atrasado falle es la tarea 140.\n",
+            file=salida,
+        )
+
     comparables = sorted({s.ticker for s in fuera})
     if not fuera:
         print("Continuidad del cohorte — sin ruedas faltantes comparables.\n", file=salida)
-        return fuera
+        return todas
 
     por_fecha: dict[str, list[str]] = {}
     for s in fuera:
@@ -871,7 +933,7 @@ def announce_continuity(
             + ". Re-bajar los artefactos afectados (y re-anclar las constantes de "
             "reproducción) o correr con strict=False declarándolo en el pre-registro."
         )
-    return fuera
+    return todas
 
 
 # ── Cohorte VIVO vs cohorte HISTÓRICO — Tarea 109 ───────────────────────────
