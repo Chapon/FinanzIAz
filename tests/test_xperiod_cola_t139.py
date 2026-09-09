@@ -138,19 +138,19 @@ def test_pero_NO_le_exime_un_hueco_interior(cohorte, monkeypatch):
 # ── Lo que la cola NO cambia todavía ─────────────────────────────────────────
 
 
-def test_la_cola_se_declara_pero_NO_aborta(cohorte, capsys):
-    """El alcance acotado de esta tarea, y la razón está en el mensaje.
+def test_la_cola_se_declara_aparte_del_hueco_interior(cohorte, capsys):
+    """La cola es una **categoría propia** en el banner, no una fila más de huecos.
 
-    Con el cohorte de hoy, 125 de 127 tickers tienen el `10y` atrasado. Si eso entrara
-    al `strict`, **los 26 lectores del cohorte abortarían** — y esta tarea no re-corre
-    ni re-publica nada. Que el atraso uniforme falle es la tarea 140.
+    (Cuánto atraso llega a abortar lo decide la tolerancia, y eso lo cubre la tarea
+    **140** en su propio archivo. Acá sólo se fija que la cola *se declare como
+    atraso* y no se confunda con un hueco interior, porque la remediación es distinta.)
     """
     bars = cohorte(propias=["2026-09-01"], hermano=["2026-09-01", "2026-09-02"])
-    salida = announce_continuity(bars, strict=True)  # strict y NO levanta
+    salida = announce_continuity(bars, strict=True)  # 1 rueda: dentro de tolerancia
 
     texto = capsys.readouterr().out
-    assert "ATRASADO" in texto
-    assert "NO aborta la corrida" in texto and "tarea 140" in texto
+    assert "ATRASADO" in texto and "se refresca, no se repara" in texto
+    assert "sin ruedas faltantes comparables" in texto  # interior: ninguno
     assert len(salida) == 1 and salida[0].cola
 
 

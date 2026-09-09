@@ -857,6 +857,7 @@ def announce_continuity(
     *,
     strict: bool = False,
     file: TextIO | None = None,
+    max_lag_days: int = ARTIFACT_MAX_LAG_DAYS,
 ) -> tuple[MissingSession, ...]:
     """Declara los huecos **interiores** del cohorte. Agrega por fecha, no por ticker.
 
@@ -881,30 +882,55 @@ def announce_continuity(
     todas = cross_period_gaps(bars_by)
     salida = file if file is not None else sys.stdout
 
-    # Tarea 139: la cola se declara **aparte** y NO cambia qué aborta.
+    # La cola se declara **aparte** del hueco interior (tarea 139) y **sí aborta**
+    # cuando pasa la tolerancia (tarea 140, camino (a), decidido por Chapa).
     #
-    # Es deliberado y acotado. Des-recortar el borde derecho hizo visible que 125 de
-    # los 127 tickers tienen el `10y` atrasado contra su `2y`; si eso entrara al
-    # `strict`, los 26 lectores del cohorte **abortarían hoy**, y esta tarea es un
-    # gate técnico que no re-corre ni re-publica nada. Que el atraso uniforme llegue a
-    # ser un fallo es la decisión de la **tarea 140**, y tiene dos caminos.
+    # **Por qué el hermano y no un calendario.** El conteo de ruedas de cola es, por
+    # construcción, un lag en **sesiones reales**: el hermano sólo tiene los días que
+    # el mercado abrió. Medido el 2026-09-09, el `2y` tiene 09-02, 03, 04, 08 y 09 y
+    # **no** tiene el 09-07 (Labor Day), así que el lag da **5**; `_busday_lag`, que no
+    # tiene feriados, habría dicho **6**. El camino (b) —un reloj externo— necesitaba
+    # esa tabla para no ser ruidoso alrededor de cada feriado, y acá sale gratis.
+    #
+    # **Y esto es lo que `stale_artifacts` no puede ver**: ése compara cada artefacto
+    # contra la última barra MODAL del propio cohorte, así que si el cohorte entero se
+    # atrasa junto, la moda se mueve con él y no acusa a nadie. Medido: el cohorte `5y`
+    # estaba 71 ruedas atrás y devolvía CERO. La referencia de acá es **externa al
+    # cohorte** — otro frame del mismo ticker.
     fuera = tuple(s for s in todas if not s.cola)
     cola = tuple(s for s in todas if s.cola)
+    de_mas: dict[str, int] = {}
 
     if cola:
-        atrasados = sorted({s.ticker for s in cola})
+        por_ticker: dict[str, int] = {}
+        for s in cola:
+            por_ticker[s.ticker] = por_ticker.get(s.ticker, 0) + 1
+        de_mas = {t: n for t, n in por_ticker.items() if n > max_lag_days}
         ultima_hermano = max(s.date for s in cola)
+        peor = max(por_ticker.values())
         print(
-            f"Continuidad del cohorte — {len(atrasados)} ticker(s) con el frame ATRASADO: "
+            f"Continuidad del cohorte — {len(por_ticker)} ticker(s) con el frame ATRASADO: "
             f"otro frame del mismo ticker llega hasta el {ultima_hermano} y éste no "
-            f"({len(cola)} rueda(s) de cola en total).",
+            f"(peor caso {peor} rueda(s); tolerancia {max_lag_days}).",
             file=salida,
         )
         print(
-            "  Es ATRASO, no hueco: se refresca, no se repara. NO aborta la corrida "
-            "(tarea 139); que un cohorte uniformemente atrasado falle es la tarea 140.\n",
+            "  Es ATRASO, no hueco: se refresca, no se repara. El conteo es en sesiones "
+            "REALES —el hermano sólo tiene los días que el mercado abrió— así que no "
+            "necesita calendario de feriados (tareas 139 y 140).\n",
             file=salida,
         )
+        if strict and de_mas:
+            peores = sorted(de_mas.items(), key=lambda kv: -kv[1])[:5]
+            raise StaleArtifactError(
+                f"{len(de_mas)} artefacto(s) ATRASADOS más de {max_lag_days} ruedas contra "
+                "otro frame del mismo ticker: "
+                + " · ".join(f"{t} ({n})" for t, n in peores)
+                + ". Es el atraso UNIFORME que `stale_artifacts` no puede ver, porque compara "
+                "contra la moda del propio cohorte (tarea 140). Refrescar los artefactos "
+                "—y re-anclar las constantes de reproducción, que la ventana se mueve— o "
+                "correr con strict=False declarándolo en el pre-registro."
+            )
 
     comparables = sorted({s.ticker for s in fuera})
     if not fuera:

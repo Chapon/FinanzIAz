@@ -18,6 +18,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 95 — Tarea 140 (COHORTE-UNIFORME) CERRADA 2026-09-09 — camino (a) decidido por Chapa, y el hermano resultó ser MEJOR que el reloj externo, no sólo más barato** (`analysis/harness_config.py`, `tests/test_cohorte_uniforme_t140.py`). Suite Windows **2975 passed, 3 skipped**, ruff limpio. **Chapa decidió además refrescar y recalcular: va como paso siguiente, aparte.**
+  - **La premisa quedó fijada como test:** `stale_artifacts` sobre un cohorte parado entero devuelve **CERO**. No es un reproche al guard —hace lo que dice, comparar contra la moda— sino la razón de que haga falta una referencia **externa al cohorte**.
+  - **El camino (a) no es sólo el más barato: es el más correcto.** El conteo de ruedas de cola es un lag en **sesiones reales**, porque el hermano sólo tiene los días que el mercado abrió. Medido: el `2y` no tiene el 2026-09-07 (Labor Day) ⇒ lag **5**; `_busday_lag` habría dicho **6**. El camino (b) necesitaba una tabla de feriados **justamente** para no ser ruidoso ahí.
+  - **Misma semántica que el guard hermano** (`> max_lag_days`, 5 se tolera y 6 falla), así que hoy **no** frena nada y mañana sí — que es el punto de refrescar.
+  - **El mensaje de fallo dice el costo, no sólo el síntoma:** que refrescar mueve la ventana ⇒ `reproduction_check` pasa a INDETERMINADO y hay que re-anclar constantes. Sin eso, el próximo refresca y se encuentra 17 constantes rotas sin saber por qué — que es literalmente lo que pasó en la T68.
+  - **El límite queda declarado y con test propio:** un ticker con **un solo** frame no tiene contra qué cruzarse y **pasa**. Es la propiedad que la T110 se ganó a propósito (nada de umbrales inventados) y su precio. Cubrirlo es el camino (b), que sigue sin hacerse.
+  - **Un bug del fixture, cazado por sus propios tests:** la primera versión devolvía dos archivos con un nombre ajeno, así que `cross_period_gaps` salteaba a los diez tickers por *«tiene un solo frame»* y el barrido **no miraba a nadie**. Tres tests lo delataron.
+
 - **WIP 94 — Tarea 139 (XPERIOD-COLA) CERRADA 2026-09-09 — des-recortada la cola, y el hermano resultó ser un calendario con feriados GRATIS** (`analysis/harness_config.py`, `tests/test_xperiod_cola_t139.py`). Suite Windows **2969 passed, 3 skipped**, ruff limpio. **Destraba la 140, que Chapa decidió: falla + refresh + recálculo.**
   - **El efecto, medido sobre el cohorte real:** de **0 huecos** a **125 de 127 tickers** acusados. Los otros dos son AVB (excepción declarada, exento) y el único sin segundo frame. La evidencia estaba en el disco desde siempre y el guard la tiraba.
   - **Y el argumento de la 139 quedó probado con datos, no con retórica:** el hermano `2y` tiene el 09-02, 03, 04, 08 y 09, y **NO tiene el 2026-09-07** — Labor Day. O sea que da un **calendario con feriados sin tabla de feriados**. `_busday_lag` habría contado **6**; el hermano dice **5**. Ése era exactamente el problema que el camino (b) tenía que resolver a mano.
@@ -1931,7 +1939,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Gate técnico, no toca decisiones: con el cohorte de hoy el guard **acusa** el atraso del `10y` contra el `2y` y **no** acusa a AVB (excepción declarada); probado por mutación en los dos sentidos. Suite Windows verde.
 - **Dependencias:** ninguna. **Destraba la 140.**
 
-### 140. COHORTE-UNIFORME — El guard de frescura es CIEGO a un cohorte uniformemente atrasado, y la asimetría además está premiada  ·  ref `docs/auditoria_guards_2026-09-08.md` §3 [G-2] · severidad **ALTA**
+### 140. ~~COHORTE-UNIFORME — El guard de frescura es CIEGO a un cohorte uniformemente atrasado, y la asimetría además está premiada~~ · **CERRADA 2026-09-09 — camino (a) elegido por Chapa: el hermano como reloj, con feriados gratis. El refresh + re-anclaje van aparte** · ref `docs/auditoria_guards_2026-09-08.md` §3 [G-2] · severidad **ALTA**
 
 - **Qué pasa.** `stale_artifacts` (`analysis/harness_config.py:521`) compara cada artefacto contra `cohort_end(bars_by)` (`:507`), que es la última barra **modal del propio cohorte**. Si todo el cohorte está igual de viejo, **la moda se mueve con él y no se acusa a nadie**. Es [[guard-no-puede-usar-de-verdad-lo-que-chequea]] en el guard que existe para que la muestra no esté torcida.
 - **La demostración, medida:** el cohorte **`5y` (39 tickers) tiene su última barra modal el 2026-06-01 —71 ruedas atrás— y `stale_artifacts` devuelve CERO.** El `10y` está 4 sesiones atrás y también da cero. El `2y` está al día.
