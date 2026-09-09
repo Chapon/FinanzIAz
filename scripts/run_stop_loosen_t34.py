@@ -89,7 +89,13 @@ CAP_DAYS = 250
 
 # §5 — la rejilla extendida. El orden importa para leer la forma de la curva (C6).
 MULTS: tuple[float, ...] = (1.0, 1.5, 2.0, 2.5, 3.0, 3.5, NO_STOP)
-LIVE_MULT = 2.0
+# Renombrada desde `LIVE_MULT` por la tarea 134, con el precedente de la T37: no es
+# configuracion, es **el baseline de una comparacion congelada** (lo ancla
+# el brazo base de la rejilla del §5). Re-apuntarla a la politica de hoy haria que el runner compare el
+# candidato contra si mismo y el veredicto publicado deje de reproducir. Una
+# constante que se llama LIVE y que nadie re-verifica es la trampa de la T92, donde
+# el nombre quedo falso el mismo dia que la tarea shipeo.
+BASELINE_STOP_MULT = 2.0
 LOOSE_EDGE = (3.5, NO_STOP)  # C6 — el extremo suelto de la rejilla
 
 BASELINE_ARM = "touch_2.0"
@@ -145,7 +151,7 @@ def build_arms(*, live_gates: bool = True, fill_mode: str = "decision") -> dict[
                 "fill_mode": fill_mode,
                 "live_gates": live_gates,
             }
-    base_p = AtrParams(stop_mult=LIVE_MULT)
+    base_p = AtrParams(stop_mult=BASELINE_STOP_MULT)
     # Los dos de sanity corren en el modo del BASELINE (``touch``), que es la regla
     # viva: se valida el instrumento donde se dicta el veredicto.
     common: dict[str, Any] = {
@@ -241,7 +247,7 @@ def walk_forward(entries, bars_by, sigs_by, common: dict) -> dict:
             test,
             bars_by,
             sigs_by,
-            atr_p=AtrParams(stop_mult=LIVE_MULT),
+            atr_p=AtrParams(stop_mult=BASELINE_STOP_MULT),
             eval_mode="touch",
             fill_mode="decision",
             live_gates=True,
@@ -338,7 +344,10 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
     }
     best_touch = max(MULTS, key=lambda m: summaries[arm_name(m)]["cagr"])
     c8a = summaries_5[cand]["cagr"] - summaries_5[BASELINE_ARM]["cagr"]
-    c8b = summaries[arm_name(m_star, "close")]["cagr"] - summaries[arm_name(LIVE_MULT, "close")]["cagr"]
+    c8b = (
+        summaries[arm_name(m_star, "close")]["cagr"]
+        - summaries[arm_name(BASELINE_STOP_MULT, "close")]["cagr"]
+    )
 
     crit: dict[str, Any] = {
         "C1_dcagr_oos": (c1, c1 >= KILL_MIN_DCAGR_OOS),
@@ -368,7 +377,7 @@ def evaluate(summaries: dict, summaries_5: dict, regimes: dict, boot, wf: dict) 
             f"NO-SHIP por C7 — el multiplo baila entre folds ({wf['picks']}). "
             f"No hay parametro que cablear; el lead de la 26b §3 queda cerrado como RUIDO."
         )
-    elif m_star == LIVE_MULT:
+    elif m_star == BASELINE_STOP_MULT:
         outcome = (
             "NO-SHIP — el walk-forward elige el multiplo VIVO (2.0). Resultado POSITIVO: "
             "el multiplo esta bien puesto y el lead de la 26b era in-sample."
@@ -491,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
 
     wf: dict[str, Any] = (
         {
-            "m_star": LIVE_MULT,
+            "m_star": BASELINE_STOP_MULT,
             "agreement": 0,
             "picks": [],
             "per_fold": [],
@@ -589,7 +598,7 @@ def _report(summaries, summaries_5, gates_off, regimes, verdict, sanity, boot, w
     for m in MULTS:
         n = arm_name(m)
         s = summaries[n]
-        mark = "  <-- BASELINE (vivo)" if m == LIVE_MULT else ""
+        mark = "  <-- BASELINE (vivo)" if m == BASELINE_STOP_MULT else ""
         print(
             f"{n:<14}{_f(s['cagr'], 9, 2, '%')}{_f(s['sharpe'], 9)}{_f(s['max_dd'], 9, 1, '%')}"
             f"{_f(s['stop_share'], 8, 1, '%')}{_f(s['exit_mix'].get('atr_trail', 0), 8, 1, '%')}"

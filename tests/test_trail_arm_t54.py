@@ -29,7 +29,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from scripts.measure_trail_arm_t54 import (
-    LIVE_MIN_EXCESS,
+    BASELINE_MIN_EXCESS,
     differential_population,
     trade_excess_atrs,
 )
@@ -72,7 +72,7 @@ def test_a_trade_that_never_rose_has_a_small_excess_not_a_negative_one():
     res = SimpleNamespace(trades=[_trade()])
     rows = trade_excess_atrs(res, {"AAA": _bars()})
     assert rows[0]["excess_atrs"] >= 0.0
-    assert rows[0]["excess_atrs"] < LIVE_MIN_EXCESS
+    assert rows[0]["excess_atrs"] < BASELINE_MIN_EXCESS
 
 
 def test_a_trade_without_bars_is_skipped_not_counted_as_zero():

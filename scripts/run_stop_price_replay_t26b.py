@@ -77,7 +77,13 @@ CAP_DAYS = 250
 # §4 — la rejilla. El orden importa para la lectura de la curva.
 MULTS: tuple[float, ...] = (1.0, 1.5, 2.0, 2.5, 3.0)
 MODES: tuple[str, ...] = ("touch", "close")
-LIVE_MULT = 2.0
+# Renombrada desde `LIVE_MULT` por la tarea 134, con el precedente de la T37: no es
+# configuracion, es **el baseline de una comparacion congelada** (lo ancla
+# el brazo base de la rejilla del §4). Re-apuntarla a la politica de hoy haria que el runner compare el
+# candidato contra si mismo y el veredicto publicado deje de reproducir. Una
+# constante que se llama LIVE y que nadie re-verifica es la trampa de la T92, donde
+# el nombre quedo falso el mismo dia que la tarea shipeo.
+BASELINE_STOP_MULT = 2.0
 
 BASELINE_ARM = "touch_2.0"  # la regla que el engine ejecuta HOY
 CANDIDATE_ARM = "close_2.0"  # aislar el efecto de la regla, múltiplo vivo fijo
@@ -124,7 +130,7 @@ def build_arms(fill_mode: str = "decision") -> dict[str, dict]:
                 "eval_mode": mode,
                 "fill_mode": fill_mode,
             }
-    base_p = AtrParams(stop_mult=LIVE_MULT)
+    base_p = AtrParams(stop_mult=BASELINE_STOP_MULT)
     # Los dos de sanity corren en el modo del BASELINE (``touch``), que es la regla
     # viva: se valida el instrumento donde se dicta el veredicto.
     arms[ORACLE_ARM] = {

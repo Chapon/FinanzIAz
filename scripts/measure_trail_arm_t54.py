@@ -75,8 +75,14 @@ LIVE_GATES = True
 CAP_DAYS = 250
 
 # El brazo VIVO desde el 2026-08-27: stop duro apagado + trailing en 2.0×ATR.
-LIVE_TRAIL_MULT = 2.0
-LIVE_MIN_EXCESS = 1.0
+# Renombrada desde `LIVE_TRAIL_MULT` por la tarea 134, con el precedente de la T37: no es
+# configuracion, es **el baseline de una comparacion congelada** (lo ancla
+# el 9.17% de la T37 (§7.7)). Re-apuntarla a la politica de hoy haria que el runner compare el
+# candidato contra si mismo y el veredicto publicado deje de reproducir. Una
+# constante que se llama LIVE y que nadie re-verifica es la trampa de la T92, donde
+# el nombre quedo falso el mismo dia que la tarea shipeo.
+BASELINE_TRAIL_MULT = 2.0
+BASELINE_MIN_EXCESS = 1.0
 
 # La grilla candidata que este script existe para justificar (o descartar).
 CANDIDATE_GRID: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5)
@@ -120,7 +126,7 @@ def trade_excess_atrs(res: PortfolioResult, bars_by: dict, period: int = 14) -> 
     return out
 
 
-def differential_population(excess: list[float], grid, base: float = LIVE_MIN_EXCESS) -> list[dict]:
+def differential_population(excess: list[float], grid, base: float = BASELINE_MIN_EXCESS) -> list[dict]:
     """Los trades que **cambian de comportamiento** al bajar el umbral a cada valor.
 
     Un brazo con umbral ``k < base`` sólo puede mover a los trades cuyo excedente
@@ -192,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
     print(
         f"Brazo medido: el VIVO desde 2026-08-27 — stop duro OFF + trail "
-        f"{LIVE_TRAIL_MULT}×ATR, armado en {LIVE_MIN_EXCESS}×ATR\n",
+        f"{BASELINE_TRAIL_MULT}×ATR, armado en {BASELINE_MIN_EXCESS}×ATR\n",
         file=log,
     )
 
@@ -200,7 +206,9 @@ def main(argv: list[str] | None = None) -> int:
         entries,
         bars_by,
         sigs_by,
-        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT, trail_min_excess_atrs=LIVE_MIN_EXCESS),
+        atr_p=AtrParams(
+            stop_mult=NO_STOP, trail_mult=BASELINE_TRAIL_MULT, trail_min_excess_atrs=BASELINE_MIN_EXCESS
+        ),
         eval_mode=EVAL_MODE,
         fill_mode=FILL_MODE,
         live_gates=LIVE_GATES,
@@ -216,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     # 9.17% que publico la T37 (§7.7) sobre esta misma ventana y poblacion.
     base_sum = summarise(res)
     print(
-        f"Brazo vivo soff_t{LIVE_TRAIL_MULT}: CAGR {100 * base_sum['cagr']:.2f}% · "
+        f"Brazo vivo soff_t{BASELINE_TRAIL_MULT}: CAGR {100 * base_sum['cagr']:.2f}% · "
         f"Sharpe {base_sum['sharpe']:.2f} · maxDD {100 * base_sum['max_dd']:.1f}% · "
         f"tomadas {base_sum['n_taken']} · tenencia {base_sum['mean_held_days']:.1f}d\n",
         file=log,
@@ -235,12 +243,12 @@ def main(argv: list[str] | None = None) -> int:
     diff = differential_population(excess, CANDIDATE_GRID)
     print(
         "Población DIFERENCIAL — trades que cambian de comportamiento vs el "
-        f"umbral vivo ({LIVE_MIN_EXCESS}×ATR):",
+        f"umbral vivo ({BASELINE_MIN_EXCESS}×ATR):",
         file=log,
     )
     print(f"  {'umbral':>8} {'cambian':>9} {'población':>11}", file=log)
     for d in diff:
-        marca = "" if d["share"] >= 0.05 or d["value"] == LIVE_MIN_EXCESS else "  <- bajo el 5% de la T13"
+        marca = "" if d["share"] >= 0.05 or d["value"] == BASELINE_MIN_EXCESS else "  <- bajo el 5% de la T13"
         print(f"  {d['value']:>8.2f} {d['n_changed']:>9} {100 * d['share']:>10.2f}%{marca}", file=log)
 
     # 3. El retorno por tramo: ¿los que se armarían tarde son los que pierden?
@@ -298,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
         "differential": diff,
         "ret_by_band": tramos,
-        "never_armed_share": sum(1 for m in excess if m <= LIVE_MIN_EXCESS) / len(excess),
+        "never_armed_share": sum(1 for m in excess if m <= BASELINE_MIN_EXCESS) / len(excess),
     }
     if args.json:
         print(json.dumps(ctx, indent=2, default=str))

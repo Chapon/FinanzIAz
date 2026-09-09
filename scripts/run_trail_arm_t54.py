@@ -93,7 +93,13 @@ BASE_CAP = 250
 
 # El brazo VIVO desde el 2026-08-27 — el baseline de esta tarea, que NO es el
 # `s2.0_t2.0` con el que corrió toda la serie anterior.
-LIVE_TRAIL_MULT = 2.0
+# Renombrada desde `LIVE_TRAIL_MULT` por la tarea 134, con el precedente de la T37: no es
+# configuracion, es **el baseline de una comparacion congelada** (lo ancla
+# `REPRO_BASE_CAGR`). Re-apuntarla a la politica de hoy haria que el runner compare el
+# candidato contra si mismo y el veredicto publicado deje de reproducir. Una
+# constante que se llama LIVE y que nadie re-verifica es la trampa de la T92, donde
+# el nombre quedo falso el mismo dia que la tarea shipeo.
+BASELINE_TRAIL_MULT = 2.0
 BASE_K = 1.0
 GRID_K: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.5)
 
@@ -469,7 +475,7 @@ def _common(max_positions: int, capital: float, **over) -> dict:
         max_positions=max_positions,
         initial_capital=capital,
         cap_days=BASE_CAP,
-        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT, trail_min_excess_atrs=BASE_K),
+        atr_p=AtrParams(stop_mult=NO_STOP, trail_mult=BASELINE_TRAIL_MULT, trail_min_excess_atrs=BASE_K),
         so_params=ScaleOutParams(),
         costs=CostModel(),
         regime_of=regime_for_date,
@@ -557,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Tickers: {len(bars_by)} · entradas `analyze BUY`: {len(entries)}", file=log)
     print(
         f"BASELINE = el brazo VIVO desde 2026-08-27: stop duro OFF + trail "
-        f"{LIVE_TRAIL_MULT}×ATR, armado en {BASE_K}×ATR",
+        f"{BASELINE_TRAIL_MULT}×ATR, armado en {BASE_K}×ATR",
         file=log,
     )
     print(f"Grilla del umbral: k ∈ {list(GRID_K)}\n", file=log)
