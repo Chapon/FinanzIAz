@@ -55,12 +55,20 @@ from analysis.exit_replay import (
 # Señal PIT: {iso10: "BUY"|"SELL"|"HOLD"}. Fechas ausentes ⇒ sin señal ese día.
 SignalSeries = dict
 
-# ``stop_filter(bars, i) -> bool``: ¿se le permite al **stop duro** disparar en la
-# barra ``i``? Sirve para los brazos oráculo de la Tarea 26 (STOP-CAL), que gatean
+# ``stop_filter(bars, i, ticker) -> bool``: ¿se le permite al **stop duro** disparar en
+# la barra ``i``? Sirve para los brazos oráculo de la Tarea 26 (STOP-CAL), que gatean
 # el stop con información del futuro para validar la sensibilidad del harness.
 # ``None`` (default) ⇒ el stop dispara siempre que toque, o sea el comportamiento
 # de T7/T23/T13/T21 sin cambio alguno.
-StopFilter = Callable[[list[Bar], int], bool]
+#
+# **El tercer argumento lo agregó la tarea 164**, y no es cosmético: el brazo de control
+# *aleatorio* sorteaba con ``(semilla, fecha, índice de barra)``, así que (a) un refresh
+# que mueve el `start` del cohorte **re-sortea el control entero** —medido: el 51% de las
+# decisiones se da vuelta— y (b) sin el ticker en la clave, **todos** los tickers que
+# comparten índice reciben el mismo sorteo: una moneda por fecha en vez de un sorteo
+# independiente por (ticker, fecha). Los filtros oráculo ignoran el ticker —miran el
+# futuro de ``bars``— pero la firma es una sola para los tres.
+StopFilter = Callable[[list[Bar], int, str], bool]
 
 # Múltiplo que pone el nivel del stop en negativo ⇒ el guard ``> 0`` lo apaga.
 _NO_STOP = 1e9
@@ -234,6 +242,10 @@ def replay_cycle(
     regime: str = "",
     time_stop_days: int | None = None,
     stop_filter: StopFilter | None = None,
+    # El ticker sólo lo usa `stop_filter` (tarea 164): es lo que hace que el sorteo del
+    # control aleatorio sea por (semilla, ticker, fecha). Keyword-only con default, así
+    # que ningún llamador que no use filtro se entera.
+    ticker: str = "",
     eval_mode: str = "close",
     fill_mode: str = "decision",
 ) -> CycleResult | None:
@@ -323,7 +335,7 @@ def replay_cycle(
             fired = _fired_barrier(
                 bars[i], avg_cost=avg_cost, hwm=hwm, atr_value=a, p=atr_p, eval_mode=eval_mode
             )
-            if fired == "atr_stop" and stop_filter is not None and not stop_filter(bars, i):
+            if fired == "atr_stop" and stop_filter is not None and not stop_filter(bars, i, ticker):
                 # Stop suprimido en esta barra (brazos oráculo de la T26). Se
                 # re-evalúa la misma barra con el stop apagado y el trailing
                 # **pineado en su múltiplo efectivo**: sin ese pin, apagar el

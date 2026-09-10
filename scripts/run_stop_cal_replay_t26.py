@@ -128,13 +128,16 @@ BOOT_SEED = 12345
 # ── Brazos oráculo (§3.2) ────────────────────────────────────────────────────
 
 
-def _oracle_stop_filter(bars: list[Bar], i: int) -> bool:
+def _oracle_stop_filter(bars: list[Bar], i: int, ticker: str = "") -> bool:
     """El stop duro dispara **sólo si la caída era real**: ``close[i+20] < close[i]``.
 
     Mira el futuro a propósito — es el contrafactual exacto de la evidencia viva
     (los nombres que el stop corta rebotan +6,81% a 20 ruedas). Cuando no hay
     barra ``i+20`` (final de la serie) **se permite el stop**, o sea que el brazo
     cae al comportamiento del baseline en vez de inventar una ventaja.
+
+    ``ticker`` entra por la firma común de ``StopFilter`` (tarea 164) y **no se usa**:
+    este brazo decide con el futuro del propio frame, que ya es por ticker.
     """
     j = i + ORACLE_HORIZON
     if j >= len(bars):
@@ -142,7 +145,7 @@ def _oracle_stop_filter(bars: list[Bar], i: int) -> bool:
     return bars[j][4] < bars[i][4]
 
 
-def _anti_oracle_stop_filter(bars: list[Bar], i: int) -> bool:
+def _anti_oracle_stop_filter(bars: list[Bar], i: int, ticker: str = "") -> bool:
     """Al revés: el stop dispara sólo cuando corta un rebote (``close[i+20] ≥ close[i]``)."""
     j = i + ORACLE_HORIZON
     if j >= len(bars):
@@ -159,12 +162,36 @@ def random_stop_filter(keep_prob: float, seed: int = RANDOM_KEEP_SEED):
     entonces el harness responde al **número** de stops y no a su **calidad**, y el
     sanity §5.5 no podía pasar por construcción.
 
-    Determinista: el sorteo se deriva de un digest de ``(seed, fecha, i)``, no del
-    ``hash()`` de Python (que está salteado por proceso).
+    **El sorteo es una función pura de (semilla, ticker, fecha) — tarea 164.** Hasta el
+    2026-09-10 la clave era ``(semilla, fecha, índice de barra)``, y eso rompía el control
+    por los dos lados:
+
+    * **el índice se mueve con la ventana.** Cualquier refresh que corra el ``start`` del
+      cohorte desplaza todos los índices ⇒ el control se **re-sortea entero**. Medido
+      sobre un frame de 200 ruedas recortándole 24 de la cabeza: **el 51% de las
+      decisiones se da vuelta para las MISMAS fechas** (90 de 176). Consecuencia real: el
+      ``ΔmaxDD`` del oráculo contra este control pasó de **−15.19 pp** (T26b) y
+      **−17.59 pp** (T37) a **−4.30 pp**, y con eso el sanity ``oracle_quality_ok`` dejó
+      inválidas dos corridas con veredicto publicado (T37 y T47).
+    * **sin el ticker, era una moneda por fecha.** Dos tickers cualesquiera con la misma
+      fecha recibían la **misma** decisión (medido: 176 de 176), así que el control
+      suprimía stops en bloque el mismo día en toda la cartera. Eso no es *«suprimir la
+      misma proporción sin elegir»*: es elegir por fecha, y le infla la varianza del
+      drawdown, que es justo la métrica con la que se lo compara.
+
+    Sigue siendo determinista y sin ``hash()`` de Python (que está salteado por proceso).
+    El ``ticker`` es **obligatorio**: con la cadena vacía el sorteo volvería a ser común a
+    toda la cartera, o sea el defecto de nuevo pero en silencio.
     """
 
-    def _f(bars: list[Bar], i: int) -> bool:
-        raw = f"{seed}|{bars[i][0]}|{i}".encode()
+    def _f(bars: list[Bar], i: int, ticker: str = "") -> bool:
+        if not ticker:
+            raise ValueError(
+                "random_stop_filter necesita el ticker: sin él el sorteo es el mismo para "
+                "toda la cartera en cada fecha (tarea 164). Pasalo vía "
+                "replay_cycle(..., ticker=...)."
+            )
+        raw = f"{seed}|{ticker}|{bars[i][0]}".encode()
         u = int.from_bytes(hashlib.blake2b(raw, digest_size=8).digest(), "big")
         return (u / 2**64) < keep_prob
 

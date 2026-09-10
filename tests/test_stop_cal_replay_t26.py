@@ -84,7 +84,7 @@ def test_stop_filter_suprime_el_atr_stop():
     bars = _flat_then([99.0, 97.0, 95.0, 93.0, 91.0, 90.0])
     a = AtrParams(stop_mult=2.0)
     assert "atr_stop" in _cycle(bars, a).exit_reasons
-    libre = _cycle(bars, a, stop_filter=lambda _b, _i: False)
+    libre = _cycle(bars, a, stop_filter=lambda _b, _i, _t="": False)
     assert "atr_stop" not in libre.exit_reasons
 
 
@@ -100,7 +100,7 @@ def test_stop_filter_no_apaga_el_trailing():
     a = AtrParams(stop_mult=2.0, tp_mult=NO_STOP)  # TP fuera del camino
     base = _cycle(bars, a)
     assert "atr_stop" in base.exit_reasons
-    filtrado = _cycle(bars, a, stop_filter=lambda _b, _i: False)
+    filtrado = _cycle(bars, a, stop_filter=lambda _b, _i, _t="": False)
     assert "atr_trail" in filtrado.exit_reasons
     assert "atr_stop" not in filtrado.exit_reasons
 
@@ -108,7 +108,7 @@ def test_stop_filter_no_apaga_el_trailing():
 def test_stop_filter_no_apaga_el_take_profit():
     bars = _flat_then([102.0, 104.0, 106.0, 108.0, 110.0, 112.0])
     a = AtrParams(stop_mult=2.0)
-    filtrado = _cycle(bars, a, stop_filter=lambda _b, _i: False)
+    filtrado = _cycle(bars, a, stop_filter=lambda _b, _i, _t="": False)
     assert "atr_tp" in filtrado.exit_reasons
 
 
@@ -117,7 +117,7 @@ def test_stop_filter_es_por_barra():
     bars = _flat_then([99.0, 97.0, 95.0, 93.0, 91.0, 90.0])
     vistos: list[int] = []
 
-    def _spy(_b, i):
+    def _spy(_b, i, _t=""):
         vistos.append(i)
         return False
 
@@ -183,16 +183,21 @@ def test_oraculos_caen_al_baseline_sin_horizonte():
 
 
 def test_control_aleatorio_es_determinista_y_respeta_la_tasa():
-    """El control post-hoc no puede depender del ``hash()`` salteado por proceso."""
+    """El control post-hoc no puede depender del ``hash()`` salteado por proceso.
+
+    El tercer argumento es el **ticker** desde la tarea 164 (el sorteo es función pura de
+    ``(semilla, ticker, fecha)``); los invariantes nuevos se testean en
+    ``tests/test_control_resorteado_t164.py``.
+    """
     bars = _bars([100.0 + (i % 7) for i in range(400)])
     f1 = random_stop_filter(0.463, seed=42)
     f2 = random_stop_filter(0.463, seed=42)
-    dec1 = [f1(bars, i) for i in range(len(bars))]
-    assert dec1 == [f2(bars, i) for i in range(len(bars))]
+    dec1 = [f1(bars, i, "AAPL") for i in range(len(bars))]
+    assert dec1 == [f2(bars, i, "AAPL") for i in range(len(bars))]
     tasa = sum(dec1) / len(dec1)
     assert 0.38 < tasa < 0.55  # ~0.463 con tolerancia de muestra
     otra = random_stop_filter(0.463, seed=43)
-    assert dec1 != [otra(bars, i) for i in range(len(bars))]
+    assert dec1 != [otra(bars, i, "AAPL") for i in range(len(bars))]
 
 
 def test_oraculo_le_gana_al_baseline_en_un_dip_que_rebota():

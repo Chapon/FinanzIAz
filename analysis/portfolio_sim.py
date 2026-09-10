@@ -469,6 +469,9 @@ def simulate_portfolio(
                 regime="" if regime_of is None else regime_of(entry_date),
                 time_stop_days=time_stop_days,
                 stop_filter=stop_filter,
+                # T164: el filtro necesita el ticker para que el sorteo del control
+                # aleatorio sea por (semilla, ticker, fecha) y no una moneda por fecha.
+                ticker=ticker,
                 eval_mode=eval_mode,
                 fill_mode=fill_mode,
             )
