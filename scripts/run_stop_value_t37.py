@@ -1059,7 +1059,16 @@ def _run(argv: list[str] | None = None) -> int:
         f"trail {[_m(t) for t in TRAIL_MULTS]} = {len(grid_cells())} brazos",
         file=log,
     )
-    print(f"BASELINE = {BASELINE_ARM} (la config viva, un solo knob)\n", file=log)
+    # **Tarea 169.** Decía *«la config viva»* y dejó de ser cierto el **2026-08-27**, cuando
+    # la cuenta 2 adoptó el candidato de esta misma tarea (`soff_t2.0`). El banner se
+    # contradecía solo: tres líneas arriba `deviations()` declara *«stop duro ENCENDIDO en
+    # el harness vs APAGADO en la cuenta 2»*. El baseline es el correcto —es el que el
+    # pre-registro congeló— lo que estaba mal era el rótulo.
+    print(
+        f"BASELINE = {BASELINE_ARM} (la config que estaba viva al CONGELAR el pre-registro, "
+        "2026-08-19; un solo knob). Hoy la viva es el candidato — ver el desvío de stop duro\n",
+        file=log,
+    )
     if smoke:
         print("*** SMOKE — la corrida NO puede dictar veredicto ***\n", file=log)
 
@@ -1378,7 +1387,8 @@ def _report(summaries: dict, tails: dict, ctx: dict) -> None:
             mark = "*" if n == v["candidate_arm"] else ("#" if n == BASELINE_ARM else " ")
             row += f"{100 * summaries[n]['cagr']:9.2f}%{mark}"
         print(row)
-    print("  # = BASELINE (lo vivo)   * = CANDIDATO (lo elige el walk-forward)")
+    # T169: decía "(lo vivo)" y lo vivo es el candidato desde el 2026-08-27.
+    print("  # = BASELINE (lo vivo al congelar, 2026-08-19)   * = CANDIDATO (lo elige el walk-forward)")
 
     print(
         f"\n{'brazo':<14}{'CAGR':>9}{'Sharpe':>8}{'maxDD':>9}"
