@@ -176,6 +176,19 @@ def main(argv: list[str] | None = None) -> int:
     other_by_fundamentals = [r for r in other_exclusions if r["reason"] != REASON_ADV]
 
     kill_pass = not fragile_missed and not other_by_fundamentals
+    # Tarea 149 — sobre cuántos del universo el screen pudo decidir DE VERDAD.
+    #
+    # La pata fundamental sólo puede excluir con **evidencia positiva** de pérdidas
+    # sostenidas. Un nombre sin ``net_income`` no es "aprobado": es **invisible** para
+    # ella, y el fail-open lo conserva. Sin este número, un veredicto de *«no excluye a
+    # nadie»* se lee igual con 128 de 128 evaluados que con 100: el veredicto sigue
+    # siendo cierto y **quiere decir otra cosa**.
+    #
+    # Medido el 2026-09-09 (tarea 129): 4 de 128 llegan sin ningún fact — ASML y TSM
+    # son foreign filers (aceptado desde julio), AVB no está en el mapa de tickers de
+    # la SEC y XOM resuelve a un CIK sin serie anual.
+    con_facts = [r for r in results if r["net_income_recent"]]
+    cobertura = len(con_facts) / len(results) if results else 0.0
     # Y esto NO entra al veredicto: entra al lado del veredicto. Sin ningún frágil
     # en el universo, la corrida mide el lado **falso-positivo** (no recortar
     # buenos) y no ejercita el **verdadero-positivo** (agarrar a los tipo MLTX).
@@ -199,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
                     "fragile_missed": fragile_missed,
                     "fragile_not_in_universe": fragile_ausentes,
                     "true_positive_exercised": true_positive_ejercitado,
+                    "facts_coverage": round(cobertura, 4),
+                    "sin_facts": sorted(r["ticker"] for r in results if not r["net_income_recent"]),
                     "other_exclusions": [r["ticker"] for r in other_exclusions],
                     "kill_pass": kill_pass,
                 },
@@ -237,6 +252,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {r['ticker']}: {r['reason']} — {r['detail']}")
     else:
         print("Otras exclusiones: ninguna")
+    sin_facts = sorted(r["ticker"] for r in results if not r["net_income_recent"])
+    print(
+        f"\nCobertura de facts: {len(con_facts)}/{len(results)} ({100 * cobertura:.1f}%)"
+        + (f" — SIN facts: {', '.join(sin_facts)}" if sin_facts else "")
+    )
+    print(
+        "  La pata fundamental sólo excluye con evidencia POSITIVA de pérdidas, así que "
+        "un nombre\n  sin facts es INVISIBLE para ella (fail-open), no aprobado. Un "
+        "veredicto de «no excluye\n  a nadie» significa cosas distintas según este número."
+    )
     print(f"\nVEREDICTO PROVISIONAL: {'PASS' if kill_pass else 'REVISAR/NO-SHIP'}")
     print(
         "  (PASS = todos los frágiles esperados **presentes en este universo** "

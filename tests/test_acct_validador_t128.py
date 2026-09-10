@@ -205,3 +205,58 @@ def test_una_exclusion_por_ADV_no_dispara_el_NO_SHIP(sin_red, monkeypatch, capsy
     assert sorted(out["other_exclusions"]) == ["AAPL", "JPM"]
     assert out["kill_pass"] is True
     assert code == 0
+
+
+# ── La cobertura de facts — tarea 149 ────────────────────────────────────────
+
+
+def test_la_cobertura_de_facts_se_DECLARA(sin_red, monkeypatch, capsys):
+    """Un nombre sin facts no es *aprobado*: es **invisible** para la pata fundamental.
+
+    Ésta sólo puede excluir con **evidencia positiva** de pérdidas sostenidas, así que
+    un ticker sin `net_income` cae siempre del lado de conservar — por fail-open, que
+    es correcto. Lo que no era correcto es que no se dijera: un veredicto de *«no
+    excluye a nadie»* significa cosas distintas con 128 de 128 evaluados que con 100,
+    y el veredicto es **cierto** en los dos casos.
+    """
+    from data.edgar_fundamentals import FundamentalFacts
+
+    def _facts_parciales(ticker: str):
+        if ticker == "SINDATOS":
+            return FundamentalFacts(ticker=ticker)  # sin net_income ni revenue
+        return _facts(ticker, (5e9, 4e9), 90e9)
+
+    monkeypatch.setattr(runner, "get_fundamental_facts", _facts_parciales)
+    _, out = _corrida(capsys, "--tickers", "AAPL,SINDATOS,JPM")
+
+    assert out["facts_coverage"] == 0.6667
+    assert out["sin_facts"] == ["SINDATOS"]
+    assert out["kill_pass"] is True  # el fail-open conserva: no es un fallo
+
+
+def test_con_cobertura_total_no_hay_nadie_sin_facts(sin_red, capsys):
+    """Control positivo: si todos resuelven, el número es 1.0 y la lista va vacía."""
+    _, out = _corrida(capsys, "--tickers", "AAPL,JPM")
+    assert out["facts_coverage"] == 1.0
+    assert out["sin_facts"] == []
+
+
+def test_la_cobertura_llega_al_INFORME_y_no_solo_al_json(sin_red, monkeypatch):
+    """Un número que no llega al informe no lo lee nadie — mismo criterio que el banner."""
+    from data.edgar_fundamentals import FundamentalFacts
+
+    monkeypatch.setattr(
+        runner,
+        "get_fundamental_facts",
+        lambda t: FundamentalFacts(ticker=t) if t == "SINDATOS" else _facts(t, (5e9, 4e9), 90e9),
+    )
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        runner.main(["--tickers", "AAPL,SINDATOS"])
+    texto = buf.getvalue()
+    assert "Cobertura de facts: 1/2 (50.0%)" in texto
+    assert "SIN facts: SINDATOS" in texto
+    assert "INVISIBLE para ella" in texto

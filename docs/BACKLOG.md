@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 101 — Tarea 149 (FACTS-COBERTURA-MUDA) CERRADA 2026-09-09 — la cobertura pasa a ser un número declarado, y el diagnóstico de la 156 redujo la tarea a esa sola pata** (`scripts/run_universe_screen_validation.py`, `tests/test_acct_validador_t128.py`). Suite Windows **2998 passed, 3 skipped**, ruff limpio. **La próxima es la 154.**
+  - **Lo que se shipeó es *«hacer mecánica la parte mecánica»*:** el validador ahora reporta `facts_coverage` y `sin_facts` en el JSON **y en el informe**. Un número que no llega al informe no lo lee nadie.
+  - **El motivo va escrito al lado del número, porque sin él se lee al revés:** la pata fundamental sólo excluye con **evidencia positiva** de pérdidas sostenidas, así que un nombre sin facts no es *«aprobado»* — es **invisible** para ella, y el fail-open lo conserva. Un veredicto de *«no excluye a nadie»* es **cierto** con 128 de 128 evaluados y con 100, y **significa cosas distintas**.
+  - **Dos de las tres causas se cayeron como bug propio:** la 156 midió que **AVB no está en `company_tickers.json` de la SEC** —el símbolo no existe en ese mapa— y que **XOM resuelve a un CIK que sí es Exxon** pero con 94 conceptos y cero series anuales. No son defectos de nuestro mapeo: son de la fuente. Lo que quedaba accionable era declarar la cobertura, y es lo que se hizo.
+  - **La tercera —ASML y TSM, foreign filers— ya estaba aceptada desde julio** y sigue siendo el caso que el fail-open existe para cubrir.
+
 - **WIP 100 — Tarea 159 (REPRO-TRES-ESTADOS-DOS-ROTULOS) CERRADA 2026-09-09 — el arreglo era de un runner, y el enunciado que yo mismo escribí decía siete** (`scripts/run_anom_profile_t45.py`, `tests/test_repro_estados_t159.py`). Suite Windows **2995 passed, 3 skipped**, ruff limpio. **La próxima es la 149.**
   - **El defecto era real y se vio en vivo:** después del refresh, el T45 imprimió `repro_live FALLA` cuando el estado era `INDETERMINADO` y el número estaba a **0,06 pp** del ancla. Acusó a la cañería por un refresh hecho a propósito.
   - **Pero el alcance que yo declaré estaba mal, y es la parte que vale.** El barrido que abrió la tarea buscó `== REPRO_OK` —el booleano de **validez**, que es legítimo y tiene que existir en los siete— y el enunciado afirmó sobre **lo que se imprime**, que es otra cosa. Medido al ir a arreglarlo: **seis de los siete ya mostraban el estado**, y el T51 hasta lo comenta. El T45 era el único que lo calculaba, lo guardaba y lo tiraba.
@@ -1921,7 +1927,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Gate técnico, no toca decisiones: las cinco quedan en `DEFAULTS` con el **mismo valor** que su fallback (ningún comportamiento cambia), la referencia se verifica contra el schema **sin excepciones**, y aparecen en la pestaña Settings. Suite Windows verde.
 - **Dependencias:** ninguna. Es la continuación natural de la **137**.
 
-### 149. FACTS-COBERTURA-MUDA — Cuatro nombres del universo vivo llegan al screen sin ningún fact de EDGAR, por tres causas distintas, y nada lo mide  ·  ref `docs/screen_revalidar_t129_2026-09-09.md` §3.3 · severidad **MEDIA**
+### 149. ~~FACTS-COBERTURA-MUDA — Cuatro nombres del universo vivo llegan al screen sin ningún fact de EDGAR, por tres causas distintas, y nada lo mide~~ · **CERRADA 2026-09-09 — la cobertura se declara; dos de las tres causas resultaron ser de la FUENTE y no del mapeo (ver 156)** · ref `docs/screen_revalidar_t129_2026-09-09.md` §3.3 · severidad **MEDIA**
 
 - **Qué pasa.** De los 128 del universo vivo, **4 llegan a `screen_candidate` con `net_income_recent: []` y `revenue_latest: None`**: AVB, XOM, ASML y TSM. El fail-open los conserva —correcto: un nombre sin datos no puede excluirse— pero **la pata fundamental queda inerte para ellos y nadie lo sabe**. No hay ningún guard, log agregado ni métrica que diga *«sobre cuántos del universo el screen efectivamente pudo decidir»*.
 - **Y son tres causas distintas, no una:**
