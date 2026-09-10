@@ -743,6 +743,57 @@ SCHEMA: dict[str, SettingSpec] = {
             "legacy = use PaperAccount.commission as a flat %."
         ),
     ),
+    # ── Flags que se leían con un fallback INLINE, sin estar acá — tarea 154 ──
+    #
+    # Los cinco funcionaban: el código hacía ``settings.get(clave, fallback)`` y el
+    # fallback vivía al lado del call site. Pero eso tenía tres costos: **no salían en
+    # la pestaña Settings** (que se arma del schema, así que Chapa no podía moverlos sin
+    # editar el JSON a mano), su default documentado en ``docs/SETTINGS_REFERENCE.md``
+    # era una **copia a mano** que podía derivar en silencio, y eran las únicas cinco
+    # filas de esa referencia que el guard de la tarea 137 tuvo que **exceptuar**.
+    #
+    # Los valores son **exactamente** los fallbacks que ya corrían (verificado el
+    # 2026-09-09, y ninguna de las cinco está escrita en el ``settings.json`` vivo), así
+    # que declararlas **no cambia ningún comportamiento**: ``get`` devuelve el default
+    # del schema en vez del fallback inline, y son el mismo número.
+    "price_sanity_band_pct": SettingSpec(
+        (int, float),
+        0.5,
+        min=0.0,
+        max=10.0,
+        doc=(
+            "Banda de sanity del precio vivo contra la referencia cacheada: se rechaza "
+            "si |precio/ref − 1| supera esta fracción. 0 la desactiva. Es el guard que "
+            "atajó el caso KLAC (precio ~10x corrupto). Default 0.5 = 50%."
+        ),
+    ),
+    "scale_drift_tolerance_pct": SettingSpec(
+        (int, float),
+        0.10,
+        min=0.0,
+        max=1.0,
+        doc=(
+            "Tolerancia de deriva de ESCALA entre dos frames del mismo ticker (tarea "
+            "64): por debajo de la banda del 50% del guard de precios, una corrupción "
+            "pasaba invisible y el ATR sale de ahí. Default 0.10 = 10%."
+        ),
+    ),
+    "catalyst_refresh_on_open": SettingSpec(
+        bool,
+        True,
+        doc="Refresco diario de catalysts en la apertura (job 5 del scheduler).",
+    ),
+    "catalyst_hourly_harvest_enabled": SettingSpec(
+        bool,
+        True,
+        doc="Harvest de catalysts cada N minutos durante la rueda (job 6, tarea 10).",
+    ),
+    "catalyst_hourly_harvest_minutes": SettingSpec(
+        int,
+        60,
+        min=15,
+        doc="Intervalo del harvest intradía, en minutos. Piso 15 (tarea 10).",
+    ),
     # Logging overrides (free-form: dict[str, str])
     "logging_levels": SettingSpec(dict, {}, doc="Per-module logging overrides {name: LEVEL}"),
 }

@@ -64,18 +64,18 @@ _CORPUS = [
 
 _FILA = re.compile(r"^\|\s*`([a-z0-9_]+)`\s*\|\s*`([^`]+)`", re.M)
 
-# Claves que `SETTINGS_REFERENCE.md` documenta y que **no están en el schema**: el
-# código las lee con `settings.get(clave, fallback)` y el fallback vive inline, así que
-# el default documentado es una copia a mano que puede derivar en silencio. Hoy las
-# cinco coinciden con su fallback (verificado 2026-09-09) — es latente, y va como
-# **tarea 154**, no tapado acá.
-_SIN_SCHEMA: dict[str, str] = {
-    "price_sanity_band_pct": "leída con fallback inline en data/yahoo_finance.py (tarea 154)",
-    "scale_drift_tolerance_pct": "leída con fallback inline en data/yahoo_finance.py (tarea 154)",
-    "catalyst_hourly_harvest_enabled": "leída con fallback inline en paper_trading/scheduler.py (tarea 154)",
-    "catalyst_hourly_harvest_minutes": "leída con fallback inline en paper_trading/scheduler.py (tarea 154)",
-    "catalyst_refresh_on_open": "leída con fallback inline en paper_trading/scheduler.py (tarea 154)",
-}
+# Claves que `SETTINGS_REFERENCE.md` documenta y que **no están en el schema**.
+#
+# **Está vacío, y eso es el resultado de la tarea 154.** Tenía cinco: el código las
+# leía con `settings.get(clave, fallback)` y el fallback vivía al lado del call site,
+# así que no salían en la pestaña Settings, su default documentado era una copia a mano
+# que podía derivar en silencio, y eran las únicas cinco filas de la referencia que
+# este guard no podía contrastar. Al declararlas en el `SCHEMA` con **el mismo valor**,
+# la excepción se vació — que es la señal de que la brecha se cerró y no de que se tapó.
+#
+# Si alguna vuelve a aparecer acá, la pregunta correcta no es *«¿le pongo el motivo?»*
+# sino *«¿por qué este flag no está en el schema?»*.
+_SIN_SCHEMA: dict[str, str] = {}
 
 # Afirmaciones en presente sobre un número, con su motivo. Registrarla es la decisión
 # que antes no existía: o el número se verifica contra el fuente, o se dice por qué no
