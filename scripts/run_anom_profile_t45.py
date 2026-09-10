@@ -363,6 +363,31 @@ def evaluate(
 # ── Sanity (§5) ──────────────────────────────────────────────────────────────
 
 
+# Los chequeos de reproduccion tienen TRES estados y este bloque los rotulaba con dos
+# (tarea 159). `reproduction_check` distingue `FALLA` --*misma muestra => cambio la
+# caneria*, una acusacion-- de `INDETERMINADO` --*la ventana se movio => re-anclar*,
+# que la T68 llama "el diseno funcionando, no fallando"-- y aca se aplastaban en un
+# booleano: el 2026-09-09, despues de un refresh hecho a proposito, este runner
+# imprimio `repro_live FALLA`. El estado estaba calculado y guardado en `repro` desde
+# siempre; lo unico que faltaba era mostrarlo.
+#
+# La VALIDEZ no cambia: un `INDETERMINADO` sigue sin ser `OK`, porque no se puede
+# declarar reproducible lo que no se pudo verificar. Lo que cambia es que el operador
+# vea si tiene que re-anclar o investigar la caneria.
+#
+# Seis de los siete runners de la serie ya lo hacian bien -- el T51 hasta lo comenta:
+# "confundirlos es el defecto que la 52 acaba de arreglar". Este era el unico que no.
+_ESTADO_DE_SANITY = {"repro_live": "live_state"}
+
+
+def etiqueta_sanity(clave: str, valor: object, repro: dict) -> str:
+    """El rotulo de una fila del bloque de sanity: el ESTADO si lo hay, si no el booleano."""
+    estado = repro.get(_ESTADO_DE_SANITY.get(clave, ""), "")
+    if estado:
+        return str(estado)
+    return "—" if valor is None else ("OK" if valor else "FALLA")
+
+
 def evaluate_sanity(
     results: dict[str, PortfolioResult], cand_sum: dict, oracle_sum: dict, repro: dict
 ) -> dict:
@@ -921,8 +946,19 @@ def _report(summaries: dict, oracle_sum: dict, ctx: dict) -> None:
 
     sa, vd = ctx["sanity"], ctx["verdict"]
     print("\nSanity (§5):")
+    # Los chequeos de reproducción tienen TRES estados y el rótulo tenía dos (tarea
+    # 159). `reproduction_check` distingue `FALLA` —*misma muestra ⇒ cambió la
+    # cañería*, una acusación— de `INDETERMINADO` —*la ventana se movió ⇒ re-anclar*,
+    # que la T68 llama «el diseño funcionando, no fallando»—, y este bloque los
+    # aplastaba en un booleano: el 2026-09-09, después de un refresh hecho a propósito,
+    # imprimió `repro_live FALLA`. El estado estaba calculado y guardado en `repro`
+    # desde siempre; lo que faltaba era mostrarlo.
+    #
+    # La **validez** no cambia: un `INDETERMINADO` sigue sin ser `OK`, porque no se
+    # puede declarar reproducible lo que no se pudo verificar. Lo que cambia es que el
+    # operador vea si tiene que re-anclar o investigar la cañería.
     for k, v in sa["checks"].items():
-        print(f"  {k:<20} {'—' if v is None else ('OK' if v else 'FALLA')}")
+        print(f"  {k:<20} {etiqueta_sanity(k, v, ctx.get('repro', {}))}")
     print(
         f"  oráculo despega +{100 * (sa['oracle_gap'] or 0):.2f} pp "
         f"(mínimo +{100 * SANITY_ORACLE_MIN_DCAGR:.0f})"
