@@ -130,7 +130,9 @@ def main() -> int:
         return 0
 
     source = TARGET.read_text(encoding="utf-8")
-    TARGET.write_text(replace_block(source, render_block(symbols)), encoding="utf-8")
+    # `newline="\n"` explícito (tarea 165): el target es un **.py versionado** y el repo
+    # es LF; sin esto, correrlo en Windows flipea el archivo entero a CRLF.
+    TARGET.write_text(replace_block(source, render_block(symbols)), encoding="utf-8", newline="\n")
     print(f"\n✓ {TARGET} actualizado ({len(symbols)} símbolos)")
     return 0
 

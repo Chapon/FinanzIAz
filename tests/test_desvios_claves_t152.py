@@ -81,7 +81,12 @@ def _todas_las_ramas(monkeypatch) -> list[HarnessConfig]:
     """
     return [
         _cfg(),
-        HarnessConfig(5, "x.txt", 127),  # slots + universo_size
+        # slots + universo_size. El tamaño va **derivado** de la constante y no clavado:
+        # decía `127`, que dejó de ser distinto del vivo el 2026-09-10 cuando la watchlist
+        # bajó a 127 (tarea 156) — y con eso la rama `universo_size` dejó de ejercitarse y
+        # el catálogo la reportó como clave fantasma. Lo que el caso necesita es un tamaño
+        # **distinto del vivo**, no el número 127.
+        HarnessConfig(5, "x.txt", LIVE_WATCHLIST_SIZE - 1),
         _cfg(eval_mode="touch"),
         _cfg(fill_mode=LEGACY_FILL_MODE),
         _cfg(live_gates=True),
@@ -191,5 +196,9 @@ def test_el_master_switch_apagado_REEMPLAZA_las_dos_lineas_de_barreras(monkeypat
 def test_las_dos_lineas_de_universo_son_claves_DISTINTAS():
     """El choque exacto que abrió esta tarea: el desvío de **tamaño** del universo y
     el del **screen** de universo comparten la palabra y no la clave."""
-    claves = {d.clave for d in deviations_keyed(HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", 127))}
+    # Igual que arriba: el tamaño tiene que **diferir** del vivo, así que sale de la
+    # constante. Clavado en 127 el test se apagó solo cuando la watchlist llegó a 127.
+    claves = {
+        d.clave for d in deviations_keyed(HarnessConfig(LIVE_MAX_POSITIONS, "x.txt", LIVE_WATCHLIST_SIZE - 1))
+    }
     assert {"universo_size", "universe_screen"} <= claves

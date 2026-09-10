@@ -171,30 +171,43 @@ def test_y_tambien_sale_cuando_la_cobertura_esta_CORTA(store):
 # ── El caso real ─────────────────────────────────────────────────────────────
 
 
-def test_el_cohorte_vivo_declara_a_AVB():
-    """Contraprueba contra los datos reales: que los tests de arriba no pasen sobre
-    fixtures mientras el caso que abrió la tarea sigue invisible.
+def test_el_cohorte_vivo_ya_no_tiene_miembros_INERTES():
+    """**Decisión de Chapa 2026-09-10: se fue por la (a)** — AVB salió de la watchlist de la
+    cuenta viva, del universo del harness y del store PIT, y las anclas se re-midieron.
 
-    Se saltea si no están los artefactos en esta máquina (lección 107: preguntar por los
-    **datos**, no por el archivo).
+    Este test decía lo contrario hasta hoy (*«el cohorte vivo declara a AVB»*), y era
+    correcto entonces: existía para avisar el día que la respuesta de la 156 cambiara.
+    Cambió porque se decidió, no porque Yahoo repare nada.
+
+    Ahora afirma lo que quedó: **el cohorte vivo no tiene ningún miembro inerte**. Si
+    apareciera otro —un ticker nuevo sin historia, un frame que se corrompe— esto se pone
+    rojo y hay que decidir igual que con AVB. Se saltea sin sustrato (lección 107).
     """
-    from data import parquet_cache
     from scripts.precompute_pit_signals import parse_universe_file
+    from scripts.run_scaleout_replay_t7 import load_bars_and_signals
 
     universo = _REPO / "data" / "harness_universe_live_acct2.txt"
     if not universo.exists():
         pytest.skip("sin universo vivo en esta máquina")
-    df = parquet_cache.read("AVB", "10y", "1d", None)
-    if df is None or df.empty:
-        pytest.skip("sin frame de AVB en esta máquina")
-    assert "AVB" in parse_universe_file(universo), "AVB salió del universo: actualizar la 156"
-
-    bars_by = {"AVB": [(str(i), 1.0, 1.0, 1.0, 1.0) for i in range(len(df))]}
-    inertes = inert_members(bars_by, "10y", 250)
-    assert [m.ticker for m in inertes] == ["AVB"], (
-        f"AVB dejó de ser inerte ({len(df)} barras): si Yahoo reparó su registro, la 156 "
-        "cambia de respuesta y hay que re-medirla"
+    tickers = parse_universe_file(universo)
+    assert "AVB" not in tickers, "AVB volvió al universo: ver la decisión de la tarea 156"
+    bars_by, _, _, _ = load_bars_and_signals(tickers, "10y", 250)
+    if len(bars_by) < 10:
+        pytest.skip("sin artefactos suficientes en esta máquina")
+    assert inert_members(bars_by, "10y", 250) == (), (
+        "apareció un miembro inerte en el cohorte vivo: hay que decidir qué hacer con él "
+        "(la 156 es el precedente), no bajarle el warmup"
     )
-    assert inertes[0].pit_n_bars and inertes[0].pit_n_bars > 2000, (
-        "el artefacto PIT ya no declara el frame viejo: alguien lo regeneró o lo borró"
+
+
+def test_el_artefacto_PIT_de_AVB_salio_del_store():
+    """La otra mitad de la decisión: el artefacto que declaraba `n_bars: 2514` sobre un
+    frame de 27 barras **ya no está en el store**.
+
+    Se preservó fuera del store (`backups/`) porque sus 2.264 señales son lo último que
+    queda del histórico sano de AVB —el frame se perdió— y borrarlo habría sido destruir
+    evidencia irrecuperable por segunda vez en la misma tarea.
+    """
+    assert not list((_REPO / "data" / "pit_signals").glob("AVB__*.json")), (
+        "el artefacto PIT de AVB volvió al store: miente sobre un frame que no existe"
     )

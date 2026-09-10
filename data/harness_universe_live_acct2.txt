@@ -1,6 +1,6 @@
 # Universo de harness = watchlist de la cuenta 2 con artefacto PIT disponible.
-# Generado por scripts/refresh_live_universe.py el 2026-08-12.
-# 127/128 tickers de la watchlist. Sin PIT: ASML.
+# Generado por scripts/refresh_live_universe.py el 2026-09-10.
+# 126/127 tickers de la watchlist. Sin PIT: ASML.
 # NO editar a mano: re-generar con el script.
 ABBV
 ABT
@@ -12,7 +12,6 @@ AMD
 AMGN
 AMT
 AMZN
-AVB
 AVGO
 AXP
 BA

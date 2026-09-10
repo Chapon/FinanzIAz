@@ -27,7 +27,7 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 
 - La config viva vive en **`analysis/harness_config.py`** (`LIVE_MAX_POSITIONS=10`, cuenta 2). Los runners toman de ahí el default de `--max-positions` — **no clavar literales**.
 - Todo runner llama a **`announce(args.max_positions, args.universe, len(bars_by))`** antes de simular: imprime la config y **nombra los desvíos**. El objetivo no es que todo coincida a la fuerza, sino que **coincida o que el desvío esté escrito** en el pre-registro.
-- Universo de la cuenta viva: **`data/harness_universe_live_acct2.txt`** (127 tickers), regenerable con `scripts/refresh_live_universe.py`. El de 41 (`harness_universe_41_10y.txt`) es el histórico de T7→T13.
+- Universo de la cuenta viva: **`data/harness_universe_live_acct2.txt`** (**126** tickers desde el 2026-09-10: se le sacó AVB, tarea 156), regenerable con `scripts/refresh_live_universe.py` — que lo deriva de la watchlist, así que **el número sale de ahí y no de acá**. El de 41 (`harness_universe_41_10y.txt`) es el histórico de T7→T13.
 - **Desvío que sigue vivo y hay que declarar:** `data/pit_signals/` se generó con ventana **expandida** (250 → ~2.514 barras) mientras el engine le pasa a `analyze()` **504 barras fijas** (`paper_history_period="2y"`). Cambian train set del XGBoost, fit de GARCH, régimen y warm-up de SMA200. Regenerar cuesta horas; cuál ventana da mejor señal es **otra pregunta, con pre-registro propio**.
 - **Segundo desvío estructural (T32, lo destapó la T26):** `replay_cycle` decide **toda** salida ATR contra el **close diario** (`eval_mode="close"`, el default); el engine vivo la decide contra el **precio corriente intradía** (`get_bulk_prices`, scan ~15 min). O sea que una barra cuyo *mínimo* perforó el nivel pero cuyo *close* se recuperó **no dispara en el harness y sí en producción**. Aplica a los cinco harness de salida (T7/T23/T13/T21/T26). **El sesgo es asimétrico y crece cuanto más ajustado el múltiplo**: el harness sub-dispara, así que mide una barrera *confirmada al close*, más benigna que la viva. La 26b lo **cuantificó**: al múltiplo vivo y 10 slots, el modo `close` mide **+3.39 pp de CAGR de más** que la regla que el engine ejecuta. `eval_mode="touch"` es la cota superior; el engine queda **entre** las dos y más cerca de `touch`.
 - **Tercer desvío estructural (T33, lo destapó la 26b): el fill de esa barrera.** `fill_mode="decision"` (default desde la T33) la llena al precio que la decidió; `"resting"` (legacy) siempre en el nivel. En modo `close` el legacy es **look-ahead** — ver abajo. Con el default honesto queda un desvío **conservador**: el engine llena con `gates.model_exit_fill_price` (orden en reposo) y el harness al close. Bajo `touch` los dos `fill_mode` coinciden entre sí **y con el engine**.
@@ -305,7 +305,7 @@ rescató nada, y el veredicto lo dice así.)*
 
 Un tope de tenencia, un time stop, una barrera nueva: todos se pre-registran con una grilla, y
 la grilla **tiene que salir de la distribución de tenencia**, medida **antes** de congelar. En la
-cuenta viva (127 tickers, 10 slots) esa distribución es:
+cuenta viva (10 slots; **medida sobre los 127 tickers de entonces** — hoy son 126, tarea 156) esa distribución es:
 
 media **8,0** ruedas · p50 **7** · p75 **11** · p90 **16** · p95 **19** · p99 **25** · **máx 37**
 

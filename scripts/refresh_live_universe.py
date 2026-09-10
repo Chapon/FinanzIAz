@@ -97,7 +97,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print(f"\n[dry-run] no se escribió {out_path}")
         return 0
-    out_path.write_text(body, encoding="utf-8")
+    # El `newline` explícito no es cosmético (tarea 165): sin él, en Windows Python
+    # traduce cada `\n` a CRLF y este archivo —que está **versionado** y es LF en el
+    # repo— se flipea entero en cada regeneración. Se vio al regenerarlo en la 156.
+    out_path.write_text(body, encoding="utf-8", newline="\n")
     print(f"\nEscrito: {out_path} ({len(keep)} tickers)")
     return 0
 

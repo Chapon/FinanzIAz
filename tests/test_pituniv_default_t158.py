@@ -142,7 +142,11 @@ def test_el_default_del_productor_NO_es_el_cohorte_legacy():
     assert universe_fingerprint(default) != POPULATION_LEGACY_41.tickers_fp
     vivos = set(parse_universe_file(_REPO / default))
     legacy = set(parse_universe_file(_REPO / LEGACY_UNIVERSE_FILE))
-    assert len(vivos - legacy) == 88, "cambió el solapamiento: re-medir el enunciado de la 158"
+    # 87 desde el 2026-09-10: AVB salió del universo vivo (tarea 156) y era uno de los
+    # que estaban sólo en el vivo. Eran 88 con 127 tickers; la intersección no se movió
+    # (39 de 41: `AAPL` y `LIN` siguen siendo los únicos legacy-only).
+    assert len(vivos - legacy) == 87, "cambió el solapamiento: re-medir el enunciado de la 158"
+    assert len(legacy - vivos) == 2, "AAPL y LIN eran los únicos legacy-only"
 
 
 def test_mut_si_el_default_vuelve_al_legacy_el_guard_ACUSA(monkeypatch):

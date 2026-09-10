@@ -48,7 +48,10 @@ def main() -> int:
         "# Regenerate:    python scripts/lock_requirements.py\n"
         "\n"
     )
-    LOCK_PATH.write_text(header + result.stdout, encoding="utf-8")
+    # `newline="\n"` explícito (tarea 165): el lock está versionado y el repo es LF; sin
+    # esto, regenerarlo en Windows lo flipea a CRLF entero (ya pasó — el archivo en disco
+    # quedó CRLF contra un blob LF).
+    LOCK_PATH.write_text(header + result.stdout, encoding="utf-8", newline="\n")
     n_lines = len([l for l in result.stdout.splitlines() if l and not l.startswith("#")])
     print(f"Wrote {n_lines} pinned packages to {LOCK_PATH}")
     return 0

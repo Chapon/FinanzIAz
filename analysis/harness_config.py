@@ -86,7 +86,10 @@ LIVE_ALLOCATION_MODE = "equal_weight"
 # test que lo **re-verifica contra la DB** cuando hay DB
 # (`tests/test_watchlist_size_t89.py`), en vez de que envejezca solo — que es lo
 # que pasaba: era un entero hardcodeado que nada re-chequeaba (tarea 89).
-LIVE_WATCHLIST_SIZE = 128
+# Bajó de 128 a 127 el 2026-09-10: se le sacó **AVB** por decisión de Chapa al cerrar la
+# tarea 156 — Yahoo corrompió su registro y su frame quedó en 27 barras, así que era un
+# miembro que no podía producir ni una entrada.
+LIVE_WATCHLIST_SIZE = 127
 
 # ── Política de SALIDA de la cuenta viva — Tarea 92 (EXITPOL-HARNESS) ────────
 #
@@ -2671,7 +2674,11 @@ WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-09", 25
 # "MISMA muestra". Medidas el 2026-09-02 sobre los archivos de universo, que no se
 # tocan desde `c40482a` (tarea 27) — o sea, los mismos con los que se midieron las
 # constantes de reproducción en la 68.
-POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 127, None, "b88c89385ebc")
+# Re-anclada el 2026-09-10 (tarea 156): era `127, "b88c89385ebc"`. Cambió porque AVB salió
+# del universo, NO porque se movieran las barras — la ventana quedó idéntica
+# (`2016-09-12..2026-09-09`, 2512), que es la contraprueba de que el miembro que se fue
+# no aportaba ninguna rueda propia.
+POPULATION_LIVE_ACCT2 = ArtifactPopulation(LIVE_UNIVERSE_FILE, 126, None, "06ab64fc6448")
 POPULATION_LEGACY_41 = ArtifactPopulation(LEGACY_UNIVERSE_FILE, 41, None, "dc8e4d0e59ec")
 
 
