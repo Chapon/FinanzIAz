@@ -231,3 +231,65 @@ def test_broken_accounting_never_ships():
     grid = _grid()
     grid[BASELINE_ARM] = dict(_sum(), accounting_ok=False)
     assert evaluate(grid, _C5_OK, _Boot(0.002), _SENS_OK)["ship"] is False
+
+
+# ── El sanity de oráculo es una CONJUNCIÓN, y el print tiene que decir cuál falló ──
+
+
+def _sanity_fake(*, d_cagr: float, d_dd: float) -> dict:
+    """El dict que `evaluate_sanity` devuelve, con las dos patas del oráculo puestas a
+    mano. El `oracle_quality_ok` se calcula igual que en el 26b: ``and`` de las dos."""
+    from scripts.run_stop_price_replay_t26b import (
+        SANITY_ORACLE_VS_RANDOM_CAGR,
+        SANITY_ORACLE_VS_RANDOM_DD,
+    )
+
+    return {
+        "accounting": True,
+        "oracle_vs_random_cagr": d_cagr,
+        "oracle_vs_random_dd": d_dd,
+        "trade_diff_share": 0.61,
+        "rule_bites": True,
+        "oracle_quality_ok": bool(
+            d_cagr >= SANITY_ORACLE_VS_RANDOM_CAGR and d_dd <= -SANITY_ORACLE_VS_RANDOM_DD
+        ),
+        "repro": {"touch_2.0": 0.0368, "close_2.0": 0.0749},
+        "repro_states": {"touch_2.0": "OK", "close_2.0": "OK"},
+    }
+
+
+def _lineas_de_oraculo(d_cagr: float, d_dd: float) -> tuple[str, str]:
+    """La lógica está extraída a una función **pura** (igual que `etiqueta_sanity` en la
+    159): se testea directo en vez de reconstruir el contexto entero de un `_report`."""
+    from scripts.run_stop_price_replay_t26b import lineas_sanity_oraculo
+
+    return lineas_sanity_oraculo(_sanity_fake(d_cagr=d_cagr, d_dd=d_dd))
+
+
+def test_el_print_nombra_las_DOS_patas_del_sanity_de_oraculo():
+    """**Tarea 164.** `oracle_quality_ok` es `ΔCAGR ≥ +1.50 pp` **y** `ΔmaxDD ≤ −5.00 pp`,
+    y acá se imprimía **sólo el ΔCAGR**. El 2026-09-10 la corrida real mostró
+    `[FALLA] … +5.03pp de CAGR`: el número visible **cumplía** y el que fallaba —ΔmaxDD
+    −4.30 pp— no aparecía. Es la 159 un nivel más abajo: el rótulo no dice qué falló.
+    """
+    lineas = _lineas_de_oraculo(0.0503, -0.0430)
+    assert len(lineas) == 2, f"tiene que haber una línea por pata: {lineas}"
+    assert "ΔCAGR" in lineas[0] and "ΔmaxDD" in lineas[1]
+    assert "+5.03" in lineas[0] and "-4.30" in lineas[1]
+
+
+def test_el_caso_REAL_del_2026_09_10_marca_OK_la_pata_que_cumple_y_FALLA_la_otra():
+    """La contraprueba del de arriba: no alcanza con imprimir dos líneas, cada una tiene
+    que llevar **su** veredicto. Con los números de la corrida real: la de tasa pasa y la
+    de drawdown falla."""
+    cagr_line, dd_line = _lineas_de_oraculo(0.0503, -0.0430)
+    assert cagr_line.strip().startswith("[OK]")
+    assert dd_line.strip().startswith("[FALLA]")
+
+
+def test_las_dos_patas_OK_y_las_dos_FALLA():
+    """Los otros dos cuadrantes, para que el test no quede pinneado al caso de hoy."""
+    a, b = _lineas_de_oraculo(0.0372, -0.1519)  # los del 26b publicado
+    assert a.strip().startswith("[OK]") and b.strip().startswith("[OK]")
+    a, b = _lineas_de_oraculo(0.0010, -0.0010)
+    assert a.strip().startswith("[FALLA]") and b.strip().startswith("[FALLA]")

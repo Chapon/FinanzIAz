@@ -180,6 +180,34 @@ def evaluate_sanity(summaries: dict, results: dict) -> dict:
     return s
 
 
+def lineas_sanity_oraculo(sanity: dict) -> tuple[str, str]:
+    """Las **dos patas** de ``oracle_quality_ok``, una línea cada una con su veredicto.
+
+    **Tarea 164.** El sanity es una conjunción —``ΔCAGR ≥ +1.50 pp`` **y**
+    ``ΔmaxDD ≤ −5.00 pp``— y el T47 imprimía el booleano de la conjunción al lado del
+    número de **una** de las patas. El 2026-09-10 eso salió como
+    ``[FALLA] … +5.03pp de CAGR``: el número visible **cumplía** y el que fallaba
+    (``ΔmaxDD −4.30 pp``) no aparecía en ningún lado, así que el operador no tenía con
+    qué entender el rechazo. Es la forma de la **159** un nivel más abajo.
+
+    Función **pura** y devuelve texto en vez de imprimir, por el mismo motivo que
+    ``etiqueta_sanity`` en la 159: así se testea directo en vez de reconstruir el
+    contexto entero de un ``_report``. Los umbrales salen de las constantes de este
+    módulo, no de literales en el texto — si alguien mueve el umbral, el mensaje se
+    mueve con él.
+    """
+    d_cagr = sanity["oracle_vs_random_cagr"]
+    d_dd = sanity["oracle_vs_random_dd"]
+    ok_cagr = d_cagr >= SANITY_ORACLE_VS_RANDOM_CAGR
+    ok_dd = d_dd <= -SANITY_ORACLE_VS_RANDOM_DD
+    return (
+        f"[{'OK' if ok_cagr else 'FALLA'}] oráculo vs control igualado — "
+        f"ΔCAGR ≥ +{100 * SANITY_ORACLE_VS_RANDOM_CAGR:.2f} pp ({100 * d_cagr:+.2f})",
+        f"[{'OK' if ok_dd else 'FALLA'}] oráculo vs control igualado — "
+        f"ΔmaxDD ≤ −{100 * SANITY_ORACLE_VS_RANDOM_DD:.2f} pp ({100 * d_dd:+.2f})",
+    )
+
+
 # ── Regla de decisión (§6) ───────────────────────────────────────────────────
 
 

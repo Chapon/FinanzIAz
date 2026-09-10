@@ -80,6 +80,10 @@ from scripts.run_stop_price_replay_t26b import (
     build_arms,
     consistency_across_mults,
     evaluate_sanity,
+    # Las dos patas del sanity de oráculo, como texto (tarea 164): vive en el 26b, que es
+    # donde están `evaluate_sanity` y los umbrales, para que el mensaje no pueda
+    # desalinearse del número con el que se compara.
+    lineas_sanity_oraculo,
 )
 from scripts.run_tp_cal_replay_t23 import buy_entries, load_bars_signals
 
@@ -451,10 +455,12 @@ def _report(summaries, ctx, verdict, sanity, boot, c5):
 
     print("\nSanity (§5):")
     print(f"  [{'OK' if sanity['accounting'] else 'FALLA'}] contabilidad")
-    print(
-        f"  [{'OK' if sanity['oracle_quality_ok'] else 'FALLA'}] el oráculo le gana al "
-        f"control IGUALADO en tasa: +{100 * sanity['oracle_vs_random_cagr']:.2f}pp de CAGR"
-    )
+    # **Tarea 164: las DOS patas, cada una con su número.** Acá se imprimía el booleano
+    # de la conjunción al lado del ΔCAGR nada más, y el 2026-09-10 salió
+    # `[FALLA] … +5.03pp de CAGR`: el número visible **cumplía**. La lógica vive en
+    # `lineas_sanity_oraculo` (pura, testeada directo) por el mismo motivo que la 159.
+    for linea in lineas_sanity_oraculo(sanity):
+        print(f"  {linea}")
     print(
         f"  [{'OK' if sanity['rule_bites'] else 'FALLA'}] la regla muerde: "
         f"{100 * sanity['trade_diff_share']:.1f}% de trades distintos"
