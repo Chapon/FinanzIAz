@@ -82,6 +82,7 @@ from analysis.harness_config import (
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
     LIVE_MAX_POSITIONS,
+    SP500_UNIVERSE_FILE,
     SignalStoreGapError,
     StaleArtifactError,
     announce,
@@ -108,7 +109,9 @@ from analysis.walkforward_power import (
 )
 from scripts.precompute_pit_signals import _load_existing, _out_path
 
-DEFAULT_UNIVERSE = "data/sp500_universe.txt"
+# La sección cruzada ancha que pedía la señal de clusters — población del veredicto
+# publicado, declarada por símbolo en harness_config (tarea 158).
+DEFAULT_UNIVERSE = SP500_UNIVERSE_FILE
 DEFAULT_TXS = "data/form345/insider_txs.json"
 
 # Brazos pre-registrados (§4.2): grilla (C, W) + una variante de seniority.

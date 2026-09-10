@@ -41,6 +41,7 @@ from analysis.exit_replay import AtrParams, Bar, max_drawdown
 from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
+    LEGACY_UNIVERSE_FILE,
     SignalStoreGapError,
     StaleArtifactError,
     announce_artifacts,
@@ -63,7 +64,9 @@ from analysis.walkforward_power import (
 )
 from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 
 # ── Brazos pre-registrados (doc §4 + enmienda 2) ─────────────────────────────
 # Eje único: qué fracción vende el flip de señal. 1.0 = engine de hoy.

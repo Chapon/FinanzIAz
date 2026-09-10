@@ -197,8 +197,22 @@ LEGACY_ACCOUNT_ID = 1
 
 # Universo de referencia para harness nuevos: la watchlist de la cuenta viva
 # recortada a los tickers con artefacto PIT (127/128; falta ASML).
+#
+# **Las tres poblaciones se nombran ACÁ, y los scripts las referencian por SÍMBOLO**
+# (tarea 158). Hasta el 2026-09-10 cada runner repetía el literal
+# ``"data/harness_universe_41_10y.txt"`` en su propio ``DEFAULT_UNIVERSE``, y eso hacía
+# **indistinguibles** dos cosas opuestas: el cohorte legacy **congelado a propósito**
+# (T7→T13, T23, R2, walkforward — los mismos que corren con ``LEGACY_MAX_POSITIONS`` y
+# ``LEGACY_FILL_MODE``) y un default que **quedó viejo**. El del productor del store PIT
+# era el segundo caso y pasó meses invisible justamente porque se veía igual que los
+# nueve legítimos. Referenciar el símbolo vuelve la intención legible y deja al guard
+# de `tests/test_pituniv_default_t158.py` decidir por predicado en vez de por lista.
 LIVE_UNIVERSE_FILE = "data/harness_universe_live_acct2.txt"
 LEGACY_UNIVERSE_FILE = "data/harness_universe_41_10y.txt"
+# El universo del T12 (clusters de insiders): la señal necesitaba la sección cruzada
+# ancha del S&P 500, no la watchlist. Es población **de su veredicto publicado**, igual
+# que el legacy de 41 — no un default que se pueda actualizar sin re-correr nada.
+SP500_UNIVERSE_FILE = "data/sp500_universe.txt"
 
 # ── Ventana de `analyze()` — el desvío que NO se corrige acá ─────────────────
 # El engine vivo le pasa a ``analyze()`` una ventana **fija** de 2 años

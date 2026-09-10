@@ -43,6 +43,7 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
+    LEGACY_UNIVERSE_FILE,
     LIVE_MAX_POSITIONS,
     SignalStoreGapError,
     StaleArtifactError,
@@ -67,7 +68,9 @@ from analysis.walkforward_power import (
 from scripts.precompute_pit_signals import parse_universe_file
 from scripts.run_tp_cal_replay_t23 import aligned_returns, buy_entries, load_bars_signals
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 
 # §2 — cap efectivamente no vinculante (el engine vivo no tiene tope de tenencia).
 CAP_DAYS = 250

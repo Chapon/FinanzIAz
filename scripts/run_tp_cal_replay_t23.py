@@ -40,6 +40,7 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
+    LEGACY_UNIVERSE_FILE,
     LIVE_MAX_POSITIONS,
     SignalStoreGapError,
     StaleArtifactError,
@@ -61,7 +62,9 @@ from analysis.walkforward_power import (
 )
 from scripts.precompute_pit_signals import _load_existing, _out_path, parse_universe_file
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 NO_TP = 1e9  # tp_mult que nunca dispara ("sin-TP")
 
 # Brazos (§3). Decisión = {TP_4.0, TP_6.0, TP_off}; TP_2.0 = sanity (fuera del DSR).

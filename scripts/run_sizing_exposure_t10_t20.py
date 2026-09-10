@@ -42,6 +42,7 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
+    LEGACY_UNIVERSE_FILE,
     LIVE_MAX_POSITIONS,
     SignalStoreGapError,
     StaleArtifactError,
@@ -72,7 +73,9 @@ from scripts.precompute_pit_signals import parse_universe_file
 from scripts.run_market_regime_r2 import check_exit_invariant, load_spy_bars
 from scripts.run_scaleout_replay_t7 import build_entries, load_bars_and_signals
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 
 # Brazos pre-registrados (§4). Cada uno = kwargs de sizing/régimen; el resto fijo.
 # sizing ∈ {equal, inverse_vol, vol_target, oracle}; regime = (mode, factor).

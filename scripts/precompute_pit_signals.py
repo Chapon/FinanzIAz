@@ -38,10 +38,12 @@ correr N procesos sin pinear threads los hace pelearse por el mismo CPU
 
 Uso
 ---
-    python scripts/precompute_pit_signals.py                    # universo E4, 10y
+    python scripts/precompute_pit_signals.py                    # universo VIVO, 10y
     python scripts/precompute_pit_signals.py --tickers AAPL,MSFT --period 5y
     python scripts/precompute_pit_signals.py --dry-run          # solo estima costo
     python scripts/precompute_pit_signals.py --workers 1        # serial (debug)
+    # el cohorte legacy congelado (T7→T13), que ya NO es el default:
+    python scripts/precompute_pit_signals.py --universe data/harness_universe_41_10y.txt
 
 **Resumable:** un JSON por ticker en ``data/pit_signals/``. Un ticker ya completo
 se saltea; uno a medias se retoma desde la última fecha persistida.
@@ -61,7 +63,18 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Sólo stdlib en ``harness_config``, verificado: importarlo acá **no** arrastra
+# numpy/pandas, así que el pineo de threads de ``_init_worker`` sigue llegando antes
+# que cualquier librería numérica (ver "Paralelismo" arriba).
+from analysis.harness_config import LIVE_UNIVERSE_FILE
+
+# **Tarea 158.** Acá decía ``"data/harness_universe_41_10y.txt"``: el cohorte legacy de
+# 41. Este script es **el productor** del store PIT —el que hay que correr después de
+# refrescar el cohorte— así que correrlo sin ``--universe`` recomputaba 39 de los 127
+# tickers vivos y dejaba **88 sin señales nuevas**. No fallaba: producía un resultado
+# plausible sobre la muestra equivocada, y después el guard de cobertura (T86) frenaba
+# las corridas sin que el operador supiera por qué (tres días, en la T111).
+DEFAULT_UNIVERSE = LIVE_UNIVERSE_FILE
 OUT_DIR = _HERE.parent / "data" / "pit_signals"
 SCHEMA_VERSION = 1
 
@@ -245,7 +258,9 @@ def run_ticker(ticker: str, period: str, warmup: int, *, save_every: int, verbos
     return computed, len(rows)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """El parser, afuera de ``main`` para que el default de ``--universe`` sea
+    **testeable sin correr el barrido** (tarea 158)."""
     p = argparse.ArgumentParser(description="Precómputo de la señal analyze() PIT")
     p.add_argument("--universe", default=DEFAULT_UNIVERSE)
     p.add_argument("--tickers", default=None, help="lista separada por comas (pisa --universe)")
@@ -260,20 +275,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--dry-run", action="store_true", help="solo inventario y estimación")
     p.add_argument("--quiet", action="store_true")
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+        fuente = f"--tickers (pisa --universe) · {args.universe} ignorado"
     else:
         upath = _HERE.parent / args.universe
         if not upath.exists():
             print(f"universo no encontrado: {upath}", file=sys.stderr)
             return 1
         tickers = parse_universe_file(upath)
+        fuente = args.universe
 
     from data import parquet_cache
 
-    print(f"Universo: {len(tickers)} tickers · period={args.period} · warmup={args.warmup}")
+    # El ARCHIVO va en la línea, no sólo la cantidad: la 158 se detectó porque el
+    # `--dry-run` decía "Universo: 41 tickers" mientras el store reportaba 126 gaps, y
+    # hubo que salir a buscar cuál de los dos números mentía. Con el nombre al lado, un
+    # default viejo se ve de una.
+    print(f"Universo: {fuente} · {len(tickers)} tickers · period={args.period} · warmup={args.warmup}")
     print(f"Salida:   {OUT_DIR}")
 
     total_pending = 0

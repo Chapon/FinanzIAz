@@ -55,6 +55,7 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
+    LEGACY_UNIVERSE_FILE,
     LIVE_MAX_POSITIONS,
     SignalStoreGapError,
     StaleArtifactError,
@@ -80,7 +81,9 @@ from scripts.precompute_pit_signals import (
     parse_universe_file,
 )
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 
 # Brazos pre-registrados (§4): grilla del par umbral (k, m). Todo lo demás fijo.
 CANDIDATE_ARMS: dict[str, tuple[float, float]] = {

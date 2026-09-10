@@ -36,6 +36,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, Bar
+from analysis.harness_config import LEGACY_UNIVERSE_FILE
 from analysis.walkforward_power import (
     A1_VARIANTS,
     EntrySample,
@@ -54,7 +55,9 @@ from analysis.walkforward_power import (
     stop_stats_by_regime,
 )
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 OUT_ROOT = _HERE.parent / "data" / "walkforward_power"
 
 

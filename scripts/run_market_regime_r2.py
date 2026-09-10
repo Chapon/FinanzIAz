@@ -40,6 +40,7 @@ from analysis.harness_config import (
     HARNESS_FILL_MODE,
     LEGACY_FILL_MODE,
     LEGACY_MAX_POSITIONS,
+    LEGACY_UNIVERSE_FILE,
     LIVE_MAX_POSITIONS,
     SignalStoreGapError,
     StaleArtifactError,
@@ -55,7 +56,9 @@ from analysis.walkforward_power import STRESS_REGIMES, regime_for_date
 from scripts.precompute_pit_signals import parse_universe_file
 from scripts.run_scaleout_replay_t7 import build_entries, load_bars_and_signals
 
-DEFAULT_UNIVERSE = "data/harness_universe_41_10y.txt"
+# Cohorte legacy **congelado**: es la población del veredicto publicado, no un
+# default que se pueda actualizar (tarea 158 lo hizo explícito por símbolo).
+DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 
 # Brazos pre-registrados (§4). El baseline es el engine de hoy.
 ARMS: dict[str, dict] = {
