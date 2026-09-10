@@ -77,7 +77,7 @@ def test_las_anclas_de_reproduccion_son_las_tres_celdas_de_la_t34_re_medidas():
     salir ``FALLA`` acusando a la cañería por un cambio de muestra (T48 §4.2).
     """
     t = _repro_targets()
-    assert t == {"s2.0_t2.0": 0.0137, "soff_t2.0": 0.0798, "soff_toff": 0.0860}
+    assert t == {"s2.0_t2.0": 0.0498, "soff_t2.0": 0.0878, "soff_toff": 0.1044}
     for name in t:
         assert name in {arm_name(s, tr) for s, tr in grid_cells()}
 

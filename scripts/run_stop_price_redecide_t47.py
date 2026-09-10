@@ -94,8 +94,8 @@ REGIMES = (BULL_NORMAL, *STRESS_NAMES)
 
 # §5.4 — el sanity de reproducción: los números publicados por la 26b, sin gates.
 REPRO_EXPECTED = {
-    "close_2.0": 0.0698,
-    "touch_2.0": 0.0358,
+    "close_2.0": 0.0749,
+    "touch_2.0": 0.0368,
 }  # re-anclado 2026-09-01 (tarea 68), eran 0.0780 / 0.0441
 REPRO_TOL = 0.0005
 

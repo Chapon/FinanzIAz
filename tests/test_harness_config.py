@@ -604,11 +604,63 @@ def test_the_artifact_window_deviation_is_declared_even_when_the_runner_omits_it
 
 
 def test_artifact_window_is_computed_from_the_bars_without_io():
+    """Los TRES campos describen la envolvente del cohorte (tarea 144).
+
+    Este fixture es la demostración más corta del defecto que se arregló. ``A`` tiene
+    el 02 y el 03; ``B`` tiene el 2019-12-31. La ventana va del **31 al 03**, o sea
+    **tres** ruedas distintas — y ``n_bars`` decía **2**, el ``max(len(bars))``: un
+    número que **no describía a ningún objeto**. Ni al cohorte (que cubre 3) ni a un
+    miembro (ninguno abarca esa ventana).
+    """
     bars = {"A": [("2020-01-02", 1, 1, 1, 1), ("2020-01-03", 1, 1, 1, 1)], "B": [("2019-12-31", 1, 1, 1, 1)]}
     w = artifact_window(bars)
-    assert (w.start, w.end, w.n_bars) == ("2019-12-31", "2020-01-03", 2)
+    assert (w.start, w.end, w.n_bars) == ("2019-12-31", "2020-01-03", 3)
     assert artifact_window({}) is None
     assert artifact_window({"A": []}) is None
+
+
+def test_la_ventana_no_la_fija_UN_ticker_congelado():
+    """**El enmascaramiento que abrió la 144.** El `max` quedaba clavado al miembro
+    más largo, y si ése era un frame congelado —AVB, por una excepción declarada— el
+    cohorte entero podía encoger sin que la identidad de la ventana se moviera.
+
+    Con la unión, el frame largo tiene que aportar **ruedas que los demás no tengan**
+    para mover el número.
+    """
+    # El caso real de AVB: su largo venía de **empezar antes**, no de cubrir las mismas
+    # ruedas. Congelado con 12 barras (2019-12-20..2020-01-06) contra sanos con 10
+    # (2020-01-02..2020-01-11): el `max` era 12 y lo fijaba él solo.
+    sanos = {f"T{i}": [(f"2020-01-{d:02d}", 1) for d in range(2, 12)] for i in range(5)}
+    congelado = {
+        "VIEJO": [(f"2019-12-{d:02d}", 1) for d in range(20, 32)][:8]
+        + [(f"2020-01-{d:02d}", 1) for d in range(2, 6)]
+    }
+
+    base = artifact_window(sanos | congelado)
+    assert max(len(v) for v in (sanos | congelado).values()) < base.n_bars, (
+        "el fixture tiene que tener la unión ESTRICTAMENTE mayor que el máximo de "
+        "miembro, o no reproduce el defecto"
+    )
+
+    # Los sanos pierden una rueda que el congelado NO tiene (2020-01-08).
+    mutado = {k: [b for b in v if b[0] != "2020-01-08"] for k, v in sanos.items()} | congelado
+    assert str(artifact_window(mutado)) != str(base), (
+        "con el `max` de antes esto quedaba byte-idéntico: el congelado tapaba el "
+        "encogimiento de los otros cinco"
+    )
+
+
+def test_una_rueda_que_le_falta_a_UN_ticker_no_es_trabajo_de_n_bars():
+    """El límite declarado: eso lo caza `cross_period_gaps` (T110), que además **aborta**.
+
+    ``n_bars`` es parte de la **identidad de la muestra**, no un guard de completitud.
+    Pedirle que detecte un hueco de un solo ticker sería pedirle que sea otra cosa — y
+    es justo la confusión que hizo que la tripleta mezclara dos agregaciones.
+    """
+    cohorte = {f"T{i}": [(f"2020-01-{d:02d}", 1) for d in range(2, 12)] for i in range(5)}
+    con_hueco = dict(cohorte)
+    con_hueco["T0"] = cohorte["T0"][:3] + cohorte["T0"][4:]
+    assert str(artifact_window(con_hueco)) == str(artifact_window(cohorte))
 
 
 _W_HOY = ArtifactWindow("2016-07-11", "2026-08-07", 2514)
@@ -697,10 +749,64 @@ def test_the_anchor_constants_match_the_measured_windows():
     **Son dos, una por universo (tarea 68).** El ancla anterior era una sola para
     los dos, y después del refresh de la 30 quedó demostrado que no se sostiene: la
     ventana viva y la legacy **difieren en el start**. Es el defecto que la 52
-    corrigió para la población, un eje más allá."""
-    assert str(WINDOW_REFRESH_2026_09_01_LIVE) == "2016-08-08..2026-09-01 (2514 barras)"
-    assert str(WINDOW_REFRESH_2026_09_01_LEGACY) == "2016-09-01..2026-09-01 (2513 barras)"
-    assert WINDOW_REFRESH_2026_09_01_LIVE != WINDOW_REFRESH_2026_09_01_LEGACY
+    corrigió para la población, un eje más allá.
+
+    **El nombre de este test decía «match the measured windows» y no medía nada**
+    (tarea 145): asserteaba los strings de las constantes **contra sí mismos**, o sea
+    una tautología que iba a seguir en verde para siempre mientras el hecho que codifica
+    se volvía falso. Lo que compara contra un cohorte **real** es
+    ``test_el_ancla_DESCRIBE_al_cohorte_real``, más abajo.
+
+    Lo que queda acá es lo único que este test puede afirmar sin tocar el disco: que
+    las constantes son las que los runners importan, y **por qué son dos**.
+    """
+    assert str(WINDOW_REFRESH_2026_09_01_LIVE) == "2016-09-12..2026-09-09 (2512 barras)"
+    assert str(WINDOW_REFRESH_2026_09_01_LEGACY) == "2016-09-01..2026-09-09 (2518 barras)"
+    # La separación se afirma sobre el eje que **no** depende de una excepción declarada.
+    # `!= ` entre dos literales era la tautología: hoy se distinguen por el `start`, y
+    # ese `start` lo sostenía **un solo artefacto congelado** (AVB). El eje que las
+    # separa de verdad es la POBLACIÓN (`universe_file` / `n_tickers`, 127 vs 41), que
+    # `reproduction_check` chequea **primero** y devuelve `REPRO_NA` (tarea 52).
+    assert POPULATION_LIVE_ACCT2 != POPULATION_LEGACY_41
+
+
+def test_el_ancla_DESCRIBE_al_cohorte_real():
+    """**El test que faltaba (tarea 145): nada en la suite comparaba jamas un ancla
+    contra un cohorte real.**
+
+    El que decia hacerlo asserteaba constantes contra si mismas. Este carga el cohorte
+    de verdad y compara. Se saltea con el patron de la 89 --sin artefactos no hay con
+    que medir-- porque existe para cazar el drift aca, no para romper donde no hay
+    sustrato (CI, checkout limpio).
+
+    **Si esto se pone rojo despues de un refresh, NO es un bug: es la tarea 157.** El
+    ancla es RODANTE por diseno (T48) y re-anclarla es el procedimiento, no la
+    excepcion. Lo que el test evita es que el ancla envejezca **sin que nadie lo note**,
+    que es distinto.
+    """
+    import pytest
+
+    from analysis.harness_config import LIVE_UNIVERSE_FILE, artifact_window, cohort_bars
+
+    universo = _REPO / LIVE_UNIVERSE_FILE
+    if not universo.exists():
+        pytest.skip("sin archivo de universo en este entorno")
+    tickers = [
+        ln.strip()
+        for ln in universo.read_text(encoding="utf-8").splitlines()
+        if ln.strip() and not ln.startswith("#")
+    ]
+    bars = cohort_bars(tickers, "10y", "1d")
+    if len(bars) < 10:
+        pytest.skip("sin cohorte de artefactos en este entorno")
+
+    medida = artifact_window(bars)
+    assert str(medida) == str(WINDOW_REFRESH_2026_09_01_LIVE), (
+        f"el ancla dice {WINDOW_REFRESH_2026_09_01_LIVE} y el cohorte real mide {medida}. "
+        "Si acabas de refrescar los artefactos, esto es el re-anclaje pendiente (tarea "
+        "157) y no un defecto: re-medir TODAS las constantes y actualizarlas en un solo "
+        "commit (T68), nunca solo la de ventana."
+    )
 
 
 def test_every_runner_anchors_to_a_window_that_declares_its_universe():
@@ -714,12 +820,26 @@ def test_every_runner_anchors_to_a_window_that_declares_its_universe():
 
 
 def test_the_live_window_start_rides_on_the_declared_refresh_exception():
-    """El `start` de la ventana viva lo fija **AVB**, que a propósito no se refresca
-    (tarea 63, declarada en `ARTIFACT_REFRESH_EXCEPTIONS`). O sea que este ancla
-    depende de una excepción: si algún día AVB se refresca, se mueve **sola** y hay
-    que re-anclar de nuevo. Queda fijado acá para que no se re-descubra."""
-    assert "AVB" in ARTIFACT_REFRESH_EXCEPTIONS
-    assert WINDOW_REFRESH_2026_09_01_LIVE.start < WINDOW_REFRESH_2026_09_01_LEGACY.start
+    """**Este test predijo lo que pasó, y pasó el 2026-09-09.**
+
+    Decía: *«el `start` de la ventana viva lo fija AVB, que a propósito no se refresca
+    (tarea 63). O sea que este ancla depende de una excepción: si algún día AVB se
+    refresca, se mueve sola y hay que re-anclar de nuevo»*. Ese día llegó — AVB se
+    refrescó por error durante la operación de la 140 (tarea **156**) y perdió su
+    histórico — y con el re-anclaje de la **157** la relación **se invirtió**:
+    ``LIVE.start`` (2016-09-12) es ahora **mayor** que ``LEGACY.start`` (2016-09-01).
+
+    Así que lo que se fija acá cambia (tarea **145**): en vez de una relación que
+    colgaba de un artefacto congelado, se afirma que las dos anclas son
+    **distinguibles**, y sobre los ejes que **no** dependen de una excepción — el
+    universo (127 vs 41) y, ahora sí por historia propia de cada cohorte, el `start` y
+    el `n_bars`.
+    """
+    assert "AVB" in ARTIFACT_REFRESH_EXCEPTIONS  # la excepción sigue declarada
+    assert WINDOW_REFRESH_2026_09_01_LIVE.start != WINDOW_REFRESH_2026_09_01_LEGACY.start
+    assert WINDOW_REFRESH_2026_09_01_LIVE.n_bars != WINDOW_REFRESH_2026_09_01_LEGACY.n_bars
+    # Y el eje que `reproduction_check` mira PRIMERO y que no cuelga de ningún frame.
+    assert POPULATION_LIVE_ACCT2 != POPULATION_LEGACY_41
 
 
 # ── Población (Tarea 52 — REPRO-POP) ─────────────────────────────────────────

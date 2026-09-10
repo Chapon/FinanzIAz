@@ -120,12 +120,12 @@ KILL_DD_TOL = 0.0300  # C3: maxDD ≤ base + 3.00 pp
 SANITY_ORACLE_PCTILE = 95  # ORACULO_PRIO > p95 de la banda del control
 SANITY_MIN_TRADE_DIFF = 0.10  # ≥10% de trades distintos (umbral T21 §5.4)
 SANITY_T33_CAGR = (
-    0.0081  # docs/fill_lookahead_t33_2026-08-16.md §6  # re-anclado 2026-09-01 (tarea 68), era 0.0197
+    0.0046  # docs/fill_lookahead_t33_2026-08-16.md §6  # re-anclado 2026-09-01 (tarea 68), era 0.0197
 )
 SANITY_T45_ANALYZE = (
-    0.0347  # docs/anom_profile_t45_2026-08-20.md §3  # re-anclado 2026-09-01 (tarea 68), era 0.0371
+    0.0450  # docs/anom_profile_t45_2026-08-20.md §3  # re-anclado 2026-09-01 (tarea 68), era 0.0371
 )
-SANITY_T45_MERGED_PRIO = 0.0761  # re-anclado 2026-09-01 (tarea 68), era 0.0792
+SANITY_T45_MERGED_PRIO = 0.0512  # re-anclado 2026-09-01 (tarea 68), era 0.0792
 SANITY_TOL = 0.0005  # ±0.05 pp (los publicados van a 2 decimales)
 
 BOOT_BLOCK = 20

@@ -190,7 +190,7 @@ justamente el eje —, y por eso T20 quedó como la única de las once que pide 
 > **Los dos números de arriba son de la corrida de la T39** y siguen bien atribuidos a **su**
 > muestra: aquella corrida fue limpia y la **68** declara que **ningún veredicto se
 > re-publica**. Lo que caducó es la cifra que esta skill daba como referencia *en presente*
-> —decía que el sanity *"devuelve el 1.97% al dígito"*, y hoy devuelve **0.81%**—. Por eso ya
+> —decía que el sanity *"devuelve el 1.97% al dígito"*, y hoy devuelve **0.46%**—. Por eso ya
 > no se repite acá ningún valor: **el número vive en la constante** (`SANITY_T33_CAGR`), que
 > es lo único que no puede caducar. Es la lección de la tarea 72: un doc de veredicto cita su
 > muestra y envejece bien; **una skill afirma en presente y se lee cada sesión**, así que

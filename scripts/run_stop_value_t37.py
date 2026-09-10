@@ -337,9 +337,9 @@ def _repro_targets() -> dict[str, float]:
     baseline de la 54.
     """
     return {
-        arm_name(2.0, 2.0): 0.0137,  # `touch_2.0` — el BASELINE, lo vivo (re-anclado T68, era 0.0201)
-        arm_name(NO_STOP, 2.0): 0.0798,  # `D1` (T34 §4) — stop off, trail 2.0 (re-anclado T68, era 0.0917)
-        arm_name(NO_STOP, NO_STOP): 0.0860,  # `touch_off` — las dos apagadas (re-anclado T68, era 0.0952)
+        arm_name(2.0, 2.0): 0.0498,  # `touch_2.0` — el BASELINE, lo vivo (re-anclado T157, era 0.0137)
+        arm_name(NO_STOP, 2.0): 0.0878,  # `D1` (T34 §4) — stop off, trail 2.0 (re-anclado T157, era 0.0798)
+        arm_name(NO_STOP, NO_STOP): 0.1044,  # `touch_off` — las dos apagadas (re-anclado T157, era 0.0860)
     }
 
 

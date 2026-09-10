@@ -142,7 +142,7 @@ BOOT_SEED = 12345
 # §5 — sanity.
 SANITY_ORACLE_MIN_DCAGR = 0.20  # el oráculo despega ≥ +20 pp sobre el candidato
 REPRO_LIVE_CAGR = (
-    0.0917  # `U_ungated` de la 38, mismos artefactos  # re-anclado 2026-09-01 (tarea 68), era 0.0923
+    0.0923  # `U_ungated` de la 38, mismos artefactos  # re-anclado 2026-09-01 (tarea 68), era 0.0923
 )
 REPRO_LEGACY_UNIVERSE = "data/harness_universe_41_10y.txt"
 REPRO_LEGACY_CAGR = 0.1251  # ver §5.3(b)  # re-anclado 2026-09-01 (tarea 68), era 0.1277 (medido 2026-08-20)

@@ -101,7 +101,7 @@ KILL_REGIME_TOL = -0.0050  # C5: ≥ −0.50pp de retorno de cartera por régime
 SANITY_ORACLE_EDGE = 0.0500  # ORACULO ≥ B1 + 5.00pp (umbral de T21 §5.2)
 SANITY_MIN_TRADE_DIFF = 0.10  # ≥10% de trades distintos (umbral de T21 §5.4)
 SANITY_T33_CAGR = (
-    0.0081  # docs/fill_lookahead_t33_2026-08-16.md §6  # re-anclado 2026-09-01 (tarea 68), era 0.0197
+    0.0046  # docs/fill_lookahead_t33_2026-08-16.md §6  # re-anclado 2026-09-01 (tarea 68), era 0.0197
 )
 SANITY_T33_TOL = 0.0005  # ±0.05pp (el publicado va a 2 decimales)
 

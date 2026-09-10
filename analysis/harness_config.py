@@ -424,19 +424,41 @@ def artifact_window(bars_by: dict[str, list]) -> ArtifactWindow | None:
     """Ventana efectiva de ``{ticker: [Bar]}`` — ``None`` si no hay barras.
 
     ``Bar`` es una tupla cuyo primer elemento es la fecha ISO-10, así que esto no
-    depende de pandas ni toca el disco."""
+    depende de pandas ni toca el disco.
+
+    **Los tres campos describen la ENVOLVENTE del cohorte (tarea 144).** ``n_bars`` era
+    un ``max(len(bars))`` —un **máximo de miembro**— mientras ``start`` y ``end`` eran
+    la envolvente, así que la tripleta **no describía a ningún objeto real**: mezclaba
+    dos agregaciones incompatibles. Ahora es la cantidad de **ruedas distintas** que el
+    cohorte cubre, que es lo que ``start..end`` ya decía.
+
+    **No es una distinción teórica.** Medido el 2026-09-09 sobre los dos cohortes: en el
+    vivo (127 tickers) las dos agregaciones dan **2512** porque el cohorte quedó
+    uniforme; en el legacy (41) dan **2513** (máximo) contra **2518** (unión). Coinciden
+    por casualidad, no por construcción.
+
+    **Por qué la unión y no la moda**, que era el arreglo obvio: la moda choca de frente
+    con la tarea **140**, que ataca justamente el uso de una referencia sacada de la
+    misma población que se chequea. La unión no depende de ningún ticker en particular
+    — que es la propiedad que el `max` no tenía: quedaba clavado a un frame congelado.
+
+    **Lo que este campo NO detecta, y va dicho:** una rueda que le falta a **un** ticker
+    y los demás tienen no mueve la unión. Ése es el trabajo de ``cross_period_gaps``
+    (T110), que además **aborta**. ``n_bars`` es parte de la **identidad de la muestra**,
+    no un guard de completitud.
+    """
     starts: list[str] = []
     ends: list[str] = []
-    n = 0
+    ruedas: set[str] = set()
     for bars in bars_by.values():
         if not bars:
             continue
         starts.append(bars[0][0])
         ends.append(bars[-1][0])
-        n = max(n, len(bars))
+        ruedas.update(b[0] for b in bars)
     if not starts:
         return None
-    return ArtifactWindow(start=min(starts), end=max(ends), n_bars=n)
+    return ArtifactWindow(start=min(starts), end=max(ends), n_bars=len(ruedas))
 
 
 # ── Frescura del cohorte de artefactos — Tarea 30 (DOC-SYNC) ─────────────────
@@ -2504,8 +2526,8 @@ def announce_effective(
 # depende a propósito de un artefacto que no se refresca. Queda dicho acá para que
 # no se re-descubra dentro de seis meses: si algún día AVB se refresca, este ancla
 # se mueve **sola** y hay que re-anclar de nuevo.
-WINDOW_REFRESH_2026_09_01_LIVE = ArtifactWindow("2016-08-08", "2026-09-01", 2514)
-WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-01", 2513)
+WINDOW_REFRESH_2026_09_01_LIVE = ArtifactWindow("2016-09-12", "2026-09-09", 2512)
+WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-09", 2518)
 
 # Las POBLACIONES sobre las que se midieron esas mismas constantes (Tarea 52). La
 # ventana sola no alcanza para acusar a la cañería: el smoke de la 37 corrió sobre

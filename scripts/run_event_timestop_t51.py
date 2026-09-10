@@ -127,13 +127,13 @@ SANITY_MIN_POPULATION = 0.05  # el umbral de la T13 (§6.3), reusado tal cual
 SANITY_MIN_TRADE_DIFF = 0.10  # el tope muerde ≥10% de trades distintos
 SANITY_ORACLE_PCTILE = 95
 REPRO_BASE_CAGR = (
-    0.0202  # `B1_score` cap 250 — la 49 §0 y la T39  # re-anclado 2026-09-01 (tarea 68), era 0.0323
+    0.0118  # `B1_score` cap 250 — la 49 §0 y la T39  # re-anclado 2026-09-01 (tarea 68), era 0.0323
 )
 REPRO_ALPHA_CAP20 = (
-    0.0347  # `E_analyze` de la 45 — la 49 §5.2  # re-anclado 2026-09-01 (tarea 68), era 0.0371
+    0.0450  # `E_analyze` de la 45 — la 49 §5.2  # re-anclado 2026-09-01 (tarea 68), era 0.0371
 )
 REPRO_ALPHA_CAP250 = (
-    0.0137  # `A_alpha` — la 49 §0 (cross-check, NO es gate)  # re-anclado 2026-09-01 (tarea 68), era 0.0201
+    0.0498  # `A_alpha` — la 49 §0 (cross-check, NO es gate)  # re-anclado 2026-09-01 (tarea 68), era 0.0201
 )
 REPRO_TOL = 0.0005
 

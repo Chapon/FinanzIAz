@@ -82,7 +82,7 @@ _SIN_SCHEMA: dict[str, str] = {}
 # caduca. La forma del registro copia a `_NO_SON_CONSTANTES` de la tarea 72.
 _CLAIMS_EN_PRESENTE: dict[str, str] = {
     "auditoria/SKILL.md:|r| > 0.58": "estadística histórica de una muestra vieja; el «hoy» de ese bloque es del ANCLA, no del número",
-    "backtest-replay-harness/SKILL.md:devuelve **0.81%**": "VERIFICADA abajo contra SANITY_T33_CAGR, que es donde vive el número",
+    "backtest-replay-harness/SKILL.md:devuelve **0.46%**": "VERIFICADA abajo contra SANITY_T33_CAGR, que es donde vive el número (re-anclado 2026-09-09, tarea 157: era 0.81%)",
     "fair-value-feature/SKILL.md:−0.05": "el coeficiente que CLAUDE.md declara explícitamente que la regla NO usa (regla 3)",
     "SETTINGS_REFERENCE.md:Bajó de 0.50 a 0.25 el 2026-09-07": "cita histórica FECHADA, y correcta: es el cambio de la tarea 115",
     "backtest-replay-harness/SKILL.md:factor **0.50**": "la cita del defecto que la 137 arregló; el valor vivo lo manda a leer de LIVE_REGIME_SCALE_FACTOR",
