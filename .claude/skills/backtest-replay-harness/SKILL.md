@@ -470,18 +470,21 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
   población de la corrida sale de `cfg.population(len(entries))` — `announce()` devuelve el
   `cfg`, así que es una línea.
 - **La ventana es POR UNIVERSO (tarea 68), y elegir mal es un error silencioso.** Hay dos
-  constantes y **ninguna es el default**: `WINDOW_REFRESH_2026_09_01_LIVE`
-  (`2016-08-08..2026-09-01`, 2514 barras) para el universo vivo y
-  `WINDOW_REFRESH_2026_09_01_LEGACY` (`2016-09-01..2026-09-01`, 2513) para el de 41. Difieren
-  en el `start`, así que una sola no puede anclar a las dos — es el defecto que la 52 corrigió
-  para la *población*, un eje más allá. El nombre viejo (`..._2026_08_09`) **no existe ni como
-  alias, a propósito**: dejarlo habría permitido elegir mal en silencio, y hay un test que lo
-  prohíbe en todos los `scripts/run_*.py`.
-- **Ojo, y esto no se re-descubre solo:** el `start` de la ventana **viva** lo fija **AVB**,
-  que es la excepción de refresh declarada en `ARTIFACT_REFRESH_EXCEPTIONS` (tarea 63: su
-  `10y` es la escala sana contra la que se detecta el split fantasma del `2y`). O sea que ese
-  ancla **depende a propósito de un artefacto que no se refresca**. Si algún día AVB se
-  refresca, la ventana viva se mueve **sola** y hay que re-anclar de nuevo.
+  constantes y **ninguna es el default**: `WINDOW_REFRESH_2026_09_01_LIVE` y
+  `WINDOW_REFRESH_2026_09_01_LEGACY`. **No copies acá sus valores**: son rodantes y se
+  re-anclan en cada refresh (la última vez, la 157) — leelas de `analysis/harness_config.py`,
+  que es donde viven, y donde `test_el_ancla_DESCRIBE_al_cohorte_real` las contrasta contra el
+  cohorte de verdad. Difieren en el `start`, así que una sola no puede anclar a las dos — es
+  el defecto que la 52 corrigió para la *población*, un eje más allá. El nombre viejo
+  (`..._2026_08_09`) **no existe ni como alias, a propósito**: dejarlo habría permitido elegir
+  mal en silencio, y hay un test que lo prohíbe en todos los `scripts/run_*.py`.
+- **Acá decía que el `start` de la ventana viva lo fijaba AVB (la excepción de refresh de la
+  tarea 63). Ya no.** AVB se refrescó por error el 2026-09-09 y su frame quedó en **27
+  barras** (tarea 156): con `min(starts)..max(ends)`, un start tardío no mueve el mínimo ni un
+  end temprano el máximo, así que **no fija ningún borde**. El ancla viva dejó de colgar de
+  una excepción de refresh — que era justo el riesgo que ese párrafo marcaba. Hoy AVB es un
+  **miembro inerte** (27 barras < warmup ⇒ cero entradas) y cada corrida lo declara vía
+  `announce_inert_members`; qué hacer con él es la decisión abierta de la **156**.
 - **El caso que motivó la T52:** el smoke de la 37 corrió sobre el universo legacy (41
   tickers) contra anclas medidas sobre el vivo (127) **con la misma ventana**, y los tres
   chequeos salieron `FALLA — MISMA ventana ⇒ cambió la cañería`. No había cambiado una línea.

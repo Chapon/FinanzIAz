@@ -1326,7 +1326,9 @@ def announce_signal_store(
     n = sum(1 for b in bars_by.values() if b)
     if not faltantes:
         print(f"Cobertura del store de señales — {n} tickers, sin fechas pendientes.\n", file=salida)
+        announce_inert_members(bars_by, period, warmup, file=salida)
         return faltantes
+    announce_inert_members(bars_by, period, warmup, file=salida)
     peor = sorted(faltantes.items(), key=lambda kv: -kv[1][0])
     print(
         f"Cobertura del store de señales — {len(faltantes)} de {n} tickers con fechas "
@@ -1351,6 +1353,90 @@ def announce_signal_store(
             "scripts/precompute_pit_signals.py, o strict=False declarándolo en el pre-registro."
         )
     return faltantes
+
+
+class InertMember(NamedTuple):
+    """Un miembro del cohorte que **no puede producir ni una entrada** — tarea 156.
+
+    ``n_bars`` son las barras que el runner efectivamente cargó y ``warmup`` el
+    calentamiento que pide: con ``n_bars <= warmup`` no hay una sola fecha evaluable.
+    ``pit_n_bars`` es lo que el artefacto PIT **declara** — cuando difiere de ``n_bars``
+    el artefacto está describiendo un frame que ya no existe.
+    """
+
+    ticker: str
+    n_bars: int
+    warmup: int
+    pit_n_bars: int | None
+
+    def __str__(self) -> str:
+        pit = "" if self.pit_n_bars is None else f"; su artefacto PIT declara {self.pit_n_bars}"
+        return f"{self.ticker}: {self.n_bars} barras con warmup {self.warmup} ⇒ 0 entradas{pit}"
+
+
+def inert_members(bars_by: dict[str, list], period: str, warmup: int) -> tuple[InertMember, ...]:
+    """Los miembros del cohorte que **cuentan como población y no aportan nada**.
+
+    **Tarea 156, y el caso que la abrió es real:** Yahoo corrompió el registro de AVB y
+    su frame pasó de ~2.500 barras a **27**, con el artefacto PIT declarando todavía
+    ``n_bars: 2514, complete: True``. Con 27 barras y warmup 250 no hay una sola entrada
+    posible — pero el ticker sigue en ``bars_by``, así que la población dice **127** y
+    ninguna línea aclara que uno de esos 127 es inerte.
+
+    **Y los dos guards que uno esperaría que lo vieran, no lo ven, por diseño:**
+
+    * ``signal_store_gaps`` **saltea** al que tiene ``len(bars) <= warmup`` — correcto
+      para lo suyo (no hay fechas que precomputar), pero deja al miembro invisible;
+    * ``stale_artifacts`` no lo mira porque AVB está en ``ARTIFACT_REFRESH_EXCEPTIONS``,
+      que es lo que evita que alguien lo "arregle" refrescándolo (refrescar fue lo que
+      destruyó su histórico).
+
+    Esto **declara, no aborta**, y es deliberado: el frame no se puede reparar desde acá
+    —el proveedor devuelve 27 filas para cualquier período— así que abortar convertiría
+    una situación conocida en un bloqueo de todas las corridas. Sacarlo del universo es
+    la decisión de fondo (tarea 156) y mueve la población de 127 a 126, o sea que obliga
+    a re-anclar: no es un efecto lateral de un chequeo.
+    """
+    from scripts.precompute_pit_signals import _load_existing, _out_path
+
+    out: list[InertMember] = []
+    for t, bars in sorted(bars_by.items()):
+        n = len(bars) if bars else 0
+        if n > warmup:
+            continue
+        blob = _load_existing(_out_path(t, period, warmup))
+        declaradas = blob.get("n_bars") if isinstance(blob, dict) else None
+        out.append(InertMember(t, n, warmup, declaradas if isinstance(declaradas, int) else None))
+    return tuple(out)
+
+
+def announce_inert_members(
+    bars_by: dict[str, list],
+    period: str,
+    warmup: int,
+    *,
+    file: TextIO | None = None,
+) -> tuple[InertMember, ...]:
+    """Imprime los miembros inertes. En el caso sano **no imprime nada** (tarea 156).
+
+    Va pegado a ``announce_signal_store`` porque las dos preguntan por el sustrato PIT y
+    comparten ``period``/``warmup``; y va **adentro** de esa llamada, y no como una
+    tercera, para que la declaración llegue a los 21 runners sin editar 21 archivos.
+    """
+    salida = file if file is not None else sys.stdout
+    inertes = inert_members(bars_by, period, warmup)
+    if not inertes:
+        return inertes
+    print(f"Miembros INERTES del cohorte — {len(inertes)} de {len(bars_by)}:", file=salida)
+    for m in inertes:
+        print(f"  {m}", file=salida)
+    print(
+        "  AVISO: cuentan en la población declarada y no aportan ni una entrada. La "
+        "corrida es válida —miden lo que miden—, pero el `n_tickers` de arriba dice "
+        "más de lo que efectivamente participa (tarea 156).\n",
+        file=salida,
+    )
+    return inertes
 
 
 @dataclass(frozen=True)
@@ -2534,12 +2620,22 @@ def announce_effective(
 # ``min(starts)..max(ends)``, y eso lo hacía invisible. De ahí sale el guard de
 # frescura (``announce_artifacts``), que ahora corre **antes** de cada harness.
 #
-# **OJO con el ``start`` de la ventana VIVA: lo fija AVB**, que es la excepción de
-# refresh declarada en ``ARTIFACT_REFRESH_EXCEPTIONS`` (su ``10y`` es la escala sana
-# contra la que se detecta el split fantasma del ``2y``). O sea que la ventana viva
-# depende a propósito de un artefacto que no se refresca. Queda dicho acá para que
-# no se re-descubra dentro de seis meses: si algún día AVB se refresca, este ancla
-# se mueve **sola** y hay que re-anclar de nuevo.
+# **Esto decía «OJO: el ``start`` de la ventana VIVA lo fija AVB», y CADUCÓ.** Era
+# cierto mientras el ``10y`` de AVB era un artefacto congelado por
+# ``ARTIFACT_REFRESH_EXCEPTIONS``, y el propio párrafo avisaba: *«si algún día AVB se
+# refresca, este ancla se mueve sola»*. Pasó el **2026-09-09** —se refrescó por error
+# durante la operación de la 140— y su frame quedó en **27 barras** (tarea 156).
+#
+# Medido el 2026-09-10 sobre el cohorte vivo: los **126** sanos empiezan todos el
+# ``2016-09-12`` y terminan el ``2026-09-09``; AVB va del ``2026-07-17`` al
+# ``2026-08-24``. Como ``artifact_window`` agrega ``min(starts)..max(ends)``, un start
+# **tardío** no mueve el mínimo y un end **temprano** no mueve el máximo: AVB ya no fija
+# ninguno de los dos bordes, y tampoco el ``n_bars``. O sea que este ancla **dejó de
+# depender de una excepción de refresh** — que era el riesgo que el párrafo viejo
+# marcaba, y se materializó de la peor manera (perdiendo el histórico).
+#
+# Lo que AVB sí es hoy: un **miembro inerte** del cohorte (27 barras < warmup 250 ⇒ cero
+# entradas), y lo declara ``announce_inert_members`` en cada corrida.
 WINDOW_REFRESH_2026_09_01_LIVE = ArtifactWindow("2016-09-12", "2026-09-09", 2512)
 WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-09", 2518)
 
