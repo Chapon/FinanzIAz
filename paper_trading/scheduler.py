@@ -18,11 +18,16 @@ Independent triggers, all gated by user settings:
 4. **Weekly surprise rebuild** (``surprise_build_enabled``, default on;
    ``surprise_build_interval_days``, default 7) — T-CAT-5a. Rides the
    once-a-minute daily timer (and a one-shot just after launch): when
-   ``build_due`` says the interval has elapsed since ``surprise_last_build``,
+   ``build_due`` says the interval has elapsed since el último build,
    a background worker regenerates ``data/catalyst/surprise_profiles.json``
-   from yfinance. Only runs while the app is open; the timestamp is stamped on
-   success so a missed week catches up on the next launch. This is the in-app
-   alternative to a Task Scheduler job — see docs/roadmap_v3_2026-06-09.md.
+   from yfinance. Only runs while the app is open, so a missed week catches up
+   on the next launch. This is the in-app alternative to a Task Scheduler job —
+   see docs/roadmap_v3_2026-06-09.md.
+   **Tarea 160:** la marca del último build sale del ``_meta.built_at`` del
+   **artefacto** (``analysis.surprise_score.last_build_iso``), no de
+   ``settings['surprise_last_build']``. Era el único estado que la app escribía
+   en el settings de Chapa, y era una segunda fuente de verdad: un build corrido
+   a mano movía el artefacto y no la marca.
 
 5. **Daily catalyst refresh** (``catalyst_refresh_on_open``, default on) —
    harvest (T-CAT-1) + classify (T-CAT-2) in-process, primera vez que la app
@@ -547,10 +552,17 @@ class PaperScheduler(QObject):
         if self._surprise_worker is not None and self._surprise_worker.isRunning():
             return
         try:
-            from analysis.surprise_score import DEFAULT_BUILD_INTERVAL_DAYS, build_due
+            from analysis.surprise_score import (
+                DEFAULT_BUILD_INTERVAL_DAYS,
+                build_due,
+                last_build_iso,
+            )
 
+            # T160: el intervalo sale del SCHEMA (declarado, con el mismo valor que el
+            # fallback inline que había acá) y la marca del último build sale del
+            # **artefacto**, no del settings. Ver `last_build_iso`.
             interval = int(settings.get("surprise_build_interval_days", DEFAULT_BUILD_INTERVAL_DAYS))
-            if not build_due(settings.get("surprise_last_build", None), utcnow_naive(), interval):
+            if not build_due(last_build_iso(), utcnow_naive(), interval):
                 return
         except Exception:
             log.exception("surprise build_due check failed")
@@ -573,17 +585,18 @@ class PaperScheduler(QObject):
         worker.start()
 
     def _on_surprise_completed(self, res) -> None:
-        # Stamp only on success so a failed run retries on the next daily tick.
-        try:
-            settings.set("surprise_last_build", utcnow_naive().isoformat())
-            log.info(
-                "surprise rebuild done: %s (%s/%s usable quarters≥min)",
-                res.get("out"),
-                res.get("n_usable"),
-                res.get("n_tickers"),
-            )
-        except Exception:
-            log.exception("stamping surprise_last_build failed")
+        # T160: acá se estampaba `settings.set("surprise_last_build", …)`. Ya no hace
+        # falta —y era el único estado que la app escribía en el settings de Chapa—:
+        # `run_build` deja su propio `_meta.built_at` adentro del artefacto, que es lo
+        # que ahora lee la cadencia. Se sigue estampando **sólo en éxito** por la misma
+        # razón que antes (un build fallido reintenta en el próximo tick diario), pero
+        # ahora eso es una propiedad de quién escribe el archivo, no una segunda marca.
+        log.info(
+            "surprise rebuild done: %s (%s/%s usable quarters≥min)",
+            res.get("out"),
+            res.get("n_usable"),
+            res.get("n_tickers"),
+        )
 
     def _on_surprise_failed(self, err: str) -> None:
         log.warning("surprise rebuild failed (will retry next tick): %s", err)

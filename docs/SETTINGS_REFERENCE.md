@@ -94,12 +94,29 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 Regenera el snapshot del artifact del dashboard (`scripts/refresh_dashboard.py`) leyendo `finanzias.db`. Reemplaza la tarea del Windows Task Scheduler que lo corría a las 8:00 (removida 2026-07-12): ahora **solo corre con la app abierta**. Puramente local (sin red); no-op si la DB o el artifact no existen.
 | Flag | Default | Qué hace |
 |------|---------|----------|
-| `dashboard_refresh_enabled` *(sin spec)* | `True` | Master switch del trigger 7. "Ambos" (Chapa 2026-07-12): refresca 1×/día calendario al abrir la app **y** tras cada scan de la cuenta del dashboard. |
+| `dashboard_refresh_enabled` | `True` | Master switch del trigger 7. "Ambos" (Chapa 2026-07-12): refresca 1×/día calendario al abrir la app **y** tras cada scan de la cuenta del dashboard. Declarado en el schema por la tarea **160** (antes se leía con fallback inline, así que esta fila no la contrastaba nadie). |
 | `dashboard_refresh_account_id` *(sin spec)* | *(la cuenta viva)* | Cuenta cuyo snapshot se regenera. **Sin setear ⇒ se resuelve contra `is_active`** (tarea 70): el default era `1`, que está pausada desde el 2026-07-01, y el dashboard se re-estampaba a diario con una cartera congelada. Si se setea a mano y apunta a una cuenta pausada, se respeta pero **se loguea un WARNING**. Solo dispara el refresh post-scan de esa cuenta. |
 
 ## Catalyst exit-veto (T-CAT-4, Gate 2c) — DEFAULT OFF
-Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no superado (ver skill `backtest-replay-harness`):
-`paper_catalyst_exit_veto_enabled` (off), `paper_catalyst_veto_min_score`, `paper_catalyst_veto_gray_high`.
+Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no superado (ver skill `backtest-replay-harness`). Los tres se declararon en el schema en la tarea **160** con el mismo valor que tenía su fallback inline: antes no estaban ni en el schema ni acá, o sea que eran invisibles por los dos lados.
+
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `paper_catalyst_exit_veto_enabled` | `False` | Master switch del Gate 2c: un catalyst puede vetar una SELL de señal. OFF hasta que el backtest de T-CAT-6 lo valide. Además **requiere** un `catalyst_signal_provider` inyectado: sin él el gate no corre. |
+| `paper_catalyst_veto_min_score` | `0.30` | Impact score mínimo para que el veto pueda aplicar. |
+| `paper_catalyst_veto_gray_high` | `0.50` | Techo de la banda gris de score en la que el veto aplica. |
+
+**Declarar no es exponer:** `ui/settings_tab.py` arma sus secciones con listas explícitas y no lee el `SCHEMA`, así que ninguno de los tres aparece en la pestaña Settings. Ponerlos ahí —que los volvería flipeables desde la UI— es una decisión aparte (tarea **162**).
+
+## Rebuild semanal de surprise_profiles (trigger 4, T-CAT-5a)
+Regenera `data/catalyst/surprise_profiles.json` desde yfinance mientras la app está abierta. Los dos flags se declararon en el schema en la tarea **160**.
+
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `surprise_build_enabled` | `True` | Master switch del trigger 4. |
+| `surprise_build_interval_days` | `7` | Cada cuántos días se regenera. Espeja `analysis.surprise_score.DEFAULT_BUILD_INTERVAL_DAYS`, y un test re-verifica el espejo. |
+
+**`surprise_last_build` ya no existe.** La marca del último build sale del `_meta.built_at` del propio artefacto (`analysis.surprise_score.last_build_iso`). Estaba en `settings.json` —escrita por el scheduler— y era el único estado que la app mutaba dentro del archivo de perillas: dos fuentes de verdad para el mismo dato, así que un build corrido a mano movía una y no la otra. La clave que quedó escrita en el `settings.json` vivo es inerte; se puede borrar a mano con la app cerrada.
 
 ## Notificaciones Slack
 El **bot token NUNCA vive acá** — se lee de la env var `SLACK_BOT_TOKEN`. Solo el canal (no secreto) va en settings o en la env var `SLACK_CHANNEL`. Todo fail-open: sin token/canal, cada aviso es no-op. Ver `integrations/slack.py` y `scripts/setup_slack.py`.

@@ -794,6 +794,61 @@ SCHEMA: dict[str, SettingSpec] = {
         min=15,
         doc="Intervalo del harvest intradía, en minutos. Piso 15 (tarea 10).",
     ),
+    # ── Gate 2c del engine (T-CAT-4) — tarea 160 ─────────────────────────────
+    # Los tres se leían con fallback inline en `engine.py` y no estaban declarados en
+    # ningún lado: invisibles para la UI, para `SETTINGS_REFERENCE.md` y para el guard
+    # de la 137. Los defaults de acá son **exactamente** los fallbacks que ya corrían
+    # (hay un test por clave), así que declararlos no mueve ninguna decisión: el gate
+    # sigue en OFF y sus dos umbrales en 0.30 / 0.50.
+    #
+    # Declarar ≠ exponer: `ui/settings_tab.py` arma sus secciones con listas explícitas
+    # y **no** lee el SCHEMA, así que ninguno de los tres aparece en la pestaña
+    # Settings. Ponerlos ahí sigue siendo una decisión de producto, aparte de ésta.
+    "paper_catalyst_exit_veto_enabled": SettingSpec(
+        bool,
+        False,
+        doc=(
+            "Gate 2c: el catalyst puede vetar una SELL de señal. DEFAULT OFF hasta que "
+            "el backtest de T-CAT-6 lo valide (docs/catalyst_t_cat_4_design.md §7). "
+            "Además requiere un catalyst_signal_provider inyectado."
+        ),
+    ),
+    "paper_catalyst_veto_min_score": SettingSpec(
+        (int, float),
+        0.30,
+        min=0.0,
+        max=1.0,
+        doc="Gate 2c: impact score mínimo para que el catalyst pueda vetar la SELL.",
+    ),
+    "paper_catalyst_veto_gray_high": SettingSpec(
+        (int, float),
+        0.50,
+        min=0.0,
+        max=1.0,
+        doc="Gate 2c: techo de la banda gris de score en la que el veto aplica.",
+    ),
+    # ── Jobs del scheduler que se leían con fallback inline — tarea 160 ──────
+    "dashboard_refresh_enabled": SettingSpec(
+        bool,
+        True,
+        doc="Refresco diario del dashboard (job 7 del scheduler).",
+    ),
+    "surprise_build_enabled": SettingSpec(
+        bool,
+        True,
+        doc="Rebuild semanal de surprise_profiles.json (job 4 del scheduler, T-CAT-5a).",
+    ),
+    # El default **espeja** `analysis.surprise_score.DEFAULT_BUILD_INTERVAL_DAYS`, que es
+    # el fallback histórico. No se importa acá para no meterle a `settings_manager` una
+    # dependencia de `analysis` (este módulo lo importa medio proyecto); el espejo lo
+    # re-verifica un test, como los `BASELINE_*`/`LIVE_*` de harness_config.
+    "surprise_build_interval_days": SettingSpec(
+        int,
+        7,
+        min=1,
+        max=365,
+        doc="Cada cuántos días se regenera surprise_profiles.json (espeja DEFAULT_BUILD_INTERVAL_DAYS).",
+    ),
     # Logging overrides (free-form: dict[str, str])
     "logging_levels": SettingSpec(dict, {}, doc="Per-module logging overrides {name: LEVEL}"),
 }

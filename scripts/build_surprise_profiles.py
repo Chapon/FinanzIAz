@@ -35,14 +35,17 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from analysis.surprise_score import MIN_QUARTERS, build_surprise_profile
+from analysis.surprise_score import MIN_QUARTERS, PROFILES_PATH, build_surprise_profile
 from config.logging_config import get_logger
 from data.news_sources import collect_yfinance_earnings_history
 from scripts.harvest_catalysts import DEFAULT_ACCOUNT_ID, resolve_universe
 
 log = get_logger(__name__)
 
-DEFAULT_OUT = ROOT / "data" / "catalyst" / "surprise_profiles.json"
+# La ruta la declara `analysis.surprise_score` (tarea 160): la cadencia del
+# scheduler se lee del `_meta.built_at` de ESTE archivo, así que el que lo escribe
+# y el que lo lee tienen que hablar del mismo path o la marca no se ve.
+DEFAULT_OUT = PROFILES_PATH
 
 
 def build_profiles(tickers: list[str], limit: int = 16) -> dict[str, dict]:

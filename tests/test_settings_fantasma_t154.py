@@ -7,8 +7,9 @@ Cinco flags funcionaban sin estar en el `SCHEMA`: el código hacía
 
 **Funcionaban, y ése es el problema.** Tres costos, ninguno visible:
 
-* **no salían en la pestaña Settings**, que se arma del schema, así que Chapa no podía
-  moverlos sin editar el JSON a mano;
+* **no salían en `docs/SETTINGS_REFERENCE.md` ni en el schema**, o sea que eran
+  invisibles por los dos lados (acá decía *«no salían en la pestaña Settings, que se
+  arma del schema»*, y la 160 midió que eso es **falso**: `ui/` no lee el `SCHEMA`);
 * su default documentado en ``docs/SETTINGS_REFERENCE.md`` era una **copia a mano** del
   fallback, o sea el defecto de la tarea **137** un nivel más abajo;
 * eran las **únicas cinco filas** de esa referencia que el guard de la 137 tuvo que
@@ -70,25 +71,17 @@ def test_cada_una_esta_DOCUMENTADA(clave):
 # ── El predicado, que es lo que evita la próxima ─────────────────────────────
 
 
-# Las que el barrido encontró y **esta** tarea no cierra, cada una con su motivo. La
-# auditoría había visto cinco porque barrió `SETTINGS_REFERENCE.md`; éstas no están
-# **ni** documentadas **ni** en el schema, así que eran invisibles por los dos lados.
-# Van como **tarea 160**, no declaradas acá por mi cuenta: tres gatean decisiones del
-# motor y exponerlas en la pestaña Settings es una decisión de producto, no un refactor.
-_PENDIENTES_T160: dict[str, str] = {
-    "paper_catalyst_exit_veto_enabled": "Gate 2c del engine (fallback False = el «DEFAULT OFF» de CLAUDE.md)",
-    "paper_catalyst_veto_min_score": "umbral del Gate 2c en engine.py (fallback 0.3)",
-    "paper_catalyst_veto_gray_high": "umbral del Gate 2c en engine.py (fallback 0.5)",
-    "dashboard_refresh_enabled": "job del scheduler (fallback True)",
-    "surprise_build_enabled": "job del scheduler (fallback True)",
-    "surprise_build_interval_days": "intervalo del job, con la constante del módulo como fallback",
-    "surprise_last_build": (
-        "NO es una perilla: es ESTADO que el scheduler escribe en settings.json "
-        "(hoy '2026-09-03T20:58…'). Declararlo en el SCHEMA sería tipificar como "
-        "configuración algo que el propio código muta — la tarea 160 tiene que "
-        "decidir si eso va a settings.json siquiera"
-    ),
-}
+# Las que el barrido encontró y **esta** tarea no cerraba. **Quedó vacío el 2026-09-10
+# con la tarea 160**, que declaró los seis que eran configuración y sacó del settings el
+# séptimo, que era ESTADO (`surprise_last_build`, la marca del último build de
+# surprise_profiles: ahora sale del `_meta.built_at` del artefacto). Igual que el
+# `_SIN_SCHEMA` del guard de la 137, no se tapó — se volvió innecesario.
+#
+# CORRECCIÓN de esta tarea, medida al cerrar la 160: acá decía que exponer un flag en la
+# pestaña Settings era el costo de declararlo, y **no es así**. `ui/` no menciona `SCHEMA`
+# en ninguna línea: `settings_tab.py` arma sus secciones con listas explícitas. Declarar
+# no expone; ponerlos en la pestaña es una decisión aparte (tarea 162).
+_PENDIENTES_T160: dict[str, str] = {}
 
 
 def _lecturas_con_fallback() -> list[str]:

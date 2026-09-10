@@ -37,6 +37,8 @@ python scripts/classify_catalysts.py --reclassify
 
 `scripts/build_surprise_profiles.py` → `data/catalyst/surprise_profiles.json`. Agrega el historial EPS estimate vs reported (yfinance) en un prior direccional por ticker. Usado por `imminent_catalyst` (reemplaza el mean neutral de reacción).
 
+**La cadencia sale del artefacto (tarea 160).** El scheduler regenera cada `surprise_build_interval_days` (default 7) contando desde el `_meta.built_at` del propio JSON — `analysis.surprise_score.last_build_iso`. Antes la marca vivía en `settings['surprise_last_build']`, así que **correr el script a mano no reseteaba el reloj**; ahora sí. Y si el artefacto no está, corresponde rebuild (antes el scheduler esperaba la semana igual). La ruta la declara `analysis.surprise_score.PROFILES_PATH`: el que escribe y el que lee tienen que hablar del mismo archivo.
+
 **Caveat**: yfinance da el estimate *actual* por trimestre, no el consenso del día previo al print → sesgo de revisión/look-ahead. Es bootstrap. La forma final (T-CAT-5b, consenso point-in-time desde `analyst_estimate_snapshots`) está **BLOQUEADA hasta ~fines jul 2026** por falta de datos acumulados (necesita ≥1 temporada capturada, ~40 pares).
 
 ## Reacción histórica

@@ -35,9 +35,11 @@ vetoes on garbage.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from config.logging_config import get_logger
 
@@ -273,6 +275,42 @@ def make_surprise_loader(
 # ── rebuild cadence (the in-app weekly scheduler reads this) ──────────────────
 
 
+# Dónde vive el artefacto de perfiles. **Acá y no en el script** (tarea 160): el
+# builder es un consumidor de este módulo, no al revés, y la cadencia se decide con
+# el ``_meta.built_at`` del propio artefacto.
+PROFILES_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "catalyst" / "surprise_profiles.json"
+
+
+def last_build_iso(path: str | Path | None = None) -> str | None:
+    """El ``_meta.built_at`` del artefacto de perfiles, o ``None`` si no hay.
+
+    **Tarea 160 — de dónde sale la marca del último build.** Vivía en
+    ``settings['surprise_last_build']``, escrita por el scheduler: era el **único**
+    estado que la app mutaba dentro del archivo de perillas de Chapa —el mismo que
+    ``SettingsManager.save()`` vuelca entero— y encima era una **segunda fuente de
+    verdad** para algo que el artefacto ya declara. Con dos fuentes, un build corrido
+    a mano (``scripts/build_surprise_profiles.py``) movía una y no la otra, así que el
+    scheduler seguía contando desde una fecha que ya no era la del último build.
+
+    Fail-soft en las cuatro formas de *no hay*: sin archivo, ilegible, JSON roto, o sin
+    la clave. ``None`` significa **nunca construido** ⇒ ``build_due`` dice que sí, que
+    es lo correcto: si el artefacto no está, hay que construirlo (antes, con la marca
+    en el settings, borrar el artefacto dejaba al scheduler esperando una semana).
+    """
+    p = Path(path) if path is not None else PROFILES_PATH
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(blob, dict):
+        return None
+    meta = blob.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    valor = meta.get("built_at")
+    return valor if isinstance(valor, str) and valor else None
+
+
 def build_due(
     last_iso: str | None,
     now: datetime,
@@ -280,10 +318,10 @@ def build_due(
 ) -> bool:
     """Is a surprise-profile rebuild due?
 
-    ``last_iso`` is the ISO timestamp of the previous successful build (the
-    value stored in ``settings['surprise_last_build']``); ``None``/empty/garbage
-    → due (never built yet). Otherwise due once ``interval_days`` have elapsed.
-    Pure and fail-soft so the scheduler can call it without a try/except.
+    ``last_iso`` is the ISO timestamp of the previous successful build (hoy, el
+    ``_meta.built_at`` del artefacto — ver :func:`last_build_iso`); ``None``/empty/
+    garbage → due (never built yet). Otherwise due once ``interval_days`` have
+    elapsed. Pure and fail-soft so the scheduler can call it without a try/except.
     """
     if not last_iso:
         return True
@@ -291,4 +329,13 @@ def build_due(
         last = datetime.fromisoformat(last_iso)
     except (TypeError, ValueError):
         return True
+    # El ``built_at`` del artefacto es **tz-aware** (UTC) y el ``now`` del scheduler es
+    # naive (``utcnow_naive``). Restar uno del otro levanta ``TypeError``, que el
+    # scheduler se come en su ``except Exception`` ⇒ el rebuild **no correría nunca**, en
+    # silencio. Se normaliza acá, que es donde están los dos lados. Tarea 160.
+    if (last.tzinfo is None) != (now.tzinfo is None):
+        if last.tzinfo is not None:
+            last = last.astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            now = now.astimezone(timezone.utc).replace(tzinfo=None)
     return (now - last) >= timedelta(days=max(0, int(interval_days)))
