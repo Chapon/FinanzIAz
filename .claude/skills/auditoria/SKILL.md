@@ -135,9 +135,17 @@ corrida del 2026-09-11 enumeró los runners con umbral de sanity de clase `magni
 inventario los deriva en `tests/test_sanity_no_anclado_t164.py`— y encontró veredictos más que
 nadie había re-mirado.
 
-El método concreto: listar lo que la operación pudo invalidar, cruzarlo contra los docs de
-re-corrida posteriores a la fecha, y publicar la diferencia como **tarea de medición** — *«no se
+El método concreto: listar lo que la operación pudo invalidar, cruzarlo contra la evidencia de
+re-corrida posterior a la fecha, y publicar la diferencia como **tarea de medición** — *«no se
 sabe»*, nunca *«es falso»*.
+
+**Y ese cruce se hace por CONTENIDO, no por nombre de archivo.** Es el error que la corrida del
+2026-09-11 cometió: midió la cobertura con un `ls docs/*<fecha>*` y publicó veredictos como *«no
+re-chequeados»* cuando sí lo estaban — la evidencia vivía en una línea del backlog y en una fila
+de tabla de un doc que se llama por **otra** tarea. En este repo el backlog es donde vive la
+mitad de la evidencia operativa; un archivo que se llame como la tarea es una **convención**, no
+una garantía. El glob de nombres no podía ver el objeto que buscaba, que es exactamente la forma
+que esta skill cataloga en *«Guards que degradan en silencio»* — cometida por la auditoría.
 
 ### C. Desvíos harness↔engine no declarados
 
@@ -301,6 +309,13 @@ Lo que tiene que intentar: buscar el caller que falta, la config que lo explica,
 ya lo cubre, el camino alternativo, el commit reciente que lo arregló (**pasó**: la 30(a)
 estaba arreglada hacía tres semanas). Lo que no sobrevive, **se borra del informe** — no se
 degrada a MEDIUM para salvarlo.
+
+**Lo primero que el `verificador` tiene que atacar es el INSTRUMENTO, no la conclusión.** Las dos
+correcciones grandes del 2026-09-11 fueron las dos del instrumento: un hallazgo retirado entero
+porque la regex con que se midió pedía un carácter de más, y otro reducido de tres casos a uno
+porque la cobertura se midió con un glob de **nombres de archivo** cuando la pregunta era sobre
+contenido. En los dos el razonamiento era impecable sobre un número que significaba otra cosa.
+Mandá el instrumento al principio del prompt del agente, no al final.
 
 **Un hallazgo puede sobrevivir con parte del impacto refutado, y eso se escribe.** El 2026-09-11
 el `verificador` confirmó el núcleo de [C-5] y **tumbó dos de sus tres patas de impacto** (*«en el

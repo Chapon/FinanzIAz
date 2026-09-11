@@ -93,71 +93,128 @@ sólo por grep; el motor vivo quedó afuera por §1.3.
 
 ## 3. Hallazgos
 
-### [M-1] El refresh del 2026-09-09 dejó tres veredictos NO-SHIP con validez DESCONOCIDA
+### [M-1] El T21 es el único runner con sanity de `magnitud` que no se re-corrió tras el refresh
 
-Severidad: **MEDIA** · Confianza: ALTA *(sobre el hecho de proceso, no sobre los veredictos)*
-Categoría: [M-ventana]
-Ubicación: `scripts/run_rank_neutral_t39.py`, `scripts/run_ranking_t21.py`,
-`scripts/run_stop_loosen_t34.py` · inventario en `tests/test_sanity_no_anclado_t164.py`
+Severidad: **BAJA** · Confianza: ALTA *(sobre el hecho de proceso)* · Categoría: [M-ventana]
+Ubicación: `scripts/run_ranking_t21.py:102` (`SANITY_ORACLE_EDGE = 0.0500`) y `:504`
 
-**El mecanismo no lo invento yo, lo estableció la tarea 164.** Un refresh del cohorte mueve los
-umbrales de sanity de clase `magnitud` —los que se comparan contra **pp de CAGR/maxDD**—, así
-que con una muestra de menos alpha el instrumento pierde resolución y una corrida se declara
-**INVÁLIDA sin que nada esté roto**. Ya pasó: el **T37** (un SHIP publicado, el que sostiene la
-política de salida viva) y el **T47** quedaron inválidos por esa vía.
+> **ESTE HALLAZGO SE PUBLICÓ PRIMERO CON TRES RUNNERS Y SEVERIDAD MEDIA, Y LA FASE ADVERSARIAL
+> LO REDUJO A UNO CON SEVERIDAD BAJA.** La versión original y el motivo exacto de cada caída
+> están en §4, porque el error de método que los produjo es más valioso que el hallazgo.
 
-**Y el re-anclaje de la 157 dio una tranquilidad que no cubría este eje.** Declaró las 17
-constantes de reproducción en OK, y eso era *cierto y angosto*: la 164 estableció que **repro OK
-no implica sanity OK** — T37 y T47 tenían la reproducción pasando y el sanity roto.
+**El mecanismo, establecido por la tarea 164.** Un refresh mueve los umbrales de sanity de clase
+`magnitud` —los que se comparan contra **pp de CAGR/maxDD**—, así que una corrida puede quedar
+**INVÁLIDA sin que nada esté roto**. Le pasó al **T37** (un SHIP publicado) y al **T47**.
 
-**Evidencia.** El `INVENTARIO` clasifica **12 constantes de clase `magnitud` en 8 runners**.
-Desde el refresh, `ls docs/*2026-09-09* docs/*2026-09-10* docs/*2026-09-11*` sólo muestra
-re-corridas para **T37** (`stop_value_rerun_t167`), **T26b** (`t26b_sanity_t168`), **T47**
-(dentro de `control_resorteado_t164`) y el **T170**, que es nuevo. Para T38, T39, T21, T26 y T34
-**no hay ningún doc**.
+**Lo que queda en pie.** De los 8 runners con umbral `magnitud`, el **T21 es el único** que no
+aparece en ninguna lista de re-corrida post-refresh: no está en los siete del re-anclaje
+(`docs/reanchor_t157_2026-09-09.md`), no está en la tabla de la 164
+(`docs/control_resorteado_t164_2026-09-10.md` §4), y **no tiene constante de reproducción
+anclada**, que es justamente por qué no entró al re-anclaje. Su `SANITY_ORACLE_EDGE` no se
+re-midió desde el refresh.
 
-**Refutación propia, y funcionó a medias — dos de los cinco se caen:**
+**Y por qué es BAJA y no más — cuatro razones, las cuatro traídas por la fase adversarial:**
 
-- **T38** cerró como *«CORRIDA INVÁLIDA por sanity §5.4 → sin veredicto»* (`docs/BACKLOG.md:1306`)
-- **T26** cerró como *«CORRIDA INVÁLIDA por sanity → NO-SHIP»* (`docs/BACKLOG.md:2920`)
+1. **Margen de 94×.** El T21 midió oráculo **475,58%** contra baseline **6,48%**, o sea
+   **+469 pp contra un umbral de +5,00 pp**. Para invalidarlo, el refresh tendría que haber
+   borrado 464 pp de ventaja; el movimiento más grande que registró el re-anclaje fue de
+   **3,6 pp**.
+2. **El mecanismo que rompió al T37/T47 no le aplica.** Esos dos se cayeron por el **control
+   sorteado por índice de barra** (tarea 164), y su margen era de pocos pp. El sanity de
+   magnitud del T21 compara **oráculo contra baseline** —dos brazos deterministas— y **no usa**
+   `random_stop_filter`.
+3. **El mismo umbral pasó post-refresh en el runner hermano.**
+   `scripts/run_rank_neutral_t39.py:101` tiene `SANITY_ORACLE_EDGE = 0.0500` con el comentario
+   *«umbral de T21 §5.2»*, mismo universo vivo y misma ventana, y quedó **VÁLIDA el 2026-09-10**.
+   No es una re-corrida formal del T21, pero mata el *«nadie miró este eje»*.
+4. **Nada está cableado sobre el T21.** Su peor caso es **NO-SHIP → sin veredicto**, y las dos
+   ramas dejan lo mismo: *«No se toca `engine.py` ni `strategies.py`»*
+   (`docs/ranking_t21_2026-08-12.md`). Compárese con el criterio por el que la 164 se puso ALTA:
+   *«uno de ellos sostiene una decisión **cableada en el motor**»*. El T21 no tiene esa pata.
 
-En los dos **no hay veredicto vivo que proteger**, así que salen del hallazgo. Quedan **tres**:
-T39, T21 y T34.
+**Un ataque que probé y que resultó FALSO, y conviene que quede escrito** para que nadie lo
+reutilice: *«el NO-SHIP aguanta igual porque lo decidió otro criterio»*. No se sostiene
+mecánicamente — `scripts/run_ranking_t21.py:513-517` hace que el sanity **pise** al criterio: si
+cae, no queda «NO-SHIP por C3», queda **CORRIDA INVÁLIDA sin veredicto**. Lo mismo en el T39
+(`run_rank_neutral_t39.py:534-535`).
 
-**La otra refutación que probé y NO funcionó:** ¿corren sobre el cohorte legacy congelado, que
-el refresh no tocó? **No.** Los cinco defaultean a `LIVE_UNIVERSE_FILE`
-(`run_anom_regime_t38.py:253`, `run_rank_neutral_t39.py:355`, `run_ranking_t21.py:371`,
-`run_stop_cal_replay_t26.py:378`, `run_stop_loosen_t34.py:394`).
+**Y la exposición es puramente documental, no de ejecución.** El sanity se evalúa **en cada
+corrida sobre la muestra de esa corrida** (`run_ranking_t21.py:511-517`), así que un sanity viejo
+no puede colarse en una corrida nueva. Además *«su validez sobre la muestra de hoy es
+desconocida»* es la **semántica declarada de todo veredicto publicado** en este repo desde la
+T48 (`docs/harness_window_t48_2026-08-20.md:13-14`: *«ningún veredicto publicado vuelve a
+reproducir»*), reforzada en el §6 del re-anclaje y el §5 del doc de la 164.
 
-**Impacto, y acotado a propósito.** Los tres supervivientes son **NO-SHIP**, no SHIP — o sea que
-el daño es menor que el del T37: lo que puede haber caducado es **la razón para no shipear**, no
-una política viva. Pero dos de los tres se citan en los blockquotes de priorización del backlog
-como el motivo de que la cola esté ordenada como está (la 39 sobre el ranking, la 34 sobre el
-múltiplo del stop).
+**¿Por qué no antes? (a) NO EXISTÍA** — el refresh fue el 2026-09-09.
 
-**Lo que este hallazgo NO afirma.** No digo que esos veredictos sean falsos. Digo que **su
-validez es desconocida**, que nadie la miró, y que el mecanismo por el que T37 y T47 se cayeron
-aplica a ellos por construcción. Va como **tarea de medición**, con el límite escrito adelante —
-la forma que la skill prescribe para la tarea 73.
+**Acción.** Línea de higiene, no tarea de medición con severidad: re-correr el T21 en modo smoke
+la próxima vez que se toque esa familia.
 
-**Agravante de proceso.** El checklist de refresh que la 164 shipeó (en `scripts/refresh_cohort.py`)
-se agregó el **2026-09-11**, o sea **después** del refresh que lo motivó. Ese refresh nunca pasó
-por él, y nada lo corrió retroactivamente.
+### [M-2] Las re-corridas post-refresh no son trazables: viven en una línea del backlog o en una fila de tabla de otro doc
 
-**¿Por qué no antes? (a) NO EXISTÍA** — el refresh fue el 2026-09-09, posterior a la corrida del
-2026-09-08.
+Severidad: **MEDIA** · Confianza: ALTA · Categoría: [M-ventana]
+Ubicación: `docs/BACKLOG.md` (entrada 164), `docs/control_resorteado_t164_2026-09-10.md:62`
 
-**Acción.** Re-correr los tres y mirar el sanity; si alguno no reproduce, declararlo como se
-hizo con el T37. Sin cambiar ningún umbral para que pase.
+**Este hallazgo lo trajo la fase adversarial, y es el que de verdad importa del área.**
 
-**Nota sobre la fase adversarial:** este hallazgo se mandó al agente `verificador`, que **murió
-por límite de sesión** antes de devolver nada. La refutación de arriba la hice yo con los mismos
-ángulos que le había pedido, y **dos de los cinco runners se cayeron**. Queda dicho que la fase
-adversarial de este hallazgo fue **propia y no independiente**.
+**Evidencia.** El 2026-09-10 se re-corrieron **siete** runners sobre el cohorte refrescado y se
+declaró su validez. Dónde quedó escrito eso:
+
+- **T37 y T47** → tienen doc propio (`stop_value_rerun_t167`, dentro de `control_resorteado_t164`)
+- **T39, T45, T49, T51, T54** → **una sola línea** dentro de la entrada 164 del backlog
+- **T34** → **una fila de una tabla** en un doc que se llama por la tarea 164
+
+**Razonamiento.** El resultado de una re-corrida post-refresh es exactamente el dato que la
+próxima auditoría —o el próximo pre-registro— necesita para saber si puede apoyarse en un
+veredicto. Hoy ese dato no es buscable: no está en el nombre de ningún archivo, no está en el
+doc de la tarea re-corrida, y la única forma de encontrarlo es leer entera la entrada de **otra**
+tarea del backlog.
+
+**Impacto — demostrado, y el caso soy yo.** Esta misma auditoría midió la cobertura con
+`ls docs/*2026-09-09* docs/*2026-09-10*` y por eso **no vio** ni la línea del backlog ni la fila
+de la tabla: publicó tres runners como *«nadie los re-chequeó»* cuando **dos de los tres sí lo
+habían sido**. La próxima auditoría se va a equivocar igual.
+
+**¿Por qué no antes? (a) NO EXISTÍA** — las re-corridas son del 2026-09-10.
+
+**Acción.** Que una re-corrida post-refresh deje su resultado **en el doc de la tarea
+re-corrida** (una nota de corrección fechada, como las que ya usa el repo), no sólo en la entrada
+de quien la disparó. Y/o una tabla única *«veredicto → última muestra sobre la que se validó»*.
 
 ---
 
-## 4. Barrido limpio en el resto del área
+## 4. Hallazgos CORREGIDOS por la fase adversarial
+
+### [M-1] pasó de TRES runners y MEDIA a UNO y BAJA
+
+**Versión publicada primero:** *«T39, T21 y T34 tienen veredicto NO-SHIP cuya validez es
+desconocida»*, severidad MEDIA. **Dos de los tres eran falsos:**
+
+- **T39 se cae.** `docs/BACKLOG.md` (entrada 164): *«Las consecuencias sobre veredictos
+  publicados, **medidas re-corriendo los siete (2026-09-10)** … **T39, T45 y T49 siguen
+  VÁLIDAS**»*. Verificado verbatim. Está repetido en el *Hecho reciente* de la 156.
+- **T34 se cae.** `docs/control_resorteado_t164_2026-09-10.md:62`, fila de la tabla de §4:
+  `| **T34** | VÁLIDA · NO-SHIP por C6 y C5 | no medido | **VÁLIDA · NO-SHIP por C6** |`.
+  Verificado verbatim.
+
+**Y había una inconsistencia interna que la fase adversarial marcó:** el hallazgo **sacó** al T45
+de la lista por aparecer en la tabla del re-anclaje, y **dejó** al T39, que aparece en la misma
+tabla. Dos criterios distintos para el mismo tipo de evidencia.
+
+### El error de método que los produjo, y es el mismo de todo el día
+
+**Medí la cobertura por NOMBRE DE ARCHIVO** (`ls docs/*2026-09-09* docs/*2026-09-10*`) cuando la
+pregunta era sobre **contenido**. Las re-corridas del T39 y del T34 **existen y están
+documentadas** — sólo que no en un archivo que se llame como ellas.
+
+Es, exactamente, la forma que esta misma tanda catalogó cuatro veces en el área `guards`: **la
+referencia del chequeo no puede ver el objeto que busca**. Cometido por la auditoría que existe
+para cazarlo, y encontrado sólo porque un agente independiente lo atacó. Va al §6 consolidado de
+`docs/auditoria_guards_2026-09-11.md` como el **cuarto** hueco de método de la tanda.
+
+---
+
+## 5. Barrido limpio en el resto del área
 
 Los otros cuatro ejes del kill-criteria **no produjeron hallazgos**, y eso se publica como
 resultado:
@@ -166,29 +223,30 @@ resultado:
   sintéticos (fixtures) y prosa histórica. Los tres conteos vivos (watchlist 127, universo 126,
   `LIVE_WATCHLIST_SIZE` 127) **coinciden entre sí y con la DB**.
 - **[M-poblacion]** — no apareció ninguna población nueva derivada de lista donde exista
-  predicado. Las cuatro de esta familia (133, 141, 147, 161) están cerradas, y la 161 de hoy
-  convirtió la última en predicado AST.
+  predicado. Las cuatro de esta familia (133, 141, 147, 161) están cerradas.
 - **[M-inerte]** — AVB sigue siendo el único miembro inerte y `announce_inert_members` lo declara
   en cada corrida.
 - **[M-vacio]** — el único caso conocido era el de la tarea **174**, cerrado hoy.
 
 ---
 
-## 5. Mapeo hallazgo → tarea
+## 6. Mapeo hallazgo → tarea
 
 | hallazgo | severidad | tarea |
 |---|---|---|
-| [M-1] tres NO-SHIP con validez desconocida post-refresh | MEDIA | **183** |
+| [M-1] el T21 sin re-correr post-refresh | BAJA | **183** (reducida de alcance) |
+| [M-2] las re-corridas post-refresh no son trazables | MEDIA | **189** |
 
 ---
 
-## 6. Deuda de método
+## 7. Deuda de método
 
-**Ninguna (c-metodo) ni (d) en esta área.** El único hallazgo es **(a)**: el defecto nació
-después de la corrida anterior. La skill funcionó acá.
+**Una (c-metodo), y es de esta corrida, no de la anterior:** medir cobertura por **nombre de
+archivo** en vez de por contenido. Va consolidada en el §6 de
+`docs/auditoria_guards_2026-09-11.md`.
 
-Lo que sí queda anotado para §6 de `docs/auditoria_guards_2026-09-11.md` es una observación de
-**alcance**, no de método: el área `muestra` no tiene hoy ninguna categoría para *«una operación
-movió la muestra — ¿qué quedó sin re-verificar?»*. Este kill-criteria la agregó como
-**[M-ventana]** y fue la que produjo el único hallazgo del área, así que conviene que quede en
-la skill en vez de depender de que alguien la re-invente.
+La observación de alcance que ya estaba anotada se mantiene: el área `muestra` no tenía
+categoría para *«una operación movió la muestra — ¿qué quedó sin re-verificar?»*. Este
+kill-criteria la agregó como **[M-ventana]** y produjo los dos hallazgos del área — pero el
+primero salió **mal medido**, así que la categoría sirve y el **instrumento** con que se la
+aplica es lo que hay que arreglar.

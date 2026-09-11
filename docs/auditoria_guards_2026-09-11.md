@@ -202,7 +202,30 @@ auditoría.
 hallazgo. La regla existente dice *«todo hallazgo accionable termina en `docs/BACKLOG.md`»*;
 pasa a decir también *«y todo alcance que se difiere»*.
 
-### 6.4 Lo que NO se cambia, y por qué
+### 6.4 Medir cobertura por NOMBRE DE ARCHIVO es el mismo defecto, y esta tanda lo cometió
+
+**Lo que pasó, y es el hueco más incómodo de los cuatro porque lo cometió la auditoría.** La
+corrida de `muestra` preguntó *«¿qué runners se re-corrieron después del refresh?»* y lo midió
+con `ls docs/*2026-09-09* docs/*2026-09-10*` — o sea **por nombre de archivo**. Publicó tres
+veredictos como *«nadie los re-chequeó»*; **dos de los tres sí lo habían sido**, y la evidencia
+estaba en una línea de la entrada 164 del backlog y en una fila de tabla de un doc que se llama
+por **otra** tarea.
+
+Es literalmente la forma del §6.2 —**la referencia del chequeo no puede ver el objeto que
+busca**— cometida por el proceso que existe para cazarla, y encontrada sólo porque un agente
+independiente la atacó. La auditoría **no se detectó a sí misma**.
+
+**La mejora concreta:** cuando una pregunta es sobre **contenido** (*«¿existe evidencia de X?»*),
+el barrido va **por contenido** — `grep` sobre `docs/` **y** `docs/BACKLOG.md`, no un glob de
+nombres. Un archivo que se llama como la tarea es una **convención**, no una garantía; y en este
+repo el backlog es, de hecho, donde vive la mitad de la evidencia operativa.
+
+**Y el corolario para la fase adversarial:** lo que el `verificador` tiene que atacar **primero**
+no es la conclusión, es **el instrumento con que se midió**. Las dos correcciones grandes de esta
+tanda —ésta y el hallazgo retirado de `claims`— fueron las dos del instrumento, no del
+razonamiento.
+
+### 6.5 Lo que NO se cambia, y por qué
 
 - **La estructura de cinco áreas** funcionó: cada una produjo hallazgos de su propia forma y
   ninguna se pisó con otra.
