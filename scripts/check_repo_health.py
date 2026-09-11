@@ -2,14 +2,18 @@
 """
 check_repo_health.py — guard contra los footguns documentados de FinanzIAs.
 
-Chequea, en orden, los tres bugs caros que ya nos mordieron (ver CLAUDE.md /
+Chequea, en orden, los cuatro bugs caros que ya nos mordieron (ver CLAUDE.md /
 skill finanzias-conventions):
 
   1. .bat sin CRLF  — cmd.exe los mata en silencio (rompio el scheduler del
      harvest desde su creacion).
-  2. Null-byte padding — los edits que achican un archivo pueden dejar \x00 al
+  2. CRLF en el working tree de un archivo versionado — `.gitattributes` declara
+     `eol=lf`, asi que CRLF en disco no vino de un checkout: lo escribio una
+     herramienta que ignoro la convencion (tareas 165 y 172). git normaliza al
+     comparar, asi que `git status` queda limpio y el desvio se acumula solo.
+  3. Null-byte padding — los edits que achican un archivo pueden dejar \x00 al
      final; corrompe el fuente sin error visible.
-  3. Escritura de finanzias.db desde un entorno no-Windows — corrupcion
+  4. Escritura de finanzias.db desde un entorno no-Windows — corrupcion
      intermitente via mounts de Linux/sandbox.
 
 Uso:
@@ -26,6 +30,8 @@ import argparse
 import platform
 import subprocess
 import sys
+from fnmatch import fnmatch
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +49,13 @@ def _staged_files() -> list[Path]:
         text=True,
     )
     return [ROOT / line.strip() for line in out.stdout.splitlines() if line.strip()]
+
+
+@lru_cache(maxsize=1)
+def _tracked() -> frozenset[str]:
+    """Los archivos que git versiona, como rutas POSIX relativas."""
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+    return frozenset(ln.strip() for ln in out.stdout.splitlines() if ln.strip())
 
 
 def _all_files() -> list[Path]:
@@ -69,6 +82,64 @@ def check_bat_crlf(files: list[Path]) -> list[str]:
         crlf = data.count(b"\r\n")
         if lf != crlf:
             problems.append(f"  [.bat sin CRLF] {p.relative_to(ROOT)} ({crlf}/{lf} lineas con CRLF)")
+    return problems
+
+
+# Los que SÍ pueden tener CRLF en el working tree, con su motivo. No es una lista de
+# conveniencia: son las dos excepciones que `.gitattributes` declara.
+_CRLF_PERMITIDO = {
+    ".bat": "cmd.exe los mata con LF (regla 4 de CLAUDE.md) — `.gitattributes` los fija en crlf",
+    ".cmd": (
+        "mismo motivo que .bat: los interpreta cmd.exe y con LF se come caracteres al "
+        "inicio de linea — `.gitattributes` los fija en crlf"
+    ),
+}
+_CRLF_PERMITIDO_GLOBS = {
+    "data/catalyst/*.json": (
+        "el builder del scheduler los re-escribe con CRLF en Windows y `.gitattributes` lo "
+        "acepta explícitamente: git normaliza al comparar, así que no ensucia el working tree"
+    ),
+}
+
+
+def check_crlf_en_working_tree(files: list[Path]) -> list[str]:
+    """El eje que le faltaba al guard: un archivo versionado con CRLF **en disco**.
+
+    **Tarea 172.** `.gitattributes` declara `* text=auto eol=lf`, o sea que git escribe
+    **LF** en el working tree; las únicas excepciones son `.bat`/`.cmd` (que lo necesitan) y
+    `data/catalyst/*.json` (que el scheduler re-escribe y el propio `.gitattributes` acepta).
+    Cualquier otro archivo con CRLF en disco **no vino de un checkout**: lo escribió una
+    herramienta que ignoró la convención — `Path.write_text()` en Windows, PowerShell, o un
+    script regenerador (los tres que arregló la tarea **165**).
+
+    **Por qué nadie lo veía:** git normaliza al comparar, así que `git status` queda
+    **limpio** y el desvío se acumula en silencio. Medido el 2026-09-10: **16** archivos
+    versionados estaban CRLF contra un blob LF, incluidos seis `scripts/*.py`, cuatro docs,
+    `requirements.lock` y `.claude/settings.json`. Ninguno mixto, que es la única buena
+    noticia: lo que se rompe no es el contenido, es cualquier comparación byte a byte (un
+    hash, un `diff` fuera de git, un guard que lea bytes).
+
+    Chequea sólo lo que git **versiona**: un artefacto no versionado con CRLF no le importa
+    a nadie.
+    """
+    problems = []
+    versionados = _tracked()
+    for p in files:
+        if not p.exists() or p.suffix.lower() in _CRLF_PERMITIDO:
+            continue
+        rel = p.relative_to(ROOT).as_posix()
+        if rel not in versionados:
+            continue
+        if any(fnmatch(rel, g) for g in _CRLF_PERMITIDO_GLOBS):
+            continue
+        data = p.read_bytes()
+        if b"\x00" in data[:8192]:  # binario: el null-byte lo cubre el otro chequeo
+            continue
+        crlf = data.count(b"\r\n")
+        if crlf:
+            lf = data.count(b"\n") - crlf
+            detalle = f"{crlf} CRLF" + (f" + {lf} LF (MIXTO)" if lf else "")
+            problems.append(f"  [CRLF en el working tree] {rel} ({detalle})")
     return problems
 
 
@@ -108,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
 
     problems: list[str] = []
     problems += check_bat_crlf(files)
+    problems += check_crlf_en_working_tree(files)
     problems += check_null_bytes(files)
     problems += check_db_write_env(files, staged_only=args.staged)
 
