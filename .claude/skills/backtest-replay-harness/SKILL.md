@@ -465,6 +465,18 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
   población ⇒ cañería ⇒ corrida INVÁLIDA) e `INDETERMINADO` (la muestra se movió, o no se
   sabe cuál era ⇒ **re-anclar la constante**, no buscar un bug). `INDETERMINADO` sigue
   bloqueando el veredicto, pero con el diagnóstico correcto.
+- **Y un refresh mueve TAMBIÉN los umbrales de sanity que no están anclados (T164).** Los de
+  clase `magnitud` —`SANITY_ORACLE_EDGE`, `SANITY_ORACLE_VS_RANDOM_CAGR`/`_DD`,
+  `SANITY_ORACLE_MIN_DCAGR`, `SANITY_RUIN_MIN_DAMAGE`— se comparan contra **pp de CAGR/maxDD**,
+  así que cuando la muestra nueva tiene menos alpha el instrumento pierde resolución y la
+  corrida se declara **INVÁLIDA sin que nada esté roto**. Pasó el 2026-09-09: el **T37** (un
+  SHIP publicado) y el **T47** quedaron inválidos y nadie se enteró, porque el re-anclaje sólo
+  miró las constantes de reproducción — *«los diecisiete pasan a OK»* era cierto y angosto.
+  **El umbral NO se mueve para que la corrida pase**: se re-corre, se mira si el sanity sigue
+  en pie, y si no, se declara. El inventario vive en `tests/test_sanity_no_anclado_t164.py`: clasifica cada umbral de sanity
+  en `magnitud` / `fraccion` / `construccion` / `anclado` / `tolerancia` y **lo deriva barriendo
+  los runners**, así que no caduca. Una constante de sanity nueva no entra al repo sin declarar
+  su clase — y los de clase `magnitud` son los que hay que re-mirar en cada refresh.
 - Toda constante de reproducción **declara sobre qué ventana y sobre qué población se midió**
   (`measured_on=WINDOW_REFRESH_2026_09_01_LIVE`, `measured_over=POPULATION_LIVE_ACCT2`). Sin
   las dos, un desajuste es `INDETERMINADO`: **no se acusa a la cañería sin evidencia**. La

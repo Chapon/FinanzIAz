@@ -122,7 +122,19 @@ def main(argv: list[str] | None = None) -> int:
         "     mismo commit (T68) — actualizar sólo la de ventana convierte un\n"
         "     INDETERMINADO honesto en un FALLA que acusa a la cañería sin evidencia.\n"
         "  3. Si la última barra es de la sesión de HOY sin asentar (T112), esperar al\n"
-        "     cierre firme antes de anclar: un cierre provisional mueve las constantes."
+        "     cierre firme antes de anclar: un cierre provisional mueve las constantes.\n"
+        "  4. **Y el refresh mueve también los umbrales de SANITY que no están anclados**\n"
+        "     (tarea 164). Los de clase `magnitud` —`SANITY_ORACLE_EDGE`,\n"
+        "     `SANITY_ORACLE_VS_RANDOM_CAGR`/`_DD`, `SANITY_ORACLE_MIN_DCAGR`,\n"
+        "     `SANITY_RUIN_MIN_DAMAGE`— se comparan contra pp de CAGR/maxDD, así que\n"
+        "     cuando la muestra nueva tiene menos alpha el instrumento pierde resolución\n"
+        "     y la corrida se declara INVÁLIDA sin que nada esté roto. Pasó el\n"
+        "     2026-09-09: el T37 y el T47 quedaron inválidos y nadie se enteró, porque\n"
+        "     el re-anclaje sólo miró las constantes de reproducción.\n"
+        "     **NO se mueven para que una corrida pase** —eso es arreglar el termómetro\n"
+        "     cambiándole las marcas—: se re-corre, se mira si el sanity sigue en pie y\n"
+        "     si no, se declara. El inventario completo, por runner y por clase, está en\n"
+        "     `tests/test_sanity_no_anclado_t164.py`."
     )
     return 0
 
