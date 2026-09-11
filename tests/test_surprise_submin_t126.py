@@ -13,8 +13,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from analysis.surprise_score import MIN_QUARTERS, make_surprise_loader
 from scripts.build_surprise_profiles import _payload, split_by_min_quarters
 
@@ -78,10 +76,40 @@ def test_un_ticker_sin_historia_cae_al_fallback_documentado():
     """El loader dice: *"Unknown ticker -> None, so `imminent_catalyst` simply falls
     back to its reaction-mean direction"*. Con el perfil de ceros adentro eso NO
     pasaba: devolvia un perfil, y el fallback quedaba desactivado por un neutral
-    fabricado. Ahora si."""
+    fabricado. Ahora si.
+
+    **Tarea 174 — el sujeto se MONTA, no se toma del artefacto vivo.** Hasta el
+    2026-09-11 este test leia `_meta.insufficient_history` del JSON real y hacia
+    `pytest.skip` si estaba vacio. Se vacio: AVB era su unico miembro y la 156 lo saco
+    del universo, asi que la afirmacion que esta tarea existe para probar dejo de
+    ejercitarse **por un cambio de datos y no por una decision**. Lo que el caso
+    necesita es *"un perfil bajo el minimo"*, no *"el que hoy este en el artefacto"* —
+    el mismo *literal derivado vs montaje* de la 166, y la misma forma de la 110 y la
+    101 (la poblacion sale de lo mismo que puede vaciarse). El `payload` se construye
+    con el `_payload` de produccion, asi que lo que se prueba sigue siendo el contrato
+    real y no una reimplementacion.
+    """
+    payload = _payload({"BUENO": _perfil(24), "CORTO": _perfil(MIN_QUARTERS - 1)}, n_tickers=2)
+    assert "CORTO" in payload["_meta"]["insufficient_history"], "montaje inutil: el corto no salio"
+
+    load = make_surprise_loader(payload["profiles"])
+    assert load("CORTO") is None, "el sub-minimo devolvio perfil: el fallback queda desactivado"
+    assert load("BUENO") is not None, "contraprueba: el loader tiene que resolver a los usables"
+
+
+def test_el_artefacto_vivo_es_COHERENTE_con_su_insufficient_history():
+    """La pata sobre el archivo real, separada de la de arriba a proposito (tarea 174).
+
+    **Puede quedar vacia y esta bien** — hoy lo esta—, y por eso no lleva `skip`: lo que
+    hace legitima la vacuidad es que el contrato ya se prueba arriba con un montaje que
+    no depende de los datos. Aca lo unico que se verifica es que las dos mitades del
+    artefacto no se contradigan: nadie puede estar en `insufficient_history` **y** en
+    `profiles`, porque entonces el loader lo resolveria y el fallback no correria.
+    """
     d = json.loads(_ARTEFACTO.read_text(encoding="utf-8"))
-    sin_historia = list(d["_meta"]["insufficient_history"])
-    if not sin_historia:
-        pytest.skip("hoy no hay tickers sin historia suficiente")
+    sin_historia = set(d["_meta"]["insufficient_history"])
+    solapados = sin_historia & set(d["profiles"])
+    assert not solapados, f"estan en las dos mitades del artefacto: {sorted(solapados)}"
+
     load = make_surprise_loader(d["profiles"])
-    assert load(sin_historia[0]) is None
+    assert all(load(t) is None for t in sin_historia)
