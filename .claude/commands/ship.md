@@ -1,19 +1,28 @@
 ---
 description: Corre la suite y, si está verde, commitea según la convención del repo
-allowed-tools: Bash(python -m pytest:*), Bash(python scripts/check_repo_health.py:*), Bash(python scripts/check_backlog_integrity.py:*), Bash(python -m ruff:*), Bash(git:*)
+allowed-tools: Bash(python -m pytest:*), Bash(python scripts/run_suite_sin_estado_vivo.py:*), Bash(python scripts/check_repo_health.py:*), Bash(python scripts/check_backlog_integrity.py:*), Bash(python -m ruff:*), Bash(git:*)
 ---
 
 Cerrá el trabajo en curso siguiendo el flujo del proyecto:
 
-1. Corré el criterio de **done**, que son tres comandos y no uno (tarea 106):
+1. Corré el criterio de **done**, que son cuatro comandos y no uno:
    - `python -m pytest tests/ -ra -m "not network" --tb=short`
    - `python -m ruff check .`
    - `python -m ruff format --check .`
+   - `python scripts/run_suite_sin_estado_vivo.py`
 
-   **Ruff entra acá porque su ausencia ya costó:** el 2026-09-02 el job `lint` del CI quedó
-   en rojo y **trece tareas se cerraron declarando "suite verde"** sin enterarse — lo estaban,
-   pero el done no incluía ruff y el CI no lo lee nadie. Si `ruff check` falla, arreglalo con
-   `ruff check --fix .` + `ruff format .` y **revisá el diff** antes de seguir.
+   **Los dos últimos entraron por el MISMO defecto, encontrado dos veces:** el CI en rojo
+   mientras las tareas se cerraban en verde, porque el done no lo miraba.
+   - **Ruff, tarea 106:** el 2026-09-02 el job `lint` quedó en rojo y **trece tareas** se
+     cerraron declarando "suite verde" — lo estaban, pero el done no incluía ruff. Si
+     `ruff check` falla, arreglalo con `ruff check --fix .` + `ruff format .` y **revisá el
+     diff** antes de seguir.
+   - **Modo sin estado vivo, tarea 176:** el 2026-09-09 el job `pytest` quedó en rojo —en el
+     mismo commit que shipeó el guard de la tarea 130— y **36 tareas** se cerraron declarando
+     "suite Windows verde", que era **verdad**: el test leía `~/.finanzias/settings.json`, que
+     en la máquina de Chapa **existe** y en el CI no. 35 corridas; lo reportó Chapa, no el
+     proceso. Este comando corre la misma suite con `HOME`/`USERPROFILE` en un directorio
+     vacío. Si falla, el fallo es real y estaría rojo en el CI aunque los otros tres pasen.
 2. **Si hay algún fallo, PARÁ** y mostrame qué falló. No commitees con tests rojos.
 3. Si pasa todo:
    a. Corré los **dos** guards de `--staged`, que son el único cableado operativo que tienen

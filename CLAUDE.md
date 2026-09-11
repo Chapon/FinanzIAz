@@ -4,10 +4,11 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 
 ## Reglas no-negociables
 
-1. **"Done" = los TRES comandos en verde, en Windows.** Entorno real: Windows + Anaconda. Antes de declarar terminado:
-   `python -m pytest tests/ -ra -m "not network" --tb=short` · `python -m ruff check .` · `python -m ruff format --check .`
+1. **"Done" = los CUATRO comandos en verde, en Windows.** Entorno real: Windows + Anaconda. Antes de declarar terminado:
+   `python -m pytest tests/ -ra -m "not network" --tb=short` · `python -m ruff check .` · `python -m ruff format --check .` · `python scripts/run_suite_sin_estado_vivo.py`
    Los tests `network` pegan a Yahoo de verdad y se saltean. `tests/conftest.py` bloquea red en unit tests.
    **Ruff entra el 2026-09-03 (tarea 106):** el done era la suite sola, el job `lint` del CI quedó en rojo el 2026-09-02 y **trece tareas se cerraron declarando "suite verde"** sin enterarse. La suite estaba verde; el criterio estaba incompleto.
+   **El cuarto entra el 2026-09-11 (tarea 176), y por la misma razón una vez más:** el job `pytest` quedó rojo el 2026-09-09 —en el mismo commit que shipeó el guard de la tarea 130— y **36 tareas se cerraron declarando "suite Windows verde"**, que era **verdad**. 35 corridas en rojo; lo reportó Chapa, no el proceso. La causa: el test leía `~/.finanzias/settings.json` y **en la máquina de Chapa ese archivo existe**. El cuarto comando corre la misma suite con `HOME`/`USERPROFILE` apuntando a un directorio vacío, o sea en la condición del CI, sin red y antes de commitear. **Lo que NO cubre va dicho en su docstring:** lo que sólo rompe en Linux de verdad (paths, permisos, locale) lo sigue viendo únicamente el CI.
 2. **Kill-criteria upfront.** Toda feature que toque decisiones de trading define umbral de aceptación ANTES de codear y se valida con backtest/replay. Si no pasa, se documenta y NO se shipea. Sin features especulativas.
 3. **Display antes que sizing.** Scoring/valuación nuevos entran como display-only, NO cableados a sizing ni gates, hasta backtestear. **La regla no depende de ningún coeficiente** — su fundamento es no cablear lo que no se backtesteó. La evidencia que se citaba se **re-midió el 2026-09-01** (tarea 73): `corr(buy_score, fwd5) = −0.05`, n=85, IC95% [−0.26, +0.17]. **No se detecta relación, pero eso no alcanza para afirmar que no predice**: la muestra sólo descarta |r| > 0.30, y el claim original lo afirmaba con n=21, que sólo detectaba 0.58. Ver `docs/buyscore_fwd5_t73_2026-09-01.md`.
 4. **`.bat` requieren CRLF** o `cmd.exe` los mata en silencio. Escribir con CRLF binario y verificar.

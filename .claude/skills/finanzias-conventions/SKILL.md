@@ -11,18 +11,21 @@ App de paper-trading en Python (PyQt6 + SQLite + yfinance). El usuario, Chapa, t
 
 Una tarea NO está terminada hasta que:
 
-1. **Los TRES comandos pasan en Windows.** El entorno real es Windows con Anaconda:
+1. **Los CUATRO comandos pasan en Windows.** El entorno real es Windows con Anaconda:
    ```
    python -m pytest tests/ -ra -m "not network" --tb=short
    python -m ruff check .
    python -m ruff format --check .
+   python scripts/run_suite_sin_estado_vivo.py
    ```
    Los tests marcados `network` pegan a Yahoo de verdad y se saltean (ver `pyproject.toml`). `tests/conftest.py` bloquea cualquier llamada de red accidental en unit tests.
-   **Ruff entra acá el 2026-09-03 (tarea 106) y no es burocracia:** el done era la suite sola, el job `lint` del CI quedó en rojo el 2026-09-02, y **trece tareas se cerraron declarando "suite verde"** sin enterarse. No mentían — la suite estaba verde; el criterio estaba incompleto, y el único lugar donde ruff corría era un CI que nadie lee.
+   **Los dos últimos entraron por el MISMO defecto, encontrado dos veces:** el CI en rojo mientras las tareas se cerraban en verde, porque el criterio no lo miraba.
+   - **Ruff, 2026-09-03 (tarea 106):** el done era la suite sola, el job `lint` quedó en rojo el 2026-09-02, y **trece tareas** se cerraron declarando "suite verde". No mentían — la suite estaba verde; el criterio estaba incompleto, y el único lugar donde ruff corría era un CI que nadie lee.
+   - **Modo sin estado vivo, 2026-09-11 (tarea 176):** el job `pytest` quedó rojo el 2026-09-09 —en el **mismo commit** que shipeó el guard de la tarea 130— y **36 tareas** se cerraron declarando "suite Windows verde", que era **verdad**. El test leía `~/.finanzias/settings.json`, y en la máquina de Chapa ese archivo **existe**. 35 corridas en rojo; lo reportó Chapa, no el proceso. El cuarto comando corre la misma suite con `HOME`/`USERPROFILE` en un directorio vacío — la condición del CI, sin red y antes de commitear. **Lo que no cubre está en su docstring:** lo que sólo rompe en Linux de verdad (paths, permisos, locale) lo sigue viendo únicamente el CI.
 2. **Se commiteó** con mensaje descriptivo en español (`feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`), pasando antes los dos guards de `--staged` del paso 3a de `/ship` (`check_repo_health.py` y `check_backlog_integrity.py`) — que son **manuales**, ver *Trampas conocidas*.
 3. Si hay GUI, **revisión visual** antes de cerrar.
 
-Nunca declarar "listo" con tests rojos, ruff en rojo, implementación parcial o sin correr los tres comandos en Windows.
+Nunca declarar "listo" con tests rojos, ruff en rojo, el modo sin estado vivo en rojo, implementación parcial o sin correr los cuatro comandos en Windows.
 
 ## Metodología: kill-criteria upfront
 
