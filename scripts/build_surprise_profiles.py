@@ -121,7 +121,13 @@ def run_build(
 
     out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(_payload(profiles, len(tickers)), indent=2), encoding="utf-8")
+    # `newline` explicito (tarea 173): este JSON esta VERSIONADO y el repo lo guarda en LF.
+    # Sin esto, `write_text` traduce cada salto a CRLF en Windows y el archivo queda
+    # desalineado contra su blob en cada corrida del scheduler. Mismo arreglo que la 165,
+    # que a este writer lo habia excluido llamandolo "artefacto no versionado".
+    out_path.write_text(
+        json.dumps(_payload(profiles, len(tickers)), indent=2), encoding="utf-8", newline="\n"
+    )
     n_usable = sum(1 for p in profiles.values() if p.get("n_quarters", 0) >= MIN_QUARTERS)
     return {"out": str(out_path), "n_tickers": len(tickers), "n_usable": n_usable, "profiles": profiles}
 

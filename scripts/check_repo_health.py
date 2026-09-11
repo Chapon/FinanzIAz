@@ -9,8 +9,8 @@ skill finanzias-conventions):
      harvest desde su creacion).
   2. CRLF en el working tree de un archivo versionado — `.gitattributes` declara
      `eol=lf`, asi que CRLF en disco no vino de un checkout: lo escribio una
-     herramienta que ignoro la convencion (tareas 165 y 172). git normaliza al
-     comparar, asi que `git status` queda limpio y el desvio se acumula solo.
+     herramienta que ignoro la convencion (tareas 165, 172 y 173). git normaliza
+     al comparar, asi que `git status` queda limpio y el desvio se acumula solo.
   3. Null-byte padding — los edits que achican un archivo pueden dejar \x00 al
      final; corrompe el fuente sin error visible.
   4. Escritura de finanzias.db desde un entorno no-Windows — corrupcion
@@ -94,23 +94,30 @@ _CRLF_PERMITIDO = {
         "inicio de linea — `.gitattributes` los fija en crlf"
     ),
 }
-_CRLF_PERMITIDO_GLOBS = {
-    "data/catalyst/*.json": (
-        "el builder del scheduler los re-escribe con CRLF en Windows y `.gitattributes` lo "
-        "acepta explícitamente: git normaliza al comparar, así que no ensucia el working tree"
-    ),
-}
+# Mismo mecanismo, por patron de ruta. **Hoy esta VACIO a proposito** (tarea 173): la unica
+# entrada que tuvo, `data/catalyst/*.json`, se apoyaba en una lectura equivocada de
+# `.gitattributes` — esa linea declara `eol=lf`, o sea **LF en el working tree**, igual que la
+# regla global; no "acepta CRLF". El defecto real estaba en los dos builders, que escribian con
+# `write_text` sin `newline` — el mismo de la 165, que a esos dos los habia excluido llamandolos
+# "no versionados" cuando `git ls-files` los lista. Arreglado el writer, la excepcion sobra.
+_CRLF_PERMITIDO_GLOBS: dict[str, str] = {}
 
 
 def check_crlf_en_working_tree(files: list[Path]) -> list[str]:
     """El eje que le faltaba al guard: un archivo versionado con CRLF **en disco**.
 
     **Tarea 172.** `.gitattributes` declara `* text=auto eol=lf`, o sea que git escribe
-    **LF** en el working tree; las únicas excepciones son `.bat`/`.cmd` (que lo necesitan) y
-    `data/catalyst/*.json` (que el scheduler re-escribe y el propio `.gitattributes` acepta).
+    **LF** en el working tree; las únicas excepciones son `.bat`/`.cmd`, que lo **necesitan**
+    (regla 4 de `CLAUDE.md`) y por eso `.gitattributes` los fija en `eol=crlf`.
     Cualquier otro archivo con CRLF en disco **no vino de un checkout**: lo escribió una
     herramienta que ignoró la convención — `Path.write_text()` en Windows, PowerShell, o un
     script regenerador (los tres que arregló la tarea **165**).
+
+    **Tarea 173 — la excepción por glob que tuvo acá era ella misma el defecto.** Los dos
+    JSON de `data/catalyst/` están versionados y sus builders los re-escribían con CRLF, así
+    que se los exceptuó en vez de arreglar al que escribe. El argumento citaba a
+    `.gitattributes`, que para ese glob declara `eol=lf` — lo **contrario** de lo que la
+    excepción suponía. Arreglados los dos writers, no queda ninguna excepción por glob.
 
     **Por qué nadie lo veía:** git normaliza al comparar, así que `git status` queda
     **limpio** y el desvío se acumula en silencio. Medido el 2026-09-10: **16** archivos

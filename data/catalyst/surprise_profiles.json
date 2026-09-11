@@ -1,16 +1,13 @@
 {
   "_meta": {
-    "built_at": "2026-09-03T20:58:27.348848+00:00",
+    "built_at": "2026-09-11T14:41:16.696952+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
     "min_quarters": 4,
-    "n_tickers": 128,
+    "n_tickers": 127,
     "n_profiles": 127,
-    "insufficient_history": {
-      "AVB": 0
-    },
-    "migrated_note": "2026-09-07 (tarea 126): los perfiles bajo min_quarters salieron de `profiles` y quedaron aca con su n_quarters. Migracion de REPRESENTACION, no de datos: `built_at` es el de la corrida original y ningun valor se re-midio."
+    "insufficient_history": {}
   },
   "profiles": {
     "ABBV": {
@@ -48,10 +45,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9583,
       "miss_rate": 0.0,
-      "mean_surprise": 0.032633,
-      "median_surprise": 0.027194,
-      "last_surprise": 0.025818,
-      "directional_score": 0.6011
+      "mean_surprise": 0.03014,
+      "median_surprise": 0.025457,
+      "last_surprise": 0.006568,
+      "directional_score": 0.5991
     },
     "AEP": {
       "ticker": "AEP",
@@ -878,10 +875,10 @@
       "n_quarters": 24,
       "beat_rate": 0.75,
       "miss_rate": 0.25,
-      "mean_surprise": 0.052158,
+      "mean_surprise": 0.053077,
       "median_surprise": 0.040815,
-      "last_surprise": 0.076531,
-      "directional_score": 0.3417
+      "last_surprise": 0.103448,
+      "directional_score": 0.3425
     },
     "OXY": {
       "ticker": "OXY",

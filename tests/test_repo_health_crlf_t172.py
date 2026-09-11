@@ -1,10 +1,15 @@
 """Tarea 172 — un archivo versionado con CRLF en el working tree deja de pasar inadvertido.
 
 `.gitattributes` declara `* text=auto eol=lf`: git escribe **LF** en el working tree, y las
-únicas excepciones son `.bat`/`.cmd` (que lo **necesitan** — regla 4 de `CLAUDE.md`) y
-`data/catalyst/*.json` (que el scheduler re-escribe, y el propio `.gitattributes` lo acepta).
-Cualquier otro archivo con CRLF en disco **no vino de un checkout**: lo escribió una
-herramienta que ignoró la convención.
+únicas excepciones son `.bat`/`.cmd`, que lo **necesitan** (regla 4 de `CLAUDE.md`) y que
+`.gitattributes` fija en `eol=crlf`. Cualquier otro archivo con CRLF en disco **no vino de un
+checkout**: lo escribió una herramienta que ignoró la convención.
+
+**Corregido por la tarea 173.** Este archivo decía además que `data/catalyst/*.json` era una
+tercera excepción *«que el propio `.gitattributes` acepta»*. Es **falso**: esa línea declara
+`eol=lf`, igual que la global. El defecto estaba en los dos builders, que escribían con
+`write_text` sin `newline`; arreglados ellos, la excepción por glob se fue y los dos tests
+que la sostenían se dan vuelta acá y en `test_crlf_builders_t173.py`.
 
 **Por qué se acumuló:** git normaliza al comparar, así que `git status` queda **limpio** y el
 desvío no aparece en ningún lado. Medido el 2026-09-10: **16** archivos versionados estaban
@@ -134,31 +139,41 @@ def test_cada_excepcion_tiene_motivo_escrito():
         assert len(motivo) > 40, f"{clave} sin motivo escrito"
 
 
+def declared_eol(patron: str) -> str | None:
+    """El `eol=` que `.gitattributes` declara para ese patrón exacto, o `None`.
+
+    **Tarea 173.** Existe porque la versión anterior de la contraprueba de abajo preguntaba
+    `patron in attrs` —o sea, matcheaba la **ruta**— y con eso aceptó como permiso una línea
+    que declara `eol=lf`, que es justo lo contrario. Un cross-check tiene que mirar el
+    **valor**, no el nombre.
+    """
+    for linea in (_REPO / ".gitattributes").read_text(encoding="utf-8").splitlines():
+        linea = linea.split("#", 1)[0].strip()
+        if not linea:
+            continue
+        campos = linea.split()
+        if campos[0] != patron:
+            continue
+        for c in campos[1:]:
+            if c.startswith("eol="):
+                return c[4:]
+    return None
+
+
 def test_las_excepciones_son_LAS_QUE_GITATTRIBUTES_DECLARA():
     """**La contraprueba que hace honesto al guard:** las excepciones no las elegí yo, las
     declara `.gitattributes`. Si alguien agrega una acá sin agregarla allá, el guard se
-    estaría aflojando por su cuenta — y si la saca de allá, ésta queda huérfana."""
+    estaría aflojando por su cuenta — y si la saca de allá, ésta queda huérfana.
+
+    **Tarea 173:** ahora exige `eol=crlf`, no la mera presencia del patrón. Con la versión
+    vieja, agregar `data/catalyst/*.json` —una línea `eol=lf`— pasaba en verde.
+    """
     attrs = (_REPO / ".gitattributes").read_text(encoding="utf-8")
-    assert "*.bat text eol=crlf" in attrs
-    assert "*.cmd text eol=crlf" in attrs
-    assert "data/catalyst/*.json" in attrs
     assert "* text=auto eol=lf" in attrs, "cambió la convención global: revisar este guard"
-    # y al revés: nada en el guard que `.gitattributes` no mencione
+    assert declared_eol("*.bat") == "crlf"
+    assert declared_eol("*.cmd") == "crlf"
+    # y al revés: toda excepción del guard tiene que estar declarada **como crlf** allá.
     for glob in _CRLF_PERMITIDO_GLOBS:
-        assert glob in attrs, f"{glob} no está declarado en .gitattributes"
+        assert declared_eol(glob) == "crlf", f"{glob} no está declarado `eol=crlf` en .gitattributes"
     for ext in _CRLF_PERMITIDO:
-        assert f"*{ext} text eol=crlf" in attrs, f"{ext} no está declarado en .gitattributes"
-
-
-def test_el_json_del_scheduler_esta_exceptuado_de_verdad(tmp_path, monkeypatch):
-    """Contraprueba del glob: el builder del scheduler re-escribe ese JSON con CRLF en cada
-    corrida, así que un guard que lo acusara sería rojo permanente — el defecto de la 107."""
-    import scripts.check_repo_health as g
-
-    d = tmp_path / "data" / "catalyst"
-    d.mkdir(parents=True)
-    f = d / "historical_reaction.json"
-    f.write_bytes(b'{"a": 1}\r\n')
-    monkeypatch.setattr(g, "ROOT", tmp_path)
-    monkeypatch.setattr(g, "_tracked", lambda: frozenset({"data/catalyst/historical_reaction.json"}))
-    assert g.check_crlf_en_working_tree([f]) == []
+        assert declared_eol(f"*{ext}") == "crlf", f"{ext} no está declarado `eol=crlf`"

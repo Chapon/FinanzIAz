@@ -2,9 +2,11 @@
 # Las reglas específicas de abajo OVERRIDEAN esto (van después a propósito).
 * text=auto eol=lf
 
-# Artefactos JSON regenerados por el scheduler diario en Windows (CRLF).
-# `text` hace que git normalice EOL al comparar/commitear → el re-write CRLF
-# del builder no ensucia el working tree (el repo guarda LF).
+# Artefactos JSON regenerados por el scheduler diario. `text` fuerza el tratamiento
+# como texto (la regla global lo AUTODETECTA) y `eol=lf` pide LF en el working tree,
+# igual que todo el resto: esta linea NO es una excepcion, no permite CRLF.
+# Lo dice explicito por la tarea 173, donde se la leyo como si lo permitiera y se
+# exceptuo a estos dos archivos del guard en vez de arreglar a sus builders.
 data/catalyst/*.json text eol=lf
 
 # Batch files DEBEN ser CRLF: cmd.exe parsea mal los .bat con LF-only

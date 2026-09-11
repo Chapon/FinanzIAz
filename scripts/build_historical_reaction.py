@@ -92,7 +92,9 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(table, indent=2), encoding="utf-8")
+    # `newline` explicito (tarea 173): ver el mismo comentario en `build_surprise_profiles.py`.
+    # Los dos JSON de `data/catalyst/` estan versionados y el repo los guarda en LF.
+    out.write_text(json.dumps(table, indent=2), encoding="utf-8", newline="\n")
     n_event = len(table.get("by_event", {}))
     n_te = len(table.get("by_ticker_event", {}))
     print(f"Wrote {out} — {n_event} event_types, {n_te} (ticker,event) buckets.")
