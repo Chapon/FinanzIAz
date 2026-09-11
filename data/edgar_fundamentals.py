@@ -43,12 +43,32 @@ NET_INCOME_CONCEPT = "NetIncomeLoss"
 
 # Revenue concept names drift across companies / filing eras. Try them in order
 # and take the first that yields annual data.
+#
+# **El ORDEN es parte del contrato, no cosmético (tarea 150).** El parser corta en
+# el primer concepto que resuelve, así que agregar uno *adelante* le cambiaría el
+# revenue a todos los que ya resolvían con `Revenues` (C, BAC, JPM, WFC, SCHW…).
+# Los nuevos van **al final**: apendear sólo puede AGREGAR resolución a quien no
+# tenía ninguna. Verificado sobre el universo vivo: el número no se movió en
+# ninguno de los 127, y el único que ganó revenue fue GS.
 REVENUE_CONCEPTS: tuple[str, ...] = (
     "Revenues",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "RevenueFromContractWithCustomerIncludingAssessedTax",
     "SalesRevenueNet",
     "SalesRevenueGoodsNet",
+    # Tarea 150 — top line de bancos de inversión y brokers. Goldman Sachs NO
+    # reporta ninguno de los cinco de arriba: su línea es `RevenuesNetOfInterest-
+    # Expense` ($58.283B). Hasta acá GS quedaba con `revenue_latest = None`, y eso
+    # lo dejaba **inmune por accidente**: sólo lo salvaba que su `NetIncomeLoss`
+    # es fuertemente positivo, porque `_fragile_fundamentals` exige primero la
+    # evidencia de pérdidas sostenidas. El día que un banco reporte dos años
+    # seguidos de pérdida GAAP —para un banco de inversión no es exótico— la
+    # ausencia se leería como *debajo del piso* (la excepción deliberada que
+    # existe para agarrar a MLTX) y saldría de los candidatos a BUY en silencio.
+    # Lo tienen también MS, JPM, WFC y AXP, que hoy resuelven antes con `Revenues`.
+    "RevenuesNetOfInterestExpense",
+    # Aseguradoras: la prima devengada es su top line. C lo reporta.
+    "PremiumsEarnedNet",
 )
 
 _ANNUAL_FRAME_RE = re.compile(r"^CY\d{4}$")
