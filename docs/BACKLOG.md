@@ -2246,6 +2246,97 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Arreglo.** El sujeto se construye con el `_payload` de producción (`{"BUENO": 24 trimestres, "CORTO": MIN_QUARTERS-1}`), con un assert de montaje —*«el corto salió de `profiles`»*— para que el caso no pueda pasar por vacío, más la contraprueba de que el usable **sí** resuelve. La pata sobre el artefacto vivo queda aparte y **sin `skip`**, chequeando lo único que ahí tiene sentido: que nadie esté en las dos mitades. Puede quedar vacía, y eso es legítimo **sólo porque** el contrato se prueba arriba sin depender de los datos — está escrito así en el docstring.
 - **Detalle que confirma el arreglo:** al sacar el `skip`, `pytest` quedó sin uso en el archivo y ruff lo marcó. El import existía **únicamente** para apagar el caso.
 
+### 178. UNIVCOUNT-VIEJO — El comentario del universo de referencia dice «127/128» y hoy es 126/127  ·  ref `docs/auditoria_claims_2026-09-11.md` [C-1] · severidad **BAJA-MEDIA**
+
+- **Qué pasa.** `analysis/harness_config.py:202` describe el universo de referencia como *«la watchlist de la cuenta viva recortada a los tickers con artefacto PIT (127/128; falta ASML)»*. Medido: watchlist = **127**, universo = **126**. El header del propio archivo ya dice **126/127**.
+- **Era exacto el 2026-09-08** (watchlist 128, universo 127) y lo rompió la **156** al sacar AVB. La parte estructural de la frase sigue bien: ASML es el único sin artefacto PIT.
+- **Alcance.** Derivar los dos números (`LIVE_WATCHLIST_SIZE` y `len(parse_universe_file(...))`) en vez de escribirlos, o sacarlos y dejar sólo *«falta ASML»*. Es el mismo criterio que la **135** aplicó a las skills: un conteo a mano caduca solo.
+- **Kill-criteria.** Gate técnico: el comentario no puede contener un conteo que un test no derive. Suite Windows verde.
+
+### 179. SETTINGSREF-UNA-DIRECCION — Cuatro perillas vivas de riesgo/sizing no están en `SETTINGS_REFERENCE.md`, y una tiene espejo y desvío declarado  ·  ref `docs/auditoria_claims_2026-09-11.md` [C-2'] · severidad **MEDIA**
+
+- **Qué pasa.** Barrido del `SCHEMA` contra la tabla: 21 de 80 claves no tienen fila. La mayoría son toggles de UI y está bien, pero cuatro no: **`vol_target_portfolio_annual` (0.12)**, `max_position_weight` (0.25), `kelly_fraction` (0.25) y `vol_target_annual` (0.2).
+- **La que pesa es la primera:** tiene espejo (`LIVE_VOL_TARGET_ANNUAL`) y alimenta el overlay de volatilidad, que está **ON y muerde todos los días** — la perilla que la **94** declaró como desvío justamente por eso. Que tenga espejo, tenga desvío y **no** tenga fila en la única referencia de settings es una asimetría, no un olvido.
+- **Por qué no se vio antes, y es lo importante:** la condición de barrido limpio de las auditorías previas decía *«toda afirmación de la doc coincide con el código»*. Eso corre **doc → código** y nunca **código → doc**, así que es estructuralmente incapaz de ver *«lo verdadero que no está escrito»*. Mismo eje que la **185**.
+- **Alcance.** Cuatro filas, o una línea que declare por qué esas cuatro no van. Y un guard que compare en **las dos direcciones**.
+- **Kill-criteria.** Gate técnico: un test barre el `SCHEMA` y exige que toda clave que el engine lee en una decisión tenga fila o excepción con motivo. Probado por mutación (sacar una fila lo pone rojo). Suite Windows verde.
+
+### 180. SKILL-SIN-T167-T170 — La skill del harness registra lecciones hasta la T164 y se saltea las dos más recientes  ·  ref `docs/auditoria_claims_2026-09-11.md` [C-3] · severidad **MEDIA**
+
+- **Qué pasa.** `.claude/skills/backtest-replay-harness/SKILL.md` cita T05…T59 y T164, y **no menciona T167 ni T170**.
+- **Por qué pertenecen ahí por su propio criterio:** la skill ya registra la **T58** (cómo se fija una grilla de salida) y la **T62** (la población de un barrido de salida). La **T170** produjo exactamente ese tipo de resultado — la rejilla de salida quedó **CERRADA por no decidible**, ninguna de las 14 celdas excluye el cero. La **T167** es peor de omitir: el veredicto que sostiene la política de salida **viva** pasó de SHIP a NO-SHIP.
+- **El costo concreto.** Quien abra la skill para diseñar una corrida de salida no se entera de que esa rejilla ya se cerró, y la vuelve a correr.
+- **Alcance.** Dos párrafos. Sin conteos a mano (regla de la 135).
+- **Kill-criteria.** La skill nombra las dos tareas y el estado de la rejilla. Suite Windows verde.
+
+### 181. KILLONLY-NO-EXISTE — `ARCHITECTURE.md` afirma un mecanismo que no existe, y el harness hereda los toggles del ambiente  ·  ref `docs/auditoria_claims_2026-09-11.md` [C-5] · severidad **MEDIA-ALTA**
+
+- **Qué pasa.** `docs/ARCHITECTURE.md:55` dice *«**kill_only** — config activa: `hmm_enabled`/`stacking_enabled` **forzados OFF** … (Ojo: los defaults de SettingSpec dicen otra cosa; **kill_only los pisa**.)»*, y `CLAUDE.md` lo repite en el mapa rápido. **Nada fuerza ni pisa nada.** `analysis/technical.py:733` lee `_toggle("hmm_enabled", default=True)`, el `SCHEMA` los tiene en `True`, y están OFF sólo porque una clave escrita a mano en `~/.finanzias/settings.json` —un archivo **fuera del repo**— lo dice.
+- **`feature_switch.py`, que declara «always OFF», es dead code**: lo importan sólo `scripts/run_switcher_validation.py` y su test. Su propio docstring dice *«Callers are responsible for plumbing the result into whatever execution path»* — y no hay tal caller.
+- **El impacto NO es el scan de hoy ni el CI** (las dos patas se refutaron en la fase adversarial: `conftest` redirige `_CONFIG_PATH` a `tmp_path`, así que la suite siempre corrió con `DEFAULTS`; y `analyze_stacked` no se llama desde `paper_trading/`). **El impacto es el harness:** `scripts/harness.py`, `scripts/harness_walkforward.py` y `scripts/run_exit_replay_t61.py` **no fijan los toggles**, así que en cualquier máquina sin ese archivo corren con el **stacking ON** —el camino no determinístico, killeado precisamente por eso— y los números salen irreproducibles **en silencio**.
+- **Verificado por el `verificador` con mandato de refutar: SOBREVIVE.** Se descartaron seis vías, incluida la empírica: con `_CONFIG_PATH` en una ruta inexistente, `load()` **ni siquiera llama a `save()`** y los dos flags devuelven `True`. Y la suite fija el invariante **contrario** (`tests/test_toggle_wiring.py:78` exige que HMM sí se llame sin override).
+- **Severidad MEDIA-ALTA y no ALTA, a propósito:** es la misma clase que la **131** y la **132** (perilla viva sin espejo), que se declararon MEDIA-ALTA latente. Ponerle más rompería la escala.
+- **Alcance.** (1) Corregir las dos frases: decir que la config viva es **un archivo**, no un mecanismo. (2) Decidir si los harness fijan los toggles explícitamente. (3) Decidir si `hmm_enabled` merece espejo `LIVE_*` — eso va con la **185**.
+- **Kill-criteria.** Gate técnico: ningún doc operativo afirma que algo «fuerza» o «pisa» los toggles; y un test fija que los harness que corren sobre el cohorte declaran su config de modelo. Suite Windows verde.
+
+### 182. CENSO-ESPEJOS — El guard de la 130 declara su punto ciego y a continuación afirma cuántos casos hay  ·  ref `docs/auditoria_claims_2026-09-11.md` [C-6] · severidad **MEDIA**
+
+- **Qué pasa.** `tests/test_espejos_vivos_t130.py:38-40` dice *«Las dos que estaban en esa situación se cerraron el mismo día»* y `docs/BACKLOG.md:305` *«Hoy son dos y ya tienen tarea»*. `hmm_enabled` y `stacking_enabled` son perillas vivas **sin espejo `LIVE_*`** y no están en esa cuenta: son al menos **cuatro**, no dos.
+- **La forma del defecto.** El mismo docstring declara, tres líneas antes, que *«una perilla viva que no tiene espejo le es invisible»* — y después **afirma cuántas hay**, que es exactamente lo único que no puede saber. Un guard no puede contar la población a la que es ciego.
+- **Alcance.** Sacar el número de los dos lugares, o derivarlo del barrido que la **185** va a construir.
+- **Kill-criteria.** Gate técnico: ningún guard afirma un conteo de su propio punto ciego. Suite Windows verde.
+
+### 183. SANITY-POST-REFRESH — Tres veredictos NO-SHIP quedaron con validez desconocida después del refresh del 2026-09-09  ·  ref `docs/auditoria_muestra_2026-09-11.md` [M-1] · severidad **MEDIA**
+
+- **El mecanismo lo estableció la 164, no esta auditoría.** Un refresh mueve los umbrales de sanity de clase `magnitud` —los que se comparan contra **pp de CAGR/maxDD**—, así que con menos alpha el instrumento pierde resolución y una corrida se declara **INVÁLIDA sin que nada esté roto**. Le pasó al **T37** (un SHIP publicado) y al **T47**.
+- **Y el re-anclaje de la 157 dio una tranquilidad que no cubría este eje:** declaró las 17 constantes de reproducción en OK, y eso era *cierto y angosto* — T37 y T47 tenían la reproducción **pasando** y el sanity roto.
+- **Quedan tres, no cinco.** De los 8 runners con umbral `magnitud`, se re-corrieron T37, T47 y T26b. De los otros cinco, **T38 y T26 ya estaban cerrados como CORRIDA INVÁLIDA**, así que no hay veredicto vivo que proteger. Sobreviven **T39, T21 y T34**.
+- **Se probó la refutación fuerte y falló:** ninguno corre sobre el cohorte legacy congelado — los cinco defaultean a `LIVE_UNIVERSE_FILE`.
+- **Lo que esta tarea NO afirma.** No digo que esos veredictos sean falsos: digo que **su validez es desconocida** y que nadie la miró. Es una **tarea de medición**, con el límite adelante — la forma de la **73**.
+- **Acota el daño, y va dicho:** los tres son **NO-SHIP**, así que lo que puede haber caducado es la razón para *no* shipear, no una política viva. Pero la 39 y la 34 se citan en los blockquotes de priorización como el motivo del orden de la cola.
+- **Agravante de proceso.** El checklist de refresh que la 164 shipeó se agregó el **2026-09-11**, o sea **después** del refresh que lo motivó. Ese refresh nunca pasó por él.
+- **Kill-criteria.** Re-correr los tres y mirar el sanity. Si alguno no reproduce, se **declara** como se hizo con el T37. **El umbral no se mueve para que la corrida pase.**
+
+### 184. ADVCAP-SIN-DECLARAR — `paper_adv_cap_pct` está ON en la cuenta viva, el harness no lo modela y `deviations()` no lo nombra  ·  ref `docs/auditoria_desvios_2026-09-11.md` [D-1] · severidad **MEDIA** (latente)
+
+- **Qué pasa.** El `settings.json` vivo tiene `paper_adv_cap_pct = 0.05` (el default del schema es **0.0**, o sea que se prendió a mano). `paper_trading/engine.py:1147` lo aplica a cada BUY vía `adv_capped_notional`. Ni `analysis/portfolio_sim.py` ni `analysis/harness_config.py` lo mencionan, y ninguna de las 10 claves de `deviations_keyed()` es el ADV cap.
+- **Es la familia de la 94** (*«el overlay está ON, muerde todos los días y no lo declara nadie»*), con una diferencia importante a favor: **hoy es inerte**.
+- **Medido, y por eso es MEDIA y no más:** la cuenta 2 tiene **$51.499 de equity con 10 slots**, o sea ~**$5.150 por BUY**. El cap de 5% sólo mordería con `ADV$ < $103.000`, que en el S&P 500 no ocurre. Muerde si la cuenta crece mucho o entra un ilíquido — y ahí lo haría **en silencio**.
+- **Alcance.** O declarar la clave con su número medido, o escribir por qué no hace falta modelarlo.
+- **Kill-criteria.** Gate técnico: o aparece la clave en `deviations_keyed()`, o hay un test que declare por qué el cap no es un desvío modelable, con el número de arriba. Suite Windows verde.
+
+### 185. ESPEJOS-DIRECCION-FALTANTE — Hay al menos cuatro perillas vivas sin espejo, y el guard que debería encontrarlas es ciego por construcción  ·  ref `docs/auditoria_desvios_2026-09-11.md` [D-2] + `docs/auditoria_guards_2026-09-11.md` [G-2] · severidad **MEDIA-ALTA** (latente)
+
+- **Qué pasa.** Perillas vivas sin espejo `LIVE_*`: **`atr_tp_mult` (4.0)**, `atr_trail_enabled` (True), `hmm_enabled` (False) y `stacking_enabled` (False).
+- **El caso más nítido es `atr_tp_mult`:** es una perilla de **política de salida**, el harness la modela con un literal (`analysis/exit_replay.py:87` → `tp_mult: float = 4.0`) que hoy coincide **por casualidad**, y no hay nada que ate los dos valores. Si Chapa mueve el take-profit, todos los harness de salida siguen modelando 4.0 y **nada lo dice**. Es byte por byte el defecto de la **92**, que costó **7,16 pp de CAGR** por seis días de política declarada al revés.
+- **Y el guard no puede verlo, por su propia declaración.** `tests/test_espejos_vivos_t130.py:34-37`: *«Su población son los `LIVE_*` que **existen**, así que una perilla viva que **no tiene espejo** le es invisible»*. Las dos conocidas se taparon una por una (**131** y **132**) y **nunca se shipeó el mecanismo que encuentra la próxima**. Un punto ciego declarado y no cerrado es una promesa, no un guard.
+- **La dirección que falta es `settings → espejos`**, la misma de la **179** en otro sustrato.
+- **Alcance.** Un predicado que barra el `SCHEMA` y exija que toda clave que el engine lee en una decisión tenga espejo `LIVE_*` **o** esté en una lista de excepciones con motivo escrito. Cierra también el conteo de la **182**.
+- **Kill-criteria.** Gate técnico: el barrido encuentra las cuatro de hoy; agregar una perilla viva nueva sin espejo pone el guard **rojo** (probado por mutación); y ninguna excepción queda sin motivo. Suite Windows verde.
+
+### 186. APP-CODIGO-VIEJO — La app corre con el código de antes de la 173, así que va a re-escribir los JSON en CRLF  ·  ref `docs/auditoria_estado_2026-09-11.md` [E-1] · severidad **MEDIA**
+
+- **Qué pasa.** El proceso de la app (PID 29264, `main.py`) arrancó el 2026-09-11 a las **11:38**; la **173** se commiteó después. Tiene los módulos viejos en memoria, así que cuando dispare el `SurpriseBuildWorker` va a escribir `data/catalyst/surprise_profiles.json` **sin** el `newline="\n"` y los dos archivos vuelven a quedar CRLF contra un blob LF.
+- **El agravante es de diagnóstico:** el guard lo va a marcar y el fuente **ya está arreglado**, así que quien lo mire no va a entender por qué.
+- **Alcance.** Reiniciar la app. Es acción manual de Chapa — va también a *Acciones manuales pendientes*.
+- **Kill-criteria.** Tras el reinicio, forzar un rebuild y verificar 0 CRLF en los dos JSON.
+
+### 187. BACKUPS-ADHOC-SIN-POLITICA — `backups/` pesa 389 MB y los backups ad-hoc no rotan nunca  ·  ref `docs/auditoria_estado_2026-09-11.md` [E-2] · severidad **BAJA-MEDIA**
+
+- **Qué pasa.** 13 archivos, **389 MB** — más que `data/parquet` (61 MB) y `data/pit_signals` (37 MB) juntos. Los `*_daily.db` **sí** rotan (lo cerró la 143); los ad-hoc se acumulan sin límite desde el **30 de junio**: `pre_e5`, `pre_0007`, `post_t77`, `pre_t81` (93 MB), `pre_manuales`, `pre_t156_avb`.
+- **Crearlos está bien** —son la red antes de cada operación riesgosa—; lo que falta es la política de cuánto se conservan.
+- **Impacto: disco y nada más.** No hay riesgo de corrección, por eso es BAJA-MEDIA.
+- **Alcance.** Decisión de Chapa: ¿los `pre_*` se conservan N días? ¿se mueven fuera del repo?
+- **Kill-criteria.** Gate operativo: la política queda escrita y, si se automatiza, con test de que no toca los dailies.
+
+### 188. BACKUP-ABIERTO — Un backup de julio tiene `-shm`/`-wal` colgados, o sea que algo lo abrió en septiembre  ·  ref `docs/auditoria_estado_2026-09-11.md` [E-3] · severidad **BAJA-MEDIA** · confianza **MEDIA**
+
+- **Qué pasa.** `backups/finanzias_pre_e5_20260701_035340.db` tiene al lado un `-shm` de **32 KB con mtime 2026-09-02** y un `-wal` de 0 bytes. SQLite sólo crea esos archivos cuando **abre** la base: el backup se abrió **dos meses después** de crearse. Es el único de los 13 con ese rastro.
+- **Por qué importa.** Un backup es, por definición, algo que no se toca. Si se abrió en modo escritura, ya no es el estado que dice ser.
+- **Confianza MEDIA a propósito:** no se midió si la apertura fue de lectura o de escritura, y no se va a medir desde una corrida read-only. La afirmación es *«se abrió»*, **no** *«se corrompió»*.
+- **Alcance.** `PRAGMA integrity_check` sobre una **copia**, y averiguar qué lo abrió el 2026-09-02 — ese día se compactó la DB (85) y cerró la **77**, que borró caches.
+- **Kill-criteria.** O el backup pasa `integrity_check` y se conserva, o se declara inservible y se borra. Y queda escrito qué lo abrió, si se puede saber.
+
 ### 175. ~~CI-ROJO-ESPEJOS — El CI está en rojo desde el 2026-09-09 y 36 tareas se cerraron declarando «suite Windows verde»: el test de mutación de la 130 arranca del default del schema y donde no hay `settings.json` vivo la mutación queda en no-op~~ · **CERRADA 2026-09-11 — la línea base sale de los espejos, y ahora se exige que esté limpia** · ref reporte de Chapa 2026-09-11 (*«los workflows en git están fallando»*) · severidad **MEDIA-ALTA**
 
 - **Qué pasaba.** `tests/test_espejos_vivos_t130.py::test_mut_mover_una_clave_del_settings_acusa_a_su_espejo` construía su línea base con `leer_settings(_SETTINGS_VIVO) or {}`. Donde **no** hay `~/.finanzias/settings.json` —el CI, un checkout limpio, una instalación nueva— eso cae al **default del schema**, y para tres claves el default **no** coincide con su espejo: `atr_stops_enabled`, `atr_hard_stop_enabled` y `paper_universe_screen_enabled` valen `False` en el schema y `True` en vivo. Flipear un bool desde el default aterriza entonces **sobre** el valor del espejo: la mutación queda en **no-op**, `desvios()` no acusa a nadie, y el assert falla.

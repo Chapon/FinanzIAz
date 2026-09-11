@@ -119,10 +119,219 @@ Sólo **(c-metodo)** y **(d)** son deuda de la skill.
 
 ---
 
-## 2. Hallazgos
+## 2. Alcance real
 
-_(se completa al correr)_
+**Mirado:** `CLAUDE.md`, `docs/SETTINGS_REFERENCE.md` (contrastada contra el `SCHEMA` vivo en
+las **dos** direcciones), `docs/ARCHITECTURE.md` y `docs/DB_SCHEMA.md` (los dos que la corrida
+del 2026-09-08 difirió explícitamente), las 5 skills, los 4 commands,
+`analysis/harness_config.py`, `analysis/technical.py`, `config/settings_manager.py`,
+`paper_trading/feature_switch.py`, y la DB viva + `~/.finanzias/settings.json` en lectura.
 
-## 5. Deuda de método — qué le faltaba a la corrida anterior
+**NO mirado, y queda declarado:** los ~20 docs de veredicto de tareas cerradas (§1.3.2), `ui/`,
+`alembic/`, el README, y los docstrings de `scripts/run_*` uno por uno (se barrieron por grep,
+no se leyeron completos).
 
-_(se completa al correr; sólo entra lo etiquetado (c-metodo) o (d))_
+---
+
+## 3. Hallazgos
+
+### [C-1] El universo de referencia dice "127/128" y hoy es 126/127
+
+Severidad: LOW-MEDIA · Confianza: ALTA · Categoría: [C-numero]
+Ubicación: `analysis/harness_config.py:202`
+
+**Evidencia.** El comentario dice *«la watchlist de la cuenta viva recortada a los tickers con
+artefacto PIT (127/128; falta ASML)»*. Medido hoy: watchlist de la cuenta 2 = **127**,
+`parse_universe_file(LIVE_UNIVERSE_FILE)` = **126**. El header del propio archivo de universo
+—que el script regenera— ya dice **«126/127 tickers de la watchlist. Sin PIT: ASML.»**
+
+**Razonamiento.** Los dos números bajaron uno cuando AVB salió (tarea 156); el comentario quedó.
+
+**Impacto.** Quien lea el módulo cree que el harness corre sobre un universo un ticker más
+grande del que corre. No cambia ningún cálculo.
+
+**Verificación.** Se comprobó que ASML sigue siendo el único sin artefacto PIT, o sea que la
+*estructura* de la frase es correcta y lo único caduco son los dos números.
+
+**¿Por qué no antes? (a) NO EXISTÍA** — el 2026-09-08 la watchlist era 128 y el universo 127,
+así que «127/128» era **exacto**. Lo rompió la tarea 156 el 2026-09-10.
+
+**Acción.** Derivar los dos números del código en vez de escribirlos, o sacarlos.
+
+### [C-2'] Cuatro perillas vivas de riesgo/sizing no están en `SETTINGS_REFERENCE.md`
+
+Severidad: MEDIA · Confianza: ALTA · Categoría: [C-presente]
+Ubicación: `docs/SETTINGS_REFERENCE.md` (ausencia); `config/settings_manager.py` (el `SCHEMA`)
+
+**Evidencia.** Barrido del `SCHEMA` contra las filas de la tabla: **21 de 80 claves no tienen
+fila**. La mayoría son toggles de UI, pero cuatro no — **`vol_target_portfolio_annual` (0.12)**,
+`max_position_weight` (0.25), `kelly_fraction` (0.25) y `vol_target_annual` (0.2).
+
+**Razonamiento.** `vol_target_portfolio_annual` **tiene espejo** (`LIVE_VOL_TARGET_ANNUAL = 0.12`)
+y alimenta el overlay de volatilidad, que está **ON y muerde todos los días** — es la perilla
+que la tarea **94** declaró como desvío justamente por eso. Una perilla con espejo y con desvío
+declarado que no está en la referencia de settings es una asimetría real, no un olvido menor.
+
+**Impacto.** El único documento que existe para contestar *«¿qué vale esta perilla y qué hace?»*
+no contesta para la magnitud del overlay de volatilidad de cartera.
+
+**Verificación.** Se comprobó que las filas **sí** existen para las cuatro `paper_*` que un
+primer barrido marcó como faltantes — ver §4, hallazgo retirado.
+
+**¿Por qué no antes? (c-metodo)** — `SETTINGS_REFERENCE.md` estaba en el alcance del 2026-09-08,
+y su condición de barrido limpio decía *«toda afirmación de la doc coincide con el código»*. Eso
+corre **doc → código** y nunca **código → doc**. La dirección que falta es la que caza *«lo que
+es verdad y no está escrito»*. **Deuda de skill — ver §6.**
+
+**Acción.** Cuatro filas, o declarar por qué esas cuatro no van.
+
+### [C-3] La skill del harness registra lecciones hasta la T164 y se saltea la T167 y la T170
+
+Severidad: MEDIA · Confianza: ALTA · Categoría: [C-veredicto]
+Ubicación: `.claude/skills/backtest-replay-harness/SKILL.md`
+
+**Evidencia.** La skill cita T05, T10, T12, T13, T20, T21, T23, T26, T27, T32, T33, T34, T37,
+T38, T39, T45, T46, T47, T48, T49, T50, T51, T52, T54, T58, T59 y T164. **No menciona T167 ni
+T170.**
+
+**Razonamiento.** La skill **es** el lugar donde este repo guarda sus restricciones
+metodológicas: registra la T58 (*cómo se fija una grilla de salida*) y la T62 (*la población de
+un barrido de salida*). La **T170 produjo exactamente ese tipo de resultado** — la rejilla de
+salida quedó **CERRADA por no decidible**, ninguna de las 14 celdas excluye el cero. Y la T167
+es peor de omitir: dice que el veredicto que sostiene la política de salida **viva** pasó de
+SHIP a NO-SHIP.
+
+**Impacto.** Quien abra la skill para diseñar una corrida de salida no se entera de que esa
+rejilla ya se cerró, y la vuelve a correr.
+
+**Verificación.** Se confirmó que la skill sí registra T58 y T62, o sea que las lecciones de
+grilla **pertenecen** ahí por su propio criterio; no es una categoría inventada por esta
+auditoría.
+
+**¿Por qué no antes? (a) NO EXISTÍA** — las dos tareas cerraron el 2026-09-10.
+
+**Acción.** Dos párrafos en la sección de lecciones.
+
+### [C-5] `kill_only` es un nombre, no un mecanismo
+
+Severidad: **MEDIA-ALTA** · Confianza: ALTA · Categoría: [C-presente]
+Ubicación: `docs/ARCHITECTURE.md:55`, `CLAUDE.md` (mapa rápido)
+
+**Evidencia.** `ARCHITECTURE.md` dice: *«**kill_only** — config activa: `hmm_enabled`/
+`stacking_enabled` **forzados OFF** … (Ojo: los defaults de SettingSpec dicen otra cosa;
+**kill_only los pisa**.)»*. Medido: `analysis/technical.py:733` →
+`_toggle("hmm_enabled", default=True)`; `DEFAULTS` los tiene en `True`; el `settings.json` vivo
+en `false`; y `paper_trading/feature_switch.py` —el módulo que declara *«always OFF»*— lo
+importan sólo un harness y su test.
+
+**Razonamiento.** **No existe ningún mecanismo que fuerce ni pise nada.** Los flags están OFF
+únicamente porque una clave escrita a mano en un archivo **fuera del repo** lo dice. Y el
+paréntesis de `ARCHITECTURE.md` es, además, la frase más probable de frenar a quien fuera a
+investigar el desajuste.
+
+**Impacto** (*corregido por la fase adversarial — ver §4*). El daño **no** es el scan de hoy,
+que es correcto, ni el CI. Es que **`scripts/harness.py`, `scripts/harness_walkforward.py` y
+`scripts/run_exit_replay_t61.py` no fijan los toggles**: heredan el `settings.json` del
+ambiente. En cualquier máquina sin ese archivo, un harness corre con el **stacking ON** —el
+camino no determinístico que está killeado precisamente por eso— y los números salen
+irreproducibles **en silencio**.
+
+**Verificación** (fase adversarial, agente `verificador`, con mandato de refutar): **SOBREVIVE**.
+Se descartaron seis vías — no hay seed ni hook de arranque, `_toggle` no tiene capa intermedia,
+`SettingsManager.load()` con el archivo ausente **ni siquiera llama a `save()`**
+(`config/settings_manager.py:911-933`), no hay consumidor vivo de `feature_switch.py`, no hay
+test que fije OFF, y **la suite fija el invariante contrario**
+(`tests/test_toggle_wiring.py:78` exige que HMM **sí** se llame sin override).
+
+**¿Por qué no antes? (b) FUERA DE ALCANCE** — `ARCHITECTURE.md` estaba explícitamente diferido
+por la corrida del 2026-09-08 (*«no entraron; quedan para la próxima corrida de esta área»*).
+Pero ese diferimiento **no tenía dueño ni mecanismo**: sobrevivió sólo porque esta corrida leyó
+el informe anterior. **Deuda de skill — ver §6.**
+
+**Acción.** Corregir las dos frases, y decidir aparte si `hmm_enabled` merece espejo `LIVE_*`.
+
+### [C-6] El censo del guard de espejos afirma "son dos" y son al menos cuatro
+
+Severidad: MEDIA · Confianza: ALTA · Categoría: [C-numero]
+Ubicación: `tests/test_espejos_vivos_t130.py:38-40`, `docs/BACKLOG.md:305`
+
+**Evidencia.** El docstring dice *«Las dos que estaban en esa situación se cerraron el mismo
+día»* y el backlog *«Hoy son dos y ya tienen tarea»*. `hmm_enabled` y `stacking_enabled` son
+perillas vivas **sin espejo `LIVE_*`** y no están en esa cuenta. (Traído por el `verificador`.)
+
+**Razonamiento.** El guard de la 130 declara su punto ciego —*«una perilla viva que no tiene
+espejo le es invisible»*— y **a continuación afirma cuántas hay**, que es precisamente lo único
+que no puede saber.
+
+**¿Por qué no antes? (c-metodo)** — el censo estaba en el alcance del 2026-09-08 y se leyó como
+un hecho en vez de como un claim verificable. **Deuda de skill — ver §6.**
+
+**Acción.** Sacar el número, o derivarlo de un barrido.
+
+---
+
+## 4. Hallazgos RECHAZADOS, con el motivo
+
+### [C-2] RETIRADO — *«faltan 4 flags `paper_*`»* — **era mi instrumento, no el repo**
+
+Llegué a tener escrito que `paper_adv_cap_pct`, `paper_regime_scale_enabled`,
+`paper_universe_min_adv_dollars` y `paper_universe_screen_enabled` no estaban en la tabla, y que
+por lo tanto `CLAUDE.md` mentía al decir *«todos los flags `paper_*`/engine»*. **Falso.** Las
+cuatro filas existen (`docs/SETTINGS_REFERENCE.md:36,45,52,53`): mi regex exigía un `|` pegado
+al backtick del default, y esas cuatro lo formatean como `` `0.0` (OFF) ``.
+
+Peor: para la comparación histórica usé **una regex distinta** que para la de hoy, así que el
+«21 vs 0» que me llamó la atención era un artefacto de comparar **dos instrumentos**. Re-medido
+con la **misma** regex en las dos fechas: **21 sin documentar en ambas, cero filas perdidas,
+cero claves nuevas sin documentar**. La afirmación de `CLAUDE.md` **se sostiene**.
+
+Es [[validar-el-instrumento-antes-del-numero]] dentro de una auditoría de claims: el número
+salió limpio y significaba otra cosa.
+
+### Dos patas del impacto de [C-5], refutadas por el `verificador`
+
+1. *«en el CI arrancan ON»* — **falso**: `tests/conftest.py:288-306` redirige `_CONFIG_PATH` a
+   `tmp_path` y recarga el singleton, así que la suite **siempre** corrió con `DEFAULTS`, con o
+   sin archivo vivo. Y el CI no opera la cuenta.
+2. *«hmm y stacking en el camino vivo»* — **falso para stacking**: `analyze_stacked` no se llama
+   desde ningún punto de `paper_trading/`; sólo desde `analysis/backtest.py:498`, que es
+   harness. La mitad viva del hallazgo es **`hmm_enabled` sola**.
+
+Las dos se **borraron del enunciado** en vez de degradarse.
+
+### Severidad de [C-5] bajada de HIGH a MEDIA-ALTA
+
+No para salvarlo: porque el repo ya fijó el precio de esta clase exacta. `atr_stops_enabled` sin
+espejo fue la tarea **132**, declarada **MEDIA-ALTA (latente)**, y `paper_universe_screen_enabled`
+la **131**. Ponerle HIGH a ésta rompería la escala contra sus dos gemelas ya cerradas.
+
+---
+
+## 5. Mapeo hallazgo → tarea
+
+| hallazgo | severidad | tarea |
+|---|---|---|
+| [C-1] universo 127/128 → 126/127 | LOW-MEDIA | **178** |
+| [C-2'] cuatro perillas fuera de la referencia | MEDIA | **179** |
+| [C-3] la skill no registra T167 ni T170 | MEDIA | **180** |
+| [C-5] `kill_only` no es un mecanismo | MEDIA-ALTA | **181** |
+| [C-6] el censo de espejos dice "dos" | MEDIA | **182** |
+| [C-2] retirado | — | ninguna (no es un hallazgo) |
+
+---
+
+## 6. Deuda de método — qué le faltaba a la corrida anterior
+
+Dos de los seis hallazgos son **(c-metodo)** y uno es un **(b) con diferimiento huérfano**. Los
+tres apuntan al mismo hueco, y van consolidados en el §6 de
+`docs/auditoria_guards_2026-09-11.md`, que es donde esta tanda concentra la mejora de la skill.
+
+1. **El cross-check de documentación corría en una sola dirección.** La condición de barrido
+   limpio del 2026-09-08 era *«toda afirmación de la doc coincide con el código»*: eso caza
+   *«lo escrito es falso»* y **nunca** *«lo verdadero no está escrito»* — que es como
+   sobrevivieron [C-2'] y, un nivel más arriba, [C-5].
+2. **Un diferimiento declarado no tiene dueño.** *«`ARCHITECTURE.md` no entró; queda para la
+   próxima corrida»* funcionó **por casualidad**: sobrevivió porque esta corrida leyó el informe
+   anterior. Nada lo garantizaba.
+3. **Un conteo escrito adentro de un guard se lee como un hecho.** [C-6] estuvo a la vista y
+   pasó porque decía un número con aire de medido.

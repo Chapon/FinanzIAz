@@ -55,6 +55,20 @@ en el doc:
 Sin ese tercer punto, la corrida no puede cerrar en limpio sin que alguien sospeche que se
 miró poco, y esa presión es exactamente la que inventa hallazgos.
 
+**Una condición de barrido limpio se escribe en las DOS direcciones.** La del 2026-09-08 decía
+*«toda afirmación de la doc coincide con el código»* — y eso caza **«lo escrito es falso»** y es
+estructuralmente incapaz de cazar **«lo verdadero no está escrito»**. Por esa dirección faltante
+sobrevivieron dos hallazgos hasta el 2026-09-11: cuatro perillas vivas de riesgo fuera de
+`SETTINGS_REFERENCE.md` —una de ellas con espejo **y** con desvío declarado— y, un nivel más
+arriba, cuatro perillas vivas sin espejo `LIVE_*`. Las dos direcciones van escritas, y el informe
+reporta **las dos**.
+
+**Si la corrida difiere parte del alcance, ese diferimiento entra al backlog como tarea.** No
+alcanza con escribir *«queda para la próxima corrida de esta área»*: eso es un pendiente sin
+dueño. El 2026-09-08 se difirieron `ARCHITECTURE.md` y `DB_SCHEMA.md`, y el hallazgo de mayor
+severidad de la tanda siguiente estaba ahí — sobrevivió sólo porque alguien leyó el informe
+anterior. Es la tarea **97** (*«declarado» no es «cableado»*) aplicada al propio informe.
+
 ## Alcance: por área, nunca "exhaustiva"
 
 `/audit <área>`. El repo es de un tamaño en el que **un barrido completo en una pasada no
@@ -111,6 +125,20 @@ ventana*) repitiéndose un nivel más abajo cada vez.
 pretenden decidir *"esto ya está / esto es la muestra"*. La pregunta siempre es la misma:
 **¿esto sigue siendo verdad si la ventana rueda?**
 
+**Y la segunda pregunta, que es la que rinde después de un refresh: «esta operación movió la
+muestra — ¿qué quedó sin re-verificar?»** No es la misma que la de arriba: acá no se busca un
+chequeo mal escrito sino un **veredicto que nadie volvió a mirar**. El 2026-09-09 se refrescó el
+cohorte; el re-anclaje de la 157 declaró las 17 constantes de reproducción en OK y eso era
+**cierto y angosto** — la 164 estableció después que **repro OK no implica sanity OK**, y por esa
+vía el T37 (un SHIP publicado) y el T47 estaban inválidos con la reproducción **pasando**. La
+corrida del 2026-09-11 enumeró los runners con umbral de sanity de clase `magnitud` —el
+inventario los deriva en `tests/test_sanity_no_anclado_t164.py`— y encontró veredictos más que
+nadie había re-mirado.
+
+El método concreto: listar lo que la operación pudo invalidar, cruzarlo contra los docs de
+re-corrida posteriores a la fecha, y publicar la diferencia como **tarea de medición** — *«no se
+sabe»*, nunca *«es falso»*.
+
 ### C. Desvíos harness↔engine no declarados
 
 **Qué.** ¿Hay un desvío que `analysis/harness_config.deviations()` **no nombra**?
@@ -151,6 +179,32 @@ escalan.
 
 **Cómo se audita.** Por cada guard: cuando falla, ¿alguien se entera? ¿el aviso escala si se
 repite? Y la pregunta que destapó la 63: **¿el guard puede estar rechazando el dato bueno?**
+
+**Y la que más rinde, porque el 2026-09-11 falló CUATRO veces en un día: ¿el guard puede ver el
+defecto que describe?** Los cuatro casos, para reconocer la forma:
+
+| tarea | el guard preguntaba | lo satisfacía |
+|---|---|---|
+| **173** | `glob in attrs` — *¿`.gitattributes` declara este path?* | una línea que declara `eol=lf`, **lo contrario** del permiso que la excepción suponía |
+| **150** | `concepto in REVENUE_CONCEPTS` | la pertenencia, cuando lo que decide es el **orden** (el parser corta en el primero que resuelve) |
+| **176** | `comando in doc` | el **frontmatter** `allowed-tools`, no la instrucción del cuerpo |
+| **177** | los archivos de universo **reales** del repo | ninguno tiene una coma, así que la población **no contenía el caso** que separa las dos semánticas |
+
+Tres son *comparar el **nombre** en vez del **valor***; la cuarta es *una población real que no
+contiene el caso distinguidor*. Las cuatro veces el guard estaba bien intencionado y escrito, a
+veces con el comentario correcto al lado — **leerlo no alcanza**.
+
+**La técnica que sí los caza: mutar en el sentido del FALSO POSITIVO.** No *«¿se pone rojo si
+rompo lo que chequea?»* —eso suele funcionar— sino **poner la declaración que dice lo contrario y
+exigir que se ponga rojo**. Si pasa en verde, está matcheando el nombre. Los cuatro se
+encontraron así, ninguno leyéndolo.
+
+**Corolario: cuando un guard declara su propio punto ciego, ese punto ciego ES un hallazgo.** No
+es una nota de color ni una muestra de honestidad. El guard de la 130 escribió *«una perilla viva
+que no tiene espejo le es invisible»*, las tareas 131 y 132 taparon los dos casos **conocidos**, y
+nunca se shipeó el mecanismo que encuentra el próximo — había al menos dos más. Un punto ciego
+declarado y no cerrado es una promesa, no un guard. Y peor: ese mismo guard **afirmaba cuántos
+casos había**, que es exactamente lo único que no podía saber.
 
 ### E. Estado regenerable que nadie regenera
 
@@ -205,8 +259,38 @@ Evidencia:  el comando o el fragmento exacto que lo demuestra
 Razonamiento: por qué la evidencia establece el hallazgo
 Impacto:    la consecuencia concreta (qué decisión se toma mal)
 Verificación: qué se buscó para intentar refutarlo
+¿Por qué no antes? (a) / (b) / (c-alcance) / (c-metodo) / (d) — ver la sección propia
 Acción:     la corrección más chica que lo resuelve
 ```
+
+## Cada hallazgo declara POR QUÉ no lo encontró la corrida anterior
+
+Pedido de Chapa el 2026-09-11, y es lo que convierte una re-corrida en algo más que repetir el
+barrido: **si un defecto estaba ahí la vez pasada y la corrida no lo vio, el hueco es de la
+skill, no del repo.**
+
+Todo hallazgo lleva un campo `¿Por qué no antes?` con una de estas etiquetas:
+
+| etiqueta | significa | ¿mejora la skill? |
+|---|---|---|
+| **(a) NO EXISTÍA** | lo introdujo un commit posterior a la corrida anterior | **no** — la skill funcionó |
+| **(b) FUERA DE ALCANCE** | estaba, pero la corrida anterior lo excluyó explícitamente | **no**, pero se revisa si la exclusión sigue siendo razonable |
+| **(c-alcance)** | estaba y entraba, pero la corrida anterior declaró que barría por muestreo | **no** — es el límite declarado de *«por área, nunca exhaustiva»* |
+| **(c-metodo)** | estaba, entraba, la corrida dijo que lo miraba, y se pasó por alto | **SÍ — es el caso que importa** |
+| **(d) SE VIO Y SE DESCARTÓ MAL** | apareció y se rechazó con un argumento que no se sostiene | **SÍ, y con prioridad** |
+
+**Sólo (c-metodo) y (d) son deuda de la skill**, y cada uno obliga a contestar *¿qué le faltaba
+al método para verlo?*. Esa respuesta va al §6 del informe y, consolidada, a una mejora concreta
+de este archivo. Las otras tres etiquetas se escriben igual: distinguir *«el repo se movió»* de
+*«no miré bien»* es la mitad del valor.
+
+**El límite, para no inflarlo:** un (c-alcance) **no** es una falla. El repo es grande y la
+skill declara que se barre por área; confundirlo con (c-metodo) convierte cada corrida en una
+autoflagelación y deja de distinguir lo que sí hay que arreglar.
+
+**Congelá los kill-criteria de TODAS las áreas juntos, antes de empezar la primera.** Es más
+estricto que de a una: impide calibrar el criterio de un área con lo que apareció en la anterior,
+que es la forma más fácil de fabricar un barrido "limpio". Se hizo así el 2026-09-11 y funcionó.
 
 ## Fase adversarial: la hace el `verificador`
 
@@ -217,6 +301,30 @@ Lo que tiene que intentar: buscar el caller que falta, la config que lo explica,
 ya lo cubre, el camino alternativo, el commit reciente que lo arregló (**pasó**: la 30(a)
 estaba arreglada hacía tres semanas). Lo que no sobrevive, **se borra del informe** — no se
 degrada a MEDIUM para salvarlo.
+
+**Un hallazgo puede sobrevivir con parte del impacto refutado, y eso se escribe.** El 2026-09-11
+el `verificador` confirmó el núcleo de [C-5] y **tumbó dos de sus tres patas de impacto** (*«en el
+CI arrancan ON»* — falso, `conftest` redirige el settings; *«hmm y stacking en el camino vivo»* —
+falso para stacking). Las dos se **borraron del enunciado** y el hallazgo quedó más chico y más
+cierto. Además trajo un impacto **mejor** que el que yo había escrito. Un verificador que sólo
+puede decir sí/no desperdicia la pasada.
+
+**Si el `verificador` no puede correr, se dice.** El mismo día el segundo agente **murió por
+límite de sesión**; la refutación se hizo a mano con los mismos ángulos —y tumbó **dos de los
+cinco** casos del hallazgo—, pero el informe dice explícitamente que esa fase fue **propia y no
+independiente**. Una fase adversarial que uno se hace a sí mismo vale menos, y el lector tiene
+que poder saberlo.
+
+**Y antes de mandarlo: validá tu propio instrumento.** El 2026-09-11 publiqué internamente un
+hallazgo de `claims` —*«faltan flags en `SETTINGS_REFERENCE.md`»*— que era **mi regex**, no el
+repo: pedía un `|` pegado al backtick, y las filas que marcó como ausentes **existían** — sólo
+formatean el default con un sufijo `(OFF)` adentro de la celda. Peor: comparé la foto histórica
+con **otra** regex que la de la corrida, así que la diferencia que me llamó la atención era un
+artefacto de comparar **dos instrumentos**. Re-medido con la misma regex en las dos fechas:
+**idéntico**. Una auditoría que mide con un instrumento sin
+validar produce exactamente lo que viene a cazar — un número limpio que significa otra cosa
+([[validar-el-instrumento-antes-del-numero]]). **Los hallazgos retirados se publican con el
+motivo**, en su propia sección.
 
 ## Salida
 

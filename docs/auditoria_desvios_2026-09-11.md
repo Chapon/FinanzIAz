@@ -73,10 +73,115 @@ Mismo protocolo que el §1.5 de `docs/auditoria_claims_2026-09-11.md`.
 
 ---
 
-## 2. Hallazgos
+## 2. Alcance real
 
-_(se completa al correr)_
+**Mirado:** `deviations_keyed()` y sus 10 claves, los 25 símbolos `LIVE_*`, el
+`~/.finanzias/settings.json` vivo contra la cuenta 2 de la DB, `paper_trading/engine.py` y
+`paper_trading/gates.py` para los gates que efectivamente corren, y `analysis/portfolio_sim.py` +
+`analysis/exit_replay.py` para lo que el harness modela.
 
-## 5. Deuda de método — qué le faltaba a la corrida anterior
+**NO mirado, y queda declarado:** el Gate 2c / catalyst (está OFF y sin provider — tarea 162);
+`ui/`; `alembic/`; los runners que no corren sobre la cuenta viva.
 
-_(se completa al correr; sólo entra lo etiquetado (c-metodo) o (d))_
+---
+
+## 3. Hallazgos
+
+### [D-1] `paper_adv_cap_pct` está ON en la cuenta viva, el harness no lo modela y nadie lo declara
+
+Severidad: **MEDIA** (latente) · Confianza: ALTA · Categoría: [D-falta]
+Ubicación: `paper_trading/engine.py:1147-1169`, `paper_trading/gates.py:565`
+
+**Evidencia.** El `settings.json` vivo tiene `paper_adv_cap_pct = 0.05` (el **default del schema
+es 0.0**, o sea que Chapa lo prendió a mano). `engine.py:1147` lo aplica a cada BUY:
+`adv_capped_notional(target_dollars, adv, adv_cap_pct)`. Y ni `analysis/portfolio_sim.py` ni
+`analysis/harness_config.py` mencionan `adv_cap` — grep vacío. Las 10 claves de
+`deviations_keyed()` son `analyze_window`, `barrier_eval`, `barrier_fill`,
+`artifact_window_undeclared`, `atr_hard_stop`, `vol_overlay`, `regime_scale`, `universe_screen`,
+`earnings_blackout`, `reentry_gates`. **Ninguna es el ADV cap.**
+
+**Razonamiento.** Es una perilla viva, encendida a mano, que **trima el tamaño de cada BUY**, y
+el harness no la modela ni la declara. Es exactamente la familia de la tarea 94 (*«el overlay de
+volatilidad está ON, muerde todos los días y no lo declara nadie»*).
+
+**Impacto — medido, y por eso es MEDIA y no más.** La cuenta 2 tiene **$51.499 de equity con 10
+slots**, o sea ~**$5.150 por BUY**. El cap de 5% sólo mordería con un `ADV$ < $103.000`, que para
+nombres del S&P 500 no ocurre. **Hoy el desvío es inerte.** Muerde si la cuenta crece mucho o si
+entra un nombre ilíquido, y ahí lo haría **en silencio**.
+
+**Verificación.** Se comprobó que el cap se aplica sólo a BUY (`trade.side == "BUY"`), que falla
+abierto sin ADV, y que la cuenta no tiene hoy ningún nombre donde el piso se acerque.
+
+**¿Por qué no antes? (c-alcance)** — la corrida del 2026-09-08 no enumeró las perillas vivas una
+por una contra `deviations_keyed()`; barrió los desvíos ya declarados. No es deuda de método:
+es que el área se barre por muestreo y esta perilla no cayó en la muestra.
+
+**Acción.** O declarar la clave con su número medido, o escribir por qué no hace falta.
+
+### [D-2] Hay al menos cuatro perillas vivas sin espejo `LIVE_*`, y el guard que debería verlas es ciego por construcción
+
+Severidad: **MEDIA-ALTA** (latente) · Confianza: ALTA · Categoría: [D-espejo]
+Ubicación: `analysis/harness_config.py` (ausencia de espejos),
+`tests/test_espejos_vivos_t130.py:34-42`
+
+**Evidencia.** Perillas vivas que **no** tienen espejo `LIVE_*`:
+
+| perilla | valor vivo | la modela el harness? |
+|---|---|---|
+| `atr_tp_mult` | `4.0` | **sí**, con un literal: `analysis/exit_replay.py:87` `tp_mult: float = 4.0` |
+| `atr_trail_enabled` | `True` | sí, implícito |
+| `hmm_enabled` | `False` | hereda el ambiente (ver [C-5] de `claims`) |
+| `stacking_enabled` | `False` | hereda el ambiente (ídem) |
+
+**Razonamiento.** `atr_tp_mult` es el caso más nítido: es una **perilla de política de salida**,
+el harness la modela con un **literal hardcodeado que hoy coincide por casualidad** (4.0 == 4.0),
+y no hay nada que ate los dos valores. Si Chapa mueve el take-profit, todos los harness de salida
+siguen modelando 4.0 y **nada lo dice**. Ése es, byte por byte, el defecto de la tarea **92**,
+que costó **7,16 pp de CAGR** por seis días de política declarada al revés.
+
+**Y el guard no puede verlo, por su propia declaración.** `tests/test_espejos_vivos_t130.py:34-37`
+dice: *«Su población son los `LIVE_*` que **existen**, así que una perilla viva que **no tiene
+espejo** le es invisible. Esto cierra "el espejo dejó de seguir al vivo" y **no** "hay algo vivo
+sin espejo"»*. Las dos que estaban en esa situación se cerraron una por una (tareas 131 y 132),
+pero **nunca se shipeó el mecanismo que encuentra la próxima**.
+
+**Impacto.** Latente hoy (los cuatro valores están alineados o son inertes). El costo aparece el
+día que alguien mueva una de las cuatro, y ese día es silencioso.
+
+**¿Por qué no antes? (c-metodo)** — el punto ciego está **escrito** en el guard desde la 130, y
+las corridas de `desvios` del 2026-09-02 y del 2026-09-08 lo leyeron y cerraron los dos casos
+conocidos **sin preguntar cómo se encuentra el tercero**. La skill no tiene ningún paso que diga
+*«cuando un guard declara su punto ciego, el punto ciego es un hallazgo»*. **Deuda de skill —
+ver §6.**
+
+**Acción.** Un predicado que barra el `SCHEMA` y exija que toda clave que el engine lee en una
+decisión tenga espejo o esté en una lista de excepciones con motivo — o sea, la dirección
+**settings → espejos**, que es la que falta.
+
+---
+
+## 4. Barrido limpio en el resto del área
+
+- **[D-texto]** — se leyeron las 10 claves y sus textos contra el código: ninguna afirma algo
+  que el código contradiga. La contradicción de la tarea **169** (el banner del T37) ya está
+  cerrada.
+- **[D-veredicto]** — el caso vivo es el T37 (SHIP → NO-SHIP), y **está declarado** en los tres
+  docs donde se lee, más la decisión de Chapa de no mover la política y el cierre de la 170.
+  No hay desvío sin declarar por ese eje.
+
+---
+
+## 5. Mapeo hallazgo → tarea
+
+| hallazgo | severidad | tarea |
+|---|---|---|
+| [D-1] `paper_adv_cap_pct` vivo, no modelado, no declarado | MEDIA | **184** |
+| [D-2] perillas vivas sin espejo + el guard ciego a ellas | MEDIA-ALTA | **185** |
+
+---
+
+## 6. Deuda de método
+
+**[D-2] es (c-metodo)** y es la más importante de la tanda junto con la de `claims`: las dos son
+**la misma dirección faltante**. Va consolidada en el §6 de
+`docs/auditoria_guards_2026-09-11.md`.
