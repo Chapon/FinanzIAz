@@ -1,5 +1,22 @@
 # Veredicto — Contra qué precio se decide la barrera (Tarea 26b, STOP-PRICE)
 
+> ### ⚠ Actualización 2026-09-10 (tarea 168): sobre la muestra de hoy esta corrida es INVÁLIDA
+>
+> Re-corrido el runner sobre el cohorte refrescado el 2026-09-09, el sanity del instrumento
+> **falla por las dos patas**: `ΔCAGR +1.26 pp` (pedía ≥ +1.50) y `ΔmaxDD −3.85 pp` (pedía
+> ≤ −5.00), contra los **+3.72 / −15.19** publicados acá. Una corrida con el sanity en falso
+> **no tiene veredicto**, así que hoy este experimento no dice nada — y eso **no re-escribe
+> este doc**: midió otra muestra (127 tickers, ventana `2016-07-11..2026-08-07`) y sigue
+> siendo lo que fue.
+>
+> **La atribución está medida** (`docs/t26b_sanity_t168_2026-09-10.md`): es el **refresh**, no
+> el arreglo del control de la tarea 164. Con el control viejo el sanity falla **peor**
+> (`ΔmaxDD −0.30`); el arreglo lo mejoró +3.55 pp sin alcanzar el umbral. Lo que más se movió
+> es el ΔCAGR, que casi no responde al control: el brazo de **azar** pasó de 3.83% a 6.18% de
+> CAGR, así que sobre esta muestra la ventaja de *elegir* cuáles stops suprimir se achicó.
+>
+> **Ningún umbral se tocó.**
+
 _2026-08-16 · pre-registro congelado `docs/stop_price_prereg_t26b_2026-08-14.md` (2026-08-14) ·
 runner `scripts/run_stop_price_replay_t26b.py` · tests `tests/test_stop_price_replay_t26b.py`_
 
