@@ -49,7 +49,7 @@ from analysis.harness_config import (
     LIVE_UNIVERSE_FILE,
     POPULATION_LIVE_ACCT2,
     REPRO_OK,
-    WINDOW_REFRESH_2026_09_01_LIVE,
+    WINDOW_LIVE,
     SignalStoreGapError,
     StaleArtifactError,
     announce,
@@ -793,7 +793,7 @@ def main(argv: list[str] | None = None) -> int:
             exp,
             tol=REPRO_TOL,
             current=window,
-            measured_on=WINDOW_REFRESH_2026_09_01_LIVE,
+            measured_on=WINDOW_LIVE,
             population=pop_run,
             measured_over=POPULATION_LIVE_ACCT2,
         )

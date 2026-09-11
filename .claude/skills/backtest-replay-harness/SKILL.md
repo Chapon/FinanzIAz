@@ -478,13 +478,13 @@ INVÁLIDA**. Es una máquina de invalidar corridas buenas.
   los runners**, así que no caduca. Una constante de sanity nueva no entra al repo sin declarar
   su clase — y los de clase `magnitud` son los que hay que re-mirar en cada refresh.
 - Toda constante de reproducción **declara sobre qué ventana y sobre qué población se midió**
-  (`measured_on=WINDOW_REFRESH_2026_09_01_LIVE`, `measured_over=POPULATION_LIVE_ACCT2`). Sin
+  (`measured_on=WINDOW_LIVE`, `measured_over=POPULATION_LIVE_ACCT2`). Sin
   las dos, un desajuste es `INDETERMINADO`: **no se acusa a la cañería sin evidencia**. La
   población de la corrida sale de `cfg.population(len(entries))` — `announce()` devuelve el
   `cfg`, así que es una línea.
 - **La ventana es POR UNIVERSO (tarea 68), y elegir mal es un error silencioso.** Hay dos
-  constantes y **ninguna es el default**: `WINDOW_REFRESH_2026_09_01_LIVE` y
-  `WINDOW_REFRESH_2026_09_01_LEGACY`. **No copies acá sus valores**: son rodantes y se
+  constantes y **ninguna es el default**: `WINDOW_LIVE` y
+  `WINDOW_LEGACY`. **No copies acá sus valores**: son rodantes y se
   re-anclan en cada refresh (la última vez, la 157) — leelas de `analysis/harness_config.py`,
   que es donde viven, y donde `test_el_ancla_DESCRIBE_al_cohorte_real` las contrasta contra el
   cohorte de verdad. Difieren en el `start`, así que una sola no puede anclar a las dos — es

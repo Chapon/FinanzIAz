@@ -2639,8 +2639,27 @@ def announce_effective(
 #
 # Lo que AVB sí es hoy: un **miembro inerte** del cohorte (27 barras < warmup 250 ⇒ cero
 # entradas), y lo declara ``announce_inert_members`` en cada corrida.
-WINDOW_REFRESH_2026_09_01_LIVE = ArtifactWindow("2016-09-12", "2026-09-09", 2512)
-WINDOW_REFRESH_2026_09_01_LEGACY = ArtifactWindow("2016-09-01", "2026-09-09", 2518)
+# **Estos nombres NO llevan fecha, y es deliberado (tarea 163).** Se llamaban
+# ``WINDOW_REFRESH_2026_09_01_*`` y la tarea **157** les re-ancló el valor a la ventana
+# del **2026-09-09** dejando el nombre: el símbolo afirmaba una fecha y su valor otra.
+#
+# En este repo el nombre de un ancla no es decorativo — el ancla anterior
+# (``WINDOW_REFRESH_2026_08_09``) **no existe ni como alias, a propósito**, con un test
+# que lo prohíbe en los runners, *«porque dejarlo habría permitido elegir mal en
+# silencio»*. El mismo argumento aplica al revés: un nombre que **miente** sobre su fecha
+# permite creer que se está anclando contra otro refresh.
+#
+# De las dos salidas posibles —renombrar en cada re-anclaje, o sacarle la fecha al
+# nombre— se eligió la segunda, que **elimina la clase entera** en vez de depender de que
+# alguien se acuerde: la fecha vive en el ``ArtifactWindow``, que es el único lugar donde
+# no puede desincronizarse, y el eje que el nombre sí distingue —``LIVE`` vs ``LEGACY``,
+# o sea el **universo**— se conserva. La señal de *«esto se re-ancló»* que daba la fecha
+# del nombre al leer un diff no se pierde: el diff del **valor** la trae.
+#
+# ``tests/test_ancla_sin_fecha_t163.py`` lo sostiene: ningún ancla de ventana puede tener
+# una fecha en el nombre, y los nombres viejos no pueden volver como alias.
+WINDOW_LIVE = ArtifactWindow("2016-09-12", "2026-09-09", 2512)
+WINDOW_LEGACY = ArtifactWindow("2016-09-01", "2026-09-09", 2518)
 
 # Las POBLACIONES sobre las que se midieron esas mismas constantes (Tarea 52). La
 # ventana sola no alcanza para acusar a la cañería: el smoke de la 37 corrió sobre

@@ -10,7 +10,7 @@ muestra no esté torcida.
 —71 ruedas atrás— y ``stale_artifacts`` devolvía **CERO**.
 
 **Y la asimetría estaba premiada**, que es lo que explica por qué el hueco no se cerraba
-solo: ``WINDOW_REFRESH_2026_09_01_LIVE`` era exactamente la ventana del cohorte de hoy,
+solo: ``WINDOW_LIVE`` era exactamente la ventana del cohorte de hoy,
 así que ``reproduction_check`` daba un veredicto usable; **refrescar** lo pasa a
 ``REPRO_INDETERMINATE`` y obliga a re-anclar constantes (la T68 re-ancló 17). Un refresh
 parcial aborta la corrida; no refrescar nunca no costaba nada. El gradiente apuntaba a

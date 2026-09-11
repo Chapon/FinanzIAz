@@ -62,8 +62,8 @@ from analysis.harness_config import (
     REPRO_INDETERMINATE,
     REPRO_NA,
     REPRO_OK,
-    WINDOW_REFRESH_2026_09_01_LEGACY,
-    WINDOW_REFRESH_2026_09_01_LIVE,
+    WINDOW_LEGACY,
+    WINDOW_LIVE,
     ArtifactPopulation,
     ArtifactWindow,
     HarnessConfig,
@@ -760,8 +760,8 @@ def test_the_anchor_constants_match_the_measured_windows():
     Lo que queda acá es lo único que este test puede afirmar sin tocar el disco: que
     las constantes son las que los runners importan, y **por qué son dos**.
     """
-    assert str(WINDOW_REFRESH_2026_09_01_LIVE) == "2016-09-12..2026-09-09 (2512 barras)"
-    assert str(WINDOW_REFRESH_2026_09_01_LEGACY) == "2016-09-01..2026-09-09 (2518 barras)"
+    assert str(WINDOW_LIVE) == "2016-09-12..2026-09-09 (2512 barras)"
+    assert str(WINDOW_LEGACY) == "2016-09-01..2026-09-09 (2518 barras)"
     # La separación se afirma sobre el eje que **no** depende de una excepción declarada.
     # `!= ` entre dos literales era la tautología: hoy se distinguen por el `start`, y
     # ese `start` lo sostenía **un solo artefacto congelado** (AVB). El eje que las
@@ -801,8 +801,8 @@ def test_el_ancla_DESCRIBE_al_cohorte_real():
         pytest.skip("sin cohorte de artefactos en este entorno")
 
     medida = artifact_window(bars)
-    assert str(medida) == str(WINDOW_REFRESH_2026_09_01_LIVE), (
-        f"el ancla dice {WINDOW_REFRESH_2026_09_01_LIVE} y el cohorte real mide {medida}. "
+    assert str(medida) == str(WINDOW_LIVE), (
+        f"el ancla dice {WINDOW_LIVE} y el cohorte real mide {medida}. "
         "Si acabas de refrescar los artefactos, esto es el re-anclaje pendiente (tarea "
         "157) y no un defecto: re-medir TODAS las constantes y actualizarlas en un solo "
         "commit (T68), nunca solo la de ventana."
@@ -836,8 +836,8 @@ def test_the_live_window_start_rides_on_the_declared_refresh_exception():
     el `n_bars`.
     """
     assert "AVB" in ARTIFACT_REFRESH_EXCEPTIONS  # la excepción sigue declarada
-    assert WINDOW_REFRESH_2026_09_01_LIVE.start != WINDOW_REFRESH_2026_09_01_LEGACY.start
-    assert WINDOW_REFRESH_2026_09_01_LIVE.n_bars != WINDOW_REFRESH_2026_09_01_LEGACY.n_bars
+    assert WINDOW_LIVE.start != WINDOW_LEGACY.start
+    assert WINDOW_LIVE.n_bars != WINDOW_LEGACY.n_bars
     # Y el eje que `reproduction_check` mira PRIMERO y que no cuelga de ningún frame.
     assert POPULATION_LIVE_ACCT2 != POPULATION_LEGACY_41
 

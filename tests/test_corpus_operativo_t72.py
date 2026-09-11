@@ -98,8 +98,8 @@ def test_el_nombre_que_la_68_borro_no_esta_definido():
     """
     definidas = _constantes_definidas()
     assert "WINDOW_REFRESH_2026_08_09" not in definidas
-    assert "WINDOW_REFRESH_2026_09_01_LIVE" in definidas
-    assert "WINDOW_REFRESH_2026_09_01_LEGACY" in definidas
+    assert "WINDOW_LIVE" in definidas
+    assert "WINDOW_LEGACY" in definidas
 
     fuente = (_REPO / "analysis" / "harness_config.py").read_text(encoding="utf-8")
     assert "WINDOW_REFRESH_2026_08_09" in fuente  # en comentarios, a propósito
