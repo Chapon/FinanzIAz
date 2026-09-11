@@ -1606,21 +1606,37 @@ def parse_universe_file(path: Path) -> list[str]:
 
 
 def _leer_universo(universe_file: str) -> list[str]:
-    """Los tickers declarados en un archivo de universo. Levanta ``OSError`` si no
-    se puede leer — cada caller decide su fail-open, que no es el mismo para todos.
+    """Los tickers declarados en un archivo de universo, por ruta **relativa al repo**.
+    Levanta ``OSError`` si no se puede leer — cada caller decide su fail-open, que no es
+    el mismo para todos.
 
     Se extrajo de ``universe_fingerprint`` cuando la tarea 109 necesitó el **conjunto**
     y no la huella: tener el parseo dos veces era garantizar que se separaran (el
     ``utf-8-sig`` de la 41 y el descarte de comentarios se habrían duplicado).
+
+    **Tarea 177 — y se separaron igual, en el eje que quedaba.** Esto tenía su propio
+    parseo, que **no** partía por comas, **no** hacía uppercase y **no** deduplicaba;
+    ``parse_universe_file`` —el de los runners— hace las tres. O sea dos lecturas del
+    mismo formato con reglas distintas, y coincidiendo **sólo** porque ningún archivo de
+    universo del repo tiene una coma ni una minúscula (medido: ``comas=0`` en los cinco).
+
+    **De esas tres diferencias sólo UNA llegaba a algo, y eso se midió en vez de suponerse.**
+    ``tickers_fingerprint`` hace ``sorted({... .upper()})`` y ``retired_tickers`` hace
+    ``{t.strip().upper() for t in ...}``: los dos consumidores **absorben caso, duplicados y
+    orden** por su cuenta, así que en esos ejes las dos semánticas eran indiferentes.
+
+    El eje que **sí** llegaba es el **split por comas**. El día que alguien escribiera dos
+    tickers en una línea —que el formato **admite** y ``parse_universe_file`` documenta— esto
+    habría devuelto ``'AAPL, MSFT'`` como **un** elemento: la huella contaría 1 donde el
+    harness carga 2, y ``retired_tickers`` reportaría a los dos como retirados. Con eso una
+    corrida podría declararse sobre otro universo del que midió. La forma de la **52**
+    (*consciente de la ventana pero no de la población*) un nivel más abajo — un eje, no tres.
+
+    **Ahora delega, y eso se pudo hacer porque se midió primero:** las huellas de los 5
+    universos del repo son **byte-idénticas** con el parseo unificado, así que el cambio es
+    demostrablemente neutro para la muestra y no hace falta re-anclar nada.
     """
-    raw = (_REPO_ROOT / universe_file).read_text(encoding="utf-8-sig")
-    return [
-        limpio
-        for ln in raw.splitlines()
-        if ln.strip() and not ln.lstrip().startswith("#")
-        for limpio in (ln.split("#", 1)[0].strip(),)
-        if limpio
-    ]
+    return parse_universe_file(_REPO_ROOT / universe_file)
 
 
 def artifact_population(
