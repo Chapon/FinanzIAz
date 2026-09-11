@@ -121,6 +121,20 @@ def valor_vivo(clave: str, vivo: dict):
     return vivo[clave] if clave in vivo else DEFAULTS.get(clave, "<no está en el schema>")
 
 
+def _movido(actual):
+    """Un valor **garantizadamente distinto** de ``actual``, del mismo tipo cuando se puede.
+
+    **Tarea 175.** Antes esto era inline y hacía ``f"{actual}-movido"`` para todo lo que no
+    fuera bool, o sea que convertía un float en str: distinto, sí, pero por el tipo y no por
+    el valor. Un `!=` que pasa por el tipo no ejercita la comparación que el guard hace.
+    """
+    if isinstance(actual, bool):
+        return not actual
+    if isinstance(actual, (int, float)):
+        return actual + 1
+    return f"{actual}-movido"
+
+
 def desvios(vivo: dict) -> list[str]:
     """Los espejos que ya no describen a la cuenta viva, con el detalle."""
     out = []
@@ -161,13 +175,29 @@ def test_mut_mover_una_clave_del_settings_acusa_a_su_espejo(espejo, clave):
     Un guard que compara 13 valores puede estar mirando 12 y nadie se entera. Acá se
     le mueve **una** al valor vivo y se exige que el mensaje **nombre a esa**.
     """
-    vivo = leer_settings(_SETTINGS_VIVO) or {}
-    mutado = {c: valor_vivo(c, vivo) for _, c in ESPEJOS}
-    actual = mutado[clave]
-    mutado[clave] = (not actual) if isinstance(actual, bool) else f"{actual}-movido"
+    # **Tarea 175 — la línea base sale de los ESPEJOS, no del settings vivo.**
+    # Antes era `leer_settings(...) or {}`, y con eso el test dependía del entorno: donde
+    # no hay `~/.finanzias/settings.json` —el CI— la base caía al **default del schema**,
+    # que para tres claves **no** coincide con su espejo (`atr_stops_enabled` y
+    # `atr_hard_stop_enabled` y `paper_universe_screen_enabled`: default `False`, vivo
+    # `True`). Flipear un bool desde el default aterrizaba entonces **sobre** el valor del
+    # espejo, la mutación quedaba en no-op y el test fallaba. Verde en Windows, rojo en
+    # Ubuntu desde su propio commit (`94dcae5`), 35 corridas.
+    #
+    # Una mutación necesita una base **sin desvíos por construcción**, y eso es lo que los
+    # espejos son. El assert de abajo lo exige en vez de suponerlo: sin él, un caso puede
+    # arrancar ya desviado y "pasar" por el desvío que traía, no por el que se inyectó.
+    base = {c: getattr(hc, e) for e, c in ESPEJOS}
+    assert desvios(base) == [], "la línea base ya traía desvíos: la mutación no probaría nada"
+
+    actual = base[clave]
+    mutado = dict(base)
+    mutado[clave] = _movido(actual)
+    assert mutado[clave] != actual, f"la mutación de {clave} no movió el valor"
 
     malos = desvios(mutado)
     assert any(espejo in m for m in malos), f"mover {clave} no acusó a {espejo}"
+    assert len(malos) == 1, f"mover {clave} acusó a más de un espejo: {malos}"
 
 
 def test_una_clave_AUSENTE_del_json_cae_al_default_del_schema():
