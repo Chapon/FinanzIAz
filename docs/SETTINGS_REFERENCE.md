@@ -106,7 +106,11 @@ Leídos en `engine.py` (proveedor inyectable). Default OFF por kill-criteria no 
 | `paper_catalyst_veto_min_score` | `0.30` | Impact score mínimo para que el veto pueda aplicar. |
 | `paper_catalyst_veto_gray_high` | `0.50` | Techo de la banda gris de score en la que el veto aplica. |
 
-**Declarar no es exponer:** `ui/settings_tab.py` arma sus secciones con listas explícitas y no lee el `SCHEMA`, así que ninguno de los tres aparece en la pestaña Settings. Ponerlos ahí —que los volvería flipeables desde la UI— es una decisión aparte (tarea **162**).
+**Declarar no es exponer:** `ui/settings_tab.py` arma sus secciones con listas explícitas y no lee el `SCHEMA`, así que ninguno de los tres aparece en la pestaña Settings. Ponerlos ahí —que los volvería flipeables desde la UI— era una decisión aparte, y **la tarea 162 la cerró: se quedan como flags de ARCHIVO, a propósito.**
+
+El motivo, y son **dos razones independientes** —si fuera una sola, la decisión sería más discutible—: el Gate 2c está OFF **por kill-criteria no superado** (T-CAT-6), y además **requiere un `catalyst_signal_provider` inyectado que nadie inyecta en producción** (verificado 2026-09-11: `catalyst_signal_provider` aparece sólo como parámetro de `run_scan` con default `None`; ningún llamador de producción lo pasa). O sea que hoy el gate no corre **ni con el flag en `True`**, y un toggle en la UI que no hace nada —o que enciende un gate que el backtest rechazó— es peor que no tenerlo.
+
+**Cuándo se revisa:** el día que **T-CAT-5b** destrabe el consenso point-in-time, se re-corra el backtest del veto y el provider quede inyectado. Ahí exponerlos desde la UI es el camino natural; hasta entonces se editan en `~/.finanzias/settings.json` y se reinicia la app.
 
 ## Rebuild semanal de surprise_profiles (trigger 4, T-CAT-5a)
 Regenera `data/catalyst/surprise_profiles.json` desde yfinance mientras la app está abierta. Los dos flags se declararon en el schema en la tarea **160**.

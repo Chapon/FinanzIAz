@@ -39,6 +39,8 @@ import pandas as pd
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
+from analysis.harness_config import parse_universe_file
+
 # Umbral pre-registrado (decisión de Chapa 2026-07-08).
 THRESHOLD_PCT = 0.15
 WINDOW_DAYS = 90
@@ -60,25 +62,9 @@ STRESS_MIN_REL_DD_REDUCTION = 0.20  # el breaker reduce el max DD ≥ 20% relati
 NORMAL_MAX_PL_CUT_PTS = 0.005  # sin recortar el P/L normal más de 0.5 pts
 
 
-def parse_universe_file(path: Path) -> list[str]:
-    raw = path.read_text(encoding="utf-8")
-    tickers: list[str] = []
-    for line in raw.splitlines():
-        if "#" in line:
-            line = line.split("#", 1)[0]
-        line = line.strip()
-        if not line:
-            continue
-        for tok in line.split(","):
-            t = tok.strip().upper()
-            if t:
-                tickers.append(t)
-    seen, out = set(), []
-    for t in tickers:
-        if t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out
+# `parse_universe_file` vive en `analysis.harness_config` desde la tarea 161: eran
+# SIETE copias y el `utf-8-sig` de la 41 estaba en una sola (las otras seis perdían
+# el primer ticker si el archivo venía con BOM de PowerShell). Se importa arriba.
 
 
 def make_breaker(threshold: float, window_days: int):

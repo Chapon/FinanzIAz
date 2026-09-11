@@ -66,7 +66,7 @@ sys.path.insert(0, str(_HERE.parent))
 # Sólo stdlib en ``harness_config``, verificado: importarlo acá **no** arrastra
 # numpy/pandas, así que el pineo de threads de ``_init_worker`` sigue llegando antes
 # que cualquier librería numérica (ver "Paralelismo" arriba).
-from analysis.harness_config import LIVE_UNIVERSE_FILE
+from analysis.harness_config import LIVE_UNIVERSE_FILE, parse_universe_file
 
 # **Tarea 158.** Acá decía ``"data/harness_universe_41_10y.txt"``: el cohorte legacy de
 # 41. Este script es **el productor** del store PIT —el que hay que correr después de
@@ -148,30 +148,9 @@ def _save(path: Path, ticker: str, period: str, warmup: int, rows: dict, n_bars:
     tmp.replace(path)
 
 
-def parse_universe_file(path: Path) -> list[str]:
-    """Un ticker por línea; ``#`` introduce comentario. (Igual que E4.)
-
-    ``utf-8-sig`` y no ``utf-8``: PowerShell 5.1 —el shell de la máquina de
-    Chapa— escribe UTF-8 **con BOM** por default (``Out-File``,
-    ``Set-Content -Encoding utf8``), y con ``utf-8`` el BOM se pega al primer
-    ticker (``\\ufeffABBV``), que después no encuentra su artefacto PIT y **se cae
-    del universo con un simple AVISO**. Sin BOM el comportamiento es idéntico.
-    Tarea 41.
-    """
-    tickers: list[str] = []
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        if "#" in line:
-            line = line.split("#", 1)[0]
-        for tok in line.strip().split(","):
-            t = tok.strip().upper()
-            if t:
-                tickers.append(t)
-    seen, out = set(), []
-    for t in tickers:
-        if t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out
+# `parse_universe_file` vive en `analysis.harness_config` desde la tarea 161: eran
+# SIETE copias y el `utf-8-sig` de la 41 estaba en una sola (las otras seis perdían
+# el primer ticker si el archivo venía con BOM de PowerShell). Se importa arriba.
 
 
 def pending_dates(df, rows: dict, warmup: int) -> list[str]:

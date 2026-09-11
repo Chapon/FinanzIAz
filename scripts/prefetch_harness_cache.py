@@ -24,35 +24,12 @@ from pathlib import Path
 repo_root = Path(__file__).parent.parent
 sys.path.insert(0, str(repo_root))
 
+from analysis.harness_config import parse_universe_file
 from data.yahoo_finance import get_historical_data_batch
 
-
-def parse_universe_file(path: Path) -> list[str]:
-    """Parse one ticker per line, with ``#`` introducing a comment (inline or
-    full-line). Commas inside a non-comment line are still allowed as
-    separators. Splitting must happen per-line so that commas inside comments
-    don't bleed into ticker tokens (the previous version produced bogus
-    "REQUIEREN PREFETCH ---" entries from comma-containing comments)."""
-    raw = path.read_text(encoding="utf-8")
-    tickers: list[str] = []
-    for line in raw.splitlines():
-        # Strip inline comments first so commas inside comments are ignored.
-        if "#" in line:
-            line = line.split("#", 1)[0]
-        line = line.strip()
-        if not line:
-            continue
-        for tok in line.split(","):
-            t = tok.strip().upper()
-            if t:
-                tickers.append(t)
-    # De-dup preserving order
-    seen, out = set(), []
-    for t in tickers:
-        if t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out
+# `parse_universe_file` vive en `analysis.harness_config` desde la tarea 161: eran
+# SIETE copias y el `utf-8-sig` de la 41 estaba en una sola (las otras seis perdían
+# el primer ticker si el archivo venía con BOM de PowerShell). Se importa arriba.
 
 
 def main():

@@ -1562,6 +1562,49 @@ def universe_fingerprint(universe_file: str) -> str | None:
     return tickers_fingerprint(tickers) if tickers else None
 
 
+def parse_universe_file(path: Path) -> list[str]:
+    """Los tickers de un archivo de universo: uno por línea, ``#`` es comentario, se
+    admiten comas dentro de una línea. Uppercase y deduplicado preservando el orden.
+
+    ``utf-8-sig`` y **no** ``utf-8``: PowerShell 5.1 —el shell de la máquina de Chapa—
+    escribe UTF-8 **con BOM** por default (``Out-File``, ``Set-Content -Encoding utf8``),
+    y con ``utf-8`` pelado el BOM se pega al primer ticker (``\\ufeffABBV``), que después
+    no encuentra su artefacto PIT y **se cae del universo con un simple AVISO**. Sin BOM
+    el comportamiento es idéntico. Tarea **41**, que lo pagó con un ticker.
+
+    **Tarea 161 — por qué esto vive acá y no en siete lugares.** Había **siete** copias de
+    esta función y el ``utf-8-sig`` de la 41 estaba en **una**: las otras seis leían con
+    ``utf-8`` pelado (``harness_walkforward``, ``prefetch_harness_cache``,
+    ``run_cross_sectional_validation``, ``run_dd_breaker_validation``,
+    ``run_switcher_validation``, ``run_walkforward_power``). Medido antes de unificar: sobre
+    los 5 archivos de universo del repo las siete daban **cero diferencias** —así que
+    consolidar no movió ninguna muestra— y con un BOM sólo la canónica devolvía ``ABBV``.
+
+    La que más pesaba era ``prefetch_harness_cache``, que baja el cache del cohorte y cuyo
+    propio docstring dice que existe porque *«el harness descarta tickers en silencio y
+    sigue con un universo más corto»*: perder el primero por un BOM es ese mismo modo de
+    falla, un nivel antes.
+
+    Va en este módulo porque es donde viven las **poblaciones** (tarea 158) y es sólo-stdlib,
+    así que cualquier runner puede importarlo sin arrastrar dependencias.
+    """
+    tickers: list[str] = []
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        if "#" in line:
+            line = line.split("#", 1)[0]
+        for tok in line.strip().split(","):
+            t = tok.strip().upper()
+            if t:
+                tickers.append(t)
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tickers:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def _leer_universo(universe_file: str) -> list[str]:
     """Los tickers declarados en un archivo de universo. Levanta ``OSError`` si no
     se puede leer — cada caller decide su fail-open, que no es el mismo para todos.

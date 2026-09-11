@@ -41,10 +41,15 @@ from analysis.harness_config import (
 
 
 def universo_vivo(path: Path) -> list[str]:
-    """Los tickers del archivo de universo, sin comentarios ni vacíos."""
+    """Los tickers del archivo de universo, sin comentarios ni vacíos.
+
+    ``utf-8-sig`` y no ``utf-8`` (tareas 41 y 161): PowerShell 5.1 escribe UTF-8 **con
+    BOM** por default, y con ``utf-8`` pelado el BOM se pega al primer ticker. Acá pesa
+    especialmente porque este script decide **qué se refresca**.
+    """
     return [
         ln.strip()
-        for ln in path.read_text(encoding="utf-8").splitlines()
+        for ln in path.read_text(encoding="utf-8-sig").splitlines()
         if ln.strip() and not ln.startswith("#")
     ]
 

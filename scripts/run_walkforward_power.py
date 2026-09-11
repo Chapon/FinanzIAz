@@ -36,7 +36,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, Bar
-from analysis.harness_config import LEGACY_UNIVERSE_FILE
+from analysis.harness_config import LEGACY_UNIVERSE_FILE, parse_universe_file
 from analysis.walkforward_power import (
     A1_VARIANTS,
     EntrySample,
@@ -61,26 +61,9 @@ DEFAULT_UNIVERSE = LEGACY_UNIVERSE_FILE
 OUT_ROOT = _HERE.parent / "data" / "walkforward_power"
 
 
-def parse_universe_file(path: Path) -> list[str]:
-    """Un ticker por línea; ``#`` introduce comentario (inline o full-line)."""
-    raw = path.read_text(encoding="utf-8")
-    tickers: list[str] = []
-    for line in raw.splitlines():
-        if "#" in line:
-            line = line.split("#", 1)[0]
-        line = line.strip()
-        if not line:
-            continue
-        for tok in line.split(","):
-            t = tok.strip().upper()
-            if t:
-                tickers.append(t)
-    seen, out = set(), []
-    for t in tickers:
-        if t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out
+# `parse_universe_file` vive en `analysis.harness_config` desde la tarea 161: eran
+# SIETE copias y el `utf-8-sig` de la 41 estaba en una sola (las otras seis perdían
+# el primer ticker si el archivo venía con BOM de PowerShell). Se importa arriba.
 
 
 def df_to_bars(df) -> list[Bar]:

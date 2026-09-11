@@ -310,7 +310,9 @@ def _load_universe(path: str | None) -> set[str] | None:
         log.warning("universe file no encontrado: %s (sin filtro)", path)
         return None
     out: set[str] = set()
-    for line in p.read_text(encoding="utf-8").splitlines():
+    # `utf-8-sig` (tareas 41 y 161): PowerShell escribe UTF-8 con BOM y con `utf-8`
+    # pelado el BOM se pega al primer ticker, que se cae del filtro en silencio.
+    for line in p.read_text(encoding="utf-8-sig").splitlines():
         s = line.strip().upper()
         if s and not s.startswith("#"):
             out.add(s)
