@@ -36,10 +36,15 @@ que **existen**, así que una perilla viva que **no tiene espejo** le es invisib
 Esto cierra *«el espejo dejó de seguir al vivo»* y **no** *«hay algo vivo sin
 espejo»*: son dos agujeros distintos y éste tapa uno solo.
 
-Las dos que estaban en esa situación se cerraron el mismo día —``atr_stops_enabled``
-(tarea **132**) y ``paper_universe_screen_enabled`` (tarea **131**)— y por eso hoy la
-tabla tiene **15** y no 13. Que hayan entrado sin fricción es el punto del test de
-población: nacieron con guard.
+**Ese punto ciego lo cierra ahora ``tests/test_espejos_direccion_faltante_t185.py``**, que
+barre la dirección contraria —del ``SCHEMA`` hacia los espejos— y exige que toda clave que el
+camino vivo de decisión lea esté espejada **o** clasificada con un motivo escrito.
+
+**Acá decía cuántas perillas estaban en esa situación, y era un conteo que este guard no puede
+hacer (tarea 182).** Decía *«las dos … ``atr_stops_enabled`` (132) y
+``paper_universe_screen_enabled`` (131)»*, y la auditoría del 2026-09-11 encontró que había más
+—entre ellas ``atr_tp_mult``, que es **política de salida**—. Un guard no puede contar la
+población a la que es ciego: el número sale de la clasificación de la 185, que sí la barre.
 """
 
 from __future__ import annotations
