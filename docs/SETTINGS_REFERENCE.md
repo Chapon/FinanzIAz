@@ -66,8 +66,8 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 |------|---------|----------|
 | `atr_stops_enabled` | `False` | Activa stops/TP basados en ATR. |
 | `atr_period` | `14` | Período del ATR. |
-| `atr_stop_mult` | (ver código) | Múltiplo ATR para el stop. |
-| `atr_tp_mult` | (ver código) | Múltiplo ATR para el take-profit. |
+| `atr_stop_mult` | `2.0` | Múltiplo ATR del stop duro. **Tiene espejo** (`LIVE_STOP_MULT`), así que el guard de la tarea 130 lo re-verifica contra este archivo en cada corrida. El valor lo validó la T37 y lo cableó la T53. |
+| `atr_tp_mult` | `4.0` | Múltiplo ATR del take-profit. **NO tiene espejo `LIVE_*`**, y el harness lo modela con un literal (`analysis/exit_replay.py` → `tp_mult: float = 4.0`) que hoy coincide **por casualidad**: si se mueve, todos los harness de salida siguen modelando 4.0 y nada lo dice. Es uno de los cinco `FALTA_ESPEJO` que declara `tests/test_espejos_direccion_faltante_t185.py` — ver tarea **185**. |
 | `atr_trail_enabled` | `True` | Trailing stop. |
 | `atr_trail_mult` | `0.0` | **T53** — múltiplo ATR del *trailing*, desacoplado del stop duro. `0.0` = seguir a `atr_stop_mult` (acople histórico, sin cambio de comportamiento). Valor validado por la T37: `2.0`. |
 | `atr_hard_stop_enabled` | `True` | **T53** — sub-switch del *stop duro* desde la entrada. `False` = no dispara nunca, la única barrera de abajo es el trailing (candidato `soff_t2.0` de la T37). Se shipea en `True` (comportamiento histórico); prenderlo/apagarlo es decisión de Chapa (`docs/stop_value_t37_2026-08-27.md`). |
@@ -133,4 +133,28 @@ El **bot token NUNCA vive acá** — se lee de la env var `SLACK_BOT_TOKEN`. Sol
 | `slack_data_outage_enabled` | `True` | Avisa cuando Yahoo se cae de forma sostenida (breaker NET1 nivel ≥2) y al recuperarse. Independiente del master de órdenes. |
 | `slack_price_alerts_enabled` | `True` | Avisa cuando una **alerta de precio** dispara (`AlertManager.check_alerts`), batcheado 1 mensaje por chequeo, además del popup. Independiente del master de órdenes. (NOTIF1) |
 
-> Sizing (cuando aplique): `kelly_fraction`, `vol_target_annual`, `max_position_weight`, `ibkr_commission_plan`. Ver el código para defaults exactos.
+## Sizing y riesgo de cartera (T06 / T10)
+
+**Estas siete filas entraron en la tarea 179**, y lo que había antes era una línea de prosa que
+nombraba cuatro de ellas y remataba *«Ver el código para defaults exactos»*. O sea que
+`CLAUDE.md` decía *«todos los flags `paper_*`/engine **con defaults**»* y la propia referencia
+admitía que para éstas no los tenía. Las otras tres no estaban en ningún lado — y la peor
+ausencia era `vol_target_portfolio_annual`, que **tiene espejo** (`LIVE_VOL_TARGET_ANNUAL`),
+**tiene desvío declarado** (clave `vol_overlay`) y **muerde todos los días**.
+
+| Flag | Default | Qué hace |
+|------|---------|----------|
+| `vol_target_portfolio_annual` | `0.12` | **El techo de σ anualizada de la CARTERA (T10), y es el que muerde.** Si la σ del libro activo lo supera, `apply_portfolio_vol_overlay` escala **todos** los pesos activos proporcionalmente y el residual queda en cash (long-only). Lo lee `_portfolio_vol_target()` (`paper_trading/strategies.py:131`). `0` lo desactiva. La tarea **94** lo declaró como desvío harness↔engine porque el harness **no** lo modela. |
+| `vol_target_annual` | `0.2` | Techo de σ anualizada **por NOMBRE**, parámetro de `compute_vol_overlay` (`paper_trading/gates.py:489`). No confundir con el de cartera: éste entra en el sizing T06 vía `_sizing_params()`, aquél es la capa de riesgo sobre el libro entero. `≤ 0` lo desactiva. |
+| `max_position_weight` | `0.25` | Tope de peso por posición en el sizing T06 (`_sizing_params()` → `max_weight`). **Inerte bajo `equal_weight` con 10 slots**, que es el modo de la cuenta viva: 1/10 = 0,10 nunca llega al tope. |
+| `kelly_fraction` | `0.25` | Fracción de Kelly del sizing T06 (`_sizing_params()`). **No entra en la cuenta viva**, cuyo `allocation_mode` es `equal_weight`. |
+| `ibkr_commission_plan` | `"tiered"` | Plan de comisiones IBKR que usa `paper_trading/costs.py:255` para valuar cada fill (`tiered` / `fixed`). El harness modela costos por su cuenta, así que no tiene espejo. |
+| `cross_sectional_lookback` | `120` | Ventana del ranking cross-sectional (T05). **Inerte**: `cross_sectional_enabled` está en `False`. |
+| `cross_sectional_weight` | `0.5` | Peso del ranking cross-sectional (T05) en la señal combinada. **Inerte** por el mismo motivo. |
+
+**El guard que lo sostiene** es `tests/test_settings_documentadas_t179.py`, y corre en la
+dirección que faltaba: barre las claves que el **camino vivo de decisión** lee —la misma
+población que la tarea 185— y exige que cada una tenga fila acá **o** una excepción con motivo
+escrito. La dirección contraria (*«lo escrito coincide con el código»*) ya la cubría el guard
+de la tarea 137; la que faltaba es ésta, *«lo verdadero está escrito»*, y por eso estas siete
+sobrevivieron a cuatro auditorías.

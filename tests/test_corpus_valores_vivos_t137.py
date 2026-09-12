@@ -87,6 +87,12 @@ _CLAIMS_EN_PRESENTE: dict[str, str] = {
     "SETTINGS_REFERENCE.md:Bajó de 0.50 a 0.25 el 2026-09-07": "cita histórica FECHADA, y correcta: es el cambio de la tarea 115",
     "backtest-replay-harness/SKILL.md:factor **0.50**": "la cita del defecto que la 137 arregló; el valor vivo lo manda a leer de LIVE_REGIME_SCALE_FACTOR",
     "backtest-replay-harness/SKILL.md:12.89% | **12.77%**": "tabla «publicado vs hoy» de un re-anclaje, que existe precisamente para mostrar la deriva",
+    "SETTINGS_REFERENCE.md:que hoy coincide **por casualidad**": (
+        "tarea 179: la fila de `atr_tp_mult` afirma que el literal del harness (4.0) coincide "
+        "HOY con el valor vivo, y eso es el hallazgo, no un dato de color — es el `FALTA_ESPEJO` "
+        "de la 185. VERIFICADA por `test_los_FALTA_ESPEJO_son_los_que_la_auditoria_reporto`, que "
+        "se pone rojo si se le da espejo y nadie actualiza esta fila"
+    ),
 }
 
 

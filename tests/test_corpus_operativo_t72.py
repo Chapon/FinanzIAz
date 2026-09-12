@@ -50,6 +50,11 @@ _NO_SON_CONSTANTES: dict[str, str] = {
     "SLACK_CHANNEL": "variable de entorno del notificador; no vive en el código",
     "ORACULO_PRIO": "es el VALOR de ORACLE_ARM en run_prio_event_t49, no una constante",
     "ANTI_ORACULO_PRIO": "es el VALOR de ANTI_ORACLE_ARM, no una constante propia",
+    "FALTA_ESPEJO": (
+        "es un RÓTULO de categoría —un prefijo de string dentro de `_PREFIJOS_VALIDOS` en "
+        "`test_espejos_direccion_faltante_t185.py`—, no una constante de Python. Mismo caso que "
+        "`ORACULO_PRIO` de arriba (tarea 179)"
+    ),
 }
 
 
