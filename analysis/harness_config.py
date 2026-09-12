@@ -828,7 +828,11 @@ def cross_period_gaps(bars_by: dict[str, list]) -> tuple[MissingSession, ...]:
         if not bars:
             continue
         # Con un solo frame no hay contra qué cruzar: la comparación es bilateral.
-        if cuantos.get(ticker.upper(), 0) < 2:
+        # Tarea 190: el índice está en tokens de ARCHIVO, así que se consulta con la
+        # función que los escribe. Decía `cuantos.get(ticker.upper())`, y para `BRK-B`
+        # —archivo `BRK_B__…`— devolvía 0: el ticker se salteaba entero, huecos
+        # interiores y cola, y el guard lo daba por sano.
+        if cuantos.get(parquet_cache.file_key(ticker), 0) < 2:
             continue
         propias = {b[0] for b in bars}
         lo_p, hi_p = min(propias), max(propias)

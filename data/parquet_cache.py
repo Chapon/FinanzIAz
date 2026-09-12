@@ -87,9 +87,20 @@ def _safe(token: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "_", str(token))
 
 
+def file_key(ticker: str) -> str:
+    """El token con que el ticker aparece en el **nombre del archivo** (``BRK-B`` → ``BRK_B``).
+
+    Público para que quien indexe el directorio por nombre de archivo consulte con la misma
+    función que escribe. Re-derivarlo por su cuenta —``ticker.upper()`` contra un índice de
+    nombres— dejó a ``BRK-B`` fuera de ``cross_period_gaps`` sin que nada lo dijera (tarea 190).
+    Es idempotente: ``file_key("BRK_B") == file_key("BRK-B")``.
+    """
+    return _safe(ticker.upper())
+
+
 def path_for(ticker: str, period: str, interval: str) -> Path:
     """Ruta del parquet para la clave ``(ticker, period, interval)``."""
-    fname = f"{_safe(ticker.upper())}__{_safe(period)}__{_safe(interval)}.parquet"
+    fname = f"{file_key(ticker)}__{_safe(period)}__{_safe(interval)}.parquet"
     return get_parquet_dir() / fname
 
 
@@ -197,7 +208,7 @@ def _candidates_1d(ticker: str) -> list[Path]:
     d = get_parquet_dir()
     if not d.exists():
         return []
-    t = _safe(ticker.upper())
+    t = file_key(ticker)
     suffix = _safe("1d")
     candidates = list(d.glob(f"{t}__*__{suffix}.parquet"))
 

@@ -61,7 +61,11 @@ def cohorte(monkeypatch):
 
             @staticmethod
             def glob(_p):
-                return [type("F", (), {"name": f"{ticker}__2y__1d.parquet"})()] * 2
+                # Tarea 190: el nombre sale de `file_key`, como lo escribe el cache. Decía
+                # `f"{ticker}__…"` —el ticker CRUDO—, que es justo como lo buscaba el código
+                # defectuoso: con este fixture un ticker con guión nunca podía dar rojo.
+                nombre = f"{parquet_cache.file_key(ticker)}__2y__1d.parquet"
+                return [type("F", (), {"name": nombre})()] * 2
 
         monkeypatch.setattr(parquet_cache, "get_parquet_dir", lambda: _Dir)
         return {ticker: [(f, 10.0) for f in propias]}
