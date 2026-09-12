@@ -233,6 +233,31 @@ LIVE_EARNINGS_BLACKOUT_DAYS = 2
 # universo vivo el screen **no excluye a nadie**, así que hoy la brecha es de cero.
 LIVE_UNIVERSE_SCREEN_ENABLED = True
 
+# Cap de liquidez por ADV, Gate 3b — Tarea 184 (ADVCAP-SIN-DECLARAR).
+#
+# `paper_adv_cap_pct` está en **0.05** en la cuenta viva desde el 2026-06-09 (T7.1, por
+# el caso MLTX) contra un default de **0.0** en el schema, y `engine.py` trima cada BUY
+# a ese porcentaje del ADV$ reciente. **Ningún runner lo modela** —`portfolio_sim` no
+# mira volumen— y hasta acá no tenía espejo ni desvío: lo encontró el barrido de la 185.
+#
+# **Se declara y no se modela porque hoy es inerte por más de un orden de magnitud, en
+# los dos lados — y eso depende de la muestra, no del código.** Medido el 2026-09-12
+# sobre el universo de referencia (126 tickers, frames `10y` al 2026-09-09): el ADV$ de
+# 20 ruedas más bajo de **toda** la ventana es de OKE el 2016-10-28, así que el cap
+# recién muerde una entrada más grande que 5% de eso. Contra el capital default de los
+# runners ($50k) es una sola entrada de decenas de veces el capital **entero**. En vivo
+# (~$5.150 por BUY: $51.499 y 10 slots, 2026-09-11) mordería con ADV$ < ~$103k. Deja de
+# ser inerte si entra un ilíquido —que es para lo que se prendió— o si un runner corre
+# con `--capital` del orden de los millones. El número lo re-verifica
+# `tests/test_advcap_declarado_t184.py` contra los frames, en la dirección que importa:
+# que la declaración nunca prometa más margen que el medido.
+LIVE_ADV_CAP_PCT = 0.05
+ADV_CAP_MIN_ADV_DOLLARS = 38_574_789  # OKE, 2016-10-28 — medido 2026-09-12 (T184)
+ADV_CAP_MIN_ADV_TICKER = "OKE"
+ADV_CAP_MIN_ADV_DATE = "2016-10-28"
+ADV_CAP_MEASURED_ON = "2026-09-12"
+ADV_CAP_DEFAULT_CAPITAL = 50_000.0  # el default de `simulate_portfolio` y de `--capital` en los runners
+
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
 LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
@@ -1972,6 +1997,25 @@ class Deviation(NamedTuple):
     texto: str
 
 
+def adv_cap_desc() -> str:
+    """El texto del desvío `adv_cap` (tarea 184), con los números derivados de las constantes.
+
+    El umbral de mordida y el múltiplo del capital **se calculan**, no se escriben: son dos
+    números que un refresh mueve juntos, y escritos a mano derivan por separado.
+    """
+    umbral = LIVE_ADV_CAP_PCT * ADV_CAP_MIN_ADV_DOLLARS
+    return (
+        f"NO se modela el cap de liquidez por ADV (Gate 3b, {100 * LIVE_ADV_CAP_PCT:.0f}% del "
+        f"ADV$ reciente): en vivo trima cada BUY y el harness entra a tamaño completo. Hoy es "
+        f"INERTE: el ADV$ más bajo del universo de referencia en toda la ventana es "
+        f"${ADV_CAP_MIN_ADV_DOLLARS / 1e6:.1f}M ({ADV_CAP_MIN_ADV_TICKER}, {ADV_CAP_MIN_ADV_DATE}), "
+        f"así que muerde recién una entrada de más de ${umbral / 1e6:.2f}M — "
+        f"{umbral / ADV_CAP_DEFAULT_CAPITAL:.0f}× el capital inicial default puesto en un solo "
+        f"nombre (medido el {ADV_CAP_MEASURED_ON}). Deja de serlo si entra un ilíquido o se "
+        f"corre con --capital del orden de los millones"
+    )
+
+
 def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     """Desvíos de ``cfg`` respecto de la cuenta viva, **con clave** (tarea 152)."""
     out: list[Deviation] = []
@@ -2132,6 +2176,9 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             "nadie, así que la brecha es de CERO — pero eso depende de los datos de "
             "EDGAR, no del código",
         )
+    # Tarea 184 — prendido en vivo, sin modelar, e inerte en la muestra de hoy.
+    if LIVE_ADV_CAP_PCT > 0:
+        _add("adv_cap", adv_cap_desc())
     # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
         _add(

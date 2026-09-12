@@ -16,7 +16,9 @@ Lo que se pierde cuando esto no existe está medido por el propio proyecto: el h
 declaró la política de salida **al revés** durante seis días (tarea 92) y eso valía
 **7,16 pp de CAGR** — más que el look-ahead del fill que se ganó la tarea 33.
 
-**Hoy los 13 espejos coinciden con el vivo: falta el guard, no la corrección.**
+**Cuando se escribió, todos los espejos coincidían con el vivo: faltaba el guard, no la corrección.**
+(Acá decía *«los 13 espejos»* y la tabla de abajo ya tenía 15 cuando entró la 184: un conteo
+escrito a mano en un docstring caduca solo — la lección de la 138.)
 
 Dos decisiones de diseño que vale la pena leer antes de tocar esto:
 
@@ -65,6 +67,7 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     ("LIVE_STOP_MULT", "atr_stop_mult"),
     ("LIVE_TRAIL_MULT", "atr_trail_mult"),
     ("LIVE_UNIVERSE_SCREEN_ENABLED", "paper_universe_screen_enabled"),
+    ("LIVE_ADV_CAP_PCT", "paper_adv_cap_pct"),
     ("LIVE_VOL_OVERLAY_ENABLED", "vol_overlay_enabled"),
     ("LIVE_VOL_TARGET_ANNUAL", "vol_target_portfolio_annual"),
     ("LIVE_VOL_PENALTY_COEF", "paper_vol_penalty_coef"),

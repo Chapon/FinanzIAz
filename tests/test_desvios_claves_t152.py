@@ -62,6 +62,7 @@ CLAVES_CONOCIDAS = frozenset(
         "vol_overlay",
         "regime_scale",
         "universe_screen",
+        "adv_cap",
         "earnings_blackout",
         "reentry_gates",
         "reentry_gates_no_cartera",
@@ -178,6 +179,7 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
         "vol_overlay",
         "regime_scale",
         "universe_screen",
+        "adv_cap",
         "earnings_blackout",
         "reentry_gates",
     }

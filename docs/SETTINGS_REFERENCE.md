@@ -35,7 +35,7 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 ## Liquidez (ADV cap, T10)
 | Flag | Default | Qué hace |
 |------|---------|----------|
-| `paper_adv_cap_pct` | `0.0` (OFF) | Cap del notional de cada BUY como fracción del ADV$. 0.05 = máx 5% del ADV. Trimea (no bloquea). Opt-in. |
+| `paper_adv_cap_pct` | `0.0` (OFF) | Cap del notional de cada BUY como fracción del ADV$. 0.05 = máx 5% del ADV. Trimea (no bloquea). Opt-in. **Vivo en `0.05` desde el 2026-06-09** (T7.1, por el caso MLTX). Espejo `LIVE_ADV_CAP_PCT`: el harness **no lo modela** y lo declara como desvío `adv_cap`, con el margen medido (tarea 184). |
 | `paper_adv_lookback_days` | `20` | Sesiones para estimar el ADV$ (media de Close×Volume). Consultado por el ADV cap y por el piso de liquidez de E1b. |
 
 ## Escalado de exposición por régimen (R2b, tarea 20) — ON

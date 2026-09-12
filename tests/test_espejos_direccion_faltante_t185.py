@@ -74,11 +74,6 @@ SIN_ESPEJO: dict[str, str] = {
         "FALTA_ESPEJO: master switch del trailing, mismo eje que `atr_stops_enabled` (que sí "
         "tiene espejo desde la tarea 132). Apagarlo cambiaría qué salidas simula el harness"
     ),
-    "paper_adv_cap_pct": (
-        "FALTA_ESPEJO: está ON en la cuenta viva (0.05 contra un default de 0.0) y trima cada "
-        "BUY; el harness no lo modela. Hoy es inerte —el cap sólo mordería con ADV$ < ~$103k— "
-        "pero no está declarado. Tarea 184"
-    ),
     "hmm_enabled": (
         "FALTA_ESPEJO: está OFF en vivo contra un default de True, y los harness que no fijan "
         "los toggles lo heredan del ambiente. Tarea 181"
@@ -242,7 +237,6 @@ def test_los_FALTA_ESPEJO_son_los_que_la_auditoria_reporto():
     assert faltan == {
         "atr_tp_mult",
         "atr_trail_enabled",
-        "paper_adv_cap_pct",
         "hmm_enabled",
         "stacking_enabled",
     }, (
@@ -252,7 +246,7 @@ def test_los_FALTA_ESPEJO_son_los_que_la_auditoria_reporto():
 
 
 def test_los_pendientes_DIFIEREN_del_default_o_son_de_politica():
-    """Por qué esos cinco y no otros: o su valor vivo **difiere** del default del schema —lo que
+    """Por qué esos y no otros: o su valor vivo **difiere** del default del schema —lo que
     los vuelve invisibles a cualquier guard construido sobre `DEFAULTS`— o son perillas de
     **política de salida**, que es el eje donde un desvío no declarado ya costó 7,16 pp."""
     vivo_path = Path.home() / ".finanzias" / "settings.json"
