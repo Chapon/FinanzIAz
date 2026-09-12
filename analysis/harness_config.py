@@ -7,7 +7,9 @@ Los harness de la serie (T7→T13) no corren contra una cuenta —y está bien: 
 backtest de 10 años no puede correr sobre una cuenta viva de 7 semanas— pero
 entonces *"¿contra qué cuenta?"* se traduce en *"¿con qué config?"*, y la config
 que venían usando (`max_positions=5`, 41 tickers) es la de la **cuenta 1, pausada
-desde el 2026-07-01**. La cuenta viva es la **2**: 10 slots y 128 tickers.
+desde el 2026-07-01**. La cuenta viva es la **2**, que al escribirse esto (2026-08-12)
+tenía 10 slots y 128 tickers; los valores de hoy son `LIVE_MAX_POSITIONS` y
+`LIVE_WATCHLIST_SIZE`, que se re-verifican contra la DB (tareas 99 y 89).
 Ninguno de los desvíos estaba declarado en ningún pre-registro
 (`docs/deep_analysis_2026-08-12.md` §1).
 
@@ -263,7 +265,11 @@ LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
 
 # Universo de referencia para harness nuevos: la watchlist de la cuenta viva
-# recortada a los tickers con artefacto PIT (127/128; falta ASML).
+# recortada a los tickers con artefacto PIT. **Cuántos quedan y cuáles faltan lo dice el
+# header del propio archivo**, que escribe `scripts/refresh_live_universe.py` al
+# regenerarlo, y `tests/test_univcount_t178.py` lo deriva. Acá decía *«(127/128; falta
+# ASML)»*: era exacto el 2026-09-08 y lo rompió la 156 al sacar AVB — un conteo escrito a
+# mano en un comentario caduca solo (tarea 178).
 #
 # **Las tres poblaciones se nombran ACÁ, y los scripts las referencian por SÍMBOLO**
 # (tarea 158). Hasta el 2026-09-10 cada runner repetía el literal
