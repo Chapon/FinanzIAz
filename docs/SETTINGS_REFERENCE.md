@@ -2,7 +2,9 @@
 
 Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tipo, default, ...)` con `doc=`). Acceso vía `settings.get("clave")`. **Los marcados como *sin spec* NO están en el `SCHEMA`**: sólo existen como `settings.get(clave, default)` en el código, se pueden setear igual —las claves desconocidas se aceptan— pero **no están validadas** (tarea 72). Esta tabla es un resumen; la fuente de verdad es el código.
 
-> **kill_only pisa defaults.** El perfil vivo corre en modo kill_only: aunque `hmm_enabled` y `stacking_enabled` tengan default `True` en el spec, en kill_only quedan **OFF**. XGBoost y vol_overlay quedan **ON**.
+> **«kill_only» es el nombre de una configuración, no un mecanismo (tarea 181).** Acá decía *«kill_only **pisa** defaults»* y era falso: nada pisa nada. `hmm_enabled` y `stacking_enabled` tienen default `True` en el spec y están **OFF** porque así lo dice `~/.finanzias/settings.json` — un archivo **fuera del repo**. `analysis/technical._toggle` los lee con `default=True`, así que en cualquier entorno sin ese archivo arrancan **ON**.
+>
+> Lo que el repo **sí** declara es `analysis.harness_config.HARNESS_MODEL_TOGGLES`, que los dos productores de artefactos (`precompute_pit_signals`, `run_walkforward_power`) fijan **en memoria** —sin escribir el archivo— para que un store no dependa de la máquina donde se lo generó.
 
 ## Scheduler
 | Flag | Default | Qué hace |
@@ -78,8 +80,8 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 | `xgb_signal_enabled` | `True` | XGBoost en la señal. (ON en kill_only) |
 | `vol_overlay_enabled` | `True` | Vol overlay. (ON en kill_only) |
 | `vol_overlay_trim_enabled` | `False` | De-risking activo: trimea el book cuando σ > target (T09). |
-| `hmm_enabled` | spec `True` / kill_only **OFF** | Detección de régimen HMM. Killeado. |
-| `stacking_enabled` | spec `True` / kill_only **OFF** | Stacking de modelos. Killeado (no determinístico). |
+| `hmm_enabled` | `True` (spec) · **vivo OFF** | Detección de régimen HMM. Killeado. El default del spec y el valor vivo **difieren**, y eso lo vuelve invisible a cualquier guard construido sobre `DEFAULTS` — por eso es uno de los cinco `FALTA_ESPEJO` de la tarea 185. |
+| `stacking_enabled` | `True` (spec) · **vivo OFF** | Stacking de modelos. Killeado por **no determinístico**, que es justamente por qué importa que un harness no lo herede del ambiente (tarea 181). Ídem `hmm_enabled`: spec y vivo difieren. |
 | `cross_sectional_enabled` | `False` | Ranking cross-sectional. KILLED (ruido, T05); dead-code. |
 | `paper_history_period` | `"2y"` | Ventana que el scanner pasa a `analyze()`/XGBoost (6mo/1y/2y/5y/10y). |
 

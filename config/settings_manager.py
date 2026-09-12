@@ -959,6 +959,34 @@ class _SettingsManager:
         self.save()
         return True
 
+    def set_ephemeral(self, key: str, value: Any) -> bool:
+        """Set a value for **this process only** — valida como ``set()`` y NO persiste.
+
+        **Tarea 181.** Existe porque un productor de artefactos necesita correr bajo una
+        config **declarada** en vez de la que haya en ``~/.finanzias/settings.json``, y las
+        dos alternativas eran malas:
+
+        * ``set()`` llama a ``save()``, o sea que **le reescribiría el archivo a Chapa** —
+          y ``save()`` vuelca el dict entero de memoria, así que se lleva puesta cualquier
+          edición externa;
+        * tocar ``_data`` desde cada script reparte acceso privado por todo ``scripts/`` y
+          garantiza que alguien lo haga mal.
+
+        El caso concreto: ``scripts/precompute_pit_signals.py`` llama a ``analyze()``, que
+        lee ``hmm_enabled``/``stacking_enabled`` con ``default=True``. En una máquina sin
+        ese archivo el store PIT —el sustrato de **todos** los runners modernos— saldría
+        computado con los dos toggles **ON**, que es lo contrario de la config bajo la que
+        se midió cada veredicto publicado, y **nada lo diría**.
+
+        Valida igual que ``set()``: un valor inválido se rechaza y el anterior queda.
+        """
+        ok, reason = _validate_value(key, value)
+        if not ok:
+            _log.warning("settings.set_ephemeral(%r, %r) rejected: %s", key, value, reason)
+            return False
+        self._data[key] = value
+        return True
+
     def reset(self) -> dict:
         self._data = dict(DEFAULTS)
         self.save()

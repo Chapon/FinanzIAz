@@ -66,7 +66,12 @@ sys.path.insert(0, str(_HERE.parent))
 # Sólo stdlib en ``harness_config``, verificado: importarlo acá **no** arrastra
 # numpy/pandas, así que el pineo de threads de ``_init_worker`` sigue llegando antes
 # que cualquier librería numérica (ver "Paralelismo" arriba).
-from analysis.harness_config import LIVE_UNIVERSE_FILE, parse_universe_file
+from analysis.harness_config import (
+    HARNESS_MODEL_TOGGLES,
+    LIVE_UNIVERSE_FILE,
+    apply_model_toggles,
+    parse_universe_file,
+)
 
 # **Tarea 158.** Acá decía ``"data/harness_universe_41_10y.txt"``: el cohorte legacy de
 # 41. Este script es **el productor** del store PIT —el que hay que correr después de
@@ -100,6 +105,11 @@ def _init_worker() -> None:
         os.environ[var] = "1"
     logging.getLogger("analysis.ml_signals").setLevel(logging.ERROR)
     logging.getLogger("analysis.garch_signals").setLevel(logging.ERROR)
+    # **Tarea 181.** Cada worker es OTRO proceso y no hereda la memoria del padre, asi que
+    # los toggles hay que fijarlos aca tambien: sin esto, el padre correria bajo la config
+    # declarada y los workers —que son los que de verdad llaman a `analyze()`— bajo la que
+    # hubiera en el settings.json del ambiente.
+    apply_model_toggles()
 
 
 def _run_ticker_job(job: tuple) -> tuple:
@@ -141,6 +151,10 @@ def _save(path: Path, ticker: str, period: str, warmup: int, rows: dict, n_bars:
         "n_bars": n_bars,
         "complete": done,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        # **Tarea 181.** La config de modelo bajo la que se computo, estampada adentro: un
+        # store producido bajo otra config deja de ser indistinguible de uno correcto. Los
+        # artefactos anteriores a la 181 no la traen, y eso se lee como "no se sabe".
+        "model_toggles": dict(HARNESS_MODEL_TOGGLES),
         "signals": rows,  # {iso10: [overall_signal, ml_probability|null]}
     }
     tmp = path.with_suffix(".json.tmp")
@@ -259,6 +273,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # **Tarea 181 — el store deja de depender de un archivo fuera del repo.** `analyze()` lee
+    # `hmm_enabled`/`stacking_enabled` con `default=True`, asi que sin esto el store saldria
+    # computado con la config que hubiera en `~/.finanzias/settings.json` — y en una maquina
+    # sin ese archivo, con los dos toggles ON, que es lo contrario de la config bajo la que se
+    # midio cada veredicto publicado. En la maquina de Chapa no cambia nada (ya estan OFF).
+    # Tambien se aplica en `_init_worker`, porque cada worker es otro proceso.
+    apply_model_toggles()
 
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]

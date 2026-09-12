@@ -167,6 +167,45 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # hardcodeado con un comentario `# ml_signals.py:1147` que ya no apuntaba a ningun
 # lado. Un cambio del valor vivo ahora rompe el test de constantes en vez de
 # desincronizarse en silencio.
+# ── La config de MODELO bajo la que corre todo lo que produce artefactos ─────
+#
+# **Tarea 181.** Los tres documentos de referencia del proyecto decían que un mecanismo
+# llamado ``kill_only`` **forzaba** estos toggles y **pisaba** los defaults del `SCHEMA`.
+# No existe tal mecanismo: `analysis/technical._toggle` los lee con ``default=True`` y
+# estaban OFF **únicamente** porque una clave escrita a mano en `~/.finanzias/settings.json`
+# —un archivo **fuera del repo**— lo decía.
+#
+# Eso importa por un camino concreto y medido: `scripts/precompute_pit_signals.py` llama a
+# ``analyze()``, y su salida —el store PIT— es el **sustrato de todos los runners modernos**
+# (los que no llaman a ``analyze`` porque leen señales precomputadas). El store es
+# **regenerable y gitignoreado**, y se recomputó dos veces en la semana del 2026-09-09. En
+# cualquier máquina sin ese archivo habría salido con hmm y stacking **ON** — señales
+# silenciosamente distintas, y cada runner midiendo otra cosa sin que ningún control lo
+# notara.
+#
+# Estos valores son los de la config viva, o sea que fijarlos **no cambia nada** en la
+# máquina de Chapa: lo que cambia es que dejan de depender de un archivo que no está
+# versionado. Se aplican con ``settings.set_ephemeral`` (memoria, sin escribir el archivo).
+HARNESS_MODEL_TOGGLES: dict[str, bool] = {
+    "hmm_enabled": False,
+    "stacking_enabled": False,
+    "xgb_signal_enabled": True,
+}
+
+
+def apply_model_toggles() -> dict[str, bool]:
+    """Fija la config de modelo de ``HARNESS_MODEL_TOGGLES`` **en memoria** y la devuelve.
+
+    La devuelve para que quien produce un artefacto pueda **estamparla** adentro: un store
+    computado bajo otra config deja de ser indistinguible de uno correcto.
+    """
+    from config.settings_manager import settings
+
+    for clave, valor in HARNESS_MODEL_TOGGLES.items():
+        settings.set_ephemeral(clave, valor)
+    return dict(HARNESS_MODEL_TOGGLES)
+
+
 LIVE_VOL_PENALTY_COEF = 0.08
 
 LIVE_REGIME_SCALE_ENABLED = True

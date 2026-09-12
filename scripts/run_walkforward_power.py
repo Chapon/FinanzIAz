@@ -36,7 +36,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.exit_replay import AtrParams, Bar
-from analysis.harness_config import LEGACY_UNIVERSE_FILE, parse_universe_file
+from analysis.harness_config import LEGACY_UNIVERSE_FILE, apply_model_toggles, parse_universe_file
 from analysis.walkforward_power import (
     A1_VARIANTS,
     EntrySample,
@@ -338,6 +338,9 @@ def render_t3(entries: list[EntrySample]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # **Tarea 181.** Fija la config de modelo declarada en vez de heredarla del
+    # `settings.json` del ambiente: este runner llama a `analyze()`.
+    apply_model_toggles()
     p = argparse.ArgumentParser(description="Walk-forward power harness (E4)")
     p.add_argument("--universe", default=DEFAULT_UNIVERSE)
     p.add_argument("--period", default="10y")
