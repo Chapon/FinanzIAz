@@ -2,6 +2,8 @@
 Pestaña "Métricas" — efectividad real del engine de paper-trading.
 
 Muestra, sin tocar el hot-path de trading (solo lectura):
+  * Score mensual de desempeño (tarea 194): 100 = $4.000 realizados en el mes,
+    70% plata + 30% calidad, con el P/L de cada mes en dólares.
   * KPI cards: P/L realizado, win rate, profit factor, expectancy, compras
     buenas/malas, y % de timing bueno (forward return > 0).
   * Gráfico de efectividad en el tiempo: P/L realizado acumulado + win-rate
@@ -124,6 +126,13 @@ def _money(x: float | None) -> str:
     return f"${x:,.0f}" if abs(x) >= 100 else f"${x:,.2f}"
 
 
+def _money_signed(x: float) -> str:
+    """``+$1,277`` / ``−$1,692`` / ``$0`` — el P/L de un mes tiene que leerse con su signo (tarea 194)."""
+    if abs(x) < 0.5:
+        return "$0"
+    return f"{'+' if x > 0 else '−'}${abs(x):,.0f}"
+
+
 def _pct(x: float | None, signed: bool = False) -> str:
     if x is None:
         return "—"
@@ -219,6 +228,173 @@ class EffectivenessChart(QFrame):
         self.canvas.draw()
 
 
+_MESES_ES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+_MESES_LARGOS_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+def _mes_corto(month: str) -> str:
+    """``"2026-09"`` → ``"sep 26"``."""
+    return f"{_MESES_ES[int(month[5:7]) - 1]} {month[2:4]}"
+
+
+def _mes_largo(month: str) -> str:
+    return f"{_MESES_LARGOS_ES[int(month[5:7]) - 1]} {month[:4]}"
+
+
+class PerformanceScorePanel(QFrame):
+    """Tarea 194 — score mensual de desempeño (100 = $4.000 realizados en el mes).
+
+    A la izquierda el mes en curso; a la derecha una barra por mes con el score y, arriba de
+    cada barra, el **P/L realizado en dólares con signo**. El score está recortado a [0, 100],
+    así que dos meses que pierden distinto dan el mismo 0: el P/L es lo que dice cuánto.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("card")
+        self.setMinimumHeight(300)
+        _apply_chart_rcparams()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(18, 16, 18, 14)
+        row.setSpacing(18)
+
+        izq = QVBoxLayout()
+        izq.setSpacing(4)
+        self.title_lbl = QLabel("SCORE DEL MES")
+        self.title_lbl.setStyleSheet(
+            f"color: {PALETTE['text3']}; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;"
+        )
+        izq.addWidget(self.title_lbl)
+        self.value_lbl = QLabel("—")
+        self.value_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 44px; font-weight: 800;")
+        izq.addWidget(self.value_lbl)
+        self.detail_lbl = QLabel("")
+        self.detail_lbl.setWordWrap(True)
+        self.detail_lbl.setStyleSheet(f"color: {PALETTE['text2']}; font-size: 12px;")
+        izq.addWidget(self.detail_lbl)
+        self.history_lbl = QLabel("")
+        self.history_lbl.setWordWrap(True)
+        self.history_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
+        izq.addWidget(self.history_lbl)
+        izq.addStretch()
+        formula = QLabel("70% plata (P/L realizado ÷ $4.000) + 30% calidad (% de round-trips ganadores)")
+        formula.setWordWrap(True)
+        formula.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 10px;")
+        izq.addWidget(formula)
+        izq_w = QWidget()
+        izq_w.setLayout(izq)
+        izq_w.setFixedWidth(260)
+        row.addWidget(izq_w)
+
+        self.figure = Figure(figsize=(7.0, 2.8), tight_layout=True)
+        self.figure.patch.set_facecolor(str(CHART_STYLE["figure.facecolor"]))
+        self.canvas = FigureCanvas(self.figure)
+        row.addWidget(self.canvas, stretch=1)
+
+    def update_score(self, ps: dict | None) -> None:
+        months = (ps or {}).get("months") or []
+        cur = (ps or {}).get("current")
+        target = (ps or {}).get("target_monthly_usd", 4000.0)
+        if cur is None:
+            self.title_lbl.setText("SCORE DEL MES")
+            self.value_lbl.setText("—")
+            self.detail_lbl.setText("Sin operaciones todavía")
+            self.history_lbl.setText("")
+        else:
+            en_curso = " (en curso)" if cur["in_progress"] else ""
+            self.title_lbl.setText(f"SCORE DEL MES — {_mes_largo(cur['month']).upper()}{en_curso}")
+            self.value_lbl.setText(f"{cur['score']:.0f}")
+            calidad = (
+                f"{cur['n_wins']} de {cur['n_round_trips']} round-trips ganadores ({cur['quality_pct']:.0f}%)"
+                if cur["quality_pct"] is not None
+                else "sin round-trips cerrados"
+            )
+            self.detail_lbl.setText(
+                f"P/L realizado {_money_signed(cur['realized_pnl'])} de {_money(target)}\n{calidad}"
+            )
+            partes = []
+            if ps.get("avg_completed") is not None:
+                partes.append(f"Promedio de meses cerrados: {ps['avg_completed']:.0f}")
+            if ps.get("best"):
+                partes.append(f"mejor: {_mes_largo(ps['best']['month'])} ({ps['best']['score']:.0f})")
+            if ps.get("worst"):
+                partes.append(f"peor: {_mes_largo(ps['worst']['month'])} ({ps['worst']['score']:.0f})")
+            self.history_lbl.setText(" · ".join(partes))
+        self._draw(months, target)
+
+    def _draw(self, months: list[dict], target: float) -> None:
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.set_facecolor(str(CHART_STYLE["axes.facecolor"]))
+        if not months:
+            ax.text(
+                0.5,
+                0.5,
+                "Sin meses con operaciones todavía",
+                ha="center",
+                va="center",
+                color=PALETTE["text3"],
+                transform=ax.transAxes,
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            self.canvas.draw()
+            return
+        accent = PALETTE.get("accent", "#5B8DEF")
+        xs = list(range(len(months)))
+        scores = [m["score"] for m in months]
+        bars = ax.bar(xs, scores, color=accent, width=0.62, zorder=2)
+        for bar, m in zip(bars, months, strict=True):
+            if m["in_progress"]:
+                bar.set_alpha(0.45)
+                bar.set_hatch("//")
+            pnl = m["realized_pnl"]
+            color = PALETTE["positive"] if pnl > 0 else (PALETTE["red"] if pnl < 0 else PALETTE["text3"])
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                m["score"] + 2,
+                f"{m['score']:.0f}\n{_money_signed(pnl)}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color=color,
+                linespacing=1.1,
+            )
+        ax.axhline(100, color=PALETTE["positive"], lw=1.0, ls="--", alpha=0.7, zorder=1)
+        ax.text(
+            xs[-1] + 0.45,
+            101,
+            f"objetivo {_money(target)}/mes",
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            color=PALETTE["positive"],
+        )
+        ax.set_ylim(0, 118)
+        ax.set_xlim(-0.6, len(months) - 0.4)
+        ax.set_xticks(xs)
+        ax.set_xticklabels(
+            [_mes_corto(m["month"]) + (" *" if m["in_progress"] else "") for m in months], fontsize=8
+        )
+        ax.set_ylabel("score", fontsize=9, color=PALETTE["text2"])
+        ax.tick_params(axis="y", labelsize=8)
+        ax.grid(axis="y", alpha=0.15, zorder=0)
+        self.canvas.draw()
+
+
 class MetricsTab(QWidget):
     """Pestaña de métricas de funcionamiento del modelo."""
 
@@ -260,6 +436,19 @@ class MetricsTab(QWidget):
         self.status_lbl = QLabel("Cargando métricas…")
         self.status_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
         self.root.addWidget(self.status_lbl)
+
+        # ── score mensual de desempeño (tarea 194) — arriba de todo: es el objetivo de la app ──
+        self.score_panel = PerformanceScorePanel()
+        self.score_panel.setToolTip(
+            "Qué tan bien funciona la app, mes a mes. 100 = ganar $4.000 realizados en el mes.\n"
+            "Score = 70% plata (P/L realizado del mes ÷ $4.000, entre 0 y 100) + 30% calidad "
+            "(% de round-trips cerrados en el mes con ganancia).\n"
+            "Un mes que pierde plata da 0 de plata: por eso cada barra muestra además el P/L en "
+            "dólares, que es lo que dice cuánto se ganó o se perdió.\n"
+            "El mes en curso (rayado, con *) se compara contra el objetivo entero.\n"
+            "Display-only: no alimenta ninguna decisión de trading."
+        )
+        self.root.addWidget(self.score_panel)
 
         # ── KPI cards (2 filas de 4) ──
         self.cards: dict[str, KpiCard] = {}
@@ -730,6 +919,9 @@ class MetricsTab(QWidget):
         # Estas son métricas escalares: ocultamos el sparkline vacío.
         for key in ("pf", "payoff", "exworst", "costs", "expired", "excursion", "benchmark"):
             self.cards[key].spark.hide()
+
+        # score mensual (tarea 194)
+        self.score_panel.update_score(m.get("performance_score"))
 
         # chart
         self.chart.update_chart(m["timeline"], m.get("commit_markers", []))

@@ -35,7 +35,7 @@ yfinance ──> data/yahoo_finance.py ──> historical_data_cache (SQLite)
 - `strategies.py` — estrategias de señal (`analyze_single`, etc.). `account.py` — operaciones de cuenta/posición. `costs.py` — comisiones IBKR + slippage. `scheduler.py` — scan en background (QTimer). `models.py` — tablas paper_*. `feature_switch.py` — dead-code de switches por régimen.
 
 ### `analysis/` — cálculo
-- `technical.py` (`analyze`: RSI/MACD/Bollinger/GARCH + XGBoost), `metrics_panel.py` (efectividad del modelo, round-trips FIFO), `leads.py` (ranking SP500 por consenso), `impact_score.py` (Impact Score + exit-veto T-CAT-4), `surprise_score.py` (prior direccional EPS), `exit_replay.py` (infra de backtest de exits), `catalyst_reaction.py` (forward returns por evento).
+- `technical.py` (`analyze`: RSI/MACD/Bollinger/GARCH + XGBoost), `metrics_panel.py` (efectividad del modelo, round-trips FIFO), `performance_score.py` (score mensual de desempeño: 100 = $4.000 realizados en el mes, display-only — tarea 194), `leads.py` (ranking SP500 por consenso), `impact_score.py` (Impact Score + exit-veto T-CAT-4), `surprise_score.py` (prior direccional EPS), `exit_replay.py` (infra de backtest de exits), `catalyst_reaction.py` (forward returns por evento).
 
 ### `data/` — ingest
 - `yahoo_finance.py` — precios (single + `get_historical_data_batch`), `get_company_info`, `get_analyst_data` (price targets + recos), earnings. Cache en SQLite, timeout-guard, retry de 401.

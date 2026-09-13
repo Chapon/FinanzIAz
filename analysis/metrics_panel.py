@@ -67,7 +67,13 @@ Schema del payload (``build_metrics``)::
       "churn": {"n_le7d", "events":[{"ticker","gap_days","sell_id","buy_id"}...]},
       "timeline": [{"day","cum_pnl","trades","rolling_win_rate"}...],
       "open_positions": [{"ticker","shares","avg_cost","mark","mtm_pct"}...],
-      "expired_buys": {"n", "by_ticker": {...}}
+      "expired_buys": {"n", "by_ticker": {...}},
+      "performance_score": {   # tarea 194: score mensual, 100 = $4.000 realizados en el mes
+        "target_monthly_usd","weight_money","weight_quality",
+        "months":[{"month","realized_pnl","n_round_trips","n_wins","money_pct",
+                   "quality_pct","score","in_progress"}...],
+        "current","best","worst","avg_completed"
+      }
     }
 
 ``commit_markers(repo_dir)`` es aparte (usa git) para no acoplar el cálculo al repo.
@@ -84,6 +90,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from analysis.performance_score import performance_score_panel
 
 # Ventana del forward return (días hábiles aproximados por índice de barras 1d).
 FWD_SHORT = 5
@@ -985,6 +993,8 @@ def build_metrics(
         "timeline": _timeline(rts),
         "open_positions": _open_positions(con, account_id),
         "expired_buys": _expired_buys(con, account_id),
+        # Tarea 194 — display-only: no alimenta ninguna decisión.
+        "performance_score": performance_score_panel(rts, orders, today=(now or datetime.now()).date()),
     }
 
 
