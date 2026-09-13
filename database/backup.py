@@ -4,10 +4,12 @@ Lightweight SQLite backup utility for FinanzIAs.
 Public API
 ----------
 ``backup_database(reason="manual")``       — make a snapshot now, return path.
-``rotate_backups(keep=7)``                 — prune old snapshots.
+``rotate_backups(keep=7)``                 — keep the last N DAILY snapshots.
+``prune_adhoc_backups(keep_days=30)``      — delete non-daily snapshots older
+                                              than N days, by the date in the name.
 ``maybe_rotate_daily(keep=7)``             — call once at app start; performs
                                               a backup if today's hasn't been
-                                              made yet, then rotates.
+                                              made yet, then rotates and prunes.
 ``list_backups()``                         — list existing snapshot files.
 ``restore_database(backup_path)``          — atomically replace the live DB
                                               with a backup (returns True on
@@ -28,10 +30,30 @@ Implementation
   is unavailable for any reason.
 - All operations are best-effort: any exception is logged, never propagated
   to the UI thread.
+
+Retención — tareas 187 y 193
+----------------------------
+**Hay dos poblaciones y cada una tiene su regla.** Los **diarios**
+(``finanzias_AAAA-MM-DD_HH-MM-SS_daily.db``) rotan por **cantidad**: quedan los últimos
+``keep``. Los **sueltos** —``pre_*``/``post_*`` que se crean a mano antes de una operación
+riesgosa, y los que crea la UI (``manual``, ``pre-delete-account``, ``pre-delete-position``)—
+se borran a los **30 días** de la fecha de su nombre (decisión de Chapa, tarea 187). Lo que
+no es ``.db`` (``settings_pre_*.json``, ``pit_*…json``) **no se toca nunca**: es evidencia de
+una decisión, no una red de seguridad.
+
+**Antes las dos poblaciones rotaban juntas, y eso borraba los diarios** (tarea 193).
+``rotate_backups`` contaba todos los ``finanzias_*.db`` y borraba los primeros **por orden
+alfabético**; ``finanzias_2026-…`` ordena antes que ``finanzias_pre_…``, así que con 5 sueltos
+quedaban **2** diarios, y con 7 el daily recién creado **se borraba en su propio arranque**.
+
+**La antigüedad sale del nombre, no del mtime,** porque el mtime de un backup no es su edad:
+el smoke test de la suite abría backups y les cambiaba la fecha (tarea 188). Un nombre sin
+fecha legible **no se borra**.
 """
 
 from __future__ import annotations
 
+import re
 import shutil
 import sqlite3
 from datetime import date, datetime
@@ -45,6 +67,13 @@ log = get_logger(__name__)
 DB_DIR = Path(DB_PATH).parent
 BACKUP_DIR = DB_DIR / "backups"
 DB_STEM = Path(DB_PATH).stem  # "finanzias"
+
+# Tarea 187: los backups sueltos se conservan 30 días desde la fecha de su nombre.
+ADHOC_KEEP_DAYS = 30
+
+# La fecha de un nombre de backup: `2026-09-12` (los que escribe `backup_database`) o
+# `20260912` (los que se crean a mano, `finanzias_pre_t81_20260902_140200.db`).
+_FECHA_EN_NOMBRE = re.compile(r"(?<!\d)(20\d{2})-?(\d{2})-?(\d{2})(?!\d)")
 
 
 def _timestamp() -> str:
@@ -105,9 +134,82 @@ def list_backups() -> list[Path]:
     return items
 
 
+def _es_diario(p: Path) -> bool:
+    """Un snapshot DIARIO, por el patrón exacto que escribe ``maybe_rotate_daily``."""
+    return (
+        re.fullmatch(
+            rf"{re.escape(DB_STEM)}_\d{{4}}-\d{{2}}-\d{{2}}_\d{{2}}-\d{{2}}-\d{{2}}_daily\.db", p.name
+        )
+        is not None
+    )
+
+
+def list_daily_backups() -> list[Path]:
+    """Sólo los snapshots diarios, del más viejo al más nuevo."""
+    return [p for p in list_backups() if _es_diario(p)]
+
+
+def _fecha_del_nombre(nombre: str) -> date | None:
+    m = _FECHA_EN_NOMBRE.search(nombre)
+    if m is None:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def _borrar_backup(p: Path) -> bool:
+    """Borra la base y **después** sus side files (tarea 143). ``True`` si se borró la base."""
+    try:
+        p.unlink()
+    except Exception:
+        log.exception("Could not delete backup %s", p)
+        return False
+    # Los side files van DESPUÉS de la base y con su propio try: si falla borrar
+    # un `-shm` no se pierde la rotación, que es lo que importa.
+    for sufijo in ("-wal", "-shm"):
+        lado = p.with_name(p.name + sufijo)
+        try:
+            lado.unlink(missing_ok=True)
+        except OSError:
+            log.warning("No se pudo borrar el side file %s", lado)
+    return True
+
+
+def adhoc_backups_vencidos(keep_days: int = ADHOC_KEEP_DAYS, *, today: date | None = None) -> list[Path]:
+    """Los backups **sueltos** (``.db`` no diarios) con más de ``keep_days`` desde la fecha de su nombre.
+
+    Un nombre sin fecha legible no entra: ante la duda, un backup se conserva.
+    """
+    hoy = today or date.today()
+    vencidos = []
+    for p in list_backups():
+        if _es_diario(p):
+            continue
+        fecha = _fecha_del_nombre(p.name)
+        if fecha is not None and (hoy - fecha).days > keep_days:
+            vencidos.append(p)
+    return vencidos
+
+
+def prune_adhoc_backups(keep_days: int = ADHOC_KEEP_DAYS, *, today: date | None = None) -> list[Path]:
+    """Borra los backups sueltos vencidos (tarea 187). Devuelve los que borró."""
+    if keep_days <= 0:
+        return []
+    borrados = [p for p in adhoc_backups_vencidos(keep_days, today=today) if _borrar_backup(p)]
+    if borrados:
+        log.info("Backups sueltos con más de %d días borrados: %s", keep_days, [p.name for p in borrados])
+    return borrados
+
+
 def rotate_backups(keep: int = 7) -> int:
     """
-    Delete oldest backups so at most ``keep`` remain. Returns number deleted.
+    Delete oldest DAILY backups so at most ``keep`` remain. Returns number deleted.
+
+    **Sólo los diarios** (tarea 193). Contaba todos los ``finanzias_*.db`` y borraba los
+    primeros por orden alfabético, así que los sueltos (``pre_*``, ``post_*``, los de la UI)
+    le comían los lugares a los diarios — y con 7 sueltos borraba el daily recién creado.
 
     **Una base SQLite en modo WAL son TRES archivos** (``.db``, ``.db-wal``,
     ``.db-shm``) y esto borraba **uno** (tarea 143). Medido el 2026-09-08: **18 side
@@ -120,26 +222,11 @@ def rotate_backups(keep: int = 7) -> int:
     """
     if keep <= 0:
         return 0
-    backups = list_backups()
+    backups = list_daily_backups()
     if len(backups) <= keep:
         return 0
     to_delete = backups[: len(backups) - keep]
-    deleted = 0
-    for p in to_delete:
-        try:
-            p.unlink()
-            deleted += 1
-        except Exception:
-            log.exception("Could not delete backup %s", p)
-            continue
-        # Los side files van DESPUÉS de la base y con su propio try: si falla borrar
-        # un `-shm` no se pierde la rotación, que es lo que importa.
-        for sufijo in ("-wal", "-shm"):
-            lado = p.with_name(p.name + sufijo)
-            try:
-                lado.unlink(missing_ok=True)
-            except OSError:
-                log.warning("No se pudo borrar el side file %s", lado)
+    deleted = sum(1 for p in to_delete if _borrar_backup(p))
     if deleted:
         log.info("Rotated backups: deleted %d, kept %d", deleted, keep)
     return deleted
@@ -147,12 +234,13 @@ def rotate_backups(keep: int = 7) -> int:
 
 def _today_already_backed_up() -> bool:
     today = date.today().isoformat()
-    return any(today in p.name for p in list_backups() if "_daily" in p.name)
+    return any(today in p.name for p in list_daily_backups())
 
 
 def maybe_rotate_daily(*, keep: int = 7) -> Path | None:
     """
-    Make today's daily snapshot if it hasn't been made yet, then rotate.
+    Make today's daily snapshot if it hasn't been made yet, then rotate the dailies
+    and prune the ad-hoc snapshots older than ``ADHOC_KEEP_DAYS`` (tareas 187 y 193).
 
     Designed to be called once on app startup — it's idempotent and silent
     when there's nothing to do, so it's cheap.
@@ -160,9 +248,11 @@ def maybe_rotate_daily(*, keep: int = 7) -> Path | None:
     try:
         if _today_already_backed_up():
             rotate_backups(keep=keep)
+            prune_adhoc_backups()
             return None
         path = backup_database(reason="daily")
         rotate_backups(keep=keep)
+        prune_adhoc_backups()
         return path
     except Exception:
         log.exception("maybe_rotate_daily failed")

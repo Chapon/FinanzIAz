@@ -62,21 +62,25 @@ def test_backup_skips_when_source_missing(tmp_path, monkeypatch):
     assert bk.backup_database() is None
 
 
+def _diario(backup_dir, dia: int):
+    """Un snapshot con el nombre exacto de un DIARIO. Desde la tarea 193 la rotación cuenta sólo
+    ésos, y `backup_database` no sirve para crearlos en serie: dos en el mismo segundo chocan."""
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    out = backup_dir / f"finanzias_2026-09-{dia:02d}_10-00-00_daily.db"
+    out.write_bytes(b"SQLite")
+    return out
+
+
 def test_rotate_backups_keeps_last_n(real_db):
-    from database.backup import backup_database, list_backups, rotate_backups
+    from database.backup import BACKUP_DIR, list_daily_backups, rotate_backups
 
-    # Create 5 backups with slightly different filenames (artificially staggered)
-    for i in range(5):
-        # Sleep is unnecessary because backup_database() embeds a fresh
-        # timestamp every call — but two backups taken in the same second
-        # would collide. Force unique by renaming.
-        out = backup_database(reason=f"r{i}")
-        assert out is not None
+    for dia in range(1, 6):
+        _diario(BACKUP_DIR, dia)
 
-    assert len(list_backups()) == 5
+    assert len(list_daily_backups()) == 5
     deleted = rotate_backups(keep=3)
     assert deleted == 2
-    assert len(list_backups()) == 3
+    assert [b.name[10:20] for b in list_daily_backups()] == ["2026-09-03", "2026-09-04", "2026-09-05"]
 
 
 def test_rotate_backups_se_lleva_los_SIDE_FILES(real_db):
@@ -89,13 +93,11 @@ def test_rotate_backups_se_lleva_los_SIDE_FILES(real_db):
     """
     from pathlib import Path
 
-    from database.backup import backup_database, list_backups, rotate_backups
+    from database.backup import BACKUP_DIR, list_backups, rotate_backups
 
     creados = []
-    for i in range(5):
-        out = backup_database(reason=f"r{i}")
-        assert out is not None
-        base = Path(out)
+    for dia in range(1, 6):
+        base = Path(_diario(BACKUP_DIR, dia))
         creados.append(base)
         for sufijo in ("-wal", "-shm"):
             base.with_name(base.name + sufijo).write_bytes(b"x")
