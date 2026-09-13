@@ -43,11 +43,15 @@ así que **no hay respuesta**). Un NO-SHIP no es lo mismo que un «sin veredicto
 | `run_trail_arm_t54.py` | T54 | **sin veredicto** | 2026-08-28 · **INVÁLIDA** (ya publicada así) | pre-refresh | `docs/trail_arm_t54_2026-08-28.md` |
 | `run_anom_regime_t38.py` | T38 | **sin veredicto** | 2026-08-19 · **INVÁLIDA** (sanity §5.4) | pre-refresh | `docs/anom_regime_t38_2026-08-19.md` |
 | `run_stop_cal_replay_t26.py` | T26 | NO-SHIP | 2026-08-13 · **INVÁLIDA** (sanity) | pre-refresh | `docs/stop_cal_t26_2026-08-13.md` |
-| `run_ranking_t21.py` | T21 | NO-SHIP · opción (a) | **NO RE-CORRIDO desde el refresh** | pre-refresh (2026-08-12) | tarea **183** |
+| `run_ranking_t21.py` | T21 | NO-SHIP · opción (a) | **2026-09-12 · VÁLIDA** (config por defecto, fill honesto — no la publicada) | refresh 2026-09-09 | `docs/BACKLOG.md`, tarea **183** |
 
-**El único que queda sin re-validar es el T21**, y la tarea **183** lo declara con su severidad
-(BAJA: margen de 94× sobre el umbral, el mecanismo que rompió al T37/T47 no le aplica, y nada
-está cableado sobre él).
+**El T21 fue el último en re-validarse, el 2026-09-12 (tarea 183).** Hasta ahí su fila decía
+*«NO RE-CORRIDO»* con un test que lo exigía. Corrió con la config **por defecto** del runner
+—universo vivo, 10 slots, barrera al close y **fill honesto**—, no con la del veredicto publicado
+(fill legacy, T33), porque lo que se re-valida es el **instrumento**: el oráculo despega
+**+538,90 pp** sobre el baseline contra un mínimo de +5,00 pp, y los cuatro sanity dan OK. El
+veredicto de esa corrida es NO-SHIP por C3 (IC95% del ΔCAGR [−1,27, +15,26] pp, p=0,059). Sus
+números **no** reproducen los publicados y no tienen por qué: otra muestra y otro fill.
 
 ---
 

@@ -144,9 +144,21 @@ def test_los_re_corridos_del_2026_09_10_estan_TODOS():
         assert "2026-09-10" in filas[runner], f"{runner}: su fila no fecha la re-corrida"
 
 
-def test_el_unico_sin_re_correr_esta_DECLARADO_como_tal():
-    """El T21 es el único que el refresh dejó sin re-validar, y la tabla no puede disimularlo:
-    su fila tiene que decirlo y apuntar a la tarea que lo sostiene (183)."""
+def test_el_T21_re_validado_declara_FECHA_config_y_tarea():
+    """El T21 fue el último en re-validarse (tarea 183, 2026-09-12). Hasta ahí este test exigía
+    que su fila dijera *«NO RE-CORRIDO»*; ahora exige lo que hace útil a la fila nueva: la fecha,
+    que corrió con una config que **no** es la publicada —o sus números se leerían como una
+    reproducción— y la tarea donde está la evidencia."""
     fila = filas_de_la_tabla()["run_ranking_t21.py"]
-    assert "NO RE-CORRIDO" in fila, "la fila del T21 dejó de declarar que no se re-corrió"
-    assert "183" in fila, "la fila del T21 no apunta a la tarea que lo declara"
+    assert "NO RE-CORRIDO" not in fila, "la fila del T21 volvió a decir que no se re-corrió"
+    assert "2026-09-12" in fila and "VÁLIDA" in fila, "la fila del T21 no fecha su re-validación"
+    assert "no la publicada" in fila, "la fila del T21 no declara que corrió con otra config"
+    assert "183" in fila, "la fila del T21 no apunta a la tarea que tiene la evidencia"
+
+
+def test_ninguna_fila_de_la_poblacion_queda_NO_RE_CORRIDA_sin_tarea():
+    """La regla general que quedaba implícita en el caso del T21: si un runner vuelve a quedar
+    sin re-validar tras un refresh, su fila puede decirlo, pero tiene que apuntar a una tarea."""
+    for runner, fila in filas_de_la_tabla().items():
+        if "NO RE-CORRIDO" in fila:
+            assert re.search(r"tarea \*\*\d+\*\*", fila), f"{runner}: NO RE-CORRIDO sin tarea que lo sostenga"
