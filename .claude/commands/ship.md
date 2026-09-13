@@ -32,7 +32,9 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
       - `python scripts/check_backlog_integrity.py --staged` — integridad de `docs/BACKLOG.md`.
         Es la mitad del guard de la tarea 66 que **necesita el diff** y por lo tanto no puede
         correr en la suite: frena un commit que le saque más de 60 líneas netas al backlog,
-        que es exactamente lo que pasó el 2026-08-31 y pasó invisible cuatro commits.
+        que es exactamente lo que pasó el 2026-08-31 y pasó invisible cuatro commits. Y desde
+        la tarea 195, frena también un commit que **escriba una repriorización** dejando fuera
+        del `El orden queda …` una tarea abierta — así se perdió la 180 el 2026-09-12.
    b. Mostrame `git status --short` y `git diff --stat` para confirmar qué entra.
    c. Hacé `git add` de la unidad lógica completa (código + tests + docs).
    d. Commiteá siguiendo la skill `git-workflow`: subject `tipo(scope): ...` o `T<n>: ...` en español, cuerpo con qué/por qué + línea `Suite: NNN passed`, y trailer `Co-Authored-By`.

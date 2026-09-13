@@ -48,10 +48,11 @@ manda activamente a **no** verificar.
 
 **Lo mismo vale para el guard del backlog.** `python scripts/check_backlog_integrity.py --staged`
 es la mitad de la tarea 66 que **necesita el diff** —frena un commit que le saque más de 60
-líneas netas a `docs/BACKLOG.md`— y también vive sólo en el paso 3a de `/ship`. Estuvo
+líneas netas a `docs/BACKLOG.md`, o que escriba una repriorización omitiendo una tarea abierta
+(tarea 195)— y también vive sólo en el paso 3a de `/ship`. Estuvo
 declarada en `.pre-commit-config.yaml` desde el 2026-09-01 sin correr **ni una vez**, porque
 en este repo **no hay ningún hook de git instalado** (tarea 97). La otra mitad (secciones,
-punteros) sí corre sola, en la suite.
+punteros, tareas abiertas contra la cola) sí corre sola, en la suite.
 
 **Regla que sale de las dos:** en este proyecto **un guard declarado no es un guard cableado**.
 Antes de escribir que algo "corre automáticamente", verificá quién lo llama.

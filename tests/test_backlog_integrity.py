@@ -40,9 +40,12 @@ import pytest
 from scripts.check_backlog_integrity import (
     MAX_LINES_LOST,
     check_file,
+    check_staged_queue,
     check_staged_shrink,
     check_text,
     declared_sections,
+    latest_queue,
+    queue_problems,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -292,6 +295,214 @@ def test_ningun_doc_afirma_que_el_hook_corre_solo():
             f"({m.group(0)!r}); en este repo no hay hooks de git instalados y su "
             "cableado operativo es el paso 3a de /ship (tarea 97)"
         )
+
+
+# ── Tarea 195: ninguna tarea abierta se cae de la cola ────────────────────────
+#
+# El (3) de arriba corre *puntero → tarea*. Esto es la inversa, *tarea abierta → cola*:
+# el 2026-09-12 una nota de repriorización reescribió el orden sin la 180 y el backlog
+# llegó a declarar «la cola queda VACÍA» con ella abierta. **Y no era la primera vez:**
+# medido contra el historial, la nota del 2026-09-02i dice «La cola priorizada queda
+# VACÍA» con SEIS tareas abiertas (11, 14, 36, 42, 43, 55), que se recuperaron recién el
+# 2026-09-07.
+
+
+def _tareas(*titulos: str) -> str:
+    return "".join(f"### {t}\n- cuerpo\n\n" for t in titulos)
+
+
+def _nota(fecha: str, orden: str, extra: str = "") -> str:
+    return f"> **Repriorizado {fecha}** tras algo. El orden queda {orden}{extra}.\n\n"
+
+
+def _backlog(notas: str, tareas: str) -> str:
+    return (
+        _HEADER
+        + "## En curso (WIP, máx 1)\n\n- algo.\n\n"
+        + "## Próximo (priorizado)\n\n"
+        + notas
+        + tareas
+        + "## Hecho reciente\n\n- [x] otra\n"
+    )
+
+
+def test_una_tarea_abierta_que_la_nota_PERDIO_se_acusa():
+    """El caso de la 180: la nota ordena la 8 y la 7 —que ya existía— no está."""
+    txt = _backlog(_nota("2026-09-12", "**8**"), _tareas("7. PERDIDA — x", "8. EN COLA — y"))
+    probs = check_text(txt)
+    assert len(probs) == 1
+    assert "la tarea abierta 7 no está en la cola" in probs[0]
+    assert "2026-09-12" in probs[0]
+
+
+def test_una_tarea_TACHADA_no_cuenta_como_abierta():
+    txt = _backlog(
+        _nota("2026-09-12", "**8**"), _tareas("7. ~~CERRADA — x~~ · **CERRADA**", "8. EN COLA — y")
+    )
+    assert check_text(txt) == []
+
+
+def test_una_tarea_creada_DESPUES_de_la_nota_no_la_acusa_la_suite_pero_si_el_exacto():
+    """La cota de la mitad de la suite, y su precio dicho.
+
+    Una tarea con número mayor que todos los que la nota ordena se creó **después** de la
+    nota (los números se asignan en orden), así que la nota no la pudo perder: medido,
+    sin esta cota el guard habría puesto en rojo decenas de commits del 9 al 11/09 que
+    encadenaban tareas nuevas por los «la próxima es la NN» de cada WIP.
+
+    El precio es que una nota que omite una tarea de número MAYOR pasa en la suite. Eso
+    lo ve el modo exacto, que es el que corre ``--staged`` cuando el commit escribe la nota.
+    """
+    txt = _backlog(_nota("2026-09-12", "**7**"), _tareas("7. EN COLA — x", "9. NUEVA — y"))
+    assert queue_problems(txt) == []
+    exacto = queue_problems(txt, exact=True)
+    assert len(exacto) == 1 and "la tarea abierta 9 no está en la cola" in exacto[0]
+
+
+def test_la_ultima_nota_es_la_de_FECHA_mas_nueva_no_la_de_mas_abajo():
+    """En el archivo real las notas no están en orden: la del 2026-09-09c aparece
+    **después** de la del 2026-09-12b. Leer «la de más abajo» usaría una cola vieja."""
+    notas = _nota("2026-09-13b", "**7 → 8**") + _nota("2026-09-13", "**8**") + _nota("2026-09-09c", "**8**")
+    txt = _backlog(notas, _tareas("7. EN COLA — x", "8. EN COLA — y"))
+    assert latest_queue(txt).nota == "2026-09-13b"
+    assert check_text(txt) == []
+
+
+def test_fuera_de_la_cola_DECLARADO_se_respeta():
+    """El caso de la 186 en la nota del 2026-09-12: una acción manual abierta, declarada
+    fuera de la cola con su motivo. No es una tarea perdida."""
+    txt = _backlog(
+        _nota("2026-09-12", "**8**", ", con la **7** fuera de la cola por ser acción manual"),
+        _tareas("7. MANUAL — x", "8. EN COLA — y"),
+    )
+    assert check_text(txt) == []
+
+
+def test_una_tarea_NOMBRADA_en_la_oracion_pero_fuera_de_la_cadena_no_esta_en_la_cola():
+    """Sólo cuenta la cadena de flechas: «…, con la **7** detrás» nombra a la 7 sin
+    ordenarla. Un parseo de la oración entera la daría por encolada."""
+    txt = _backlog(
+        _nota("2026-09-12", "**8**", ", y la **7** queda para después"), _tareas("7. X — x", "8. Y — y")
+    )
+    assert any("la tarea abierta 7 no está en la cola" in p for p in check_text(txt))
+
+
+def test_la_cadena_entiende_negritas_parciales_bloques_y_sufijos():
+    """Las formas que el archivo usa de verdad: «**58 → 54** → 59 → 29/30/31 → 26b»."""
+    txt = _backlog(_nota("2026-09-12", "**58 → 54** → 59 → 29/30/31 → 26b"), "")
+    assert latest_queue(txt).orden == ("58", "54", "59", "29", "30", "31", "26b")
+
+
+def test_una_nota_SIN_orden_se_acusa():
+    """Del 01/09 al 08/09 hubo notas que escribían el orden en prosa («la 128 encabeza…
+    detrás va la 129»). Eso no se puede verificar, y es el período en que seis tareas
+    estuvieron fuera de la cola. Desde la 195 la última nota tiene que traer la cadena."""
+    txt = _backlog("> **Repriorizado 2026-09-12** tras algo. La 8 encabeza.\n\n", _tareas("8. Y — y"))
+    assert any("no declara 'El orden queda" in p for p in check_text(txt))
+
+
+def test_dos_notas_con_la_misma_fecha_y_sufijo_se_acusan():
+    notas = _nota("2026-09-12", "**8**") + _nota("2026-09-12", "**7**")
+    txt = _backlog(notas, _tareas("7. X — x", "8. Y — y"))
+    assert any("hay dos notas" in p for p in check_text(txt))
+
+
+def test_sin_notas_no_hay_cola_que_chequear():
+    """Un backlog sin repriorizaciones (los fixtures de arriba) no tiene contra qué
+    comparar: callarse es correcto, no un agujero."""
+    assert queue_problems(_HEADER + _CUERPO) == []
+
+
+def _backlog_historico(commit: str) -> str:
+    r = subprocess.run(
+        ["git", "show", f"{commit}:docs/BACKLOG.md"],
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if r.returncode != 0 or not r.stdout:
+        pytest.skip(f"sin acceso al commit {commit} (checkout superficial o sin git)")
+    return r.stdout
+
+
+def test_el_guard_caza_la_180_en_el_commit_que_la_PERDIO():
+    """``fdd7517`` (cierre de la 184) escribió «El orden queda 190 → 178 → 183 → 187 →
+    188» sin la 180. La 186 tampoco está, pero la nota la declara fuera de la cola por
+    ser acción manual: el guard tiene que nombrar a la 180 **y no** a la 186."""
+    probs = queue_problems(_backlog_historico("fdd7517"))
+    assert len(probs) == 1
+    assert "la tarea abierta 180 no está en la cola" in probs[0]
+    assert "186" not in probs[0].split("dice")[0]
+
+
+def test_el_guard_caza_la_180_cuando_el_backlog_declaro_la_cola_VACIA():
+    """``821b359`` es el cierre cuyo WIP dijo «La cola queda VACÍA» con la 180 abierta."""
+    probs = queue_problems(_backlog_historico("821b359"))
+    assert any("la tarea abierta 180 no está en la cola" in p for p in probs)
+
+
+# ── Tarea 195, la mitad que necesita el diff ─────────────────────────────────
+
+
+@pytest.fixture
+def repo_con_cola(tmp_path, monkeypatch):
+    """Un repo git real con un backlog que tiene una nota y dos tareas en cola."""
+    import scripts.check_backlog_integrity as guard
+
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "test@finanzias.local")
+    _git(tmp_path, "config", "user.name", "test")
+    doc = tmp_path / "docs" / "BACKLOG.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text(
+        _backlog(_nota("2026-09-12", "**7 → 8**"), _tareas("7. X — x", "8. Y — y")), encoding="utf-8"
+    )
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    monkeypatch.setattr(guard, "REPO", tmp_path)
+    return tmp_path, doc
+
+
+def test_el_commit_que_ESCRIBE_una_nota_sin_una_tarea_abierta_se_frena(repo_con_cola):
+    """El hueco de la cota, cerrado donde la omisión es segura: quien escribe el orden tiene
+    todas las abiertas delante. Caso real: ``4c78e17`` creó la 82 y en el mismo commit
+    escribió una nota que ordenaba hasta la 81 sin ella."""
+    repo, doc = repo_con_cola
+    doc.write_text(
+        _backlog(
+            _nota("2026-09-13", "**7**") + _nota("2026-09-12", "**7 → 8**"),
+            _tareas("7. X — x", "8. ~~Y~~ · CERRADA", "9. NUEVA — z"),
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", "docs/BACKLOG.md")
+
+    probs = check_staged_queue(doc)
+
+    assert len(probs) == 1 and "la tarea abierta 9 no está en la cola" in probs[0]
+    assert queue_problems(doc.read_text(encoding="utf-8")) == []  # la suite sola no lo ve
+
+
+def test_un_commit_que_NO_toca_la_nota_no_se_mide_en_exacto(repo_con_cola):
+    """Crear una tarea sin escribir nota es el flujo normal del loop (la próxima se encadena
+    en el WIP). Exigir el exacto ahí sería forzar una nota por tarea."""
+    repo, doc = repo_con_cola
+    doc.write_text(doc.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    doc.write_text(
+        doc.read_text(encoding="utf-8").replace(
+            "## Hecho reciente", _tareas("9. NUEVA — z") + "## Hecho reciente"
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", "docs/BACKLOG.md")
+
+    assert check_staged_queue(doc) == []
+
+
+def test_la_mitad_exacta_es_fail_open_sin_git(tmp_path):
+    assert check_staged_queue(tmp_path / "no_existe.md") == []
 
 
 # ── La validación que importa: el commit real que rompió el archivo ──────────

@@ -31,10 +31,30 @@ Qué chequea, y por qué cada cosa
    exactamente lo que se rompió, y es un invariante **estructural**: no necesita
    un umbral ni una cuenta mínima que alguien tenga que ir subiendo.
 4. **El archivo declara al menos una tarea.** El caso extremo del truncamiento.
+5. **Ninguna tarea abierta se cae de la cola (tarea 195).** El (3) corre en la
+   dirección *puntero → tarea*; ésta es la inversa, *tarea abierta → cola*. El
+   2026-09-12 la nota de repriorización del cierre de la 184 reescribió el orden sin
+   la **180**, y el backlog llegó a declarar *«la cola queda VACÍA»* con ella
+   abierta. Lo que se lee como cola es el ``El orden queda …`` de la **última**
+   nota ``> **Repriorizado AAAA-MM-DD[x]**`` —la última por **fecha**, no por
+   posición: en el archivo no están en orden—, y se exige que toda tarea abierta
+   con número **menor o igual al mayor que esa nota ordena** figure en el orden o
+   esté declarada ``la **NN** fuera de la cola``.
 
-El otro eje —*"perdió más de N líneas en un commit"*— no se puede chequear leyendo
-un archivo: necesita el diff. Vive en el hook de ``pre-commit`` (``--staged``), que
-compara contra el índice de git.
+   **Por qué esa cota y no «toda tarea abierta»:** medido contra el historial, la
+   versión sin cota habría puesto en rojo decenas de commits del 9 al 11/09 —tareas
+   creadas **después** de la nota y encadenadas por los ``la próxima es la NN`` de
+   cada WIP—, que no eran ningún defecto. Como los números se asignan en orden, una
+   tarea con número menor al mayor de la nota **ya existía** cuando se escribió: si
+   no está, la nota la perdió. **Lo que esta mitad no ve, dicho:** una tarea con
+   número **mayor** que todos los de la nota y omitida por ella. Eso lo cubre la
+   mitad ``--staged``, en el momento de escribir la nota.
+
+Los ejes que necesitan el diff no se pueden chequear leyendo un archivo: corren con
+``--staged``, contra el índice de git, y su cableado operativo es el paso 3a de
+``/ship`` (tarea 97 — no hay hooks de git instalados). Son dos: *"perdió más de N
+líneas en un commit"* (``check_staged_shrink``) y *"la nota de repriorización que
+este commit escribe omite una tarea abierta"* (``check_staged_queue``, tarea 195).
 
 Uso
 ---
@@ -51,6 +71,7 @@ import argparse
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -67,6 +88,15 @@ _BACKTICKED = re.compile(r"`([^`]+)`")
 # y «la próxima es la **29/30/31**» (un bloque de tareas chicas que van juntas).
 _PROXIMA = re.compile(r"[Ll]a próxima es la \*\*([0-9][0-9a-z/]*)\*\*")
 _TAREA = re.compile(r"^### (\d+)[a-z]?\.", re.MULTILINE)
+# Tarea 195. Una tarea está ABIERTA si su título no arranca tachado (`### 12. ~~…~~`).
+_TAREA_TITULO = re.compile(r"^### (\d+[a-z]?)\.(.*)$", re.MULTILINE)
+_NOTA = re.compile(r"^> \*\*Repriorizado (\d{4}-\d{2}-\d{2})([a-z]?)\*\*(.*)$", re.MULTILINE)
+# «El orden queda **195 → 198** → 199 → 29/30/31»: la cadena de flechas, con negritas
+# parciales. Sólo la cadena: el resto de la oración («…, con la 186 fuera de la cola»)
+# nombra tareas que NO están en el orden.
+_TOKEN = r"(?:\*\*)?[0-9][0-9a-z/]*(?:\*\*)?"
+_ORDEN = re.compile(rf"[Ee]l orden queda\s+({_TOKEN}(?:\s*→\s*{_TOKEN})*)")
+_FUERA = re.compile(r"\*\*(\d+[a-z]?)\*\*\s+fuera de la cola")
 
 
 def declared_sections(text: str) -> list[str]:
@@ -92,6 +122,91 @@ def _section_bodies(text: str) -> dict[str, str]:
     if actual is not None:
         out[actual] = "\n".join(buf)
     return out
+
+
+def open_tasks(text: str) -> list[str]:
+    """Los ``### NN.`` cuyo título no arranca tachado, en orden de aparición."""
+    return [n for n, resto in _TAREA_TITULO.findall(text) if not resto.strip().startswith("~~")]
+
+
+@dataclass(frozen=True)
+class Cola:
+    """Lo que la última nota de repriorización declara como cola."""
+
+    nota: str  # «2026-09-13b»
+    orden: tuple[str, ...]  # vacío si la nota no trae «El orden queda …»
+    fuera: frozenset[str]
+    duplicada: bool  # otra nota con la misma fecha y sufijo: «la última» es ambigua
+
+    def contiene(self, tarea: str) -> bool:
+        return tarea in self.orden or _numero(tarea) in {_numero(t) for t in self.orden}
+
+    def excluye(self, tarea: str) -> bool:
+        return tarea in self.fuera or _numero(tarea) in {_numero(t) for t in self.fuera}
+
+
+def _numero(tarea: str) -> str:
+    return tarea.rstrip("abcdefghijklmnopqrstuvwxyz")
+
+
+def latest_queue(text: str) -> Cola | None:
+    """La cola que declara la nota ``> **Repriorizado …**`` más RECIENTE, o None si no hay.
+
+    Por **fecha y sufijo**, no por posición: en el archivo las notas no están en orden
+    cronológico (la del 2026-09-09c aparece después de la del 2026-09-12b), así que
+    "la de más abajo" no es "la última".
+    """
+    notas = [(fecha, sufijo, cuerpo) for fecha, sufijo, cuerpo in _NOTA.findall(text)]
+    if not notas:
+        return None
+    clave = max((fecha, sufijo) for fecha, sufijo, _ in notas)
+    cuerpos = [cuerpo for fecha, sufijo, cuerpo in notas if (fecha, sufijo) == clave]
+    cuerpo = cuerpos[-1]
+    cadenas = _ORDEN.findall(cuerpo)
+    orden = tuple(re.findall(r"[0-9][0-9a-z]*", cadenas[-1].replace("/", " "))) if cadenas else ()
+    return Cola(
+        nota=clave[0] + clave[1],
+        orden=orden,
+        fuera=frozenset(_FUERA.findall(cuerpo)),
+        duplicada=len(cuerpos) > 1,
+    )
+
+
+def queue_problems(text: str, *, exact: bool = False) -> list[str]:
+    """Tareas abiertas que la última nota de repriorización perdió (tarea 195).
+
+    ``exact=False`` es la mitad de la suite: sólo acusa a las abiertas con número menor o
+    igual al mayor que la nota ordena, porque ésas ya existían cuando se escribió.
+    ``exact=True`` es la mitad ``--staged``: se usa cuando el commit **escribe** la nota,
+    y ahí toda tarea abierta tiene que estar.
+    """
+    cola = latest_queue(text)
+    if cola is None:
+        return []
+    if cola.duplicada:
+        return [
+            f"hay dos notas '> **Repriorizado {cola.nota}**': con la misma fecha y sufijo no se "
+            "sabe cuál es la última. Poné un sufijo a la nueva (b, c, …)."
+        ]
+    if not cola.orden:
+        return [
+            f"la última repriorización ({cola.nota}) no declara 'El orden queda …': sin eso el "
+            "backlog no dice cuál es la cola, y ninguna tarea abierta se puede verificar contra ella"
+        ]
+    tope = max(int(_numero(t)) for t in cola.orden if _numero(t).isdigit())
+    perdidas = [
+        t
+        for t in open_tasks(text)
+        if not cola.contiene(t) and not cola.excluye(t) and (exact or int(_numero(t)) <= tope)
+    ]
+    if not perdidas:
+        return []
+    lista = ", ".join(perdidas)
+    return [
+        f"la tarea abierta {lista} no está en la cola: la última repriorización ({cola.nota}) "
+        f"dice 'El orden queda {' → '.join(cola.orden)}'. Agregala al orden, cerrala, o declarala "
+        "'la **NN** fuera de la cola' con el motivo (tarea 195: así se perdió la 180)."
+    ]
 
 
 def check_text(text: str) -> list[str]:
@@ -126,6 +241,7 @@ def check_text(text: str) -> list[str]:
     for n in sorted(apuntadas, key=int):
         if n not in tareas:
             problemas.append(f"'la próxima es la {n}' no apunta a ningún lado: falta la sección '### {n}.'")
+    problemas += queue_problems(text)
     return problemas
 
 
@@ -164,14 +280,43 @@ def check_staged_shrink(path: Path = BACKLOG, max_lost: int = MAX_LINES_LOST) ->
     ]
 
 
+def _git_show(spec: str) -> str | None:
+    r = subprocess.run(
+        ["git", "show", spec], cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=False
+    )
+    return r.stdout if r.returncode == 0 else None
+
+
+def check_staged_queue(path: Path = BACKLOG) -> list[str]:
+    """Si el commit staged escribe o cambia la última nota de repriorización, toda tarea
+    abierta tiene que estar en su orden — sin la cota de la mitad de la suite (tarea 195).
+
+    Es el momento en que la omisión es un error seguro: quien escribe el orden tiene
+    todas las tareas abiertas delante. Fail-open sin git o sin HEAD.
+    """
+    try:
+        rel = path.relative_to(REPO).as_posix()
+        antes, ahora = _git_show(f"HEAD:{rel}"), _git_show(f":{rel}")
+    except Exception:
+        return []
+    if antes is None or ahora is None:
+        return []
+    cola_antes, cola_ahora = latest_queue(antes), latest_queue(ahora)
+    if cola_ahora is None or cola_ahora == cola_antes:
+        return []
+    return [f"[--staged] {p}" for p in queue_problems(ahora, exact=True)]
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Integridad de docs/BACKLOG.md (tarea 66)")
+    ap = argparse.ArgumentParser(description="Integridad de docs/BACKLOG.md (tareas 66 y 195)")
     ap.add_argument("--staged", action="store_true", help="además, mirar el diff staged")
     args = ap.parse_args(argv)
 
     problemas = check_file()
     if args.staged:
         problemas += check_staged_shrink()
+        # Sin duplicar lo que la mitad de la suite ya acusó sobre el mismo archivo.
+        problemas += [p for p in check_staged_queue() if p.removeprefix("[--staged] ") not in problemas]
     if not problemas:
         print("docs/BACKLOG.md: OK")
         return 0
