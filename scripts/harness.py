@@ -30,6 +30,7 @@ sys.path.insert(0, str(repo_root))
 from analysis.backtest import signal_from_analyze_stacked
 from analysis.harness import ExperimentConfig, HarnessRunner
 from analysis.harness.metrics import ComputedMetrics
+from database.readonly import readonly_uri
 
 
 def _load_baseline_metrics() -> ComputedMetrics:
@@ -309,7 +310,7 @@ if __name__ == "__main__":
         if not db_path.exists():
             print(f"Error: {db_path} not found")
             sys.exit(2)
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
         try:
             rows = conn.execute(
                 "SELECT ticker FROM paper_watchlist WHERE account_id = ? ORDER BY ticker",

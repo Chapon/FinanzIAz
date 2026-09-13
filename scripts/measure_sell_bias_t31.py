@@ -43,9 +43,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from analysis.harness_config import COHORTE_HISTORICO, announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
+from database.readonly import readonly_uri  # tarea 191
 
 HORIZONTES = (5, 10, 20)  # ruedas hábiles
 PERIODO = "2y"
@@ -89,7 +89,7 @@ def _stats(xs: list[float]) -> dict:
 
 
 def _ventas(db: Path) -> list[dict]:
-    con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db), uri=True)
     try:
         filas = list(
             con.execute(

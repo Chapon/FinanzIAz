@@ -29,6 +29,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Después del `sys.path.insert`: corrido como script, la raíz no está en el path antes.
+from database.readonly import readonly_uri
+
 DEFAULT_DB = ROOT / "finanzias.db"
 
 
@@ -60,7 +63,7 @@ def main(argv=None) -> int:
 
     from data import parquet_cache
 
-    con = sqlite3.connect(str(db))
+    con = sqlite3.connect(readonly_uri(db), uri=True)  # sólo lee (tarea 191)
     con.row_factory = sqlite3.Row
     q = "SELECT ticker, period, interval, data_json FROM historical_data_cache"
     if args.period:

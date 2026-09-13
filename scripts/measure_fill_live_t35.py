@@ -46,6 +46,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from database.readonly import readonly_uri  # tarea 191
 
 # `atr_stop @ 155.19 ≤ 156.32 (…)`  ·  el operador es ≤ para stop/trail y ≥ para tp
 _DISPARO = re.compile(r"^(atr_\w+)\s*@\s*([\d.]+)\s*[≤≥<>]=?\s*([\d.]+)")
@@ -68,7 +69,7 @@ def parse_reason(reason: str) -> dict | None:
 
 
 def _salidas(db: Path) -> list[dict]:
-    con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db), uri=True)
     try:
         filas = list(
             con.execute(

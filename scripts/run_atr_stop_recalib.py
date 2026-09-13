@@ -39,6 +39,7 @@ from analysis.exit_replay import (
     build_report,
     replay_atr_recalib,
 )
+from database.readonly import readonly_uri
 from scripts.baseline_metrics import load_snapshots, resolve_account_id
 from scripts.run_exit_replay_t61 import (
     build_sell_events,
@@ -93,7 +94,7 @@ def partition_atr_events(
 
 
 def run(db_path: Path, account_id: int, cap_days: int, contam_tol: float):
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     try:
         # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
         # contra `is_active`), no el literal 1. La 1 está pausada desde el

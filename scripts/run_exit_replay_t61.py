@@ -49,6 +49,7 @@ from analysis.exit_replay import (
     simulate_variant,
 )
 from analysis.harness_config import StaleArtifactError, announce_artifacts, artifact_window
+from database.readonly import readonly_uri
 from scripts.baseline_metrics import fifo_match, load_fills, load_snapshots, resolve_account_id
 
 DEFAULT_DB = "finanzias.db"
@@ -204,7 +205,7 @@ def run(
     atr_from_defaults: bool = False,
     strict_artifacts: bool = True,
 ) -> tuple[list[ReplayReport], dict]:
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     try:
         # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
         # contra `is_active`), no el literal 1. La 1 está pausada desde el

@@ -36,6 +36,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
+from database.readonly import readonly_uri  # tarea 191
 
 # Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
 from scripts.baseline_metrics import resolve_account_id
@@ -65,7 +66,7 @@ def _cause(notes: str | None) -> str:
 
 
 def run(db_path: Path, account_id: int):
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)
     try:
         # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
         # contra `is_active`), no el literal 1. La 1 está pausada desde el

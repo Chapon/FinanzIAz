@@ -62,6 +62,7 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
+from database.readonly import readonly_uri
 from scripts.baseline_metrics import (
     AccountSnapshot,
     _parse_dt,
@@ -760,7 +761,7 @@ def _kpis(snapshots: list[AccountSnapshot], fills) -> dict:
 
 
 def build_payload(db_path: Path, account_id: int) -> dict:
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     try:
         account = _account_row(con, account_id)
         if account is None:

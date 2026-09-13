@@ -38,6 +38,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Después del `sys.path.insert`: corrido como script, la raíz no está en el path antes.
+from database.readonly import readonly_uri
+
 DEFAULT_DB = ROOT / "finanzias.db"
 
 
@@ -64,7 +67,7 @@ def migrate(db_path, *, apply: bool = False, parquet_dir=None, log=print) -> dic
     if parquet_dir is not None:
         parquet_cache.set_parquet_dir(parquet_dir)
 
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     con.row_factory = sqlite3.Row
     written = failed = 0
     try:

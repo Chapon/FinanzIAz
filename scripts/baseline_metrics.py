@@ -50,6 +50,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Corrido como `python scripts/baseline_metrics.py`, la raíz del repo no está en el path, y
+# hasta la tarea 191 este script no importaba nada del repo. Ahora importa el helper de
+# solo-lectura, que es el que evita dejar `-shm`/`-wal` en un backup.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from database.readonly import readonly_uri  # después del sys.path.insert (tarea 191)
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 TRADING_DAYS_PER_YEAR = 252
@@ -774,7 +781,7 @@ def print_account(result: AccountResult) -> None:
 
 def run(db_path: Path, out_dir: Path, write: bool = True) -> dict[str, Any]:
     """Public entry point: returns the payload that gets written to disk."""
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)
     try:
         accounts = load_accounts(con)
         results: list[AccountResult] = []

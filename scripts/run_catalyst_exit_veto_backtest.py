@@ -55,6 +55,7 @@ from analysis.exit_replay import (
 )
 from analysis.impact_score import exit_veto_block, imminent_catalyst
 from analysis.surprise_score import make_surprise_loader
+from database.readonly import readonly_uri
 from scripts.baseline_metrics import load_snapshots, resolve_account_id
 
 # reutilizamos la infraestructura ya probada del runner T6.1
@@ -153,7 +154,7 @@ def make_earnings_loader_asof(calendar: dict[str, list[datetime]], asof: datetim
 
 
 def run(db_path: Path, account_id: int, cap_days: int, horizon: int):
-    con = sqlite3.connect(str(db_path))
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     try:
         # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
         # contra `is_active`), no el literal 1. La 1 está pausada desde el

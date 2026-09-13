@@ -45,9 +45,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from analysis.harness_config import announce_artifacts, artifact_window, cohort_bars
 from data import parquet_cache
+from database.readonly import readonly_uri  # tarea 191
 
 HORIZONTE = 5  # ruedas hábiles, igual que el fwd5 del original
 PERIODO = "2y"  # frame con el que se calculan los forwards
@@ -102,7 +102,7 @@ def detectable_r(n: int) -> float:
 
 
 def _muestra(db: Path) -> list[dict]:
-    con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db), uri=True)
     try:
         filas = list(
             con.execute(

@@ -48,6 +48,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from data.edgar_fundamentals import get_fundamental_facts
+from database.readonly import readonly_uri
 from paper_trading.gates import recent_adv_dollars
 from paper_trading.universe import (
     REASON_ADV,
@@ -67,7 +68,7 @@ def _load_watchlist(db: str, account_id: int | None) -> tuple[int, list[str]]:
     watchlist: preguntarle a una base por la cuenta viva y leerle la watchlist a
     otra es justo el desvío que este script existe para no tener.
     """
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(readonly_uri(db), uri=True)  # sólo lee (tarea 191)
     try:
         account_id = resolve_account_id(con, account_id)
         rows = con.execute(

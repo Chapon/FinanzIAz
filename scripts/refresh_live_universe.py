@@ -27,8 +27,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 sys.path.insert(0, str(_ROOT))
-
 from analysis.harness_config import LIVE_ACCOUNT_ID, LIVE_UNIVERSE_FILE
+from database.readonly import readonly_uri  # tarea 191
 
 PIT_DIR = "data/pit_signals"
 
@@ -41,7 +41,7 @@ def pit_tickers(pit_dir: Path) -> set[str]:
 
 
 def watchlist_tickers(db_path: Path, account_id: int) -> list[str]:
-    con = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)
     try:
         rows = con.execute(
             "select distinct ticker from paper_watchlist where account_id = ?",

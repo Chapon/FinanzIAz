@@ -47,6 +47,7 @@ from statistics import mean, median
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from database.readonly import readonly_uri  # tarea 191
 
 # Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
 from scripts.baseline_metrics import resolve_account_id
@@ -145,7 +146,7 @@ def load_round_trips(db_path: Path, account_id: int) -> list[dict]:
     """Lee round-trips cerrados de la DB (read-only). Reusa metrics_panel."""
     from analysis.metrics_panel import _filled_orders, pair_round_trips
 
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db_path), uri=True)
     try:
         # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta
         # contra `is_active`), no el literal 1. La 1 está pausada desde el

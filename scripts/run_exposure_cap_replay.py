@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Import después del `sys.path.insert` a propósito (E402 está en el ignore global).
+from database.readonly import readonly_uri
 from scripts.baseline_metrics import resolve_account_id
 
 # Nombres de referencia del kill-criteria.
@@ -118,7 +119,7 @@ def _load_orders(db: str, account: int | None) -> tuple[list[dict], float, int]:
     **imprime** en su encabezado: si el default se resuelve solo, lo que se imprime
     tiene que ser lo que se midió, no el ``None`` que pasó el operador (tarea 99).
     """
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(readonly_uri(db), uri=True)  # sólo lee (tarea 191)
     con.row_factory = sqlite3.Row
     # Tarea 99: sin `--account` explícito, la cuenta es la **VIVA** (resuelta contra
     # `is_active`), no el literal 1. La 1 está pausada desde el 2026-07-01 y tiene

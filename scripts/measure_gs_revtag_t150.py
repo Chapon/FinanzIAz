@@ -55,13 +55,13 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
-
 from data.edgar_fundamentals import (
     NET_INCOME_CONCEPT,
     REVENUE_CONCEPTS,
     fetch_company_facts,
     parse_fundamental_facts,
 )
+from database.readonly import readonly_uri  # tarea 191
 from paper_trading.universe import UniverseThresholds, _fragile_fundamentals
 from scripts.baseline_metrics import NoLiveAccount, resolve_account_id
 
@@ -115,7 +115,7 @@ def _resuelve_con(gaap: dict, conceptos: tuple[str, ...]) -> str | None:
 
 def _load_watchlist(db: str, account_id: int | None) -> tuple[int, list[str]]:
     """``(cuenta, tickers)``. Sin ``account_id`` se resuelve la **viva** (tarea 99)."""
-    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    con = sqlite3.connect(readonly_uri(db), uri=True)
     try:
         account_id = resolve_account_id(con, account_id)
         rows = con.execute(
