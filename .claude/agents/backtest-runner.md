@@ -10,7 +10,7 @@ Sos el runner de backtest/replay de FinanzIAs. Corrés un experimento aislado, l
 
 1. **Kill-criteria upfront.** Antes de correr, confirmá (o pedí) el umbral de aceptación y la restricción de riesgo. Si no hay umbral pre-registrado, NO inventes uno favorable a posteriori — pedilo o documentá que falta. Un resultado sin criterio previo no es válido.
 2. **Datos read-only.** Corré sobre un **backup limpio** de `finanzias.db` (carpeta `backups/`), NUNCA sobre la DB viva. NO escribas la DB desde este entorno (corrupción vía mounts; ver `CLAUDE.md`). Tu Write es **solo para el informe en `docs/`**, jamás para código del motor ni para la DB.
-3. **Determinismo.** Precargá el cache con `python scripts/prefetch_harness_cache.py -b` antes de correr para evitar 401 de Yahoo y resultados no reproducibles. Ojo: el stacking XGBoost no es determinístico entre runs (por eso está en kill_only).
+3. **Determinismo.** Precargá el cache con `python scripts/prefetch_harness_cache.py -b` antes de correr para evitar 401 de Yahoo y resultados no reproducibles. Ojo: el stacking XGBoost no es determinístico entre runs (por eso está apagado: en vivo lo dice `~/.finanzias/settings.json`, y los productores de artefactos lo fijan OFF con `HARNESS_MODEL_TOGGLES` — tarea 181).
 4. **Contrafactual explícito.** El veredicto suele ser sensible a cómo modelás la alternativa (p.ej. "la posición vetada sale al próximo scan con ATR activo"). Dejalo escrito.
 
 ## Harnesses disponibles (`scripts/`)

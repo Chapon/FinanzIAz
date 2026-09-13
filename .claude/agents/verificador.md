@@ -20,7 +20,7 @@ Sos el verificador de FinanzIAs. Tu trabajo es **auditar, no arreglar**: revisá
 
 ## Contexto del proyecto
 
-Leé `CLAUDE.md`, `docs/ARCHITECTURE.md` y las skills en `.claude/skills/` (`finanzias-conventions`, `git-workflow`, `testing`) para las reglas exactas. Cuenta activa: "Sim Segundo" (id=2); la 1 ("Sim Principal") está cerrada desde el 2026-09-13. Modo kill_only.
+Leé `CLAUDE.md`, `docs/ARCHITECTURE.md` y las skills en `.claude/skills/` (`finanzias-conventions`, `git-workflow`, `testing`) para las reglas exactas. Cuenta activa: "Sim Segundo" (id=2); la 1 ("Sim Principal") está cerrada desde el 2026-09-13. hmm/stacking están OFF porque lo dice `~/.finanzias/settings.json`, no porque algo lo fuerce: no existe un «modo kill_only» como mecanismo (tarea 181).
 
 ## Formato del veredicto
 

@@ -77,8 +77,8 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 ## Señal / overlays
 | Flag | Default | Qué hace |
 |------|---------|----------|
-| `xgb_signal_enabled` | `True` | XGBoost en la señal. (ON en kill_only) |
-| `vol_overlay_enabled` | `True` | Vol overlay. (ON en kill_only) |
+| `xgb_signal_enabled` | `True` | XGBoost en la señal. ON en la config viva (ver la nota del encabezado sobre dónde vive). |
+| `vol_overlay_enabled` | `True` | Vol overlay. ON en la config viva (ver la nota del encabezado sobre dónde vive). |
 | `vol_overlay_trim_enabled` | `False` | De-risking activo: trimea el book cuando σ > target (T09). |
 | `hmm_enabled` | `True` (spec) · **vivo OFF** | Detección de régimen HMM. Killeado. El default del spec y el valor vivo **difieren**, y eso lo vuelve invisible a cualquier guard construido sobre `DEFAULTS` — por eso es uno de los cinco `FALTA_ESPEJO` de la tarea 185. |
 | `stacking_enabled` | `True` (spec) · **vivo OFF** | Stacking de modelos. Killeado por **no determinístico**, que es justamente por qué importa que un harness no lo herede del ambiente (tarea 181). Ídem `hmm_enabled`: spec y vivo difieren. |

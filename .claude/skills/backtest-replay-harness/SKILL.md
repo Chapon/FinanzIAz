@@ -19,7 +19,7 @@ Acá se valida si una feature **mejora las decisiones** antes de cablearla. Regl
 
 - Correr **read-only sobre un backup limpio** de `finanzias.db` (carpeta `backups/`), NO sobre la DB viva. No escribir la DB desde Linux (ver `finanzias-conventions`).
 - Precargar cache con `prefetch_harness_cache.py` antes de correr, para evitar 401 de Yahoo y resultados no-deterministas.
-- Los harness deben ser **deterministas**. Ojo: el stacking XGBoost NO es determinístico entre runs (descubierto en T05) — está en modo kill_only justamente por eso.
+- Los harness deben ser **deterministas**. Ojo: el stacking XGBoost NO es determinístico entre runs (descubierto en T05) — por eso está apagado: en vivo lo dice `~/.finanzias/settings.json`, y en los productores de artefactos lo fija `analysis.harness_config.HARNESS_MODEL_TOGGLES` (tarea 181: «kill_only» es el nombre de esa config, no un mecanismo).
 
 ## Config: contra qué cuenta corre (T27)
 

@@ -18,6 +18,9 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 137 — Tarea 198 (KILLONLY-EN-AGENTES-Y-SKILLS) CERRADA 2026-09-13 — los últimos «kill_only» como mecanismo corregidos, y la cuenta viva del corpus se compara por valor** (skill de convenciones, agentes `verificador` y `backtest-runner`, skill del harness, `SETTINGS_REFERENCE.md`, `tests/test_corpus_cuenta_y_killonly_t198.py`). La próxima es la **199**.
+  - **Guard nuevo:** todo *«Cuenta activa: "X" (id=N)»* del corpus contra `LIVE_ACCOUNT_NAME`/`LIVE_ACCOUNT_ID`, y todo párrafo que nombre kill_only fuera de una cita tiene que decir que vive en `settings.json`. **Cinco mutaciones rojas**; la del id salió verde la primera vez y destapó el test que faltaba.
+
 - **WIP 136 — Tarea 195 (COLA-PIERDE-ABIERTAS) CERRADA 2026-09-13 — el guard del backlog mira también *tarea abierta → cola*, y el historial dice que la 180 era la segunda vez** (`scripts/check_backlog_integrity.py`, `tests/test_backlog_integrity.py`). La próxima es la **198**.
   - **Suite:** toda tarea abierta con número ≤ al mayor que ordena la última repriorización (por fecha) tiene que estar en su `El orden queda …` o declarada `la **NN** fuera de la cola`. **`--staged`:** si el commit escribe la nota, exacto.
   - **La medición sobre 181 commits:** además de la 180, dispara con **seis tareas perdidas del 01/09 al 07/09** bajo una nota que decía *«La cola priorizada queda VACÍA»*. El mismo defecto, antes y más grande.
@@ -2610,7 +2613,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un build que falla siempre verifica que, avanzando el reloj de a un minuto durante un día, se lanzan **como máximo** los intentos que el backoff declara, y que un éxito posterior vuelve a la cadencia normal. Mutación: sacar el backoff pone el test en rojo. Los cuatro comandos en verde.
 - **Dependencias:** la **160** (la cadencia sale del artefacto). Emparenta con la **186**.
 
-### 198. KILLONLY-EN-AGENTES-Y-SKILLS — La 181 corrigió «kill_only» en tres documentos y quedan cuatro lugares que lo siguen afirmando, uno de ellos el agente verificador  ·  origen: barrido del corpus al registrar el cierre de la cuenta 1 (2026-09-13) · severidad **MEDIA** (lo leen los agentes que validan y diseñan corridas)
+### 198. ~~KILLONLY-EN-AGENTES-Y-SKILLS — La 181 corrigió «kill_only» en tres documentos y quedan cuatro lugares que lo siguen afirmando, uno de ellos el agente verificador~~ · **CERRADA 2026-09-13 — los cuatro lugares y las dos filas corregidos, y un guard que compara la cuenta por VALOR**  ·  origen: barrido del corpus al registrar el cierre de la cuenta 1 (2026-09-13) · severidad **MEDIA** (lo leen los agentes que validan y diseñan corridas)
 
 - **Qué pasa.** La **181** demostró que *kill_only* es el **nombre de una configuración escrita en `~/.finanzias/settings.json`**, no un mecanismo, y corrigió `ARCHITECTURE.md`, `CLAUDE.md` y `SETTINGS_REFERENCE.md`. En el corpus operativo lo siguen afirmando como mecanismo:
   - `.claude/skills/finanzias-conventions/SKILL.md` —la skill que se lee **siempre** al empezar—: *«Modo **kill_only** (hmm_enabled=False, stacking_enabled=False; XGBoost y vol_overlay siempre ON)»*. El *«siempre ON»* tampoco lo garantiza nada.
@@ -2623,6 +2626,15 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** Reescribir los cuatro lugares y las dos filas con la formulación de la 181 (*la config de modelo la declara `HARNESS_MODEL_TOGGLES` en el repo; lo vivo lo dice `settings.json`*). Y decidir si el barrido de *afirmaciones sobre la cuenta viva* entra al guard de la **72**/**137**, que hoy no mira `.claude/agents/` con ese criterio.
 - **Kill-criteria.** Ningún documento del corpus operativo (incluidos `.claude/agents/`) presenta *kill_only* como algo que fuerza o pisa valores, verificado por sustancia y no por palabra (las correcciones pueden citar la frase vieja). Los cuatro comandos en verde.
 - **Dependencias:** la **181**. Emparenta con la **72** y la **137** (el corpus que afirma en presente).
+- **Cerrada (2026-09-13).** Reescritos con la formulación de la 181 —*la config viva la dice `~/.finanzias/settings.json`; en el repo la declara `HARNESS_MODEL_TOGGLES`*— la skill de convenciones, los agentes `verificador` y `backtest-runner`, la skill del harness y las dos filas de `SETTINGS_REFERENCE.md`.
+- **Una corrección a mi enunciado:** decía que el guard de la 72/137 *«hoy no mira `.claude/agents/`»*. **Sí lo mira**, porque su corpus es `.claude/**/*.md`. Lo que faltaba era el **criterio**: la 72 busca constantes inexistentes y la 137 números en presente, y ninguna compara **qué cuenta** se afirma como viva.
+- **El guard, `tests/test_corpus_cuenta_y_killonly_t198.py`, sobre el corpus operativo más `ARCHITECTURE.md`:**
+  - **Cuenta, por valor.** Todo *«Cuenta activa: "X" (id=N)»* se parsea y se compara contra `LIVE_ACCOUNT_NAME`/`LIVE_ACCOUNT_ID`. Tiene contraprueba de que no pasa por vacío.
+  - **kill_only, por sustancia.** Un párrafo que lo nombra fuera de una cita «…» tiene que decir dónde vive la config (`settings.json`). Así no se lo engaña con una paráfrasis, y una corrección que cita la frase vieja no dispara.
+- **Cinco mutaciones, las cinco rojas:** el `verificador` vuelve a la cuenta 1; la fila vuelve a *«(ON en kill_only)»*; la skill vuelve a *«modo kill_only»*; el guard deja de descartar citas; la cuenta se compara sin el id.
+  - **La última salió VERDE la primera vez:** comparando sólo el nombre, *«"Sim Segundo" (id=1)»* pasaba, y ningún test cubría ese caso. Se agregó.
+  - **Y la corrida de mutación dejó `verificador.md` en CRLF**, porque restauré con `write_text`, el defecto que ya está en memoria. Se volvió a LF por bytes y se verificó antes de commitear.
+- **Lo que no ve, dicho en su docstring:** una afirmación falsa de mecanismo que además mencione `settings.json` en el mismo párrafo, y una cuenta viva afirmada con otra forma que *«Cuenta activa: "X" (id=N)»*.
 
 ### 199. ACCIONES-MANUALES-LLENA-DE-CERRADAS — La sección *Acciones manuales pendientes* es 80% cosas hechas, y el guard de la 138 salta con el próximo agregado  ·  origen: al registrar las decisiones de Chapa del 2026-09-13 · severidad **BAJA**
 
