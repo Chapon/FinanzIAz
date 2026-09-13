@@ -398,6 +398,50 @@ que se puede mirar *antes* de congelar y por eso **fija la grilla**. La efectiva
 corrido el brazo**: es un sanity **post-corrida**. Un pre-registro que la pida como criterio de
 grilla está pidiendo un número que todavía no existe.
 
+## La rejilla de SALIDA stop × trailing está CERRADA (T167 → T170)
+
+Antes de pre-registrar otro barrido de `atr_hard_stop_enabled`/`atr_stop_mult` × `atr_trail_mult`,
+leer esto: **esa rejilla no se vuelve a correr sobre la misma ventana rodante.**
+
+**T167 — la evidencia de una política viva dejó de reproducirse.** La T37 publicó **SHIP por los
+nueve criterios** el 2026-08-27 y la cuenta adoptó su candidato, `soff_t2.0` (stop duro apagado +
+trailing 2.0; el valor vivo se lee de `LIVE_HARD_STOP_ENABLED`/`LIVE_TRAIL_MULT`, no de acá). Re-corrida
+con el instrumento sano (T164) sobre la muestra del 2026-09-09 —nueve sanity en OK, constantes de
+reproducción exactas— dio **NO-SHIP por cuatro criterios**: ΔCAGR fuera de muestra −1.17 pp, el IC
+del bootstrap cruzando cero, la cola, y el mismo brazo en sólo 3 de 5 folds. In-sample el candidato
+**seguía ganando**; lo que no sobrevivió fue la generalización. Y el doc de agosto ya lo decía en
+sus reservas: *«el margen fuera de muestra está dominado por un fold»*. Dos lecciones:
+
+- **Un SHIP cuyo margen OOS cuelga de un fold no es una política validada: es una realización.**
+  La reserva escrita al publicar era el resultado, un mes antes.
+- **Una decisión viva puede quedarse sin la evidencia con la que se tomó y nada avisa.** Sólo
+  re-correr el veredicto después de un refresh lo ve.
+
+Doc: `docs/stop_value_rerun_t167_2026-09-10.md`.
+
+**T170 — la elección de celda NO es decidible con esta muestra.** Chapa decidió no tocar la política
+y pre-registrar un gate **sin selección**: dos brazos fijos, nombrados por procedencia antes de mirar
+(el vivo y el que tenía evidencia antes del 2026-08-27). Veredicto **NO MOVER**: D1 pasa y D2-D5
+fallan, con el desafiante costando +15.8 pp de maxDD in-sample. Y la pregunta descriptiva, con
+regla de lectura congelada: de las 14 celdas de la rejilla, **ninguna** tiene un IC95% del ΔCAGR
+fuera de muestra (pareado contra el vivo) que excluya el cero. **La serie 26 → 26b → 34 → 37 → 167
+eligió una celda distinta cada vez porque estaba leyendo ruido.** Doc:
+`docs/exit_policy_t170_2026-09-10.md`.
+
+**Tres reglas que salen de ahí:**
+
+1. **La rejilla queda cerrada hasta que haya muestra nueva.** Refrescar la ventana `10y` unas
+   semanas después **no** es muestra nueva: comparte casi todas las barras (T48). Un sexto barrido
+   sobre esa ventana sólo puede producir otro orden del mismo ruido. El pre-registro que la reabra
+   tiene que declarar **qué** la hace muestra nueva.
+2. **Cuando la pregunta es «¿movemos lo vivo?», el gate va SIN selección.** Un criterio fuera de
+   muestra que mide *el procedimiento de selección* (el C1 de la T37) premia a quien minó la
+   rejilla. Dos brazos fijos nombrados antes de mirar —con un test que **cuente las simulaciones**
+   por fold (`tests/test_exit_policy_t170.py`)— miden la política.
+3. **El resultado esperado se escribe antes de correr, y la carga de la prueba es asimétrica.** La
+   T170 escribió «NO MOVER» en el pre-registro y exigió **todas** las condiciones para el cambio: así
+   *no mover* queda medido y no es inercia.
+
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 
 Cuando un brazo **elige un subconjunto** —qué stops saltear (T26), a qué candidatos darles el
