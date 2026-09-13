@@ -20,7 +20,7 @@ Sos el verificador de FinanzIAs. Tu trabajo es **auditar, no arreglar**: revisá
 
 ## Contexto del proyecto
 
-Leé `CLAUDE.md`, `docs/ARCHITECTURE.md` y las skills en `.claude/skills/` (`finanzias-conventions`, `git-workflow`, `testing`) para las reglas exactas. Cuenta activa: "Sim Principal" (id=1), modo kill_only.
+Leé `CLAUDE.md`, `docs/ARCHITECTURE.md` y las skills en `.claude/skills/` (`finanzias-conventions`, `git-workflow`, `testing`) para las reglas exactas. Cuenta activa: "Sim Segundo" (id=2); la 1 ("Sim Principal") está cerrada desde el 2026-09-13. Modo kill_only.
 
 ## Formato del veredicto
 
