@@ -241,7 +241,7 @@ entre nov-2025 y abr-2026):
 | **Raspberry Pi 5** (1-2 GB) | €48-68 **la placa** (~US$100-125 armada) | ~2,7-3,0 W | ~26 kWh | Sí con 2 GB; 1 GB queda justo |
 | **Raspberry Pi 4** (2-4 GB) | usada, menos | ~2,7-3,4 W | ~26-30 kWh | Sí, y consume casi igual |
 | **Pi Zero 2 W** | €15-22 | ~0,7 W | ~6 kWh | **No.** 512 MB de RAM: pandas + 127 tickers no entra |
-| Mini PC nuevo **N100/N150** | US$130-200 | 6-10 W | 53-88 kWh | Sí, pero **de más**: el trabajo son 5 min/día |
+| Mini PC nuevo **N100/N150** | US$140-180 (16 GB/500 GB) | 6-10 W | 53-88 kWh | Sí — **la mejor si el usado no baja de ~US$120** (§4.4.3) |
 | **Notebook vieja que ya tengas** | **US$0** | 15-25 W | 130-220 kWh | **Sí, y es la única con UPS** (§4.4.2) |
 | NAS que ya tengas (Synology y cía.) | US$0 | ya está prendido | ~0 marginal | Sí, vía Docker — la mejor si existe |
 
@@ -308,6 +308,27 @@ Términos para buscar en eBay: **`wyse 5070`**, **`hp t640 thin client`**,
 **`thinkcentre m720q tiny`**, **`optiplex 3070 micro`**. Filtrá por *8 GB RAM* y por
 que traiga **fuente** (algunos se venden sin el adaptador, que es propietario y
 después sale caro). Si aparece uno con M.2 libre, mejor todavía.
+
+> **El canal importa más que el modelo — dato real de Chapa, 2026-09-14.** Buscó el
+> Wyse 5070 **en Amazon** y le sale **US$179**, o sea 2-5× el rango de eBay. No es que
+> el precio de eBay esté mal: **Amazon es un canal de refurb con markup** para equipo
+> corporativo usado, y eBay es donde se liquida. Si el equipo usado no aparece cerca de
+> US$80, **la recomendación se da vuelta y la regla ya estaba escrita arriba**: *«un
+> N100 nuevo recién vale la pena si el thin client se va por encima de ~US$120»*.
+> A US$179 ese umbral está cruzado.
+>
+> Entonces, a precio de Amazon, **conviene un mini PC N100 nuevo** (TRIGKEY, Beelink
+> S12 Pro, GMKtec, ~US$140-180 con 16 GB y 500 GB NVMe): es **nuevo, con garantía**,
+> más rápido, más RAM y más disco que el thin client de US$179, y en la misma banda de
+> consumo (6-10 W contra 6 W — unos US$2/año de diferencia). Comprar un refurb de 2018
+> al precio de uno nuevo no tiene sentido.
+>
+> **Resumen del canal:** eBay ⇒ thin client usado (US$38-80) es lo mejor. Amazon ⇒ N100
+> nuevo (~US$140-180). En los dos casos le sigue ganando a un Pi armado (~US$100-175),
+> salvo que quieras específicamente lo más chico y silencioso.
+> *(No pude verificar la página de Amazon: devolvió 503. El US$179 es el dato que
+> reportó Chapa; los precios de N100 salen de las búsquedas de la §Fuentes y conviene
+> confirmarlos al comprar.)*
 
 La luz: 3 W × 24 × 365 = **26 kWh/año**. A US$0,05/kWh son ~**US$1,3/año**; a US$0,15,
 ~US$4. Con una notebook vieja a 25 W son 219 kWh/año — entre US$11 y US$33/año, que
@@ -529,9 +550,13 @@ la segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test
    corte de luz no la apaga, que es la desventaja central de toda esta rama. Si existe,
    no hay nada que comprar.
 2. **Un thin client usado** (Dell Wyse 5070, HP t640, Lenovo Tiny): **US$38-80
-   completo** en eBay, x86, con eMMC o SSD en vez de microSD, 8 GB y ethernet por cable.
-   Le gana al Pi por precio **y** por fiabilidad (§4.4.1, §4.4.3).
-3. **Un Raspberry Pi**, si preferís lo chico y silencioso. Anda perfecto; sólo tené en
+   completo, y eso es en eBay**, x86, con eMMC o SSD en vez de microSD, 8 GB y ethernet
+   por cable. Le gana al Pi por precio **y** por fiabilidad (§4.4.1).
+3. **Un mini PC N100 nuevo** (~US$140-180, 16 GB + 500 GB NVMe) **si no lo conseguís
+   usado cerca de US$80.** A precio de Amazon el mismo Wyse 5070 sale US$179, y ahí
+   pagar eso por un refurb de 2018 no tiene sentido: por lo mismo hay uno nuevo con
+   garantía y el doble de todo (§4.4.3).
+4. **Un Raspberry Pi**, si preferís lo chico y silencioso. Anda perfecto; sólo tené en
    cuenta que el total armado es ~US$100-175, no el precio de la placa, y que conviene
    arrancarlo desde SSD por USB y no desde microSD.
 
