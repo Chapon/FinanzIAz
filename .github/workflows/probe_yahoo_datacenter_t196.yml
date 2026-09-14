@@ -1,0 +1,42 @@
+name: Probe Yahoo desde datacenter (T196)
+
+# Diagnóstico de la tarea 196, NO un gate. Contesta una sola pregunta: ¿responden
+# yfinance y SEC EDGAR desde una IP de datacenter? Ver el docstring de
+# scripts/probe_yahoo_datacenter_t196.py y docs/harvest_nube_t196_2026-09-14.md §5.
+#
+# El job SIEMPRE sale con 0 — un resultado rojo es información, no un CI roto. El
+# veredicto se emite como anotación porque los logs de Actions piden autenticación
+# y la API de anotaciones no (misma razón que el job `pytest`, tarea 65).
+on:
+  workflow_dispatch: {}
+  # Corre solo cuando se toca el probe, para que la primera respuesta llegue con el
+  # push que lo trae. NO va en `push: branches: [main]` a secas: pegarle a Yahoo en
+  # cada commit es justo la clase de tráfico que hace que te bloqueen.
+  push:
+    paths:
+      - ".github/workflows/probe_yahoo_datacenter_t196.yml"
+      - "scripts/probe_yahoo_datacenter_t196.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: yfinance + SEC desde Azure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        # Sólo yfinance: el probe no importa nada del repo a propósito, así que no
+        # hace falta requirements.txt (que arrastra PyQt6 y las libs de Qt).
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance
+      - name: Probe
+        env:
+          SEC_EDGAR_USER_AGENT: ${{ secrets.SEC_EDGAR_USER_AGENT }}
+        run: python scripts/probe_yahoo_datacenter_t196.py
