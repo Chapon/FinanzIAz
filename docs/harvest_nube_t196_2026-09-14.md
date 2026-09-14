@@ -7,7 +7,8 @@ servicio de AWS que cueste **$0/mes**, con los datos esperando en la nube hasta 
 app abra y los importe?
 
 **Ampliación pedida por Chapa el 2026-09-14:** evaluar también opciones fuera de la
-nube, tipo Raspberry Pi. Está en §4.4, y no es un apéndice — **cambió la
+nube, tipo Raspberry Pi — y después, cuál máquina conviene en ese rango de precio
+(§4.4.1) comprando en **EE.UU.** (§4.4.3). Está en §4.4, y no es un apéndice — **cambió la
 recomendación**, porque una máquina propia sale por IP residencial y ahí el riesgo que
 bloquea todo lo demás (§5) directamente no existe.
 
@@ -23,7 +24,7 @@ importación a la app es idempotente y no escribe la DB desde fuera de Windows.
 
 | Opción | (a) $0/mes | (b) smoke test | (c) import idempotente | Veredicto |
 |---|---|---|---|---|
-| **Raspberry Pi** en casa (u otra máquina propia siempre prendida) | **el criterio no le aplica** — ~€50-90 una vez + ~US$2/año de luz (§4.4) | **YA SATISFECHO** por 3 meses de producción: es la misma IP residencial (§5) | PASA *con un arreglo* (§6.2) | **la más fuerte** (§8) |
+| **Máquina propia en casa** (thin client usado, notebook vieja, Raspberry Pi) | **el criterio no le aplica** — US$0-80 una vez + ~US$2-25/año de luz (§4.4) | **YA SATISFECHO** por 3 meses de producción: es la misma IP residencial (§5) | PASA *con un arreglo* (§6.2) | **la más fuerte** (§8) |
 | Lambda + EventBridge + DynamoDB + SSM | **PASA**, margen 7,5× | **SIN EVALUAR en AWS**; yfinance dio 5/5 desde Azure (§5.1) | idem | **sin veredicto**, pero más plausible |
 | Lambda + EventBridge + **S3** | **NO PASA** — el free tier de S3 de tu cuenta ya venció (§4.2) | SIN EVALUAR | idem | **no viable** |
 | **EC2** chica | **NO PASA** — mismo motivo (§4.2) | SIN EVALUAR | idem | **no viable** |
@@ -42,8 +43,9 @@ solo: el criterio (b) no se puede evaluar sin desplegar.** No es un detalle post
 Lambda, la mitad del harvest no se puede mudar").
 
 **La opción de hardware propio es la única que ya lo tiene resuelto**, y no por suerte:
-un Raspberry Pi en tu casa sale por **la misma IP residencial desde la que la app
-viene harvesteando hace tres meses** con 2 eventos de rate-limit en todo el log. El
+una máquina en tu casa —thin client usado, notebook vieja o Raspberry Pi— sale por **la
+misma IP residencial desde la que la app viene harvesteando hace tres meses**, con 2
+eventos de rate-limit en todo el log. El
 riesgo #1 no es que no esté medido: es que **no existe** en esa rama. Eso, más que
 cualquier tabla de costos, es lo que mueve la recomendación (§8).
 
@@ -220,7 +222,7 @@ riesgo de Yahoo que AWS**, ni mejor ni peor.
 
 De ahí sale una idea barata que sirve igual: §5.
 
-### 4.4 Hardware propio: Raspberry Pi y parientes (pedido de Chapa, 2026-09-14)
+### 4.4 Hardware propio: Raspberry Pi, thin clients y parientes (pedido de Chapa, 2026-09-14)
 
 Hasta acá todas las opciones comparten un rasgo que no salta a la vista porque no está
 en ninguna tabla de precios: **salen por una IP de datacenter.** AWS, Oracle, GitHub
@@ -234,12 +236,78 @@ entre nov-2025 y abr-2026):
 
 | Equipo | Compra | Idle | Luz/año @ 24×7 | ¿Sirve? |
 |---|---:|---:|---:|---|
-| **Raspberry Pi 5** (4-8 GB) | €90-140 | ~2,7-3,0 W | ~26 kWh | **Sí, con holgura** |
-| **Raspberry Pi 5** (1-2 GB) | €48-68 | ~2,7-3,0 W | ~26 kWh | Sí con 2 GB; 1 GB queda justo |
+| **Thin client usado** (Dell Wyse 5070, HP t630/t640, Lenovo Tiny) | **US$38-80, completo** | ~6 W | ~53 kWh | **Sí — la mejor comprada** (§4.4.1) |
+| **Raspberry Pi 5** (4-8 GB) | €90-140 **la placa** (~US$145-175 armada) | ~2,7-3,0 W | ~26 kWh | Sí, con holgura |
+| **Raspberry Pi 5** (1-2 GB) | €48-68 **la placa** (~US$100-125 armada) | ~2,7-3,0 W | ~26 kWh | Sí con 2 GB; 1 GB queda justo |
 | **Raspberry Pi 4** (2-4 GB) | usada, menos | ~2,7-3,4 W | ~26-30 kWh | Sí, y consume casi igual |
 | **Pi Zero 2 W** | €15-22 | ~0,7 W | ~6 kWh | **No.** 512 MB de RAM: pandas + 127 tickers no entra |
-| PC/notebook viejo que ya tengas | €0 | 15-40 W | 130-350 kWh | Sí, y sale **cero** de compra |
-| NAS que ya tengas (Synology y cía.) | €0 | ya está prendido | ~0 marginal | Sí, vía Docker — la mejor si existe |
+| Mini PC nuevo **N100/N150** | US$130-200 | 6-10 W | 53-88 kWh | Sí, pero **de más**: el trabajo son 5 min/día |
+| **Notebook vieja que ya tengas** | **US$0** | 15-25 W | 130-220 kWh | **Sí, y es la única con UPS** (§4.4.2) |
+| NAS que ya tengas (Synology y cía.) | US$0 | ya está prendido | ~0 marginal | Sí, vía Docker — la mejor si existe |
+
+> **Corrección al precio de la Pi (2026-09-14).** La primera versión de esta tabla
+> ponía €48-140 como costo del Pi, y **ése es el precio de la placa sola** (y en euros,
+> cuando Chapa compra en EE.UU.). Un Pi 5 que
+> funcione 24×7 necesita además la fuente USB-C PD oficial de 27 W (~US$12), gabinete
+> (~US$10), disipador activo (~US$5) y —por §4.4.1— un **SSD por USB en vez de microSD**
+> (~US$20-30). El total real armado es **~US$100-175**. El thin client, en cambio, ya
+> viene con gabinete, fuente y almacenamiento: el precio de lista **es** el total.
+
+### 4.4.1 Por qué un thin client usado le gana al Pi *en este trabajo*
+
+No es una preferencia de marca: son cuatro cosas concretas, y la primera es la que
+importa de verdad para un recolector que tiene que correr meses sin que nadie lo mire.
+
+1. **La microSD es el modo de falla real del Pi en 24×7.** Escritura continua y
+   corrupción silenciosa; se mitiga con `log2ram` o un SSD por USB, pero eso es trabajo
+   y plata extra. Un thin client trae **eMMC o M.2/SATA** de fábrica.
+2. **Es x86_64.** `pandas`, `numpy` y `yfinance` tienen ruedas ARM64 y andan — pero el
+   camino x86 es el que no tiene bordes. Este servicio es literalmente un `pip install`
+   corriendo solo: cuanto menos exótica la plataforma, mejor.
+3. **Viene completo.** Gabinete, fuente y disco incluidos (ver la corrección de arriba).
+4. **8 GB de RAM y ethernet gigabit por cable** en un equipo de US$38-80, contra 2 GB y
+   Wi-Fi en un Pi del mismo precio. Para una caja desatendida, el cable no es un lujo.
+
+**Lo que gana el Pi, medido y honesto:** consume ~3 W contra ~6 W. Son **~26 kWh/año de
+diferencia**, o sea **US$1,3 a 4 por año**. Es real y es irrelevante frente a la
+diferencia de precio y de fiabilidad. Y es más chico y silencioso, si eso importa.
+
+Referencia concreta: el **Dell Wyse 5070** se consigue usado **desde ~US$38 con envío**
+en eBay, típico US$50-80, idle **6 W**, máximo 16 W, y corre un kernel moderno sin
+pelear. El **HP t640** sale casi lo mismo. Un **N100 nuevo** recién vale la pena si el
+thin client se va por encima de ~US$120 — y para este trabajo, que son 5 minutos de CPU
+por día, es potencia que no se usa.
+
+### 4.4.2 La opción gratis que además resuelve algo que ninguna otra resuelve
+
+**Si tenés una notebook vieja, esa es la primera que miraría** — y no sólo porque sale
+cero. Es **la única opción con UPS incorporado**: la batería. Un corte de luz no la
+apaga, y §4.4 lista "depende de tu casa" como la desventaja central de toda esta rama.
+Un Pi o un thin client se apagan con el corte; la notebook sigue recolectando.
+
+Cuesta más luz —15-25 W contra 3-6— pero eso son **US$7 a 25 por año**, y compra una
+propiedad que las otras no tienen a ningún precio.
+
+### 4.4.3 Comprando en EE.UU. (que es donde compra Chapa)
+
+Es el mercado donde el usado corporativo es más barato y más abundante del mundo, así
+que la ventaja del thin client **se agranda**, no se achica:
+
+| | Precio EE.UU. verificado | Qué incluye |
+|---|---|---|
+| **Dell Wyse 5070** usado | **desde ~US$38 con envío** (eBay); típico US$50-80 | gabinete, fuente, eMMC/SSD, 8 GB |
+| **HP t630 / t640** usado | prácticamente lo mismo | ídem |
+| Mini PC **N100/N150** nuevo | US$130-200 | completo, y de más para este trabajo |
+| **Raspberry Pi 5** | la placa, más fuente de 27 W + gabinete + SSD por USB | **el total armado es ~US$100-175** |
+
+**A esos precios no hay comparación:** un Wyse 5070 completo por US$38-80 contra un Pi 5
+armado por US$100-175, para un trabajo de 5 minutos de CPU por día que va a correr
+desatendido durante meses. El Pi sólo gana los ~US$2-4/año de luz.
+
+Términos para buscar en eBay: **`wyse 5070`**, **`hp t640 thin client`**,
+**`thinkcentre m720q tiny`**, **`optiplex 3070 micro`**. Filtrá por *8 GB RAM* y por
+que traiga **fuente** (algunos se venden sin el adaptador, que es propietario y
+después sale caro). Si aparece uno con M.2 libre, mejor todavía.
 
 La luz: 3 W × 24 × 365 = **26 kWh/año**. A US$0,05/kWh son ~**US$1,3/año**; a US$0,15,
 ~US$4. Con una notebook vieja a 25 W son 219 kWh/año — entre US$11 y US$33/año, que
@@ -259,10 +327,10 @@ sigue siendo poco pero ya es 10× la Pi.
 
 **Las desventajas, que son reales:**
 
-1. **No es $0, es capex.** €50-90 una vez. El criterio (a) se fijó en "$0/mes dentro
+1. **No es $0, es capex.** US$38-80 una vez, o **cero** si ya tenés una máquina (§4.4.2). El criterio (a) se fijó en "$0/mes dentro
    del límite gratuito", que es una frase escrita pensando en un servicio en la nube:
    **al hardware propio no le aplica**, no lo pasa ni lo falla. Lo digo así en vez de
-   estirar el criterio para que entre. Tu decisión es si €50-90 una vez valen más o
+   estirar el criterio para que entre. Tu decisión es si US$38-80 una vez valen más o
    menos que un $0/mes con un bloqueante sin medir.
 2. **Depende de tu casa.** Corte de luz o de internet = misma pérdida que la app
    cerrada. Con la salvedad de que el piso a superar es **27% de cobertura de RTH**
@@ -451,9 +519,21 @@ que es la fuente sensible al rate limit.
 
 ## 8. Recomendación
 
-**Recomiendo un Raspberry Pi 5 (2-4 GB) en tu casa, corriendo el harvest que ya existe,
-con el alcance recortado al snapshot de consenso diario.** Si no querés hardware, la
-segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
+**Recomiendo una máquina propia siempre prendida en tu casa, corriendo el harvest que ya
+existe, con el alcance recortado al snapshot de consenso diario.** Si no querés hardware,
+la segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
+
+**Cuál máquina, en orden** (revisado el 2026-09-14 a pedido de Chapa, §4.4):
+
+1. **Una notebook vieja que ya tengas — US$0, y es la única con UPS** (la batería). Un
+   corte de luz no la apaga, que es la desventaja central de toda esta rama. Si existe,
+   no hay nada que comprar.
+2. **Un thin client usado** (Dell Wyse 5070, HP t640, Lenovo Tiny): **US$38-80
+   completo** en eBay, x86, con eMMC o SSD en vez de microSD, 8 GB y ethernet por cable.
+   Le gana al Pi por precio **y** por fiabilidad (§4.4.1, §4.4.3).
+3. **Un Raspberry Pi**, si preferís lo chico y silencioso. Anda perfecto; sólo tené en
+   cuenta que el total armado es ~US$100-175, no el precio de la placa, y que conviene
+   arrancarlo desde SSD por USB y no desde microSD.
 
 > **Reescrito después del probe (§5.1), que debilitó mi propio argumento principal.**
 > La primera versión de esta sección ponía primero *"el Pi elimina el riesgo #1"*. El
@@ -476,8 +556,8 @@ segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
    tres meses harvestea bien, así que (b) está satisfecho de entrada. El probe hizo que
    esto pese menos —la nube tampoco parece bloqueada— pero *menos* no es *nada*: para
    AWS sigue siendo un supuesto, y acá es un hecho.
-4. Cuesta **€50-90 una vez y ~US$2/año** de luz. Si tenés un NAS o una máquina vieja
-   siempre prendida, cuesta **cero**: empezá por ahí antes de comprar nada.
+4. Cuesta **US$38-80 una vez y ~US$2-4/año** de luz. Si tenés un NAS o una notebook
+   vieja, cuesta **cero**: empezá por ahí antes de comprar nada (§4.4.2).
 
 **El alcance, y vale para las dos ramas:** empezar por **el snapshot de consenso diario
 y nada más**. Es el 17% del volumen, una pasada por día, ~0,1 MB — y es **el 100% de la
@@ -523,8 +603,9 @@ Q3 una vez por esto.
 
 **Lo que falta:**
 
-1. **Tu decisión: Pi o AWS.** Si es Pi: ¿tenés ya un NAS o una máquina siempre prendida?
-   Cambia el costo de €50-90 a cero y es lo primero que miraría.
+1. **Tu decisión: máquina propia o AWS.** Si es máquina propia: ¿tenés un NAS o una
+   notebook vieja? Cambia el costo a **cero** y la notebook además trae UPS (§4.4.2).
+   Si hay que comprar, un **thin client usado de eBay** (US$38-80) le gana al Pi.
 2. **El smoke test desde AWS** — sólo si elegís esa rama. Una Lambda que baje
    `Ticker.news` y `earnings_estimate` de 5 tickers y reporte qué respondió. Con el
    probe verde, lo espero verde también, pero *esperar* no es *medir*.
