@@ -6,11 +6,13 @@ Pregunta del enunciado: ¿se puede sacar la **recolección** (no las decisiones)
 servicio de AWS que cueste **$0/mes**, con los datos esperando en la nube hasta que la
 app abra y los importe?
 
-**Ampliación pedida por Chapa el 2026-09-14:** evaluar también opciones fuera de la
-nube, tipo Raspberry Pi — y después, cuál máquina conviene en ese rango de precio
-(§4.4.1) comprando en **EE.UU.** (§4.4.3). Está en §4.4, y no es un apéndice — **cambió la
-recomendación**, porque una máquina propia sale por IP residencial y ahí el riesgo que
-bloquea todo lo demás (§5) directamente no existe.
+**Ampliación pedida por Chapa el 2026-09-14, en tres pasos:** evaluar opciones fuera de
+la nube tipo Raspberry Pi; después, cuál máquina conviene en ese rango comprando en
+EE.UU.; y por último —el que cerró el tema— **que ya tiene una Pi corriendo openHABian
+24×7**. Está en §4.4, y no es un apéndice: **cambió la recomendación entera**. Una
+máquina propia sale por IP residencial, y ahí el riesgo que bloquea todo lo demás (§5)
+directamente no existe. Y como la máquina ya está prendida, **el costo es US$0 y no hay
+nada que comprar** (§4.4.0).
 
 ---
 
@@ -24,7 +26,7 @@ importación a la app es idempotente y no escribe la DB desde fuera de Windows.
 
 | Opción | (a) $0/mes | (b) smoke test | (c) import idempotente | Veredicto |
 |---|---|---|---|---|
-| **Máquina propia en casa** (thin client usado, notebook vieja, Raspberry Pi) | **el criterio no le aplica** — US$0-80 una vez + ~US$2-25/año de luz (§4.4) | **YA SATISFECHO** por 3 meses de producción: es la misma IP residencial (§5) | PASA *con un arreglo* (§6.2) | **la más fuerte** (§8) |
+| **La Pi de openHABian que Chapa YA tiene prendida** | **US$0** — el criterio no le aplica, y no hay nada que comprar (§4.4.0) | **YA SATISFECHO** por 3 meses de producción: es la misma IP residencial (§5) | PASA *con un arreglo* (§6.2) | **la más fuerte** (§8) |
 | Lambda + EventBridge + DynamoDB + SSM | **PASA**, margen 7,5× | **SIN EVALUAR en AWS**; yfinance dio 5/5 desde Azure (§5.1) | idem | **sin veredicto**, pero más plausible |
 | Lambda + EventBridge + **S3** | **NO PASA** — el free tier de S3 de tu cuenta ya venció (§4.2) | SIN EVALUAR | idem | **no viable** |
 | **EC2** chica | **NO PASA** — mismo motivo (§4.2) | SIN EVALUAR | idem | **no viable** |
@@ -43,11 +45,15 @@ solo: el criterio (b) no se puede evaluar sin desplegar.** No es un detalle post
 Lambda, la mitad del harvest no se puede mudar").
 
 **La opción de hardware propio es la única que ya lo tiene resuelto**, y no por suerte:
-una máquina en tu casa —thin client usado, notebook vieja o Raspberry Pi— sale por **la
-misma IP residencial desde la que la app viene harvesteando hace tres meses**, con 2
-eventos de rate-limit en todo el log. El
-riesgo #1 no es que no esté medido: es que **no existe** en esa rama. Eso, más que
-cualquier tabla de costos, es lo que mueve la recomendación (§8).
+una máquina en tu casa sale por **la misma IP residencial desde la que la app viene
+harvesteando hace tres meses**, con 2 eventos de rate-limit en todo el log. El riesgo #1
+no es que no esté medido: es que **no existe** en esa rama. Eso, más que cualquier tabla
+de costos, es lo que mueve la recomendación (§8).
+
+**Y la máquina ya existe**: la Raspberry con openHABian. El harvest pide **126 MB de RAM
+y 126 MB de disco** (medidos, §4.4.0) sobre una placa que ya está prendida las 24 horas.
+Lo único que queda por confirmar son cuatro chequeos en esa Pi, de los cuales dos pueden
+bloquear: la arquitectura (32 vs 64 bits) y la versión de Python.
 
 ---
 
@@ -277,6 +283,55 @@ en eBay, típico US$50-80, idle **6 W**, máximo 16 W, y corre un kernel moderno
 pelear. El **HP t640** sale casi lo mismo. Un **N100 nuevo** recién vale la pena si el
 thin client se va por encima de ~US$120 — y para este trabajo, que son 5 minutos de CPU
 por día, es potencia que no se usa.
+
+### 4.4.0 La respuesta real: Chapa ya tiene un Pi prendido (openHABian)
+
+**No hay nada que comprar.** Chapa reportó el 2026-09-14 que tiene una Raspberry corriendo
+**openHABian** 24×7. Eso satisface de entrada todo lo que esta rama pide: está prendida
+siempre, sale por IP residencial, y **cuesta US$0**. Todo §4.4.1 y §4.4.3 pasa a ser
+material de referencia por si alguna vez hace falta una máquina aparte.
+
+**Lo que el harvest necesita, medido (no estimado), el 2026-09-14:**
+
+| Recurso | Medido | Comentario |
+|---|---:|---|
+| RAM, piso del proceso | **126 MB** | sólo los imports: pandas 80 MB, +yfinance 102, +el harvest 126 |
+| RAM, pico estimado con datos | ~150-300 MB | los frames de 127 tickers encima del piso |
+| Disco, dependencias | **126 MB** | pandas 65,5 · numpy 30,1 · SQLAlchemy 17,9 · curl_cffi 3,9 · yfinance 1,1 · resto 7 |
+| Disco, venv completo | ~150-200 MB | con `pip`/`setuptools` adentro |
+| Escritura por día | **~0,6 MB** | irrelevante para el desgaste de la SD (§4.4.1) |
+| CPU | ~5 min/día, o **1-2 min** con el alcance recomendado (§8) | una vez por día, no continuo |
+
+**Cuatro cosas hay que chequear antes, y las dos primeras pueden bloquear:**
+
+```bash
+uname -m            # aarch64 ⇒ todo sale de PyPI. armv7l ⇒ 32 bits, ver abajo
+python3 -V          # tiene que ser >= 3.10 (lo pide `requires-python` del repo)
+cat /etc/os-release # bookworm ⇒ Python 3.11 OK · bullseye ⇒ Python 3.9, NO alcanza
+free -m ; df -h /   # ~300 MB de RAM libre y ~200 MB de disco
+```
+
+1. **`aarch64` vs `armv7l` — el bloqueante más probable.** En 64 bits, `pandas>=2.2.2` y
+   `numpy>=1.26.4,<2.0` bajan como wheels manylinux de PyPI y no se compila nada. En
+   **32 bits (armhf) PyPI no publica wheels de pandas**: habría que depender de piwheels
+   o compilar, que en una Pi son horas y puede no salir. Las imágenes de openHABian
+   vienen en las dos variantes según la época.
+2. **Python ≥ 3.10.** Bookworm trae 3.11 y alcanza; **Bullseye trae 3.9 y no**. Con
+   Bullseye hay que subir Python aparte, que es trabajo real.
+3. **RAM libre con openHAB corriendo.** openHAB es Java y suele usar 300-700 MB. En una
+   Pi 4/5 (2-8 GB) sobra; en una **Pi 3 de 1 GB puede quedar muy justo**, y ahí el
+   alcance recortado a sólo el consenso (§8) importa el doble.
+4. **PEP 668.** En Bookworm el `pip` del sistema se niega a instalar en el Python del
+   sistema. **Hay que usar un venv** — que además es lo que se quiere: aislar esto de
+   openHAB para no tocarle nada.
+
+**Cómo no romperle la domótica**, que es lo que de verdad hay que cuidar: venv propio en
+el home del usuario, un **systemd timer** (no cron) para una corrida diaria, y `Nice=19`
+en la unidad. openHAB es sensible a la latencia, pero un proceso de 1-5 minutos al día
+con prioridad mínima no lo toca. Y **nada de instalar en el Python del sistema**.
+
+**La regla 5 sigue igual:** la Pi es Linux, así que **no monta ni escribe
+`finanzias.db`**. Escribe su propio store y la app, en Windows, importa (§6.3).
 
 ### 4.4.2 La opción gratis que además resuelve algo que ninguna otra resuelve
 
@@ -544,11 +599,16 @@ que es la fuente sensible al rate limit.
 existe, con el alcance recortado al snapshot de consenso diario.** Si no querés hardware,
 la segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
 
-**Cuál máquina, en orden** (revisado el 2026-09-14 a pedido de Chapa, §4.4):
+**Cuál máquina — ya la tenés** (revisado el 2026-09-14 a pedido de Chapa, §4.4):
 
+0. **La Raspberry que ya corre openHABian.** Está prendida 24×7, sale por IP
+   residencial y cuesta **US$0**. El harvest pide **126 MB de RAM** y **126 MB de
+   disco**, medidos. Antes de nada, los cuatro chequeos de **§4.4.0** — `uname -m` y la
+   versión de Python son los que pueden bloquear. Si pasan, **acá termina la búsqueda de
+   hardware** y lo de abajo no hace falta.
 1. **Una notebook vieja que ya tengas — US$0, y es la única con UPS** (la batería). Un
-   corte de luz no la apaga, que es la desventaja central de toda esta rama. Si existe,
-   no hay nada que comprar.
+   corte de luz no la apaga, que es la desventaja central de toda esta rama. Segunda
+   opción si la Pi no pasa los chequeos.
 2. **Un thin client usado** (Dell Wyse 5070, HP t640, Lenovo Tiny): **US$38-80
    completo, y eso es en eBay**, x86, con eMMC o SSD en vez de microSD, 8 GB y ethernet
    por cable. Le gana al Pi por precio **y** por fiabilidad (§4.4.1).
@@ -628,9 +688,10 @@ Q3 una vez por esto.
 
 **Lo que falta:**
 
-1. **Tu decisión: máquina propia o AWS.** Si es máquina propia: ¿tenés un NAS o una
-   notebook vieja? Cambia el costo a **cero** y la notebook además trae UPS (§4.4.2).
-   Si hay que comprar, un **thin client usado de eBay** (US$38-80) le gana al Pi.
+1. **Correr los cuatro chequeos de §4.4.0 en la Pi de openHABian.** Es la máquina que
+   ya tenés prendida, así que si pasan, la decisión de hardware está tomada y no hay
+   nada que comprar. Los que pueden bloquear son `uname -m` (32 vs 64 bits) y
+   `python3 -V` (el repo pide ≥ 3.10).
 2. **El smoke test desde AWS** — sólo si elegís esa rama. Una Lambda que baje
    `Ticker.news` y `earnings_estimate` de 5 tickers y reporte qué respondió. Con el
    probe verde, lo espero verde también, pero *esperar* no es *medir*.
