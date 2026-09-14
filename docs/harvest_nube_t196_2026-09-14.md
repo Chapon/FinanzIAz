@@ -330,14 +330,16 @@ Azure). Sale con código 0 siempre —es diagnóstico, no un gate— y emite el 
 como anotación, porque los logs de Actions piden token y la API de anotaciones no
 (tarea 65).
 
-**Corrida [34872679069](https://github.com/Chapon/FinanzIAz/actions/runs/34872679069),
-sobre NVDA, AAPL, MSFT, TSLA y KO:**
+**Dos corridas, sobre NVDA, AAPL, MSFT, TSLA y KO:**
 
-| Fuente | Resultado |
-|---|---|
-| `yfinance` — `Ticker.news` | **5/5 OK** |
-| `yfinance` — `earnings_estimate` (el consenso) | **5/5 OK** |
-| SEC EDGAR | **no probado** — ver abajo |
+| Fuente | [34872679069](https://github.com/Chapon/FinanzIAz/actions/runs/34872679069) (instrumento con el defecto) | [34873799447](https://github.com/Chapon/FinanzIAz/actions/runs/34873799447) (corregido) |
+|---|---|---|
+| `yfinance` — `Ticker.news` | **5/5 OK** | **5/5 OK** |
+| `yfinance` — `earnings_estimate` (el consenso) | **5/5 OK** | **5/5 OK** |
+| SEC EDGAR | «FALLA» — **falso**, ver abajo | **n/d, no probado**, con el motivo en la anotación |
+
+Las dos coinciden en lo que importa: **yfinance respondió las diez llamadas**. El
+defecto del instrumento sólo tocaba la pata de SEC.
 
 **Esto es evidencia real y va en contra de lo que yo escribí arriba.** Puse el riesgo
 de yfinance desde datacenter en "ALTO"; desde una IP de Azure respondieron las dos
