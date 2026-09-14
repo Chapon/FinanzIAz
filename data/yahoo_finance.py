@@ -1044,6 +1044,65 @@ def _arbitrate_price(price: float, reference: float, independent: float | None) 
         return "sin_opinion"
 
 
+# ── Qué hizo la segunda opinión, para el scan — tarea 201 ────────────────────
+#
+# `unreliable_reference` devuelve un motivo o None, y eso alcanza para ACEPTAR o
+# RECHAZAR un precio. La 201 necesita una tercera salida: **usar el precio de la
+# fuente independiente** cuando respalda a la referencia (decisión de Chapa: la posición
+# no puede quedar ciega, que es lo que pasaba al rechazar). Por eso el veredicto se
+# registra acá, en la única función que consulta la fuente, y el fetch y el engine lo
+# LEEN — ninguno de los dos llama a la fuente por su cuenta (el invariante de la 63).
+#
+# Vive lo mismo que el memo de la opinión, y se borra cuando el ticker vuelve a dar un
+# precio en banda: un veredicto viejo no puede decidir sobre un precio nuevo.
+_opinion_log: dict[str, dict] = {}
+_opinion_log_lock = threading.Lock()
+
+
+def _record_opinion(
+    ticker: str, price: float, reference: float, independent: float | None, verdict: str
+) -> None:
+    if verdict == "sin_opinion":
+        return
+    with _opinion_log_lock:
+        _opinion_log[ticker.upper()] = {
+            "ticker": ticker.upper(),
+            "verdict": verdict,
+            "price": price,
+            "reference": reference,
+            "independent": independent,
+            "at": time.time(),
+        }
+
+
+def price_dispute(ticker: str) -> dict | None:
+    """El último veredicto de la segunda opinión para el ticker, si sigue vigente.
+
+    ``verdict`` es ``"reference"`` (el precio de Yahoo es el podrido), ``"ninguno"``
+    (la fuente independiente no coincide con ninguno) o ``"price"``. Copia, para que
+    nadie mute el registro.
+    """
+    with _opinion_log_lock:
+        d = _opinion_log.get(ticker.upper())
+        if d is None:
+            return None
+        if time.time() - d["at"] >= _SECOND_OPINION_TTL_S:
+            _opinion_log.pop(ticker.upper(), None)
+            return None
+        return dict(d)
+
+
+def _forget_opinion(ticker: str) -> None:
+    with _opinion_log_lock:
+        _opinion_log.pop(ticker.upper(), None)
+
+
+def _clear_opinion_log() -> None:
+    """Sólo para los tests."""
+    with _opinion_log_lock:
+        _opinion_log.clear()
+
+
 def unreliable_reference(
     ticker: str,
     price: float | None,
@@ -1101,14 +1160,28 @@ def unreliable_reference(
                 log.exception("segunda opinión: falló la consulta de %s", ticker)
                 indep = None
             veredicto = _arbitrate_price(price, reference, indep)
+            _record_opinion(ticker, float(price), float(reference), indep, veredicto)
             if veredicto == "reference":
                 log.error(
                     "Segunda opinión para %s: la fuente independiente (%.4f) respalda "
-                    "la REFERENCIA (%.4f) y no el precio (%.4f) — el precio se rechaza.",
+                    "la REFERENCIA (%.4f) y no el precio (%.4f) — el precio de Yahoo se "
+                    "rechaza y el scan usa el de la fuente independiente (tarea 201).",
                     ticker.upper(),
                     indep,
                     reference,
                     price,
+                )
+                return None
+            if veredicto == "ninguno":
+                # Tarea 201, decisión de Chapa: nadie avala ningún precio ⇒ no se opera
+                # sobre un número que nadie confirma. Sin precio ese scan, y aviso.
+                log.error(
+                    "Segunda opinión para %s: la fuente independiente (%.4f) no coincide "
+                    "ni con el precio (%.4f) ni con la referencia (%.4f) — sin precio este scan.",
+                    ticker.upper(),
+                    indep,
+                    price,
+                    reference,
                 )
                 return None
         return "los frames 1d cacheados no coinciden sobre este precio (escala en disputa entre períodos)"
@@ -1163,6 +1236,7 @@ def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
     ref = reference_close(ticker_upper)
     if not is_price_out_of_band(price, ref):
         _clear_out_of_band_streak(ticker_upper)
+        _forget_opinion(ticker_upper)
         return info
 
     # `is_price_out_of_band` devolvio True, y eso ya exige que los dos sean
@@ -1189,6 +1263,29 @@ def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
                 reason,
             )
         return info
+
+    # Tarea 201: si el rechazo lo decidió la segunda opinión respaldando a la referencia,
+    # el scan no se queda sin precio — usa el de la fuente independiente, MARCADO. La
+    # marca es lo que impide que se cachee como si fuera de Yahoo y lo que el engine usa
+    # para mandar la venta por señal a aprobación.
+    disputa = price_dispute(ticker_upper)
+    if (
+        disputa is not None
+        and disputa["verdict"] == "reference"
+        and disputa["price"] == px
+        and disputa["independent"] is not None
+        and disputa["independent"] > 0
+    ):
+        return {
+            **info,
+            "price": float(disputa["independent"]),
+            "price_source": "second_opinion",
+            "yahoo_price": px,
+            "reference_close": rf,
+            # Derivados del precio de Yahoo: con el precio sustituido mentirían.
+            "change_pct": None,
+            "market_cap": None,
+        }
 
     if n >= _ESCALATE_AFTER:
         if not _already_announced(ticker_upper, "escalated"):
@@ -1256,6 +1353,10 @@ def get_current_price(ticker: str) -> dict | None:
         info = _reject_if_out_of_band(ticker.upper(), info)
         if info is None:
             return None
+        if info.get("price_source"):
+            # Tarea 201: un precio sustituido no se cachea — volvería como si fuera de Yahoo.
+            info["from_cache"] = False
+            return info
 
         # 3. Cache write
         with session_scope() as session:
@@ -2373,7 +2474,9 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
             market_cap=info.get("market_cap"),
         )
         for ticker, info in live_results.items()
-        if info is not None
+        # Tarea 201: un precio sustituido por la segunda opinión NO se cachea: el próximo
+        # scan lo leería del cache sin la marca, como si fuera de Yahoo.
+        if info is not None and not info.get("price_source")
     ]
     if new_entries:
         try:

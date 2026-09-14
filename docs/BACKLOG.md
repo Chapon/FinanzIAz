@@ -18,6 +18,10 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 140 — Tarea 201 (VENTA-DUDOSA-A-APROBACION) CERRADA 2026-09-14 — con el precio de la segunda opinión, el scan hace lo que decidió Chapa; la premisa del enunciado era falsa y se re-decidió con él** (`data/yahoo_finance.py`, `paper_trading/engine.py`, `tests/test_venta_dudosa_aprobacion_t201.py`, `docs/SETTINGS_REFERENCE.md`). La próxima es la **196**.
+  - **La premisa:** con el flag, la posición no quedaba *frenada* sino **sin evaluar**, ni señal ni stops. Chapa eligió: fuente que respalda el cierre guardado → **se usa su precio**; ninguno → **sin precio y aviso**.
+  - **18 tests con `run_scan` de verdad, once mutaciones rojas.** Prender el flag quedó en *Acciones manuales pendientes*.
+
 - **WIP 139 — Tarea 200 (SEGUNDA-OPINION-TARDIA) CERRADA 2026-09-14 — Finnhub se consulta desde el primer precio fuera de banda, los splits siguen esperando la racha, y el engine sigue sin pegar a la red** (`data/yahoo_finance.py`, `tests/test_second_opinion_primer_rechazo_t200.py`, `docs/SETTINGS_REFERENCE.md`). La próxima es la **201**.
   - **7 tests de punta a punta** (fetch → memo → guard del engine en el mismo scan). **Cuatro mutaciones rojas.** El flag sigue **OFF** por decisión de Chapa hasta la 201.
 
@@ -1203,6 +1207,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
 > **Acá van sólo las acciones ABIERTAS (tarea 199).** Al cerrar una, se **mueve** a *Acciones manuales resueltas* —al final del archivo, antes de *Hecho reciente*— con su fecha y lo que se hizo; **no se tacha en el lugar**. Tacharlas acá dejó la sección con 17 cerradas de 20, lo que tenías que hacer enterrado entre lo hecho, y el guard de la 138 en rojo por tamaño.
+
+- **Prender `price_second_opinion_enabled` (tareas 127, 200 y 201) — cuando quieras, con la app CERRADA.** Ya está todo lo que pediste antes de prenderlo: Finnhub se consulta desde el primer precio raro (200), y el scan hace lo que decidiste (201). Si Finnhub avala el cierre guardado, usa su precio: los stops salen solos, la venta por señal te pide aprobación en la pestaña Paper, las compras se bloquean y te llega un Slack. Si no coincide con ninguno, ese ticker queda sin precio ese scan y te llega un Slack con los tres precios. **Cómo:** con la app cerrada, poné `"price_second_opinion_enabled": true` en `~/.finanzias/settings.json` (backup antes), o pedímelo y lo hago como con `surprise_last_build`. **Qué esperar:** en la última semana el caso apareció 5 veces, todas AVB y con el precio de Yahoo bueno, así que prenderlo no habría cambiado nada; muerde en un caso tipo KLAC.
 
 - **Backfill opcional de la polaridad de las noticias viejas (resto de OPS1, 2026-07-09) — opcional y sin apuro.** Los tres pasos del cierre operacional de OPS1 están cumplidos (ver *Acciones manuales resueltas*); queda esto. **Medido contra la DB viva el 2026-09-13:** de las **14.543** noticias clasificadas antes del 2026-07-09, **ninguna** tiene `sentiment_score`; la acumulación hacia adelante sí funciona (37.793 con polaridad). Para poblarlas: `python scripts/classify_catalysts.py --reclassify`. El valor es chico: lo que importa del dato es que sea point-in-time, y reclasificar hoy una noticia de junio no lo es — sirve para descriptivos, no para backtest.
 
@@ -2655,7 +2661,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Cuatro mutaciones, las cuatro rojas:** volver a la llave compartida (el defecto), que el engine abra la red, abrir también los splits, ignorar el flag.
 - **`SETTINGS_REFERENCE.md`** suma que se consulta desde el primer precio fuera de banda, que en el engine sólo cambia ventas, y que sigue OFF hasta la 201.
 
-### 201. VENTA-DUDOSA-A-APROBACION — Cuando Finnhub no avala el precio de una venta por señal, la venta queda pendiente de aprobación manual en vez de ejecutarse o frenarse  ·  decisión de Chapa (2026-09-13) · severidad **MEDIA-ALTA** (camino vivo de ejecución) · **el flag `price_second_opinion_enabled` sigue OFF hasta que ésta y la 200 estén**
+### 201. ~~VENTA-DUDOSA-A-APROBACION — Cuando Finnhub no avala el precio de una venta por señal, la venta queda pendiente de aprobación manual en vez de ejecutarse o frenarse~~ · **CERRADA 2026-09-14 — y el enunciado partía de una premisa falsa: con el flag, la posición no quedaba «frenada» sino CIEGA; Chapa re-decidió usar el precio independiente**  ·  decisión de Chapa (2026-09-13) · severidad **MEDIA-ALTA** (camino vivo de ejecución) · **el flag `price_second_opinion_enabled` sigue OFF hasta que ésta y la 200 estén**
 
 - **La decisión, caso por caso** (detalle en *Acciones manuales resueltas*). Aplica a una **venta por señal** con precio fuera de banda y frames cacheados en disputa:
   - Finnhub **avala el precio** nuevo → vende sola.
@@ -2679,6 +2685,20 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
   - Los cuatro comandos en verde.
 - **Al cerrarla:** se anota en *Acciones manuales pendientes* **prender `price_second_opinion_enabled`**, con la app cerrada.
 - **Dependencias:** la **200**. Emparenta con la **127** y con N3/A2 (los stops no esperan).
+- **Cerrada (2026-09-14). La premisa que se cayó al empezar, y es mía:** la decisión de ayer suponía que con el flag la venta *«se frena hasta el próximo scan»*. Leyendo el camino del scan: cuando la fuente independiente respalda al cierre guardado, `_reject_if_out_of_band` **descarta el precio**, el ticker queda **sin precio** en todo el scan, y sin precio `_compute_atr_forced_exits` y la estrategia **no lo evalúan** (el log dice *«posiciones SIN evaluar (stops no corridos)»*). No había venta que aprobar, y los stops tampoco corrían: con Yahoo corrupto varios scans, la posición quedaba **ciega**, el modo de falla de la 63. **Se le re-preguntó a Chapa con eso delante**, y eligió: si la fuente respalda el cierre guardado, **el scan usa su precio**; si no coincide con ninguno, **sin precio y aviso**.
+- **Lo que quedó, por capa:**
+  - **Datos (`data/yahoo_finance.py`).** `unreliable_reference` registra el veredicto (`price_dispute`), en la única función que consulta la fuente, así que el invariante de la 63 sigue en pie. Con `reference`, el fetch entrega el precio independiente **marcado** (`price_source`), sin `change_pct`/`market_cap` de Yahoo. Con `ninguno` no entrega precio. Un precio sustituido **no se escribe en `price_cache`** (ni en `get_bulk_prices` ni en `get_current_price`): si se cacheara, volvería sin marca y la venta saldría sola. Un precio en banda **borra** el veredicto.
+  - **Engine (`paper_trading/engine.py`).** `_scan_price_disputes` reconoce la sustitución sólo si el precio que llegó **es** el independiente; un veredicto viejo no toca un precio sano leído del cache. Con precio sustituido:
+    - una **venta por señal** pasa los gates y queda **pendiente**, marcada `[segunda opinión]` en las notas, en **cualquier** modo de cuenta, sin duplicarse;
+    - una **compra** se bloquea;
+    - un **stop** sale solo.
+
+    Al final del loop, toda pendiente marcada que este scan no volvió a proponer se **cancela** —precio coherente, señal que cambió o posición cerrada—, salvo con el mercado cerrado. Si el precio volvió a ser coherente, decide la lógica normal en el mismo scan.
+  - **Aviso.** Por Slack (master switch y opt-out por cuenta, no el filtro `slack_notify_on`), una vez por ticker y tipo por día, con los tres precios. La pendiente aparece además en el resumen de órdenes.
+- **Lo que no hizo falta construir:** la UI de *Paper* ya mostraba y dejaba aprobar pendientes de **cualquier** cuenta (`get_pending_orders(account_id)`, sin filtro de modo). Y `approve_order` ya vuelve a pedir el precio y a pasar el guard, así que aprobar llena con el precio que haya al aprobar.
+- **Kill-criteria (cumplido).** `tests/test_venta_dudosa_aprobacion_t201.py`, **18 tests**, con `run_scan` de verdad sobre la DB en memoria: las filas de la tabla; stop que sale solo; dedup; aviso una vez por día; cancelación al volver el precio, al cambiar la señal, y **no** con el mercado cerrado; aprobación que llena; veredicto viejo sobre precio sano; flag OFF sin registro; y la capa de fetch (ninguno, sustitución sin derivados, borrado en banda, no-cache). **Once mutaciones, las once rojas**, una por rama. Los dos tests de la 200 que fijaban *«se rechaza»* pasan a fijar *«el precio corrupto no llega al scan»*, que es lo que la 200 garantizaba.
+- **La medición sobre los logs vivos, declarada:** en el último mes el camino de excepción se activó con AVB, y en todos los casos el precio de Yahoo era el bueno (184, la escala post-split que confirmó la 63). La fuente independiente habría respaldado al precio ⇒ **cero** aprobaciones pedidas. Las líneas de agosto están además contaminadas por la suite, antes del archivado de la 78. Es una estimación: no hay registro de qué habría contestado Finnhub en esas fechas.
+- **El flag sigue OFF.** Quedó anotado en *Acciones manuales pendientes* que prenderlo es de Chapa, con la app cerrada.
 
 ### 202. FUENTES-DE-PRECIO — Evaluar fuentes de precio alternativas antes de dar de alta una tercera  ·  decisión de Chapa (2026-09-13) · **ANÁLISIS, sin código de producción** · severidad **MEDIA**
 

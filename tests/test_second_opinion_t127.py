@@ -21,8 +21,10 @@ from data import yahoo_finance as yfm
 @pytest.fixture(autouse=True)
 def _memo_limpio():
     yfm._clear_second_opinion_cache()
+    yfm._clear_opinion_log()  # tarea 201: el registro de veredictos también es estado global
     yield
     yfm._clear_second_opinion_cache()
+    yfm._clear_opinion_log()
 
 
 @pytest.fixture

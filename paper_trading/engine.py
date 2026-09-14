@@ -704,6 +704,10 @@ class ScanResult:
     # justo lo que el `None` del borde no dejaba ver.
     garch_no_fit: str | None = None
 
+    # Tarea 201 — los tickers cuyo precio decidió la segunda opinión este scan: con el
+    # precio sustituido (``kind="sustituido"``) o sin precio (``kind="sin_precio"``).
+    price_disputes: list[dict] = field(default_factory=list)
+
     def summary(self) -> str:
         base = (
             f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
@@ -776,6 +780,10 @@ def run_scan(
             _warm_up_history_cache(tickers)
 
         prices = prices_provider(tickers) if tickers else {}
+        # Tarea 201: qué tickers llegaron con el precio de la segunda opinión, y cuáles
+        # quedaron sin precio porque la fuente independiente no avaló a nadie.
+        disputes = _scan_price_disputes(tickers, prices)
+        dispute_sells_seen: set[str] = set()
 
         t_after_fetch = perf_counter()  # OPS1(c): fin de fetch (warm-up + precios)
 
@@ -863,6 +871,7 @@ def run_scan(
             warnings=list(scan_warnings),
             ml_training=ml_training,
             garch_no_fit=garch_no_fit,
+            price_disputes=list(disputes.values()),
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
@@ -979,10 +988,11 @@ def run_scan(
                 ):
                     _earnings_date_for(_t.ticker)
 
-        # In manual mode, remember which (ticker, side) pairs already have a
-        # pending order so we don't duplicate the same intent on every scan.
+        # Remember which (ticker, side) pairs already have a pending order so we
+        # don't duplicate the same intent on every scan. Manual mode, and — since
+        # the tarea 201 — any account where the second opinion queued a SELL.
         existing_pending: set[tuple[str, str]] = set()
-        if acct.mode == "manual":
+        if acct.mode == "manual" or disputes:
             existing_pending = {
                 (o.ticker, o.side)
                 for o in (
@@ -1253,6 +1263,49 @@ def run_scan(
                 if _px is not None and np.isfinite(_px) and _px > 0:
                     buy_note = _buy_risk_note(trade.ticker, float(_px), _history_for)
 
+            # Tarea 201 — el precio de este ticker lo puso la segunda opinión (el de Yahoo
+            # era el corrupto). Decisión de Chapa: los stops salen solos sobre ese precio;
+            # una venta por SEÑAL pide aprobación, en cualquier modo de cuenta; y una compra
+            # no se hace, porque entrar es opcional y el histórico del ticker está en duda.
+            disputa = disputes.get(trade.ticker)
+            if disputa is not None and disputa["kind"] == DISPUTE_SUBSTITUTED:
+                if trade.side == "BUY":
+                    result.skipped += 1
+                    result.warnings.append(
+                        f"{trade.ticker} BUY bloqueado: el precio del scan es el de la segunda "
+                        "opinión (el de Yahoo vino corrupto) — no se entra sobre un histórico en duda."
+                    )
+                    continue
+                if not risk_exit:
+                    dispute_sells_seen.add(trade.ticker)
+                    if (trade.ticker, "SELL") in existing_pending:
+                        result.skipped += 1
+                        continue
+                    order = _create_pending_order(
+                        session,
+                        acct,
+                        trade,
+                        current_price=prices.get(trade.ticker),
+                        notes=_dispute_note(disputa),
+                    )
+                    existing_pending.add((trade.ticker, "SELL"))
+                    result.queued += 1
+                    result.pending_orders.append(order.id)
+                    result.new_orders.append(
+                        OrderNotice(
+                            account_name=account_name,
+                            ticker=order.ticker,
+                            side=order.side,
+                            status="pending",
+                            shares=order.target_shares,
+                            price=prices.get(trade.ticker),
+                            dollars=order.target_dollars,
+                            reason=f"{order.reason} · {DISPUTE_NOTE_TAG} aprobar a mano",
+                            signal_score=order.signal_score,
+                        )
+                    )
+                    continue
+
             if acct.mode == "manual" and not risk_exit:
                 key = (trade.ticker, trade.side)
                 if key in existing_pending:
@@ -1343,6 +1396,33 @@ def run_scan(
                     )
                 )
 
+        # Tarea 201 — una venta pendiente por la segunda opinión se REEVALÚA en cada scan
+        # (decisión de Chapa): si este scan no volvió a proponerla sobre un precio
+        # sustituido —el precio de Yahoo volvió a ser coherente, la señal ya no vende, o
+        # la posición se cerró (p. ej. por un stop)—, se cancela y decide la lógica normal.
+        # Con el mercado cerrado no se evaluó nada, así que no se cancela nada.
+        if not market_blocked:
+            for o in (
+                session.query(PaperOrder)
+                .filter(PaperOrder.account_id == acct.id)
+                .filter(PaperOrder.status == "pending")
+                .filter(PaperOrder.side == "SELL")
+                .all()
+            ):
+                if not _is_dispute_order(o) or o.id in result.pending_orders:
+                    continue
+                if o.ticker in dispute_sells_seen:
+                    continue
+                o.status = "expired"
+                o.decided_at = utcnow_naive()
+                o.notes = (
+                    (o.notes or "") + "\n[scan] cancelada: este scan ya no la propuso sobre un precio "
+                    "sustituido (el precio volvió a ser coherente, la señal cambió o la posición se cerró)."
+                ).strip()
+                result.warnings.append(
+                    f"{o.ticker} SELL pendiente por segunda opinión cancelada: ya no aplica este scan."
+                )
+
         # Stamp account + monthly rebalance flag
         acct.last_scan_at = result.scan_at
         if any_monthly and acct.mode == "auto":
@@ -1370,6 +1450,7 @@ def run_scan(
     # critical path and is fully fail-open: a missing token, a disabled switch,
     # or a notifier that raises must never affect the scan result.
     _maybe_notify_slack(result, account_name, account_slack_notify, slack_notifier)
+    _maybe_notify_price_disputes(result, account_name, account_slack_notify, slack_notifier)
 
     # OPS1(c) — timing por fase. ``process`` absorbe el loop de gates+fill más el
     # snapshot/slack del final; fetch+analyze+process == scan_seconds exacto.
@@ -1424,6 +1505,118 @@ def _maybe_notify_slack(
         get_logger(__name__).exception(
             "Slack notify: failed for account %r (fail-open, scan unaffected).",
             account_name,
+        )
+
+
+# ── Segunda opinión en el scan — tarea 201 ───────────────────────────────────
+#
+# Decisión de Chapa (2026-09-13), para una posición cuyo precio de Yahoo vino fuera de
+# banda con los frames cacheados en disputa:
+#   · la fuente independiente respalda el CIERRE GUARDADO → el scan usa su precio; los
+#     stops salen solos; una venta por señal queda pendiente de aprobación, y avisa;
+#   · no coincide con NINGUNO → sin precio ese scan, y avisa con los tres precios;
+#   · respalda el precio de Yahoo, o no contesta → como siempre.
+# Todo esto existe sólo con `price_second_opinion_enabled`: con el flag apagado el
+# registro de veredictos queda vacío y `_scan_price_disputes` devuelve {}.
+
+DISPUTE_SUBSTITUTED = "sustituido"
+DISPUTE_NO_PRICE = "sin_precio"
+# Marca de las órdenes pendientes que creó este camino, para reevaluarlas en cada scan.
+DISPUTE_NOTE_TAG = "[segunda opinión]"
+
+# Qué se avisó ya por Slack, para no repetir el mismo aviso cada 15 minutos mientras
+# Yahoo siga corrupto: una vez por (cuenta, ticker, tipo) por día.
+_disputes_announced: dict[tuple[int, str, str], str] = {}
+
+
+def _scan_price_disputes(tickers: list[str], prices: dict[str, float]) -> dict[str, dict]:
+    """Tickers del scan cuyo precio decidió la segunda opinión. Fail-open: {} ante error.
+
+    Un veredicto ``reference`` cuenta sólo si el precio que llegó ES el de la fuente
+    independiente: si el scan leyó un precio sano de Yahoo del cache, no hay sustitución
+    aunque el registro todavía la recuerde. Un ``ninguno`` cuenta sólo si el ticker quedó
+    efectivamente sin precio.
+    """
+    try:
+        from data.yahoo_finance import price_dispute
+    except Exception:
+        return {}
+    out: dict[str, dict] = {}
+    for t in tickers:
+        try:
+            d = price_dispute(t)
+        except Exception:
+            continue
+        if d is None:
+            continue
+        px = prices.get(t)
+        indep = d.get("independent")
+        if d["verdict"] == "reference" and px is not None and indep is not None and abs(px - indep) < 1e-9:
+            out[t] = {**d, "kind": DISPUTE_SUBSTITUTED}
+        elif d["verdict"] == "ninguno" and px is None:
+            out[t] = {**d, "kind": DISPUTE_NO_PRICE}
+    return out
+
+
+def _dispute_note(d: dict) -> str:
+    return (
+        f"{DISPUTE_NOTE_TAG} Yahoo dio {d['price']:.2f}, el cierre guardado es {d['reference']:.2f} y "
+        f"la fuente independiente dice {d['independent']:.2f}: el precio de Yahoo se descartó y la "
+        "venta espera tu aprobación. Al aprobar se vuelve a pedir el precio."
+    )
+
+
+def _is_dispute_order(o: PaperOrder) -> bool:
+    return (o.notes or "").startswith(DISPUTE_NOTE_TAG)
+
+
+def _format_price_disputes(account_name: str, disputes: list[dict]) -> str:
+    lineas = [f"⚠️ *{account_name}* — precio en disputa (segunda opinión)"]
+    for d in disputes:
+        indep = d.get("independent")
+        indep_txt = f"{indep:.2f}" if indep is not None else "—"
+        base = f"• *{d['ticker']}*: Yahoo {d['price']:.2f} · cierre guardado {d['reference']:.2f} · independiente {indep_txt}"
+        if d["kind"] == DISPUTE_SUBSTITUTED:
+            lineas.append(f"{base} → se usa el precio independiente; una venta por señal espera aprobación.")
+        else:
+            lineas.append(f"{base} → nadie avala un precio: la posición NO se evaluó este scan.")
+    return "\n".join(lineas)
+
+
+def _maybe_notify_price_disputes(
+    result: ScanResult,
+    account_name: str,
+    account_slack_notify: bool,
+    slack_notifier: SlackNotifier | None,
+) -> None:
+    """Aviso por Slack de los precios en disputa del scan. Fail-open, como el resumen T12.
+
+    Respeta el master switch y el opt-out por cuenta, pero **no** el filtro
+    ``slack_notify_on``: no es un aviso de órdenes sino de un precio que el sistema no
+    pudo confirmar, y Chapa pidió enterarse.
+    """
+    try:
+        if not result.price_disputes:
+            return
+        if not bool(settings.get("slack_notifications_enabled", False)) or not account_slack_notify:
+            return
+        hoy = f"{result.scan_at:%Y-%m-%d}"
+        nuevas = []
+        for d in result.price_disputes:
+            clave = (result.account_id, d["ticker"], d["kind"])
+            if _disputes_announced.get(clave) != hoy:
+                nuevas.append(d)
+        if not nuevas:
+            return
+        notifier = slack_notifier or default_notifier
+        notifier(_format_price_disputes(account_name, nuevas))
+        for d in nuevas:
+            _disputes_announced[(result.account_id, d["ticker"], d["kind"])] = hoy
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception(
+            "Slack notify (precio en disputa): failed for account %r (fail-open).", account_name
         )
 
 

@@ -35,6 +35,7 @@ FINNHUB_REAL = 195.0
 def escenario(monkeypatch):
     """Frames en disputa, un cierre guardado, y una Finnhub que cuenta sus llamadas."""
     yfm._clear_second_opinion_cache()
+    yfm._clear_opinion_log()
     yfm._clear_out_of_band_streak("KLAC")
     monkeypatch.setattr(yfm, "_price_sanity_band", lambda: 0.50)
     monkeypatch.setattr(yfm, "reference_close", lambda t: CIERRE_GUARDADO)
@@ -48,6 +49,7 @@ def escenario(monkeypatch):
     monkeypatch.setattr("data.providers.second_opinion", _finnhub)
     yield llamadas
     yfm._clear_second_opinion_cache()
+    yfm._clear_opinion_log()
     yfm._clear_out_of_band_streak("KLAC")
 
 
@@ -55,11 +57,19 @@ def _fetch(precio=PRECIO_CORRUPTO):
     return yfm._reject_if_out_of_band("KLAC", {"price": precio})
 
 
-def test_con_el_flag_ON_el_PRIMER_precio_corrupto_ya_se_rechaza(escenario, monkeypatch):
-    """El kill-criteria de la 200. Antes, este fetch devolvía el info (precio aceptado)
-    y Finnhub ni se consultaba."""
+def test_con_el_flag_ON_el_PRIMER_precio_corrupto_ya_se_descarta(escenario, monkeypatch):
+    """El kill-criteria de la 200. Antes, este fetch devolvía el info con el precio de
+    Yahoo (aceptado) y Finnhub ni se consultaba.
+
+    **Desde la 201 el descarte no deja al ticker sin precio:** por decisión de Chapa el
+    scan usa el de la fuente independiente, marcado. Lo que fija este test es lo que la
+    200 vino a garantizar —el precio corrupto no llega al scan desde el primer rechazo—."""
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: True)
-    assert _fetch() is None, "el primer precio ~10× corrupto tiene que rechazarse"
+    info = _fetch()
+    assert info is not None and info["price"] == FINNHUB_REAL, (
+        "el primer precio ~10× corrupto no llega al scan"
+    )
+    assert info["price_source"] == "second_opinion" and info["yahoo_price"] == PRECIO_CORRUPTO
     assert escenario == ["KLAC"], "Finnhub se consulta en el primer rechazo, una sola vez"
 
 
@@ -83,7 +93,7 @@ def test_el_engine_SOLO_nunca_pega_a_la_red(escenario, monkeypatch):
 def test_dentro_del_TTL_los_rechazos_siguientes_no_reconsultan(escenario, monkeypatch):
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: True)
     for _ in range(4):
-        assert _fetch() is None
+        assert _fetch()["price"] == FINNHUB_REAL
     assert escenario == ["KLAC"], f"consultó {len(escenario)} veces dentro del TTL"
 
 
