@@ -40,7 +40,14 @@ DEFAULT_TICKERS = ["NVDA", "AAPL", "MSFT", "TSLA", "KO"]
 
 # Apple. Sólo se usa para ver si EDGAR contesta; el CIK concreto da igual.
 SEC_PROBE_URL = "https://data.sec.gov/submissions/CIK0000320193.json"
-SEC_UA = os.environ.get("SEC_EDGAR_USER_AGENT", "FinanzIAs probe t196 (contacto en el repo)")
+
+# OJO con `os.environ.get(K, default)`: cuando el workflow escribe la variable desde un
+# secret que NO existe, la variable queda SETEADA en cadena vacía, así que el default
+# nunca entra y el pedido sale con User-Agent vacío. EDGAR contesta 403 y el probe
+# reporta "SEC FALLA" — que es un defecto del instrumento y se lee como un hallazgo.
+# Pasó en la corrida 34872679069. El repo ya usa esta forma en
+# `data.news_sources._sec_session()`; acá se replica a propósito.
+SEC_UA = os.environ.get("SEC_EDGAR_USER_AGENT") or ""
 
 
 def _ip_saliente() -> str:
@@ -52,7 +59,15 @@ def _ip_saliente() -> str:
         return f"desconocida ({type(exc).__name__})"
 
 
-def _probe_sec() -> tuple[bool, str]:
+def _probe_sec() -> tuple[bool | None, str]:
+    """``(ok, detalle)``. ``ok is None`` = no se probó, que NO es lo mismo que falló.
+
+    EDGAR exige un User-Agent con contacto y devuelve 403 sin él. Mandar uno inventado
+    sería maleducado y además no mediría nada: el 403 vendría de la etiqueta, no de la
+    IP. Así que sin contacto real, se declara NO PROBADO y no cuenta en el veredicto.
+    """
+    if not SEC_UA:
+        return None, "NO PROBADO — falta el secret SEC_EDGAR_USER_AGENT en el repo"
     req = urllib.request.Request(SEC_PROBE_URL, headers={"User-Agent": SEC_UA})
     t0 = time.monotonic()
     try:
@@ -64,7 +79,7 @@ def _probe_sec() -> tuple[bool, str]:
             f"HTTP {r.status}, {len(payload.get('filings', {}).get('recent', {}).get('form', []))} forms, {dt:.1f}s",
         )
     except Exception as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {str(exc)[:120]}"
 
 
 def _probe_yf(ticker: str) -> tuple[bool, str, bool, str]:
@@ -107,7 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Tickers: {', '.join(tickers)}\n")
 
     sec_ok, sec_det = _probe_sec()
-    print(f"{'SEC EDGAR':<12} {'OK' if sec_ok else 'FALLA':<6} {sec_det}")
+    sec_rotulo = "n/d" if sec_ok is None else ("OK" if sec_ok else "FALLA")
+    print(f"{'SEC EDGAR':<12} {sec_rotulo:<6} {sec_det}")
     print()
 
     print(f"{'ticker':<8} {'news':<6} {'detalle':<46} {'estimates':<10} detalle")
@@ -121,12 +137,15 @@ def main(argv: list[str] | None = None) -> int:
     n = len(tickers)
     resumen = (
         f"T196 probe desde datacenter — yfinance news {news_ok_n}/{n}, "
-        f"yfinance estimates {est_ok_n}/{n}, SEC EDGAR {'OK' if sec_ok else 'FALLA'}"
+        f"yfinance estimates {est_ok_n}/{n}, SEC EDGAR {sec_rotulo} ({sec_det})"
     )
     print(f"\n{resumen}")
 
     # El veredicto va por anotación: los logs de Actions piden token, las anotaciones no.
-    todo_bien = news_ok_n == n and est_ok_n == n and sec_ok
+    # Por eso el detalle del fallo viaja DENTRO del resumen: una anotación que sólo diga
+    # "FALLA" obliga a abrir los logs, que es justo lo que no se puede sin token.
+    # `sec_ok is None` no cuenta como fallo — no se probó (ver _probe_sec).
+    todo_bien = news_ok_n == n and est_ok_n == n and sec_ok is not False
     nivel = "warning" if todo_bien else "error"
     print(f"::{nivel}::{resumen}")
 

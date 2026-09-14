@@ -38,5 +38,11 @@ jobs:
           pip install yfinance
       - name: Probe
         env:
+          # Si el secret no existe, esto NO queda sin setear: queda seteado en cadena
+          # VACIA. En la corrida 34872679069 eso mandó un User-Agent vacío a EDGAR, que
+          # contestó 403, y el probe lo reportó como "SEC FALLA" — un defecto del
+          # instrumento leyéndose como un hallazgo sobre el datacenter. El script ahora
+          # distingue vacío (NO PROBADO) de fallo. Para probar la pata de SEC hay que
+          # dar de alta el secret con un contacto real.
           SEC_EDGAR_USER_AGENT: ${{ secrets.SEC_EDGAR_USER_AGENT }}
         run: python scripts/probe_yahoo_datacenter_t196.py

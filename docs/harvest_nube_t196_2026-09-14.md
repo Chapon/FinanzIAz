@@ -24,7 +24,7 @@ importación a la app es idempotente y no escribe la DB desde fuera de Windows.
 | Opción | (a) $0/mes | (b) smoke test | (c) import idempotente | Veredicto |
 |---|---|---|---|---|
 | **Raspberry Pi** en casa (u otra máquina propia siempre prendida) | **el criterio no le aplica** — ~€50-90 una vez + ~US$2/año de luz (§4.4) | **YA SATISFECHO** por 3 meses de producción: es la misma IP residencial (§5) | PASA *con un arreglo* (§6.2) | **la más fuerte** (§8) |
-| Lambda + EventBridge + DynamoDB + SSM | **PASA**, margen 7,5× | **SIN EVALUAR** | idem | **sin veredicto** |
+| Lambda + EventBridge + DynamoDB + SSM | **PASA**, margen 7,5× | **SIN EVALUAR en AWS**; yfinance dio 5/5 desde Azure (§5.1) | idem | **sin veredicto**, pero más plausible |
 | Lambda + EventBridge + **S3** | **NO PASA** — el free tier de S3 de tu cuenta ya venció (§4.2) | SIN EVALUAR | idem | **no viable** |
 | **EC2** chica | **NO PASA** — mismo motivo (§4.2) | SIN EVALUAR | idem | **no viable** |
 | GitHub Actions (referencia de costo) | **PASA** — repo público, minutos ilimitados | SIN EVALUAR | idem | sirve para el probe, no para guardar (§4.3) |
@@ -322,17 +322,44 @@ de Chapa**. Un Raspberry Pi ahí no necesita smoke test porque no cambia la vari
 el smoke test mide. **La rama de hardware propio no tiene el riesgo #1: no lo mitiga,
 no lo tiene.**
 
-**Probe desde datacenter — escrito, pendiente de correr** (autorizado por Chapa el
-2026-09-14). `scripts/probe_yahoo_datacenter_t196.py` +
-`.github/workflows/probe_yahoo_datacenter_t196.yml`: baja `Ticker.news` y
-`earnings_estimate` de 5 tickers y consulta EDGAR, desde los runners de GitHub (IPs de
+### 5.1 Probe desde datacenter — CORRIDO 2026-09-14, y yfinance PASÓ
+
+`scripts/probe_yahoo_datacenter_t196.py` +
+`.github/workflows/probe_yahoo_datacenter_t196.yml`, desde los runners de GitHub (IPs de
 Azure). Sale con código 0 siempre —es diagnóstico, no un gate— y emite el veredicto
 como anotación, porque los logs de Actions piden token y la API de anotaciones no
-(tarea 65). **No sustituye al smoke test desde AWS**: Yahoo bloquea por reputación de
-rango y los rangos de AWS son los más castigados, así que un verde acá no prueba que
-Lambda ande. Un **rojo**, en cambio, es concluyente en el sentido útil: ahorra abrir la
-infraestructura entera. **Resultado: pendiente** — corre con el push que trae estos dos
-archivos, y el número va acá cuando esté.
+(tarea 65).
+
+**Corrida [34872679069](https://github.com/Chapon/FinanzIAz/actions/runs/34872679069),
+sobre NVDA, AAPL, MSFT, TSLA y KO:**
+
+| Fuente | Resultado |
+|---|---|
+| `yfinance` — `Ticker.news` | **5/5 OK** |
+| `yfinance` — `earnings_estimate` (el consenso) | **5/5 OK** |
+| SEC EDGAR | **no probado** — ver abajo |
+
+**Esto es evidencia real y va en contra de lo que yo escribí arriba.** Puse el riesgo
+de yfinance desde datacenter en "ALTO"; desde una IP de Azure respondieron las dos
+llamadas, para los cinco tickers, incluida la del consenso que es la que importa. **No
+prueba que AWS ande** —Yahoo bloquea por reputación de rango y los de AWS son los más
+castigados— pero sí saca a la nube del terreno de "probablemente no funciona". §8
+quedó reescrito por esto.
+
+**Lo de SEC fue un defecto de mi instrumento, no un hallazgo.** La primera corrida
+reportó *"SEC EDGAR FALLA"* y era falso: el workflow escribe
+`SEC_EDGAR_USER_AGENT` desde un secret que **no existe en el repo**, y
+`os.environ.get(K, default)` devuelve **cadena vacía** en ese caso —no el default—, así
+que el pedido salió con User-Agent vacío y EDGAR contestó 403 por la etiqueta, no por
+la IP. El repo ya hacía esto bien (`data.news_sources._sec_session()` usa `if not ua:`);
+el probe no. Corregido: ahora distingue **no probado** de **falla**, y el detalle del
+error viaja dentro de la anotación para poder diagnosticarlo sin token. **Para probar
+esa pata hay que dar de alta el secret con un contacto real** — y como el repo es
+público, esa decisión es de Chapa, no mía.
+
+Sigue en pie lo de §5: el riesgo de SEC es **bajo por razonamiento** —su política de
+*fair access* es explícita y no discrimina por IP— pero eso es un argumento, no una
+medición, y ahora está etiquetado como tal.
 
 ---
 
@@ -426,18 +453,27 @@ que es la fuente sensible al rate limit.
 con el alcance recortado al snapshot de consenso diario.** Si no querés hardware, la
 segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
 
-**Por qué el Pi, en orden de peso:**
+> **Reescrito después del probe (§5.1), que debilitó mi propio argumento principal.**
+> La primera versión de esta sección ponía primero *"el Pi elimina el riesgo #1"*. El
+> probe mostró que yfinance responde 5/5 desde una IP de datacenter, así que ese riesgo
+> es **menos probable** de lo que yo había supuesto — sigue sin estar medido en AWS,
+> pero ya no es la razón más fuerte. La recomendación **no cambia**; cambia **por qué**,
+> y el margen es más chico. Lo dejo escrito en vez de reordenar los argumentos en
+> silencio.
 
-1. **Elimina el único criterio que no se puede evaluar.** Todo lo demás en este doc está
-   medido; (b) no, y no lo va a estar hasta desplegar. El Pi sale por la misma IP
-   residencial que hace tres meses harvestea bien. No es que el riesgo esté controlado:
-   **no está**.
-2. **Corre `scripts/harvest_catalysts.py` tal cual.** AWS pide partir por lotes (§7.1),
-   empaquetar, cambiar de almacenamiento y escribir un import. Un orden de magnitud más
-   de trabajo, para resolver el mismo problema peor.
-3. **Nadie te lo re-tarifa.** Oracle acaba de mostrar que "always free" es revocable
+**Por qué el Pi, en orden de peso (post-probe):**
+
+1. **Corre `scripts/harvest_catalysts.py` tal cual.** Es ahora la razón más fuerte. AWS
+   pide partir por lotes por el techo de 15 min (§7.1), empaquetar dependencias,
+   cambiar de almacenamiento y escribir un import. **Un orden de magnitud más de
+   trabajo**, para resolver el mismo problema peor.
+2. **Nadie te lo re-tarifa.** Oracle acaba de mostrar que "always free" es revocable
    (§4.5), y el free tier de 12 meses de tu cuenta ya venció sin que nadie avisara
    (§4.2). El hardware que comprás no cambia de precio después.
+3. **Sigue sin necesitar smoke test.** El Pi sale por la misma IP residencial que hace
+   tres meses harvestea bien, así que (b) está satisfecho de entrada. El probe hizo que
+   esto pese menos —la nube tampoco parece bloqueada— pero *menos* no es *nada*: para
+   AWS sigue siendo un supuesto, y acá es un hecho.
 4. Cuesta **€50-90 una vez y ~US$2/año** de luz. Si tenés un NAS o una máquina vieja
    siempre prendida, cuesta **cero**: empezá por ahí antes de comprar nada.
 
@@ -479,15 +515,21 @@ Q3 una vez por esto.
 - ✅ **Evaluar hardware propio (Raspberry Pi):** pedido el mismo día, hecho en §4.4. Es
   lo que cambió la recomendación.
 
+- ✅ **Probe corrido** (§5.1): **yfinance 5/5 desde IP de datacenter**, las dos llamadas.
+  No cierra (b) para AWS, pero saca a la nube del terreno de "probablemente no anda" —
+  y me obligó a reescribir §8 en contra de mi propio argumento.
+
 **Lo que falta:**
 
-1. **El resultado del probe** (§5). Llega solo, con el push. Si sale **rojo**, la rama
-   de nube se cae y el Pi queda como única opción; si sale verde, sigue sin decir nada
-   definitivo sobre AWS, y lo que decide es §8.
-2. **Tu decisión: Pi o AWS.** Si es Pi: ¿tenés ya un NAS o una máquina siempre prendida?
+1. **Tu decisión: Pi o AWS.** Si es Pi: ¿tenés ya un NAS o una máquina siempre prendida?
    Cambia el costo de €50-90 a cero y es lo primero que miraría.
-3. **El smoke test desde AWS** — sólo si elegís esa rama. Una Lambda que baje
-   `Ticker.news` y `earnings_estimate` de 5 tickers y reporte qué respondió.
+2. **El smoke test desde AWS** — sólo si elegís esa rama. Una Lambda que baje
+   `Ticker.news` y `earnings_estimate` de 5 tickers y reporte qué respondió. Con el
+   probe verde, lo espero verde también, pero *esperar* no es *medir*.
+3. **¿Damos de alta el secret `SEC_EDGAR_USER_AGENT` en el repo?** Es lo único que falta
+   para probar la pata de SEC desde datacenter. El repo es **público**: el valor no se
+   ve (GitHub enmascara los secrets), pero la decisión de poner un contacto tuyo ahí es
+   tuya. Sin eso, esa pata queda como argumento y no como medición.
 4. **La tarea 203** (§6.2, §10) es prerrequisito de implementar **cualquiera** de las
    dos ramas, porque las dos agregan un segundo escritor a la tabla del consenso.
 
@@ -504,6 +546,11 @@ Q3 una vez por esto.
    medidas tardaron 82 y 95 min contra una mediana de 5, porque cada fuente de cada
    ticker agota su timeout. In-app sólo molesta (el gate de worker vivo evita que se
    apilen); en cualquier ejecución con límite de tiempo, es fatal.
+3. **`os.environ.get(K, default)` con un secret inexistente manda cadena vacía, no el
+   default** (§5.1) — el probe reportó *«SEC EDGAR FALLA»* y era suyo, no de SEC.
+   Arreglado al encontrarlo, antes de que el número se usara para nada. Va igual como
+   tarea (**205**, cerrada) porque un instrumento que fabrica un hallazgo falso con
+   formato de resultado no se arregla en silencio.
 
 ---
 
