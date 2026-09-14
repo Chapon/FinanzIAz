@@ -42,6 +42,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from sqlalchemy.exc import IntegrityError
+
 from config.logging_config import get_logger
 from data.news_sources import _CollectResult, collect_all
 from database.models import (
@@ -198,7 +200,20 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
 
 
 def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
-    """Insert one EstimateSnapshot per (ticker, metric, period_label, day). Returns True if new."""
+    """Insert one EstimateSnapshot per (ticker, metric, period_label, day). Returns True if new.
+
+    **Dos capas, y la de abajo es la que manda (tarea 203).** La consulta previa es
+    el camino rápido: evita el INSERT cuando la fila del día ya está, que es el caso
+    normal de re-correr el harvest. Pero compara el datetime **exacto**, así que por
+    sí sola no ve una fila del mismo día estampada con otra hora — y no es atómica.
+    Lo que garantiza el invariante es el índice único por expresión
+    ``ux_est_ticker_metric_period_dia``, sobre ``date(snapshot_date)``.
+
+    Por eso el INSERT va en un **savepoint**: si otro escritor metió la fila en el
+    medio, la colisión revierte sólo esta fila y se cuenta como duplicado, en vez de
+    abortar la transacción del ticker y llevarse puestas también sus noticias (la
+    fase 2 persiste news + estimates del mismo ticker en una sola sesión).
+    """
     exists = (
         session.query(AnalystEstimateSnapshot.id)
         .filter(AnalystEstimateSnapshot.ticker == snap.ticker)
@@ -209,18 +224,31 @@ def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
     )
     if exists is not None:
         return False
-    session.add(
-        AnalystEstimateSnapshot(
-            ticker=snap.ticker,
-            metric=snap.metric,
-            period_label=snap.period_label,
-            consensus_value=snap.consensus_value,
-            num_analysts=snap.num_analysts,
-            snapshot_date=today,
-            fetched_at=utcnow_naive(),
+    try:
+        with session.begin_nested():
+            session.add(
+                AnalystEstimateSnapshot(
+                    ticker=snap.ticker,
+                    metric=snap.metric,
+                    period_label=snap.period_label,
+                    consensus_value=snap.consensus_value,
+                    num_analysts=snap.num_analysts,
+                    snapshot_date=today,
+                    fetched_at=utcnow_naive(),
+                )
+            )
+            session.flush()
+    except IntegrityError:
+        # El índice la frenó: la fila del día ya existe con otro sello de hora.
+        # Es exactamente el caso que el chequeo de arriba no puede ver.
+        log.debug(
+            "snapshot duplicado frenado por el indice: %s/%s/%s @ %s",
+            snap.ticker,
+            snap.metric,
+            snap.period_label,
+            today.date(),
         )
-    )
-    session.flush()
+        return False
     return True
 
 

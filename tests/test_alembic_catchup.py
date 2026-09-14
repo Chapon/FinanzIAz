@@ -61,19 +61,29 @@ def _head(cfg: Config) -> str:
 
 
 def _schema_snapshot(engine) -> dict:
-    """{tabla: (set(columnas), set(índices))} ignorando housekeeping de alembic/sqlite."""
+    """{tabla: (set(columnas), set(índices))} ignorando housekeeping de alembic/sqlite.
+
+    **Los índices salen de ``sqlite_master``, no del inspector (tarea 203).** Con
+    ``insp.get_indexes()`` los índices **por expresión** no aparecen — y este test
+    compara dos fotos tomadas con el mismo instrumento, así que un índice invisible
+    en las dos da igualdad y el test pasa **sin haberlo mirado**. Es exactamente la
+    forma de guard que no puede ver lo que chequea: si la migración se olvidara de
+    crear ``ux_est_ticker_metric_period_dia``, la equivalencia seguiría dando OK.
+    """
     insp = sa.inspect(engine)
+    with engine.connect() as conn:
+        por_tabla: dict[str, set[str]] = {}
+        for nombre, tabla in conn.execute(
+            sa.text("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
+        ):
+            if nombre and not nombre.startswith("sqlite_autoindex"):
+                por_tabla.setdefault(tabla, set()).add(nombre)
     snap = {}
     for t in insp.get_table_names():
         if t in ("alembic_version", "sqlite_sequence"):
             continue
         cols = {c["name"] for c in insp.get_columns(t)}
-        idxs = {
-            i["name"]
-            for i in insp.get_indexes(t)
-            if i["name"] and not i["name"].startswith("sqlite_autoindex")
-        }
-        snap[t] = (cols, idxs)
+        snap[t] = (cols, por_tabla.get(t, set()))
     return snap
 
 

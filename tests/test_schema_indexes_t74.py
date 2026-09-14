@@ -118,12 +118,18 @@ def test_upgrade_es_idempotente_sobre_una_db_completa(tmp_path):
     command.stamp(_cfg(path), "0008")
 
     def snap():
+        # Por ``sqlite_master`` y no por el inspector: los índices **por expresión**
+        # no salen en ``get_indexes()``, y esta función compara dos fotos — uno
+        # invisible en las dos daría igualdad sin haberlo mirado (tarea 203).
         insp = sa.inspect(engine)
-        return {
-            t: {i["name"] for i in insp.get_indexes(t)}
-            for t in insp.get_table_names()
-            if t != "alembic_version"
-        }
+        with engine.connect() as conn:
+            por_tabla: dict[str, set[str]] = {}
+            for nombre, tabla in conn.execute(
+                sa.text("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
+            ):
+                if nombre:
+                    por_tabla.setdefault(tabla, set()).add(nombre)
+        return {t: por_tabla.get(t, set()) for t in insp.get_table_names() if t != "alembic_version"}
 
     antes = snap()
     command.upgrade(_cfg(path), "head")
@@ -135,9 +141,19 @@ def test_upgrade_es_idempotente_sobre_una_db_completa(tmp_path):
 def test_los_indices_unicos_siguen_siendo_unicos(tmp_path):
     """La reconstrucción no puede degradar un índice ÚNICO a uno común.
 
-    Tres de los declarados son ``unique=True`` (uno de ellos, ``ix_news_content_hash``,
-    es lo que evita noticias duplicadas). Recrearlos sin el flag sería cambiar
-    una restricción de datos por un índice de performance, en silencio.
+    Varios de los declarados son ``unique=True`` (uno de ellos, ``ix_news_content_hash``,
+    es lo que evita noticias duplicadas; otro, ``ux_est_ticker_metric_period_dia``,
+    es lo que evita snapshots de consenso duplicados — tarea 203). Recrearlos sin el
+    flag sería cambiar una restricción de datos por un índice de performance, en
+    silencio.
+
+    **Por qué no alcanza el inspector (tarea 203).** ``insp.get_indexes()`` **saltea
+    los índices por expresión**: con ``ux_est_ticker_metric_period_dia`` declarado,
+    el ``next(...)`` de la versión anterior de este test levantaba ``StopIteration``
+    aunque el índice estuviera perfectamente creado y único. El instrumento no podía
+    ver a la población que tenía que revisar. El DDL de ``sqlite_master`` sí los
+    lista a todos, y además dice ``CREATE UNIQUE INDEX`` literal, que es justo el
+    invariante que este test quiere fijar.
     """
     path = tmp_path / "uniq.db"
     engine = _full_db(path)
@@ -148,10 +164,14 @@ def test_los_indices_unicos_siguen_siendo_unicos(tmp_path):
     command.stamp(_cfg(path), "0008")
     command.upgrade(_cfg(path), "head")
 
-    insp = sa.inspect(engine)
-    for tabla, idx in unicos:
-        real = next(i for i in insp.get_indexes(tabla) if i["name"] == idx)
-        assert real["unique"], f"{idx} se recreó sin unique"
+    with engine.connect() as conn:
+        ddl = {
+            r[0]: (r[1] or "")
+            for r in conn.execute(sa.text("SELECT name, sql FROM sqlite_master WHERE type='index'"))
+        }
+    for _tabla, idx in sorted(unicos):
+        assert idx in ddl, f"{idx} no se recreó"
+        assert "CREATE UNIQUE INDEX" in ddl[idx].upper(), f"{idx} se recreó sin unique: {ddl[idx]}"
 
 
 def test_el_arranque_avisa_cuando_falta_un_indice(tmp_path, caplog):

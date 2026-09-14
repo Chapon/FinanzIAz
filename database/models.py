@@ -470,10 +470,36 @@ class AnalystEstimateSnapshot(Base):
 
     ``snapshot_date`` se guarda truncado a medianoche para que el chequeo
     "¿ya tomé snapshot hoy?" sea una igualdad exacta.
+
+    **Tarea 203 — el "a lo sumo una fila por día" lo garantiza el ESQUEMA.** Antes
+    lo sostenía sólo ``harvest_catalysts._insert_estimate_if_new_today()``, un
+    *read-then-write* en Python: no es atómico, y sobre todo compara el datetime
+    **exacto**, así que un escritor que estampara ``snapshot_date`` con hora —o en
+    UTC contra un local— no encontraba la fila que ya estaba y **duplicaba en
+    silencio**. Funcionaba porque hay **un solo escritor**; la tarea 196 propone el
+    segundo. La hermana ``news_events`` ya tenía su UNIQUE (``content_hash``).
+
+    El índice es **por expresión** y eso no es cosmético: un
+    ``UNIQUE (ticker, metric, period_label, snapshot_date)`` a secas **no arregla
+    el defecto**, porque compara el mismo datetime exacto que comparaba el Python.
+    Hace falta ``date(snapshot_date)`` para que la clave sea el **día calendario**.
+    Y ``COALESCE(period_label, '')`` porque la columna es nullable y SQLite trata
+    cada NULL como distinto: sin eso, dos filas con ``period_label`` NULL del mismo
+    día pasan las dos (hoy no hay ninguna NULL, pero el esquema las permite).
     """
 
     __tablename__ = "analyst_estimate_snapshots"
-    __table_args__ = (Index("ix_est_ticker_metric_date", "ticker", "metric", "snapshot_date"),)
+    __table_args__ = (
+        Index("ix_est_ticker_metric_date", "ticker", "metric", "snapshot_date"),
+        Index(
+            "ux_est_ticker_metric_period_dia",
+            text("ticker"),
+            text("metric"),
+            text("COALESCE(period_label, '')"),
+            text("date(snapshot_date)"),
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
@@ -565,17 +591,43 @@ def missing_declared_indexes(engine=None) -> list[tuple[str, str]]:
 
     Las tablas que **no existen** en la DB no se reportan: eso es otro problema
     (falta la tabla, no el índice) y mezclarlos haría ruidoso el caso normal.
+
+    **Tarea 203 — el inspector solo no alcanza.** ``insp.get_indexes()`` **saltea
+    los índices por expresión** (emite ``SAWarning: Skipped unsupported reflection
+    of expression-based index``), así que uno declarado en un model se reportaba
+    como faltante **para siempre**, existiera o no: el guard habría quedado en rojo
+    permanente y sin forma de ponerlo en verde. Apareció al declarar
+    ``ux_est_ticker_metric_period_dia``, que es por expresión a propósito (ver
+    ``AnalystEstimateSnapshot``). Por eso los nombres reales se completan con
+    ``sqlite_master``, que los lista todos. Es específico de SQLite y está bien
+    que lo sea: la DB del proyecto es SQLite, y si el motor no lo soporta el
+    fallback deja el comportamiento anterior en vez de romper.
     """
     from sqlalchemy import inspect as _sa_inspect
 
     _register_paper_models()
-    insp = _sa_inspect(engine if engine is not None else ENGINE)
+    eng = engine if engine is not None else ENGINE
+    insp = _sa_inspect(eng)
     tablas = set(insp.get_table_names())
+
+    def _reales(tabla: str) -> set[str]:
+        try:
+            with eng.connect() as conn:
+                filas = conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=:t"),
+                    {"t": tabla},
+                )
+                return {r[0] for r in filas if r[0]}
+        except Exception:  # pragma: no cover — motor sin sqlite_master
+            # El inspector va de fallback, no de primera: sobre SQLite emite
+            # ``SAWarning`` en cada índice por expresión y además no lo devuelve.
+            return {i["name"] for i in insp.get_indexes(tabla) if i.get("name")}
+
     faltan: list[tuple[str, str]] = []
     for t in Base.metadata.sorted_tables:
         if not t.indexes or t.name not in tablas:
             continue
-        reales = {i["name"] for i in insp.get_indexes(t.name) if i.get("name")}
+        reales = _reales(t.name)
         faltan.extend((t.name, i.name) for i in t.indexes if i.name not in reales)
     return sorted(faltan)
 
