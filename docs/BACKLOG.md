@@ -18,6 +18,9 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 139 — Tarea 200 (SEGUNDA-OPINION-TARDIA) CERRADA 2026-09-14 — Finnhub se consulta desde el primer precio fuera de banda, los splits siguen esperando la racha, y el engine sigue sin pegar a la red** (`data/yahoo_finance.py`, `tests/test_second_opinion_primer_rechazo_t200.py`, `docs/SETTINGS_REFERENCE.md`). La próxima es la **201**.
+  - **7 tests de punta a punta** (fetch → memo → guard del engine en el mismo scan). **Cuatro mutaciones rojas.** El flag sigue **OFF** por decisión de Chapa hasta la 201.
+
 - **WIP 138 — Tarea 199 (ACCIONES-MANUALES-LLENA-DE-CERRADAS) CERRADA 2026-09-13 — lo cerrado se mueve, no se tacha: *pendientes* queda con tres acciones abiertas** (`docs/BACKLOG.md`, `tests/test_acciones_manuales_solo_abiertas_t199.py`). La próxima es la **196**.
   - **18 ítems movidos enteros** a `## Acciones manuales resueltas`, que pasa a ser sección obligatoria. La cota de la 138 no se tocó.
   - **Guard** calibrado contra la población real en las dos direcciones. Su contraprueba cazó al primer intento que OPS1 no llevaba marca de cierre. **Cuatro mutaciones rojas.**
@@ -2631,7 +2634,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
   - **Cuatro mutaciones, las cuatro rojas:** una resuelta vuelve a *pendientes*, y el guard ignora cada una de las tres marcas. Para las dos últimas hizo falta un test por marca, porque en la población real todas las cerradas llevan tachado **y** estado.
 - **Lo que no ve, dicho:** una acción cerrada con una marca nueva que no sea ninguna de esas.
 
-### 200. SEGUNDA-OPINION-TARDIA — La segunda opinión de precio recién se consulta al TERCER precio fuera de banda seguido, así que los dos primeros pasan igual  ·  origen: al preparar las preguntas de la decisión de `price_second_opinion_enabled` (2026-09-13) · severidad **MEDIA** (latente: el flag está apagado)
+### 200. ~~SEGUNDA-OPINION-TARDIA — La segunda opinión de precio recién se consulta al TERCER precio fuera de banda seguido, así que los dos primeros pasan igual~~ · **CERRADA 2026-09-14 — dos llaves de red donde había una: los splits siguen esperando la racha, Finnhub se consulta desde el primero**  ·  origen: al preparar las preguntas de la decisión de `price_second_opinion_enabled` (2026-09-13) · severidad **MEDIA** (latente: el flag está apagado)
 
 - **Qué pasa.** En `data/yahoo_finance._reject_if_out_of_band`, `unreliable_reference` se llama con `allow_network=(n >= _ESCALATE_AFTER)`, que vale **3**. Con los frames en disputa, la segunda opinión consulta a Finnhub **sólo con red habilitada**. Sin red devuelve lo memoizado, y no hay nada memoizado la primera vez. Resultado: en el **primer y segundo** precio fuera de banda de un ticker el veredicto es `sin_opinion`, el precio **se acepta** y el engine **no frena la venta**, porque su guard corre con `allow_network=False` y lee el mismo memo vacío.
 - **Por qué importa.** El caso que el flag vino a tapar (KLAC) es un precio corrupto **puntual**: justo el que aparece una o dos veces y no llega a racha. La nota de la decisión decía *«el incidente más grave de los tres que motivaron ARQ3 deja de poder repetirse en silencio»*; con el flag prendido **tal como está**, eso era falso para los dos primeros scans.
@@ -2639,6 +2642,18 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** Con los frames en disputa y el flag prendido, consultar a Finnhub **desde el primer** precio fuera de banda (el fetch sí puede pegar a la red; el engine sigue leyendo el memo). Mantener el TTL de 15 minutos del memo para no pegarle a Finnhub en cada scan.
 - **Kill-criteria.** Test: con frames en disputa, flag ON y Finnhub respaldando la referencia, el **primer** precio fuera de banda ya se rechaza en el fetch, y la venta del engine en ese mismo scan ve el veredicto memoizado. Mutación: volver a `n >= _ESCALATE_AFTER` pone el test en rojo. Con el flag OFF, cero llamadas a Finnhub (test que cuente las llamadas). Los cuatro comandos en verde.
 - **Dependencias:** la **127** (el mecanismo). Va **antes** de la **201**: el circuito de aprobación depende de que el veredicto exista a tiempo.
+- **Cerrada (2026-09-14).** `unreliable_reference` suma `opinion_network`: la llave de red **de la segunda opinión**, separada de `allow_network`, que queda para los splits. El fetch (`_reject_if_out_of_band`) pasa `opinion_network=True`; los splits siguen con `n >= _ESCALATE_AFTER`. El engine no pasa la llave, así que hereda `allow_network=False` y **nunca** pega a la red.
+- **Verificado el orden dentro del scan,** que es de lo que depende todo: `run_scan` pide los precios (`prices_provider` → `get_bulk_prices` → `_reject_if_out_of_band`) **antes** del guard del fill (`_price_out_of_band`). Por eso el engine encuentra el veredicto memoizado en el **mismo** scan. En `approve_order` pasa lo mismo.
+- **Kill-criteria (cumplido).** `tests/test_second_opinion_primer_rechazo_t200.py`, de punta a punta por el fetch y el guard del engine, con sólo Finnhub simulada. **7 tests:**
+  - con el flag ON, el **primer** precio ~10× corrupto se rechaza con **una** consulta;
+  - la venta del engine en el mismo scan se frena **sin** consultar de nuevo;
+  - el engine solo, sin fetch previo, no consulta nada;
+  - dentro del TTL no se reconsulta;
+  - con el flag OFF, **cero** llamadas y el precio se acepta como antes;
+  - si Finnhub avala el precio, se acepta desde el primero (el caso AVB);
+  - la consulta de **splits** sigue esperando la racha (`[False, False, True]`).
+- **Cuatro mutaciones, las cuatro rojas:** volver a la llave compartida (el defecto), que el engine abra la red, abrir también los splits, ignorar el flag.
+- **`SETTINGS_REFERENCE.md`** suma que se consulta desde el primer precio fuera de banda, que en el engine sólo cambia ventas, y que sigue OFF hasta la 201.
 
 ### 201. VENTA-DUDOSA-A-APROBACION — Cuando Finnhub no avala el precio de una venta por señal, la venta queda pendiente de aprobación manual en vez de ejecutarse o frenarse  ·  decisión de Chapa (2026-09-13) · severidad **MEDIA-ALTA** (camino vivo de ejecución) · **el flag `price_second_opinion_enabled` sigue OFF hasta que ésta y la 200 estén**
 

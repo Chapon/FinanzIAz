@@ -1045,7 +1045,12 @@ def _arbitrate_price(price: float, reference: float, independent: float | None) 
 
 
 def unreliable_reference(
-    ticker: str, price: float | None, reference: float | None, *, allow_network: bool
+    ticker: str,
+    price: float | None,
+    reference: float | None,
+    *,
+    allow_network: bool,
+    opinion_network: bool | None = None,
 ) -> str | None:
     """Motivo por el que la REFERENCIA no sirve para acusar, o None si sirve.
 
@@ -1059,10 +1064,22 @@ def unreliable_reference(
        que E5 espera y se sigue bloqueando como siempre. En el engine nunca: un
        fill no puede colgarse esperando a Yahoo, pero sí aprovecha lo memoizado.
 
+    ``opinion_network`` es la llave de red **de la segunda opinión**, separada de la
+    de los splits (tarea 200). Hasta ahí compartían ``allow_network``, así que en el
+    fetch Finnhub recién se consultaba al **tercer** rechazo seguido: los dos primeros
+    precios fuera de banda —justo el caso de un precio corrupto puntual, KLAC— pasaban
+    sin veredicto. La racha tiene sentido para los splits (consultarlos en cada
+    rechazo aislado es caro y E5 ya bloquea lo pasajero); para la segunda opinión no,
+    porque sólo corre con los frames **en disputa**, que ya es el camino raro, y queda
+    memoizada. ``None`` ⇒ la misma llave que ``allow_network``: el engine no la pasa y
+    sigue sin pegar a la red.
+
     Es **pública a propósito**: el guard del fetch y el del engine tienen que
     decidir con la misma función. Que uno acepte un precio y el otro lo rechace
     —con la misma referencia— es cómo una posición queda sin poder venderse.
     """
+    if opinion_network is None:
+        opinion_network = allow_network
     if price is None or reference is None:
         return None
     if scale_is_disputed(price, ticker):
@@ -1079,7 +1096,7 @@ def unreliable_reference(
             # el camino de precios, y una excepción que suba desde una opinión
             # *opcional* frenaría un fill. Defensa en profundidad a propósito.
             try:
-                indep = independent_price(ticker, allow_network=allow_network)
+                indep = independent_price(ticker, allow_network=opinion_network)
             except Exception:
                 log.exception("segunda opinión: falló la consulta de %s", ticker)
                 indep = None
@@ -1156,7 +1173,11 @@ def _reject_if_out_of_band(ticker_upper: str, info: dict | None) -> dict | None:
     px, rf = float(price), float(ref)
     args = (ticker_upper, px, rf, abs(px / rf - 1.0) * 100, _price_sanity_band() * 100)
 
-    reason = unreliable_reference(ticker_upper, px, rf, allow_network=(n >= _ESCALATE_AFTER))
+    # Splits: con la racha. Segunda opinión: desde el PRIMER rechazo (tarea 200) — sólo
+    # corre con los frames en disputa y queda memoizada para el guard del engine.
+    reason = unreliable_reference(
+        ticker_upper, px, rf, allow_network=(n >= _ESCALATE_AFTER), opinion_network=True
+    )
     if reason is not None:
         if not _already_announced(ticker_upper, "unreliable"):
             log.error(
