@@ -263,33 +263,58 @@ def test_collect_finnhub_uses_injected_session():
 # ── collect_all wiring across sources ────────────────────────────────────────
 
 
+# La costura que parchean estos tests son las implementaciones (`_yf_news`, `_sec_8k`,
+# `_rss`, `_finnhub_news`), no los accesores públicos: desde la tarea 207 `collect_all`
+# llama a las primeras, porque son las que devuelven el veredicto además de la lista.
+#
+# **Y el cambio de costura NO fue cosmético.** Al mover `collect_all` a las
+# implementaciones, estos tests quedaron parcheando algo que ya nadie llamaba y
+# `_finnhub_news` salió a la **API real de Finnhub** —hay `FINNHUB_API_KEY` viva en la
+# máquina de Chapa— devolviendo 257 artículos de verdad. Lo delató que el contenido no
+# coincidiera; si el fake hubiera producido algo compatible, el test habría pasado
+# **pegándole a internet**. `conftest.py` aísla la DB y el settings, pero **no la red**:
+# anotado como tarea 209.
+
+
+def _ok(source, items):
+    return items, ns.SourceOutcome(source, "ok", len(items))
+
+
 def test_collect_all_default_is_yfinance_only(monkeypatch):
     calls = []
-    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [_n(t, "yf")])
-    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
-    monkeypatch.setattr(ns, "collect_sec_8k", lambda t: calls.append("sec") or [])
-    monkeypatch.setattr(ns, "collect_rss", lambda t, urls, source=None: calls.append("rss") or [])
+    monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", [_n(t, "yf")]))
+    monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
+    monkeypatch.setattr(ns, "_sec_8k", lambda t: calls.append("sec") or _ok("sec", []))
+    monkeypatch.setattr(ns, "_rss", lambda t, urls, source=None: calls.append("rss") or _ok("rss", []))
 
     res = collect_all("NVDA")
     assert [i.source for i in res.news] == ["yfinance-fake"]
     assert calls == []  # sec/rss not invoked by default
+    # Y sólo las fuentes que corrieron dejan veredicto (tarea 207).
+    assert [o.source for o in res.outcomes] == ["yfinance_news", "yfinance_estimates"]
 
 
 def test_collect_all_includes_sec_and_rss_when_selected(monkeypatch):
-    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [_n(t, "yf")])
-    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
-    monkeypatch.setattr(ns, "collect_sec_8k", lambda t: [_n(t, "sec_8k")])
-    monkeypatch.setattr(ns, "collect_rss", lambda t, urls, source=None: [_n(t, "yahoo_rss")])
+    monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", [_n(t, "yf")]))
+    monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
+    monkeypatch.setattr(ns, "_sec_8k", lambda t: _ok("sec", [_n(t, "sec_8k")]))
+    monkeypatch.setattr(ns, "_rss", lambda t, urls, source=None: _ok("rss", [_n(t, "yahoo_rss")]))
 
     res = collect_all("NVDA", {"yfinance", "sec", "rss"})
     got = sorted(i.source for i in res.news)
     assert got == ["sec_8k", "yahoo_rss", "yfinance-fake"]
+    assert sorted(o.source for o in res.outcomes) == [
+        "rss",
+        "sec",
+        "yfinance_estimates",
+        "yfinance_news",
+    ]
 
 
 def test_collect_all_includes_finnhub_when_selected(monkeypatch):
-    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [_n(t, "yf")])
-    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
-    monkeypatch.setattr(ns, "collect_finnhub_news", lambda t: [_n(t, "finnhub:Reuters")])
+    monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", [_n(t, "yf")]))
+    monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
+    monkeypatch.setattr(ns, "_finnhub_news", lambda t: _ok("finnhub", [_n(t, "finnhub:Reuters")]))
 
     res = collect_all("NVDA", {"yfinance", "finnhub"})
     got = sorted(i.source for i in res.news)
@@ -298,9 +323,9 @@ def test_collect_all_includes_finnhub_when_selected(monkeypatch):
 
 def test_collect_all_default_does_not_call_finnhub(monkeypatch):
     calls = []
-    monkeypatch.setattr(ns, "collect_yfinance_news", lambda t: [])
-    monkeypatch.setattr(ns, "collect_yfinance_estimates", lambda t: [])
-    monkeypatch.setattr(ns, "collect_finnhub_news", lambda t: calls.append("finnhub") or [])
+    monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", []))
+    monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
+    monkeypatch.setattr(ns, "_finnhub_news", lambda t: calls.append("finnhub") or _ok("finnhub", []))
 
     collect_all("NVDA")
     assert calls == []  # finnhub not invoked by default

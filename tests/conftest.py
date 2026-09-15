@@ -29,10 +29,16 @@ import tempfile
 os.environ.setdefault("FINANZIAS_LOG_FILE", "")
 
 # Los fetch de tooltip no corren en la suite (tarea 82). No es sólo por el crash
-# de salida: el runnable pide **red** —bloqueada acá— y toca la **DB** desde un
-# hilo del pool mientras los tests la rebindean a memoria; con eso la suite entera
-# se murió a los ~35 tests. Es el mismo aislamiento que ya se hace con la red, la
-# DB y el log, y va acá por el mismo motivo: antes de cualquier import.
+# de salida: el runnable pide **red** y toca la **DB** desde un hilo del pool
+# mientras los tests la rebindean a memoria; con eso la suite entera se murió a
+# los ~35 tests. Es el mismo aislamiento que ya se hace con la DB y el log, y va
+# acá por el mismo motivo: antes de cualquier import.
+#
+# **Corrección (tarea 207):** acá decía *«el runnable pide red —bloqueada acá—»* y
+# *«el mismo aislamiento que ya se hace con la red»*. La red **no** está bloqueada
+# en esta suite: de los cuatro aislamientos de este bloque ninguno la toca, y
+# `mock_yfinance` es opt-in y sólo parchea `data.yahoo_finance.yf`. Esta variable
+# corta *este* fetch concreto, no la red. El cortafuegos de verdad es la tarea 209.
 os.environ.setdefault("FINANZIAS_DISABLE_TICKER_FETCH", "1")
 
 # La suite tampoco toca la ``finanzias.db`` de producción **desde un subproceso**

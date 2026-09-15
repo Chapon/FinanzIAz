@@ -75,9 +75,51 @@ class EstimateSnapshot:
 
 
 @dataclass
+class SourceOutcome:
+    """Qué hizo **una** fuente para **un** ticker (tarea 207).
+
+    ``[]`` estaba sobrecargado: significaba a la vez *«respondió y no había nada»*,
+    *«falló»* y *«no corrió»*. Cada collector se traga su excepción y devuelve ``[]``
+    —correcto y deliberado, una fuente caída no hunde a las otras— así que el reporte
+    del harvest no tenía cómo distinguirlas. Las dos corridas de 95 y 82 minutos del
+    2026-08-14, con las tres fuentes timeouteando, cerraron con ``failed 0``.
+
+    ``failed`` con ``items > 0`` es un estado real, no una contradicción: ``_rss``
+    acumula y **sigue** tras un feed caído. Al revés, ``ok`` no garantiza que no haya
+    fallado nada adentro: ``_yf_estimates`` consulta cinco propiedades a través de
+    ``_getattr``, que se traga la excepción de cada una — hueco declarado en su docstring
+    y anotado como tarea 210.
+    """
+
+    source: str
+    status: str  # "ok" | "failed" | "skipped"
+    items: int = 0
+    detail: str = ""
+
+    @property
+    def failed(self) -> bool:
+        return self.status == "failed"
+
+    @property
+    def skipped(self) -> bool:
+        return self.status == "skipped"
+
+
+@dataclass
 class _CollectResult:
     news: list[NewsItem] = field(default_factory=list)
     estimates: list[EstimateSnapshot] = field(default_factory=list)
+    # Una entrada por fuente consultada para este ticker (tarea 207). Vacío = nadie
+    # declaró nada, que es distinto de "todas respondieron sin novedades".
+    outcomes: list[SourceOutcome] = field(default_factory=list)
+
+    @property
+    def sources_failed(self) -> list[str]:
+        return [o.source for o in self.outcomes if o.failed]
+
+    @property
+    def total_items(self) -> int:
+        return len(self.news) + len(self.estimates)
 
 
 # ── Dedup hash ───────────────────────────────────────────────────────────────
@@ -177,8 +219,8 @@ def parse_yf_news_item(ticker: str, raw: dict) -> NewsItem | None:
     )
 
 
-def collect_yfinance_news(ticker: str) -> list[NewsItem]:
-    """Fetch ``Ticker.news`` and map to NewsItems. Never raises."""
+def _yf_news(ticker: str) -> tuple[list[NewsItem], SourceOutcome]:
+    """La implementación real: la lista **y** si la fuente respondió (tarea 207)."""
     out: list[NewsItem] = []
     try:
         from data.yahoo_finance import _ticker  # reuse the configured session/rate-limit
@@ -188,9 +230,19 @@ def collect_yfinance_news(ticker: str) -> list[NewsItem]:
             item = parse_yf_news_item(ticker, raw)
             if item is not None:
                 out.append(item)
-    except Exception:
+    except Exception as e:
         log.exception("yfinance news fetch failed for %s", ticker)
-    return out
+        return out, SourceOutcome("yfinance_news", "failed", len(out), _brief(e))
+    return out, SourceOutcome("yfinance_news", "ok", len(out))
+
+
+def collect_yfinance_news(ticker: str) -> list[NewsItem]:
+    """Fetch ``Ticker.news`` and map to NewsItems. Never raises.
+
+    Accesor de una línea sobre ``_yf_news``, que es la única implementación — así el
+    resultado y su veredicto no pueden divergir.
+    """
+    return _yf_news(ticker)[0]
 
 
 # ── yfinance analyst estimates (daily snapshot) ──────────────────────────────
@@ -225,11 +277,20 @@ def _df_rows_to_estimates(ticker: str, df, metric: str) -> list[EstimateSnapshot
     return out
 
 
-def collect_yfinance_estimates(ticker: str) -> list[EstimateSnapshot]:
+def _yf_estimates(ticker: str) -> tuple[list[EstimateSnapshot], SourceOutcome]:
     """
     Snapshot the *current* consensus for ``ticker``: EPS + revenue estimates,
     recommendation mean, and price target. Never raises. One call per ticker
     per day is the intended cadence (the harvester enforces it).
+
+    **Qué ve el veredicto, y qué no** (tarea 207). El ``try`` de afuera sólo alcanza a
+    lo que *escapa*: en la práctica, que ``_ticker()`` no resuelva. Los cinco sub-fetches
+    (earnings, revenue, price targets, info) pasan por ``_getattr``, **que se traga cada
+    excepción a propósito** —yfinance fetchea de verdad al acceder a la propiedad— así
+    que una fuente que contesta 2 de 5 se declara ``ok``. Eso es exactamente lo que se ve
+    en el log del 2026-08-14: ``yfinance_news`` falló 52 de 52 y ``yfinance_estimates``
+    no registró **ninguna** falla. **Hueco conocido, anotado como tarea 210**; acá se
+    declara en vez de quedar implícito.
     """
     out: list[EstimateSnapshot] = []
     try:
@@ -253,9 +314,15 @@ def collect_yfinance_estimates(ticker: str) -> list[EstimateSnapshot]:
             n = _safe_int(info.get("numberOfAnalystOpinions"))
             if rec_mean is not None:
                 out.append(EstimateSnapshot(ticker.upper(), "rec_mean", "current", rec_mean, n))
-    except Exception:
+    except Exception as e:
         log.exception("yfinance estimates fetch failed for %s", ticker)
-    return out
+        return out, SourceOutcome("yfinance_estimates", "failed", len(out), _brief(e))
+    return out, SourceOutcome("yfinance_estimates", "ok", len(out))
+
+
+def collect_yfinance_estimates(ticker: str) -> list[EstimateSnapshot]:
+    """Accesor de una línea sobre ``_yf_estimates`` (ver ``collect_yfinance_news``)."""
+    return _yf_estimates(ticker)[0]
 
 
 # ── yfinance earnings history (past surprise track record — T-CAT-5a) ─────────
@@ -353,7 +420,9 @@ def _rss_source_label(url: str) -> str:
     return "rss"
 
 
-def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) -> list[NewsItem]:
+def _rss(
+    ticker: str, feed_urls: list[str], source: str | None = None
+) -> tuple[list[NewsItem], SourceOutcome]:
     """
     Generic RSS collector (Yahoo per-ticker / PR Newswire / Business Wire / …).
 
@@ -361,13 +430,17 @@ def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) ->
     returns [] so the MVP keeps running on yfinance + SEC alone. Caller decides
     which feed URLs to pass. When ``source`` is None the source tag is inferred
     from each feed's URL (see ``_rss_source_label``).
+
+    Un feed que revienta **no** corta los demás, así que el veredicto es ``failed``
+    si cayó **alguno**, con la cuenta de los que sí entraron (tarea 207).
     """
     out: list[NewsItem] = []
     try:
         import feedparser
     except Exception:
         log.info("feedparser not installed — RSS source skipped for %s", ticker)
-        return out
+        return out, SourceOutcome("rss", "skipped", 0, "feedparser no instalado")
+    caidos: list[str] = []
     for url in feed_urls or []:
         src = source or _rss_source_label(url)
         try:
@@ -394,7 +467,15 @@ def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) ->
                 )
         except Exception:
             log.exception("RSS parse failed for %s (%s)", ticker, url)
-    return out
+            caidos.append(url)
+    if caidos:
+        return out, SourceOutcome("rss", "failed", len(out), f"{len(caidos)} feed(s) caidos")
+    return out, SourceOutcome("rss", "ok", len(out))
+
+
+def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) -> list[NewsItem]:
+    """Accesor de una línea sobre ``_rss`` (ver ``collect_yfinance_news``)."""
+    return _rss(ticker, feed_urls, source)[0]
 
 
 # ── Finnhub company-news (aggregates Reuters / CNBC / Bloomberg / …) ─────────
@@ -469,14 +550,14 @@ def parse_finnhub_news(ticker: str, payload) -> list[NewsItem]:
 _warned_no_finnhub_key = False
 
 
-def collect_finnhub_news(
+def _finnhub_news(
     ticker: str,
     *,
     session=None,
     api_key: str | None = None,
     days_back: int = 7,
     now: datetime | None = None,
-) -> list[NewsItem]:
+) -> tuple[list[NewsItem], SourceOutcome]:
     """
     Fetch recent company news for ``ticker`` from Finnhub and map to NewsItems.
 
@@ -495,7 +576,7 @@ def collect_finnhub_news(
                 'at finnhub.io and set it (setx FINNHUB_API_KEY "…" on Windows).'
             )
             _warned_no_finnhub_key = True
-        return []
+        return [], SourceOutcome("finnhub", "skipped", 0, "sin FINNHUB_API_KEY")
     try:
         import requests
 
@@ -509,10 +590,23 @@ def collect_finnhub_news(
             timeout=20,
         )
         r.raise_for_status()
-        return parse_finnhub_news(ticker, r.json())
-    except Exception:
+        out = parse_finnhub_news(ticker, r.json())
+        return out, SourceOutcome("finnhub", "ok", len(out))
+    except Exception as e:
         log.exception("collect_finnhub_news failed for %s", ticker)
-        return []
+        return [], SourceOutcome("finnhub", "failed", 0, _brief(e))
+
+
+def collect_finnhub_news(
+    ticker: str,
+    *,
+    session=None,
+    api_key: str | None = None,
+    days_back: int = 7,
+    now: datetime | None = None,
+) -> list[NewsItem]:
+    """Accesor de una línea sobre ``_finnhub_news`` (ver ``collect_yfinance_news``)."""
+    return _finnhub_news(ticker, session=session, api_key=api_key, days_back=days_back, now=now)[0]
 
 
 # ── SEC 8-K via EDGAR (point-in-time, the most reliable source) ──────────────
@@ -707,13 +801,13 @@ def cik_for_ticker(ticker: str, mapping: dict[str, int] | None = None) -> int | 
     return m.get(ticker.upper())
 
 
-def collect_sec_8k(
+def _sec_8k(
     ticker: str,
     *,
     session=None,
     mapping: dict[str, int] | None = None,
     max_filings: int = 20,
-) -> list[NewsItem]:
+) -> tuple[list[NewsItem], SourceOutcome]:
     """
     Fetch recent 8-K filings for ``ticker`` from EDGAR and map to NewsItems.
 
@@ -721,20 +815,36 @@ def collect_sec_8k(
     disclosure date. Resolves the CIK via the cached ticker map, then reads
     ``submissions/CIK##########.json``. Never raises — a missing CIK or a failed
     request returns [].
+
+    **«Sin CIK» es `skipped`, no `failed`** (tarea 207): el ticker no cotiza en EDGAR
+    y eso no dice nada sobre la salud de la fuente. Contarlo como falla haría que
+    cualquier universo con un ADR o un ETF pareciera roto todos los días.
     """
     try:
         cik = cik_for_ticker(ticker, mapping)
         if cik is None:
             log.info("no CIK for %s — SEC 8-K skipped", ticker)
-            return []
+            return [], SourceOutcome("sec", "skipped", 0, "sin CIK")
         sess = session or _sec_session()
         url = f"{SEC_DATA_BASE}/submissions/CIK{cik:010d}.json"
         r = sess.get(url, timeout=20)
         r.raise_for_status()
-        return parse_edgar_submissions(ticker, r.json(), cik=cik, max_filings=max_filings)
-    except Exception:
+        out = parse_edgar_submissions(ticker, r.json(), cik=cik, max_filings=max_filings)
+        return out, SourceOutcome("sec", "ok", len(out))
+    except Exception as e:
         log.exception("collect_sec_8k failed for %s", ticker)
-        return []
+        return [], SourceOutcome("sec", "failed", 0, _brief(e))
+
+
+def collect_sec_8k(
+    ticker: str,
+    *,
+    session=None,
+    mapping: dict[str, int] | None = None,
+    max_filings: int = 20,
+) -> list[NewsItem]:
+    """Accesor de una línea sobre ``_sec_8k`` (ver ``collect_yfinance_news``)."""
+    return _sec_8k(ticker, session=session, mapping=mapping, max_filings=max_filings)[0]
 
 
 # ── Default combined collector ───────────────────────────────────────────────
@@ -746,22 +856,41 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
     Default sources = {"yfinance"} (news + estimates). Pass e.g.
     {"yfinance", "sec", "rss", "finnhub"} to enable more. Each source is
     independently guarded — one failing source never sinks the others.
+
+    Cada fuente deja además su ``SourceOutcome`` en ``res.outcomes`` (tarea 207): el
+    guardado sigue siendo el mismo, pero ahora se puede saber si el ``[]`` fue porque
+    no había nada o porque la fuente se cayó. Se llaman las implementaciones
+    ``_yf_news``/``_sec_8k``/… y no los accesores públicos, que son las mismas
+    funciones sin el veredicto.
     """
     sources = sources or {"yfinance"}
     res = _CollectResult()
+
+    def _correr(fn, *args):
+        items, outcome = fn(*args)
+        res.outcomes.append(outcome)
+        return items
+
     if "yfinance" in sources:
-        res.news.extend(collect_yfinance_news(ticker))
-        res.estimates.extend(collect_yfinance_estimates(ticker))
+        res.news.extend(_correr(_yf_news, ticker))
+        res.estimates.extend(_correr(_yf_estimates, ticker))
     if "sec" in sources:
-        res.news.extend(collect_sec_8k(ticker))
+        res.news.extend(_correr(_sec_8k, ticker))
     if "rss" in sources:
-        res.news.extend(collect_rss(ticker, default_feed_urls(ticker)))
+        res.news.extend(_correr(_rss, ticker, default_feed_urls(ticker)))
     if "finnhub" in sources:
-        res.news.extend(collect_finnhub_news(ticker))
+        res.news.extend(_correr(_finnhub_news, ticker))
     return res
 
 
 # ── small helpers ────────────────────────────────────────────────────────────
+
+
+def _brief(e: BaseException, limite: int = 120) -> str:
+    """El tipo + el mensaje, acotado. El traceback ya fue al log por ``log.exception``;
+    esto viaja adentro del reporte, que se lee de un vistazo."""
+    msg = " ".join(str(e).split())
+    return f"{type(e).__name__}: {msg[:limite]}" if msg else type(e).__name__
 
 
 def _getattr(obj, name):

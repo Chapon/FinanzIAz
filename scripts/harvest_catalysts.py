@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +75,34 @@ def resolve_account_id(account_id: int | None = None) -> int | None:
     return live_account_id()
 
 
+# Tasa de fallas de UNA fuente, sobre los tickers en que se la consultó, a partir de la
+# cual la corrida se loguea como WARNING (tarea 207).
+#
+# **Calibrado contra la población real, no elegido a ojo.** Contando las líneas de fallo
+# de cada collector entre cada *«harvest starting»* y su *«done»* sobre los cinco logs
+# (77 corridas con reporte, 2026-07-12 a 2026-09-15):
+#
+#   * **Normales (n=72, excluyendo el 2026-08-14):** la tasa máxima de **todas** las
+#     fuentes es **0,019** — una sola falla de Finnhub en una sola corrida. Las otras
+#     tres nunca fallaron: 0 de 72.
+#   * **2026-08-14 (el desastre):** las dos corridas largas dan **1,00 / 0,98 / 1,00**
+#     — cada fuente falló para prácticamente todos los tickers.
+#
+# O sea que las dos poblaciones están separadas por ~50×, y cualquier umbral entre 0,02
+# y 0,98 las separa. 0,20 está ~10× arriba del peor caso normal y 5× abajo del desastre;
+# además es una tasa que ya vale la pena mirar (una fuente cayéndose para un quinto del
+# universo). **Verificado en las dos direcciones** —ninguna corrida normal lo cruza, las
+# dos catastróficas sí—, que es lo que hace que esto no repita el defecto de sacar la
+# referencia de la misma población que se chequea: el día malo se excluyó de la
+# calibración *antes* de medir, no después de ver el resultado.
+#
+# **`cero_resultados` NO es la alarma, y es a propósito.** El dedup hace que la mayoría
+# de los tickers devuelva cero filas nuevas en una corrida perfectamente sana (los
+# reportes reales dicen `news +1 (dup 33)`), y la tasa normal de eso **no se puede medir
+# con los logs de hoy**, que no son por ticker. Se reporta, no se usa de gate.
+SOURCE_FAILURE_ALARM_RATE = 0.20
+
+
 @dataclass
 class HarvestReport:
     """Qué hizo la corrida. ``tickers`` es sobre cuántos corrió **de verdad** (T204).
@@ -82,6 +111,11 @@ class HarvestReport:
     catastróficas del 2026-08-14 reportaron ``52 tickers`` igual que una sana. Con el
     presupuesto de wall-clock la distinción deja de ser cosmética — una corrida cortada
     recolecta sobre un prefijo del universo y el resto queda en ``skipped``.
+
+    Y esas dos corridas reportaban además ``failed 0`` (T207): ``failed`` sólo cuenta
+    los tickers cuyo **collector** levanta, y ``collect_all`` guarda cada fuente en su
+    propio ``try``, así que no levanta nunca. La salud de las fuentes vive ahora en
+    ``src_fail``/``src_run``, que se llenan de los ``SourceOutcome``.
     """
 
     tickers: int = 0  # sobre cuántos se invocó el collector
@@ -93,17 +127,48 @@ class HarvestReport:
     failed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)  # no se llegó: presupuesto agotado
     elapsed_s: float = 0.0
+    # Por fuente: en cuántos tickers se la consultó y en cuántos falló (T207).
+    src_run: Counter = field(default_factory=Counter)
+    src_fail: Counter = field(default_factory=Counter)
+    # Tickers que se consultaron y no trajeron NADA (ni news ni estimates). Se reporta
+    # como contexto; no dispara la alarma — ver `SOURCE_FAILURE_ALARM_RATE`.
+    cero_resultados: list[str] = field(default_factory=list)
 
     @property
     def stopped_early(self) -> bool:
         return bool(self.skipped)
 
+    def source_failure_rates(self) -> dict[str, float]:
+        """Fracción de tickers en que cada fuente falló, sobre los que se la consultó."""
+        return {s: self.src_fail.get(s, 0) / n for s, n in self.src_run.items() if n}
+
+    def sources_alarming(self) -> list[str]:
+        """Las fuentes cuya tasa de falla cruza el umbral calibrado, peor primero."""
+        malas = [(s, r) for s, r in self.source_failure_rates().items() if r >= SOURCE_FAILURE_ALARM_RATE]
+        return [s for s, _ in sorted(malas, key=lambda x: -x[1])]
+
+    @property
+    def degraded(self) -> bool:
+        return bool(self.sources_alarming())
+
     def summary(self) -> str:
         techo = f" | CORTADO por presupuesto: {len(self.skipped)} sin correr" if self.skipped else ""
+        tasas = self.source_failure_rates()
+        alarma = (
+            " | FUENTES CAIDAS: "
+            + ", ".join(f"{s} {self.src_fail[s]}/{self.src_run[s]}" for s in self.sources_alarming())
+            if self.degraded
+            else ""
+        )
+        # Sin alarma igual se dice cuántas fuentes tuvieron ALGUNA falla: es la
+        # diferencia entre "no falló nada" y "falló poco", que antes no existía.
+        con_fallas = sum(1 for r in tasas.values() if r > 0)
+        salud = f" | fuentes {len(tasas) - con_fallas}/{len(tasas)} limpias" if tasas else ""
         return (
             f"Harvest: {self.tickers}/{self.requested} tickers en {self.elapsed_s:.0f}s | "
             f"news +{self.news_new} (dup {self.news_dup}) | estimates +{self.est_new} "
-            f"(dup {self.est_dup}) | failed {len(self.failed)}{techo}"
+            f"(dup {self.est_dup}) | failed {len(self.failed)} | "
+            f"sin datos {len(self.cero_resultados)}{salud}{techo}{alarma}"
         )
 
 
@@ -288,6 +353,34 @@ def resolve_budget_seconds(budget_seconds: float | None = None) -> float | None:
     return b if b > 0 else None
 
 
+def _loguear(report: HarvestReport, prefijo: str = "") -> None:
+    """El resumen, a ``WARNING`` cuando alguna fuente cruzó el umbral (T207).
+
+    El nivel es la mitad que importa: el 2026-08-14 el resumen salió a ``INFO`` como
+    cualquier otro día, así que el desastre quedó indistinguible del ruido normal para
+    cualquiera que filtre por nivel — que es cómo se lee un log de tres meses.
+    """
+    (log.warning if report.degraded else log.info)("%s%s", prefijo, report.summary())
+
+
+def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
+    """Vuelca los ``SourceOutcome`` del ticker a los contadores del reporte (T207).
+
+    ``skipped`` **no** cuenta como consultada: una fuente sin key (Finnhub) o sin CIK
+    (un ADR en EDGAR) no dice nada sobre su salud, y meterla en el denominador diluiría
+    la tasa justo cuando hay que verla. Tolera un ``_CollectResult`` sin ``outcomes``
+    —un collector inyectado por un test viejo— sin inventar nada.
+    """
+    for o in getattr(res, "outcomes", None) or []:
+        if o.status == "skipped":
+            continue
+        report.src_run[o.source] += 1
+        if o.status == "failed":
+            report.src_fail[o.source] += 1
+    if not (getattr(res, "news", None) or getattr(res, "estimates", None)):
+        report.cero_resultados.append(ticker)
+
+
 def _collect_fase1(
     universe: list[str],
     sources: set[str] | None,
@@ -331,6 +424,7 @@ def _collect_fase1(
             log.exception("collect failed for %s", t)
             report.failed.append(t)
             continue
+        _anotar_salud(report, t, res)
         collected.append((t, res))
     report.tickers = len(universe) - len(report.skipped)
     return collected
@@ -376,7 +470,7 @@ def harvest(
             report.news_new += len(res.news)
             report.est_new += len(res.estimates)
         report.elapsed_s = time.monotonic() - t0
-        log.info("[dry-run] %s", report.summary())
+        _loguear(report, prefijo="[dry-run] ")
         return report
 
     collected = _collect_fase1(universe, sources, collector, report, deadline)
@@ -409,7 +503,7 @@ def harvest(
         report.est_dup += e_dup
 
     report.elapsed_s = time.monotonic() - t0
-    log.info("%s", report.summary())
+    _loguear(report)
     return report
 
 
