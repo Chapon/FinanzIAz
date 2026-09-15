@@ -90,6 +90,7 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 |------|---------|----------|
 | `catalyst_hourly_harvest_enabled` | `True` | Harvest-only (sin classify/GPU) cada N min durante RTH, **solo con la app abierta** (rides el tick por minuto del scheduler). El pipeline completo (harvest+classify) corre 1×/día in-app vía `catalyst_refresh_on_open`. (Antes había además una tarea del Windows Task Scheduler a las 15:00; se removió 2026-07-12 — todo corre in-app.) |
 | `catalyst_hourly_harvest_minutes` | `60` | Intervalo del harvest horario (piso 15 min). |
+| `catalyst_harvest_budget_seconds` | `1200` | **Techo de wall-clock de la recolección** (tarea 204), en segundos. **`0` = sin techo**, no «cortar ya». El camino lento del harvest es el de la **falla**: el 2026-08-14, con las tres fuentes timeouteando, dos corridas de 52 tickers tardaron 95 y 82 min contra una mediana de 4,7 min medida el 2026-09-15 sobre los 127 tickers vivos (n=26). Se chequea **antes de cada ticker**, así que la corrida vuelve en ≤ presupuesto + lo que tarde el último (~110 s en el peor caso medido). Lo ya recolectado **siempre se persiste**. Override por corrida: `--budget-seconds`. |
 | `catalyst_refresh_on_open` | `True` | Refresh diario in-app (harvest+classify) la primera vez que la app abre en el día, si `refresh_due`. Harvest con `--sources yfinance,sec,finnhub` (idéntico al harvest horario y al `.bat` removido; finnhub se saltea solo sin API key). |
 
 ## Dashboard refresh in-app (trigger 7 — reemplaza la tarea de Windows)

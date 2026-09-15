@@ -21,6 +21,7 @@ Usage
     python scripts/harvest_catalysts.py --tickers NVDA,PLTR,RKLB
     python scripts/harvest_catalysts.py --sources yfinance,sec,finnhub
     python scripts/harvest_catalysts.py --dry-run       # collect + report, no writes
+    python scripts/harvest_catalysts.py --budget-seconds 780   # techo de 13 min (0 = sin techo)
 
 Finnhub: set a free key once (Windows: ``setx FINNHUB_API_KEY "your-key"``) so
 the scheduled harvest sees it. Without the key the finnhub source is skipped.
@@ -32,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -74,18 +76,34 @@ def resolve_account_id(account_id: int | None = None) -> int | None:
 
 @dataclass
 class HarvestReport:
-    tickers: int = 0
+    """Qué hizo la corrida. ``tickers`` es sobre cuántos corrió **de verdad** (T204).
+
+    Antes valía ``len(universe)``, o sea *cuántos se pidieron*: las dos corridas
+    catastróficas del 2026-08-14 reportaron ``52 tickers`` igual que una sana. Con el
+    presupuesto de wall-clock la distinción deja de ser cosmética — una corrida cortada
+    recolecta sobre un prefijo del universo y el resto queda en ``skipped``.
+    """
+
+    tickers: int = 0  # sobre cuántos se invocó el collector
+    requested: int = 0  # cuántos tenía el universo
     news_new: int = 0
     news_dup: int = 0
     est_new: int = 0
     est_dup: int = 0
     failed: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)  # no se llegó: presupuesto agotado
+    elapsed_s: float = 0.0
+
+    @property
+    def stopped_early(self) -> bool:
+        return bool(self.skipped)
 
     def summary(self) -> str:
+        techo = f" | CORTADO por presupuesto: {len(self.skipped)} sin correr" if self.skipped else ""
         return (
-            f"Harvest: {self.tickers} tickers | news +{self.news_new} "
-            f"(dup {self.news_dup}) | estimates +{self.est_new} (dup {self.est_dup}) "
-            f"| failed {len(self.failed)}"
+            f"Harvest: {self.tickers}/{self.requested} tickers en {self.elapsed_s:.0f}s | "
+            f"news +{self.news_new} (dup {self.news_dup}) | estimates +{self.est_new} "
+            f"(dup {self.est_dup}) | failed {len(self.failed)}{techo}"
         )
 
 
@@ -252,6 +270,72 @@ def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
     return True
 
 
+def resolve_budget_seconds(budget_seconds: float | None = None) -> float | None:
+    """El presupuesto de wall-clock explícito, o el de settings. ``None`` ⇒ sin techo.
+
+    ``0`` (y cualquier valor ≤ 0) significa **sin techo**, no «cortar ya»: es la única
+    forma de apagar el mecanismo sin un segundo flag, y la semántica queda fijada por un
+    test — no sólo por esta línea.
+    """
+    if budget_seconds is None:
+        from config.settings_manager import settings
+
+        budget_seconds = settings.get("catalyst_harvest_budget_seconds", 1200)
+    try:
+        b = float(budget_seconds)
+    except (TypeError, ValueError):
+        return None
+    return b if b > 0 else None
+
+
+def _collect_fase1(
+    universe: list[str],
+    sources: set[str] | None,
+    collector,
+    report: HarvestReport,
+    deadline: float | None,
+) -> list[tuple[str, _CollectResult]]:
+    """Fase 1 — recolectar (RED) FUERA de toda sesión, con techo de wall-clock (T204).
+
+    Tener la conexión tomada durante los fetch de red (yfinance/SEC/RSS, ~90s para 52
+    tickers) era un lock-holder enorme que chocaba con el scan/bulk-fetch paralelo →
+    "database is locked" + agotamiento del QueuePool. Mismo patrón que classify_events.
+
+    **El corte va por TICKER, no por lote.** Un chequeo de reloj por ticker cuesta
+    nanosegundos contra un fetch de ~2,7 s, así que agrupar sólo empeoraría la
+    granularidad sin ahorrar nada. Se chequea **antes** de arrancar cada ticker: cortar
+    adentro de uno pediría meter el deadline en ``collect_all``, que es el contrato de
+    otro módulo y del ``collector`` inyectable. El precio de esa decisión es que el
+    sobrepaso es **lo que tarde el último ticker** — ~110 s en el peor caso medido
+    (95 min / 52 tickers el 2026-08-14, con las tres fuentes timeouteando).
+
+    `_CollectResult` y no `object`: es lo que devuelve `collect_all`, y con `object` los
+    accesos a `.news` y `.estimates` de más abajo quedaban sin tipo.
+    """
+    collected: list[tuple[str, _CollectResult]] = []
+    for i, t in enumerate(universe):
+        if deadline is not None and time.monotonic() >= deadline:
+            report.skipped = list(universe[i:])
+            log.warning(
+                "harvest CORTADO por presupuesto de wall-clock: %d de %d tickers "
+                "recolectados, %d sin correr (el primero sin correr es %s)",
+                i,
+                len(universe),
+                len(report.skipped),
+                t,
+            )
+            break
+        try:
+            res = collector(t, sources)
+        except Exception:
+            log.exception("collect failed for %s", t)
+            report.failed.append(t)
+            continue
+        collected.append((t, res))
+    report.tickers = len(universe) - len(report.skipped)
+    return collected
+
+
 def harvest(
     tickers: list[str] | None = None,
     *,
@@ -260,48 +344,42 @@ def harvest(
     collector=collect_all,
     now: datetime | None = None,
     dry_run: bool = False,
+    budget_seconds: float | None = None,
 ) -> HarvestReport:
     """
     Collect news + estimate snapshots for ``tickers`` (default = the account's
     watchlist ∪ positions) and persist new rows idempotently.
 
     ``collector(ticker, sources)`` is injectable so tests can run fully offline.
+
+    ``budget_seconds`` es el techo de wall-clock de la **recolección** (tarea 204);
+    ``None`` lo resuelve contra ``catalyst_harvest_budget_seconds``. Lo que ya se
+    recolectó **siempre se persiste**: el modo de falla que esto evita es justamente el
+    de morir después de haber hecho trabajo parcial. O sea que el total es
+    ``presupuesto + último ticker + persistir lo recolectado``; la fase 2 es local y
+    corta (transacciones por ticker sobre SQLite), pero **no** está acotada por este
+    presupuesto y va dicho.
     """
+    t0 = time.monotonic()
     universe = tickers if tickers is not None else resolve_universe(account_id)
     now = now or utcnow_naive()
     today = _midnight(now)
-    report = HarvestReport(tickers=len(universe))
+    report = HarvestReport(tickers=len(universe), requested=len(universe))
     seen_hashes: set[str] = set()
     seen_urls: set[str] = set()
 
+    budget = resolve_budget_seconds(budget_seconds)
+    deadline = None if budget is None else t0 + budget
+
     if dry_run:
-        for t in universe:
-            try:
-                res = collector(t, sources)
-                report.news_new += len(res.news)
-                report.est_new += len(res.estimates)
-            except Exception:
-                log.exception("collect failed for %s", t)
-                report.failed.append(t)
+        for _t, res in _collect_fase1(universe, sources, collector, report, deadline):
+            report.news_new += len(res.news)
+            report.est_new += len(res.estimates)
+        report.elapsed_s = time.monotonic() - t0
         log.info("[dry-run] %s", report.summary())
         return report
 
-    # Fase 1 — recolectar (RED) FUERA de toda sesión. Tener la conexión tomada
-    # durante los fetch de red (yfinance/SEC/RSS, ~90s para 52 tickers) era un
-    # lock-holder enorme que chocaba con el scan/bulk-fetch paralelo →
-    # "database is locked" + agotamiento del QueuePool. Mismo patrón que
-    # classify_events. Idéntico al camino dry_run, que ya recolecta sin sesión.
-    # `_CollectResult` y no `object`: es lo que devuelve `collect_all`, y con
-    # `object` los accesos a `.news` y `.estimates` de mas abajo quedaban sin tipo.
-    collected: list[tuple[str, _CollectResult]] = []
-    for t in universe:
-        try:
-            res = collector(t, sources)
-        except Exception:
-            log.exception("collect failed for %s", t)
-            report.failed.append(t)
-            continue
-        collected.append((t, res))
+    collected = _collect_fase1(universe, sources, collector, report, deadline)
 
     # Fase 2 — persistir en transacciones CORTAS, una por ticker. Los contadores
     # se vuelcan al report SOLO tras commit exitoso (antes un rollback por un
@@ -330,6 +408,7 @@ def harvest(
         report.est_new += e_new
         report.est_dup += e_dup
 
+    report.elapsed_s = time.monotonic() - t0
     log.info("%s", report.summary())
     return report
 
@@ -351,6 +430,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Comma-separated: yfinance,sec,rss,finnhub (finnhub needs FINNHUB_API_KEY).",
     )
     p.add_argument("--dry-run", action="store_true", help="Collect and report without writing to the DB.")
+    p.add_argument(
+        "--budget-seconds",
+        type=float,
+        default=None,
+        help=(
+            "Techo de wall-clock de la recolección (tarea 204). 0 = sin techo. "
+            "Sin el flag sale de `catalyst_harvest_budget_seconds` (default 1200)."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -367,7 +455,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         tickers = None  # resolve from account watchlist
 
-    report = harvest(tickers, account_id=args.account_id, sources=sources, dry_run=args.dry_run)
+    report = harvest(
+        tickers,
+        account_id=args.account_id,
+        sources=sources,
+        dry_run=args.dry_run,
+        budget_seconds=args.budget_seconds,
+    )
     print(report.summary())
     return 0
 

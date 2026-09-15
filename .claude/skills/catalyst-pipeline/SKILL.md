@@ -17,7 +17,10 @@ python scripts/harvest_catalysts.py --universe sp500
 python scripts/harvest_catalysts.py --tickers NVDA,PLTR,RKLB
 python scripts/harvest_catalysts.py --sources yfinance,sec,finnhub
 python scripts/harvest_catalysts.py --dry-run    # recolecta y reporta, sin escribir
+python scripts/harvest_catalysts.py --budget-seconds 780   # techo de 13 min (0 = sin techo)
 ```
+
+**El harvest tiene techo de wall-clock y está ON (tarea 204).** `catalyst_harvest_budget_seconds`, default **1200 s (20 min)**; `--budget-seconds` lo pisa por corrida y **`0` = sin techo**, no «cortar ya». El motivo es que el camino lento del harvest es el de la **falla**, no el del éxito: con las tres fuentes timeouteando, cada ticker agota su presupuesto de timeout + reintentos y eso se multiplica por 3 fuentes × N tickers. El chequeo va **antes de cada ticker**, así que una corrida cortada se lleva el **sufijo** del universo y **lo ya recolectado se persiste igual**. Al diagnosticar un harvest, leer el `Harvest: X/Y tickers en Ns …` del log: `X<Y` más `CORTADO por presupuesto` es un corte, no una falla.
 
 **Sin `--account-id` el harvest resuelve la cuenta viva contra `is_active` (tarea 70).** Este bloque decía `--account-id 1` y esa cuenta está pausada desde el 2026-07-01: el harvest —y el que corre el scheduler cada hora, que llama sin flag— recolectaba para los **52** tickers de la cuenta 1 en vez de los **128** de la viva. Pasarle un id explícito sigue funcionando, y ahora avisa fuerte si apunta a una cuenta pausada.
 

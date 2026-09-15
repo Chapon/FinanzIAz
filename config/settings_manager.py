@@ -794,6 +794,22 @@ SCHEMA: dict[str, SettingSpec] = {
         min=15,
         doc="Intervalo del harvest intradía, en minutos. Piso 15 (tarea 10).",
     ),
+    "catalyst_harvest_budget_seconds": SettingSpec(
+        int,
+        1200,
+        min=0,
+        doc=(
+            "Techo de wall-clock del harvest, en segundos (tarea 204). El camino lento "
+            "del harvest es el de la FALLA, no el del éxito: el 2026-08-14, con las tres "
+            "fuentes timeouteando, dos corridas de 52 tickers tardaron 82 y 95 min contra "
+            "una mediana de 4,7 min medida el 2026-09-15 sobre los 127 tickers vivos "
+            "(n=26). El presupuesto se chequea ANTES "
+            "de cada ticker, así que la corrida vuelve en ≤ presupuesto + lo que tarde el "
+            "último ticker (~110 s en el peor caso medido). Default 1200 = 20 min, 3,4× el "
+            "máximo observado en el camino feliz (5,8 min), o sea que NO muerde una corrida "
+            "sana. **0 = sin techo**, no 'cortar ya'."
+        ),
+    ),
     # ── Gate 2c del engine (T-CAT-4) — tarea 160 ─────────────────────────────
     # Los tres se leían con fallback inline en `engine.py` y no estaban declarados en
     # ningún lado: invisibles para la UI, para `SETTINGS_REFERENCE.md` y para el guard
