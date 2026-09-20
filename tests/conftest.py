@@ -10,6 +10,11 @@ Key concerns
 2. yfinance must never be called in unit tests — it's slow, network-bound,
    and rate-limited. Use the ``mock_yfinance`` fixture (or build your own
    ``MagicMock``) when a unit under test reaches into ``data.yahoo_finance``.
+   Desde la tarea 209 esto **está impuesto**, no sólo recomendado: el autouse
+   ``_cortafuegos_de_red`` (al final del archivo) corta todo socket saliente y
+   todo request de ``curl_cffi`` en los tests sin ``@pytest.mark.network``.
+   ``mock_yfinance`` sigue siendo opt-in y sólo cubre ``data.yahoo_finance.yf``:
+   el cortafuegos no lo reemplaza, evita que su ausencia salga a internet.
 3. Synthetic OHLCV data: ``ohlcv_factory`` creates a deterministic random-
    walk DataFrame so tests are reproducible.
 """
@@ -34,11 +39,13 @@ os.environ.setdefault("FINANZIAS_LOG_FILE", "")
 # los ~35 tests. Es el mismo aislamiento que ya se hace con la DB y el log, y va
 # acá por el mismo motivo: antes de cualquier import.
 #
-# **Corrección (tarea 207):** acá decía *«el runnable pide red —bloqueada acá—»* y
-# *«el mismo aislamiento que ya se hace con la red»*. La red **no** está bloqueada
-# en esta suite: de los cuatro aislamientos de este bloque ninguno la toca, y
-# `mock_yfinance` es opt-in y sólo parchea `data.yahoo_finance.yf`. Esta variable
-# corta *este* fetch concreto, no la red. El cortafuegos de verdad es la tarea 209.
+# **Corrección (tarea 207), ya saldada (tarea 209):** acá decía *«el runnable pide
+# red —bloqueada acá—»* y *«el mismo aislamiento que ya se hace con la red»*, y
+# cuando se escribió era **falso**: ninguno de los aislamientos de este bloque tocaba
+# la red, y `mock_yfinance` es opt-in y sólo parchea `data.yahoo_finance.yf`. Esta
+# variable sigue cortando *este* fetch concreto y nada más; el cortafuegos de red es
+# ahora `_cortafuegos_de_red`, al final de este archivo, y va por fixture autouse y
+# no por variable de entorno porque tiene que leer el marcador de cada test.
 os.environ.setdefault("FINANZIAS_DISABLE_TICKER_FETCH", "1")
 
 # La suite tampoco toca la ``finanzias.db`` de producción **desde un subproceso**
@@ -310,3 +317,124 @@ def _disable_settings_persistence(tmp_path, monkeypatch):
     from config.settings_manager import settings as _live_settings
 
     _live_settings.load()
+
+
+# ── Cortafuegos de red (tarea 209) ───────────────────────────────────────────
+
+
+class RedBloqueadaEnLaSuite(RuntimeError):
+    """Un test sin el marcador ``network`` intentó salir a internet."""
+
+
+# Bitácora de lo que el cortafuegos frenó **en el test en curso** (el fixture la vacía
+# al empezar cada uno). No es telemetría: existe para que un test pueda afirmar que el
+# corte **se disparó**, y no sólo que no llegaron datos. Sin esto, un test que verifica
+# un bloqueo pasa igual con la máquina sin internet, o con una librería que se traga su
+# propio error y devuelve vacío —que es justo lo que hace ``yfinance``—, o sea probando
+# nada. Es la contraprueba del instrumento, no del sujeto.
+INTENTOS_BLOQUEADOS: list[str] = []
+
+
+# Loopback se deja pasar: lo que se quiere cortar son las llamadas a terceros, y un
+# servidor local o un socketpair de Qt no es eso. Bloquearlo sería romper por deporte.
+_HOSTS_LOCALES = frozenset({"127.0.0.1", "::1", "localhost", "0.0.0.0"})
+
+
+def _es_local(address) -> bool:
+    host = address[0] if isinstance(address, (tuple, list)) and address else address
+    return isinstance(host, str) and (host in _HOSTS_LOCALES or host.startswith("127."))
+
+
+@pytest.fixture(autouse=True)
+def _cortafuegos_de_red(request, monkeypatch):
+    """Ningún test sin ``@pytest.mark.network`` sale a internet (tarea 209).
+
+    **Por qué hizo falta, y por qué no estaba.** ``CLAUDE.md`` decía que este archivo
+    bloqueaba la red y era **falso**: los cuatro aislamientos de arriba cubren el log, la
+    DB, el fetch de tooltip y Slack, y ``mock_yfinance`` es **opt-in** y sólo parchea
+    ``data.yahoo_finance.yf``. El 2026-09-15, al mover la costura de ``collect_all`` en la
+    tarea 207, tres tests quedaron parcheando un nombre que ya nadie llamaba y
+    ``_finnhub_news`` **salió a la API real de Finnhub** —hay key viva en esta máquina—
+    devolviendo 257 artículos de verdad. Se notó **sólo** porque el contenido no coincidía
+    con el fake; si hubiera coincidido, el test habría pasado por el motivo equivocado. Y
+    en el CI, sin la key, el mismo test toma otra rama: verde de los dos lados por razones
+    distintas, que es la familia de la 175 y la 176.
+
+    **Hay que cortar en DOS lugares, y el segundo es el que importa.** Parchear ``socket``
+    alcanza a ``requests``/``urllib3``/``http.client`` (Finnhub, EDGAR, RSS) y **no a
+    ``curl_cffi``**, que va por libcurl sin pasar por el módulo ``socket`` de Python — y
+    ``curl_cffi`` es exactamente lo que usa **yfinance 1.x**, o sea la mayor superficie de
+    red del proyecto. Medido antes de escribir esto: con ``socket`` parcheado, ``requests``
+    queda bloqueado y ``curl_cffi.get`` **sale igual**. Un cortafuegos sólo-socket habría
+    sido la forma exacta del guard que es ciego al caso mayoritario. El corte de
+    ``curl_cffi`` va en ``Curl.perform``, el nivel más bajo: verificado que alcanza a
+    ``requests.get`` de módulo, a ``Session().get`` y a ``yf.Ticker(...).news``.
+
+    **Lo que NO cubre, y va dicho:** igual que ``_guard_real_db``, esto aísla **este
+    proceso**. Un test que abre un **subproceso** hereda el entorno pero no los parches,
+    así que puede salir a la red. Hoy no hay ninguno que lo haga; si aparece, la mitad que
+    falta se resuelve con una variable de entorno, como la 108 resolvió la de la DB.
+    Tampoco corta el **DNS**: el corte va en ``connect``, y ``requests`` resuelve el
+    nombre antes de llegar ahí, así que una consulta de DNS sí sale. Es a propósito —
+    bloquear ``getaddrinfo`` se llevaría puesta también la resolución de ``localhost`` y
+    no protege nada más: lo único que se filtra es el nombre del host, sin credenciales,
+    sin cuota de API y sin dato que vuelva.
+
+    **Por qué ``socket.socket`` alcanza también al TLS, que no es obvio.**
+    ``ssl.SSLSocket`` define ``connect`` y ``connect_ex`` **propios** —o sea que el parche
+    de la clase base no los pisa— pero los dos delegan en ``_real_connect``, que llama
+    ``super().connect(addr)``, y ese ``super()`` resuelve por MRO **en el momento de la
+    llamada**: cae en el atributo parcheado. Verificado midiendo, no deducido, y fijado
+    por un test, porque es la clase de detalle que una versión de Python puede cambiar
+    sin que nadie se entere hasta que un test vuelva a salir a internet en silencio.
+    """
+    INTENTOS_BLOQUEADOS.clear()
+
+    if request.node.get_closest_marker("network"):
+        return
+
+    import socket as _socket
+
+    # `socket.socket.connect` es el cuello de botella de TODO lo que va por el módulo
+    # socket: `requests`/`urllib3` arman el socket y llaman `connect`, y el
+    # `socket.create_connection` de `http.client` hace lo mismo un nivel más abajo.
+    # Verificado midiendo: parchear sólo esto alcanza para bloquear `requests.get`.
+    _real_connect = _socket.socket.connect
+    _real_connect_ex = _socket.socket.connect_ex
+
+    def _connect(self, address, *a, **kw):
+        if _es_local(address):
+            return _real_connect(self, address, *a, **kw)
+        INTENTOS_BLOQUEADOS.append(f"socket.connect {address!r}")
+        raise RedBloqueadaEnLaSuite(
+            f"este test intentó conectarse a {address!r}. La suite no sale a internet: "
+            "mockeá la fuente, o marcá el test con @pytest.mark.network si de verdad "
+            "tiene que pegarle a la API real (tarea 209)."
+        )
+
+    def _connect_ex(self, address, *a, **kw):
+        if _es_local(address):
+            return _real_connect_ex(self, address, *a, **kw)
+        INTENTOS_BLOQUEADOS.append(f"socket.connect_ex {address!r}")
+        raise RedBloqueadaEnLaSuite(
+            f"este test intentó conectarse (connect_ex) a {address!r}; ver el mensaje de "
+            "`connect` (tarea 209)."
+        )
+
+    monkeypatch.setattr(_socket.socket, "connect", _connect)
+    monkeypatch.setattr(_socket.socket, "connect_ex", _connect_ex)
+
+    try:
+        import curl_cffi
+    except ImportError:  # pragma: no cover — sin yfinance moderno no hay nada que cortar
+        return
+
+    def _perform(self, *a, **kw):
+        INTENTOS_BLOQUEADOS.append("curl_cffi.Curl.perform")
+        raise RedBloqueadaEnLaSuite(
+            "este test intentó un request con curl_cffi (el camino de yfinance). La suite "
+            "no sale a internet: usá el fixture mock_yfinance, o marcá el test con "
+            "@pytest.mark.network (tarea 209)."
+        )
+
+    monkeypatch.setattr(curl_cffi.Curl, "perform", _perform)

@@ -87,6 +87,15 @@ _CLAIMS_EN_PRESENTE: dict[str, str] = {
     "SETTINGS_REFERENCE.md:Bajó de 0.50 a 0.25 el 2026-09-07": "cita histórica FECHADA, y correcta: es el cambio de la tarea 115",
     "backtest-replay-harness/SKILL.md:factor **0.50**": "la cita del defecto que la 137 arregló; el valor vivo lo manda a leer de LIVE_REGIME_SCALE_FACTOR",
     "backtest-replay-harness/SKILL.md:12.89% | **12.77%**": "tabla «publicado vs hoy» de un re-anclaje, que existe precisamente para mostrar la deriva",
+    "CLAUDE.md:aunque hoy no hay ninguno": (
+        "tarea 209: la regla 1 afirma que NINGUN test lleva hoy el marcador `network` — "
+        "verificado con `grep pytest.mark.network tests/`, y es informacion util porque "
+        "evita que alguien salga a buscar el conjunto de tests que ese marcador nombra. "
+        "NO es una afirmacion sobre un numero: los decimales que disparan el guard "
+        "(-0.05, [-0.26, +0.17], 0.30, 0.58) son de la **regla 3** y hablan de otra cosa. "
+        "Las tres reglas son items de una lista numerada sin linea en blanco entre ellos, "
+        "o sea UN bloque para el splitter — ese acoplamiento es la tarea **214**"
+    ),
     "SETTINGS_REFERENCE.md:que hoy coincide **por casualidad**": (
         "tarea 179: la fila de `atr_tp_mult` afirma que el literal del harness (4.0) coincide "
         "HOY con el valor vivo, y eso es el hallazgo, no un dato de color — es el `FALTA_ESPEJO` "

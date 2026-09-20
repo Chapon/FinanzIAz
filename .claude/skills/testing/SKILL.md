@@ -18,7 +18,7 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
 
 ## Reglas de oro
 
-1. **Nunca tocar la red.** yfinance es lento, rate-limited y no determinístico. Los unit tests no deben pegar a Yahoo.
+1. **Nunca tocar la red** — y desde la tarea 209 **no es una regla de buena conducta, es un corte**: el autouse `_cortafuegos_de_red` hace fallar con `RedBloqueadaEnLaSuite` cualquier test sin `@pytest.mark.network` que intente salir. Si te topás con él, la respuesta casi siempre es mockear la fuente, no marcar el test.
 2. **Nunca tocar `finanzias.db` real.** Usar la DB en memoria del fixture.
 3. **Determinismo.** Nada de `datetime.now()` sin control ni random sin seed. Usar `ohlcv_factory` (tiene seed).
 
@@ -41,10 +41,11 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
       df = ohlcv_factory(rows=300, start_price=100, seed=42)
   ```
 - **`_disable_settings_persistence`** (autouse) — redirige `settings.json` a un tmp por test y recarga el singleton `settings`, así cada test arranca con defaults limpios y no filtra config del host. No hace falta pedirlo; ya corre solo.
+- **`_cortafuegos_de_red`** (autouse, tarea 209) — corta la red en todo test sin `@pytest.mark.network`. Parchea `socket.socket.connect`/`connect_ex` (el camino de `requests`/`urllib3`/`http.client`: Finnhub, EDGAR, RSS) **y** `curl_cffi.Curl.perform` (el de yfinance 1.x, que **no** pasa por el módulo `socket` — por eso hacen falta los dos). Loopback pasa, así que un servidor local en un test sigue andando. **No cubre subprocesos**: aísla este proceso, como `_guard_real_db` antes de la 108.
 
 ## Markers
 
-- `network` — tests que pegan a Yahoo de verdad. Se **saltean** en la corrida normal (`-m "not network"`). Marcarlos: `@pytest.mark.network`.
+- `network` — tests que pegan a Yahoo de verdad. Se **saltean** en la corrida normal (`-m "not network"`). Marcarlos: `@pytest.mark.network`. Desde la tarea 209 el marcador es además **lo único que exime del cortafuegos**: sin él, el test no llega a la red aunque nadie lo saltee.
 - `slow` — tests lentos; deseleccionar con `-m "not slow"`.
 - Cualquier marker nuevo va declarado en `pyproject.toml` (por `--strict-markers`).
 

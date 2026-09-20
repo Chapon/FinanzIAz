@@ -42,11 +42,15 @@ Lo que NO aísla, dicho en vez de sobreentendido
   ``case`` del filesystem. Eso lo ve el CI y no esto. Este script cubre la clase
   *«estado vivo de la máquina»*, que es la que mordió dos veces, y no *«Windows vs
   Linux»*.
-* **Las variables de entorno de Chapa** (``SLACK_BOT_TOKEN``, ``SLACK_CHANNEL``). Van
-  a propósito: ``conftest`` pone ``FINANZIAS_DISABLE_SLACK`` (tarea 148) y dejarlas
-  puestas mantiene ejercitado **ese** bloqueo, que es el que evita postear de verdad.
-  Borrarlas acá haría pasar la suite por el camino que el CI recorre, sí, pero
-  apagaría la contraprueba del arreglo de la 148 en el único lugar donde existe.
+* **Las variables de entorno de Chapa** (``SLACK_BOT_TOKEN``, ``SLACK_CHANNEL``, y
+  desde la tarea 209 también ``FINNHUB_API_KEY`` y ``SEC_EDGAR_USER_AGENT``). Van a
+  propósito, y por el mismo argumento en los dos casos: ``conftest`` pone
+  ``FINANZIAS_DISABLE_SLACK`` (tarea 148) y el autouse ``_cortafuegos_de_red`` (209),
+  y dejar las variables puestas mantiene ejercitados **esos** bloqueos, que son los
+  que evitan postear y salir a internet de verdad. Borrarlas acá haría pasar la suite
+  por el camino que el CI recorre, sí, pero apagaría las dos contrapruebas en el único
+  lugar donde existen. Medido el 2026-09-20: con las keys y sin ellas la suite da
+  **exactamente el mismo conteo**, que antes del cortafuegos no se cumplía.
 
 Uso
 ---
