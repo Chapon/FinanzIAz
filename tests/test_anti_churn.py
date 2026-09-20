@@ -19,6 +19,45 @@ from paper_trading.engine import _closed_cycles_count
 from paper_trading.models import PaperOrder
 
 
+# Gate 6 (earnings blackout) DECLARADO, no fallando abierto por accidente (tarea 213).
+#
+# Estos tests inyectan `prices_provider` e `history_provider` pero no éste, y el default
+# sale a Yahoo de verdad: `yf.Ticker(...).calendar`, en un thread del pool del scan — por
+# eso no aparecía en ningún traceback. Lo destapó la bitácora del cortafuegos de la **209**
+# (el exit code no lo veía: el gate tolera el fallo y el test pasaba igual).
+#
+# Va una fecha **lejana** y no `None` a propósito: `None` deja pasar por el fail-open, o
+# sea por la rama de "no sé", y entonces el test no distingue "el gate miró y no bloqueó"
+# de "el gate no tenía dato". Con +90 días contra un blackout de ±2, el gate **corre** y
+# deja pasar por el motivo que está escrito acá.
+class _EarningsLejos:
+    """Provider de earnings que deja pasar el Gate 6 **y registra a quien se le pregunto**.
+
+    ``consultado`` es lo que vuelve **load-bearing** a la inyeccion: sin el, sacar el
+    ``earnings_provider=`` de un ``run_scan`` deja el test igual de verde -- el default
+    sale a Yahoo, el gate tolera el fallo y nadie se entera. Asi fue como el defecto de
+    la tarea 213 sobrevivio sin que ninguna corrida lo delatara. Mutacion: sacar el
+    ``append`` pone en rojo los cuatro tests de este archivo.
+
+    **La fecha lejana, en cambio, NO esta probada, y conviene decirlo.** La idea era que
+    +90 dias contra un blackout de +-2 hace que el gate **corra** y deje pasar por el
+    motivo escrito, en vez de por el fail-open de "no se" que da ``None``. Eso es cierto
+    del engine, pero **ningun test de aca lo distingue**: con ``None`` el gate tampoco
+    bloquea y ``consultado`` se llena igual, asi que la mutacion "devolver ``None``" sale
+    **verde**. Y no se puede cerrar sin tocar el engine, que hoy no registra en ningun
+    lado "el gate evaluo y dejo pasar". Queda como eleccion de **legibilidad** -- se lee
+    que fecha se le dio al gate -- y no como propiedad fijada. Que Gate 6 **si** bloquea
+    con una fecha adentro de la ventana lo cubren los tests del blackout (T08), no estos.
+    """
+
+    def __init__(self):
+        self.consultado: list[str] = []
+
+    def __call__(self, ticker):
+        self.consultado.append(ticker)
+        return utcnow_naive() + timedelta(days=90)
+
+
 def _add_order(session, account_id, ticker, side, fill_price, fill_shares, hours_ago):
     when = utcnow_naive() - timedelta(hours=hours_ago)
     session.add(
@@ -176,10 +215,12 @@ def test_gate_blocks_buy_after_churn(test_db, monkeypatch):
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("KO"))
 
+    earnings = _EarningsLejos()
     result = engine.run_scan(
         a.id,
         prices_provider=lambda _tickers: {"KO": 63.0},
         history_provider=lambda _t: None,
+        earnings_provider=earnings,
     )
 
     assert result is not None
@@ -187,6 +228,10 @@ def test_gate_blocks_buy_after_churn(test_db, monkeypatch):
     assert result.queued == 0
     assert result.skipped >= 1
     assert any("anti-churn" in w for w in result.warnings)
+    assert earnings.consultado == ["KO"], (
+        "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
+        "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
 
 
 def test_gate_allows_buy_below_threshold(test_db, monkeypatch):
@@ -204,15 +249,21 @@ def test_gate_allows_buy_below_threshold(test_db, monkeypatch):
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("KO"))
 
+    earnings = _EarningsLejos()
     result = engine.run_scan(
         a.id,
         prices_provider=lambda _tickers: {"KO": 63.0},
         history_provider=lambda _t: None,
+        earnings_provider=earnings,
     )
 
     assert result is not None
     assert result.queued == 1
     assert not any("anti-churn" in w for w in result.warnings)
+    assert earnings.consultado == ["KO"], (
+        "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
+        "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
 
 
 def test_gate_allows_buy_when_cycles_expired(test_db, monkeypatch):
@@ -231,15 +282,21 @@ def test_gate_allows_buy_when_cycles_expired(test_db, monkeypatch):
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("KO"))
 
+    earnings = _EarningsLejos()
     result = engine.run_scan(
         a.id,
         prices_provider=lambda _tickers: {"KO": 63.0},
         history_provider=lambda _t: None,
+        earnings_provider=earnings,
     )
 
     assert result is not None
     assert result.queued == 1
     assert not any("anti-churn" in w for w in result.warnings)
+    assert earnings.consultado == ["KO"], (
+        "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
+        "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
 
 
 def test_gate_disabled_with_zero_setting(test_db, monkeypatch):
@@ -259,15 +316,21 @@ def test_gate_disabled_with_zero_setting(test_db, monkeypatch):
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: _buy_strategy("KO"))
 
+    earnings = _EarningsLejos()
     result = engine.run_scan(
         a.id,
         prices_provider=lambda _tickers: {"KO": 63.0},
         history_provider=lambda _t: None,
+        earnings_provider=earnings,
     )
 
     assert result is not None
     assert result.queued == 1
     assert not any("anti-churn" in w for w in result.warnings)
+    assert earnings.consultado == ["KO"], (
+        "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
+        "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
 
 
 def test_gate_does_not_touch_sells(test_db, monkeypatch):
@@ -312,12 +375,18 @@ def test_gate_does_not_touch_sells(test_db, monkeypatch):
 
     monkeypatch.setattr(engine, "get_strategy_fn", lambda _: strat)
 
+    earnings = _EarningsLejos()
     result = engine.run_scan(
         a.id,
         prices_provider=lambda _tickers: {"KO": 63.0},
         history_provider=lambda _t: None,
+        earnings_provider=earnings,
     )
 
     assert result is not None
     assert result.queued == 1
     assert not any("anti-churn" in w for w in result.warnings)
+    assert earnings.consultado == [], (
+        "Gate 6 no toca SELLs con earnings_blackout_block_sells=False — si esto falla, "
+        "el blackout empezo a mirar ventas y hay que decidirlo, no descubrirlo."
+    )

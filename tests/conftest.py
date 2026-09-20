@@ -144,6 +144,50 @@ def _cortar_fetches_de_tooltip():
         mod.shutdown()
 
 
+# Los cuatro memos por ticker de ``data.yahoo_finance``, con nombre y motivo.
+# Todos son ``dict`` module-level y ninguno se borra solo: sobreviven de un test al
+# siguiente, y los cuatro **cambian si se pega o no a la red**.
+_MEMOS_POR_TICKER = (
+    "_out_of_band_streak",  # n rechazos seguidos; a n>=_ESCALATE_AFTER habilita el fetch de splits
+    "_split_factor_cache",  # lo contrario: un factor cacheado EVITA ese fetch
+    "_second_opinion_cache",  # el memo de la segunda opinión (tarea 200)
+    "_opinion_log",  # el veredicto que lee el guard del engine (tarea 201)
+)
+
+
+@pytest.fixture(autouse=True)
+def _aislar_los_memos_de_yahoo():
+    """Cada test arranca sin los memos por ticker de ``data.yahoo_finance`` (tarea 213).
+
+    **El defecto, medido y no supuesto.** `test_price_sanity.py` rechaza el precio de
+    KLAC en tres tests distintos; como la racha es module-level, el tercero
+    —``test_get_current_price_rejects_out_of_band``— arranca con ``n = 3``, que es
+    exactamente ``_ESCALATE_AFTER``, y entonces ``unreliable_reference`` **sale a buscar
+    splits a Yahoo**. Corrido solo, el test no toca la red; corriendo el archivo entero,
+    sí. O sea que su contacto con internet dependía del **orden de ejecución**, que es la
+    clase de cosa que no se encuentra leyendo el archivo. Lo destapó la bitácora del
+    cortafuegos de la **209**, no el exit code: el camino falla abierto y el test pasaba
+    igual.
+
+    **Por qué acá y no en cada archivo.** `test_split_guard_t63`, la **200** y la **201**
+    ya se arman **cada uno su propia limpieza** de estos mismos dicts — o sea que el
+    problema era conocido y la solución era una **lista de archivos que se acuerdan**.
+    `test_price_sanity` es el que no estaba en la lista, y el próximo tampoco va a estar.
+    Es el mismo argumento que el bloqueo de Slack (148), que va en el límite y no en los
+    tres productores.
+
+    Se mira ``sys.modules`` en vez de importar, como ``_cortar_fetches_de_tooltip``: la
+    mayoría de los tests no toca yfinance y no hay por qué cargarlo. Limpia **antes** del
+    test; lo que quede después lo puede seguir inspeccionando quien lo necesite (la 63
+    afirma sobre el contenido de la racha al terminar, y sigue pudiendo).
+    """
+    mod = sys.modules.get("data.yahoo_finance")
+    if mod is not None:
+        for nombre in _MEMOS_POR_TICKER:
+            getattr(mod, nombre, {}).clear()
+    yield
+
+
 @pytest.fixture
 def test_db(monkeypatch) -> Iterator:
     """
