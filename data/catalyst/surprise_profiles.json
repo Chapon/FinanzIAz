@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-09-11T14:41:16.696952+00:00",
+    "built_at": "2026-09-20T23:06:22.541793+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -275,10 +275,10 @@
       "n_quarters": 24,
       "beat_rate": 0.7917,
       "miss_rate": 0.125,
-      "mean_surprise": 0.068736,
-      "median_surprise": 0.045315,
-      "last_surprise": 0.102041,
-      "directional_score": 0.455
+      "mean_surprise": 0.068048,
+      "median_surprise": 0.049182,
+      "last_surprise": 0.105802,
+      "directional_score": 0.4544
     },
     "COST": {
       "ticker": "COST",
@@ -485,10 +485,10 @@
       "n_quarters": 24,
       "beat_rate": 0.8333,
       "miss_rate": 0.1667,
-      "mean_surprise": 0.175631,
+      "mean_surprise": 0.17637,
       "median_surprise": 0.109229,
       "last_surprise": 0.5,
-      "directional_score": 0.5405
+      "directional_score": 0.5411
     },
     "GS": {
       "ticker": "GS",
