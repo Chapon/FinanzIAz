@@ -18,7 +18,8 @@ Sources wired today (T-CAT-1: full MVP)
   point-in-time source; ``filingDate`` is the official disclosure date)
 - Finnhub ``company-news`` → NewsItem. A free aggregator over dozens of outlets
   (Reuters / CNBC / Bloomberg / …); we keep the originating outlet in the source
-  tag as ``finnhub:<Outlet>``. Needs ``FINNHUB_API_KEY``; skipped if unset.
+  tag as ``finnhub:<Outlet>``. Needs ``FINNHUB_API_KEY``; sin la key la fuente
+  queda ``unavailable`` para toda la corrida y el resumen lo dice (tarea 217).
 
 Source selection is by token set: ``{"yfinance"}`` (default), plus ``"sec"``
 y/o ``"finnhub"``. The harvester CLI maps ``--sources yfinance,sec,finnhub``
@@ -102,6 +103,25 @@ class SourceOutcome:
     52 fallas de 52 y ``yfinance_estimates`` **ninguna**. El ``detail`` **nombra** qué
     se cayó, que es lo que convierte "algo anda mal" en algo accionable.
 
+    ``unavailable`` es el quinto y lo agrega la **tarea 217**: la fuente **no corrió y no
+    va a correr** —falta una dependencia o una key—, así que el motivo es el **mismo para
+    todos los tickers**. Era un ``skipped`` más, y por eso resultaba invisible: la 207
+    decidió —bien— que ``skipped`` no entra al denominador de la alarma, porque un ADR sin
+    CIK en EDGAR no dice nada sobre la salud de la fuente. Pero eso vale para un skip **por
+    ticker**. Un ``skipped`` del **100% de los tickers, todas las corridas, para siempre**
+    es una fuente caída de raíz, y el reporte era ciego a eso **por construcción**: sin
+    ``FINNHUB_API_KEY`` el resumen salía a ``INFO`` diciendo ``failed 0``, indistinguible
+    de un día sano — y por ahí se va el **56,6%** del volumen de ``news_events``.
+
+    **Es un estado y no un ``skipped`` con el motivo en ``detail`` a propósito.** Decidirlo
+    leyendo el ``detail`` obligaría al reporte a buscar subcadenas ("key", "no instalado"),
+    y un chequeo por subcadena se satisface con una línea que diga lo contrario. El
+    productor es el único que sabe si el motivo es estructural; lo declara, no lo insinúa.
+
+    **``unavailable`` tampoco entra al denominador**, por la misma razón que ``skipped``:
+    la fuente no corrió, así que no tiene tasa de falla. Lo que cambia es que ahora el
+    resumen **lo dice**, una vez por fuente y no una vez por ticker.
+
     **``degraded`` NO cuenta como falla para la alarma, y esa decisión es deliberada.**
     ``SOURCE_FAILURE_ALARM_RATE`` se calibró en la 207 contra una población donde una
     falla por sub-propiedad era **invisible**, así que esa población no dice nada sobre
@@ -111,7 +131,7 @@ class SourceOutcome:
     """
 
     source: str
-    status: str  # "ok" | "degraded" | "failed" | "skipped"
+    status: str  # "ok" | "degraded" | "failed" | "skipped" | "unavailable"
     items: int = 0
     detail: str = ""
 
@@ -126,6 +146,10 @@ class SourceOutcome:
     @property
     def degraded(self) -> bool:
         return self.status == "degraded"
+
+    @property
+    def unavailable(self) -> bool:
+        return self.status == "unavailable"
 
 
 @dataclass
@@ -520,11 +544,14 @@ def _finnhub_news(
     if not key:
         if not _warned_no_finnhub_key:
             log.info(
-                "FINNHUB_API_KEY not set — Finnhub source skipped. Get a free key "
+                "FINNHUB_API_KEY not set — Finnhub source UNAVAILABLE for every "
+                "ticker this run. Get a free key "
                 'at finnhub.io and set it (setx FINNHUB_API_KEY "…" on Windows).'
             )
             _warned_no_finnhub_key = True
-        return [], SourceOutcome("finnhub", "skipped", 0, "sin FINNHUB_API_KEY")
+        # `unavailable`, no `skipped` (tarea 217): sin key la fuente no corre para NINGUN
+        # ticker, ni hoy ni nunca. Como `skipped` quedaba fuera del reporte entero.
+        return [], SourceOutcome("finnhub", "unavailable", 0, "sin FINNHUB_API_KEY")
     try:
         import requests
 

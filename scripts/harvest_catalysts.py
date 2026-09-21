@@ -24,7 +24,9 @@ Usage
     python scripts/harvest_catalysts.py --budget-seconds 780   # techo de 13 min (0 = sin techo)
 
 Finnhub: set a free key once (Windows: ``setx FINNHUB_API_KEY "your-key"``) so
-the scheduled harvest sees it. Without the key the finnhub source is skipped.
+the scheduled harvest sees it. Without the key the finnhub source is ``unavailable``
+for the whole run and the summary says so (tarea 217) — it used to vanish as a plain
+``skipped``, which is how 56,6% of ``news_events`` could stop arriving at INFO level.
 News rows are deduped both by content_hash and by canonical URL, so enabling
 overlapping sources (e.g. finnhub + yfinance) won't double-count a shared story.
 """
@@ -139,6 +141,12 @@ class HarvestReport:
     # Tickers que se consultaron y no trajeron NADA (ni news ni estimates). Se reporta
     # como contexto; no dispara la alarma — ver `SOURCE_FAILURE_ALARM_RATE`.
     cero_resultados: list[str] = field(default_factory=list)
+    # Fuentes que NO corrieron para ningun ticker por un motivo estructural — falta una
+    # dependencia o una key (tarea 217). Es un `dict` y no un `Counter` justamente porque
+    # el motivo es el MISMO para los 127 tickers: guardarlo por fuente lo dice UNA vez.
+    # No entra a `src_run` (la fuente no corrio, no tiene tasa de falla) pero SI sube el
+    # nivel del log — ver `hay_fuente_no_disponible`.
+    src_unavailable: dict[str, str] = field(default_factory=dict)
 
     @property
     def stopped_early(self) -> bool:
@@ -156,6 +164,19 @@ class HarvestReport:
     @property
     def degraded(self) -> bool:
         return bool(self.sources_alarming())
+
+    @property
+    def hay_fuente_no_disponible(self) -> bool:
+        """Alguna fuente pedida no pudo correr para ningun ticker (tarea 217).
+
+        SEPARADO de `degraded`, que es el gate calibrado: `SOURCE_FAILURE_ALARM_RATE`
+        se midio sobre tasas de falla de fuentes que SI corrieron, y una fuente que no
+        corrio no tiene tasa. Meterla ahi seria inventar un umbral en vez de calibrarlo
+        — la misma decision que la 207 tomo con `cero_resultados` y la 210 con
+        `degraded`. Lo que si hace es subir el nivel del resumen, porque una fuente que
+        se pidio y no pudo correr es exactamente lo raro que tiene que destacar.
+        """
+        return bool(self.src_unavailable)
 
     def summary(self) -> str:
         techo = f" | CORTADO por presupuesto: {len(self.skipped)} sin correr" if self.skipped else ""
@@ -185,11 +206,19 @@ class HarvestReport:
             if self.src_degraded
             else ""
         )
+        # Una linea por FUENTE, no por ticker (tarea 217): el motivo es el mismo para los
+        # 127, asi que decirlo 127 veces seria ruido y decirlo cero veces era el defecto.
+        no_disponibles = (
+            " | FUENTE NO DISPONIBLE: "
+            + ", ".join(f"{s} ({motivo})" for s, motivo in sorted(self.src_unavailable.items()))
+            if self.src_unavailable
+            else ""
+        )
         return (
             f"Harvest: {self.tickers}/{self.requested} tickers en {self.elapsed_s:.0f}s | "
             f"news +{self.news_new} (dup {self.news_dup}) | estimates +{self.est_new} "
             f"(dup {self.est_dup}) | failed {len(self.failed)} | "
-            f"sin datos {len(self.cero_resultados)}{salud}{degradadas}{techo}{alarma}"
+            f"sin datos {len(self.cero_resultados)}{salud}{degradadas}{no_disponibles}{techo}{alarma}"
         )
 
 
@@ -438,19 +467,35 @@ def _loguear(report: HarvestReport, prefijo: str = "") -> None:
     El nivel es la mitad que importa: el 2026-08-14 el resumen salió a ``INFO`` como
     cualquier otro día, así que el desastre quedó indistinguible del ruido normal para
     cualquiera que filtre por nivel — que es cómo se lee un log de tres meses.
+
+    **También sube por una fuente no disponible (tarea 217)**, que es el caso opuesto y
+    hasta ahora salía a ``INFO``: la fuente no cruzó ningún umbral porque no corrió, y
+    sin key ``finnhub`` se lleva el 56,6% del volumen de noticias en silencio. Son dos
+    condiciones distintas con el mismo remedio — que el renglón no se lea como un día
+    normal — y se mantienen separadas a propósito: ``degraded`` es el gate calibrado.
     """
-    (log.warning if report.degraded else log.info)("%s%s", prefijo, report.summary())
+    grave = report.degraded or report.hay_fuente_no_disponible
+    (log.warning if grave else log.info)("%s%s", prefijo, report.summary())
 
 
 def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
     """Vuelca los ``SourceOutcome`` del ticker a los contadores del reporte (T207).
 
-    ``skipped`` **no** cuenta como consultada: una fuente sin key (Finnhub) o sin CIK
-    (un ADR en EDGAR) no dice nada sobre su salud, y meterla en el denominador diluiría
-    la tasa justo cuando hay que verla. Tolera un ``_CollectResult`` sin ``outcomes``
-    —un collector inyectado por un test viejo— sin inventar nada.
+    ``skipped`` **no** cuenta como consultada: un ticker sin CIK en EDGAR no dice nada
+    sobre la salud de la fuente, y meterlo en el denominador diluiría la tasa justo
+    cuando hay que verla. Tolera un ``_CollectResult`` sin ``outcomes`` —un collector
+    inyectado por un test viejo— sin inventar nada.
+
+    ``unavailable`` tampoco entra al denominador —la fuente no corrió, no tiene tasa—
+    **pero sí queda registrado** (tarea 217). Antes era un ``skipped`` más y por eso
+    desaparecía: el motivo es estructural y el mismo para los 127 tickers, así que se
+    guarda **por fuente**, no por ticker. El primero gana; los otros 126 son la misma
+    frase. Si se lo volviera a tratar como ``skipped``, el reporte vuelve a ser ciego.
     """
     for o in getattr(res, "outcomes", None) or []:
+        if o.status == "unavailable":
+            report.src_unavailable.setdefault(o.source, o.detail or "sin detalle")
+            continue
         if o.status == "skipped":
             continue
         report.src_run[o.source] += 1

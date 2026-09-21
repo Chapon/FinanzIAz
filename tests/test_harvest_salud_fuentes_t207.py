@@ -149,8 +149,12 @@ def test_el_umbral_esta_en_el_hueco_medido():
 
 
 def test_una_fuente_SALTEADA_no_entra_en_el_denominador(test_db):
-    """Finnhub sin key, o un ADR sin CIK en EDGAR, no dicen nada sobre la salud de la
-    fuente. Meterlos en el denominador diluiría la tasa justo cuando hay que verla."""
+    """Un ADR sin CIK en EDGAR no dice nada sobre la salud de la fuente: meterlo en el
+    denominador diluiría la tasa justo cuando hay que verla.
+
+    El otro ejemplo que decía acá —Finnhub sin key— **ya no es éste**: desde la tarea
+    217 es ``unavailable``, porque el motivo es el mismo para los 127 tickers. Sigue
+    fuera del denominador, pero ahora además se reporta."""
     rep = harvest(_universo(20), collector=_collector(saltean=("finnhub",)), budget_seconds=0)
 
     assert "finnhub" not in rep.source_failure_rates(), "una fuente salteada no se mide"
@@ -281,13 +285,21 @@ class _SessQueRevienta:
         raise ConnectionError("connect timeout")
 
 
-def test_finnhub_sin_key_es_SKIPPED_no_ok(monkeypatch):
+def test_finnhub_sin_key_es_UNAVAILABLE_no_skipped(monkeypatch):
+    """Era ``skipped`` hasta la **tarea 217**, y por eso desaparecía del reporte.
+
+    Sin key la fuente no corre para **ningún** ticker, ni hoy ni nunca — el motivo es
+    estructural, no del ticker. Como ``skipped`` quedaba fuera del denominador (bien) y
+    también fuera del resumen (mal), así que el 56,6% del volumen de ``news_events`` se
+    podía ir a INFO sin que nadie se enterara. Ver ``test_skipped_estructural_t217.py``.
+    """
     from data.news_sources import _finnhub_news
 
     monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
     monkeypatch.delenv("FINNHUB_TOKEN", raising=False)
     items, o = _finnhub_news("NVDA")
-    assert items == [] and o.status == "skipped" and o.source == "finnhub"
+    assert items == [] and o.status == "unavailable" and o.source == "finnhub"
+    assert o.unavailable and not o.skipped
 
 
 def test_finnhub_que_revienta_es_FAILED_con_el_motivo():
