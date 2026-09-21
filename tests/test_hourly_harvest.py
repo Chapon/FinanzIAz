@@ -65,3 +65,51 @@ def test_interval_floor_is_15_minutes():
     assert _due(interval_min=1, last=NOW - timedelta(minutes=10)) is False
     # ...y a los 15 sí.
     assert _due(interval_min=1, last=NOW - timedelta(minutes=15)) is True
+
+
+# ── Tarea 216 — el gate de mercado NO pega a la red ──────────────────────────
+
+
+def test_el_chequeo_de_mercado_abierto_no_toca_la_red():
+    """**La afirmación que el docstring hacía y era falsa**, ahora atada a la función.
+
+    Decía *«mercado abierto (puede pegar a Yahoo; por eso va último)»*. `is_market_open`
+    es aritmética de reloj pura: zona horaria, día de semana y comparación de horas. La
+    frase no costaba nada en runtime — hacía daño **dirigiendo mal a quien la lee**, que
+    podía reordenar gates o agregar caché para proteger algo que cuesta microsegundos.
+
+    Se verifica con el cortafuegos de la **209**, que es el instrumento correcto: si
+    algún día `is_market_open` empezara a consultar algo, esto se pone rojo con
+    `RedBloqueadaEnLaSuite` en vez de quedar como un comentario que nadie re-verifica.
+    """
+    from data.yahoo_finance import is_market_open
+
+    abierto, etiqueta = is_market_open()
+    assert isinstance(abierto, bool)
+    assert isinstance(etiqueta, str) and etiqueta
+
+
+def test_el_gate_de_mercado_se_evalua_EAGER_y_el_docstring_ya_no_dice_lo_contrario():
+    """La otra mitad falsa: *«por eso va último»*.
+
+    El llamador lo pasa como **argumento** de `hourly_harvest_due`, así que Python lo
+    evalúa antes de entrar a la función — o sea antes que el flag y el intervalo. No es
+    un defecto (no cuesta nada y el patrón de argumentos-bool es lo que hace a la
+    función pura y testeable), pero el docstring afirmaba un orden que no existe.
+    """
+    import inspect
+
+    from paper_trading.scheduler import PaperScheduler
+
+    fuente = inspect.getsource(PaperScheduler._maybe_hourly_harvest)
+    assert "market_open=_is_market_open_now()" in fuente, (
+        "si esto cambió, el gate dejó de evaluarse eager y el docstring hay que revisarlo de nuevo"
+    )
+
+    # **Acá NO se afirma que la frase falsa no esté**, y el motivo vale escribirlo: la
+    # primera versión de este test pedía `"puede pegar a Yahoo" not in fuente` y salió
+    # roja — porque el docstring corregido **cita** la frase para explicar por qué era
+    # falsa. Es exactamente la lección de las tareas 128 y 135: para un guard de texto,
+    # la prosa que cita un defecto es indistinguible del defecto. Lo que se puede atar
+    # mecánicamente es el orden de evaluación, que es lo de arriba; que el texto diga la
+    # verdad lo sostiene la lectura, no un grep.

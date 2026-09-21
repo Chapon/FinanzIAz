@@ -41,6 +41,14 @@ granularidad a ventanas alrededor de cada *«hoy»* se probó y **no** arregla e
 concreto, porque la cita y el defecto conviven en la misma frase: lo que lo cubre es
 que el número vivo se lea del fuente (`LIVE_REGIME_SCALE_FACTOR`), que es lo que la
 línea arreglada ahora manda a hacer.
+
+**Precisión sobre ese párrafo, porque la tarea 214 SÍ adoptó ventanas.** Lo de arriba
+sigue en pie y no se contradice: las ventanas no arreglan *«una afirmación nueva escrita
+adentro de un párrafo ya registrado»*, y eso sigue sin cubrirse. La 214 las usa para el
+problema **opuesto** —un bloque que acusa de más porque una lista de markdown no tiene
+líneas en blanco entre ítems— y no cambia la granularidad del **registro**, que sigue
+bendiciendo el párrafo entero. O sea: dos defectos distintos, y la ventana sólo resuelve
+el segundo.
 """
 
 from __future__ import annotations
@@ -87,15 +95,11 @@ _CLAIMS_EN_PRESENTE: dict[str, str] = {
     "SETTINGS_REFERENCE.md:Bajó de 0.50 a 0.25 el 2026-09-07": "cita histórica FECHADA, y correcta: es el cambio de la tarea 115",
     "backtest-replay-harness/SKILL.md:factor **0.50**": "la cita del defecto que la 137 arregló; el valor vivo lo manda a leer de LIVE_REGIME_SCALE_FACTOR",
     "backtest-replay-harness/SKILL.md:12.89% | **12.77%**": "tabla «publicado vs hoy» de un re-anclaje, que existe precisamente para mostrar la deriva",
-    "CLAUDE.md:aunque hoy no hay ninguno": (
-        "tarea 209: la regla 1 afirma que NINGUN test lleva hoy el marcador `network` — "
-        "verificado con `grep pytest.mark.network tests/`, y es informacion util porque "
-        "evita que alguien salga a buscar el conjunto de tests que ese marcador nombra. "
-        "NO es una afirmacion sobre un numero: los decimales que disparan el guard "
-        "(-0.05, [-0.26, +0.17], 0.30, 0.58) son de la **regla 3** y hablan de otra cosa. "
-        "Las tres reglas son items de una lista numerada sin linea en blanco entre ellos, "
-        "o sea UN bloque para el splitter — ese acoplamiento es la tarea **214**"
-    ),
+    # La entrada de `CLAUDE.md:aunque hoy no hay ninguno` vivió acá entre la 209 y la
+    # **214**, y se fue porque dejó de hacer falta: era el falso positivo del
+    # acoplamiento —su «hoy» estaba a **2741** caracteres de los decimales que lo
+    # disparaban, que son de otra regla— y con la ventana ya no casa. Lo detectó el
+    # propio `test_el_registro_no_tiene_entradas_FANTASMA`, no una lectura.
     "SETTINGS_REFERENCE.md:que hoy coincide **por casualidad**": (
         "tarea 179: la fila de `atr_tp_mult` afirma que el literal del harness (4.0) coincide "
         "HOY con el valor vivo, y eso es el hallazgo, no un dato de color — es el `FALTA_ESPEJO` "
@@ -173,14 +177,38 @@ _HOY = re.compile(r"\bhoy\b", re.IGNORECASE)
 _DECIMAL = re.compile(r"\d+[.,]\d+")
 
 
+#: A qué distancia máxima (en caracteres del bloque normalizado) un «hoy» y un decimal
+#: cuentan como **la misma afirmación** (tarea 214).
+#:
+#: **Calibrado contra la población, no elegido.** Medidas las distancias mínimas de los
+#: ocho bloques que el guard marcaba el 2026-09-21: las **siete** afirmaciones reales
+#: —las registradas abajo con su motivo— están a **6, 10, 15, 17, 29, 29 y 76**; la
+#: octava, el falso positivo que abrió esta tarea, a **2741**. Las dos poblaciones están
+#: separadas **36×** y 300 cae en el medio: ~4× por encima del peor caso verdadero
+#: (margen para una oración más larga) y ~9× por debajo del falso.
+_VENTANA_HOY_DECIMAL = 300
+
+
 def _afirmaciones_en_presente() -> list[tuple[str, str]]:
-    """``(ubicación, párrafo)`` de cada bloque del corpus con «hoy» y un decimal.
+    """``(ubicación, párrafo)`` de cada bloque del corpus con «hoy» **cerca de** un decimal.
 
     **Por párrafo y no por línea, y lo aprendí fallando.** La primera versión miraba
     línea por línea, y la cita que yo mismo escribí al arreglar el defecto quedó
     partida en dos —*«Acá decía «hoy: el»* en una y *«factor 0.50»* en la siguiente—
     así que **se le escapaba entera**. En markdown el ancho de línea es arbitrario: un
     guard que dependa de él tiene un agujero del tamaño de un `reflow`.
+
+    **Pero el péndulo se había pasado de largo (tarea 214).** El remedio para *«la línea
+    es arbitraria»* no es *«el bloque entero»*: una lista numerada de markdown **no tiene
+    líneas en blanco entre ítems**, así que las tres reglas de `CLAUDE.md` eran UN bloque
+    y un «hoy» de la regla 1 se apareaba con un decimal de la regla 3, que habla de otra
+    cosa. Ahora los dos tienen que estar a menos de ``_VENTANA_HOY_DECIMAL`` caracteres —
+    la distancia es la que dice si son la misma afirmación, y no el ancho de línea ni el
+    largo del bloque, que son los dos arbitrarios.
+
+    **Por qué importa acusar de menos acá:** el guard fallaba hacia el lado seguro, pero
+    registrar de más **desgasta el registro**. Cuando ``_CLAIMS_EN_PRESENTE`` se llena de
+    entradas cuyo motivo es *«no aplica»*, deja de servir para lo que se hizo.
     """
     out = []
     for p in _CORPUS:
@@ -188,9 +216,23 @@ def _afirmaciones_en_presente() -> list[tuple[str, str]]:
             continue
         etiqueta = p.name if p.parent == _REPO or p.parent.name == "docs" else f"{p.parent.name}/{p.name}"
         for bloque in re.split(r"\n\s*\n", p.read_text(encoding="utf-8")):
-            if _HOY.search(bloque) and _DECIMAL.search(bloque):
-                out.append((etiqueta, " ".join(bloque.split())))
+            normalizado = " ".join(bloque.split())
+            if _hoy_cerca_de_un_decimal(normalizado):
+                out.append((etiqueta, normalizado))
     return out
+
+
+def _hoy_cerca_de_un_decimal(texto: str) -> bool:
+    """¿Hay un «hoy» a menos de ``_VENTANA_HOY_DECIMAL`` de algún decimal? (tarea 214)
+
+    Se compara contra **todos** los pares y no contra el primero de cada uno: un bloque
+    puede tener varios «hoy» y varios números, y basta con que **uno** de los pares esté
+    cerca para que haya una afirmación que registrar.
+    """
+    decimales = [m.start() for m in _DECIMAL.finditer(texto)]
+    if not decimales:
+        return False
+    return any(abs(h.start() - d) <= _VENTANA_HOY_DECIMAL for h in _HOY.finditer(texto) for d in decimales)
 
 
 def test_toda_afirmacion_en_presente_sobre_un_numero_esta_registrada():
@@ -248,3 +290,72 @@ def test_el_unico_claim_VERIFICABLE_se_verifica_de_verdad():
         f"la skill cita un valor del sanity T33 distinto de SANITY_T33_CAGR "
         f"({100 * SANITY_T33_CAGR:.2f}%) — es el defecto de la 137 otra vez"
     )
+
+
+# ── (3) la ventana del apareo (tarea 214) ────────────────────────────────────
+
+
+def test_un_hoy_LEJOS_de_un_decimal_no_dispara():
+    """**El falso positivo que abrió la 214.**
+
+    Las tres reglas de `CLAUDE.md` son ítems consecutivos de una lista numerada, o sea
+    que markdown **no las separa con línea en blanco** y el splitter las ve como UN
+    bloque. Un «hoy» de la regla 1 se apareaba con los decimales de la regla 3, que
+    hablan de otra cosa — y había que registrarlo aunque no afirmara ningún número.
+    """
+    lejano = "hoy no hay ninguno. " + ("relleno " * 60) + "el coeficiente es −0.05"
+    assert len(lejano) > _VENTANA_HOY_DECIMAL, "el caso de prueba tiene que estar LEJOS"
+    assert not _hoy_cerca_de_un_decimal(lejano)
+
+
+def test_un_hoy_CERCA_de_un_decimal_sigue_disparando():
+    """La otra dirección, que es la que no se puede perder: el guard tiene que acusar."""
+    assert _hoy_cerca_de_un_decimal("el overlay shipeado hoy: el factor 0.50 de T20")
+
+
+def test_la_cita_que_motivo_el_cambio_a_PARRAFO_sigue_cazandose():
+    """**Contraprueba del agujero original** — el que el paso de línea a párrafo cerró.
+
+    La cita del *«factor 0.50»* quedó partida en dos líneas por un reflow. Si la ventana
+    la dejara escapar, la 214 habría reabierto el defecto que la 137 arregló, y esto
+    estaría cambiando un falso positivo por un falso **negativo**, que es mucho peor.
+    """
+    partida = "Si existe un overlay shipeado (**hoy: el\nfactor 0.50 de T20**), el candidato"
+    assert _hoy_cerca_de_un_decimal(" ".join(partida.split()))
+
+
+def test_la_ventana_cae_entre_sus_dos_limites_MEDIDOS():
+    """El valor no es libre: lo acotan las dos poblaciones medidas el 2026-09-21.
+
+    Por abajo, tiene que dejar pasar la peor afirmación **real** (76 caracteres); por
+    arriba, tiene que rechazar el falso positivo (2741). Si alguien mueve el número
+    fuera de ese rango se entera acá y no descubriendo que el guard dejó de acusar.
+    """
+    peor_verdadero, falso_positivo = 76, 2741
+    assert peor_verdadero < _VENTANA_HOY_DECIMAL, (
+        f"con {_VENTANA_HOY_DECIMAL} se perdería la afirmación real más larga medida "
+        f"({peor_verdadero} caracteres)"
+    )
+    assert falso_positivo > _VENTANA_HOY_DECIMAL, (
+        f"con {_VENTANA_HOY_DECIMAL} vuelve a casar el acoplamiento de la lista de "
+        f"`CLAUDE.md` ({falso_positivo} caracteres)"
+    )
+
+
+def test_sin_decimal_no_dispara_aunque_haya_hoy():
+    """El «hoy» solo no es nada: lo que se persigue es la afirmación sobre un NÚMERO."""
+    assert not _hoy_cerca_de_un_decimal("hoy la cuenta viva es la 2 y no tiene decimales")
+
+
+def test_el_registro_no_tiene_entradas_FANTASMA_por_la_ventana():
+    """Achicar el apareo puede dejar entradas registradas sin nada que bendecir.
+
+    Ya lo cubre `test_el_registro_no_tiene_entradas_FANTASMA`, y de hecho **fue el que
+    detectó** que la entrada de `CLAUDE.md` sobraba tras este cambio — no una lectura.
+    Esto lo deja dicho al lado de la ventana, que es donde alguien que la toque va a
+    mirar: bajar `_VENTANA_HOY_DECIMAL` sin re-correr el corpus deja basura en el
+    registro, y registrar de más es justo lo que la 214 vino a evitar.
+    """
+    bloques = [b for _, b in _afirmaciones_en_presente()]
+    huerfanas = [frag for frag in _CLAIMS_EN_PRESENTE if not any(frag.split(":", 1)[1] in b for b in bloques)]
+    assert not huerfanas, huerfanas

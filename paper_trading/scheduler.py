@@ -761,11 +761,23 @@ class PaperScheduler(QObject):
     def _maybe_hourly_harvest(self) -> None:
         """Launch harvest-only iff enabled, market open, interval elapsed.
 
-        Gates en orden de costo: flag → intervalo → workers vivos → mercado
-        abierto (puede pegar a Yahoo; por eso va último). Corre SOLO con la app
-        abierta (rides el tick por minuto del daily timer). Se estampa el
-        timestamp al lanzar, aunque el harvest falle: el reintento natural es
-        el próximo intervalo, no el próximo tick.
+        Gates: flag → intervalo → workers vivos → mercado abierto. Corre SOLO con la app
+        abierta (rides el tick por minuto del daily timer). Se estampa el timestamp al
+        lanzar, aunque el harvest falle: el reintento natural es el próximo intervalo,
+        no el próximo tick.
+
+        **Corrección (tarea 216).** Acá decía *«en orden de costo: … mercado abierto
+        (puede pegar a Yahoo; por eso va último)»*, y las **dos** mitades eran falsas.
+        (1) `is_market_open()` es **aritmética de reloj pura** —zona horaria, día de
+        semana y comparación de horas—, sin una sola llamada de red. (2) Y no va último:
+        el llamador lo evalúa **eager**, como argumento de `hourly_harvest_due`, así que
+        corre **antes** que los gates que supuestamente lo protegían.
+
+        No costaba nada, y por eso el arreglo es el texto y no el código: lo que hacía
+        daño era **dirigir mal a quien lo lee**. Volverlo perezoso sería peor —el patrón
+        de argumentos-bool es justo lo que hace a `hourly_harvest_due` pura y testeable
+        offline (`tests/test_hourly_harvest.py`)—, así que lo que sobraba era la
+        afirmación, no el diseño.
         """
         now = utcnow_naive()
         if not hourly_harvest_due(
