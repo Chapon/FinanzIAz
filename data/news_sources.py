@@ -85,14 +85,25 @@ class SourceOutcome:
     2026-08-14, con las tres fuentes timeouteando, cerraron con ``failed 0``.
 
     ``failed`` con ``items > 0`` es un estado real, no una contradicción: ``_rss``
-    acumula y **sigue** tras un feed caído. Al revés, ``ok`` no garantiza que no haya
-    fallado nada adentro: ``_yf_estimates`` consulta cinco propiedades a través de
-    ``_getattr``, que se traga la excepción de cada una — hueco declarado en su docstring
-    y anotado como tarea 210.
+    acumula y **sigue** tras un feed caído.
+
+    ``degraded`` es el cuarto estado y lo agrega la **tarea 210**: la fuente contestó,
+    pero **parte** de lo que consulta adentro se cayó. Hasta entonces eso se declaraba
+    ``ok`` —``_yf_estimates`` lee cuatro propiedades a través de ``_getattr``, que se
+    traga la excepción de cada una— y por eso el 2026-08-14 ``yfinance_news`` registró
+    52 fallas de 52 y ``yfinance_estimates`` **ninguna**. El ``detail`` **nombra** qué
+    se cayó, que es lo que convierte "algo anda mal" en algo accionable.
+
+    **``degraded`` NO cuenta como falla para la alarma, y esa decisión es deliberada.**
+    ``SOURCE_FAILURE_ALARM_RATE`` se calibró en la 207 contra una población donde una
+    falla por sub-propiedad era **invisible**, así que esa población no dice nada sobre
+    cuántos ``degraded`` tiene un día sano — exactamente el caso de ``cero_resultados``,
+    que la 207 dejó como contexto por la misma razón. Meterlo al gate sería inventar un
+    umbral en vez de calibrarlo. Se reporta aparte y se decide cuando haya población.
     """
 
     source: str
-    status: str  # "ok" | "failed" | "skipped"
+    status: str  # "ok" | "degraded" | "failed" | "skipped"
     items: int = 0
     detail: str = ""
 
@@ -103,6 +114,10 @@ class SourceOutcome:
     @property
     def skipped(self) -> bool:
         return self.status == "skipped"
+
+    @property
+    def degraded(self) -> bool:
+        return self.status == "degraded"
 
 
 @dataclass
@@ -277,38 +292,57 @@ def _df_rows_to_estimates(ticker: str, df, metric: str) -> list[EstimateSnapshot
     return out
 
 
+#: Cuantas propiedades de yfinance consulta `_yf_estimates` (tarea 210). Se declara
+#: para que el `detail` diga "1/4" y no un numero suelto — y porque el docstring que
+#: escribio la 207 decia **cinco** y listaba **cuatro**; el enunciado de la 210 heredo
+#: el error en un lado y lo corrigio en el otro ("1 de 4" en su kill-criteria).
+_SUBFETCHES_DE_ESTIMATES = 4
+
+
 def _yf_estimates(ticker: str) -> tuple[list[EstimateSnapshot], SourceOutcome]:
     """
     Snapshot the *current* consensus for ``ticker``: EPS + revenue estimates,
     recommendation mean, and price target. Never raises. One call per ticker
     per day is the intended cadence (the harvester enforces it).
 
-    **Qué ve el veredicto, y qué no** (tarea 207). El ``try`` de afuera sólo alcanza a
-    lo que *escapa*: en la práctica, que ``_ticker()`` no resuelva. Los cinco sub-fetches
-    (earnings, revenue, price targets, info) pasan por ``_getattr``, **que se traga cada
-    excepción a propósito** —yfinance fetchea de verdad al acceder a la propiedad— así
-    que una fuente que contesta 2 de 5 se declara ``ok``. Eso es exactamente lo que se ve
-    en el log del 2026-08-14: ``yfinance_news`` falló 52 de 52 y ``yfinance_estimates``
-    no registró **ninguna** falla. **Hueco conocido, anotado como tarea 210**; acá se
-    declara en vez de quedar implícito.
+    **Qué ve el veredicto** (tareas 207 y 210). El ``try`` de afuera sólo alcanza a lo
+    que *escapa*: en la práctica, que ``_ticker()`` no resuelva — y eso sigue siendo
+    ``failed``. Los **cuatro** sub-fetches (earnings, revenue, price targets, info) pasan
+    por ``_getattr``, **que se traga cada excepción a propósito**, porque yfinance
+    fetchea de verdad al acceder a la propiedad y una caída no debe hundir a las otras.
+
+    Hasta la **210** eso significaba que una fuente que contestaba 2 de 4 se declaraba
+    ``ok``, y es exactamente lo que se ve en el log del 2026-08-14: ``yfinance_news``
+    falló 52 de 52 y ``yfinance_estimates`` no registró **ninguna**. Ahora ``_getattr``
+    **anota** lo que levanta —tolerar y ocultar dejaron de ser la misma cosa— y el
+    veredicto sale ``degraded`` nombrando qué se cayó. ``degraded`` es contexto y **no**
+    entra al gate de ``SOURCE_FAILURE_ALARM_RATE``: ver ``SourceOutcome``.
+
+    **Corrección de esta misma docstring (210):** decía *«los cinco sub-fetches»* y
+    listaba **cuatro**. Son cuatro, y ahora lo dice ``_SUBFETCHES_DE_ESTIMATES``, que un
+    test compara contra los ``_getattr`` reales de esta función por AST — un número en un
+    mensaje que nadie verifica es un número que se pudre.
     """
     out: list[EstimateSnapshot] = []
+    # Las propiedades que LEVANTARON, con su motivo (tarea 210). Las que devuelven
+    # `None` sin excepcion no entran: eso es un ticker sin ese dato, no una falla.
+    caidas: list[str] = []
     try:
         from data.yahoo_finance import _ticker
 
         t = _ticker(ticker)
 
-        out.extend(_df_rows_to_estimates(ticker, _getattr(t, "earnings_estimate"), "eps"))
-        out.extend(_df_rows_to_estimates(ticker, _getattr(t, "revenue_estimate"), "revenue"))
+        out.extend(_df_rows_to_estimates(ticker, _getattr(t, "earnings_estimate", caidas), "eps"))
+        out.extend(_df_rows_to_estimates(ticker, _getattr(t, "revenue_estimate", caidas), "revenue"))
 
         # recommendation mean (single scalar) — from analyst_price_targets/info
-        pt = _getattr(t, "analyst_price_targets")
+        pt = _getattr(t, "analyst_price_targets", caidas)
         if isinstance(pt, dict):
             mean = _safe_float(pt.get("mean"))
             if mean is not None:
                 out.append(EstimateSnapshot(ticker.upper(), "price_target", "current", mean, None))
 
-        info = _getattr(t, "info") or {}
+        info = _getattr(t, "info", caidas) or {}
         if isinstance(info, dict):
             rec_mean = _safe_float(info.get("recommendationMean"))
             n = _safe_int(info.get("numberOfAnalystOpinions"))
@@ -317,6 +351,13 @@ def _yf_estimates(ticker: str) -> tuple[list[EstimateSnapshot], SourceOutcome]:
     except Exception as e:
         log.exception("yfinance estimates fetch failed for %s", ticker)
         return out, SourceOutcome("yfinance_estimates", "failed", len(out), _brief(e))
+    if caidas:
+        return out, SourceOutcome(
+            "yfinance_estimates",
+            "degraded",
+            len(out),
+            f"{len(caidas)}/{_SUBFETCHES_DE_ESTIMATES} sub-fetch caidos — " + "; ".join(caidas),
+        )
     return out, SourceOutcome("yfinance_estimates", "ok", len(out))
 
 
@@ -893,11 +934,28 @@ def _brief(e: BaseException, limite: int = 120) -> str:
     return f"{type(e).__name__}: {msg[:limite]}" if msg else type(e).__name__
 
 
-def _getattr(obj, name):
+def _getattr(obj, name, caidas: list[str] | None = None):
+    """Lee ``obj.name`` tolerando que reviente, y **anota** si revienta (tarea 210).
+
+    El ``try`` es deliberado y no se toca: yfinance fetchea de verdad al acceder a la
+    propiedad, y una que falle no debe hundir a las otras. Lo que faltaba era que el
+    veredicto de la fuente se enterara — hasta la 210, tolerar y **ocultar** eran la
+    misma cosa, y por eso el 2026-08-14 ``yfinance_estimates`` no registró ni una falla
+    mientras ``yfinance_news`` fallaba 52 de 52.
+
+    ``caidas`` es opcional a propósito: los llamadores que no arman veredicto (el
+    fallback de ``earnings_dates``) siguen llamando con dos argumentos.
+
+    **Sólo cuenta lo que LEVANTA.** Una propiedad que devuelve ``None`` sin excepción no
+    es una falla: es un ticker sin ese dato, que es normal y frecuente. Confundir las dos
+    sería el mismo error que la 207 arregló un nivel más arriba, donde ``[]`` significaba
+    a la vez *«no había nada»* y *«se cayó»*.
+    """
     try:
         return getattr(obj, name, None)
-    except Exception:
-        # yfinance lazily fetches some properties on access; tolerate failures.
+    except Exception as e:
+        if caidas is not None:
+            caidas.append(f"{name}: {_brief(e, 60)}")
         return None
 
 

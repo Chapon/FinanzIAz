@@ -364,18 +364,19 @@ def test_estimates_con_la_fuente_ENTERA_caida_es_failed(monkeypatch):
     assert items == [] and o.failed and o.source == "yfinance_estimates"
 
 
-def test_HUECO_CONOCIDO_getattr_se_traga_la_falla_por_propiedad(monkeypatch):
-    """**Este test fija una limitación, no un acierto — tarea 210.**
+def test_una_propiedad_caida_deja_la_fuente_DEGRADED_y_la_NOMBRA(monkeypatch):
+    """**Cerrado por la tarea 210 — este test fijaba la limitación y ahora fija el arreglo.**
 
-    ``_getattr`` envuelve cada sub-fetch en su propio ``try`` **a propósito**: yfinance
-    fetchea de verdad al acceder a la propiedad y una que falle no debe hundir a las
-    otras. El costo es que el veredicto de la fuente no las ve: acá una propiedad
-    revienta y la fuente igual se declara ``ok``.
+    Antes decía: *«acá una propiedad revienta y la fuente igual se declara ``ok``»*, y
+    era cierto — ``_getattr`` envuelve cada sub-fetch en su propio ``try`` **a propósito**
+    (yfinance fetchea de verdad al acceder a la propiedad, y una caída no debe hundir a
+    las otras), pero el veredicto no las veía. Eso explica el log del 2026-08-14, donde
+    ``yfinance_news`` registró 52 fallas de 52 y ``yfinance_estimates`` **ninguna**.
 
-    Es la misma forma que esta tarea arregla un nivel más arriba, un nivel más abajo — y
-    explica el log del 2026-08-14, donde ``yfinance_estimates`` no registró ninguna falla
-    mientras ``yfinance_news`` fallaba 52 de 52. Si alguien cierra la 210, esto se pone
-    rojo: **actualizarlo es parte de cerrarla**, no un daño colateral.
+    Ahora tolerar y **ocultar** dejaron de ser la misma cosa: el ``try`` sigue igual, y
+    lo que cambió es que anota. El veredicto es ``degraded`` —no ``failed``, porque la
+    fuente contestó— y el ``detail`` **nombra** cuál se cayó, que es lo que convierte
+    *«algo anda mal»* en algo accionable.
     """
     import data.yahoo_finance as yh
     from data.news_sources import _yf_estimates
@@ -402,10 +403,15 @@ def test_HUECO_CONOCIDO_getattr_se_traga_la_falla_por_propiedad(monkeypatch):
     monkeypatch.setattr(yh, "_ticker", lambda s: _T())
     items, o = _yf_estimates("NVDA")
     assert len(items) > 0, "las propiedades que sí contestaron tienen que entrar"
-    assert o.status == "ok", (
-        "si esto está en 'failed', la tarea 210 se cerró y este test hay que actualizarlo "
-        f"(es la limitación que documenta, no un acierto): {o}"
+    assert o.status == "degraded", (
+        f"una propiedad caída de cuatro no es la fuente caída, pero tampoco es 'ok': {o}"
     )
+    assert "analyst_price_targets" in o.detail, (
+        "el veredicto tiene que NOMBRAR la propiedad que se cayó — sin eso, 'degraded' "
+        f"es igual de mudo que el 'ok' de antes: {o.detail!r}"
+    )
+    assert "boom en UNA propiedad" in o.detail, "y el motivo, no sólo el nombre"
+    assert "1/4" in o.detail, "cuántas de cuántas, que es lo que dice si es un hipo o un outage"
 
 
 def test_rss_sin_feedparser_es_SKIPPED(monkeypatch):

@@ -130,6 +130,12 @@ class HarvestReport:
     # Por fuente: en cuántos tickers se la consultó y en cuántos falló (T207).
     src_run: Counter = field(default_factory=Counter)
     src_fail: Counter = field(default_factory=Counter)
+    # Por fuente: en cuantos tickers contesto pero con parte de sus sub-fetches caidos
+    # (tarea 210). Va SEPARADO de `src_fail` a proposito: `SOURCE_FAILURE_ALARM_RATE` se
+    # calibro contra una poblacion donde esto era invisible, asi que no dice nada sobre
+    # cuantos `degraded` tiene un dia sano. Contexto, no gate — la misma decision que la
+    # 207 tomo con `cero_resultados`, y por la misma razon.
+    src_degraded: Counter = field(default_factory=Counter)
     # Tickers que se consultaron y no trajeron NADA (ni news ni estimates). Se reporta
     # como contexto; no dispara la alarma — ver `SOURCE_FAILURE_ALARM_RATE`.
     cero_resultados: list[str] = field(default_factory=list)
@@ -162,13 +168,28 @@ class HarvestReport:
         )
         # Sin alarma igual se dice cuántas fuentes tuvieron ALGUNA falla: es la
         # diferencia entre "no falló nada" y "falló poco", que antes no existía.
-        con_fallas = sum(1 for r in tasas.values() if r > 0)
-        salud = f" | fuentes {len(tasas) - con_fallas}/{len(tasas)} limpias" if tasas else ""
+        #
+        # **Y "limpia" incluye no estar degradada (tarea 210).** Con la cuenta vieja una
+        # fuente con sub-fetches caidos tenia tasa de falla 0, asi que el resumen decia
+        # `fuentes 1/1 limpias | degradadas: yfinance_estimates 1` — las dos cosas a la
+        # vez. Quien lee se queda con la primera. El GATE no cambia (sigue mirando solo
+        # `source_failure_rates`); lo que cambia es que la etiqueta para humanos no
+        # afirme que esta limpio algo que el mismo renglon declara degradado.
+        sucias = {s for s, r in tasas.items() if r > 0} | set(self.src_degraded)
+        salud = f" | fuentes {len(tasas) - len(sucias)}/{len(tasas)} limpias" if tasas else ""
+        # Contexto, no alarma (tarea 210): una fuente que contesto con parte de sus
+        # sub-fetches caidos. Sin esta linea, `degraded` seria un estado que el codigo
+        # distingue y el reporte no — o sea el defecto de la 207 con otro nombre.
+        degradadas = (
+            " | degradadas: " + ", ".join(f"{s} {n}" for s, n in sorted(self.src_degraded.items()))
+            if self.src_degraded
+            else ""
+        )
         return (
             f"Harvest: {self.tickers}/{self.requested} tickers en {self.elapsed_s:.0f}s | "
             f"news +{self.news_new} (dup {self.news_dup}) | estimates +{self.est_new} "
             f"(dup {self.est_dup}) | failed {len(self.failed)} | "
-            f"sin datos {len(self.cero_resultados)}{salud}{techo}{alarma}"
+            f"sin datos {len(self.cero_resultados)}{salud}{degradadas}{techo}{alarma}"
         )
 
 
@@ -377,6 +398,11 @@ def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
         report.src_run[o.source] += 1
         if o.status == "failed":
             report.src_fail[o.source] += 1
+        elif o.status == "degraded":
+            # Cuenta en `src_run` (la fuente SI corrio) y NO en `src_fail` (no esta
+            # caida). Ver el comentario del campo: meterlo al gate seria inventar un
+            # umbral en vez de calibrarlo.
+            report.src_degraded[o.source] += 1
     if not (getattr(res, "news", None) or getattr(res, "estimates", None)):
         report.cero_resultados.append(ticker)
 
