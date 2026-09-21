@@ -232,6 +232,16 @@ def test_gate_blocks_buy_after_churn(test_db, monkeypatch):
         "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
         "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
     )
+    # Tarea 215 — aca el Gate 6 NO corre, y eso tambien vale declararlo: un gate previo
+    # (anti-churn / anti-whipsaw) bloqueo y el loop hizo `continue` antes de llegar. El
+    # spy de arriba SI se llena, porque lo consulta el **prefetch** de `run_scan`, que
+    # corre antes del loop de gates para no dejar red adentro de la ventana de escritura.
+    # Los dos juntos dicen algo que ninguno dice solo: se pidio el dato, y el gate que
+    # bloqueo fue otro.
+    assert result.earnings_gate == {}, (
+        "si el Gate 6 evaluo algo, este BUY llego mas lejos de lo que el test cree: "
+        f"lo tenia que frenar un gate anterior. {result.earnings_gate}"
+    )
 
 
 def test_gate_allows_buy_below_threshold(test_db, monkeypatch):
@@ -263,6 +273,15 @@ def test_gate_allows_buy_below_threshold(test_db, monkeypatch):
     assert earnings.consultado == ["KO"], (
         "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
         "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
+    # Tarea 215 — y esto es lo que la 213 NO podia escribir. Alla el engine no
+    # registraba "el gate evaluo y dejo pasar", asi que cambiar la fecha lejana por
+    # `None` no rompia nada y la eleccion quedaba como preferencia de legibilidad. Con
+    # el contador, la fecha pasa a estar FIJADA: el gate corrio, tenia el dato, y dejo
+    # pasar por eso y no por el fail-open de "no se".
+    assert result.earnings_gate.get("evaluado") == 1, (
+        "el Gate 6 tiene que haber evaluado con FECHA CONOCIDA; si dice `sin_dato`, el "
+        f"provider dejo de devolver la fecha lejana (tarea 215): {result.earnings_gate}"
     )
 
 
@@ -297,6 +316,15 @@ def test_gate_allows_buy_when_cycles_expired(test_db, monkeypatch):
         "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
         "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
     )
+    # Tarea 215 — y esto es lo que la 213 NO podia escribir. Alla el engine no
+    # registraba "el gate evaluo y dejo pasar", asi que cambiar la fecha lejana por
+    # `None` no rompia nada y la eleccion quedaba como preferencia de legibilidad. Con
+    # el contador, la fecha pasa a estar FIJADA: el gate corrio, tenia el dato, y dejo
+    # pasar por eso y no por el fail-open de "no se".
+    assert result.earnings_gate.get("evaluado") == 1, (
+        "el Gate 6 tiene que haber evaluado con FECHA CONOCIDA; si dice `sin_dato`, el "
+        f"provider dejo de devolver la fecha lejana (tarea 215): {result.earnings_gate}"
+    )
 
 
 def test_gate_disabled_with_zero_setting(test_db, monkeypatch):
@@ -330,6 +358,15 @@ def test_gate_disabled_with_zero_setting(test_db, monkeypatch):
     assert earnings.consultado == ["KO"], (
         "el Gate 6 no llego a consultar el provider inyectado: si esto falla, el scan "
         "volvio a resolver earnings por el default, que sale a Yahoo (tarea 213)."
+    )
+    # Tarea 215 — y esto es lo que la 213 NO podia escribir. Alla el engine no
+    # registraba "el gate evaluo y dejo pasar", asi que cambiar la fecha lejana por
+    # `None` no rompia nada y la eleccion quedaba como preferencia de legibilidad. Con
+    # el contador, la fecha pasa a estar FIJADA: el gate corrio, tenia el dato, y dejo
+    # pasar por eso y no por el fail-open de "no se".
+    assert result.earnings_gate.get("evaluado") == 1, (
+        "el Gate 6 tiene que haber evaluado con FECHA CONOCIDA; si dice `sin_dato`, el "
+        f"provider dejo de devolver la fecha lejana (tarea 215): {result.earnings_gate}"
     )
 
 
@@ -389,4 +426,8 @@ def test_gate_does_not_touch_sells(test_db, monkeypatch):
     assert earnings.consultado == [], (
         "Gate 6 no toca SELLs con earnings_blackout_block_sells=False — si esto falla, "
         "el blackout empezo a mirar ventas y hay que decidirlo, no descubrirlo."
+    )
+    assert result.earnings_gate == {}, (
+        "y no hay nada que contar: el gate ni siquiera se evaluo para un SELL "
+        f"(tarea 215): {result.earnings_gate}"
     )

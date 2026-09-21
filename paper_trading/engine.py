@@ -704,6 +704,24 @@ class ScanResult:
     # justo lo que el `None` del borde no dejaba ver.
     garch_no_fit: str | None = None
 
+    # GATE-SIN-RASTRO (tarea 215) — qué hizo el **Gate 6** (earnings blackout) en cada
+    # evaluación de este scan, agregado. Claves: ``evaluado`` (había fecha y quedó fuera
+    # de la ventana), ``bloqueo`` (había fecha y adentro), ``sin_dato`` (el provider no
+    # tenía fecha) y ``sin_dato_por_error`` (el provider reventó).
+    #
+    # **Por qué hacía falta.** ``warnings`` se llena cuando un gate **bloquea**, así que
+    # el log contaba bien los rechazos y **nada** de las evaluaciones que pasaron: desde
+    # afuera, *«evalué la fecha y no aplica»* y *«no tuve dato, fail-open»* eran
+    # idénticos. La segunda es un outage disfrazado de vía libre, y no se podía contar.
+    # Lo destapó una mutación de la 213 que quedó verde: cambiar el provider de una fecha
+    # lejana a ``None`` no rompía ningún test, porque nada distinguía los dos casos.
+    #
+    # Es la misma forma que ``garch_no_fit`` de arriba —*«el motivo distingue "no hay
+    # datos" de "no converge"»*— y que el ``degraded`` de la 210 en el harvest. Va como
+    # **contador agregado por scan** y no como warning por trade **a propósito**: eso
+    # último es el spam que la T25 y la racha de la 63 vinieron a apagar.
+    earnings_gate: dict[str, int] = field(default_factory=dict)
+
     # Tarea 201 — los tickers cuyo precio decidió la segunda opinión este scan: con el
     # precio sustituido (``kind="sustituido"``) o sin precio (``kind="sin_precio"``).
     price_disputes: list[dict] = field(default_factory=list)
@@ -722,6 +740,19 @@ class ScanResult:
             base += f"  · {self.ml_training}"
         if self.garch_no_fit:
             base += f"  · {self.garch_no_fit}"
+        # Tarea 215: sólo se imprime lo que **no** es el camino feliz. Un scan donde el
+        # Gate 6 evaluó todo con fecha conocida no agrega nada al renglón — si cada scan
+        # sano dijera `earnings: evaluado 8`, el día que diga `sin_dato 8` nadie lo vería.
+        # Es el mismo criterio del nivel de log de la 207: lo raro tiene que destacar.
+        sin_dato = self.earnings_gate.get("sin_dato", 0)
+        rotos = self.earnings_gate.get("sin_dato_por_error", 0)
+        if sin_dato or rotos:
+            partes = []
+            if rotos:
+                partes.append(f"{rotos} por fetch caído")
+            if sin_dato:
+                partes.append(f"{sin_dato} sin fecha")
+            base += "  · earnings-gate fail-open: " + ", ".join(partes)
         return base
 
 
@@ -914,6 +945,13 @@ def run_scan(
         # blocks trading.
         _earnings_seen: dict[str, datetime | None] = {}
 
+        # Tickers cuyo provider de earnings **reventó** (tarea 215). Se guarda aparte de
+        # `_earnings_seen` porque los dos terminan en `None` y significan cosas
+        # distintas: "no hay fecha" es normal y frecuente, "el fetch se cayó" es un
+        # outage. Mismo criterio que la 210 usó para `_getattr`: levantar != devolver
+        # vacío, y meterlos en la misma bolsa es lo que hace ciego al reporte.
+        _earnings_rotos: set[str] = set()
+
         def _earnings_date_for(ticker: str) -> datetime | None:
             if ticker in _earnings_seen:
                 return _earnings_seen[ticker]
@@ -928,8 +966,13 @@ def run_scan(
                     exc_info=True,
                 )
                 edt = None
+                _earnings_rotos.add(ticker)
             _earnings_seen[ticker] = edt
             return edt
+
+        def _anotar_gate_earnings(clave: str) -> None:
+            """Suma uno al contador agregado del Gate 6 (tarea 215)."""
+            result.earnings_gate[clave] = result.earnings_gate.get(clave, 0) + 1
 
         # Memoize OHLCV history within this scan (used by the T10 ADV cap below).
         # Fail-open: a provider that raises yields None and the cap is skipped.
@@ -1236,15 +1279,27 @@ def run_scan(
                 should_check = trade.side == "BUY" or earnings_block_sells
                 if should_check:
                     edt = _earnings_date_for(trade.ticker)
-                    if edt is not None and _earnings_blackout_hit(
-                        edt, result.scan_at, earnings_blackout_days
-                    ):
+                    if edt is None:
+                        # Fail-open, **pero dejando rastro** (tarea 215). Los dos
+                        # caminos llegan acá con `None` y no son lo mismo: uno es un
+                        # ticker sin fecha de earnings conocida —normal— y el otro es
+                        # el fetch caído, o sea un outage que hasta ahora se veía
+                        # exactamente igual que una vía libre.
+                        _anotar_gate_earnings(
+                            "sin_dato_por_error" if trade.ticker in _earnings_rotos else "sin_dato"
+                        )
+                    elif _earnings_blackout_hit(edt, result.scan_at, earnings_blackout_days):
+                        _anotar_gate_earnings("bloqueo")
                         result.skipped += 1
                         result.warnings.append(
                             f"{trade.ticker} {trade.side} bloqueado: earnings el "
                             f"{edt:%Y-%m-%d} dentro de ±{earnings_blackout_days}d (blackout)."
                         )
                         continue
+                    else:
+                        # El caso que no dejaba huella: el gate **corrió**, tenía la
+                        # fecha y decidió que no aplica.
+                        _anotar_gate_earnings("evaluado")
 
             # Modo manual: las sugerencias de señal se encolan como orden
             # pendiente (requieren aprobación). EXCEPCIÓN — las salidas de
