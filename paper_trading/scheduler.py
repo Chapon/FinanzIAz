@@ -82,7 +82,7 @@ Methods
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from datetime import time as dtime
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
@@ -240,6 +240,55 @@ def hourly_harvest_due(
     return bool(market_open)
 
 
+# Cuánto espera el rebuild de surprise después de un intento FALLIDO (tarea 197).
+#
+# El número sale del incidente, no de la intuición. Del 2026-09-10 17:58 al 2026-09-11
+# 11:41 —**17,7 h**— el log vivo tiene **390** `surprise rebuild starting` y **389**
+# fallos, uno por minuto, cada uno pegándole a yfinance. Con 6 h eso habrían sido **3**
+# intentos en vez de 389. La cota de arriba la pone la cadencia normal, que es
+# **semanal** (`DEFAULT_BUILD_INTERVAL_DAYS`): el backoff tiene que ser mucho más chico
+# que eso para que una falla transitoria se recupere el mismo día y no dentro de una
+# semana. 6 h cae con holgura entre los dos límites — 360× el tick y 1/28 de la cadencia.
+_SURPRISE_RETRY_HOURS = 6
+
+
+def surprise_build_due(
+    *,
+    enabled: bool,
+    worker_running: bool,
+    now: datetime,
+    retry_after: datetime | None,
+) -> bool:
+    """Los gates **baratos** del rebuild de surprise — puros y testeables offline (197).
+
+    Devuelve si corresponde siquiera *consultar* la cadencia. Se queda afuera a
+    propósito el gate de cadencia (`build_due` sobre `last_build_iso()`), que **lee el
+    artefacto de disco**: es el caro, y separarlo es lo que hace que los otros tres se
+    puedan evaluar sin tocar nada. El llamador los encadena en ese orden.
+
+    **El gate nuevo es `retry_after`, y es el defecto entero de la tarea 197.** La
+    cadencia sale del `_meta.built_at` del artefacto (tarea 160) y ese sello lo escribe
+    **sólo un build exitoso**. O sea que un build que falla no deja ninguna marca,
+    `build_due` sigue devolviendo `True`, y como el "tick diario" del scheduler en
+    realidad dispara **cada minuto** (``_DAILY_CHECK_MS = 60_000``), el reintento es por
+    minuto y no por día. Medido en el log vivo: 389 fallos seguidos en 17,7 h.
+
+    **Por qué un sello aparte y no el patrón de los otros tres jobs.** El refresh de
+    catalysts, el dashboard y el harvest horario estampan **al lanzar, aunque falle**, y
+    cada uno lo dice en su docstring — o sea que el problema era conocido y el de
+    surprise es el único de los cuatro que quedó afuera. Pero copiarles el sello acá
+    rompería la cadencia: la suya es *«una vez por día calendario»* y la de surprise es
+    *«cada N días, según el artefacto»*, que es justo lo que la 160 sacó del settings a
+    propósito. Por eso el sello del intento **no reemplaza** a `build_due`: sólo lo
+    pospone tras una falla, y un éxito lo borra.
+    """
+    if not enabled:
+        return False
+    if worker_running:
+        return False
+    return not (retry_after is not None and now < retry_after)
+
+
 class CatalystHarvestWorker(QThread):
     """Run the harvest-only news pipeline off the UI thread (tarea 10).
 
@@ -324,6 +373,11 @@ class PaperScheduler(QObject):
 
         # T-CAT-5a weekly surprise-profile rebuild (in-app, single worker).
         self._surprise_worker: SurpriseBuildWorker | None = None
+        # Backoff tras un intento FALLIDO (tarea 197). `None` = sin falla pendiente.
+        # Vive en memoria a propósito: la cadencia normal es del artefacto (tarea 160) y
+        # esto es sólo una pausa, así que reabrir la app reintenta — que es exactamente
+        # lo que desatascó el incidente del 2026-09-10.
+        self._surprise_retry_after: datetime | None = None
 
         # Daily catalyst refresh (in-app, single worker, once per calendar day).
         self._catalyst_worker: CatalystRefreshWorker | None = None
@@ -546,10 +600,21 @@ class PaperScheduler(QObject):
     def _maybe_build_surprise(self) -> None:
         """Launch a surprise-profile rebuild iff enabled and the weekly interval
         has elapsed. Cheap and idempotent: ``build_due`` short-circuits until due,
-        and a still-running worker blocks a second launch."""
-        if not settings.get("surprise_build_enabled", True):
-            return
-        if self._surprise_worker is not None and self._surprise_worker.isRunning():
+        and a still-running worker blocks a second launch.
+
+        **Tarea 197 — y el comentario que había acá abajo decía algo falso.** Decía que
+        *«un build fallido reintenta en el próximo tick diario»*, y el tick **no es
+        diario**: ``_DAILY_CHECK_MS = 60_000``, o sea que dispara cada minuto y el
+        reintento era por minuto. Los gates baratos —flag, worker vivo y el backoff
+        nuevo— viven en ``surprise_build_due``, que es pura; el de cadencia queda acá
+        abajo porque lee el artefacto de disco.
+        """
+        if not surprise_build_due(
+            enabled=bool(settings.get("surprise_build_enabled", True)),
+            worker_running=(self._surprise_worker is not None and self._surprise_worker.isRunning()),
+            now=utcnow_naive(),
+            retry_after=self._surprise_retry_after,
+        ):
             return
         try:
             from analysis.surprise_score import (
@@ -565,7 +630,13 @@ class PaperScheduler(QObject):
             if not build_due(last_build_iso(), utcnow_naive(), interval):
                 return
         except Exception:
+            # Este camino tambien loopeaba por minuto, y era el del incidente: el
+            # `ImportError` del 2026-09-10 lo levantaba el worker, pero un import roto
+            # **aca** tiene exactamente la misma forma y ningun sello lo frenaba. El
+            # backoff se arma igual que tras una falla del worker — un chequeo que no se
+            # puede evaluar no es distinto de un build que no se puede hacer.
             log.exception("surprise build_due check failed")
+            self._posponer_surprise()
             return
         self._launch_surprise_build()
 
@@ -589,8 +660,15 @@ class PaperScheduler(QObject):
         # falta —y era el único estado que la app escribía en el settings de Chapa—:
         # `run_build` deja su propio `_meta.built_at` adentro del artefacto, que es lo
         # que ahora lee la cadencia. Se sigue estampando **sólo en éxito** por la misma
-        # razón que antes (un build fallido reintenta en el próximo tick diario), pero
-        # ahora eso es una propiedad de quién escribe el archivo, no una segunda marca.
+        # razón que antes, pero ahora eso es una propiedad de quién escribe el archivo,
+        # no una segunda marca.
+        #
+        # **Corrección (tarea 197):** acá decía que *«un build fallido reintenta en el
+        # próximo tick diario»*, y el tick **no es diario** — ``_DAILY_CHECK_MS`` es de
+        # 60 s. Reintentaba por minuto: 389 fallos seguidos en 17,7 h el 2026-09-10. El
+        # éxito ahora además **borra** el backoff, que es lo que devuelve la cadencia
+        # normal después de una racha de fallas.
+        self._surprise_retry_after = None
         log.info(
             "surprise rebuild done: %s (%s/%s usable quarters≥min)",
             res.get("out"),
@@ -598,8 +676,21 @@ class PaperScheduler(QObject):
             res.get("n_tickers"),
         )
 
+    def _posponer_surprise(self) -> None:
+        """Arma el backoff tras un intento fallido (tarea 197)."""
+        self._surprise_retry_after = utcnow_naive() + timedelta(hours=_SURPRISE_RETRY_HOURS)
+
     def _on_surprise_failed(self, err: str) -> None:
-        log.warning("surprise rebuild failed (will retry next tick): %s", err)
+        # El mensaje decia *«will retry next tick»* y el tick es de un minuto, asi que
+        # describia el defecto como si fuera el diseno. Ahora dice **cuando**, que es lo
+        # que un log sirve para contestar: 389 lineas identicas no dejaban saberlo.
+        self._posponer_surprise()
+        log.warning(
+            "surprise rebuild failed (reintenta no antes de %s, backoff de %sh): %s",
+            self._surprise_retry_after,
+            _SURPRISE_RETRY_HOURS,
+            err,
+        )
 
     def _reap_surprise_worker(self) -> None:
         w = self._surprise_worker
