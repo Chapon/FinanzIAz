@@ -260,6 +260,64 @@ def resolve_universe(account_id: int | None = None) -> list[str]:
     return sorted(watch | pos)
 
 
+def ordenar_por_rezago(universe: list[str], ultimos: dict[str, object]) -> list[str]:
+    """El universo ordenado **por quién hace más que no se recolecta** (tarea 208).
+
+    Puro y separado del query a propósito: el criterio es lo que hay que poder
+    interrogar en un test, y mezclarlo con la lectura de la DB obligaría a montar filas
+    para probar una comparación.
+
+    **El defecto que arregla.** ``resolve_universe()`` devuelve ``sorted(...)`` y
+    ``_collect_fase1`` recorre esa lista en orden, así que el corte por presupuesto
+    (tarea 204) se lleva siempre el **sufijo**: los mismos tickers del final del
+    alfabeto, en cada corrida degradada. No es aleatorio, es sistemático — y el snapshot
+    de consenso **no tiene catch-up posible** (la 196 lo midió: las noticias se
+    auto-recuperan hasta 7 días, el consenso no), así que la pérdida se concentra
+    siempre en los mismos nombres y es para siempre.
+
+    **Por qué este criterio y no rotar el arranque.** Rotar pide recordar por dónde se
+    quedó la corrida anterior, o sea **estado nuevo que hay que persistir**. El rezago
+    sale de ``analyst_estimate_snapshots``, que ya existe, y además es
+    **auto-corrector**: un ticker que se saltó ayer tiene la fecha más vieja hoy y pasa
+    al frente solo. No hace falta que nadie lleve la cuenta.
+
+    Quien **nunca** se recolectó va primero (``None`` ordena antes que cualquier fecha):
+    es el caso de un ticker recién agregado a la watchlist, que es justo el que más
+    urge. Los empates se rompen **alfabéticamente**, así que el orden sigue siendo
+    determinístico — importa, porque en una corrida sana todos comparten la fecha de hoy
+    y sin el desempate el orden sería arbitrario entre corridas.
+    """
+    return sorted(universe, key=lambda t: (ultimos.get(t) is not None, ultimos.get(t), t))
+
+
+def _ultimo_consenso_por_ticker() -> dict[str, object]:
+    """``{ticker: fecha del último snapshot de consenso}``, para ``ordenar_por_rezago``.
+
+    Un solo agregado sobre la tabla (47.890 filas / 131 tickers al 2026-09-21), indexado
+    por ``ix_est_ticker_metric_date``. Fail-open: si el query falla se devuelve ``{}`` y
+    el orden cae al alfabético de siempre — ordenar mejor es una optimización de reparto,
+    no algo por lo que valga la pena no recolectar.
+    """
+    from sqlalchemy import func
+
+    from database.models import AnalystEstimateSnapshot
+
+    try:
+        with session_scope() as s:
+            filas = (
+                s.query(
+                    AnalystEstimateSnapshot.ticker,
+                    func.max(AnalystEstimateSnapshot.snapshot_date),
+                )
+                .group_by(AnalystEstimateSnapshot.ticker)
+                .all()
+            )
+        return {t: d for t, d in filas}
+    except Exception:
+        log.exception("no se pudo leer el rezago de consenso — se recorre alfabético")
+        return {}
+
+
 def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> bool:
     """
     Insert a NewsItem unless it's a duplicate. Returns True if new.
@@ -482,6 +540,12 @@ def harvest(
     """
     t0 = time.monotonic()
     universe = tickers if tickers is not None else resolve_universe(account_id)
+    # Tarea 208 — el orden decide QUIÉN se pierde cuando el presupuesto corta, así que
+    # va acá y no adentro de `resolve_universe`: esa función la usan también
+    # `build_surprise_profiles` y `news_feed`, que no tienen techo y a los que cambiarles
+    # el orden no aporta nada. El reparto es un problema del harvest, y se arregla donde
+    # está el corte.
+    universe = ordenar_por_rezago(universe, _ultimo_consenso_por_ticker())
     now = now or utcnow_naive()
     today = _midnight(now)
     report = HarvestReport(tickers=len(universe), requested=len(universe))
