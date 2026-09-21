@@ -85,6 +85,30 @@ os.environ.setdefault(
 # lo levanta con `monkeypatch.delenv` — se lee en cada llamada, no al importar.
 os.environ.setdefault("FINANZIAS_DISABLE_SLACK", "1")
 
+# La suite tampoco sale a internet **desde un subproceso** (tarea 211). Quinto
+# aislamiento de la familia, y la mitad que le faltaba al cortafuegos de la 209: ése
+# parchea con ``monkeypatch``, o sea **en memoria de este proceso**, y un hijo hereda el
+# entorno pero no los parches. Exactamente lo que le pasaba a la DB antes de la 108.
+#
+# El mecanismo es ``sitecustomize.py``, que ``site.py`` importa al arrancar **cualquier**
+# intérprete que tenga este directorio en el path; el corte en sí lo enciende
+# ``FINANZIAS_BLOQUEAR_RED``.
+#
+# Las dos variables van acá y no en el fixture, igual que las cuatro de arriba y por la
+# misma razón — pero además por una que apareció midiendo: si la variable la pusiera el
+# fixture con ``monkeypatch.setenv``, en un test marcado ``network`` ya estaría **ausente**
+# (monkeypatch la deshace al terminar cada test), y entonces el ``delenv`` del escape no
+# haría nada. Puesta acá, el escape del marcador **es** el ``delenv``, y eso se puede
+# probar. ``setdefault`` a propósito: exportarla a mano para depurar sigue funcionando.
+_DIR_CORTAFUEGOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_cortafuegos")
+sys.path.insert(0, _DIR_CORTAFUEGOS)
+import cortafuegos_red as _cortafuegos_red
+
+os.environ["PYTHONPATH"] = _cortafuegos_red.pythonpath_con(
+    _DIR_CORTAFUEGOS, os.environ.get("PYTHONPATH"), os.pathsep
+)
+os.environ.setdefault(_cortafuegos_red.VAR_ENTORNO, "1")
+
 import contextlib
 from collections.abc import Iterator
 from pathlib import Path
@@ -363,35 +387,33 @@ def _disable_settings_persistence(tmp_path, monkeypatch):
     _live_settings.load()
 
 
-# ── Cortafuegos de red (tarea 209) ───────────────────────────────────────────
+# ── Cortafuegos de red (tareas 209 y 211) ────────────────────────────────────
+#
+# La implementación vive en `tests/_cortafuegos/cortafuegos_red.py` y NO acá, porque el
+# mismo corte tiene que armarse en dos lugares: este fixture (el proceso de la suite) y
+# `sitecustomize.py` (cada subproceso, tarea 211). Dos copias divergen — es lo que pasó
+# en la 207 con `collect_all` y los `collect_*` públicos—, así que los dos llaman a la
+# misma función y un test compara las identidades.
+#
+# Se re-exportan los nombres para que los tests los sigan importando de `tests.conftest`,
+# que es de donde se importan los demás fixtures.
+#
+# **Van como ASIGNACIÓN y no como `from … import x as _x`, y no es cosmético:** un alias
+# que este archivo no usa es un F401 para ruff, y `ruff check --fix` **lo borra**. Al
+# refactorizar esto se llevó puesto `es_local as _es_local` sin decir nada, y el test de
+# la 209 se cayó con `ImportError` en la colección. Una asignación no la toca nadie.
+import cortafuegos_red as _cortafuegos  # el dir ya está en `sys.path`, arriba
 
-
-class RedBloqueadaEnLaSuite(RuntimeError):
-    """Un test sin el marcador ``network`` intentó salir a internet."""
-
-
-# Bitácora de lo que el cortafuegos frenó **en el test en curso** (el fixture la vacía
-# al empezar cada uno). No es telemetría: existe para que un test pueda afirmar que el
-# corte **se disparó**, y no sólo que no llegaron datos. Sin esto, un test que verifica
-# un bloqueo pasa igual con la máquina sin internet, o con una librería que se traga su
-# propio error y devuelve vacío —que es justo lo que hace ``yfinance``—, o sea probando
-# nada. Es la contraprueba del instrumento, no del sujeto.
-INTENTOS_BLOQUEADOS: list[str] = []
-
-
-# Loopback se deja pasar: lo que se quiere cortar son las llamadas a terceros, y un
-# servidor local o un socketpair de Qt no es eso. Bloquearlo sería romper por deporte.
-_HOSTS_LOCALES = frozenset({"127.0.0.1", "::1", "localhost", "0.0.0.0"})
-
-
-def _es_local(address) -> bool:
-    host = address[0] if isinstance(address, (tuple, list)) and address else address
-    return isinstance(host, str) and (host in _HOSTS_LOCALES or host.startswith("127."))
+RedBloqueadaEnLaSuite = _cortafuegos.RedBloqueadaEnLaSuite
+INTENTOS_BLOQUEADOS = _cortafuegos.INTENTOS_BLOQUEADOS
+VAR_ENTORNO = _cortafuegos.VAR_ENTORNO
+_es_local = _cortafuegos.es_local
+_instalar_cortafuegos = _cortafuegos.instalar
 
 
 @pytest.fixture(autouse=True)
 def _cortafuegos_de_red(request, monkeypatch):
-    """Ningún test sin ``@pytest.mark.network`` sale a internet (tarea 209).
+    """Ningún test sin ``@pytest.mark.network`` sale a internet (tareas 209 y 211).
 
     **Por qué hizo falta, y por qué no estaba.** ``CLAUDE.md`` decía que este archivo
     bloqueaba la red y era **falso**: los cuatro aislamientos de arriba cubren el log, la
@@ -404,81 +426,31 @@ def _cortafuegos_de_red(request, monkeypatch):
     en el CI, sin la key, el mismo test toma otra rama: verde de los dos lados por razones
     distintas, que es la familia de la 175 y la 176.
 
-    **Hay que cortar en DOS lugares, y el segundo es el que importa.** Parchear ``socket``
-    alcanza a ``requests``/``urllib3``/``http.client`` (Finnhub, EDGAR, RSS) y **no a
-    ``curl_cffi``**, que va por libcurl sin pasar por el módulo ``socket`` de Python — y
-    ``curl_cffi`` es exactamente lo que usa **yfinance 1.x**, o sea la mayor superficie de
-    red del proyecto. Medido antes de escribir esto: con ``socket`` parcheado, ``requests``
-    queda bloqueado y ``curl_cffi.get`` **sale igual**. Un cortafuegos sólo-socket habría
-    sido la forma exacta del guard que es ciego al caso mayoritario. El corte de
-    ``curl_cffi`` va en ``Curl.perform``, el nivel más bajo: verificado que alcanza a
-    ``requests.get`` de módulo, a ``Session().get`` y a ``yf.Ticker(...).news``.
+    **Dos mitades, y la segunda llegó después (tarea 211).** Este fixture parchea **en
+    memoria**, así que cubre este proceso; un **subproceso** hereda el entorno pero no los
+    parches y salía igual. Por eso acá se pone también ``FINANZIAS_BLOQUEAR_RED``, que el
+    ``sitecustomize.py`` de ``tests/_cortafuegos`` lee al arrancar cada hijo. El entorno es
+    lo único que un hijo hereda solo — el mismo argumento de la 108 y de la 148.
 
-    **Lo que NO cubre, y va dicho:** igual que ``_guard_real_db``, esto aísla **este
-    proceso**. Un test que abre un **subproceso** hereda el entorno pero no los parches,
-    así que puede salir a la red. Hoy no hay ninguno que lo haga; si aparece, la mitad que
-    falta se resuelve con una variable de entorno, como la 108 resolvió la de la DB.
-    Tampoco corta el **DNS**: el corte va en ``connect``, y ``requests`` resuelve el
-    nombre antes de llegar ahí, así que una consulta de DNS sí sale. Es a propósito —
-    bloquear ``getaddrinfo`` se llevaría puesta también la resolución de ``localhost`` y
-    no protege nada más: lo único que se filtra es el nombre del host, sin credenciales,
-    sin cuota de API y sin dato que vuelva.
+    **El marcador ``network`` exime a las dos mitades.** En un test marcado, este fixture
+    no parchea **y borra la variable**, así que sus subprocesos también salen. Que el
+    escape valga para el hijo no es un detalle: un test que se marca ``network`` porque
+    necesita la API real la va a necesitar igual si el fetch lo hace un hijo.
 
-    **Por qué ``socket.socket`` alcanza también al TLS, que no es obvio.**
-    ``ssl.SSLSocket`` define ``connect`` y ``connect_ex`` **propios** —o sea que el parche
-    de la clase base no los pisa— pero los dos delegan en ``_real_connect``, que llama
-    ``super().connect(addr)``, y ese ``super()`` resuelve por MRO **en el momento de la
-    llamada**: cae en el atributo parcheado. Verificado midiendo, no deducido, y fijado
-    por un test, porque es la clase de detalle que una versión de Python puede cambiar
-    sin que nadie se entere hasta que un test vuelva a salir a internet en silencio.
+    **Lo que NO cubre, y va dicho:** el corte del hijo depende de que sea un intérprete de
+    **Python** que corra ``site.py`` — un hijo lanzado con ``-S``, o un ejecutable que no
+    sea Python, no lo hereda. Tampoco corta el **DNS**: el corte va en ``connect``, y
+    ``requests`` resuelve el nombre antes de llegar ahí, así que una consulta de DNS sí
+    sale. Es a propósito — bloquear ``getaddrinfo`` se llevaría puesta también la
+    resolución de ``localhost`` y no protege nada más: lo único que se filtra es el nombre
+    del host, sin credenciales, sin cuota de API y sin dato que vuelva.
     """
     INTENTOS_BLOQUEADOS.clear()
 
     if request.node.get_closest_marker("network"):
+        monkeypatch.delenv(VAR_ENTORNO, raising=False)
         return
 
-    import socket as _socket
-
-    # `socket.socket.connect` es el cuello de botella de TODO lo que va por el módulo
-    # socket: `requests`/`urllib3` arman el socket y llaman `connect`, y el
-    # `socket.create_connection` de `http.client` hace lo mismo un nivel más abajo.
-    # Verificado midiendo: parchear sólo esto alcanza para bloquear `requests.get`.
-    _real_connect = _socket.socket.connect
-    _real_connect_ex = _socket.socket.connect_ex
-
-    def _connect(self, address, *a, **kw):
-        if _es_local(address):
-            return _real_connect(self, address, *a, **kw)
-        INTENTOS_BLOQUEADOS.append(f"socket.connect {address!r}")
-        raise RedBloqueadaEnLaSuite(
-            f"este test intentó conectarse a {address!r}. La suite no sale a internet: "
-            "mockeá la fuente, o marcá el test con @pytest.mark.network si de verdad "
-            "tiene que pegarle a la API real (tarea 209)."
-        )
-
-    def _connect_ex(self, address, *a, **kw):
-        if _es_local(address):
-            return _real_connect_ex(self, address, *a, **kw)
-        INTENTOS_BLOQUEADOS.append(f"socket.connect_ex {address!r}")
-        raise RedBloqueadaEnLaSuite(
-            f"este test intentó conectarse (connect_ex) a {address!r}; ver el mensaje de "
-            "`connect` (tarea 209)."
-        )
-
-    monkeypatch.setattr(_socket.socket, "connect", _connect)
-    monkeypatch.setattr(_socket.socket, "connect_ex", _connect_ex)
-
-    try:
-        import curl_cffi
-    except ImportError:  # pragma: no cover — sin yfinance moderno no hay nada que cortar
-        return
-
-    def _perform(self, *a, **kw):
-        INTENTOS_BLOQUEADOS.append("curl_cffi.Curl.perform")
-        raise RedBloqueadaEnLaSuite(
-            "este test intentó un request con curl_cffi (el camino de yfinance). La suite "
-            "no sale a internet: usá el fixture mock_yfinance, o marcá el test con "
-            "@pytest.mark.network (tarea 209)."
-        )
-
-    monkeypatch.setattr(curl_cffi.Curl, "perform", _perform)
+    # La variable ya está puesta arriba, al importar este archivo; acá sólo se arma el
+    # corte **en memoria**, que es lo que el hijo no puede heredar.
+    _instalar_cortafuegos(monkeypatch.setattr)

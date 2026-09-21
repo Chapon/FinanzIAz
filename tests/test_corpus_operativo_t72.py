@@ -48,6 +48,13 @@ _NO_SON_CONSTANTES: dict[str, str] = {
     "FINNHUB_API_KEY": "variable de entorno que lee el harvest; no vive en el código",
     "SLACK_BOT_TOKEN": "variable de entorno del notificador; no vive en el código",
     "SLACK_CHANNEL": "variable de entorno del notificador; no vive en el código",
+    "FINANZIAS_BLOQUEAR_RED": (
+        "nombre de variable de entorno (tarea 211), como FINNHUB_API_KEY y SLACK_BOT_TOKEN de "
+        "arriba — pero con un matiz que aquéllas no tienen: ésta SÍ vive en el código, como el "
+        "VALOR de `VAR_ENTORNO` en `tests/_cortafuegos/cortafuegos_red.py`. O sea el caso de "
+        "`ORACULO_PRIO`, no el de las otras dos. El corpus la nombra porque es la perilla que "
+        "alguien tiene que poder buscar al depurar un subproceso que no sale a la red"
+    ),
     "ORACULO_PRIO": "es el VALOR de ORACLE_ARM en run_prio_event_t49, no una constante",
     "ANTI_ORACULO_PRIO": "es el VALOR de ANTI_ORACLE_ARM, no una constante propia",
     "FALTA_ESPEJO": (

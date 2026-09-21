@@ -49,7 +49,7 @@ import ssl
 
 import pytest
 
-from tests.conftest import INTENTOS_BLOQUEADOS, RedBloqueadaEnLaSuite, _es_local
+from tests.conftest import INTENTOS_BLOQUEADOS, VAR_ENTORNO, RedBloqueadaEnLaSuite, _es_local
 
 pytest_plugins = ["pytester"]
 
@@ -235,7 +235,7 @@ def test_un_socket_a_loopback_no_se_bloquea():
 # ── El escape por marcador, corriendo pytest de verdad adentro ──────────────
 
 
-def test_el_marcador_network_EXIME_y_su_ausencia_NO(pytester):
+def test_el_marcador_network_EXIME_y_su_ausencia_NO(pytester, monkeypatch):
     """**Las dos direcciones, con pytest corriendo de verdad.**
 
     Un test marcado ``network`` tiene que quedar con el ``socket.connect`` original, y
@@ -245,7 +245,16 @@ def test_el_marcador_network_EXIME_y_su_ausencia_NO(pytester):
 
     No se conecta a nada: compara la identidad de ``socket.socket.connect``, así que
     corre igual en el CI y con la máquina sin internet.
+
+    **Por qué se le saca la variable al hijo (tarea 211).** Desde la 211 el
+    ``sitecustomize`` corta la red en **todo** subproceso que herede
+    ``FINANZIAS_BLOQUEAR_RED``, y el pytest anidado es uno. Si la heredara, el
+    ``_ORIGINAL`` que el módulo de abajo captura al importarse ya sería **el parche del
+    sitecustomize** y no el ``connect`` de verdad: el test seguiría pasando, pero
+    comparando dos cosas distintas de las que dice comparar. Se la borra para que el
+    anidado arranque limpio y el único parche que se mida sea el del fixture.
     """
+    monkeypatch.delenv(VAR_ENTORNO, raising=False)
     # El fixture se importa **por nombre**: `from tests.conftest import *` NO lo trae,
     # porque empieza con guion bajo y `import *` saltea esos nombres. Lo aprendí acá —
     # la primera versión de este test usaba el `*` y el pytest anidado corría sin
