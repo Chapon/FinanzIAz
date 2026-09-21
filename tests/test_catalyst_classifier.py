@@ -89,7 +89,7 @@ def test_headline_mna():
 
 
 def test_headline_downgrade_negative():
-    c = heuristic_classify("Analyst downgrade sends shares lower", None, "yahoo_rss")
+    c = heuristic_classify("Analyst downgrade sends shares lower", None, "finnhub:Yahoo")
     assert c.event_type == "analyst_rating"
     assert c.sentiment == "negative"
 

@@ -32,9 +32,9 @@ if not exist "%USERPROFILE%\.finanzias" mkdir "%USERPROFILE%\.finanzias"
 echo. >> "%LOG%"
 echo ===== %DATE% %TIME% catalyst harvest start ===== >> "%LOG%"
 "%PY%" scripts\harvest_catalysts.py --sources yfinance,sec,finnhub >> "%LOG%" 2>&1
-REM hybrid-ollama: SEC 8-K via heuristic (item codes, 0.90); yfinance/RSS
-REM headlines via local qwen2.5:14b on the GPU. Free, unattended. Falls back
-REM to the heuristic automatically if Ollama isn't running.
+REM hybrid-ollama: SEC 8-K via heuristic (item codes, 0.90); yfinance and
+REM finnhub headlines via local qwen2.5:14b on the GPU. Free, unattended.
+REM Falls back to the heuristic automatically if Ollama isn't running.
 "%PY%" scripts\classify_catalysts.py --backend hybrid-ollama --model qwen2.5:14b >> "%LOG%" 2>&1
 echo ===== %DATE% %TIME% catalyst harvest done ===== >> "%LOG%"
 endlocal

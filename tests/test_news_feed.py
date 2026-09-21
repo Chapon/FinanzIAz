@@ -19,7 +19,7 @@ def _seed():
         # (ticker, title, source, published_at, hash)
         ("NVDA", "NVDA newest", "yfinance", datetime(2026, 6, 6, 10, 0), "h1"),
         ("NVDA", "NVDA older", "sec_8k", datetime(2026, 6, 1, 9, 0), "h2"),
-        ("NVDA", "NVDA undated", "yahoo_rss", None, "h3"),
+        ("NVDA", "NVDA undated", "finnhub:Yahoo", None, "h3"),
         ("PLTR", "PLTR news", "yfinance", datetime(2026, 6, 5, 12, 0), "h4"),
     ]
     with session_scope() as s:

@@ -85,7 +85,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--ticker", type=str, default=None, help="Single ticker, e.g. NVDA.")
     p.add_argument("--watchlist", action="store_true", help="All tickers in account watchlist ∪ positions.")
     p.add_argument("--account-id", type=int, default=None, help="Account for --watchlist.")
-    p.add_argument("--source", type=str, default=None, help="Filter by source tag, e.g. sec_8k, yahoo_rss.")
+    p.add_argument(
+        "--source",
+        type=str,
+        default=None,
+        help="Filter by source tag, e.g. sec_8k, yfinance, finnhub:Benzinga.",
+    )
     p.add_argument("--limit", type=int, default=20, help="Max rows.")
     return p.parse_args(argv)
 

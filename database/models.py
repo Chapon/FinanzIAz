@@ -429,7 +429,9 @@ class NewsEvent(Base):
     content: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # summary o cuerpo si la fuente lo provee
-    source: Mapped[str] = mapped_column(String(50), nullable=False)  # "yfinance", "sec_8k", "pr_rss", ...
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "yfinance", "sec_8k", "finnhub:<Outlet>"
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True

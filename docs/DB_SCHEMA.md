@@ -41,7 +41,7 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 ## Catalyst Engine — append-only point-in-time (`database/models.py`)
 
 ### `news_events` — noticias crudas
-Append-only: una fila por (noticia, fuente) **observada**. `id`, `ticker`, `title`, `content`, `source` ("yfinance"/"sec_8k"/"pr_rss"/"finnhub:*"), `url`, `published_at` (declara la fuente), **`fetched_at`** (cuándo LO VIMOS), `content_hash` (sha1 UNIQUE → idempotencia).
+Append-only: una fila por (noticia, fuente) **observada**. `id`, `ticker`, `title`, `content`, `source` ("yfinance"/"sec_8k"/"finnhub:*"; la rama `rss` se borró en la tarea 212 y **cero** filas la usaban), `url`, `published_at` (declara la fuente), **`fetched_at`** (cuándo LO VIMOS), `content_hash` (sha1 UNIQUE → idempotencia).
 Campos de clasificación (NULL hasta T-CAT-2, UPDATE in-place): `event_type`, `sentiment`, `classifier_confidence`, `classified_at`, `classified_by` ("heuristic"/"ollama"/"llm"/"fallback").
 
 ### `analyst_estimate_snapshots` — consenso diario

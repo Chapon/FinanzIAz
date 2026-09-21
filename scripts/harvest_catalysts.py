@@ -611,7 +611,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--sources",
         type=str,
         default="yfinance",
-        help="Comma-separated: yfinance,sec,rss,finnhub (finnhub needs FINNHUB_API_KEY).",
+        help="Comma-separated: yfinance,sec,finnhub (finnhub needs FINNHUB_API_KEY).",
     )
     p.add_argument("--dry-run", action="store_true", help="Collect and report without writing to the DB.")
     p.add_argument(

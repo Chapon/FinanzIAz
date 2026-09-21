@@ -32,7 +32,7 @@ def _row(
     id=1,
     ticker="NVDA",
     title="t",
-    source="yahoo_rss",
+    source="finnhub:Yahoo",
     url=None,
     published_at=None,
     event_type=None,
@@ -86,7 +86,7 @@ def test_rank_dedups_same_ticker_title_keeps_best():
         _row(
             id=1,
             title="NVDA beats estimates",
-            source="yahoo_rss",
+            source="finnhub:Yahoo",
             event_type="stock_movement",
             sentiment="positive",
             conf=0.5,
@@ -222,7 +222,7 @@ def _seed(rows):
                 NewsEvent(
                     ticker=ticker,
                     title=title,
-                    source="yahoo_rss",
+                    source="finnhub:Yahoo",
                     published_at=pub,
                     fetched_at=fetched,
                     content_hash=f"h{i}",

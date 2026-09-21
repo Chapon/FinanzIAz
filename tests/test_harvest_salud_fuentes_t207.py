@@ -414,23 +414,6 @@ def test_una_propiedad_caida_deja_la_fuente_DEGRADED_y_la_NOMBRA(monkeypatch):
     assert "1/4" in o.detail, "cuántas de cuántas, que es lo que dice si es un hipo o un outage"
 
 
-def test_rss_sin_feedparser_es_SKIPPED(monkeypatch):
-    import builtins
-
-    from data.news_sources import _rss
-
-    real = builtins.__import__
-
-    def _sin_feedparser(name, *a, **kw):
-        if name == "feedparser":
-            raise ImportError("no está")
-        return real(name, *a, **kw)
-
-    monkeypatch.setattr(builtins, "__import__", _sin_feedparser)
-    items, o = _rss("NVDA", ["http://x/feed"])
-    assert items == [] and o.status == "skipped" and "feedparser" in o.detail
-
-
 def test_los_accesores_publicos_devuelven_LO_MISMO_que_la_implementacion(monkeypatch):
     """Los ``collect_*`` son una línea sobre la implementación, así que no pueden
     divergir. Este test es lo que lo fija si alguien los reescribe."""

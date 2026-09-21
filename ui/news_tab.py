@@ -76,7 +76,7 @@ COLUMNS: list[tuple[str, str]] = [
     ("Categoría", "Una de las 17 categorías de la taxonomía catalyst (T-CAT-2)."),
     ("Sentimiento", "Clasificado por qwen local o heurística, desde la óptica del ticker."),
     ("Conf", "Confianza del clasificador (0-1). 0.90 = item-code SEC estructurado."),
-    ("Fuente", "sec_8k = filing EDGAR · yahoo_rss / yfinance = headlines."),
+    ("Fuente", "sec_8k = filing EDGAR · yfinance / finnhub:* = headlines."),
     ("Titular", "Doble click para abrir la noticia en el navegador."),
 ]
 

@@ -39,7 +39,7 @@ yfinance ──> data/yahoo_finance.py ──> historical_data_cache (SQLite)
 
 ### `data/` — ingest
 - `yahoo_finance.py` — precios (single + `get_historical_data_batch`), `get_company_info`, `get_analyst_data` (price targets + recos), earnings. Cache en SQLite, timeout-guard, retry de 401.
-- `news_sources.py` — collectors de noticias (yfinance, SEC 8-K/EDGAR, RSS, Finnhub) para el Catalyst Engine.
+- `news_sources.py` — collectors de noticias (yfinance, SEC 8-K/EDGAR, Finnhub) para el Catalyst Engine.
 
 ### `database/` + esquema
 - `database/models.py` (portfolios, caches, news_events, analyst_estimate_snapshots) y `paper_trading/models.py` (paper_*). SQLite con **WAL + busy_timeout**. Migraciones por **alembic** (`init_db` → `_alembic_sync`). Ver `docs/DB_SCHEMA.md` y `docs/schema_management.md`.

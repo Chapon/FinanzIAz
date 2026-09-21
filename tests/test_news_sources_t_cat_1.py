@@ -16,15 +16,12 @@ import data.news_sources as ns
 from data.news_sources import (
     NewsItem,
     _finnhub_source_label,
-    _rss_source_label,
     cik_for_ticker,
     collect_all,
     collect_finnhub_news,
-    default_feed_urls,
     parse_company_tickers,
     parse_edgar_submissions,
     parse_finnhub_news,
-    yahoo_rss_url,
 )
 
 # ── fixtures (recorded EDGAR shapes) ─────────────────────────────────────────
@@ -150,33 +147,6 @@ def test_8k_different_items_hash_differently():
     assert items[0].content_hash() != items[1].content_hash()
 
 
-# ── RSS helpers ──────────────────────────────────────────────────────────────
-
-
-def test_yahoo_rss_url():
-    assert yahoo_rss_url("nvda") == (
-        "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US"
-    )
-
-
-def test_default_feed_urls_includes_yahoo():
-    urls = default_feed_urls("NVDA")
-    assert any("feeds.finance.yahoo.com" in u for u in urls)
-
-
-def test_default_feed_urls_appends_env_templates(monkeypatch):
-    monkeypatch.setenv("CATALYST_EXTRA_FEEDS", "https://x.com/rss?s={ticker},https://y.com/{ticker}.xml")
-    urls = default_feed_urls("PLTR")
-    assert "https://x.com/rss?s=PLTR" in urls
-    assert "https://y.com/PLTR.xml" in urls
-
-
-def test_rss_source_label():
-    assert _rss_source_label("https://feeds.finance.yahoo.com/...") == "yahoo_rss"
-    assert _rss_source_label("https://www.businesswire.com/rss") == "businesswire_rss"
-    assert _rss_source_label("https://example.com/feed") == "rss"
-
-
 # ── Finnhub company-news ─────────────────────────────────────────────────────
 
 FINNHUB_PAYLOAD = [
@@ -264,7 +234,7 @@ def test_collect_finnhub_uses_injected_session():
 
 
 # La costura que parchean estos tests son las implementaciones (`_yf_news`, `_sec_8k`,
-# `_rss`, `_finnhub_news`), no los accesores públicos: desde la tarea 207 `collect_all`
+# `_finnhub_news`), no los accesores públicos: desde la tarea 207 `collect_all`
 # llama a las primeras, porque son las que devuelven el veredicto además de la lista.
 #
 # **Y el cambio de costura NO fue cosmético.** Al mover `collect_all` a las
@@ -285,26 +255,24 @@ def test_collect_all_default_is_yfinance_only(monkeypatch):
     monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", [_n(t, "yf")]))
     monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
     monkeypatch.setattr(ns, "_sec_8k", lambda t: calls.append("sec") or _ok("sec", []))
-    monkeypatch.setattr(ns, "_rss", lambda t, urls, source=None: calls.append("rss") or _ok("rss", []))
 
     res = collect_all("NVDA")
     assert [i.source for i in res.news] == ["yfinance-fake"]
-    assert calls == []  # sec/rss not invoked by default
+    assert calls == []  # sec no se invoca por default
     # Y sólo las fuentes que corrieron dejan veredicto (tarea 207).
     assert [o.source for o in res.outcomes] == ["yfinance_news", "yfinance_estimates"]
 
 
-def test_collect_all_includes_sec_and_rss_when_selected(monkeypatch):
+def test_collect_all_includes_sec_when_selected(monkeypatch):
+    """La rama ``rss`` que este test tambien ejercitaba se borro en la tarea 212."""
     monkeypatch.setattr(ns, "_yf_news", lambda t: _ok("yfinance_news", [_n(t, "yf")]))
     monkeypatch.setattr(ns, "_yf_estimates", lambda t: _ok("yfinance_estimates", []))
     monkeypatch.setattr(ns, "_sec_8k", lambda t: _ok("sec", [_n(t, "sec_8k")]))
-    monkeypatch.setattr(ns, "_rss", lambda t, urls, source=None: _ok("rss", [_n(t, "yahoo_rss")]))
 
-    res = collect_all("NVDA", {"yfinance", "sec", "rss"})
+    res = collect_all("NVDA", {"yfinance", "sec"})
     got = sorted(i.source for i in res.news)
-    assert got == ["sec_8k", "yahoo_rss", "yfinance-fake"]
+    assert got == ["sec_8k", "yfinance-fake"]
     assert sorted(o.source for o in res.outcomes) == [
-        "rss",
         "sec",
         "yfinance_estimates",
         "yfinance_news",
@@ -341,3 +309,42 @@ if __name__ == "__main__":
     import pytest
 
     pytest.main([__file__, "-v"])
+
+
+# ── La rama RSS se borró (tarea 212) ─────────────────────────────────────────
+
+
+def test_la_rama_rss_ya_no_existe():
+    """**Decisión de Chapa 2026-09-21, con la superposición medida.**
+
+    `feedparser` nunca estuvo instalado ni declarado en `requirements.txt`, así que
+    `_rss` devolvía `skipped` **siempre** — era código que no podía ejecutarse, y la 207
+    dejó ese `skipped` fuera del denominador de la alarma, así que el reporte era ciego
+    a la fuente caída de raíz **por construcción**.
+
+    Lo que decidió no fue eso sino la medición: sobre 12 tickers del universo vivo, el
+    feed default de Yahoo trae 211 titulares y **182 (86%) ya estaban** en la DB,
+    traídos por `yfinance` + `finnhub:Yahoo`. Y **cero** filas de `news_events` usan una
+    fuente rss, así que borrar no dejó ningún dato huérfano.
+
+    Este test existe para que el borrado no vuelva a medias: un `_rss` que reaparezca
+    sin `feedparser` declarado sería el mismo defecto otra vez.
+    """
+    import data.news_sources as mod
+
+    for nombre in ("_rss", "collect_rss", "yahoo_rss_url", "default_feed_urls", "_rss_source_label"):
+        assert not hasattr(mod, nombre), (
+            f"`{nombre}` volvió: si la rama RSS se reimplementa, `feedparser` tiene que "
+            "entrar a `requirements.txt` en el mismo commit (tarea 212)"
+        )
+
+
+def test_collect_all_ignora_la_fuente_rss_si_alguien_la_pide():
+    """El token viejo no rompe nada: se ignora, como cualquier otro desconocido.
+
+    Importa porque el `.bat` de alguien, o un `--sources` copiado de un doc viejo, puede
+    seguir diciendo `rss`. Fallar ahí sería romper el harvest por un token muerto.
+    """
+    res = collect_all("NVDA", {"rss"})
+    assert res.news == [] and res.estimates == []
+    assert res.outcomes == [], "una fuente que no existe no deja veredicto"

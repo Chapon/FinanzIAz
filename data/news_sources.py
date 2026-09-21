@@ -16,16 +16,23 @@ Sources wired today (T-CAT-1: full MVP)
   analyst_price_targets               → EstimateSnapshot (snapshotted daily)
 - SEC 8-K via EDGAR ``submissions``   → NewsItem  (free, the most reliable
   point-in-time source; ``filingDate`` is the official disclosure date)
-- generic RSS (Yahoo per-ticker headline feed by default; PR Newswire /
-  Business Wire / GlobeNewswire via ``CATALYST_EXTRA_FEEDS``) → NewsItem,
-  parsed with ``feedparser`` if installed; silently skipped if not.
 - Finnhub ``company-news`` → NewsItem. A free aggregator over dozens of outlets
   (Reuters / CNBC / Bloomberg / …); we keep the originating outlet in the source
   tag as ``finnhub:<Outlet>``. Needs ``FINNHUB_API_KEY``; skipped if unset.
 
-Source selection is by token set: ``{"yfinance"}`` (default), plus ``"sec"``,
-``"rss"`` and/or ``"finnhub"``. The harvester CLI maps
-``--sources yfinance,sec,rss,finnhub`` here.
+Source selection is by token set: ``{"yfinance"}`` (default), plus ``"sec"``
+y/o ``"finnhub"``. The harvester CLI maps ``--sources yfinance,sec,finnhub``
+aquí.
+
+**La rama ``rss`` se borró en la tarea 212** (decisión de Chapa 2026-09-21), y no
+por prolijidad: ``feedparser`` nunca estuvo instalado ni declarado en
+``requirements.txt``, así que ``_rss`` devolvía ``skipped`` **siempre** — era
+código que no podía ejecutarse. Medido antes de decidir: sobre 12 tickers del
+universo vivo, el feed default de Yahoo trae 211 titulares y **182 (86%) ya
+estaban**, traídos por ``yfinance`` + ``finnhub:Yahoo``; y **cero** filas de
+``news_events`` usan una fuente rss. Si algún día hacen falta los newswire de
+fuente primaria (Business Wire / PR Newswire / GlobeNewswire), se reimplementa
+con ese requisito escrito en vez de arrastrar una rama muerta.
 
 SEC etiquette: EDGAR requires a descriptive ``User-Agent`` with a contact
 address. Set ``SEC_EDGAR_USER_AGENT`` (e.g. "FinanzIAs you@example.com") or the
@@ -84,8 +91,9 @@ class SourceOutcome:
     del harvest no tenía cómo distinguirlas. Las dos corridas de 95 y 82 minutos del
     2026-08-14, con las tres fuentes timeouteando, cerraron con ``failed 0``.
 
-    ``failed`` con ``items > 0`` es un estado real, no una contradicción: ``_rss``
-    acumula y **sigue** tras un feed caído.
+    ``failed`` con ``items > 0`` es un estado real, no una contradicción: una fuente
+    puede acumular resultados y **seguir** tras una falla parcial. (El ejemplo que
+    tenía escrito acá era ``_rss``, que la tarea 212 borró.)
 
     ``degraded`` es el cuarto estado y lo agrega la **tarea 210**: la fuente contestó,
     pero **parte** de lo que consulta adentro se cayó. Hasta entonces eso se declaraba
@@ -416,107 +424,6 @@ def collect_yfinance_earnings_history(ticker: str, limit: int = 16) -> list[tupl
     except Exception:
         log.exception("yfinance earnings history fetch failed for %s", ticker)
     return out
-
-
-# ── Per-ticker RSS (Yahoo by default, others via env) ────────────────────────
-
-
-def yahoo_rss_url(ticker: str) -> str:
-    """Yahoo Finance's free per-symbol headline RSS feed."""
-    return f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker.upper()}&region=US&lang=en-US"
-
-
-def default_feed_urls(ticker: str) -> list[str]:
-    """
-    Free per-ticker RSS feed URLs for ``ticker``.
-
-    Yahoo's per-symbol headline feed is the only reliably free *per-ticker* feed
-    (PR Newswire / Business Wire / GlobeNewswire don't expose stable per-ticker
-    feeds without a key). Extra feeds can be supplied via the
-    ``CATALYST_EXTRA_FEEDS`` env var — a comma-separated list of URL templates
-    with a ``{ticker}`` placeholder, e.g.
-    ``https://www.example.com/rss?symbol={ticker}``.
-    """
-    urls = [yahoo_rss_url(ticker)]
-    extra = os.environ.get("CATALYST_EXTRA_FEEDS", "")
-    for tmpl in (s.strip() for s in extra.split(",") if s.strip()):
-        try:
-            urls.append(tmpl.format(ticker=ticker.upper()))
-        except Exception:
-            log.warning("bad CATALYST_EXTRA_FEEDS template skipped: %r", tmpl)
-    return urls
-
-
-def _rss_source_label(url: str) -> str:
-    """Map a feed URL to a friendly source tag for ``news_events.source``."""
-    u = (url or "").lower()
-    if "yahoo" in u:
-        return "yahoo_rss"
-    if "businesswire" in u:
-        return "businesswire_rss"
-    if "prnewswire" in u:
-        return "prnewswire_rss"
-    if "globenewswire" in u:
-        return "globenewswire_rss"
-    return "rss"
-
-
-def _rss(
-    ticker: str, feed_urls: list[str], source: str | None = None
-) -> tuple[list[NewsItem], SourceOutcome]:
-    """
-    Generic RSS collector (Yahoo per-ticker / PR Newswire / Business Wire / …).
-
-    Requires ``feedparser`` (optional dep). If it's not installed, logs once and
-    returns [] so the MVP keeps running on yfinance + SEC alone. Caller decides
-    which feed URLs to pass. When ``source`` is None the source tag is inferred
-    from each feed's URL (see ``_rss_source_label``).
-
-    Un feed que revienta **no** corta los demás, así que el veredicto es ``failed``
-    si cayó **alguno**, con la cuenta de los que sí entraron (tarea 207).
-    """
-    out: list[NewsItem] = []
-    try:
-        import feedparser
-    except Exception:
-        log.info("feedparser not installed — RSS source skipped for %s", ticker)
-        return out, SourceOutcome("rss", "skipped", 0, "feedparser no instalado")
-    caidos: list[str] = []
-    for url in feed_urls or []:
-        src = source or _rss_source_label(url)
-        try:
-            parsed = feedparser.parse(url)
-            for entry in getattr(parsed, "entries", []):
-                title = entry.get("title")
-                if not title:
-                    continue
-                published = None
-                if entry.get("published_parsed"):
-                    try:
-                        published = datetime(*entry["published_parsed"][:6])
-                    except Exception:
-                        published = None
-                out.append(
-                    NewsItem(
-                        ticker=ticker.upper(),
-                        title=title,
-                        source=src,
-                        content=entry.get("summary"),
-                        url=entry.get("link"),
-                        published_at=published,
-                    )
-                )
-        except Exception:
-            log.exception("RSS parse failed for %s (%s)", ticker, url)
-            caidos.append(url)
-    if caidos:
-        return out, SourceOutcome("rss", "failed", len(out), f"{len(caidos)} feed(s) caidos")
-    return out, SourceOutcome("rss", "ok", len(out))
-
-
-def collect_rss(ticker: str, feed_urls: list[str], source: str | None = None) -> list[NewsItem]:
-    """Accesor de una línea sobre ``_rss`` (ver ``collect_yfinance_news``)."""
-    return _rss(ticker, feed_urls, source)[0]
 
 
 # ── Finnhub company-news (aggregates Reuters / CNBC / Bloomberg / …) ─────────
@@ -895,7 +802,7 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
     """
     Run the enabled sources for one ticker and return combined news + estimates.
     Default sources = {"yfinance"} (news + estimates). Pass e.g.
-    {"yfinance", "sec", "rss", "finnhub"} to enable more. Each source is
+    {"yfinance", "sec", "finnhub"} to enable more. Each source is
     independently guarded — one failing source never sinks the others.
 
     Cada fuente deja además su ``SourceOutcome`` en ``res.outcomes`` (tarea 207): el
@@ -917,8 +824,6 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
         res.estimates.extend(_correr(_yf_estimates, ticker))
     if "sec" in sources:
         res.news.extend(_correr(_sec_8k, ticker))
-    if "rss" in sources:
-        res.news.extend(_correr(_rss, ticker, default_feed_urls(ticker)))
     if "finnhub" in sources:
         res.news.extend(_correr(_finnhub_news, ticker))
     return res
