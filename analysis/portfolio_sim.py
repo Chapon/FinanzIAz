@@ -70,7 +70,7 @@ from analysis.harness_config import (
     LIVE_WHIPSAW_LOOKBACK_DAYS,
     LIVE_WHIPSAW_MIN_LOSS_PCT,
 )
-from analysis.scaleout_replay import CostModel, ScaleOutParams, StopFilter, replay_cycle
+from analysis.scaleout_replay import CostModel, ScaleOutParams, SenalFilter, StopFilter, replay_cycle
 
 # entry_filter(ticker, date_iso10) -> factor de tamaño en [0, 1].
 #   1.0 = entrada normal · 0.0 = entrada suprimida · 0.5 = medio tamaño.
@@ -193,6 +193,7 @@ def simulate_portfolio(
     cap_days_of: CapDaysOf | None = None,
     trail_min_excess_of: TrailMinExcessOf | None = None,
     stop_filter: StopFilter | None = None,
+    senal_filter: SenalFilter | None = None,
     eval_mode: str = "close",
     fill_mode: str = "decision",
     live_gates: bool = False,
@@ -229,6 +230,13 @@ def simulate_portfolio(
     misma frecuencia que el candidato, sin que el simulador sepa qué es un
     control. **``0.0`` es válido** (trailing siempre armado) — a diferencia del
     ``cap_days_of``, donde un 0 no tiene sentido y se cae al global.
+
+    ``senal_filter`` (brazos sanity de la Tarea 219): ``None`` ⇒ el flip de señal vende
+    siempre que pase la histéresis, que es el comportamiento de todas las tareas
+    previas. Espeja a ``stop_filter`` y existe por lo mismo: un sanity necesita
+    suprimir salidas **eligiendo cuáles** (oráculo, azar igualado en tasa), y eso no se
+    puede expresar con ``min_age_bdays``, que suprime por edad. Los brazos del **gate**
+    de la 219 NO lo usan.
 
     Ídem ``stop_filter`` (brazos oráculo de STOP-CAL, Tarea 26): ``None`` ⇒ el stop
     duro dispara siempre que toque. Y ``eval_mode`` (STOP-PRICE, Tarea 26b):
@@ -469,6 +477,7 @@ def simulate_portfolio(
                 regime="" if regime_of is None else regime_of(entry_date),
                 time_stop_days=time_stop_days,
                 stop_filter=stop_filter,
+                senal_filter=senal_filter,
                 # T164: el filtro necesita el ticker para que el sorteo del control
                 # aleatorio sea por (semilla, ticker, fecha) y no una moneda por fecha.
                 ticker=ticker,

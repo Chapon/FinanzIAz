@@ -397,6 +397,13 @@ LOOKAHEAD_FILL_COST_DESC = (
 # **Eso vale para la rejilla de la T34, no para todo harness** (tarea 36): la
 # conclusión depende del eje de los brazos, y por eso el banner declara las dos
 # lecturas en ``REENTRY_GATES_READING_DESC`` en vez de exportar ésta.
+# `paper_signal_sell_bypass_score` — Gate 2b: un SELL de señal con score POR DEBAJO de
+# esto saltea la espera de `min_age_bdays` (convicción alta de salir). Entra acá al
+# barrer la edad mínima en la tarea 219: el runner lo tenía como constante propia, que
+# es la duplicación que las tareas 92 y 134 cerraron. Medido sobre las salidas por
+# señal vivas de la cuenta 2: el bypass alcanza a 1 de 41 (el resto tiene score ≥ 0.25,
+# rango 0.15-0.45, mediana 0.39), o sea que el gate de edad SÍ tiene palanca.
+LIVE_SIGNAL_SELL_BYPASS_SCORE = 0.25
 LIVE_WHIPSAW_LOOKBACK_DAYS = 7
 LIVE_WHIPSAW_MIN_LOSS_PCT = 0.0
 LIVE_CHURN_LOOKBACK_DAYS = 10

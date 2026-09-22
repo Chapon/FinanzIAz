@@ -76,6 +76,9 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     ("LIVE_EARNINGS_BLACKOUT_DAYS", "earnings_blackout_days"),
     ("LIVE_WHIPSAW_LOOKBACK_DAYS", "paper_whipsaw_lookback_days"),
     ("LIVE_WHIPSAW_MIN_LOSS_PCT", "paper_whipsaw_min_loss_pct"),
+    # Gate 2b — entra con la tarea 219, que barrió la edad mínima y necesitaba el
+    # bypass en un solo lugar. Es espejo REAL: `settings.get("paper_signal_sell_bypass_score")`.
+    ("LIVE_SIGNAL_SELL_BYPASS_SCORE", "paper_signal_sell_bypass_score"),
     ("LIVE_CHURN_LOOKBACK_DAYS", "paper_churn_lookback_days"),
     ("LIVE_CHURN_MAX_CYCLES", "paper_churn_max_cycles"),
 )

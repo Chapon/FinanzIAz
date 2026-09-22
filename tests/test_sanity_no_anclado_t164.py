@@ -68,6 +68,9 @@ INVENTARIO: dict[str, str] = {
     "run_stop_value_t37.py:SANITY_ORACLE_VS_RANDOM_CAGR": MAGNITUD,
     "run_stop_value_t37.py:SANITY_ORACLE_VS_RANDOM_DD": MAGNITUD,
     "run_stop_value_t37.py:SANITY_RUIN_MIN_DAMAGE": MAGNITUD,  # la ruina tiene que doler ≥2 pp
+    # El oráculo de SALIDA POR SEÑAL contra el azar igualado en tasa (tarea 219). Es pp
+    # de CAGR, así que un refresh lo mueve: va al checklist de re-anclaje.
+    "run_signal_exit_delay_t219.py:SANITY_ORACULO_VS_AZAR_CAGR": MAGNITUD,
     # — fracciones de población ————————————————————————————————————————————
     "run_anom_regime_t38.py:SANITY_MIN_TRADE_DIFF": FRACCION,
     "run_anom_regime_t38.py:SANITY_MIN_CAPITAL_DIFF": FRACCION,

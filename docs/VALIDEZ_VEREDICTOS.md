@@ -38,6 +38,7 @@ así que **no hay respuesta**). Un NO-SHIP no es lo mismo que un «sin veredicto
 | `run_rank_neutral_t39.py` | T39 | NO-SHIP por C2, C4 y C6 | **2026-09-10 · VÁLIDA** | refresh 2026-09-09 | `docs/BACKLOG.md`, entrada **164** |
 | `run_anom_profile_t45.py` | T45 | NO-SHIP por C4 y C8 | **2026-09-10 · VÁLIDA** | refresh 2026-09-09 | `docs/BACKLOG.md`, entrada **164** |
 | `run_prio_event_t49.py` | T49 | NO-SHIP por C1, C2, C4, C5 y C7 | **2026-09-10 · VÁLIDA** | refresh 2026-09-09 | `docs/BACKLOG.md`, entrada **164** |
+| `run_signal_exit_delay_t219.py` | T219 | **NO-SHIP** · ningún brazo pasa · eje CERRADO | **2026-09-22 · VÁLIDA** (corrida nueva; el baseline reproduce el `soff_t2.0` de la T170 al decimal) | refresh 2026-09-09, artefactos 8 sesiones atrasados (enmienda 1 del pre-registro) | `docs/signal_exit_delay_t219_2026-09-22.md` |
 | `run_exit_policy_t170.py` | T170 | **NO MOVER** · rejilla CERRADA | **2026-09-10 · VÁLIDA** (corrida nueva) | refresh 2026-09-09 | `docs/exit_policy_t170_2026-09-10.md` |
 | `run_event_timestop_t51.py` | T51 | **sin veredicto** | 2026-08-28 · **INVÁLIDA** (ya publicada así) | pre-refresh | `docs/event_timestop_t51_2026-08-28.md` |
 | `run_trail_arm_t54.py` | T54 | **sin veredicto** | 2026-08-28 · **INVÁLIDA** (ya publicada así) | pre-refresh | `docs/trail_arm_t54_2026-08-28.md` |

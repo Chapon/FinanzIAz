@@ -170,6 +170,67 @@ barreras ATR (la T170 dijo NO MOVER), el escalado por régimen (T20, cableado) y
 
 ---
 
+## Enmienda 1 — 2026-09-22, ANTES de leer ningún Δ: se corre con artefactos atrasados
+
+**Qué pasó.** El primer intento de corrida **abortó** por el guard de continuidad del
+cohorte (tarea 140): los **126** frames `10y` terminan el **2026-09-09** mientras un frame
+hermano del mismo ticker (`2y`) llega al **2026-09-21** — **8 sesiones** de atraso, sobre
+una tolerancia de 5. El guard hizo exactamente su trabajo.
+
+**Qué se decide, y por qué NO se refresca.** Se corre con `--allow-stale-artifacts` y la
+ventana **queda la que este pre-registro congeló**. Refrescar el cohorte movería el
+`start` y el `end` de la ventana, y con eso:
+
+* habría que **re-anclar las constantes de reproducción**, que el propio guard avisa;
+* y —más de fondo— **la población dejaría de ser la que acá se congeló**. El pre-registro
+  fija la huella `06ab64fc6448`; correr sobre otra ventana hace que los Δ no sean
+  comparables con lo que se pre-registró, que es justo lo que el pre-registro existe para
+  evitar.
+
+**Por qué es inmaterial acá, y no una excusa.** La ventana es de **10 años**. Perder las
+últimas **8 sesiones** cambia el extremo derecho en ~0,3% del período. No hay ningún brazo
+cuyo efecto viva en esas 8 ruedas: el eje que se mide es la **edad mínima de la salida por
+señal**, con horizontes de 3 a 20 días sobre miles de ciclos repartidos en una década.
+
+**Lo que esto sí cuesta, declarado:** las 8 ruedas que faltan son **las más recientes**, o
+sea las más parecidas al presente. Si alguien quisiera leer este veredicto como *«y esto
+vale para el mercado de esta semana»*, no puede. Vale para la década medida.
+
+**Y lo que NO se toca:** el refresh, cuando se haga, va **sólo** por
+`scripts/refresh_cohort.py`. A mano se pisan las `ARTIFACT_REFRESH_EXCEPTIONS` — ya costó
+el histórico de AVB, irreversible.
+
+---
+
+## Enmienda 2 — 2026-09-22, tras un primer intento INVÁLIDO: entra un quinto sanity
+
+**Qué pasó.** El primer intento corrió con `stop_mult=0.0` creyendo que era *«stop
+apagado»*. El centinela es `NO_STOP = 1e9`; `0.0` pone el stop **en el precio de entrada**
+y dispara ante cualquier baja. Resultado: **8.838** trades, tenencia **1,6 días**, CAGR
+**−17,89%** y Sharpe **−1,76** en los **siete** brazos.
+
+**Por qué esto obliga a una enmienda y no alcanza con arreglar el bug.** Los cuatro sanity
+de §5 **pasaban**: el oráculo se separaba, la contabilidad cerraba y la curva seguía siendo
+**monótona**. Los Δ entre brazos seguían pareciendo razonables. **El veredicto habría
+salido sin que nada lo marcara**, sobre una cartera que perdía el 18% anual.
+
+**El quinto sanity, y es DURO:** el baseline `age3` **es** el brazo `soff_t2.0` que la
+**T170** publicó sobre esta **misma** población, misma ventana y misma config viva
+(`ScaleOutParams()` por default es `min_age_bdays=3`). Así que tiene que reproducir su fila
+publicada: **CAGR 8,78% · Sharpe 0,55 · 2531 tomados**, con tolerancias 0,5 pp / 0,05 /
+2%. Si no reproduce ⇒ **INVÁLIDA, sin veredicto**.
+
+**Y la referencia es EXTERNA a propósito.** Un sanity derivado de esta misma corrida habría
+sido **ciego al defecto**, porque el bug afectaba a los siete brazos por igual — es
+exactamente el defecto que las tareas **101** y **110** dejaron documentado (*«si la
+referencia del guard sale de la misma población que chequea, es ciega al defecto
+mayoritario»*). Los tres números van **clavados del doc publicado**, no derivados.
+
+**Esta enmienda se declara ANTES de leer los Δ de la corrida válida.** Lo único que se vio
+del primer intento son los números del baseline, que es lo que disparó la sospecha.
+
+---
+
 ## 8. Plan de ejecución
 
 1. Runner nuevo y chico que reuse `simulate_portfolio` + `cohort_bars` + el store PIT, con

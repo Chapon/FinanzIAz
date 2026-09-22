@@ -131,7 +131,10 @@ SIN_ESPEJO: dict[str, str] = {
         "SIZING_NO_CABLEADO: piso de notional (250 USD) contra un tamaño de BUY de ~5.150 USD "
         "en la cuenta viva, o sea inerte por dos órdenes de magnitud"
     ),
-    "paper_signal_sell_bypass_score": "YA_DECLARADO: parte del Gate 2b, que la clave `reentry_gates` ya declara",
+    # `paper_signal_sell_bypass_score` VIVÍA acá y SALIÓ con la tarea **219**: al barrer la
+    # edad mínima hubo que tener el bypass en un solo lugar, así que ganó su espejo
+    # `LIVE_SIGNAL_SELL_BYPASS_SCORE` y ahora lo cubre el guard de la 130. Su hermano
+    # sigue acá: la 219 lo barrió como EJE del experimento, no lo cableó a un espejo.
     "paper_signal_sell_min_age_bdays": "YA_DECLARADO: parte del Gate 2b, que la clave `reentry_gates` ya declara",
 }
 

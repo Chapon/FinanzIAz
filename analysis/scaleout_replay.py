@@ -70,6 +70,18 @@ SignalSeries = dict
 # futuro de ``bars``— pero la firma es una sola para los tres.
 StopFilter = Callable[[list[Bar], int, str], bool]
 
+# ``senal_filter(bars, i, ticker) -> bool``: ¿se le permite al **flip de señal**
+# vender en la barra ``i``? ``False`` lo suprime y la posición sigue abierta. Espeja a
+# ``stop_filter`` a propósito —misma firma, misma semántica de "None = no toca nada"—
+# porque es el mismo problema con otra barrera: los brazos sanity de la tarea **219**
+# (oráculo y control igualado en tasa) necesitan suprimir salidas **eligiendo cuáles**,
+# y eso no se puede expresar con ``min_age_bdays``, que suprime por edad.
+#
+# NO se usa para los brazos del gate: ésos mueven ``ScaleOutParams.min_age_bdays``, que
+# es la perilla viva. Este hook existe sólo para los sanity, igual que ``stop_filter``
+# existe sólo para los oráculos de la T26.
+SenalFilter = Callable[[list[Bar], int, str], bool]
+
 # Múltiplo que pone el nivel del stop en negativo ⇒ el guard ``> 0`` lo apaga.
 _NO_STOP = 1e9
 
@@ -242,7 +254,8 @@ def replay_cycle(
     regime: str = "",
     time_stop_days: int | None = None,
     stop_filter: StopFilter | None = None,
-    # El ticker sólo lo usa `stop_filter` (tarea 164): es lo que hace que el sorteo del
+    senal_filter: SenalFilter | None = None,
+    # El ticker lo usan `stop_filter` (tarea 164) y `senal_filter` (tarea 219): es lo que hace que el sorteo del
     # control aleatorio sea por (semilla, ticker, fecha). Keyword-only con default, así
     # que ningún llamador que no use filtro se entera.
     ticker: str = "",
@@ -358,7 +371,14 @@ def replay_cycle(
 
         # ── 2. Flip de señal ──────────────────────────────────────────────────
         sig = signals.get(date_i)
-        if sig == "SELL" and _passes_hysteresis(bars, entry_idx, i, scores, date_i, params):
+        # `senal_filter` va DESPUÉS de la histéresis a propósito: primero se pregunta si el
+        # engine vivo habría vendido (Gate 2b), y sólo sobre ésas actúa el filtro. Al revés
+        # el sanity mediría un universo de salidas que el motor nunca ofreció.
+        if (
+            sig == "SELL"
+            and _passes_hysteresis(bars, entry_idx, i, scores, date_i, params)
+            and (senal_filter is None or senal_filter(bars, i, ticker))
+        ):
             frac = _fraction_to_sell(params, scaled_out)
             if frac > 0:
                 sell_shares = remaining * frac
