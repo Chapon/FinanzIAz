@@ -325,36 +325,21 @@ _POST_SELL_HORIZONS = (5, 20)
 
 
 def _load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float]] | None:
-    """Serie de cierres diarios desde ``historical_data_cache`` (stdlib puro).
+    """Serie de cierres diarios, por el backend ACTIVO del cache (tarea 218).
 
-    Toma la fila más recientemente fetcheada con interval='1d' para el ticker
-    y parsea el ``data_json`` (orient="split" de pandas) sin pandas.
-    Devuelve [(date_iso10, close), ...] ordenado ascendente, o None.
+    Esto era una **segunda copia** del lector de ``metrics_panel``: los dos hacian el
+    mismo ``SELECT ... FROM historical_data_cache`` a mano. Esa tabla no se escribe
+    desde que ARQ1 movio el cache a Parquet (2026-07-12) y no tiene filas desde la
+    migracion 0011 (2026-09-02), asi que las dos copias devolvian ``None`` para todo
+    ticker — incluido el ``SPY`` del benchmark V1 de este mismo dashboard.
+
+    Tener dos copias es lo que permitio que arreglar una no alcanzara a la otra. Ahora
+    el lector es uno solo y vive en ``data.historical_series``; ``pandas`` sigue sin
+    importarse a nivel de modulo (el camino Parquet lo importa adentro).
     """
-    row = con.execute(
-        "SELECT data_json FROM historical_data_cache "
-        "WHERE ticker = ? AND interval = '1d' "
-        "ORDER BY fetched_at DESC LIMIT 1",
-        (ticker,),
-    ).fetchone()
-    if not row or not row[0]:
-        return None
-    try:
-        d = json.loads(row[0])
-        cols = d["columns"]
-        # Columnas pueden venir planas ("Close") o como tuplas serializadas
-        # (["Close", "MSFT"]) si el frame era MultiIndex.
-        names = [c[0] if isinstance(c, list) else c for c in cols]
-        ci = names.index("Close")
-        pairs: list[tuple[str, float]] = []
-        for ts, vals in zip(d["index"], d["data"], strict=False):
-            c = vals[ci]
-            if c is not None and float(c) > 0:
-                pairs.append((str(ts)[:10], float(c)))
-        pairs.sort()
-        return pairs or None
-    except Exception:
-        return None
+    from data.historical_series import close_series
+
+    return close_series(con, ticker)
 
 
 def _fwd_return_from_series(pairs: list[tuple[str, float]], date_iso10: str, horizon: int) -> float | None:
@@ -550,12 +535,15 @@ def _regime_for_dates(con: sqlite3.Connection, dates_iso10: list[str]) -> dict[s
 
         from analysis.regime_detector import detect_regime_series
 
-        tickers = [
-            r[0]
-            for r in con.execute(
-                "SELECT DISTINCT ticker FROM historical_data_cache WHERE interval='1d'"
-            ).fetchall()
-        ]
+        # Claves del cache ACTIVO (tarea 218). Esto listaba la tabla vieja, que no
+        # tiene filas desde la migracion 0011: `tickers` salia vacio, `cols` tambien,
+        # y el `len(cols) < 5` de abajo devolvia None — o sea que el corte por regimen
+        # del dashboard estaba apagado y se leia como "no hay suficientes datos".
+        # Son claves de cache y NO tickers (`BRK-B` se guarda `BRK_B`); sirven porque
+        # vuelven al mismo archivo por el mismo modulo. Ver `claves_1d`.
+        from data.historical_series import claves_1d
+
+        tickers = claves_1d(con)
         cols: dict[str, dict[str, float]] = {}
         for t in tickers:
             pairs = _load_close_series(con, t)

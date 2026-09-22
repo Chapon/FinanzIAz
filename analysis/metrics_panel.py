@@ -81,7 +81,6 @@ Schema del payload (``build_metrics``)::
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import subprocess
 from collections import defaultdict, deque
@@ -92,6 +91,7 @@ from typing import Any
 import numpy as np
 
 from analysis.performance_score import performance_score_panel
+from data import historical_series
 
 # Ventana del forward return (días hábiles aproximados por índice de barras 1d).
 FWD_SHORT = 5
@@ -179,72 +179,25 @@ def _day(ts: str | None) -> str | None:
 
 # ── series de cierre desde el cache histórico ─────────────────────────────────
 def load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float]] | None:
-    """Lista ``(YYYY-MM-DD, close)`` ordenada por fecha desde la fila 1d más fresca.
+    """Lista ``(YYYY-MM-DD, close)`` ascendente, o ``None`` si no hay serie.
 
-    Devuelve ``None`` si no hay cache para el ticker.
+    **Delega en ``data.historical_series`` desde la tarea 218.** Antes hacia el
+    ``SELECT ... FROM historical_data_cache`` a mano, y esa tabla no se escribe desde
+    que ARQ1 movio el cache a Parquet (2026-07-12) ni tiene filas desde que la
+    migracion 0011 la vacio (2026-09-02): devolvia ``None`` para TODO ticker, lo que
+    apago la tarjeta VS SPY, MAE/MFE y el fwd-5d sin que nada lo dijera.
     """
-    row = con.execute(
-        "SELECT data_json FROM historical_data_cache "
-        "WHERE ticker=? AND interval='1d' ORDER BY fetched_at DESC LIMIT 1",
-        (ticker,),
-    ).fetchone()
-    if not row or not row[0]:
-        return None
-    try:
-        d = json.loads(row[0])
-        ci = d["columns"].index("Close")
-    except (ValueError, KeyError, json.JSONDecodeError):
-        return None
-    out: list[tuple[str, float]] = []
-    # strict=False a proposito: esto parsea un JSON EXTERNO (orient="split")
-    # en un path de display, y el try/except de arriba ya cerro. Un largo
-    # distinto tiene que degradar, no tirar abajo el panel de metricas.
-    for idx, vals in zip(d.get("index", []), d.get("data", []), strict=False):
-        try:
-            cl = vals[ci]
-        except (IndexError, TypeError):
-            continue
-        if cl is not None and isinstance(idx, str):
-            out.append((idx[:10], float(cl)))
-    return out or None
+    return historical_series.close_series(con, ticker)
 
 
 def load_ohlc_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float, float]] | None:
-    """Lista ``(YYYY-MM-DD, high, low)`` ordenada por fecha desde la fila 1d más fresca.
+    """Lista ``(YYYY-MM-DD, high, low)`` ascendente, o ``None`` si no hay serie.
 
-    Igual que ``load_close_series`` pero devuelve el rango intradía (High/Low) que
-    un stop/target realmente ve — usado para MAE/MFE. Tolera columnas planas
-    (``"High"``) o serializadas como tupla (``["High","MSFT"]``, frame MultiIndex).
-    Devuelve ``None`` si no hay cache, o si faltan las columnas High/Low.
+    El rango intradia que un stop/target realmente ve — usado para MAE/MFE. Devuelve
+    ``None`` si la fuente no trae High/Low, que es el contrato que ya tenia. Delega
+    en ``data.historical_series`` desde la tarea 218 (ver ``load_close_series``).
     """
-    row = con.execute(
-        "SELECT data_json FROM historical_data_cache "
-        "WHERE ticker=? AND interval='1d' ORDER BY fetched_at DESC LIMIT 1",
-        (ticker,),
-    ).fetchone()
-    if not row or not row[0]:
-        return None
-    try:
-        d = json.loads(row[0])
-        names = [c[0] if isinstance(c, list) else c for c in d["columns"]]
-        hi = names.index("High")
-        lo = names.index("Low")
-    except (ValueError, KeyError, json.JSONDecodeError):
-        return None
-    out: list[tuple[str, float, float]] = []
-    # strict=False a proposito: esto parsea un JSON EXTERNO (orient="split")
-    # en un path de display, y el try/except de arriba ya cerro. Un largo
-    # distinto tiene que degradar, no tirar abajo el panel de metricas.
-    for idx, vals in zip(d.get("index", []), d.get("data", []), strict=False):
-        try:
-            h = vals[hi]
-            lw = vals[lo]
-        except (IndexError, TypeError):
-            continue
-        if h is not None and lw is not None and isinstance(idx, str):
-            out.append((idx[:10], float(h), float(lw)))
-    out.sort()
-    return out or None
+    return historical_series.ohlc_series(con, ticker)
 
 
 def excursions(
@@ -918,6 +871,11 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": None,
         "stale": False,
         "spy_end_day": None,
+        # Por que NO hay numero (tarea 218). `stale` ya separaba "dato viejo", pero
+        # "sin serie" y "faltan snapshots" se veian igual — y la UI los rotulaba a los
+        # dos como "sin cache de SPY todavia", que ademas afirmaba un "todavia" falso:
+        # el lector estaba roto, no esperando datos.
+        "motivo": "sin_snapshots",
     }
     try:
         rows = con.execute(
@@ -936,7 +894,13 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     account_return = (end_eq / start_eq - 1.0) if start_eq > 0 else None
     spy = load_close_series(con, BENCHMARK_TICKER)
     if not spy or start_day is None or end_day is None:
-        return {**empty, "start_day": start_day, "end_day": end_day, "account_return": account_return}
+        return {
+            **empty,
+            "start_day": start_day,
+            "end_day": end_day,
+            "account_return": account_return,
+            "motivo": "sin_serie",
+        }
     spy = sorted(spy)
     spy_end_day = spy[-1][0] if spy else None
     # tarea 22: si el cache de SPY quedó > K días hábiles atrás del último
@@ -950,6 +914,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
             "account_return": account_return,
             "stale": True,
             "spy_end_day": spy_end_day,
+            "motivo": "stale",
         }
     p0 = _close_on_or_after(spy, start_day)
     p1 = _close_on_or_before(spy, end_day)
@@ -967,6 +932,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": vs_spy,
         "stale": False,
         "spy_end_day": spy_end_day,
+        "motivo": None if spy_return is not None else "sin_serie",
     }
 
 

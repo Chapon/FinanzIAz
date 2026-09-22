@@ -33,7 +33,7 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 | `alerts` | Alertas de precio. Estado derivado: `is_active=False` ⇒ "disparada"; `is_active=True` + `is_paused=True` ⇒ "pausada" (no se evalúa en `check_alerts`); resto ⇒ "activa" (ALRT1, col `is_paused` NOT NULL default false, migración 0008). |
 | `price_cache` | Cache de precios actuales. |
 | `dividend_cache` | Cache de dividendos. |
-| `historical_data_cache` | OHLCV histórico cacheado (5y/10y precargados). Lo llena `get_historical_data[_batch]`. |
+| `historical_data_cache` | **VACÍA y sin escritor desde ARQ1** (2026-07-12): el cache OHLCV vive en `data/parquet/`, y la migración **0011** borró sus 288 filas el 2026-09-02. La tabla se conserva porque el backend `sqlite` sigue siendo un camino válido (`historical_cache_backend`). Leer de acá a mano fue el defecto de la tarea **218** — usá `data/historical_series.py`, que despacha por el backend activo. |
 | `earnings_cache` | Fechas de earnings. |
 | `analyst_data_cache` | Recos + price targets cacheados. |
 | `failed_tickers` | Tickers que fallan en Yahoo (`status`: failing/retry) para saltarlos. |

@@ -880,7 +880,16 @@ class MetricsTab(QWidget):
                 (bm["vs_spy"] or 0) > 0,
             )
         else:
-            self.cards["benchmark"].set_value("—", "sin cache de SPY todavía", None)
+            # tarea 218: el "todavía" que decía acá afirmaba que el dato venía en
+            # camino. No venía: `metrics_panel` leía una tabla que la migración 0011
+            # dejó vacía, así que VS SPY estuvo apagado desde el 2026-09-02 y el
+            # cartel lo presentaba como algo normal y transitorio.
+            motivo = bm.get("motivo")
+            sub = {
+                "sin_serie": "sin serie de SPY en el cache",
+                "sin_snapshots": "faltan snapshots de la cuenta",
+            }.get(motivo, "sin datos para comparar")
+            self.cards["benchmark"].set_value("—", sub, None)
         # ── sparklines ──
         # Cada card lleva un mini-gráfico abajo. Le damos serie a las que tienen
         # una secuencia con sentido y ocultamos el recuadro en las que son un

@@ -28,14 +28,25 @@ O sea que el reconstructor reproduce el estado final sin error. Lo que sigue se 
 
 | tramo | cuenta | SPY | diferencia |
 |---|---:|---:|---:|
-| 2026-06-20 → 2026-06-30 | +1,11% | +0,00% | **+1,10pp** |
-| 2026-06-30 → 2026-07-24 | +3,41% | +0,03% | **+3,37pp** |
-| 2026-07-24 → 2026-08-31 | −2,15% | +2,68% | **−4,83pp** |
+| 2026-06-20 → 2026-06-30 | +1,06% | +0,32% | **+0,74pp** |
+| 2026-06-30 → 2026-07-24 | +3,41% | −1,05% | **+4,46pp** |
+| 2026-07-24 → 2026-08-31 | −2,15% | +3,81% | **−5,95pp** |
 | 2026-08-31 → 2026-09-21 | +0,84% | +1,09% | −0,25pp |
-| **total desde el inicio** | **+3,12%** | **+3,84%** | **−0,72pp** |
+| **total desde el inicio** | **+3,12%** | **+4,17%** | **−1,05pp** |
 
-**Desde el inicio la cuenta casi empata al mercado** (+3,12% contra +3,84%, ~13% anualizado).
+**Desde el inicio la cuenta casi empata al mercado** (+3,12% contra +4,17%, ~13% anualizado).
 Eso no es «cero».
+
+> **Corrección del 2026-09-21, al cerrar la tarea 218.** La primera versión de esta tabla decía
+> SPY **+3,84%** y una brecha de −0,72pp. Estaba **anclada un día antes**: el 20-jun fue sábado, así
+> que tomé la barra del **18-jun** (744,89) en vez de la primera rueda de la cuenta, el **22-jun**
+> (742,55). Con VS SPY prendido, el panel ancla en la primera barra **>= el inicio**, que es lo
+> correcto. El número bueno es **+4,17%** y la brecha **−1,05pp**. La del pico (−6,26pp) **no cambia**
+> —ahí los dos extremos son ruedas hábiles, así que el anclaje no la tocaba—, y las filas intermedias
+> de la tabla se recalcularon con el mismo criterio. El signo y la conclusión no se mueven: la cuenta
+> le ganó al mercado hasta el 24-jul y se lo devolvió después. Lo que cambia es que la ventaja de
+> julio era **mayor** de lo que decía (+4,46pp, no +3,37pp) y la pérdida de agosto también
+> (−5,95pp, no −4,83pp): SPY **bajó** −1,05% en el tramo de julio, no subió +0,03%.
 
 **Pero tenés razón en lo que ves, y el número exacto es éste:** el pico de equity fue
 **$52.252,05 el 2026-07-24**. Desde ahí:

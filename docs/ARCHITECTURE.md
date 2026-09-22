@@ -5,7 +5,7 @@ Mapa del flujo de datos y responsabilidades de cada paquete. Para reglas de trab
 ## Flujo de datos (de Yahoo a la orden)
 
 ```
-yfinance ──> data/yahoo_finance.py ──> historical_data_cache (SQLite)
+yfinance ──> data/yahoo_finance.py ──> data/parquet/ (ARQ1, desde 2026-07-12)
                   │  (batch download, 1 crumb/chunk, retry 401, WAL)
                   ▼
             analysis/technical.py  ──>  señal técnica + XGBoost + vol_overlay

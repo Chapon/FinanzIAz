@@ -152,6 +152,13 @@ SPLITS_CLASIFICADOS: dict[tuple[str, str], str] = {
     ("scripts/measure_scale_drift_t64.py", "measure"): (
         "IDEMPOTENTE: sólo CUENTA tokens distintos, y el conteo es el mismo con `_` o con `-`"
     ),
+    ("data/historical_series.py", "claves_1d"): (
+        "IDEMPOTENTE: las claves vuelven a entrar por `close_series`/`ohlc_series` del MISMO "
+        "modulo, que llama a `parquet_cache.latest_1d` y re-sanitiza igual (`BRK_B` -> `BRK_B`), "
+        "asi que resuelven al mismo archivo. El unico consumidor es el proxy de mercado del "
+        "dashboard, que promedia series normalizadas y no muestra el nombre. Lo fija "
+        "`test_las_claves_del_cache_NO_son_tickers_pero_resuelven` (tarea 218)"
+    ),
     ("scripts/refresh_live_universe.py", "pit_tickers"): (
         "PIT_SIN_SANITIZAR: los JSON PIT se nombran con el ticker CRUDO "
         "(`BRK-B__10y__w250.json`), así que el prefijo es el ticker y se compara bien contra "
