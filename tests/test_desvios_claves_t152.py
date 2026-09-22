@@ -63,6 +63,7 @@ CLAVES_CONOCIDAS = frozenset(
         "regime_scale",
         "universe_screen",
         "adv_cap",
+        "dividendos",
         "earnings_blackout",
         "reentry_gates",
         "reentry_gates_no_cartera",
@@ -180,6 +181,8 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
         "regime_scale",
         "universe_screen",
         "adv_cap",
+        # Tarea 220 — INCONDICIONAL: el harness cobra dividendos y el motor no.
+        "dividendos",
         "earnings_blackout",
         "reentry_gates",
     }

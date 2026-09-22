@@ -260,6 +260,27 @@ ADV_CAP_MIN_ADV_DATE = "2016-10-28"
 ADV_CAP_MEASURED_ON = "2026-09-12"
 ADV_CAP_DEFAULT_CAPITAL = 50_000.0  # el default de `simulate_portfolio` y de `--capital` en los runners
 
+
+# ── Dividendos: el harness los cobra, el motor vivo no (tarea 220 → 221) ─────
+#
+# `data/yahoo_finance.py` baja TODO con `auto_adjust=True` (`:1805`, `:1867`), asi que
+# cada barra cacheada es una serie **total-return**: los dividendos ya estan
+# reinvertidos en el precio y todo lo que el harness simula los cobra implicitamente.
+# Y `paper_trading/` **no menciona dividendos en ninguna linea**: cuando una posicion
+# pasa por su ex-date el precio cae y la cuenta NO recibe el efectivo.
+#
+# Medido el 2026-09-21 sobre las tenencias REALES de la cuenta 2 (bajando el calendario
+# de dividendos de cada ticker y contando solo los ex-dates dentro de cada periodo de
+# tenencia). Los dos tickers sin historial —AMD y WBD— no pagan, asi que no esta
+# subestimado.
+DIVIDENDOS_NO_COBRADOS_USD = 322.77
+DIVIDENDOS_N_TENENCIAS = 79
+DIVIDENDOS_N_TICKERS = 54
+DIVIDENDOS_VENTANA_MESES = 3.05
+DIVIDENDOS_CAPITAL = 50_000.0  # capital inicial de la cuenta 2
+DIVIDENDOS_PNL_REALIZADO_USD = 521.38  # P&L neto realizado de la cuenta en la MISMA ventana
+DIVIDENDOS_MEDIDO_EL = "2026-09-21"
+
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
 LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
@@ -2026,6 +2047,36 @@ def adv_cap_desc() -> str:
     )
 
 
+def dividendos_desc() -> str:
+    """El texto del desvío `dividendos` (tarea 220), con los números **derivados**.
+
+    Como en ``adv_cap_desc``: el porcentaje del capital, el anualizado y la fracción del
+    P&L se **calculan** de las constantes. Escritos a mano, los cuatro derivan por
+    separado en cuanto se re-mida uno.
+    """
+    pct = DIVIDENDOS_NO_COBRADOS_USD / DIVIDENDOS_CAPITAL * 100
+    anual = pct * 12.0 / DIVIDENDOS_VENTANA_MESES
+    del_pnl = DIVIDENDOS_NO_COBRADOS_USD / DIVIDENDOS_PNL_REALIZADO_USD * 100
+    return (
+        f"El harness COBRA dividendos y el motor vivo NO. Todo el cache se baja con "
+        f"`auto_adjust=True`, o sea series total-return, así que cada brazo simulado los "
+        f"cobra en el precio; `paper_trading/` no los menciona en ninguna línea, así que la "
+        f"cuenta pasa por el ex-date, ve caer el precio y no recibe el efectivo. Medido el "
+        f"{DIVIDENDOS_MEDIDO_EL} sobre las tenencias reales de la cuenta "
+        f"{LIVE_ACCOUNT_ID} ({DIVIDENDOS_N_TENENCIAS} tenencias, {DIVIDENDOS_N_TICKERS} "
+        f"tickers): ${DIVIDENDOS_NO_COBRADOS_USD:,.2f} en {DIVIDENDOS_VENTANA_MESES:.2f} "
+        f"meses = {pct:.2f}% del capital = {anual:.2f}%/año, que es el {del_pnl:.0f}% de todo "
+        f"el P&L neto realizado de la cuenta en la misma ventana. "
+        f"CÓMO LEERLO: sobre una cifra ABSOLUTA (el CAGR de un brazo) el harness está "
+        f"sobrestimado por ~el dividend yield del universo. Sobre una DIFERENCIA entre brazos "
+        f"el sesgo es en buena medida común —los dos brazos corren sobre las mismas barras— "
+        f"pero NO es exactamente común: un brazo que cambie el tiempo en mercado o la "
+        f"selección de nombres también cambia el dividendo que cobra, y el escalado por "
+        f"régimen (T20, lo único cableado) cambia justamente el tiempo en mercado. Esa parte "
+        f"NO está medida"
+    )
+
+
 def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     """Desvíos de ``cfg`` respecto de la cuenta viva, **con clave** (tarea 152)."""
     out: list[Deviation] = []
@@ -2198,6 +2249,10 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
             f"hay fechas de earnings point-in-time a 10 años",
         )
+    # Tarea 220 — INCONDICIONAL: no depende de `cfg` ni de ningún flag. El harness no
+    # tiene forma de no cobrarlos (las barras vienen ajustadas) y el motor no tiene forma
+    # de cobrarlos (no los mira). Se declara siempre, hasta que la 221 lo cierre.
+    _add("dividendos", dividendos_desc())
     if cfg.per_trade:
         _add("reentry_gates_no_cartera", REENTRY_GATES_NO_CARTERA_DESC)
     elif not cfg.live_gates:
