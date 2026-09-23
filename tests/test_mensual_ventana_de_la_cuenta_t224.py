@@ -48,6 +48,15 @@ aritmética vive en ``metrics_panel.retorno_de_spy`` y el test de abajo
 —``test_la_fila_mensual_y_la_TARJETA_dan_el_mismo_numero``— las ata: sobre una cuenta
 de un solo mes tienen que dar exactamente lo mismo. Ése es el que impide que vuelvan a
 separarse.
+
+Lo que de acá quedó superado, y va dicho
+-----------------------------------------
+El kill-criteria de esta tarea pedía que *«en un mes completo el número no cambie»*, y la
+**230** lo cambió a propósito: los meses ahora arrancan en el cierre del mes anterior,
+que es la única convención con la que la tabla y la tarjeta encadenan. Aquel criterio
+existía para que un arreglo de **ventana** no se llevara puesta la convención, no para
+congelarla — y el cambio de convención se hizo aparte, con su propio criterio. Los tests
+de acá que tocaban esa cláusula se reescribieron señalando qué propiedad siguen fijando.
 """
 
 from __future__ import annotations
@@ -183,13 +192,17 @@ def test_en_un_mes_COMPLETO_el_numero_no_cambia(monkeypatch):
     assert fila["mes_parcial"] is False
 
 
-def test_los_meses_que_NO_son_el_primero_conservan_su_period_return(monkeypatch):
-    """La base del mes sigue siendo el primer endpoint diario, no algo nuevo.
+def test_la_base_del_mes_sale_del_ULTIMO_snapshot_del_dia_ancla(monkeypatch):
+    """``daily_endpoints`` se queda con el **último** snapshot de cada día, y eso se fija.
 
-    ``daily_endpoints`` se queda con el **último** snapshot de cada día. Si el ancla de
-    la 223 se aplicara con el *primer* snapshot del día —o se aplicara a todos los
-    meses en vez de sólo al primero—, los meses intermedios se moverían en silencio.
-    Acá hay dos snapshots el mismo día, que es lo que hace observable la diferencia.
+    **La convención de qué día ancla cambió en la tarea 230** —ahora el mes arranca en el
+    cierre del mes anterior, no en su propio primer endpoint—, así que este test se
+    reescribió. Lo que sigue valiendo, y es por lo que existe, es la otra mitad: la
+    equity del día ancla es la del **último** snapshot de esa fecha. Con dos scans el
+    mismo día, tomar el primero daría un número completamente distinto y en silencio.
+
+    Y la dirección que acota el cambio: el **primer** mes no tiene mes anterior, así que
+    ancla en el capital (tarea 223) y la 230 no lo toca.
     """
     spy = [("2026-03-02", 100.0), ("2026-03-30", 100.0), ("2026-04-01", 100.0), ("2026-04-30", 100.0)]
     con = _con(
@@ -202,13 +215,15 @@ def test_los_meses_que_NO_son_el_primero_conservan_su_period_return(monkeypatch)
     )
     con.execute(
         "INSERT INTO paper_equity_snapshots (account_id, snapshot_at, total_equity, cash, positions_value) "
-        "VALUES (2,'2026-04-01 09:00:00', 99999.0, 0.0, 99999.0)"  # MISMO día, más temprano
+        "VALUES (2,'2026-03-30 09:00:00', 99999.0, 0.0, 99999.0)"  # MISMO día ancla, más temprano
     )
     filas = {f["month"]: f for f in _mensual(con, spy, monkeypatch)}
 
-    # Abril arranca en el endpoint del 01/04 = el ÚLTIMO snapshot de ese día (52.000).
-    assert filas["2026-04"]["period_return"] == pytest.approx(53_000.0 / 52_000.0 - 1.0)
-    # Y marzo, que es el primero, sí ancla en el capital (tarea 223).
+    # Abril ancla en el cierre de marzo = el ÚLTIMO snapshot del 30/03 (51.000), no 99.999.
+    assert filas["2026-04"]["ancla_day"] == "2026-03-30"
+    assert filas["2026-04"]["period_return"] == pytest.approx(53_000.0 / 51_000.0 - 1.0)
+    # Y marzo, que es el primero, sigue anclando en el capital (tarea 223).
+    assert filas["2026-03"]["ancla_day"] is None
     assert filas["2026-03"]["period_return"] == pytest.approx(51_000.0 / _CAPITAL - 1.0)
 
 

@@ -283,6 +283,9 @@ def _monthly_perf(
     spy = _load_close_series(con, "SPY")  # V1 benchmark (cache diario)
     capital = _initial_capital(con, account_id)
     primer_mes = next((r["month"] for r in monthly if r.get("start_day")), None)
+    # Primer día con snapshot de toda la cuenta: el origen desde el que se acumulan los
+    # dividendos (tarea 230), que es el mismo que usa la tarjeta VS SPY.
+    arranque = next((r["start_day"] for r in monthly if r.get("start_day")), None)
     # La cobertura se mide **rueda contra rueda**, y no contra `n_trading_days`: ése
     # cuenta días calendario con snapshot, sábados incluidos (el scan corre todos los
     # días), así que un mes al que le faltan tres ruedas puede tener más "días" que
@@ -291,7 +294,12 @@ def _monthly_perf(
 
     for row in monthly:
         ini, fin = row.get("start_day"), row.get("end_day")
-        spy_return, _anclaje = retorno_de_spy(spy, ini, fin)
+        # tarea 230: el retorno se mide desde el cierre del mes ANTERIOR (`ancla_day`),
+        # que es lo único que hace encadenar los meses al total. SPY tiene que anclar en
+        # el mismo punto o el desacuerdo se muda de lugar en vez de irse. En el primer
+        # mes no hay ancla y se usa `start_day`, igual que la tarjeta.
+        desde = row.get("ancla_day") or ini
+        spy_return, _anclaje = retorno_de_spy(spy, desde, fin)
         row["spy_return"] = spy_return
         # Tres números, porque son tres preguntas distintas y mezclarlas daba un flag
         # que salía False en los cuatro meses, o sea que no distinguía nada:
@@ -311,22 +319,27 @@ def _monthly_perf(
         )
         row["mes_parcial"] = row["ruedas_ventana"] < row["ruedas_mes"]
 
-        # tarea 221: el retorno de la cuenta es de PRECIO y el de SPY es total-return.
-        # Se le suma lo devengado en el mes, igual que hace la tarjeta.
+        # tarea 221: el retorno de la cuenta es de PRECIO y el de SPY es total-return,
+        # así que se le suma lo devengado. `account_dividends` es lo del MES —que es lo
+        # que se lee en la fila—, pero el retorno total se calcula sobre el **acumulado**
+        # (tarea 230): el dividendo es efectivo que la cuenta no cobró y que queda en su
+        # valor, así que tiene que estar también en la BASE del mes siguiente. Sumando
+        # sólo el del mes, los meses no encadenarían aunque las ventanas sí lo hicieran.
         dividendos, faltantes = _dividendos_del_mes(con, account_id, ini, fin)
         row["account_dividends"] = dividendos
         row["dividendos_completos"] = not faltantes
+        div_hasta_fin = _dividendos_acumulados(con, account_id, arranque, fin)
+        div_hasta_base = _dividendos_acumulados(con, account_id, arranque, desde) if desde != ini else 0.0
 
-        # tarea 223: SÓLO el primer mes cambia de base — ancla en el capital, que es lo
-        # que había antes de pagar la fricción de apertura (el primer snapshot ya la
-        # pagó). En el resto la base es el primer endpoint diario del mes, o sea
-        # exactamente la que ya usaba `period_return`: esos meses no se mueven.
+        # tarea 223: el primer mes ancla en el CAPITAL —lo que había antes de pagar la
+        # fricción de apertura, que el primer snapshot ya pagó—. El resto ancla en el
+        # cierre del mes anterior (tarea 230).
         es_primero = row["month"] == primer_mes
-        base = capital if (es_primero and capital) else _equity_del_dia(snapshots, ini)
+        base = capital if (es_primero and capital) else _equity_del_dia(snapshots, desde)
         fin_eq = _equity_del_dia(snapshots, fin)
         if base and base > 0 and fin_eq is not None:
             row["period_return"] = fin_eq / base - 1.0
-            row["account_return_total"] = (fin_eq + dividendos) / base - 1.0
+            row["account_return_total"] = (fin_eq + div_hasta_fin) / (base + div_hasta_base) - 1.0
         else:
             row["account_return_total"] = row.get("period_return")
 
@@ -357,6 +370,19 @@ def _dividendos_del_mes(
     from analysis.metrics_panel import _dividendos_devengados
 
     return _dividendos_devengados(con, account_id, ini, fin)
+
+
+def _dividendos_acumulados(
+    con: sqlite3.Connection, account_id: int | None, arranque: str | None, hasta: str | None
+) -> float:
+    """Devengado **desde el arranque de la cuenta** hasta ``hasta`` (tarea 230).
+
+    El dividendo es efectivo que la cuenta ya ganó y no cobró: queda en su valor, así
+    que tiene que estar en la base de todos los meses siguientes. Si sólo se sumara el
+    del mes, la serie no encadenaría aunque las ventanas sí lo hicieran — el mismo
+    defecto una capa más adentro.
+    """
+    return _dividendos_del_mes(con, account_id, arranque, hasta)[0]
 
 
 def _equity_del_dia(snapshots: list[AccountSnapshot], dia: str | None) -> float | None:

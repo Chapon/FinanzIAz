@@ -587,6 +587,22 @@ def monthly_breakdown(
     2026-07-24 y el 2026-08-09). Sin la ventana explícita, quien consuma estas filas
     no tiene con qué alinear nada contra ellas — que es exactamente lo que le pasó al
     ``vs_spy`` del dashboard, comparando la cuenta parcial contra el mes entero de SPY.
+
+    **El retorno se mide desde el CIERRE DEL MES ANTERIOR (tarea 230), y eso cambió.**
+    Antes cada mes iba de su primer endpoint al último, así que el tramo entre el último
+    día de un mes y el primero del siguiente **no entraba en ninguno**. Con scans diarios
+    eso es un fin de semana; con un hueco real —la cuenta 2 estuvo 16 días sin scans— es
+    un tramo grande que desaparece. Y como desaparecía de la cuenta **y** de SPY pero en
+    proporciones distintas, no se cancelaba: la serie mensual daba **+4,29pp** de alpha
+    acumulado donde la tarjeta VS SPY daba **−0,78pp**, 5,07pp de desacuerdo entre dos
+    números del mismo panel.
+
+    Ahora el mes arranca en ``ancla_day`` —el último endpoint del mes anterior, ``None``
+    en el primero— y con eso **los meses encadenan exactamente al total**. El ancla entra
+    como *semilla* en la serie de endpoints, no como un día más, así que ``period_return``,
+    ``sharpe_annual`` y ``max_drawdown`` cubren todos **el mismo período**; mover sólo el
+    retorno habría dejado la fila con dos ventanas distintas adentro. ``n_trading_days``
+    sigue contando los días del mes, sin la semilla, porque es cobertura y no ventana.
     """
     endpoints = daily_endpoints(snapshots)
     by_month_eps: dict[str, list[tuple[datetime, float]]] = {}
@@ -599,21 +615,32 @@ def monthly_breakdown(
 
     months = sorted(set(by_month_eps) | set(by_month_trades))
     out: list[dict[str, Any]] = []
+    ancla: tuple[datetime, float] | None = None  # último endpoint del mes anterior
     for m in months:
         eps = by_month_eps.get(m, [])
         ts = by_month_trades.get(m, [])
-        rets = daily_returns(eps)
-        dd_pct, dd_date = max_drawdown(eps)
+        # tarea 230: el mes se mide DESDE el cierre del mes anterior, que es la única
+        # convención con la que los meses encadenan al total. El ancla entra como
+        # semilla en la serie de endpoints —no como un día más— así que el retorno, el
+        # Sharpe y el drawdown cubren TODOS el mismo período. Sin la semilla, mover sólo
+        # `period_return` dejaría la fila con dos ventanas distintas adentro.
+        con_ancla = [ancla, *eps] if (ancla and eps) else eps
+        rets = daily_returns(con_ancla)
+        dd_pct, dd_date = max_drawdown(con_ancla)
         ts_stats = trade_stats(ts)
         out.append(
             {
                 "month": m,
+                # Los días del MES, sin contar la semilla: es cobertura, no ventana.
                 "n_trading_days": len(eps),
                 # Ventana REAL del mes (tarea 224). `None` en un mes que sólo tiene
                 # trades cerrados y ningún snapshot: no hay ventana que declarar.
                 "start_day": eps[0][0].strftime("%Y-%m-%d") if eps else None,
                 "end_day": eps[-1][0].strftime("%Y-%m-%d") if eps else None,
-                "period_return": period_return(eps),
+                # Desde dónde se mide el retorno (tarea 230). `None` en el primer mes,
+                # que no tiene mes anterior: ahí el ancla es el capital.
+                "ancla_day": ancla[0].strftime("%Y-%m-%d") if (ancla and eps) else None,
+                "period_return": period_return(con_ancla),
                 "sharpe_annual": sharpe_annual(rets),
                 "max_drawdown": dd_pct if eps else None,
                 "max_dd_date": dd_date,
@@ -623,6 +650,8 @@ def monthly_breakdown(
                 "expectancy_dollars": ts_stats["expectancy_dollars"],
             }
         )
+        if eps:
+            ancla = eps[-1]
     return out
 
 
