@@ -910,6 +910,49 @@ def _ancla_de_spy(series: list[tuple[str, float]], start_day: str) -> tuple[floa
     return _close_on_or_after(series, start_day), "primera_rueda"
 
 
+def retorno_de_spy(
+    series: list[tuple[str, float]] | None, start_day: str | None, end_day: str | None
+) -> tuple[float | None, str | None]:
+    """``(retorno de SPY en [start_day, end_day], de dónde salió el ancla)``.
+
+    **La aritmética del benchmark, en UN solo lugar (tarea 224).** Había dos copias:
+    ésta y la de ``scripts/dashboard_data._monthly_perf``, que además usaba **otra**
+    ventana — todas las ruedas del mes calendario en vez de la ventana de la cuenta.
+    Que hubiera dos es lo que permitió que la 22, la 221 y la 223 arreglaran una y
+    dejaran la otra intacta; es el mismo desenlace que ya tenía documentado el lector
+    de series (``dashboard_data._load_close_series``: *«tener dos copias es lo que
+    permitió que arreglar una no alcanzara a la otra»*), repetido un nivel más arriba.
+
+    El inicio se ancla con ``_ancla_de_spy`` y el final con ``_close_on_or_before``:
+    las dos puntas, con la misma regla. Devuelve ``(None, None)`` si falta la serie o
+    alguna de las dos fechas, y ``(None, anclaje)`` si la ventana no da un retorno
+    computable — el llamador decide si eso apaga el número o sólo lo declara.
+    """
+    if not series or start_day is None or end_day is None:
+        return None, None
+    ordenada = sorted(series)
+    p0, anclaje = _ancla_de_spy(ordenada, start_day)
+    p1 = _close_on_or_before(ordenada, end_day)
+    if not p0 or not p1 or p0 <= 0:
+        return None, anclaje
+    return p1 / p0 - 1.0, anclaje
+
+
+def ruedas_en_ventana(
+    series: list[tuple[str, float]] | None, start_day: str | None, end_day: str | None
+) -> int:
+    """Cuántas ruedas de la serie caen dentro de ``[start_day, end_day]`` (tarea 224).
+
+    Se publica al lado de los días con snapshot de la cuenta para que un período con
+    **cobertura incompleta** se pueda ver. La cuenta 2 no tiene scans entre el
+    2026-07-24 y el 2026-08-09, así que julio cubre 18 de 22 ruedas y agosto 15 de 21
+    — y hasta ahora nada lo decía.
+    """
+    if not series or start_day is None or end_day is None:
+        return 0
+    return sum(1 for d, _ in series if start_day <= d <= end_day)
+
+
 # Fecha centinela de `data/yahoo_finance._SIN_DIVIDENDOS`: marca "este ticker ya se
 # chequeó y no paga". Se duplica el literal a propósito y NO se importa: `analysis/` no
 # depende de `data/yahoo_finance` (que arrastra yfinance, red y el cache entero) sólo
@@ -1115,10 +1158,10 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
             "motivo": "stale",
         }
     # tarea 223: el inicio se ancla con la MISMA regla que el final (`_close_on_or_before`),
-    # que es el close con el que está marcada la equity del primer snapshot. Ver `_ancla_de_spy`.
-    p0, spy_anclaje = _ancla_de_spy(spy, start_day)
-    p1 = _close_on_or_before(spy, end_day)
-    spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
+    # que es el close con el que está marcada la equity del primer snapshot. Desde la 224
+    # la aritmética entera vive en `retorno_de_spy`, compartida con el mensual del
+    # dashboard — tener dos copias fue lo que dejó a una sin los arreglos de la otra.
+    spy_return, spy_anclaje = retorno_de_spy(spy, start_day, end_day)
 
     # Total contra total (tarea 221): la equity de la cuenta es sólo precio, así que se
     # le suma el efectivo que devengó y no cobró. SPY ya viene total-return del cache.

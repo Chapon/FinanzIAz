@@ -234,28 +234,146 @@ def _expired_notes_top(con: sqlite3.Connection, account_id: int, limit: int = 10
     return [{"note": n, "count": int(c)} for n, c in rows]
 
 
-def _monthly_perf(con: sqlite3.Connection, snapshots: list[AccountSnapshot], fills) -> list[dict]:
+def _monthly_perf(
+    con: sqlite3.Connection,
+    snapshots: list[AccountSnapshot],
+    fills,
+    account_id: int | None = None,
+) -> list[dict]:
     """Per-month performance for the alpha decay panel.
 
     Returns a list of dicts (one per YYYY-MM), ordered chronologically, with:
-        month, n_trading_days, period_return, sharpe_annual,
+        month, n_trading_days, start_day, end_day, period_return, sharpe_annual,
         max_drawdown, n_round_trips, win_rate, profit_factor,
-        spy_return, vs_spy   # V1: retorno de SPY del mes y alpha (period_return − SPY)
+        spy_return, vs_spy,              # V1: alpha del mes
+        account_return_total,            # tarea 221: precio + dividendos devengados
+        account_dividends, dividendos_completos,
+        ruedas_mes, ruedas_ventana, ruedas_cubiertas, mes_parcial   # tarea 224: cobertura
+
+    **La ventana de SPY es la de la CUENTA dentro del mes, no el mes calendario
+    (tarea 224).** Antes salía de ``[(d, c) for d, c in spy if d[:7] == mo]``, o sea
+    **todas** las ruedas del mes, contra un ``period_return`` medido sobre los días que
+    la cuenta realmente tiene. Medido sobre la cuenta 2, eso movía los **cuatro** meses
+    entre 1,0 y 2,0pp — junio publicaba **+2,41pp** donde la comparación alineada da
+    **+1,11pp** — y siempre por el mismo mecanismo que la tarea 22 declaró para el otro
+    lado: *«comparar la ventana completa contra un SPY recortado sesga el `vs_spy` en
+    silencio»*. La tarjeta lo guarda con ``stale``; acá no lo guardaba nadie.
+
+    No muerde sólo en el mes parcial, y ésa fue la parte que el enunciado subestimaba:
+    la cuenta 2 **no tiene scans entre el 2026-07-24 y el 2026-08-09**, así que julio
+    cubre 18 de 22 ruedas y agosto 15 de 21. Por eso la cobertura se **declara**
+    (``ruedas_spy`` contra ``n_trading_days``) en vez de quedar implícita.
+
+    **Y usa la misma aritmética que la tarjeta VS SPY**, ``metrics_panel.retorno_de_spy``.
+    Tener dos copias del mismo número es lo que dejó a ésta sin los arreglos de la 22,
+    la 221 y la 223 — el mismo desenlace que ``_load_close_series`` ya tenía anotado un
+    nivel más abajo. Un test fija que sobre una cuenta de un solo mes las dos den
+    exactamente el mismo ``vs_spy``.
+
+    **Lo que esto NO arregla, y va dicho: los meses no encadenan al total** (tarea 228).
+    Cada mes mide primer→último endpoint *suyo*, así que el tramo entre el último día
+    de un mes y el primero del siguiente no entra en ninguno. Con los huecos de la
+    cuenta 2 eso es grande: el alpha encadenando los cuatro meses da **+3,58pp** y el
+    total directo **−1,56pp**. Es una decisión de convención aparte, no este defecto.
     """
+    from analysis.metrics_panel import retorno_de_spy, ruedas_en_ventana
+
     trades, _ = fifo_match(fills)
     monthly = monthly_breakdown(snapshots, trades)
     spy = _load_close_series(con, "SPY")  # V1 benchmark (cache diario)
+    capital = _initial_capital(con, account_id)
+    primer_mes = next((r["month"] for r in monthly if r.get("start_day")), None)
+    # La cobertura se mide **rueda contra rueda**, y no contra `n_trading_days`: ése
+    # cuenta días calendario con snapshot, sábados incluidos (el scan corre todos los
+    # días), así que un mes al que le faltan tres ruedas puede tener más "días" que
+    # ruedas y declararse completo. Sería un chequeo que mide la cosa equivocada.
+    dias_con_snapshot = {s.snapshot_at.strftime("%Y-%m-%d") for s in snapshots}
+
     for row in monthly:
-        mo = row.get("month")
-        spy_return = None
-        if spy and mo:
-            in_month = [(d, c) for d, c in spy if d[:7] == mo]
-            if len(in_month) >= 2 and in_month[0][1] > 0:
-                spy_return = in_month[-1][1] / in_month[0][1] - 1.0
-        pr = row.get("period_return")
+        ini, fin = row.get("start_day"), row.get("end_day")
+        spy_return, _anclaje = retorno_de_spy(spy, ini, fin)
         row["spy_return"] = spy_return
-        row["vs_spy"] = (pr - spy_return) if (pr is not None and spy_return is not None) else None
+        # Tres números, porque son tres preguntas distintas y mezclarlas daba un flag
+        # que salía False en los cuatro meses, o sea que no distinguía nada:
+        #   `ruedas_mes`      — cuántas ruedas tiene el mes calendario;
+        #   `ruedas_ventana`  — cuántas caen adentro de la ventana de la cuenta;
+        #   `ruedas_cubiertas`— de ésas, cuántas tienen snapshot.
+        # `mes_parcial` sale de las dos primeras y **no necesita umbral**: es la
+        # diferencia entre un scan salteado suelto (la cuenta 2 se perdió el 06-24) y
+        # un tramo entero sin cubrir (agosto arranca el 09 porque no hubo scans entre
+        # el 24/07 y el 09/08). Sólo lo segundo hace que el mes no sea comparable.
+        row["ruedas_mes"] = ruedas_en_ventana(spy, f"{row['month']}-01", f"{row['month']}-31")
+        row["ruedas_ventana"] = ruedas_en_ventana(spy, ini, fin)
+        row["ruedas_cubiertas"] = (
+            sum(1 for d, _ in (spy or []) if ini <= d <= fin and d in dias_con_snapshot)
+            if (ini and fin)
+            else 0
+        )
+        row["mes_parcial"] = row["ruedas_ventana"] < row["ruedas_mes"]
+
+        # tarea 221: el retorno de la cuenta es de PRECIO y el de SPY es total-return.
+        # Se le suma lo devengado en el mes, igual que hace la tarjeta.
+        dividendos, faltantes = _dividendos_del_mes(con, account_id, ini, fin)
+        row["account_dividends"] = dividendos
+        row["dividendos_completos"] = not faltantes
+
+        # tarea 223: SÓLO el primer mes cambia de base — ancla en el capital, que es lo
+        # que había antes de pagar la fricción de apertura (el primer snapshot ya la
+        # pagó). En el resto la base es el primer endpoint diario del mes, o sea
+        # exactamente la que ya usaba `period_return`: esos meses no se mueven.
+        es_primero = row["month"] == primer_mes
+        base = capital if (es_primero and capital) else _equity_del_dia(snapshots, ini)
+        fin_eq = _equity_del_dia(snapshots, fin)
+        if base and base > 0 and fin_eq is not None:
+            row["period_return"] = fin_eq / base - 1.0
+            row["account_return_total"] = (fin_eq + dividendos) / base - 1.0
+        else:
+            row["account_return_total"] = row.get("period_return")
+
+        total = row.get("account_return_total")
+        row["vs_spy"] = (total - spy_return) if (total is not None and spy_return is not None) else None
     return monthly
+
+
+def _initial_capital(con: sqlite3.Connection, account_id: int | None) -> float | None:
+    """``initial_capital`` de la cuenta, o ``None`` si no se puede leer (tarea 223)."""
+    if account_id is None:
+        return None
+    try:
+        fila = con.execute(
+            "SELECT initial_capital FROM paper_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return float(fila[0]) if fila and fila[0] else None
+
+
+def _dividendos_del_mes(
+    con: sqlite3.Connection, account_id: int | None, ini: str | None, fin: str | None
+) -> tuple[float, list[str]]:
+    """Devengado de la cuenta en ``[ini, fin]``, por el camino de la tarjeta (tarea 221)."""
+    if account_id is None or ini is None or fin is None:
+        return 0.0, []
+    from analysis.metrics_panel import _dividendos_devengados
+
+    return _dividendos_devengados(con, account_id, ini, fin)
+
+
+def _equity_del_dia(snapshots: list[AccountSnapshot], dia: str | None) -> float | None:
+    """Equity de cierre de ``dia``: el **último** snapshot de esa fecha.
+
+    Tiene que ser el último y no el primero, porque es la misma regla que usa
+    ``baseline_metrics.daily_endpoints`` (*«un scan puede correr muchas veces por día;
+    nos quedamos con el último como cierre»*). Con el primero, los meses que esta
+    función no debería tocar se moverían en silencio — que es justo lo que el
+    kill-criteria de la 224 prohíbe.
+    """
+    if dia is None:
+        return None
+    del_dia = [s for s in snapshots if s.snapshot_at.strftime("%Y-%m-%d") == dia]
+    if not del_dia:
+        return None
+    return float(max(del_dia, key=lambda s: s.snapshot_at).total_equity)
 
 
 # Slope threshold for the decay signal (Sharpe units per month).
@@ -756,7 +874,7 @@ def build_payload(db_path: Path, account_id: int) -> dict:
             return {"error": f"account {account_id} not found in {db_path}"}
         snapshots = load_snapshots(con, account_id)
         fills = load_fills(con, account_id)
-        monthly = _monthly_perf(con, snapshots, fills)
+        monthly = _monthly_perf(con, snapshots, fills, account_id)
         payload: dict[str, Any] = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "db_path": str(db_path),

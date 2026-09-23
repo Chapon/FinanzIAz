@@ -577,7 +577,17 @@ def monthly_breakdown(
     snapshots: list[AccountSnapshot],
     trades: list[Trade],
 ) -> list[dict[str, Any]]:
-    """Per-month metrics aligned by calendar month (YYYY-MM)."""
+    """Per-month metrics aligned by calendar month (YYYY-MM).
+
+    Cada fila declara además **su ventana real** (``start_day``/``end_day``, ISO), que
+    es el primer y el último día del mes **con snapshot** — no el primero y el último
+    del calendario (tarea 224). Los dos casi nunca coinciden: el primer mes de una
+    cuenta arranca el día que se creó, el último llega hasta hoy, y en el medio
+    cualquier tramo sin scans deja huecos (la cuenta 2 no tiene ninguno entre el
+    2026-07-24 y el 2026-08-09). Sin la ventana explícita, quien consuma estas filas
+    no tiene con qué alinear nada contra ellas — que es exactamente lo que le pasó al
+    ``vs_spy`` del dashboard, comparando la cuenta parcial contra el mes entero de SPY.
+    """
     endpoints = daily_endpoints(snapshots)
     by_month_eps: dict[str, list[tuple[datetime, float]]] = {}
     for d, eq in endpoints:
@@ -599,6 +609,10 @@ def monthly_breakdown(
             {
                 "month": m,
                 "n_trading_days": len(eps),
+                # Ventana REAL del mes (tarea 224). `None` en un mes que sólo tiene
+                # trades cerrados y ningún snapshot: no hay ventana que declarar.
+                "start_day": eps[0][0].strftime("%Y-%m-%d") if eps else None,
+                "end_day": eps[-1][0].strftime("%Y-%m-%d") if eps else None,
                 "period_return": period_return(eps),
                 "sharpe_annual": sharpe_annual(rets),
                 "max_drawdown": dd_pct if eps else None,
