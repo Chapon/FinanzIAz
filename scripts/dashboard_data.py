@@ -6,7 +6,9 @@ payload the live-dashboard HTML artifact needs to render. Designed to be
 invoked from inside the artifact via ``window.cowork.callMcpTool``
 ("mcp__workspace__bash") so the dashboard sees fresh data on every Reload.
 
-Default account: Sim Principal (id=1). Override with ``--account <id>``.
+Cuenta por default: la **viva** de la base que se lee — ``is_active=1``, y la de menor
+id si hay varias (tareas 70 y 228). Se pisa con ``--account <id>``, que se respeta
+aunque esa cuenta esté pausada: la decisión es del operador.
 
 Output schema (top-level keys)::
 
@@ -78,10 +80,43 @@ from scripts.baseline_metrics import (
 DEFAULT_DB = "finanzias.db"
 # T70: era `1` (pausada). Séptimo call site de la misma familia — no estaba
 # en el enunciado de la tarea, apareció al cablear los otros seis.
+# **Y hasta la tarea 228 esto se declaraba y no se usaba**: `main()` pasaba
+# `args.account` —que defaulteaba a `None` por su cuenta— directo a `build_payload`,
+# así que sin `--account` el script imprimía `{"error": "account None not found"}`
+# mientras el `--help` prometía `1` y esta línea prometía la cuenta viva. Tres
+# afirmaciones distintas y ninguna era la que corría.
 DEFAULT_ACCOUNT_ID = None  # None ⇒ la cuenta viva
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _live_account_id(con: sqlite3.Connection) -> int | None:
+    """Id de la cuenta **viva** de ESTA base, o ``None`` si no hay (tareas 70 y 228).
+
+    Misma regla que ``paper_trading.account.live_account_id``: ``is_active=1``, y si hay
+    varias la de **menor id**. Un test fija que las dos den lo mismo sobre los mismos
+    datos, que es lo que evita que la duplicación derive (la forma de la 71).
+
+    **Se duplica a propósito, y el motivo es el `--db`.** ``live_account_id`` resuelve
+    por el ORM contra el **engine global**, o sea contra la base del repo; este script es
+    read-only sobre la base que le pasen. Llamarlo haría que ``--db backup.db`` trajera
+    el id de la base **viva** y lo aplicara a la otra — un desvío cruzado, silencioso y
+    de la misma familia que los que la 220 y la 223 destaparon en el VS SPY.
+
+    **No lee el `settings.json`, y va dicho.** ``refresh_dashboard`` respeta el override
+    ``dashboard_refresh_account_id``; este CLI no. El flag configura el **job de
+    refresh** —lo dice el nombre— y hacer que una herramienta read-only sobre una base
+    arbitraria dependa de estado vivo invisible es peor que la diferencia. Hoy no cambia
+    nada: el flag no está seteado y ni siquiera tiene ``SettingSpec``.
+    """
+    try:
+        fila = con.execute(
+            "SELECT id FROM paper_accounts WHERE is_active = 1 ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return int(fila[0]) if fila else None
 
 
 def _account_row(con: sqlite3.Connection, account_id: int) -> dict | None:
@@ -892,9 +927,17 @@ def _kpis(snapshots: list[AccountSnapshot], fills) -> dict:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
-def build_payload(db_path: Path, account_id: int) -> dict:
+def build_payload(db_path: Path, account_id: int | None = DEFAULT_ACCOUNT_ID) -> dict:
     con = sqlite3.connect(readonly_uri(db_path), uri=True)  # sólo lee (tarea 191)
     try:
+        if account_id is None:
+            # tarea 228: `None` significa «la cuenta viva de ESTA base», no «ninguna».
+            # Si no hay ninguna activa NO se elige una: se devuelve el motivo, igual que
+            # hace `refresh_dashboard`. Un dashboard que no sabe qué cuenta mostrar no
+            # debe mostrar cualquiera.
+            account_id = _live_account_id(con)
+            if account_id is None:
+                return {"error": f"no hay ninguna cuenta activa en {db_path} (tarea 70)"}
         account = _account_row(con, account_id)
         if account is None:
             return {"error": f"account {account_id} not found in {db_path}"}
@@ -925,7 +968,13 @@ def build_payload(db_path: Path, account_id: int) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Dump dashboard JSON for the live HTML artifact.")
     p.add_argument("--db", default=None, help="Path to finanzias.db (default: repo root)")
-    p.add_argument("--account", type=int, default=None, help="Account id (default: 1)")
+    p.add_argument(
+        "--account",
+        type=int,
+        default=DEFAULT_ACCOUNT_ID,
+        help="Account id. Sin esto se resuelve la cuenta VIVA de --db (is_active=1; "
+        "la de menor id si hay varias). Un id explícito se respeta aunque esté pausada.",
+    )
     args = p.parse_args(argv)
 
     if args.db is None:
