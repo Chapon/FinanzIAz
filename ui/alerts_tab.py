@@ -105,8 +105,11 @@ class AlertsTab(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(7)
+        # "Última vez" y no "Disparada" (tarea 227): desde el re-arme diario, una
+        # alerta puede estar **Activa** y tener fecha de disparo — la de la última vez
+        # que saltó. Con el rótulo viejo las dos columnas se contradecían.
         self.table.setHorizontalHeaderLabels(
-            ["Ticker", "Tipo", "Precio Objetivo", "Estado", "Creada", "Disparada", "Mensaje"]
+            ["Ticker", "Tipo", "Precio Objetivo", "Estado", "Creada", "Última vez", "Mensaje"]
         )
         table_header(self.table).setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
