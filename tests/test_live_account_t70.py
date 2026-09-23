@@ -157,6 +157,85 @@ def _constantes_de_cuenta() -> list[tuple[str, str, object]]:
     return out
 
 
+# Constantes `*ACCOUNT_ID` que se declaran **sin usarse**, con el motivo (tarea 229).
+# Una excepción sin motivo escrito es una lista disfrazada; la clave es `archivo:nombre`
+# y no sólo el nombre, porque `DEFAULT_ACCOUNT_ID` existe en tres archivos y en dos de
+# ellos SÍ tiene que estar cableado.
+_IDS_SOLO_DECLARATIVOS: dict[str, str] = {
+    "analysis/harness_config.py:LEGACY_ACCOUNT_ID": (
+        "documenta de qué cuenta heredaron su config los harness T7→T13. No es un "
+        "parámetro de nada —esos runners corren sobre el cohorte, no sobre una cuenta—, "
+        "así que no hay dónde cablearla; su hermana `LEGACY_MAX_POSITIONS` sí lo es y la "
+        "leen cuatro runners, y esa asimetría es justamente lo que había que decidir"
+    ),
+}
+
+
+def _usos_en_el_modulo(arbol, nombre: str) -> int:
+    """Cuántas veces se **lee** ``nombre`` en ese árbol (sin contar la asignación)."""
+    import ast
+
+    return sum(
+        1
+        for n in ast.walk(arbol)
+        if isinstance(n, ast.Name) and n.id == nombre and isinstance(n.ctx, ast.Load)
+    )
+
+
+def _importadores_de(nombre: str, modulo: str) -> list[str]:
+    """Módulos del proyecto que hacen ``from <modulo> import <nombre>``.
+
+    Importar la constante **es** usarla: `harvest_catalysts.DEFAULT_ACCOUNT_ID` no se lee
+    en su propio archivo y lo consume `build_surprise_profiles`, que es legítimo. Se
+    compara el **módulo** y no sólo el nombre: sin eso, un único
+    ``from scripts.harvest_catalysts import DEFAULT_ACCOUNT_ID`` haría pasar por usadas a
+    las tres constantes homónimas — lo comprobé escribiendo el barrido, que en su primera
+    versión daba exactamente ese falso negativo.
+    """
+    import ast
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    out: list[str] = []
+    for paquete in _PAQUETES:
+        for p in sorted((raiz / paquete).rglob("*.py")):
+            rel = p.relative_to(raiz).as_posix()
+            if rel.replace("/", ".").removesuffix(".py") == modulo:
+                continue
+            try:
+                arbol = ast.parse(p.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover
+                continue
+            for n in ast.walk(arbol):
+                if (
+                    isinstance(n, ast.ImportFrom)
+                    and n.module == modulo
+                    and any(a.name == nombre for a in n.names)
+                ):
+                    out.append(rel)
+                    break
+    return out
+
+
+def _constantes_muertas() -> list[str]:
+    """``archivo:nombre`` de cada constante de cuenta que **nadie lee** (tarea 229)."""
+    import ast
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    muertas = []
+    for arch, nombre, _valor in _constantes_de_cuenta():
+        if f"{arch}:{nombre}" in _IDS_SOLO_DECLARATIVOS:
+            continue
+        arbol = ast.parse((raiz / arch).read_text(encoding="utf-8"))
+        if _usos_en_el_modulo(arbol, nombre):
+            continue
+        if _importadores_de(nombre, arch.replace("/", ".").removesuffix(".py")):
+            continue
+        muertas.append(f"{arch}:{nombre}")
+    return muertas
+
+
 def test_ninguna_constante_de_modulo_clava_un_id_de_cuenta():
     """Regresión del arreglo de la 70, **reescrita como predicado** (tarea 147).
 
@@ -205,6 +284,109 @@ def test_cada_id_declarado_dice_por_que():
     for nombre, motivo in _IDS_DECLARADOS.items():
         assert len(motivo) > 40, f"{nombre} sin motivo escrito"
         assert nombre in nombres, f"{nombre} ya no existe: sacalo de _IDS_DECLARADOS"
+
+
+# ── Que la constante se USE, y no sólo que esté declarada (tarea 229) ────────
+
+
+def test_ninguna_constante_de_cuenta_esta_DECLARADA_Y_MUERTA():
+    """El guard que faltaba, y el que habría cazado la **228** el 2026-09-01.
+
+    Los dos tests de arriba miran que la constante **exista** y que su **valor** sea
+    `None`. Ninguno mira que **se lea**, y ésa es la propiedad que importa: un
+    `DEFAULT_ACCOUNT_ID = None` declarado y muerto aprueba los dos exactamente igual que
+    uno cableado, mientras el módulo defaultea por su cuenta a otra cosa. Es
+    [[guard-no-puede-usar-de-verdad-lo-que-chequea]]: el guard medía el artefacto barato
+    de verificar en lugar de la propiedad.
+
+    Así vivió la 228 durante 22 días — ``scripts/dashboard_data.py`` declaraba la
+    constante con el valor correcto, argparse tenía su propio literal, y el CLI devolvía
+    ``{"error": "account None not found"}`` con el guard en verde.
+
+    **El barrido destapó dos más**, que es por lo que el alcance decía que era el primer
+    paso y no el último: ``scripts/news_feed.py`` tenía la misma forma (cableada acá) y
+    ``analysis/harness_config.py:LEGACY_ACCOUNT_ID`` está muerta a propósito (declarada
+    en ``_IDS_SOLO_DECLARATIVOS`` con el motivo).
+    """
+    muertas = _constantes_muertas()
+    assert not muertas, (
+        "estas constantes de cuenta están declaradas y no las lee nadie, así que el "
+        "módulo defaultea por otro lado y cambiarlas no hace nada (tareas 228 y 229). "
+        "Cableala, o declarala en _IDS_SOLO_DECLARATIVOS con el motivo:\n  " + "\n  ".join(muertas)
+    )
+
+
+def test_el_guard_nuevo_CAZA_el_defecto_REAL_de_la_228():
+    """Se valida contra el defecto que existió, no contra uno inventado.
+
+    La forma fuerte sería leer el archivo de antes del commit de la 228, pero atar un
+    test a un hash lo rompe en un clone shallow o en un export. Acá se **reconstruye** el
+    estado viejo aplicando al archivo **real** la edición inversa exacta —volver
+    ``default=DEFAULT_ACCOUNT_ID`` a ``default=None``— y se exige que el predicado lo
+    acuse. Es fuente real, sin depender del historial.
+
+    Es la forma que usó la **215** con la 213: un guard cuyo kill-criteria es poner en
+    rojo el defecto concreto que lo motivó. Sin esto, un guard puede quedar verde sobre
+    una población en la que el defecto ya no está y nadie sabría si alguna vez lo cazó.
+    """
+    import ast
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    fuente = (raiz / "scripts" / "dashboard_data.py").read_text(encoding="utf-8")
+
+    # La 228 cableó la constante en DOS lugares, así que la reconstrucción revierte los
+    # dos. Que los `count` estén asserteados no es decoración: si alguien renombra o
+    # reordena, una sustitución que no matchea reconstruiría un archivo idéntico al de
+    # hoy y este test saldría verde sin haber probado nada — el falso negativo que la
+    # 221 se comió en su propio barrido de mutación.
+    reversos = [
+        ("default=DEFAULT_ACCOUNT_ID,", "default=None,"),
+        ("account_id: int | None = DEFAULT_ACCOUNT_ID", "account_id: int"),
+    ]
+    viejo = fuente
+    for actual, previo in reversos:
+        assert fuente.count(actual) == 1, f"cambió el cableado ({actual!r}): revisá esta reconstrucción"
+        viejo = viejo.replace(actual, previo)
+
+    assert _usos_en_el_modulo(ast.parse(fuente), "DEFAULT_ACCOUNT_ID") > 0, "el archivo de hoy la usa"
+    assert _usos_en_el_modulo(ast.parse(viejo), "DEFAULT_ACCOUNT_ID") == 0, (
+        "el guard NO caza el estado de antes de la 228: está midiendo otra cosa"
+    )
+
+
+def test_cada_constante_solo_declarativa_dice_por_que_y_sigue_existiendo():
+    """Misma regla que ``_IDS_DECLARADOS``: sin motivo escrito es una lista disfrazada.
+
+    Y la otra dirección, que es la que evita que la lista se vuelva basura: si la
+    constante dejó de existir —o alguien la cableó— la excepción sobra y hay que
+    sacarla, o el guard queda con un agujero permanente por una entrada fantasma.
+    """
+    presentes = {f"{arch}:{nombre}" for arch, nombre, _ in _constantes_de_cuenta()}
+    for clave, motivo in _IDS_SOLO_DECLARATIVOS.items():
+        assert len(motivo) > 40, f"{clave} sin motivo escrito"
+        assert clave in presentes, f"{clave} ya no existe: sacalo de _IDS_SOLO_DECLARATIVOS"
+        arch, nombre = clave.rsplit(":", 1)
+        import ast
+        from pathlib import Path
+
+        arbol = ast.parse((Path(__file__).resolve().parent.parent / arch).read_text(encoding="utf-8"))
+        assert _usos_en_el_modulo(arbol, nombre) == 0, f"{clave} ahora SÍ se usa: sacalo de la lista"
+
+
+def test_el_barrido_de_importadores_compara_el_MODULO_y_no_solo_el_nombre():
+    """El falso negativo que tuvo la primera versión del barrido, fijado.
+
+    ``DEFAULT_ACCOUNT_ID`` se declara en **tres** archivos. Mirando sólo el nombre
+    importado, el único ``from scripts.harvest_catalysts import DEFAULT_ACCOUNT_ID`` de
+    ``build_surprise_profiles`` daba por usadas a las tres — y el guard habría nacido
+    ciego a la 228, que es lo que venía a cazar.
+    """
+    de_harvest = _importadores_de("DEFAULT_ACCOUNT_ID", "scripts.harvest_catalysts")
+    de_news = _importadores_de("DEFAULT_ACCOUNT_ID", "scripts.news_feed")
+
+    assert "scripts/build_surprise_profiles.py" in de_harvest
+    assert de_news == [], "el import de harvest_catalysts se le está atribuyendo a news_feed"
 
 
 def test_el_scheduler_resuelve_los_dos_jobs_contra_is_active():

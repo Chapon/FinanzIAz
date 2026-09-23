@@ -84,7 +84,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Per-ticker catalyst feed (read-only).")
     p.add_argument("--ticker", type=str, default=None, help="Single ticker, e.g. NVDA.")
     p.add_argument("--watchlist", action="store_true", help="All tickers in account watchlist ∪ positions.")
-    p.add_argument("--account-id", type=int, default=None, help="Account for --watchlist.")
+    # tarea 229: el default sale de la constante del módulo y no de un literal. Acá
+    # los dos valen `None` y el comportamiento no cambia —`resolve_universe(None)` ya
+    # resolvía la cuenta viva—, pero declarar una constante que nadie lee es la trampa
+    # que hizo invisible a la 228: quien la cambiara no movería nada.
+    p.add_argument(
+        "--account-id",
+        type=int,
+        default=DEFAULT_ACCOUNT_ID,
+        help="Account for --watchlist. Sin esto, la cuenta VIVA (is_active).",
+    )
     p.add_argument(
         "--source",
         type=str,

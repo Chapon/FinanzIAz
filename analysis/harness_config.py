@@ -282,6 +282,12 @@ DIVIDENDOS_PNL_REALIZADO_USD = 521.38  # P&L neto realizado de la cuenta en la M
 DIVIDENDOS_MEDIDO_EL = "2026-09-21"
 
 # Config de la cuenta 1 (pausada), que es la que heredaron T7→T13.
+# `LEGACY_MAX_POSITIONS` es un **parámetro** y lo leen cuatro runners. `LEGACY_ACCOUNT_ID`
+# es **documentación**: registra de qué cuenta salió esa config congelada, y no lo lee
+# nadie porque los runners de esa familia corren sobre el cohorte, no sobre una cuenta —
+# no hay dónde cablearlo. Queda declarado como tal en el guard de la tarea 229, que
+# acusa a toda constante `*ACCOUNT_ID` que nadie use; sin la declaración, esta línea
+# sería indistinguible del defecto de la 228 (una constante muerta que aparenta mandar).
 LEGACY_MAX_POSITIONS = 5
 LEGACY_ACCOUNT_ID = 1
 
