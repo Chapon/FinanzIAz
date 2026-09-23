@@ -121,6 +121,12 @@ NETWORK_THROTTLE_PROBE_TIMEOUT_SECONDS: float = 5.0
 PRICE_CACHE_TTL_MINUTES: int = 5
 HISTORICAL_CACHE_TTL_HOURS: int = 1
 DIVIDEND_CACHE_HOURS: int = 6
+# Calendario de ex-dates (tarea 221). TTL MUCHO más largo que el de arriba y no es
+# incoherencia: `DIVIDEND_CACHE_HOURS` cachea un ACUMULADO hasta hoy, que se mueve con
+# el precio del dinero de la posición abierta; esto cachea ex-dates PASADOS, que no
+# cambian nunca. Lo único que caduca es el borde derecho —que aparezca uno nuevo— y eso
+# pasa como mucho una vez por trimestre por ticker.
+DIVIDEND_CALENDAR_CACHE_HOURS: int = 24
 EARNINGS_CACHE_HOURS: int = 24  # next-earnings calendar TTL (T08 earnings gate)
 BULK_FETCH_WORKERS: int = 5  # max parallel threads
 

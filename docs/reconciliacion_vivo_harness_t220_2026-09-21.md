@@ -123,11 +123,29 @@ que la comparación resta peras de manzanas:
 
 | | valor |
 |---|---:|
-| cuenta, como la mide el sistema (sólo precio) | +3,12% |
-| cuenta, retorno total (precio + dividendos) | **+3,77%** |
+| cuenta, como la mide el sistema (sólo precio) | +3,17% |
+| cuenta, retorno total (precio + dividendos) | **+3,81%** |
 | SPY, total-return | +4,17% |
-| **brecha que reporta el panel** | **−1,05pp** |
-| **brecha comparando total contra total** | **−0,40pp** |
+| **brecha que reporta el panel** | **−1,00pp** |
+| **brecha comparando total contra total** | **−0,36pp** |
+
+> **Corrección del 2026-09-23 (tarea 221), y el motivo importa.** Esta tabla decía
+> +3,12% / +3,77% / **−1,05pp** / **−0,40pp**. El error no estaba en los dividendos —los
+> $322,77 se reprodujeron **al centavo** por el camino de producción, y los nueve tickers
+> uno por uno— sino en el retorno base de la cuenta: acá se calculó contra el **capital
+> nominal** ($50.000) y el panel lo calcula contra el **primer snapshot de equity**
+> ($49.976,99), que se estampó después de los primeros fills. Son 0,047pp.
+>
+> La fila que de verdad afirmaba algo falso era *«brecha que reporta el panel −1,05pp»*:
+> el panel reporta **−1,00pp**, que es lo que la tarea **218** había medido corriendo la
+> función un día antes de escribirse esto. Las dos tareas cerraron con un día de
+> diferencia publicando números distintos del mismo panel.
+>
+> **Y la diferencia destapó un segundo defecto, que queda como tarea aparte:** anclar la
+> cuenta en su primer snapshot le regala el costo de entrada del día 1 ($23,01 de comisión
+> y slippage) mientras SPY se ancla en la rueda completa. Es una asimetría a favor de la
+> cuenta, del mismo VS SPY y de la misma familia que ésta, pero **no** es el desvío de
+> dividendos y no se arregló acá.
 
 **El 62% de la brecha contra SPY es un artefacto de medición, no rendimiento.** Una cuenta que
 tuviera SPY y nada más aparecería perdiendo contra SPY por su propio dividend yield.

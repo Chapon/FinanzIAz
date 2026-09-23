@@ -33,6 +33,7 @@ from urllib3.util.retry import Retry
 from config.constants import (
     BULK_FETCH_WORKERS,
     DIVIDEND_CACHE_HOURS,
+    DIVIDEND_CALENDAR_CACHE_HOURS,
     EARNINGS_CACHE_HOURS,
     HISTORICAL_CACHE_TTL_HOURS,
     MARKET_CLOSE_HOUR_ET,
@@ -81,6 +82,7 @@ from database.models import (
     AnalystDataCache,
     CompanyInfoCache,
     DividendCache,
+    DividendCalendarCache,
     EarningsCache,
     HistoricalDataCache,
     PriceCache,
@@ -2219,6 +2221,159 @@ def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
                 log.exception("Bulk dividend fetch failed for %s", ticker)
                 results[ticker] = 0.0
     return results
+
+
+# ── Calendario de ex-dates (tarea 221) ────────────────────────────────────────
+#
+# Hermano de `get_dividends_since`, con OTRA pregunta. Aquél devuelve el acumulado
+# desde una fecha hasta hoy, que es lo que necesita `ui/portfolio_tab.py` para la
+# cartera real ("¿cuánto lleva cobrado esta posición abierta?"). Éste devuelve el
+# calendario, que es lo que necesita cualquiera que pregunte por un INTERVALO
+# cerrado — el VS SPY del panel de métricas, y mañana el motor si se decide
+# acreditar dividendos.
+#
+# Sacar un intervalo del acumulado obliga a `since(t0) - since(t1)`: dos filas
+# fetcheadas en momentos distintos, y un ex-date que caiga en el medio corrompe la
+# resta sin error y sin log. Por eso son dos funciones y no un parámetro más.
+
+
+# Fecha centinela para "este ticker no paga dividendos, ya lo chequeamos". No puede
+# chocar con un ex-date real: no existe el día 0 de ningún mes. Sin ella, un ticker sin
+# dividendos no deja NINGUNA fila donde estampar `fetched_at`, así que el TTL nunca lo
+# tapa y se re-fetchea en cada refresh del panel — y son la mayoría del universo.
+_SIN_DIVIDENDOS = "0000-00-00"
+
+
+def get_dividend_calendar(ticker: str) -> list[tuple[str, float]]:
+    """Ex-dates de ``ticker`` como ``[(YYYY-MM-DD, $/acción), ...]``, cache-first.
+
+    Ordenado por fecha ascendente. Devuelve ``[]`` si el ticker no paga dividendos
+    o si el dato no está disponible — **y las dos cosas se ven igual a propósito**:
+    un consumidor que necesite distinguirlas tiene que mirar si hubo fetch, no el
+    largo de la lista. Hoy ninguno lo necesita (un ticker que no paga y uno que no
+    se pudo bajar devengan lo mismo: cero), y devolver ``None`` obligaría a todos
+    los call sites a manejar un caso que no usan.
+
+    El TTL (``DIVIDEND_CALENDAR_CACHE_HOURS``) se evalúa sobre el ``fetched_at`` más
+    reciente del ticker, no fila por fila: las filas viejas no caducan porque un
+    ex-date pasado no cambia. Lo único que puede faltar es el borde derecho.
+    """
+    sym = ticker.upper()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=DIVIDEND_CALENDAR_CACHE_HOURS)
+
+    try:
+        with session_scope() as session:
+            fresco = (
+                session.query(DividendCalendarCache)
+                .filter(DividendCalendarCache.ticker == sym)
+                .filter(DividendCalendarCache.fetched_at >= cutoff)
+                .first()
+            )
+            if fresco is not None:
+                filas = (
+                    session.query(DividendCalendarCache)
+                    .filter(DividendCalendarCache.ticker == sym)
+                    .order_by(DividendCalendarCache.ex_date.asc())
+                    .all()
+                )
+                return [(f.ex_date, float(f.amount)) for f in filas if f.ex_date != _SIN_DIVIDENDOS]
+    except Exception:
+        log.exception("Dividend calendar cache read failed for %s", sym)
+
+    calendario = _fetch_dividend_calendar(sym)
+
+    try:
+        with session_scope() as session:
+            # Upsert por (ticker, ex_date): el UNIQUE del esquema garantiza que no se
+            # dupliquen, pero un INSERT pelado reventaría en el segundo warm-up. Se
+            # re-escribe el monto porque yfinance puede corregirlo hacia atrás.
+            previas = {
+                f.ex_date: f
+                for f in session.query(DividendCalendarCache)
+                .filter(DividendCalendarCache.ticker == sym)
+                .all()
+            }
+            ahora = utcnow_naive()
+            for ex, monto in calendario:
+                fila = previas.get(ex)
+                if fila is None:
+                    session.add(DividendCalendarCache(ticker=sym, ex_date=ex, amount=monto, fetched_at=ahora))
+                else:
+                    fila.amount = monto
+                    fila.fetched_at = ahora
+            if not calendario:
+                # Un ticker que no paga tiene que quedar marcado como fetcheado, o el
+                # TTL nunca lo tapa y se re-fetchea en CADA refresh del panel. Como no
+                # hay fila donde estampar `fetched_at`, se estampa una centinela con
+                # monto 0 y una fecha que no puede ser un ex-date real.
+                centinela = previas.get(_SIN_DIVIDENDOS)
+                if centinela is None:
+                    session.add(
+                        DividendCalendarCache(
+                            ticker=sym, ex_date=_SIN_DIVIDENDOS, amount=0.0, fetched_at=ahora
+                        )
+                    )
+                else:
+                    centinela.fetched_at = ahora
+    except Exception:
+        log.exception("Dividend calendar cache write failed for %s", sym)
+
+    return calendario
+
+
+def _fetch_dividend_calendar(ticker: str) -> list[tuple[str, float]]:
+    """Fetch crudo del calendario — ``[(YYYY-MM-DD, $/acción)]`` ascendente.
+
+    ``Ticker.dividends`` devuelve una Series indexada por ex-date con el monto **sin
+    ajustar por splits posteriores**, que es la convención con la que la T220 midió
+    los $322,77 — y este módulo reproduce esa tabla ticker por ticker.
+    """
+
+    def _do_fetch() -> list[tuple[str, float]]:
+        try:
+            t = _ticker(ticker)
+            divs = t.dividends
+            if divs is None or divs.empty:
+                return []
+            out: list[tuple[str, float]] = []
+            for fecha, monto in zip(divs.index, divs.values, strict=False):
+                dia = str(fecha)[:10]
+                valor = float(monto)
+                if len(dia) == 10 and valor > 0:
+                    out.append((dia, valor))
+            out.sort()
+            return out
+        except Exception:
+            log.exception("Raw dividend calendar fetch failed for %s", ticker)
+            return []
+
+    result = _run_with_timeout(_do_fetch, timeout=HARD_TIMEOUT_SECONDS, default=[])
+    return result if result is not None else []
+
+
+def get_bulk_dividend_calendar(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """``get_dividend_calendar`` para varios tickers, en paralelo. Best-effort.
+
+    Un ticker que falla entra como ``[]`` en vez de tumbar el lote: el consumidor es
+    display-only y un calendario incompleto se declara arriba (``motivo``), no se
+    convierte en una excepción que apague el panel entero.
+    """
+    unicos = sorted({t.upper() for t in tickers if t})
+    if not unicos:
+        return {}
+
+    out: dict[str, list[tuple[str, float]]] = {}
+    max_workers = min(BULK_FETCH_WORKERS, len(unicos))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futuros = {executor.submit(get_dividend_calendar, t): t for t in unicos}
+        for fut in as_completed(futuros):
+            t = futuros[fut]
+            try:
+                out[t] = fut.result()
+            except Exception:
+                log.exception("Bulk dividend calendar fetch failed for %s", t)
+                out[t] = []
+    return out
 
 
 _TZ_FALLO_AVISADO = False

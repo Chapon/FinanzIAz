@@ -296,6 +296,48 @@ class DividendCache(Base):
         return f"<DividendCache({self.ticker} ${self.total_per_share}/share since {self.since_date.date()})>"
 
 
+class DividendCalendarCache(Base):
+    """Calendario de ex-dates por ticker: una fila por (ticker, ex_date) — tarea 221.
+
+    **Por qué no alcanzaba ``DividendCache``**, que es la tabla de al lado y guarda
+    dividendos del mismo proveedor: guarda el **acumulado desde una fecha hasta hoy**
+    (``total_per_share``) con un TTL de ``DIVIDEND_CACHE_HOURS`` = 6 h. Esa forma
+    responde *"¿cuánto cobró esta posición abierta?"*, que es lo que necesita la
+    pestaña de cartera real (``ui/portfolio_tab.py``), y **no** responde *"¿cuánto
+    devengó entre estas dos fechas?"*, que es lo que necesita el VS SPY.
+
+    Sacar un intervalo del acumulado obliga a restar dos filas —``since(t0) −
+    since(t1)``— y eso es frágil justo donde importa: las dos filas se fetchean en
+    momentos distintos, así que un ex-date que caiga entre los dos fetches corrompe
+    la resta **sin error y sin log**. Con el calendario, cualquier intervalo se suma
+    directo.
+
+    Y el TTL sobra: un ex-date pasado **no cambia**. Lo único que caduca es el borde
+    derecho (si apareció un ex-date nuevo), así que la frescura se evalúa sobre
+    ``fetched_at`` del ticker y no sobre cada fila.
+
+    ``amount`` es en dólares por acción, **sin ajustar por splits posteriores**, que
+    es como lo devuelve ``yfinance`` (``Ticker.dividends``) y como lo midió la T220.
+    """
+
+    __tablename__ = "dividend_calendar_cache"
+    __table_args__ = (
+        # UNIQUE y no un índice común: el invariante es "una fila por ex-date". Sin
+        # esto, dos warm-ups concurrentes duplican la fila y el devengado sale al
+        # DOBLE — un error que se lee como rendimiento, no como bug (tarea 203).
+        Index("ux_divcal_ticker_exdate", "ticker", "ex_date", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ex_date: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD'
+    amount: Mapped[float] = mapped_column(Float, nullable=False)  # $/acción
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+
+    def __repr__(self):
+        return f"<DividendCalendarCache({self.ticker} ${self.amount}/share ex {self.ex_date})>"
+
+
 class HistoricalDataCache(Base):
     """
     Cache for OHLCV historical data to avoid repeated yfinance downloads.

@@ -85,6 +85,7 @@ class MetricsWorker(BaseWorker):
         # ve los sectores recién cacheados. Best-effort y en el hilo del worker
         # (no bloquea la UI); get_company_info es cache-first.
         self._warm_sectors()
+        self._warm_dividendos()
         con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
         try:
             payload = build_metrics(con, self.account_id)
@@ -115,6 +116,41 @@ class MetricsWorker(BaseWorker):
                 get_company_info(tkr)  # cache-first; fetchea+cachea en un miss
         except Exception:
             log.debug("sector warm-up failed", exc_info=True)
+
+    def _warm_dividendos(self) -> None:
+        """Puebla ``dividend_calendar_cache`` con los ex-dates que la cuenta tocó (T221).
+
+        Mismo patrón y mismo motivo que ``_warm_sectors``, que está justo arriba: el
+        fetch es **cache-first** y corre **en el hilo del worker**, no en el de la UI
+        (tarea 80), y va ANTES de abrir la conexión ro de ``build_metrics`` para que el
+        panel vea lo recién cacheado. El TTL del calendario es de 24 h, así que en el
+        uso normal esto no pega a la red ni una vez.
+
+        El universo son los tickers que la cuenta **operó alguna vez**, no los que tiene
+        abiertos: el VS SPY se calcula sobre la ventana entera, así que un nombre que se
+        compró y se vendió en julio también devengó. Con las posiciones abiertas nada
+        más, el devengado saldría corto y el ``vs_spy`` quedaría pesimista **sin que
+        nada lo dijera** — que es exactamente el defecto que la 221 arregla.
+
+        Best-effort: si falla, el panel lo declara (``dividendos_completos=False``) en
+        vez de mostrar un número sesgado en silencio.
+        """
+        try:
+            con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
+            try:
+                rows = con.execute(
+                    "SELECT DISTINCT ticker FROM paper_orders WHERE account_id=? AND status='filled'",
+                    (self.account_id,),
+                ).fetchall()
+            finally:
+                con.close()
+            if not rows:
+                return
+            from data.yahoo_finance import get_bulk_dividend_calendar
+
+            get_bulk_dividend_calendar([t for (t,) in rows])
+        except Exception:
+            log.debug("dividend calendar warm-up failed", exc_info=True)
 
     def on_success(self, result: dict) -> None:
         self.result_ready.emit(result)
@@ -873,10 +909,23 @@ class MetricsTab(QWidget):
             sub = f"SPY desactualizado (hasta {_ddmm(end)})" if end else "SPY desactualizado"
             self.cards["benchmark"].set_value("—", sub, None)
         elif bm["available"]:
+            # tarea 221: el número compara TOTAL contra TOTAL. Se muestra el retorno
+            # total de la cuenta (precio + dividendos devengados) y no el de precio,
+            # porque es el que entra en la resta — mostrar el otro al lado de un vs_spy
+            # calculado con éste haría que la cuenta no cerrara a ojo.
+            cuenta = bm.get("account_return_total")
+            if cuenta is None:
+                cuenta = bm["account_return"]
+            sub = f"cuenta {_pct(cuenta, signed=True)} · SPY {_pct(bm['spy_return'], signed=True)}"
+            if not bm.get("dividendos_completos", True):
+                # El dividendo sólo puede SUMAR, así que con el calendario incompleto el
+                # número es un piso. Se dice, en vez de apagar la tarjeta: apagarla sería
+                # la regresión que la 218 acaba de arreglar.
+                faltan = len(bm.get("dividendos_faltantes") or [])
+                sub += f" · piso: faltan dividendos de {faltan}"
             self.cards["benchmark"].set_value(
                 _pct(bm["vs_spy"], signed=True),
-                f"cuenta {_pct(bm['account_return'], signed=True)} · "
-                f"SPY {_pct(bm['spy_return'], signed=True)}",
+                sub,
                 (bm["vs_spy"] or 0) > 0,
             )
         else:

@@ -850,6 +850,96 @@ def _close_on_or_before(series: list[tuple[str, float]], day: str) -> float | No
     return out
 
 
+# Fecha centinela de `data/yahoo_finance._SIN_DIVIDENDOS`: marca "este ticker ya se
+# chequeó y no paga". Se duplica el literal a propósito y NO se importa: `analysis/` no
+# depende de `data/yahoo_finance` (que arrastra yfinance, red y el cache entero) sólo
+# para leer una tabla. Un test fija que los dos literales coincidan, que es lo que evita
+# que la duplicación derive — la misma forma con que la 71 resolvió los literales de
+# reproducción.
+_SIN_DIVIDENDOS = "0000-00-00"
+
+
+def _dividendos_devengados(
+    con: sqlite3.Connection, account_id: int, start_day: str, end_day: str
+) -> tuple[float, list[str]]:
+    """``(dólares devengados, tickers sin calendario)`` en ``[start_day, end_day]``.
+
+    **Qué mide y por qué existe (tareas 220 → 221).** El harness corre sobre barras
+    bajadas con ``auto_adjust=True``, o sea total-return: cobra dividendos en el
+    precio. ``paper_trading/`` no los menciona en ninguna línea, así que la cuenta
+    pasa por el ex-date, ve caer el precio y no recibe el efectivo. Este número es
+    exactamente ese efectivo, y sirve para que el VS SPY compare total contra total
+    en vez de restar el retorno de PRECIO de la cuenta contra un SPY TOTAL-RETURN.
+
+    **La convención de quién cobra: hay que tener la acción ANTES del ex-date.** Un
+    fill del mismo día del ex-date no cobra, así que la posición se evalúa con los
+    fills estrictamente anteriores (``filled_at`` < ``ex_date``). Es la convención con
+    la que la T220 midió los $322,77, y este cálculo **reproduce esa tabla ticker por
+    ticker** — verificado antes de escribirlo, sobre los nueve tickers publicados.
+
+    **El segundo elemento no es decoración.** Un ticker que la cuenta tuvo y del que
+    no hay ninguna fila de calendario **no devenga cero: no se sabe**. Confundir las
+    dos cosas haría que el VS SPY volviera a estar sesgado en silencio, que es el
+    defecto que esta tarea arregla. Por eso se devuelven aparte y el panel lo declara.
+    Un ticker que no paga SÍ devenga cero, y se distingue por la fila centinela.
+    """
+    try:
+        fills = con.execute(
+            "SELECT ticker, side, fill_shares, filled_at FROM paper_orders "
+            "WHERE account_id=? AND status='filled' AND fill_shares IS NOT NULL "
+            "ORDER BY filled_at ASC",
+            (account_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0.0, []
+    if not fills:
+        return 0.0, []
+
+    por_ticker: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for ticker, side, shares, filled_at in fills:
+        dia = _day(filled_at)
+        if dia is None or not shares:
+            continue
+        signo = 1.0 if str(side).upper() == "BUY" else -1.0
+        por_ticker[str(ticker).upper()].append((dia, signo * float(shares)))
+
+    total = 0.0
+    sin_calendario: list[str] = []
+    for ticker, eventos in sorted(por_ticker.items()):
+        try:
+            filas = con.execute(
+                "SELECT ex_date, amount FROM dividend_calendar_cache WHERE ticker=? ORDER BY ex_date ASC",
+                (ticker,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # La tabla no existe (DB sintética, o anterior a la migración 0013). No hay
+            # calendario para NINGÚN ticker, así que todos quedan sin declarar.
+            return 0.0, sorted(por_ticker)
+        if not filas:
+            sin_calendario.append(ticker)
+            continue
+        for ex_date, monto in filas:
+            if ex_date == _SIN_DIVIDENDOS:
+                # La fila centinela marca "chequeado, no paga" para que el TTL lo tape.
+                # **Es redundante y va dicho:** probando por mutación, sacarle este
+                # `continue` NO pone nada en rojo, porque `"0000-00-00"` ordena antes que
+                # cualquier fecha ISO y el filtro de ventana de abajo ya lo descarta. Se
+                # deja por legibilidad —la fila necesita nombre donde se lee—, pero lo que
+                # de verdad lo sostiene es el rango, y un comentario que dijera lo
+                # contrario dirigiría mal a quien venga a tocar el filtro. Los dos hechos
+                # están fijados por tests (el literal y su orden).
+                continue
+            if not (start_day <= ex_date <= end_day):
+                continue
+            # Shares en cartera ANTES del ex-date. `< ex_date` y no `<=`: comprar el
+            # día del ex-date no cobra.
+            shares = sum(q for dia, q in eventos if dia < ex_date)
+            if shares > 0:
+                total += shares * float(monto)
+
+    return total, sin_calendario
+
+
 def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     """Retorno de la cuenta vs SPY sobre la MISMA ventana (V1).
 
@@ -857,6 +947,21 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     y compara el retorno de equity contra el retorno de SPY entre esas fechas
     (cache diario, ``load_close_series``). Permite, por primera vez, separar
     sistema de mercado: ``vs_spy = account_return − spy_return`` (alpha del período).
+
+    **Compara TOTAL contra TOTAL (tarea 221), y antes no.** El cache se baja con
+    ``auto_adjust=True``, así que la serie de SPY es total-return: trae sus dividendos
+    reinvertidos. La equity de la cuenta, en cambio, es sólo precio — ``paper_trading/``
+    no acredita dividendos. Restar una de la otra es restar peras de manzanas, y en la
+    cuenta 2 valía **0,65pp sobre 3 meses**: el panel reportaba −1,05pp donde la
+    comparación honesta da −0,40pp, o sea que el **62% de la brecha contra SPY era un
+    artefacto de medición**. Ahora el devengado de la cuenta se suma a su retorno
+    (``account_return_total``) y el ``vs_spy`` sale de ahí.
+
+    **La dirección del sesgo importa para leer el caso degradado:** el dividendo sólo
+    puede sumar, así que si el calendario está incompleto el ``vs_spy`` publicado es un
+    **piso** — el real es ése o mejor. Por eso un calendario parcial no apaga el número
+    (apagarlo sería la regresión que la 218 acaba de arreglar): lo declara en
+    ``dividendos_completos`` y ``dividendos_faltantes``.
 
     Best-effort/display-only: ``available=False`` si faltan snapshots (<2) o el
     cache de SPY. No lanza si la tabla de snapshots no existe (DB sintética).
@@ -867,6 +972,10 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "start_day": None,
         "end_day": None,
         "account_return": None,
+        "account_dividends": None,
+        "account_return_total": None,
+        "dividendos_completos": False,
+        "dividendos_faltantes": [],
         "spy_return": None,
         "vs_spy": None,
         "stale": False,
@@ -919,15 +1028,28 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     p0 = _close_on_or_after(spy, start_day)
     p1 = _close_on_or_before(spy, end_day)
     spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
+
+    # Total contra total (tarea 221): la equity de la cuenta es sólo precio, así que se
+    # le suma el efectivo que devengó y no cobró. SPY ya viene total-return del cache.
+    dividendos, faltantes = _dividendos_devengados(con, account_id, start_day, end_day)
+    account_return_total = ((end_eq + dividendos) / start_eq - 1.0) if start_eq > 0 else None
     vs_spy = (
-        (account_return - spy_return) if (account_return is not None and spy_return is not None) else None
+        (account_return_total - spy_return)
+        if (account_return_total is not None and spy_return is not None)
+        else None
     )
     return {
         "available": spy_return is not None,
         "ticker": BENCHMARK_TICKER,
         "start_day": start_day,
         "end_day": end_day,
+        # `account_return` sigue siendo el de PRECIO, que es lo que la cuenta hizo en
+        # equity y lo que cuadra contra los snapshots. El de la comparación es el total.
         "account_return": account_return,
+        "account_dividends": dividendos,
+        "account_return_total": account_return_total,
+        "dividendos_completos": not faltantes,
+        "dividendos_faltantes": faltantes,
         "spy_return": spy_return,
         "vs_spy": vs_spy,
         "stale": False,
