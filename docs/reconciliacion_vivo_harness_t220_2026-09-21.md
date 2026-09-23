@@ -126,8 +126,17 @@ que la comparación resta peras de manzanas:
 | cuenta, como la mide el sistema (sólo precio) | +3,17% |
 | cuenta, retorno total (precio + dividendos) | **+3,81%** |
 | SPY, total-return | +4,17% |
-| **brecha que reporta el panel** | **−1,00pp** |
+| **brecha que reportaba el panel al 2026-09-21** | **−1,00pp** |
 | **brecha comparando total contra total** | **−0,36pp** |
+
+> **Los números de esta tabla son del 2026-09-21 y quedaron viejos el 2026-09-23 (tarea
+> 223), pero NO por una medición nueva: por dos anclajes que estaban mal.** El panel medía
+> la cuenta desde su **primer snapshot** —ya con la fricción de apertura pagada— y a SPY
+> desde la rueda **siguiente** al arranque, que cae dos ruedas después porque el 20-jun fue
+> sábado. Arreglados los dos, SPY total-return en esta ventana es **+3,84%** (no +4,17%: ése
+> salía del ancla corrida) y el panel hoy publica **−0,68pp** sobre la ventana al 2026-09-23.
+> La conclusión de este doc **no se mueve**: el desvío de dividendos vale lo que dice, y la
+> brecha contra SPY sigue siendo ≤ 0.
 
 > **Corrección del 2026-09-23 (tarea 221), y el motivo importa.** Esta tabla decía
 > +3,12% / +3,77% / **−1,05pp** / **−0,40pp**. El error no estaba en los dividendos —los
@@ -172,6 +181,7 @@ publicados. Va como tarea **221**.
    cobrar (§4), y explica el **62%** de la brecha contra SPY.
 
 **Y lo que esto NO dice:** que el sistema tenga alpha. Con los dividendos acreditados la
-cuenta pasa de −1,05pp a −0,40pp contra SPY, que sigue siendo ≤ 0 y sigue estando muy dentro
+cuenta pasaba de −1,05pp a −0,40pp contra SPY al 2026-09-21 (con los anclajes de la **223**
+son −0,68pp al 2026-09-23), que sigue siendo ≤ 0 y sigue estando muy dentro
 del ruido (`docs/diagnostico_pnl_cuenta2_2026-09-21.md`, t=0,21 sobre 69 trades). Lo que
 cambia es que **una parte concreta de la diferencia dejó de ser un misterio**.

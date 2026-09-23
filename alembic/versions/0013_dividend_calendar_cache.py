@@ -25,9 +25,10 @@ en ninguna línea: la cuenta pasa por el ex-date, ve caer el precio y no recibe 
 efectivo. Medido sobre las tenencias reales de la cuenta 2 el 2026-09-21:
 **$322,77 en 3,05 meses = 2,54%/año**, el 62% de todo el P&L realizado.
 
-El panel de métricas compara ese retorno **de precio** contra un SPY
-**total-return**, así que resta peras de manzanas: reporta −1,05pp donde la
-comparación honesta da −0,40pp. Esta tabla es el insumo que lo corrige.
+El panel de métricas comparaba ese retorno **de precio** contra un SPY
+**total-return**, así que restaba peras de manzanas: al 2026-09-21 reportaba −1,05pp
+donde la comparación honesta daba −0,40pp. Esta tabla es el insumo que lo corrige.
+(Los dos números son de antes de la **223**, que arregló además los anclajes.)
 
 Estado de la DB viva al escribir esta revisión (2026-09-23)
 ------------------------------------------------------------

@@ -41,7 +41,11 @@ Schema del payload (``build_metrics``)::
       "benchmark": {  # V1: retorno de la cuenta vs SPY sobre la misma ventana
         "available","ticker","start_day","end_day",
         "account_return","spy_return","vs_spy",
-        "stale","spy_end_day"   # tarea 22: SPY desactualizado → no se compara
+        "account_dividends","account_return_total",          # tarea 221: total vs total
+        "dividendos_completos","dividendos_faltantes",       # calendario incompleto → piso
+        "base_equity","base_anclaje","spy_anclaje",          # tarea 223: de dónde sale cada ancla
+        "stale","spy_end_day",  # tarea 22: SPY desactualizado → no se compara
+        "motivo"                # tarea 218: por qué NO hay número
       },
       "concentration": {  # V2: concentración del book vivo (display-only)
         "n","total_value","weights":[{"ticker","weight","market_value","sector",
@@ -850,6 +854,62 @@ def _close_on_or_before(series: list[tuple[str, float]], day: str) -> float | No
     return out
 
 
+def _ancla_de_la_cuenta(con: sqlite3.Connection, account_id: int, rows: list) -> tuple[float, str]:
+    """``(equity base, de dónde salió)`` para el retorno de la cuenta (tarea 223).
+
+    **El primer snapshot NO es el capital: es el capital menos la primera tanda de
+    costos.** ``record_equity_snapshot`` corre al FINAL de ``run_scan``, después de los
+    fills, así que ``rows[0]`` ya trae descontados comisión y slippage de la entrada del
+    día 1 — en la cuenta 2, **$23,01 exactos** (50.000,00 − 49.976,99, y la suma de
+    ``commission_paid + slippage_cost`` de los diez fills del 2026-06-20 da ese número al
+    centavo). Anclar ahí hacía que **el costo de entrada no contara como pérdida**,
+    mientras SPY arrancaba sin pagar nada. El sesgo es chico (0,047pp hoy) pero
+    **sistemático y siempre a favor de la cuenta**: no depende de cuánto fue el costo,
+    sino de que exista.
+
+    Por eso la base es ``initial_capital``, que es la plata que de verdad se puso. Que
+    eso sea también *«la equity justo antes del primer scan»* no es una suposición
+    cómoda: los snapshots **sólo** los escribe ``run_scan``, y ``acct.cash`` **sólo** lo
+    mueven los fills (``engine.py`` es el único que lo toca, en dos líneas) — no hay
+    depósitos ni retiros en ningún lado del proyecto.
+
+    **El caso degradado se declara, no se esconde.** Una DB sintética sin
+    ``paper_accounts`` cae en ``rows[0]``, que es el comportamiento viejo; devolverlo en
+    silencio sería dejar el sesgo vivo sin que nada lo diga, así que sale rotulado.
+    """
+    try:
+        fila = con.execute("SELECT initial_capital FROM paper_accounts WHERE id=?", (account_id,)).fetchone()
+    except sqlite3.OperationalError:
+        fila = None
+    if fila and fila[0] is not None and float(fila[0]) > 0:
+        return float(fila[0]), "initial_capital"
+    return float(rows[0][1] or 0.0), "primer_snapshot"
+
+
+def _ancla_de_spy(series: list[tuple[str, float]], start_day: str) -> tuple[float | None, str]:
+    """``(close base de SPY, de dónde salió)`` para el retorno del benchmark (tarea 223).
+
+    **El ancla va en el close que la equity de la cuenta tiene puesto, que es el
+    PREVIO.** El panel usaba ``_close_on_or_after`` en el inicio y ``_close_on_or_before``
+    en el final — la asimetría estaba escrita ahí mismo. Cuando el primer snapshot cae en
+    una rueda, las dos dan lo mismo y no se nota; cuando cae **fuera** de una rueda, no:
+    el primer snapshot de la cuenta 2 es el **sábado 2026-06-20** (el viernes 19 fue
+    feriado), así que su equity está marcada con los closes del **18** y SPY se anclaba en
+    el **22**. Medido: vale **+0,33pp**, siete veces el sesgo de fricción que esta misma
+    tarea arregla, y en la dirección contraria.
+
+    ``_close_on_or_after`` queda de fallback para el caso en que la serie **empiece
+    después** del primer snapshot (la ventana del cache es rodante). Eso no es una
+    equivalencia sino un desvío distinto —SPY midiendo una ventana más corta que la
+    cuenta, el espejo del ``stale`` de la tarea 22, que hoy nadie guarda— así que sale
+    rotulado y está anotado como tarea **225**.
+    """
+    p0 = _close_on_or_before(series, start_day)
+    if p0 is not None:
+        return p0, "close_previo"
+    return _close_on_or_after(series, start_day), "primera_rueda"
+
+
 # Fecha centinela de `data/yahoo_finance._SIN_DIVIDENDOS`: marca "este ticker ya se
 # chequeó y no paga". Se duplica el literal a propósito y NO se importa: `analysis/` no
 # depende de `data/yahoo_finance` (que arrastra yfinance, red y el cache entero) sólo
@@ -952,16 +1012,31 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     ``auto_adjust=True``, así que la serie de SPY es total-return: trae sus dividendos
     reinvertidos. La equity de la cuenta, en cambio, es sólo precio — ``paper_trading/``
     no acredita dividendos. Restar una de la otra es restar peras de manzanas, y en la
-    cuenta 2 valía **0,65pp sobre 3 meses**: el panel reportaba −1,05pp donde la
-    comparación honesta da −0,40pp, o sea que el **62% de la brecha contra SPY era un
-    artefacto de medición**. Ahora el devengado de la cuenta se suma a su retorno
-    (``account_return_total``) y el ``vs_spy`` sale de ahí.
+    cuenta 2 valía **0,65pp sobre 3 meses** (medido el 2026-09-21: −1,05pp contra −0,40pp
+    comparando honesto), o sea que el **62% de la brecha contra SPY era un artefacto de
+    medición**. Ahora el devengado de la cuenta se suma a su retorno
+    (``account_return_total``) y el ``vs_spy`` sale de ahí. Los dos números de esa medición
+    quedaron viejos al día siguiente, con la 223: son de antes de arreglar los anclajes.
 
     **La dirección del sesgo importa para leer el caso degradado:** el dividendo sólo
     puede sumar, así que si el calendario está incompleto el ``vs_spy`` publicado es un
     **piso** — el real es ése o mejor. Por eso un calendario parcial no apaga el número
     (apagarlo sería la regresión que la 218 acaba de arreglar): lo declara en
     ``dividendos_completos`` y ``dividendos_faltantes``.
+
+    **Y los dos lados se anclan IGUAL (tarea 223), que antes tampoco.** La cuenta
+    arrancaba en ``rows[0]`` —o sea *después* de pagar la fricción del primer scan— y SPY
+    en la rueda siguiente al primer snapshot, sin pagar nada y sobre otra fecha. Son dos
+    asimetrías distintas, no una: valen **−0,047pp** y **+0,33pp** sobre la cuenta 2, en
+    direcciones opuestas, así que arreglar sólo la que decía el enunciado habría dejado la
+    otra —la grande— intacta. El detalle de cada una vive en ``_ancla_de_la_cuenta`` y
+    ``_ancla_de_spy``, y cuál se usó sale en ``base_anclaje`` / ``spy_anclaje``.
+
+    **SPY entra sin fricción a propósito, y eso es lo que hace legible al número.** El
+    benchmark es el índice: *«comprar SPY y no hacer nada»* rinde el retorno del índice, y
+    todo lo que la cuenta paga por operar —empezando por la entrada del día 1— tiene que
+    verse como pérdida contra él. Darle a SPY una comisión de entrada taparía justo el
+    costo que esta tarea destapa.
 
     Best-effort/display-only: ``available=False`` si faltan snapshots (<2) o el
     cache de SPY. No lanza si la tabla de snapshots no existe (DB sintética).
@@ -980,6 +1055,12 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": None,
         "stale": False,
         "spy_end_day": None,
+        # De dónde salió cada ancla (tarea 223). No los pinta nadie: están para que el
+        # caso degradado —DB sin `paper_accounts`, serie que empieza después de la
+        # cuenta— se pueda ver en vez de quedar como un número sin historia.
+        "base_equity": None,
+        "base_anclaje": None,
+        "spy_anclaje": None,
         # Por que NO hay numero (tarea 218). `stale` ya separaba "dato viejo", pero
         # "sin serie" y "faltan snapshots" se veian igual — y la UI los rotulaba a los
         # dos como "sin cache de SPY todavia", que ademas afirmaba un "todavia" falso:
@@ -998,13 +1079,20 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         return empty
     start_day = _day(rows[0][0])
     end_day = _day(rows[-1][0])
-    start_eq = float(rows[0][1] or 0.0)
+    # tarea 223: la base es el capital ANTES de la fricción del primer scan, no el
+    # primer snapshot — que ya la pagó. Ver `_ancla_de_la_cuenta`.
+    start_eq, base_anclaje = _ancla_de_la_cuenta(con, account_id, rows)
     end_eq = float(rows[-1][1] or 0.0)
     account_return = (end_eq / start_eq - 1.0) if start_eq > 0 else None
+    anclas = {
+        "base_equity": start_eq if start_eq > 0 else None,
+        "base_anclaje": base_anclaje,
+    }
     spy = load_close_series(con, BENCHMARK_TICKER)
     if not spy or start_day is None or end_day is None:
         return {
             **empty,
+            **anclas,
             "start_day": start_day,
             "end_day": end_day,
             "account_return": account_return,
@@ -1018,6 +1106,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
     if benchmark_stale_bdays(spy_end_day, end_day) > BENCHMARK_STALE_BDAYS:
         return {
             **empty,
+            **anclas,
             "start_day": start_day,
             "end_day": end_day,
             "account_return": account_return,
@@ -1025,7 +1114,9 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
             "spy_end_day": spy_end_day,
             "motivo": "stale",
         }
-    p0 = _close_on_or_after(spy, start_day)
+    # tarea 223: el inicio se ancla con la MISMA regla que el final (`_close_on_or_before`),
+    # que es el close con el que está marcada la equity del primer snapshot. Ver `_ancla_de_spy`.
+    p0, spy_anclaje = _ancla_de_spy(spy, start_day)
     p1 = _close_on_or_before(spy, end_day)
     spy_return = (p1 / p0 - 1.0) if (p0 and p1 and p0 > 0) else None
 
@@ -1043,8 +1134,9 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "ticker": BENCHMARK_TICKER,
         "start_day": start_day,
         "end_day": end_day,
-        # `account_return` sigue siendo el de PRECIO, que es lo que la cuenta hizo en
-        # equity y lo que cuadra contra los snapshots. El de la comparación es el total.
+        # `account_return` sigue siendo el de PRECIO —lo que la cuenta hizo en equity— y
+        # el de la comparación es el total. Los dos sobre la misma base: el capital, que
+        # desde la 223 ya no es el primer snapshot (ver `_ancla_de_la_cuenta`).
         "account_return": account_return,
         "account_dividends": dividendos,
         "account_return_total": account_return_total,
@@ -1054,6 +1146,8 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": vs_spy,
         "stale": False,
         "spy_end_day": spy_end_day,
+        **anclas,
+        "spy_anclaje": spy_anclaje,
         "motivo": None if spy_return is not None else "sin_serie",
     }
 

@@ -23,15 +23,31 @@ from ui.styles import CHART_STYLE, PALETTE
 
 
 def build_benchmark_overlay(
-    snapshots: list, spy_pairs: list[tuple[str, float]] | None
+    snapshots: list,
+    spy_pairs: list[tuple[str, float]] | None,
+    initial_capital: float | None = None,
 ) -> list[tuple[datetime, float]]:
-    """Normaliza SPY a la equity inicial sobre la ventana de los snapshots (V1).
+    """Normaliza SPY al CAPITAL de la cuenta sobre la ventana de los snapshots (V1).
 
     ``snapshots``: ``PaperEquitySnapshot`` ascendentes (``.snapshot_at``,
     ``.total_equity``). ``spy_pairs``: ``[(YYYY-MM-DD, close)]``. Devuelve
     ``[(datetime, valor)]`` por cada barra SPY dentro de ``[primer, último]``
-    snapshot, escalada para arrancar en la equity inicial → una línea comparable
-    en las mismas unidades ($) que la curva de equity. ``[]`` si falta data.
+    snapshot, escalada para arrancar en el capital → una línea comparable en las
+    mismas unidades ($) que la curva de equity. ``[]`` si falta data.
+
+    **Ancla igual que la tarjeta VS SPY (tarea 223), y antes no.** Esta línea tenía las
+    dos asimetrías que arregló esa tarea, copiadas: escalaba contra
+    ``snapshots[0].total_equity`` —que es el capital **menos** la fricción del primer
+    scan, porque el snapshot se estampa después de los fills— y tomaba como base el
+    primer close **en o después** del primer snapshot, o sea la rueda siguiente cuando
+    ese snapshot cae fuera de una (el de la cuenta 2 es un sábado). Que el gráfico y la
+    tarjeta anclen distinto es peor que cualquiera de las dos por separado: son el mismo
+    número dibujado en dos lugares.
+
+    Con el capital de base la línea de SPY arranca en $50.000 mientras la equity arranca
+    en $49.977 — ese hueco **es** el costo de entrada, y verlo es el punto.
+    ``initial_capital=None`` cae en la equity del primer snapshot, que es el
+    comportamiento viejo, para los llamadores que no lo tengan a mano.
 
     Función pura (sin Qt) para poder testear la alineación sin event loop.
     """
@@ -43,10 +59,17 @@ def build_benchmark_overlay(
         end_day = snapshots[-1].snapshot_at.date().isoformat()
     except (AttributeError, TypeError, ValueError):
         return []
+    if initial_capital is not None and float(initial_capital) > 0:
+        start_eq = float(initial_capital)
     if start_eq <= 0:
         return []
     pairs = sorted(spy_pairs)
-    base = next((c for d, c in pairs if d >= start_day), None)
+    # Mismo par de helpers que `_benchmark_panel`, y en el mismo orden: el close con el
+    # que está marcada la equity del primer snapshot es el PREVIO; la rueda siguiente
+    # queda de fallback para cuando la serie empieza después de la cuenta.
+    from analysis.metrics_panel import _ancla_de_spy
+
+    base, _anclaje = _ancla_de_spy(pairs, start_day)
     if not base or base <= 0:
         return []
     scale = start_eq / base

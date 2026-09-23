@@ -596,8 +596,12 @@ class MetricsTab(QWidget):
                 "(del primer al último snapshot de equity). Es el alpha del período: "
                 "positivo = la cuenta le ganó al mercado; negativo = un índice pasivo "
                 "hubiera rendido más. Separa por fin sistema de mercado. SPY = "
-                "total-return implícito del cache (auto_adjust). '—' si falta el "
-                "cache de SPY o hay menos de 2 snapshots.",
+                "total-return implícito del cache (auto_adjust). La cuenta arranca en "
+                "su CAPITAL, no en el primer snapshot: así la comisión y el slippage "
+                "de la entrada cuentan como pérdida contra el índice, que es lo que "
+                "son. SPY entra sin fricción a propósito — es el costo de operar lo "
+                "que este número tiene que mostrar. '—' si falta el cache de SPY o "
+                "hay menos de 2 snapshots.",
             ),
         ]
         for i, (key, title, kind, tip) in enumerate(defs):

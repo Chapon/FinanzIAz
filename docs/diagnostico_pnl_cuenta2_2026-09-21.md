@@ -28,25 +28,35 @@ O sea que el reconstructor reproduce el estado final sin error. Lo que sigue se 
 
 | tramo | cuenta | SPY | diferencia |
 |---|---:|---:|---:|
-| 2026-06-20 → 2026-06-30 | +1,06% | +0,32% | **+0,74pp** |
+| 2026-06-20 → 2026-06-30 | +1,06% | +0,00% | **+1,06pp** |
 | 2026-06-30 → 2026-07-24 | +3,41% | −1,05% | **+4,46pp** |
 | 2026-07-24 → 2026-08-31 | −2,15% | +3,81% | **−5,95pp** |
 | 2026-08-31 → 2026-09-21 | +0,84% | +1,09% | −0,25pp |
-| **total desde el inicio** | **+3,12%** | **+4,17%** | **−1,05pp** |
+| **total desde el inicio** | **+3,12%** | **+3,84%** | **−0,72pp** |
 
-**Desde el inicio la cuenta casi empata al mercado** (+3,12% contra +4,17%, ~13% anualizado).
+**Desde el inicio la cuenta casi empata al mercado** (+3,12% contra +3,84%, ~13% anualizado).
 Eso no es «cero».
 
-> **Corrección del 2026-09-21, al cerrar la tarea 218.** La primera versión de esta tabla decía
-> SPY **+3,84%** y una brecha de −0,72pp. Estaba **anclada un día antes**: el 20-jun fue sábado, así
-> que tomé la barra del **18-jun** (744,89) en vez de la primera rueda de la cuenta, el **22-jun**
-> (742,55). Con VS SPY prendido, el panel ancla en la primera barra **>= el inicio**, que es lo
-> correcto. El número bueno es **+4,17%** y la brecha **−1,05pp**. La del pico (−6,26pp) **no cambia**
-> —ahí los dos extremos son ruedas hábiles, así que el anclaje no la tocaba—, y las filas intermedias
-> de la tabla se recalcularon con el mismo criterio. El signo y la conclusión no se mueven: la cuenta
-> le ganó al mercado hasta el 24-jul y se lo devolvió después. Lo que cambia es que la ventaja de
-> julio era **mayor** de lo que decía (+4,46pp, no +3,37pp) y la pérdida de agosto también
-> (−5,95pp, no −4,83pp): SPY **bajó** −1,05% en el tramo de julio, no subió +0,03%.
+> **Corrección del 2026-09-23 (tarea 223): la corrección de abajo estaba al revés, y la tabla
+> vuelve a sus números originales.** El 2026-09-21 cambié SPY de **+3,84%** a **+4,17%** con este
+> argumento: *«el panel ancla en la primera barra ≥ el inicio, que es lo correcto»*. **El panel
+> estaba mal.** El 20-jun fue sábado (el 19 fue feriado), así que la equity de la cuenta ese día
+> está marcada con el close del **18-jun** (744,89) y anclar SPY en el **22-jun** (742,55) compara
+> dos instantes distintos. La 223 arregló el panel —ahora ancla con `_close_on_or_before`, la
+> misma regla que ya usaba para el final— y con eso el número de arriba vuelve a ser el bueno.
+>
+> **Lo que falló no fue la aritmética sino el criterio:** tomé el comportamiento del código como
+> definición de lo correcto en vez de preguntarme qué instante representaba cada lado. Toca dos
+> filas —la primera y el total, las únicas con un extremo fuera de rueda— y vale **0,33pp**, que
+> es lo mismo que midió la 223 sobre la ventana de hoy. **El signo y la conclusión no se mueven**
+> en ninguna de las dos versiones: la cuenta le pierde a SPY desde el inicio.
+>
+> **Corrección anterior, del 2026-09-21 (tarea 218) — la parte que SÍ valía.** Las filas de julio
+> y agosto se recalcularon y ésas no se tocan: la ventaja de julio era **mayor** de lo que decía
+> la primera versión (+4,46pp, no +3,37pp) y la pérdida de agosto también (−5,95pp, no −4,83pp),
+> porque SPY **bajó** −1,05% en el tramo de julio en vez de subir +0,03%. Los dos extremos de esos
+> tramos son ruedas hábiles, así que el anclaje nunca los tocó. La del pico (−6,26pp) tampoco
+> cambia, por lo mismo.
 
 **Pero tenés razón en lo que ves, y el número exacto es éste:** el pico de equity fue
 **$52.252,05 el 2026-07-24**. Desde ahí:
