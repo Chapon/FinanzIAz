@@ -44,7 +44,8 @@ Schema del payload (``build_metrics``)::
         "account_dividends","account_return_total",          # tarea 221: total vs total
         "dividendos_completos","dividendos_faltantes",       # calendario incompleto → piso
         "base_equity","base_anclaje","spy_anclaje",          # tarea 223: de dónde sale cada ancla
-        "stale","spy_end_day",  # tarea 22: SPY desactualizado → no se compara
+        "stale","spy_end_day",     # tarea 22: SPY desactualizado → no se compara
+        "spy_start_day",           # tarea 225: el espejo — serie más corta que la cuenta
         "motivo"                # tarea 218: por qué NO hay número
       },
       "concentration": {  # V2: concentración del book vivo (display-only)
@@ -130,6 +131,21 @@ def benchmark_stale_bdays(spy_last_day: str | None, ref_day: str | None) -> int:
         return int(np.busday_count(spy_last_day[:10], ref_day[:10]))
     except (TypeError, ValueError):
         return 0
+
+
+def benchmark_start_gap_bdays(spy_first_day: str | None, ref_day: str | None) -> int:
+    """Días hábiles que el PRIMER close de SPY arranca DESPUÉS de ``ref_day`` (tarea 225).
+
+    El espejo de ``benchmark_stale_bdays``. Es la misma cuenta de días hábiles con los
+    roles dados vuelta, y existe como función aparte **para que el call site diga qué
+    mide**: llamar al otro con los argumentos invertidos da el número correcto y un
+    lector que confíe en los nombres entiende lo contrario.
+
+    Positivo = la serie empieza tarde, o sea que SPY va a medir una ventana **más corta**
+    que la cuenta. ``0`` ante fechas ausentes o inválidas, igual que su espejo: no se
+    apaga una tarjeta por un parseo fallido.
+    """
+    return -benchmark_stale_bdays(spy_first_day, ref_day)
 
 
 # Keywords que marcan commits que cambian la *lógica de trading* (para el overlay
@@ -1098,6 +1114,9 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": None,
         "stale": False,
         "spy_end_day": None,
+        # Dónde EMPIEZA la serie (tarea 225). El espejo de `spy_end_day`: sin esto, el
+        # caso `serie_corta` diría que no hay número y no con qué ventana se quedó.
+        "spy_start_day": None,
         # De dónde salió cada ancla (tarea 223). No los pinta nadie: están para que el
         # caso degradado —DB sin `paper_accounts`, serie que empieza después de la
         # cuenta— se pueda ver en vez de quedar como un número sin historia.
@@ -1143,6 +1162,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         }
     spy = sorted(spy)
     spy_end_day = spy[-1][0] if spy else None
+    spy_start_day = spy[0][0] if spy else None
     # tarea 22: si el cache de SPY quedó > K días hábiles atrás del último
     # snapshot, comparar la cuenta (ventana completa) contra un SPY recortado
     # sesga el vs_spy en silencio → se marca stale y NO se computa el número.
@@ -1155,7 +1175,36 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
             "account_return": account_return,
             "stale": True,
             "spy_end_day": spy_end_day,
+            "spy_start_day": spy_start_day,
             "motivo": "stale",
+        }
+    # tarea 225: **el espejo del de arriba, que faltaba.** Si la serie EMPIEZA después
+    # del primer snapshot, SPY mide una ventana más corta que la cuenta por el otro
+    # extremo, y el sesgo es igual de silencioso. Pasa solo: el cache es una ventana
+    # **rodante** que avanza ~1 rueda por día mientras el arranque de la cuenta queda
+    # fijo, así que el colchón se achica monótonamente (al 2026-09-24 la cuenta 2 tiene
+    # 453 días hábiles y la 1, 413).
+    #
+    # **Se apaga en vez de publicarse, igual que `stale`, y el motivo es el signo.** El
+    # dividendo incompleto se puede publicar como *piso* porque sólo puede sumar; acá el
+    # tramo que falta puede haber subido o bajado, así que no hay dirección que declarar
+    # y un número sin dirección no es un piso, es una adivinanza.
+    #
+    # **Reusa `BENCHMARK_STALE_BDAYS` y no un umbral propio, y eso va dicho:** es la
+    # misma pregunta espejada —cuánto de la ventana le falta a SPY antes de que la
+    # comparación deje de valer— y **no hay población contra la cual calibrar un segundo
+    # umbral** (0 de 2 cuentas lo tocan hoy). Inventar una constante nueva sin datos
+    # sería peor que reusar una ya declarada.
+    if benchmark_start_gap_bdays(spy_start_day, start_day) > BENCHMARK_STALE_BDAYS:
+        return {
+            **empty,
+            **anclas,
+            "start_day": start_day,
+            "end_day": end_day,
+            "account_return": account_return,
+            "spy_start_day": spy_start_day,
+            "spy_end_day": spy_end_day,
+            "motivo": "serie_corta",
         }
     # tarea 223: el inicio se ancla con la MISMA regla que el final (`_close_on_or_before`),
     # que es el close con el que está marcada la equity del primer snapshot. Desde la 224
@@ -1189,6 +1238,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "vs_spy": vs_spy,
         "stale": False,
         "spy_end_day": spy_end_day,
+        "spy_start_day": spy_start_day,
         **anclas,
         "spy_anclaje": spy_anclaje,
         "motivo": None if spy_return is not None else "sin_serie",

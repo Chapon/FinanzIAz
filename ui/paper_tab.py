@@ -1262,19 +1262,24 @@ class PaperTradingTab(QWidget):
         except Exception as e:
             log.warning("equity refresh failed: %s", e)
             snaps = []
-        overlay, stale = self._load_spy_overlay(snaps, self._current_account_id)
-        self.equity_chart.set_data(snaps, benchmark=overlay, benchmark_stale=stale)
+        overlay, aviso = self._load_spy_overlay(snaps, self._current_account_id)
+        self.equity_chart.set_data(snaps, benchmark=overlay, benchmark_aviso=aviso)
 
     @staticmethod
-    def _load_spy_overlay(snaps: list, account_id: int | None = None) -> tuple[list | None, bool]:
+    def _load_spy_overlay(snaps: list, account_id: int | None = None) -> tuple[list | None, str | None]:
         """Serie SPY normalizada para overlayar en la curva de equity (V1).
 
         Best-effort/read-only: lee el cache diario de SPY (poblado por el warm-up
         del scan) y lo alinea a la ventana de los snapshots. Devuelve
-        ``(overlay, stale)`` — ``overlay=None`` si SPY todavía no está cacheado o
-        algo falla (la curva se dibuja igual). ``stale=True`` (tarea 22) si el
-        cache de SPY quedó atrás: se suprime la línea corta y el chart anota
-        "SPY desactualizado" en vez de mostrar dato viejo como actual.
+        ``(overlay, aviso)`` — ``overlay=None`` si SPY todavía no está cacheado o
+        algo falla (la curva se dibuja igual), y ``aviso`` es el **texto** que el chart
+        anota cuando la línea no se puede dibujar honestamente:
+
+        * *«SPY desactualizado»* (tarea 22) — el cache quedó atrás del último snapshot;
+        * *«SPY arranca después que la cuenta»* (tarea 225) — la serie empieza tarde, y
+          entonces la línea quedaría escalada para valer el capital en una fecha en la
+          que la cuenta ya se había movido. Los dos suprimen la línea, pero por motivos
+          **opuestos**, así que no pueden compartir el cartel.
 
         ``account_id`` (tarea 223) es para traer el ``initial_capital``, que es la base
         contra la que se normaliza SPY desde que la tarjeta VS SPY dejó de anclar en el
@@ -1282,14 +1287,18 @@ class PaperTradingTab(QWidget):
         serie; si falta, el overlay cae en la equity del primer snapshot.
         """
         if not snaps:
-            return None, False
+            return None, None
         try:
             import sqlite3
             from pathlib import Path
 
             from analysis.metrics_panel import BENCHMARK_TICKER, load_close_series
             from database.models import DB_PATH
-            from ui.paper.equity_chart import build_benchmark_overlay, overlay_is_stale
+            from ui.paper.equity_chart import (
+                build_benchmark_overlay,
+                overlay_empieza_tarde,
+                overlay_is_stale,
+            )
 
             con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
             try:
@@ -1303,11 +1312,13 @@ class PaperTradingTab(QWidget):
             finally:
                 con.close()
             if overlay_is_stale(snaps, spy):
-                return None, True
-            return build_benchmark_overlay(snaps, spy, capital) or None, False
+                return None, "SPY desactualizado"
+            if overlay_empieza_tarde(snaps, spy):
+                return None, "SPY arranca después que la cuenta"
+            return build_benchmark_overlay(snaps, spy, capital) or None, None
         except Exception as e:
             log.warning("SPY overlay failed: %s", e)
-            return None, False
+            return None, None
 
     # ── Prices & KPIs ────────────────────────────────────────────────────────
 

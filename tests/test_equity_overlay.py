@@ -90,7 +90,10 @@ def test_chart_annotates_stale_benchmark(qapp):
     chart = EquityCurveChart()
     snaps = [_Snap(datetime(2026, 7, 1, 16), 50000.0), _Snap(datetime(2026, 7, 21, 16), 52000.0)]
     # stale: se suprime la línea y se anota "SPY desactualizado".
-    chart.set_data(snaps, benchmark=None, benchmark_stale=True)
+    # tarea 225: el parámetro pasó de `benchmark_stale: bool` a `benchmark_aviso: str`,
+    # porque con un segundo motivo —la serie que empieza tarde— el booleano habría
+    # pintado "desactualizado" sobre el caso contrario.
+    chart.set_data(snaps, benchmark=None, benchmark_aviso="SPY desactualizado")
     texts = [t.get_text() for t in chart.ax.texts]
     assert any("desactualizado" in t for t in texts)
     assert chart.ax.get_legend() is None  # no se dibujó la línea SPY

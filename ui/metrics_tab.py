@@ -938,10 +938,20 @@ class MetricsTab(QWidget):
             # dejó vacía, así que VS SPY estuvo apagado desde el 2026-09-02 y el
             # cartel lo presentaba como algo normal y transitorio.
             motivo = bm.get("motivo")
-            sub = {
-                "sin_serie": "sin serie de SPY en el cache",
-                "sin_snapshots": "faltan snapshots de la cuenta",
-            }.get(motivo, "sin datos para comparar")
+            if motivo == "serie_corta":
+                # tarea 225: el espejo del stale. La fecha es la parte informativa —
+                # decir sólo "serie corta" no deja ver cuánto falta ni por qué.
+                desde = bm.get("spy_start_day")
+                sub = (
+                    f"SPY arranca {_ddmm(desde)}, después que la cuenta"
+                    if desde
+                    else "serie de SPY más corta que la cuenta"
+                )
+            else:
+                sub = {
+                    "sin_serie": "sin serie de SPY en el cache",
+                    "sin_snapshots": "faltan snapshots de la cuenta",
+                }.get(motivo, "sin datos para comparar")
             self.cards["benchmark"].set_value("—", sub, None)
         # ── sparklines ──
         # Cada card lleva un mini-gráfico abajo. Le damos serie a las que tienen

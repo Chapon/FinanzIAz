@@ -287,20 +287,28 @@ def test_sin_paper_accounts_cae_en_el_primer_snapshot_y_LO_DICE(spy_plano):
     assert b["vs_spy"] == pytest.approx(0.0, abs=1e-12)
 
 
-def test_una_serie_que_EMPIEZA_DESPUES_de_la_cuenta_cae_en_la_primera_rueda_y_LO_DICE(
+def test_una_serie_que_EMPIEZA_UN_POCO_DESPUES_cae_en_la_primera_rueda_y_LO_DICE(
     monkeypatch,
 ):
-    """El fallback, que **no** es una equivalencia: es el desvío de la tarea 225.
+    """El fallback, que **no** es una equivalencia: era el desvío de la tarea 225.
 
     Si el cache rodante ya no cubre el arranque de la cuenta, ``_close_on_or_before``
     devuelve ``None`` y hay que usar la primera rueda disponible — pero entonces SPY mide
-    una ventana **más corta** que la cuenta, que es el espejo del ``stale`` de la tarea 22
-    y hoy no lo guarda nadie. Por eso sale rotulado.
+    una ventana **más corta** que la cuenta, que es el espejo del ``stale`` de la tarea 22.
+
+    **Desde la 225 ese caso está guardado**, así que acá el hueco se deja *adentro* de la
+    tolerancia (los mismos 3 días hábiles del ``stale``): el número sigue saliendo, y lo
+    que se fija es que el ancla quede **rotulada** como el fallback que es. El caso que
+    pasa la tolerancia —y que ahora apaga la tarjeta— vive en
+    ``test_spy_sin_guard_al_inicio_t225.py``.
     """
+    # La cuenta arranca el viernes 2026-06-19 (feriado) y la serie el lunes 22: un solo
+    # día hábil de hueco, adentro de la tolerancia.
     monkeypatch.setattr(mp, "load_close_series", lambda con, t: [(_RUEDA_1, 100.0), (_FIN, 110.0)])
-    con = _con(equity=[("2026-01-05", _CAPITAL), (_FIN, _CAPITAL)])
+    con = _con(equity=[("2026-06-19", _CAPITAL), (_FIN, _CAPITAL)])
     b = mp._benchmark_panel(con, 2)
 
+    assert b["available"] is True, "un hueco de un día hábil no apaga la tarjeta"
     assert b["spy_anclaje"] == "primera_rueda"
     assert b["spy_return"] == pytest.approx(0.10)
 
