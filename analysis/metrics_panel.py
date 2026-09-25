@@ -1022,6 +1022,24 @@ def _dividendos_devengados(
         signo = 1.0 if str(side).upper() == "BUY" else -1.0
         por_ticker[str(ticker).upper()].append((dia, signo * float(shares)))
 
+    # tarea 222: lo que el MOTOR ya acreditó a la caja está en la equity, así que
+    # sumarlo acá lo contaría DOS veces y el VS SPY saldría inflado — en silencio y
+    # hacia arriba, que es la peor dirección. Se descubrió escribiendo el docstring del
+    # panel al cerrar la 222, no corriendo nada: el cableado del motor y este cálculo son
+    # dos consumidores del MISMO calendario, y hasta la 222 uno de los dos no existía.
+    try:
+        ya_en_caja = {
+            (str(t).upper(), ex)
+            for t, ex in con.execute(
+                "SELECT ticker, ex_date FROM paper_dividend_credits WHERE account_id=?",
+                (account_id,),
+            ).fetchall()
+        }
+    except sqlite3.OperationalError:
+        # DB anterior a la migración 0014: el motor no acreditaba nada, así que no hay
+        # nada que descontar y el devengado completo es el correcto.
+        ya_en_caja = set()
+
     total = 0.0
     sin_calendario: list[str] = []
     for ticker, eventos in sorted(por_ticker.items()):
@@ -1050,6 +1068,8 @@ def _dividendos_devengados(
                 continue
             if not (start_day <= ex_date <= end_day):
                 continue
+            if (ticker, ex_date) in ya_en_caja:
+                continue  # ya lo cobró el motor (tarea 222): está en la equity
             # Shares en cartera ANTES del ex-date. `< ex_date` y no `<=`: comprar el
             # día del ex-date no cobra.
             shares = sum(q for dia, q in eventos if dia < ex_date)
@@ -1069,13 +1089,19 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
 
     **Compara TOTAL contra TOTAL (tarea 221), y antes no.** El cache se baja con
     ``auto_adjust=True``, así que la serie de SPY es total-return: trae sus dividendos
-    reinvertidos. La equity de la cuenta, en cambio, es sólo precio — ``paper_trading/``
-    no acredita dividendos. Restar una de la otra es restar peras de manzanas, y en la
+    reinvertidos. La equity de la cuenta, en cambio, es sólo precio de las posiciones.
+    Restar una de la otra es restar peras de manzanas, y en la
     cuenta 2 valía **0,65pp sobre 3 meses** (medido el 2026-09-21: −1,05pp contra −0,40pp
     comparando honesto), o sea que el **62% de la brecha contra SPY era un artefacto de
     medición**. Ahora el devengado de la cuenta se suma a su retorno
     (``account_return_total``) y el ``vs_spy`` sale de ahí. Los dos números de esa medición
     quedaron viejos al día siguiente, con la 223: son de antes de arreglar los anclajes.
+
+    **Desde la 222 el motor acredita el dividendo a la caja**, así que lo devengado que se
+    suma acá es cada vez menos: lo que el motor ya cobró entra en la equity por sí solo y
+    ``_dividendos_devengados`` sólo aporta los ex-dates **anteriores** al cableado (la 222
+    corre sólo hacia adelante y no backfillea). Los dos caminos usan la **misma**
+    convención de quién cobra —tener la acción antes del ex-date— y un test lo fija.
 
     **La dirección del sesgo importa para leer el caso degradado:** el dividendo sólo
     puede sumar, así que si el calendario está incompleto el ``vs_spy`` publicado es un

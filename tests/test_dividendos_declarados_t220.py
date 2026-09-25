@@ -123,16 +123,14 @@ def test_el_cache_se_baja_AJUSTADO():
     assert "auto_adjust=True" in codigo
 
 
-def test_el_motor_vivo_NO_mira_dividendos():
-    """Pata 2, y por AST para no confundir prosa con código.
+def _identificadores_de_dividendos() -> list[str]:
+    """``archivo:nombre`` de cada identificador con ``dividend`` en ``paper_trading/``.
 
-    Un ``grep`` de ``dividend`` sobre ``paper_trading/`` se satisface con un comentario
-    que explique el desvío — es la trampa de las tareas 128/135/216, y la piso seguido.
-    Así que se miran **nombres e identificadores**, no texto: si el motor empezara a
-    acreditar dividendos (opción (a) de la 221) esto se pone rojo y hay que venir a
-    cerrar el desvío en vez de dejarlo declarado de más.
+    Por **AST** y no por ``grep``: un ``grep`` de ``dividend`` se satisface con un
+    comentario que explique el desvío, que es la trampa de las tareas 128/135/216 y la
+    piso seguido. Se miran **nombres**, no texto.
     """
-    sospechosos: list[str] = []
+    out: list[str] = []
     for f in sorted((_REPO / "paper_trading").glob("*.py")):
         arbol = ast.parse(f.read_text(encoding="utf-8"))
         for nodo in ast.walk(arbol):
@@ -144,10 +142,35 @@ def test_el_motor_vivo_NO_mira_dividendos():
             elif isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 nombre = nodo.name
             if nombre and "dividend" in nombre.lower():
-                sospechosos.append(f"{f.name}:{nombre}")
-    assert not sospechosos, (
-        f"el motor vivo parece mirar dividendos: {sospechosos}. Si es la opción (a) de la "
-        f"tarea 221, hay que CERRAR el desvío `dividendos`, no dejarlo declarado"
+                out.append(f"{f.name}:{nombre}")
+    return out
+
+
+def test_el_motor_vivo_SI_mira_dividendos_desde_la_222():
+    """**Este test estaba al revés hasta el 2026-09-25, y darlo vuelta era el punto.**
+
+    Mientras el motor no los miraba, la pata 2 del desvío era *«`paper_trading/` no los
+    menciona en ninguna línea»* y este guard la sostenía: si alguien empezaba a
+    acreditarlos, se ponía rojo y obligaba a venir a **cerrar** el desvío en vez de
+    dejarlo declarado de más.
+
+    La **222** hizo exactamente eso —Chapa eligió caja al ex-date— así que el guard
+    cumplió su función y ahora se invierte. Lo que fija de acá en más es lo simétrico:
+    si alguien **saca** el crédito, el desvío declarado pasa a describir un motor que no
+    existe, y eso es igual de malo. Un registro de desvíos sólo sirve si falla en las dos
+    direcciones.
+    """
+    nombres = _identificadores_de_dividendos()
+    assert nombres, (
+        "el motor vivo dejó de mirar dividendos. Si el crédito de la 222 se sacó a "
+        "propósito, hay que volver a declarar el desvío como estaba antes (el motor NO "
+        "los cobra), no dejar el texto nuevo mintiendo"
+    )
+    # Y no alcanza con que aparezca la palabra en cualquier lado: el crédito tiene que
+    # estar en el camino del scan. Sin esto, un módulo muerto que nadie llama aprobaría
+    # el guard — la forma exacta del defecto de la 228/229.
+    assert any(n.startswith("engine.py:") for n in nombres), (
+        f"hay identificadores de dividendos pero ninguno en el engine: {nombres}"
     )
 
 

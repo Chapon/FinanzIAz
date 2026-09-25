@@ -266,8 +266,14 @@ ADV_CAP_DEFAULT_CAPITAL = 50_000.0  # el default de `simulate_portfolio` y de `-
 # `data/yahoo_finance.py` baja TODO con `auto_adjust=True` (`:1805`, `:1867`), asi que
 # cada barra cacheada es una serie **total-return**: los dividendos ya estan
 # reinvertidos en el precio y todo lo que el harness simula los cobra implicitamente.
-# Y `paper_trading/` **no menciona dividendos en ninguna linea**: cuando una posicion
-# pasa por su ex-date el precio cae y la cuenta NO recibe el efectivo.
+# Hasta el 2026-09-25 `paper_trading/` **no los mencionaba en ninguna linea**: la cuenta
+# pasaba por el ex-date, veia caer el precio y NO recibia el efectivo. La tarea **222** lo
+# cerro — el motor acredita el efectivo a la CAJA al ex-date (`paper_trading/dividends.py`)
+# — asi que el desvio dejo de ser "uno cobra y el otro no" y paso a ser "los dos cobran,
+# uno REINVIERTE": `auto_adjust=True` reinvierte el dividendo en el precio y la caja
+# acreditada queda quieta hasta la compra siguiente. Sobre la cuenta 2 eso vale ~$2,77 de
+# los $322,77, o sea el 0,9%. **El numero de abajo sigue siendo el que hay que usar para
+# leer cualquier veredicto publicado antes de esa fecha**, que es por lo que no se borra.
 #
 # Medido el 2026-09-21 sobre las tenencias REALES de la cuenta 2 (bajando el calendario
 # de dividendos de cada ticker y contando solo los ex-dates dentro de cada periodo de
@@ -2071,10 +2077,16 @@ def dividendos_desc() -> str:
     anual = pct * 12.0 / DIVIDENDOS_VENTANA_MESES
     del_pnl = DIVIDENDOS_NO_COBRADOS_USD / DIVIDENDOS_PNL_REALIZADO_USD * 100
     return (
-        f"El harness COBRA dividendos y el motor vivo NO. Todo el cache se baja con "
-        f"`auto_adjust=True`, o sea series total-return, así que cada brazo simulado los "
-        f"cobra en el precio; `paper_trading/` no los menciona en ninguna línea, así que la "
-        f"cuenta pasa por el ex-date, ve caer el precio y no recibe el efectivo. Medido el "
+        f"El harness REINVIERTE los dividendos y el motor vivo los cobra como CAJA "
+        f"(tarea 222, desde el 2026-09-25). Todo el cache se baja con `auto_adjust=True`, "
+        f"o sea series total-return, así que cada brazo simulado cobra el dividendo **y lo "
+        f"reinvierte en el precio**: la posición crece. El motor acredita el efectivo a la "
+        f"caja al ex-date, donde participa del sizing de la compra siguiente pero **no "
+        f"compone hasta que esa compra ocurre**. El desvío pasó de *«uno cobra y el otro "
+        f"no»* a *«los dos cobran, uno reinvierte»*, que sobre la cuenta 2 vale ~$2,77 de "
+        f"los $322,77 — el 0,9%. ANTES de la 222 el motor no los miraba en ninguna línea y "
+        f"el desvío era el total que sigue abajo, que es el que hay que usar para leer "
+        f"cualquier veredicto publicado antes de esa fecha. Medido el "
         f"{DIVIDENDOS_MEDIDO_EL} sobre las tenencias reales de la cuenta "
         f"{LIVE_ACCOUNT_ID} ({DIVIDENDOS_N_TENENCIAS} tenencias, {DIVIDENDOS_N_TICKERS} "
         f"tickers): ${DIVIDENDOS_NO_COBRADOS_USD:,.2f} en {DIVIDENDOS_VENTANA_MESES:.2f} "

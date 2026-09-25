@@ -248,3 +248,39 @@ class PaperEquitySnapshot(Base):
             f"at={self.snapshot_at:%Y-%m-%d %H:%M} "
             f"${self.total_equity:,.2f})>"
         )
+
+
+class PaperDividendCredit(Base):
+    """Un dividendo ya acreditado a la cuenta: el ledger de la tarea 222.
+
+    **Qué sostiene.** Desde la 222 el motor acredita el efectivo del ex-date a la caja
+    (opción (i), decidida por Chapa), así que participa del sizing de las compras
+    siguientes. Esta tabla es el registro de **qué ya se pagó**: el scan corre varias
+    veces por día y puede correr después de días con la app cerrada, así que sin un
+    registro explícito el mismo ex-date se acreditaría de nuevo en cada pasada — y un
+    doble crédito **no se lee como bug, se lee como rendimiento**.
+
+    El UNIQUE ``(account_id, ticker, ex_date)`` va en el esquema y no en un ``if``:
+    misma lección que la 0012 y la 0013. El ``if`` protege al scan de hoy; el índice
+    protege también al que corra en paralelo y al bug que todavía no escribí.
+    """
+
+    __tablename__ = "paper_dividend_credits"
+    __table_args__ = (
+        Index("ix_paper_divcred_account", "account_id"),
+        Index("ux_paper_divcred_account_ticker_exdate", "account_id", "ticker", "ex_date", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    ex_date: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD'
+    # Las tres, aunque `cash = shares * amount_per_share`: el ledger tiene que poder
+    # auditarse sin re-derivar nada desde un calendario que para entonces pudo cambiar.
+    shares: Mapped[float] = mapped_column(Float, nullable=False)
+    amount_per_share: Mapped[float] = mapped_column(Float, nullable=False)
+    cash: Mapped[float] = mapped_column(Float, nullable=False)
+    credited_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+
+    def __repr__(self) -> str:
+        return f"<PaperDividendCredit({self.ticker} {self.ex_date} ${self.cash:,.2f})>"

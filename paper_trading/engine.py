@@ -42,6 +42,8 @@ from integrations.slack import (
     select_notifiable,
 )
 from paper_trading.account import record_equity_snapshot
+from paper_trading.dividends import acreditar_dividendos
+from paper_trading.dividends import dia as _dia_iso
 from paper_trading.models import (
     PaperAccount,
     PaperOrder,
@@ -232,6 +234,33 @@ def _warm_up_history_cache(tickers: list[str]) -> None:
             get_historical_data(BENCHMARK_TICKER, period=period)
         except Exception:
             get_logger(__name__).exception("SPY benchmark fallback fetch failed")
+
+
+def _warm_up_dividend_calendar(tickers: list[str]) -> None:
+    """Puebla ``dividend_calendar_cache`` antes de acreditar dividendos (tarea 222).
+
+    Va acá, al lado del warm-up de barras, y **no** en un job del scheduler. El enunciado
+    de la 222 decía que hacía falta un job porque *«el engine no pega a la red»*, y eso
+    era **falso**: ``_warm_up_history_cache``, treinta líneas más arriba, hace un batch
+    contra Yahoo en cada scan. Lo que nunca pega a la red es el **guard** del engine
+    (tarea 130), que es otra cosa. Verificarlo antes de diseñar ahorró un job entero.
+
+    Cache-first con TTL de 24 h, así que en el uso normal esto no emite un request. Y es
+    best-effort a propósito: si falla, ``acreditar_dividendos`` simplemente no encuentra
+    ex-dates y el scan sigue — un crédito que no llega es plata que la cuenta ya no
+    cobraba antes de esta tarea, mientras que un scan que se cae por el calendario sería
+    una regresión nueva.
+    """
+    if not tickers:
+        return
+    from config.logging_config import get_logger
+
+    try:
+        from data.yahoo_finance import get_bulk_dividend_calendar
+
+        get_bulk_dividend_calendar(sorted(set(tickers)))
+    except Exception:
+        get_logger(__name__).exception("Dividend calendar warm-up failed; el scan sigue sin acreditar")
 
 
 def _declare_scale_drift(tickers: list[str]) -> list[str]:
@@ -809,6 +838,34 @@ def run_scan(
         # defecto — si se inyectó uno (tests), no tocar la red.
         if tickers and not history_was_injected:
             _warm_up_history_cache(tickers)
+            _warm_up_dividend_calendar(sorted({p.ticker for p in positions}))
+
+        # ── Dividendos al ex-date (tarea 222) ───────────────────────────────
+        # Va ANTES de la estrategia porque el efectivo tiene que participar del sizing
+        # de ESTE scan: con `equal_weight` el target es `available / len(picks)` y
+        # `available` sale de `account.cash`. Acreditar después sería acreditar a una
+        # cuenta que ya decidió, que es medio camino y el peor de los dos.
+        #
+        # La ventana es `(último scan, hoy]` — exclusiva a la izquierda —, y eso es lo
+        # que implementa el "sólo hacia adelante" que decidió Chapa: el primer scan tras
+        # shipear esto tiene el scan anterior en ayer, así que no acredita nada viejo. Si
+        # la app estuvo cerrada dos semanas, la ventana las cubre, que es correcto: ese
+        # dividendo se ganó igual.
+        dividend_credits = acreditar_dividendos(
+            session,
+            acct,
+            _dia_iso(acct.last_scan_at),
+            _dia_iso(utcnow_naive()) or "",
+        )
+        # Los mensajes entran a `scan_warnings` donde se inicializa, unas líneas abajo:
+        # `result` todavía no existe acá, y el crédito tiene que pasar ANTES de la
+        # estrategia. Un crédito no es un problema, pero se reporta por el mismo canal
+        # que todo lo que el scan quiere que se vea.
+        dividend_msgs = [
+            f"{c['ticker']}: dividendo del {c['ex_date']} acreditado — "
+            f"{c['shares']:.0f} acciones × ${c['cash'] / c['shares']:.4f} = ${c['cash']:,.2f}"
+            for c in dividend_credits
+        ]
 
         prices = prices_provider(tickers) if tickers else {}
         # Tarea 201: qué tickers llegaron con el precio de la segunda opinión, y cuáles
@@ -826,7 +883,7 @@ def run_scan(
         # precio — ahí un stop que debería evaluarse no pudo correr este scan.
         missing_tickers = [t for t in tickers if t not in prices]
         held_without_price = sorted(p.ticker for p in positions if p.ticker not in prices)
-        scan_warnings: list[str] = []
+        scan_warnings: list[str] = list(dividend_msgs)  # tarea 222: los créditos se reportan
         # T64 — drift de escala por DEBAJO de la banda: acá, después del warm-up,
         # porque es el cache más fresco que va a haber este scan.
         scan_warnings.extend(_declare_scale_drift(tickers))

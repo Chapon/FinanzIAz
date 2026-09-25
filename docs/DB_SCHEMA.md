@@ -23,6 +23,13 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 ### `paper_equity_snapshots` — curva de equity
 `id`, `account_id` (FK), `snapshot_at`, `cash`, `positions_value`, `total_equity`, `portfolio_sigma`.
 
+### `paper_dividend_credits` — el ledger de dividendos acreditados (tarea 222)
+`id`, `account_id` (FK), `ticker`, `ex_date` (`YYYY-MM-DD`), `shares`, `amount_per_share`, `cash`, `credited_at`. UNIQUE `ux_paper_divcred_account_ticker_exdate`, migración **0014**.
+
+Desde el 2026-09-25 el motor **acredita a la caja** el efectivo del ex-date (decisión de Chapa entre las tres salidas de la 221, con los costos medidos). Esta tabla registra **qué ya se pagó**: el scan corre varias veces por día y puede correr después de días con la app cerrada, así que sin un registro explícito el mismo ex-date se acreditaría de nuevo en cada pasada — y un doble crédito **no se lee como bug, se lee como rendimiento**. El UNIQUE va en el esquema y no en un `if`, igual que en la 0012 y la 0013.
+
+Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`: el ledger tiene que poder auditarse sin re-derivar nada desde un calendario que para entonces pudo cambiar de fila. **Sólo hacia adelante**: la tabla arranca vacía y el motor acredita desde el primer ex-date de la ventana `(último scan, hoy]`, así que los $322,77 que la cuenta 2 ya había devengado **no** se backfillean y ninguna métrica publicada cambia de base.
+
 ## Núcleo / caches (`database/models.py`)
 
 | Tabla | Para qué |
