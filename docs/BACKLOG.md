@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 173 — Tarea 234 (PRECIO-BUENO-DESCARTADO-POR-EL-CACHE) CERRADA 2026-09-28 — un cache que no se puede escribir ya no tira el dato que se bajó, y el barrido encontró una segunda con la misma forma** (`data/yahoo_finance.py`, `tests/test_cache_write_no_tumba_el_dato_t234.py` **nuevo**).
+- **WIP 173 — Tarea 234 (PRECIO-BUENO-DESCARTADO-POR-EL-CACHE) CERRADA 2026-09-28 — un cache que no se puede escribir ya no tira el dato que se bajó, y el barrido encontró una segunda con la misma forma** (`95b7afd`; `data/yahoo_finance.py`, `tests/test_cache_write_no_tumba_el_dato_t234.py` **nuevo**).
   - **El defecto no era el lock sino dónde estaba la escritura:** adentro del `try` de todo el fetch. Ahora pasa por `_cache_write_best_effort`, que si falla deja **una línea WARNING** (sin traceback ni SQL) y devuelve el dato igual.
   - **La segunda, peor:** `get_dividends_since` (la consume la pestaña Portfolio) devolvía **`0.0`**, o sea «no pagó dividendos», en vez del total que ya había bajado. Las otras escrituras de cache del módulo —históricos, `get_bulk_prices`, earnings, calendario de dividendos— ya tenían su propio `try`.
   - **Sin reintento, a propósito:** el `busy_timeout` ya esperó 30 s; reintentar multiplica esa espera en el hilo del que llama. Por eso no se copió el helper de earnings, que sí reintenta.
