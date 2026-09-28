@@ -38,6 +38,9 @@ ENV/
 
 # Project-specific
 finanzias.db
+# Cache de yfinance caído en el cwd cuando platformdirs no resuelve AppData (tarea 236).
+# Es red, no arreglo: el arreglo está en scripts/run_suite_sin_estado_vivo.py.
+py-yfinance/
 finanzias.db-journal
 finanzias.db-wal
 finanzias.db-shm

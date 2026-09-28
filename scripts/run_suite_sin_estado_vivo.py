@@ -33,6 +33,18 @@ Con eso, todo lo que cuelgue de ``Path.home()`` deja de existir para la suite:
 cualquier cosa que alguien agregue ahí mañana. Es un **predicado sobre la raíz**, no
 una lista de archivos — que es la diferencia entre esto y parchear un test.
 
+**Y el home vacío tiene que tener forma de home de Windows (tarea 236).** Mover
+``USERPROFILE`` a un directorio pelado dejaba a ``platformdirs`` —que resuelve por
+``SHGetFolderPathW``, no por variables de entorno— sin ``AppData\\Local`` que
+expandir: la API devuelve ``''``, ``user_cache_dir()`` vale ``'.'``, y yfinance
+creaba ``py-yfinance/`` en el **cwd**, que es la raíz del repo. O sea que la suite
+«sin estado» escribía estado en el repo y lo reusaba en la corrida siguiente. Por eso
+se crean ``AppData\\Local`` y ``AppData\\Roaming`` adentro, se les apunta
+``LOCALAPPDATA``/``APPDATA`` (las leen otras librerías), la contraprueba del montaje
+exige que el cache de ``platformdirs`` caiga adentro del home vacío, y al terminar se
+compara el ``git status`` de antes y de después: si la suite dejó algo nuevo en el
+repo, el comando no reporta verde.
+
 Lo que NO aísla, dicho en vez de sobreentendido
 -----------------------------------------------
 * **La ``finanzias.db``.** No hace falta: ``conftest`` ya la re-liga a una temporal por
@@ -59,7 +71,8 @@ Uso
 
 Sin argumentos corre el mismo selector que el done (``tests/ -m "not network"``).
 Con argumentos, se los pasa tal cual a pytest — útil para reproducir un caso puntual.
-Exit code = el de pytest.
+Exit code = el de pytest; ``2`` si el aislamiento no se montó, ``3`` si la suite pasó
+pero dejó cambios en el repo.
 """
 
 from __future__ import annotations
@@ -81,40 +94,95 @@ ARGS_DEL_DONE = ["tests/", "-ra", "-m", "not network", "--tb=short"]
 # script pasando en verde**, que es peor que no tenerlo.
 _VARS_DE_HOME = ("HOME", "USERPROFILE")
 
+# Tarea 236 — las carpetas de datos de aplicación de Windows, adentro del home vacío.
+_APPDATA = {"LOCALAPPDATA": ("AppData", "Local"), "APPDATA": ("AppData", "Roaming")}
+
+_SONDA = (
+    "from pathlib import Path; import platformdirs; print(Path.home()); print(platformdirs.user_cache_dir())"
+)
+
+
+def montar_home_vacio(home_vacio: str | Path, base: dict[str, str] | None = None) -> dict[str, str]:
+    """El entorno de la suite: el de ``base`` con el home y el AppData movidos a ``home_vacio``."""
+    env = dict(os.environ if base is None else base)
+    for var in _VARS_DE_HOME:
+        env[var] = str(home_vacio)
+    for var, partes in _APPDATA.items():
+        carpeta = Path(home_vacio).joinpath(*partes)
+        carpeta.mkdir(parents=True, exist_ok=True)
+        env[var] = str(carpeta)
+    return env
+
+
+def fallas_del_aislamiento(env: dict[str, str], home_vacio: str | Path) -> list[str]:
+    """Contraprueba del montaje, corrida en un hijo con ``env``: qué raíz quedó afuera.
+
+    Es el chequeo que convierte *«seteé unas variables»* en *«el aislamiento funciona»*: caza
+    mover sólo ``HOME`` en Windows (``Path.home()`` afuera) y el home sin ``AppData`` de la
+    236 (``platformdirs`` en ``'.'``, o sea en el cwd).
+    """
+    r = subprocess.run([sys.executable, "-c", _SONDA], cwd=ROOT, env=env, capture_output=True, text=True)
+    lineas = r.stdout.strip().splitlines()
+    if r.returncode != 0 or len(lineas) != 2:
+        return [f"la sonda no corrió: {r.stderr.strip()[-300:]!r}"]
+    raiz = Path(home_vacio).resolve()
+    fallas = []
+    for nombre, visto in zip(("Path.home()", "platformdirs.user_cache_dir()"), lineas, strict=True):
+        p = Path(visto).resolve()
+        if p != raiz and raiz not in p.parents:
+            fallas.append(f"{nombre} devolvió {visto!r}, afuera de {str(raiz)!r}")
+    return fallas
+
+
+def estado_del_repo() -> set[str] | None:
+    """Las líneas de ``git status --porcelain``, o ``None`` si git no está a mano."""
+    try:
+        r = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    return set(r.stdout.splitlines()) if r.returncode == 0 else None
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     pytest_args = argv or ARGS_DEL_DONE
 
     with tempfile.TemporaryDirectory(prefix="finanzias_sin_estado_") as home_vacio:
-        env = dict(os.environ)
-        for var in _VARS_DE_HOME:
-            env[var] = home_vacio
+        env = montar_home_vacio(home_vacio)
 
-        # Contraprueba del propio montaje: si `Path.home()` no cae adentro del
-        # directorio vacío, este script no está aislando nada y **no puede** reportar
-        # verde. Es el chequeo que convierte "seteé unas variables" en "el aislamiento
-        # funciona" — y el que caza el error de mover sólo `HOME` en Windows.
-        comprobacion = subprocess.run(
-            [sys.executable, "-c", "from pathlib import Path; print(Path.home())"],
-            cwd=ROOT,
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        visto = comprobacion.stdout.strip()
-        if Path(visto).resolve() != Path(home_vacio).resolve():
+        # Si alguna raíz cae afuera del directorio vacío, este script no está aislando
+        # nada y **no puede** reportar verde.
+        if fallas := fallas_del_aislamiento(env, home_vacio):
             print(
                 "run_suite_sin_estado_vivo: el aislamiento NO funcionó — "
-                f"Path.home() devolvió {visto!r} y se esperaba {home_vacio!r}. "
-                "La suite habría corrido contra el estado vivo de la máquina.",
+                + "; ".join(fallas)
+                + ". La suite habría corrido contra el estado vivo de la máquina.",
                 file=sys.stderr,
             )
             return 2
 
         print(f"Suite en la condición del CI — HOME vacío en {home_vacio}")
-        print("  (sin ~/.finanzias/settings.json, sin log de producción)\n")
-        return subprocess.run([sys.executable, "-m", "pytest", *pytest_args], cwd=ROOT, env=env).returncode
+        print("  (sin ~/.finanzias/settings.json, sin log de producción, AppData adentro)\n")
+        antes = estado_del_repo()
+        codigo = subprocess.run([sys.executable, "-m", "pytest", *pytest_args], cwd=ROOT, env=env).returncode
+        despues = estado_del_repo()
+
+    if antes is None or despues is None:
+        print("\n(sin git: no se pudo verificar que la suite no escribió en el repo)")
+    elif nuevo := sorted(despues - antes):
+        print(
+            "\nrun_suite_sin_estado_vivo: la suite dejó cambios en el repo (tarea 236):\n  "
+            + "\n  ".join(nuevo)
+            + "\nSi es un proceso ajeno (la app abierta reescribe archivos de datos), re-correr.",
+            file=sys.stderr,
+        )
+        return codigo or 3
+    return codigo
 
 
 if __name__ == "__main__":
