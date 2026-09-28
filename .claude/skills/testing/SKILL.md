@@ -30,6 +30,7 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
       with session_scope() as s:
           ...
   ```
+- **`db_archivo`** (tareas 237/238, en `tests/lock_real.py`, cargado como plugin) — la DB de la app sobre un **archivo** en WAL con timeout de 0,5 s, para testear contra el **write lock real** de SQLite, que en `:memory:` no existe. Va con `FetchQueEscribeElCache`, un fetch falso que escribe `price_cache` por su propia conexión y registra cada `database is locked`. Usalo cuando el código pida red con una sesión abierta: si la sesión ya escribió, el cache del fetch espera a su propio llamador. `tests/test_fetch_fuera_de_la_sesion_t238.py` barre por AST que ningún fetch quede adentro de un `with session_scope()` sin declararse ahí con su test.
 - **`mock_yfinance`** — parchea `data.yahoo_finance.yf` con un `MagicMock` y lo devuelve para configurar returns:
   ```python
   def test_precio(mock_yfinance):

@@ -10,71 +10,19 @@ podía escribir (`docs/lock_arranque_t235_2026-09-28.md`).
 in-memory de `test_db` no hay dos conexiones sobre el mismo archivo y el defecto no existe.
 El fetch se reemplaza por uno que hace lo mismo que el real en lo que importa acá: escribe el
 cache por una conexión propia, con un timeout corto para que el rojo tarde 0,5 s y no 30.
+Las dos piezas viven en `tests/lock_real.py` desde la 238, para que las use cualquier
+llamador del fetch que tenga una sesión abierta.
 """
 
 from __future__ import annotations
 
 import sqlite3
-import time
 from datetime import timedelta
 
-import pytest
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-
 from alerts.alert_manager import AlertManager
-from database import models as db_models
 from database.models import Alert, Portfolio, session_scope, utcnow_naive
-
-_TIMEOUT_S = 0.5
-
-
-@pytest.fixture
-def db_archivo(tmp_path, monkeypatch):
-    """La DB de la app sobre un archivo, en WAL como la viva, con timeout corto."""
-    import paper_trading.models  # noqa: F401  (registra las tablas de paper en Base)
-
-    path = tmp_path / "alertas.db"
-    engine = create_engine(f"sqlite:///{path}", connect_args={"timeout": _TIMEOUT_S})
-
-    @event.listens_for(engine, "connect")
-    def _wal(dbapi_conn, _rec):
-        dbapi_conn.execute("PRAGMA journal_mode=WAL")
-
-    monkeypatch.setattr(db_models, "ENGINE", engine)
-    monkeypatch.setattr(
-        db_models, "SessionLocal", sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    )
-    db_models.Base.metadata.create_all(engine)
-    yield path
-    engine.dispose()
-
-
-class _FetchQueEscribeElCache:
-    """Como `get_current_price`: devuelve el precio y escribe `price_cache` por otra conexión."""
-
-    def __init__(self, path, precios, al_pedir=None):
-        self.path, self.precios, self.al_pedir = path, precios, al_pedir
-        self.bloqueos: list[str] = []
-        self.esperas: list[float] = []
-
-    def __call__(self, ticker):
-        con = sqlite3.connect(self.path, timeout=_TIMEOUT_S)
-        t0 = time.perf_counter()
-        try:
-            if self.al_pedir:
-                self.al_pedir(con, ticker)
-            con.execute(
-                "INSERT INTO price_cache (ticker, price, fetched_at) VALUES (?, ?, ?)",
-                (ticker, self.precios[ticker], utcnow_naive().isoformat(" ")),
-            )
-            con.commit()
-        except sqlite3.OperationalError as e:
-            self.bloqueos.append(f"{ticker}: {e}")
-        finally:
-            self.esperas.append(time.perf_counter() - t0)
-            con.close()
-        return {"price": self.precios[ticker]}
+from tests.lock_real import TIMEOUT_S as _TIMEOUT_S
+from tests.lock_real import FetchQueEscribeElCache as _FetchQueEscribeElCache
 
 
 def _sembrar(*, rearmar: bool) -> None:

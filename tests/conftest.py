@@ -118,6 +118,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+# El fixture `db_archivo` (DB de archivo, lock real de SQLite) — tareas 237/238. Va como
+# plugin y no importado en cada test: importado, ruff lo lee como redefinición (F811).
+pytest_plugins = ["tests.lock_real"]
+
 # Make ``import database.models`` etc. work when pytest is invoked from the
 # repo root via ``pytest`` (no editable install needed).
 ROOT = Path(__file__).resolve().parent.parent
