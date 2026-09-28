@@ -44,13 +44,24 @@ from tests.test_espejos_vivos_t130 import ESPEJOS
 _REPO = Path(__file__).resolve().parent.parent
 
 # El camino vivo de decisión: lo que corre cuando el engine propone y filtra una orden.
-_CAMINO_VIVO: tuple[str, ...] = (
-    "paper_trading/engine.py",
-    "paper_trading/gates.py",
-    "paper_trading/strategies.py",
-    "analysis/technical.py",
-    "analysis/ml_signals.py",
-)
+#
+# **Tarea 231: los ARCHIVOS también se descubren.** Esto era una tupla literal de cinco
+# archivos —el defecto que el docstring dice evitar, un nivel más arriba— y la auditoría
+# de desvíos del 2026-09-27 encontró seis perillas de decisión fuera de ella, entre ellas
+# `price_second_opinion_enabled` (`data/yahoo_finance.py`), con el encendido pendiente.
+# Ahora la población son **todos** los módulos bajo estas raíces; lo que queda afuera
+# está dicho abajo, con su motivo, y la clasificación de claves hace el resto.
+_RAICES: tuple[str, ...] = ("paper_trading", "data", "analysis")
+# Lo que NO se barre, y por qué:
+#   · `ui/`      — la GUI no decide órdenes; lo que decide lo lee el engine.
+#   · `scripts/` — runners de harness y jobs de CLI: corren FUERA del motor vivo.
+#   · `config/`  — define el schema (`settings_manager`) y el logging; no decide nada.
+
+
+def archivos_del_camino_vivo(repo: Path = _REPO) -> list[str]:
+    """Todos los ``.py`` bajo ``_RAICES``, relativos a ``repo``. Se descubren, no se enumeran."""
+    return sorted(p.relative_to(repo).as_posix() for raiz in _RAICES for p in (repo / raiz).rglob("*.py"))
+
 
 # Las dos formas en que el camino vivo lee una perilla. Ver el §2 del docstring: mirar una sola
 # deja fuera a los tres toggles de modelo.
@@ -136,6 +147,76 @@ SIN_ESPEJO: dict[str, str] = {
     # `LIVE_SIGNAL_SELL_BYPASS_SCORE` y ahora lo cubre el guard de la 130. Su hermano
     # sigue acá: la 219 lo barrió como EJE del experimento, no lo cableó a un espejo.
     "paper_signal_sell_min_age_bdays": "YA_DECLARADO: parte del Gate 2b, que la clave `reentry_gates` ya declara",
+    # ── Tarea 231: lo que apareció al descubrir los ARCHIVOS en vez de enumerarlos ──
+    # Guards de calidad de dato sobre la cotización EN VIVO.
+    "price_sanity_band_pct": (
+        "NO_MODELABLE: banda del E5 sobre la cotización en vivo (rechaza el fill de un precio de "
+        "escala corrupta). El harness no tiene cotizaciones en vivo: corre sobre artefactos cuyos "
+        "defectos de escala tienen guards propios (T63/T64, `mixed_scale_frames`)"
+    ),
+    "scale_drift_tolerance_pct": (
+        "NO_MODELABLE: umbral del drift de escala entre frames cacheados (T64), que bloquea la "
+        "ENTRADA en vivo. Es un guard del cache del scan; el harness chequea la escala de sus "
+        "artefactos con `mixed_scale_frames`/`announce_mixed_scale`, no con este umbral"
+    ),
+    # El screen E1b: el master switch tiene espejo (131); éstos son sus parámetros.
+    "paper_universe_min_adv_dollars": (
+        "YA_DECLARADO: parámetro del screen E1b, que la clave `universe_screen` declara entero. "
+        "OJO: vale 0.0 en vivo, o sea que la pata de liquidez está APAGADA, y el texto de esa "
+        "clave todavía la nombra — eso lo corrige la tarea 233"
+    ),
+    "paper_universe_fundamentals_enabled": (
+        "YA_DECLARADO: pata fundamental del screen E1b, que la clave `universe_screen` declara "
+        "entero (el harness no modela el screen)"
+    ),
+    "paper_universe_min_negative_years": (
+        "YA_DECLARADO: parámetro de la pata fundamental del screen E1b, declarado entero por la "
+        "clave `universe_screen`"
+    ),
+    "paper_universe_revenue_floor_dollars": (
+        "YA_DECLARADO: parámetro de la pata fundamental del screen E1b, declarado entero por la "
+        "clave `universe_screen`"
+    ),
+    # CUÁNDO corre el scan. El harness decide una vez por barra diaria.
+    "paper_scheduler_enabled": (
+        "NO_MODELABLE: master switch del scheduler in-app; el harness no tiene reloj, recorre "
+        "barras diarias. La cadencia que sí importa está espejada (`LIVE_SCAN_INTERVAL_MINUTES`)"
+    ),
+    "paper_scan_on_startup": "NO_MODELABLE: si el scan corre al abrir la app; el harness no tiene arranque ni reloj",
+    "paper_daily_scan_enabled": (
+        "NO_MODELABLE: scan diario programado, además del periódico; el harness decide una vez "
+        "por barra diaria y no tiene reloj de sesión"
+    ),
+    "paper_daily_scan_time_et": "NO_MODELABLE: hora ET del scan diario programado; el harness no tiene reloj de sesión",
+    "paper_market_hours_only": (
+        "NO_MODELABLE: el scheduler sólo dispara con el mercado abierto; es el mismo eje que "
+        "`paper_enforce_market_hours`, sin equivalente sobre barras diarias"
+    ),
+    # Infraestructura de datos: DÓNDE se guardan las barras, no cuáles son.
+    "cache": (
+        "NO_ES_DECISION: cache de cotizaciones de 5 min; apagarlo pide el precio en tiempo real "
+        "en cada llamada — más red, mismas decisiones"
+    ),
+    "historical_cache_backend": (
+        "NO_ES_DECISION: backend del cache OHLCV (sqlite/parquet/dual, ARQ1). Cambia dónde se "
+        "guardan las barras, no cuáles son; el harness lee los mismos parquet"
+    ),
+    # Jobs de fondo que ACUMULAN datos; su consumidor de decisión (Gate 2c) está OFF.
+    "catalyst_hourly_harvest_enabled": (
+        "NO_ES_DECISION: harvest horario de noticias; acumula datos. El único consumidor de "
+        "decisión sería el Gate 2c, que está OFF y sin provider (tarea 162)"
+    ),
+    "catalyst_hourly_harvest_minutes": "NO_ES_DECISION: cadencia del harvest horario de noticias, que sólo acumula datos",
+    "catalyst_refresh_on_open": "NO_ES_DECISION: refresh de catalysts al abrir la app; acumula datos, no decide órdenes",
+    "surprise_build_enabled": (
+        "NO_ES_DECISION: rebuild semanal de `surprise_profiles` (T-CAT-5a); display y Gate 2c, que está OFF"
+    ),
+    "surprise_build_interval_days": "NO_ES_DECISION: cadencia del rebuild de `surprise_profiles`, que no entra en ninguna orden",
+    "dashboard_refresh_enabled": "NO_ES_DECISION: regenera el dashboard in-app (1×/día y post-scan); es display, posterior a toda decisión",
+    "slack_data_outage_enabled": (
+        "NO_ES_DECISION: avisa por Slack de una caída de datos; el aviso es posterior al scan y "
+        "no cambia qué se compra ni a qué tamaño"
+    ),
 }
 
 _PREFIJOS_VALIDOS = (
@@ -149,13 +230,11 @@ _PREFIJOS_VALIDOS = (
 )
 
 
-def claves_del_camino_vivo() -> dict[str, set[str]]:
+def claves_del_camino_vivo(repo: Path = _REPO) -> dict[str, set[str]]:
     """``{clave: {archivos que la leen}}``, por AST sobre el camino vivo de decisión."""
     out: dict[str, set[str]] = {}
-    for rel in _CAMINO_VIVO:
-        p = _REPO / rel
-        if not p.exists():  # pragma: no cover
-            continue
+    for rel in archivos_del_camino_vivo(repo):
+        p = repo / rel
         for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
             if not (isinstance(n, ast.Call) and n.args):
                 continue

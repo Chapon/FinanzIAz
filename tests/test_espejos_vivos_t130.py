@@ -81,6 +81,11 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     ("LIVE_SIGNAL_SELL_BYPASS_SCORE", "paper_signal_sell_bypass_score"),
     ("LIVE_CHURN_LOOKBACK_DAYS", "paper_churn_lookback_days"),
     ("LIVE_CHURN_MAX_CYCLES", "paper_churn_max_cycles"),
+    # Tarea 231 — las dos viven fuera de los cinco archivos que barría la 185. La segunda
+    # opinión se espeja ANTES de que se prenda: prenderla pone rojo esto, y mover el espejo
+    # hace aparecer la clave `second_opinion` en `deviations_keyed()`.
+    ("LIVE_PRICE_SECOND_OPINION_ENABLED", "price_second_opinion_enabled"),
+    ("LIVE_SCAN_INTERVAL_MINUTES", "paper_scan_interval_minutes"),
 )
 
 # Los ``LIVE_*`` que **no** salen del settings, con el motivo. No es una excepción:

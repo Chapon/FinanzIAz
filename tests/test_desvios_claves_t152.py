@@ -63,6 +63,7 @@ CLAVES_CONOCIDAS = frozenset(
         "regime_scale",
         "universe_screen",
         "adv_cap",
+        "second_opinion",
         "dividendos",
         "earnings_blackout",
         "reentry_gates",
@@ -129,6 +130,7 @@ def test_ninguna_clave_emitida_queda_fuera_del_catalogo(monkeypatch):
     monkeypatch.setattr(hc, "LIVE_ATR_STOPS_ENABLED", False)
     con_switch_off = _claves(_todas_las_ramas(monkeypatch))
     monkeypatch.setattr(hc, "LIVE_ATR_STOPS_ENABLED", True)
+    monkeypatch.setattr(hc, "LIVE_PRICE_SECOND_OPINION_ENABLED", True)  # T231: rama condicional
     emitidas = con_switch_off | _claves(_todas_las_ramas(monkeypatch))
 
     assert not (sin := emitidas - CLAVES_CONOCIDAS), (
@@ -145,6 +147,7 @@ def test_el_catalogo_no_tiene_claves_FANTASMA(monkeypatch):
     monkeypatch.setattr(hc, "LIVE_ATR_STOPS_ENABLED", False)
     emitidas = _claves(_todas_las_ramas(monkeypatch))
     monkeypatch.setattr(hc, "LIVE_ATR_STOPS_ENABLED", True)
+    monkeypatch.setattr(hc, "LIVE_PRICE_SECOND_OPINION_ENABLED", True)  # T231: rama condicional
     emitidas |= _claves(_todas_las_ramas(monkeypatch))
 
     assert not (fantasmas := CLAVES_CONOCIDAS - emitidas), (

@@ -260,6 +260,20 @@ ADV_CAP_MIN_ADV_DATE = "2016-10-28"
 ADV_CAP_MEASURED_ON = "2026-09-12"
 ADV_CAP_DEFAULT_CAPITAL = 50_000.0  # el default de `simulate_portfolio` y de `--capital` en los runners
 
+# Segunda opinión de precio — Tarea 231 (espejo puesto ANTES de que se prenda).
+#
+# `price_second_opinion_enabled` se lee en `data/yahoo_finance.py`, fuera de los cinco
+# archivos que barría el guard de la 185, así que no tenía espejo, ni clasificación, ni
+# desvío. Hoy está **OFF**, pero prenderla figura en *Acciones manuales pendientes*, y con
+# ON el motor gana una conducta que el harness no tiene (tareas 200/201): cuando Yahoo
+# trae un precio fuera de banda y una fuente independiente avala el cierre guardado, el
+# scan **no compra** ese nombre y **encola** la venta por señal para aprobación manual —
+# también en cuentas `auto`—; si nadie avala a nadie, el ticker queda sin precio ese scan.
+# El harness corre sobre artefactos sin cotizaciones en disputa, así que entra y sale como
+# si nada. Prenderla es una edición de `settings.json`, sin commit: el espejo hace que esa
+# edición ponga rojo el guard de la 130, y al moverlo aparece la clave `second_opinion`.
+LIVE_PRICE_SECOND_OPINION_ENABLED = False
+
 
 # ── Dividendos: el harness los cobra, el motor vivo no (tarea 220 → 221) ─────
 #
@@ -355,7 +369,11 @@ PIT_WINDOW_DESC = "expandida (250 → ~2.514 barras)"
 # Ninguno de los dos modos ES producción: ``close`` es la cota **inferior** de
 # frecuencia de disparo y ``touch`` la **superior**; el engine samplea c/15 min,
 # así que queda entre las dos y más cerca de ``touch``.
-LIVE_EXIT_EVAL_DESC = "precio corriente intradía (scan ~15 min)"
+#
+# El intervalo del scan era un literal adentro de este texto —una copia de
+# `paper_scan_interval_minutes` sin espejo— y ahora sale del espejo (tarea 231).
+LIVE_SCAN_INTERVAL_MINUTES = 15
+LIVE_EXIT_EVAL_DESC = f"precio corriente intradía (scan ~{LIVE_SCAN_INTERVAL_MINUTES} min)"
 PIT_EXIT_EVAL_DESC = "close diario"
 TOUCH_EXIT_EVAL_DESC = "toque intradía del extremo de la barra"
 
@@ -2265,6 +2283,18 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     # Tarea 184 — prendido en vivo, sin modelar, e inerte en la muestra de hoy.
     if LIVE_ADV_CAP_PCT > 0:
         _add("adv_cap", adv_cap_desc())
+    # Tarea 231 — condicional: sólo existe con la segunda opinión prendida.
+    if LIVE_PRICE_SECOND_OPINION_ENABLED:
+        _add(
+            "second_opinion",
+            "NO se modela la segunda opinión de precio (tareas 200/201): en vivo, cuando el "
+            "precio de Yahoo sale de banda y la fuente independiente avala el cierre guardado, "
+            "el scan NO compra ese nombre y ENCOLA la venta por señal para aprobación manual "
+            "(también en cuentas `auto`; los stops salen igual); si no avala a nadie, el ticker "
+            "queda sin precio ese scan. El harness corre sobre artefactos sin cotizaciones en "
+            "disputa y entra y sale como si nada. Frecuencia NO medida: sólo muerde con una "
+            "cotización corrupta en vivo (casos del tipo KLAC/AVB)",
+        )
     # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
         _add(
