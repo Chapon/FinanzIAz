@@ -51,6 +51,7 @@ from analysis.exit_replay import (
     atr_exit,
     atr_series,
 )
+from analysis.harness_config import LIVE_SIGNAL_SELL_BYPASS_SCORE, LIVE_SIGNAL_SELL_MIN_AGE_BDAYS
 
 # Señal PIT: {iso10: "BUY"|"SELL"|"HOLD"}. Fechas ausentes ⇒ sin señal ese día.
 SignalSeries = dict
@@ -115,9 +116,11 @@ class ScaleOutParams:
     #         nivel-vs-señal del gap A4 ("los niveles mandan") en su forma
     #         separable — ver la nota de abajo.
     sell_fraction: float = 1.0
-    # Gate 2b — histéresis del engine vivo (T6.4).
-    min_age_bdays: int = 3
-    bypass_score: float = 0.25
+    # Gate 2b — histéresis del engine vivo (T6.4). Los defaults LEEN los espejos (tarea
+    # 232): eran dos literales iguales al vivo por casualidad, y mover la perilla dejaba a
+    # todo harness de salida modelando la política vieja sin que nada lo dijera.
+    min_age_bdays: int = LIVE_SIGNAL_SELL_MIN_AGE_BDAYS
+    bypass_score: float = LIVE_SIGNAL_SELL_BYPASS_SCORE
 
 
 @dataclass

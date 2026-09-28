@@ -79,6 +79,8 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     # Gate 2b — entra con la tarea 219, que barrió la edad mínima y necesitaba el
     # bypass en un solo lugar. Es espejo REAL: `settings.get("paper_signal_sell_bypass_score")`.
     ("LIVE_SIGNAL_SELL_BYPASS_SCORE", "paper_signal_sell_bypass_score"),
+    # Su hermano, desde la tarea 232 (antes clasificado en la 185 con un motivo falso).
+    ("LIVE_SIGNAL_SELL_MIN_AGE_BDAYS", "paper_signal_sell_min_age_bdays"),
     ("LIVE_CHURN_LOOKBACK_DAYS", "paper_churn_lookback_days"),
     ("LIVE_CHURN_MAX_CYCLES", "paper_churn_max_cycles"),
     # Tarea 231 — las dos viven fuera de los cinco archivos que barría la 185. La segunda

@@ -186,7 +186,11 @@ def test_el_azar_respeta_la_tasa_pedida():
 
 def test_el_baseline_es_la_perilla_VIVA():
     p = _so_params(BASELINE)
-    assert p.min_age_bdays == 3, "la cuenta 2 corre con paper_signal_sell_min_age_bdays=3"
+    # Contra el ESPEJO y no contra un `3` (tarea 232): si la política viva se mueve, esto se pone
+    # rojo diciendo que el baseline congelado de la 219 dejó de ser la política viva.
+    from analysis.harness_config import LIVE_SIGNAL_SELL_MIN_AGE_BDAYS
+
+    assert p.min_age_bdays == LIVE_SIGNAL_SELL_MIN_AGE_BDAYS, "el baseline de la 219 ya no es la edad viva"
     assert p.sell_fraction == 1.0, "y la señal cierra entero"
 
 

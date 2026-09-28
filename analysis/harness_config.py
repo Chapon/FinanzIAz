@@ -434,6 +434,12 @@ LOOKAHEAD_FILL_COST_DESC = (
 # señal vivas de la cuenta 2: el bypass alcanza a 1 de 41 (el resto tiene score ≥ 0.25,
 # rango 0.15-0.45, mediana 0.39), o sea que el gate de edad SÍ tiene palanca.
 LIVE_SIGNAL_SELL_BYPASS_SCORE = 0.25
+# `paper_signal_sell_min_age_bdays` — el otro parámetro del Gate 2b: días hábiles que un SELL
+# de señal espera desde la entrada. Espejo desde la tarea **232**: hasta ahí figuraba en el
+# guard de la 185 como «ya declarado por `reentry_gates`» —una clave que sólo nombra los
+# Gates 5/5b— mientras `ScaleOutParams` lo modelaba con un `3` escrito a mano que coincidía
+# con el vivo por casualidad. Ahora `ScaleOutParams` lee este espejo y el del bypass.
+LIVE_SIGNAL_SELL_MIN_AGE_BDAYS = 3
 LIVE_WHIPSAW_LOOKBACK_DAYS = 7
 LIVE_WHIPSAW_MIN_LOSS_PCT = 0.0
 LIVE_CHURN_LOOKBACK_DAYS = 10
