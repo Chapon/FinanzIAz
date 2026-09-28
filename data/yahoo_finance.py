@@ -987,7 +987,9 @@ def _clear_out_of_band_streak(ticker_upper: str) -> None:
 # Y por eso también se **memoiza**: el engine no puede pegar a la red en medio de un
 # fill, pero sí aprovechar lo que el fetch ya aprendió — exactamente como los splits.
 _SECOND_OPINION_TTL_S = 900.0
-_second_opinion_cache: dict[str, tuple[float, float | None]] = {}
+# Tarea 206: el memo guarda la opinión de CADA fuente (`{"finnhub": px, "tiingo": px}`),
+# no un único float — la regla de mayoría necesita saber cuál contestó qué.
+_second_opinion_cache: dict[str, tuple[float, dict[str, float | None]]] = {}
 _second_opinion_lock = threading.Lock()
 
 
@@ -1000,30 +1002,32 @@ def _second_opinion_enabled() -> bool:
         return False
 
 
-def independent_price(ticker: str, *, allow_network: bool = True) -> float | None:
-    """Precio de una fuente **independiente** de Yahoo, memoizado. None si no hay.
+def independent_prices(ticker: str, *, allow_network: bool = True) -> dict[str, float | None]:
+    """Precio de cada fuente **independiente** de Yahoo, memoizado. ``{}`` si no se sabe.
 
     ``allow_network=False`` responde **sólo con lo memoizado**, igual que
-    ``recent_split_factor``: es lo que usa el guard del engine.
+    ``recent_split_factor``: es lo que usa el guard del engine. Una fuente que no contestó
+    queda con ``None`` y **también** se memoiza (tarea 19: sin eso, un ticker sin
+    cobertura consultaría en cada precio fuera de banda).
     """
     key = ticker.upper()
     now = time.time()
     with _second_opinion_lock:
         hit = _second_opinion_cache.get(key)
         if hit is not None and now - hit[0] < _SECOND_OPINION_TTL_S:
-            return hit[1]
+            return dict(hit[1])
     if not allow_network:
-        return None
+        return {}
     try:
-        from data.providers import second_opinion
+        from data.providers import second_opinions
 
-        px = second_opinion(key)
+        opiniones = dict(second_opinions(key))
     except Exception:
-        log.exception("independent_price: falló la consulta de %s", key)
-        px = None
+        log.exception("independent_prices: falló la consulta de %s", key)
+        opiniones = {}
     with _second_opinion_lock:
-        _second_opinion_cache[key] = (now, px)
-    return px
+        _second_opinion_cache[key] = (now, opiniones)
+    return dict(opiniones)
 
 
 def _clear_second_opinion_cache() -> None:
@@ -1032,18 +1036,25 @@ def _clear_second_opinion_cache() -> None:
         _second_opinion_cache.clear()
 
 
-def _arbitrate_price(price: float, reference: float, independent: float | None) -> str:
-    """A quién respalda la fuente independiente. Delega la regla en `providers`.
+def _arbitrate_price(
+    price: float, reference: float, opiniones: dict[str, float | None]
+) -> tuple[str, float | None]:
+    """``(veredicto, precio independiente a usar)`` por la regla de mayoría (tarea 206).
 
     Se envuelve acá para que un fallo de import (o de la banda) **no** cambie el
     comportamiento: sin veredicto, el guard queda exactamente como estaba.
     """
     try:
-        from data.providers import arbitrate
+        from data.providers import arbitrate_votes
 
-        return arbitrate(float(price), float(reference), independent, band=_price_sanity_band())
+        return arbitrate_votes(float(price), float(reference), opiniones, band=_price_sanity_band())
     except Exception:
-        return "sin_opinion"
+        return "sin_opinion", None
+
+
+def _opiniones_txt(opiniones: dict[str, float | None]) -> str:
+    """``finnhub 195.0000 · tiingo —`` para los logs y avisos."""
+    return " · ".join(f"{f} {px:.4f}" if px is not None else f"{f} —" for f, px in opiniones.items()) or "—"
 
 
 # ── Qué hizo la segunda opinión, para el scan — tarea 201 ────────────────────
@@ -1062,7 +1073,12 @@ _opinion_log_lock = threading.Lock()
 
 
 def _record_opinion(
-    ticker: str, price: float, reference: float, independent: float | None, verdict: str
+    ticker: str,
+    price: float,
+    reference: float,
+    independent: float | None,
+    verdict: str,
+    opiniones: dict[str, float | None] | None = None,
 ) -> None:
     if verdict == "sin_opinion":
         return
@@ -1072,7 +1088,10 @@ def _record_opinion(
             "verdict": verdict,
             "price": price,
             "reference": reference,
+            # El precio independiente que se USA (con `reference`, el que sustituye).
             "independent": independent,
+            # Tarea 206: lo que dijo cada fuente, para el aviso.
+            "opiniones": dict(opiniones or {}),
             "at": time.time(),
         }
 
@@ -1153,35 +1172,37 @@ def unreliable_reference(
         # referencia **no** es dudosa — el podrido es el precio, y devolver None acá
         # es lo que hace que el caller lo rechace. Es el caso KLAC.
         if _second_opinion_enabled():
-            # Envuelto acá **además** de adentro de `independent_price`: esto corre en
+            # Envuelto acá **además** de adentro de `independent_prices`: esto corre en
             # el camino de precios, y una excepción que suba desde una opinión
             # *opcional* frenaría un fill. Defensa en profundidad a propósito.
             try:
-                indep = independent_price(ticker, allow_network=opinion_network)
+                opiniones = independent_prices(ticker, allow_network=opinion_network)
             except Exception:
                 log.exception("segunda opinión: falló la consulta de %s", ticker)
-                indep = None
-            veredicto = _arbitrate_price(price, reference, indep)
-            _record_opinion(ticker, float(price), float(reference), indep, veredicto)
+                opiniones = {}
+            veredicto, indep = _arbitrate_price(price, reference, opiniones)
+            _record_opinion(ticker, float(price), float(reference), indep, veredicto, opiniones)
             if veredicto == "reference":
                 log.error(
-                    "Segunda opinión para %s: la fuente independiente (%.4f) respalda "
-                    "la REFERENCIA (%.4f) y no el precio (%.4f) — el precio de Yahoo se "
-                    "rechaza y el scan usa el de la fuente independiente (tarea 201).",
+                    "Segunda opinión para %s: las fuentes independientes (%s) contradicen "
+                    "al precio de Yahoo (%.4f; cierre guardado %.4f) — se rechaza y el scan "
+                    "usa %.4f (tareas 201/206).",
                     ticker.upper(),
-                    indep,
-                    reference,
+                    _opiniones_txt(opiniones),
                     price,
+                    reference,
+                    indep,
                 )
                 return None
             if veredicto == "ninguno":
                 # Tarea 201, decisión de Chapa: nadie avala ningún precio ⇒ no se opera
-                # sobre un número que nadie confirma. Sin precio ese scan, y aviso.
+                # sobre un número que nadie confirma. Sin precio ese scan, y aviso. Con
+                # tres fuentes (206) es el caso SIN MAYORÍA, y Chapa eligió lo mismo.
                 log.error(
-                    "Segunda opinión para %s: la fuente independiente (%.4f) no coincide "
-                    "ni con el precio (%.4f) ni con la referencia (%.4f) — sin precio este scan.",
+                    "Segunda opinión para %s: sin mayoría — independientes (%s), precio "
+                    "(%.4f), cierre guardado (%.4f) — sin precio este scan.",
                     ticker.upper(),
-                    indep,
+                    _opiniones_txt(opiniones),
                     price,
                     reference,
                 )

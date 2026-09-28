@@ -23,16 +23,19 @@ Proveedores
 -----------
 * **Stooq** — **NO USABLE** desde el 2026-09-07: devuelve una verificación
   proof-of-work en JavaScript en vez del CSV. Se deja con la evidencia.
-* **Tiingo** — free tier, EOD limpio, **requiere** `TIINGO_API_KEY`, que este entorno
-  **no tiene**. Sin la key se declara no disponible; no es un error.
+* **Tiingo** — free tier, EOD limpio, **requiere** `TIINGO_API_KEY`. Sin la key se declara
+  no disponible; no es un error. **La key existe en la máquina de Chapa desde el
+  2026-09-28** (tarea 206): Tiingo es la tercera fuente de `second_opinions` y el
+  proveedor de la cadena EOD. El CI no la tiene.
 * **Finnhub** — sus velas históricas son **premium** (`/stock/candle` → 403 con la key
   que sí existe), pero su `/quote` **funciona** y sirve para el cross-check del precio
   actual: ver `second_opinion`.
 
-**Estado, medido el 2026-09-07: no hay hoy un proveedor EOD de fallback sin dar de alta
-una key nueva.** La mitad "histórico" de ARQ3 está bloqueada por eso —por datos, no por
-código— y la mitad "sanity bilateral del precio actual" **sí** es viable y es la que
-mata la clase KLAC.
+**Estado, medido el 2026-09-07: no había un proveedor EOD de fallback sin dar de alta
+una key nueva.** Con la key de Tiingo (2026-09-28) la cadena deja de estar vacía, pero
+la mitad "histórico" de ARQ3 **sigue sin cablearse**: `fetch_with_fallback` no tiene
+llamadores y el flag `price_provider_fallback_enabled` está OFF. La mitad "sanity del
+precio actual" es la que mata la clase KLAC, y desde la tarea 206 vota con tres fuentes.
 """
 
 from __future__ import annotations
@@ -50,13 +53,20 @@ from config.logging_config import get_logger
 log = get_logger(__name__)
 
 __all__ = [
+    "MAYORIA",
     "OHLCV_COLUMNS",
+    "QUOTE_SOURCES",
     "PriceProvider",
     "ProviderResult",
     "StooqProvider",
     "TiingoProvider",
+    "arbitrate",
+    "arbitrate_votes",
     "default_chain",
     "fetch_with_fallback",
+    "second_opinion",
+    "second_opinions",
+    "tiingo_quote",
 ]
 
 # El contrato de forma que `_normalize_ohlcv` deja y que el resto del sistema asume.
@@ -240,16 +250,12 @@ class TiingoProvider:
 def default_chain() -> list[PriceProvider]:
     """La cadena EOD, ya filtrada por disponibilidad.
 
-    **Hoy queda VACÍA, y ése es el hallazgo de la tarea 14** (medido el 2026-09-07):
-    Stooq bloqueó a los clientes no-browser con un proof-of-work, Tiingo necesita una
-    ``TIINGO_API_KEY`` que este entorno no tiene, y las velas diarias de Finnhub son
-    **premium** en el free tier (``/stock/candle`` devuelve 403 con la key que sí
-    existe). O sea que **no hay hoy un proveedor EOD de fallback sin dar de alta una
-    key nueva** — la mitad "histórico" de ARQ3 está bloqueada por eso, no por código.
+    **Sin ``TIINGO_API_KEY`` queda VACÍA, y ése fue el hallazgo de la tarea 14** (medido
+    el 2026-09-07): Stooq bloqueó a los clientes no-browser con un proof-of-work, y las
+    velas diarias de Finnhub son **premium** en el free tier (``/stock/candle`` devuelve
+    403). Con la key —en la máquina de Chapa desde el 2026-09-28— queda ``[tiingo]``.
 
-    La mitad que **sí** se puede es el cross-check del **precio actual**, que no usa
-    esta cadena sino ``second_opinion`` (Finnhub ``/quote``, que con la misma key
-    funciona).
+    El cross-check del **precio actual** no usa esta cadena sino ``second_opinions``.
     """
     return [p for p in (StooqProvider(), TiingoProvider()) if p.available()]
 
@@ -290,11 +296,21 @@ def fetch_with_fallback(
 # Finnhub `/quote` sirve para esto **con la key que este entorno ya tiene** (la que usa
 # el harvest de noticias). Sus velas históricas NO — `/stock/candle` da 403 en el free
 # tier, medido — así que esto no arregla el histórico, sólo el precio actual.
-QUOTE_SOURCE = "finnhub"
+#
+# **Tarea 206 — tres fuentes, manda la mayoría** (regla de Chapa, 2026-09-13). La tercera
+# es Tiingo (`docs/fuentes_precio_t202_2026-09-14.md`). El ORDEN de la tupla es el de
+# desempate al elegir qué precio independiente se usa cuando dos coinciden.
+QUOTE_SOURCES = ("finnhub", "tiingo")
+
+# Votos que hacen mayoría sobre tres fuentes (Yahoo + las dos de `QUOTE_SOURCES`).
+MAYORIA = 2
 
 
 def second_opinion(ticker: str, *, timeout: float = 10.0, api_key: str | None = None) -> float | None:
-    """El precio actual según una fuente **independiente** de Yahoo, o ``None``.
+    """El precio actual según **Finnhub** ``/quote``, independiente de Yahoo, o ``None``.
+
+    Es una de las fuentes de ``second_opinions``; conserva el nombre de cuando era la
+    única (tareas 127/200/201), que es el que stubean sus tests.
 
     Fail-open en todos los caminos —sin key, error de red, respuesta rara— porque el
     llamador es el guard del precio: una segunda opinión que no llega tiene que dejar
@@ -319,8 +335,102 @@ def second_opinion(ticker: str, *, timeout: float = 10.0, api_key: str | None = 
     return px if px > 0 else None
 
 
+def tiingo_quote(ticker: str, *, timeout: float = 10.0, api_key: str | None = None) -> float | None:
+    """El precio actual según **Tiingo** (endpoint IEX), o ``None``. Fail-open como Finnhub.
+
+    ``tngoLast`` es el último de Tiingo (intradía); fuera de hora puede venir vacío, y
+    entonces se cae a ``last`` y a ``prevClose``. Con la banda del 50% un cierre alcanza
+    (`docs/fuentes_precio_t202_2026-09-14.md` §2). Verificado en vivo el 2026-09-28: AAPL
+    devuelve ``tngoLast``; un ticker inexistente, 404.
+    """
+    key = api_key or os.environ.get("TIINGO_API_KEY")
+    if not key:
+        return None
+    import requests
+
+    try:
+        resp = requests.get(
+            "https://api.tiingo.com/iex/",
+            params={"tickers": ticker.strip().upper(), "token": key},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        filas = resp.json()
+        fila = filas[0] if isinstance(filas, list) and filas else {}
+        crudo = fila.get("tngoLast") or fila.get("last") or fila.get("prevClose")
+        px = float(crudo or 0.0)
+    except Exception:
+        log.warning("tiingo_quote: no se pudo consultar %s", ticker)
+        return None
+    return px if px > 0 else None
+
+
+def second_opinions(ticker: str, *, timeout: float = 10.0) -> dict[str, float | None]:
+    """El precio actual según **cada** fuente de ``QUOTE_SOURCES``: cuál contestó qué.
+
+    ``None`` para la que no contestó. Las funciones se resuelven al llamar (no al importar)
+    para que un stub de ``second_opinion`` en un test siga surtiendo efecto.
+    """
+    consultas = {"finnhub": second_opinion, "tiingo": tiingo_quote}
+    out: dict[str, float | None] = {}
+    for fuente in QUOTE_SOURCES:
+        try:
+            out[fuente] = consultas[fuente](ticker, timeout=timeout)
+        except Exception:
+            log.warning("second_opinions: %s reventó con %s", fuente, ticker)
+            out[fuente] = None
+    return out
+
+
+def arbitrate_votes(
+    price: float, reference: float, opiniones: dict[str, float | None], *, band: float
+) -> tuple[str, float | None]:
+    """La regla de tres fuentes (tarea 206): ``(veredicto, precio independiente a usar)``.
+
+    Los votos son **tres precios**: el de Yahoo y los de las dos fuentes independientes.
+    La referencia (el cierre guardado) no vota: es de Yahoo también, y es lo que está en
+    disputa. Dos precios «coinciden» si difieren menos que ``band``.
+
+    * ``"price"`` — Yahoo y al menos una externa coinciden: mayoría para el precio.
+    * ``"reference"`` — las dos externas coinciden entre sí y Yahoo no: mayoría contra el
+      precio. Se usa el de las externas **avalen o no el cierre guardado** (decisión de
+      Chapa, 2026-09-28: también cuando las dos cosas de Yahoo están mal, manda la mayoría).
+      El nombre se conserva por el camino de la 201, que lo lee como *«el precio de Yahoo
+      pierde»*.
+    * ``"ninguno"`` — sin mayoría: los tres discrepan. Chapa (2026-09-28): se comporta
+      **igual que hoy**, sin precio ese scan y con aviso.
+    * **Una sola externa contesta** ⇒ la regla de **dos** fuentes de siempre
+      (``arbitrate``), llamada a propósito y no por accidente.
+    * **Ninguna contesta** ⇒ ``"sin_opinion"``: el guard queda como estaba (Chapa,
+      2026-09-28: que se caigan dos APIs no dispara ventas).
+    """
+    if price is None or reference is None or price <= 0 or reference <= 0:
+        return "sin_opinion", None
+    orden = [f for f in QUOTE_SOURCES if f in opiniones] + [f for f in opiniones if f not in QUOTE_SOURCES]
+    validas = [float(opiniones[f]) for f in orden if opiniones[f] is not None and opiniones[f] > 0]
+    if not validas:
+        return "sin_opinion", None
+    if len(validas) == 1:
+        # Degradado explícito a dos fuentes: con un solo voto externo no hay mayoría de
+        # tres que contar, y lo que decide es la regla de la 127/201.
+        return arbitrate(price, reference, validas[0], band=band), validas[0]
+
+    def coinciden(a: float, b: float) -> bool:
+        return abs(a / b - 1.0) <= band
+
+    con_yahoo = [px for px in validas if coinciden(px, price)]
+    if 1 + len(con_yahoo) >= MAYORIA:
+        return "price", con_yahoo[0]
+    for px in validas:
+        if sum(coinciden(q, px) for q in validas) >= MAYORIA:
+            return "reference", px
+    return "ninguno", None
+
+
 def arbitrate(price: float, reference: float, independent: float | None, *, band: float) -> str:
-    """¿A quién le da la razón la fuente independiente? — la decisión, pura y testeable.
+    """La regla de **dos** fuentes: ¿a quién le da la razón la única independiente?
+
+    Desde la tarea 206 la usa ``arbitrate_votes`` cuando contesta una sola externa.
 
     Devuelve ``"price"``, ``"reference"``, ``"ninguno"`` o ``"sin_opinion"``.
 

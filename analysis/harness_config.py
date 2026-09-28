@@ -2326,11 +2326,11 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     if LIVE_PRICE_SECOND_OPINION_ENABLED:
         _add(
             "second_opinion",
-            "NO se modela la segunda opinión de precio (tareas 200/201): en vivo, cuando el "
-            "precio de Yahoo sale de banda y la fuente independiente avala el cierre guardado, "
-            "el scan NO compra ese nombre y ENCOLA la venta por señal para aprobación manual "
-            "(también en cuentas `auto`; los stops salen igual); si no avala a nadie, el ticker "
-            "queda sin precio ese scan. El harness corre sobre artefactos sin cotizaciones en "
+            "NO se modela la segunda opinión de precio (tareas 200/201/206): en vivo, cuando el "
+            "precio de Yahoo sale de banda y la mayoría de tres fuentes (Yahoo, Finnhub, Tiingo) "
+            "lo contradice, el scan NO compra ese nombre y ENCOLA la venta por señal para "
+            "aprobación manual (también en cuentas `auto`; los stops salen igual); sin mayoría, "
+            "el ticker queda sin precio ese scan. El harness corre sobre artefactos sin cotizaciones en "
             "disputa y entra y sale como si nada. Frecuencia NO medida: sólo muerde con una "
             "cotización corrupta en vivo (casos del tipo KLAC/AVB)",
         )

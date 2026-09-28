@@ -1685,9 +1685,19 @@ def _is_dispute_order(o: PaperOrder) -> bool:
 def _format_price_disputes(account_name: str, disputes: list[dict]) -> str:
     lineas = [f"⚠️ *{account_name}* — precio en disputa (segunda opinión)"]
     for d in disputes:
-        indep = d.get("independent")
-        indep_txt = f"{indep:.2f}" if indep is not None else "—"
-        base = f"• *{d['ticker']}*: Yahoo {d['price']:.2f} · cierre guardado {d['reference']:.2f} · independiente {indep_txt}"
+        # Tarea 206: lo que dijo cada fuente independiente; sin el detalle (registros
+        # anteriores o tests), el precio independiente que se usó.
+        opiniones = d.get("opiniones") or {}
+        if opiniones:
+            indep_txt = " · ".join(
+                f"{f} {px:.2f}" if px is not None else f"{f} —" for f, px in opiniones.items()
+            )
+        else:
+            indep = d.get("independent")
+            indep_txt = f"independiente {indep:.2f}" if indep is not None else "independiente —"
+        base = (
+            f"• *{d['ticker']}*: Yahoo {d['price']:.2f} · cierre guardado {d['reference']:.2f} · {indep_txt}"
+        )
         if d["kind"] == DISPUTE_SUBSTITUTED:
             lineas.append(f"{base} → se usa el precio independiente; una venta por señal espera aprobación.")
         else:

@@ -19,7 +19,11 @@ from data import yahoo_finance as yfm
 
 
 @pytest.fixture(autouse=True)
-def _memo_limpio():
+def _memo_limpio(monkeypatch):
+    # Tarea 206: Tiingo es la segunda fuente de `second_opinions`, y su key existe en la
+    # máquina de Chapa y no en el CI. Estos tests son de UNA fuente (Finnhub stubeado):
+    # sin la key, Tiingo contesta None en los dos entornos, sin salir a la red.
+    monkeypatch.delenv("TIINGO_API_KEY", raising=False)
     yfm._clear_second_opinion_cache()
     yfm._clear_opinion_log()  # tarea 201: el registro de veredictos también es estado global
     yield
@@ -35,7 +39,8 @@ def disputa(monkeypatch):
 
 
 def _opinion(valor):
-    return lambda ticker, allow_network=True: valor
+    """Lo que devuelve `independent_prices` con UNA fuente contestando (tarea 206)."""
+    return lambda ticker, allow_network=True: {"finnhub": valor}
 
 
 # ── Con el flag OFF no cambia nada ───────────────────────────────────────────
@@ -47,7 +52,7 @@ def test_con_el_flag_OFF_el_comportamiento_es_EXACTAMENTE_el_de_antes(disputa, m
     """
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: False)
     llamadas = []
-    monkeypatch.setattr(yfm, "independent_price", lambda *a, **k: llamadas.append(1))
+    monkeypatch.setattr(yfm, "independent_prices", lambda *a, **k: llamadas.append(1))
     motivo = yfm.unreliable_reference("KLAC", 1942.70, 194.0, allow_network=True)
     assert motivo is not None and "disputa" in motivo
     assert llamadas == [], "con el flag OFF ni siquiera se consulta la fuente"
@@ -60,7 +65,7 @@ def test_KLAC_la_fuente_independiente_respalda_la_REFERENCIA_y_el_precio_se_rech
     """El caso que motivó ARQ3: un precio ~10× corrupto que llegó a ejecutar un trade.
     La tercera fuente coincide con la referencia ⇒ el podrido es el precio."""
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: True)
-    monkeypatch.setattr(yfm, "independent_price", _opinion(195.0))
+    monkeypatch.setattr(yfm, "independent_prices", _opinion(195.0))
     assert yfm.unreliable_reference("KLAC", 1942.70, 194.0, allow_network=True) is None
 
 
@@ -69,7 +74,7 @@ def test_AVB_la_fuente_independiente_respalda_el_PRECIO_y_no_se_toca_nada(disput
     tercera fuente respalda al **precio**, la referencia sí era dudosa y el precio se
     sigue aceptando, como antes."""
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: True)
-    monkeypatch.setattr(yfm, "independent_price", _opinion(184.0))
+    monkeypatch.setattr(yfm, "independent_prices", _opinion(184.0))
     motivo = yfm.unreliable_reference("AVB", 184.06, 68.14, allow_network=True)
     assert motivo is not None, "respaldando el precio, la referencia sigue siendo la dudosa"
 
@@ -77,7 +82,7 @@ def test_AVB_la_fuente_independiente_respalda_el_PRECIO_y_no_se_toca_nada(disput
 def test_sin_segunda_opinion_queda_como_estaba(disputa, monkeypatch):
     """Fail-open: una fuente que no contesta no puede cambiar el veredicto ni tirar."""
     monkeypatch.setattr(yfm, "_second_opinion_enabled", lambda: True)
-    monkeypatch.setattr(yfm, "independent_price", _opinion(None))
+    monkeypatch.setattr(yfm, "independent_prices", _opinion(None))
     assert yfm.unreliable_reference("KLAC", 1942.70, 194.0, allow_network=True) is not None
 
 
@@ -89,7 +94,7 @@ def test_si_la_fuente_independiente_EXPLOTA_el_guard_sigue(disputa, monkeypatch)
     def _boom(*a, **k):
         raise RuntimeError("sin red")
 
-    monkeypatch.setattr(yfm, "independent_price", _boom)
+    monkeypatch.setattr(yfm, "independent_prices", _boom)
     # La excepción NO puede subir: el guard tiene que seguir y quedar como estaba.
     assert yfm.unreliable_reference("KLAC", 1942.70, 194.0, allow_network=True) is not None
 
@@ -112,15 +117,15 @@ def test_el_engine_NO_pega_a_la_red_pero_usa_lo_memoizado(monkeypatch):
     monkeypatch.setattr("data.providers.second_opinion", _fuente)
 
     # Sin memo y sin red: no consulta y no sabe nada.
-    assert yfm.independent_price("KLAC", allow_network=False) is None
+    assert yfm.independent_prices("KLAC", allow_network=False) == {}
     assert llamadas == []
 
     # El fetch (con red) lo aprende y lo memoiza.
-    assert yfm.independent_price("KLAC", allow_network=True) == 195.0
+    assert yfm.independent_prices("KLAC", allow_network=True)["finnhub"] == 195.0
     assert llamadas == ["KLAC"]
 
     # Ahora el engine lo aprovecha SIN red.
-    assert yfm.independent_price("KLAC", allow_network=False) == 195.0
+    assert yfm.independent_prices("KLAC", allow_network=False)["finnhub"] == 195.0
     assert llamadas == ["KLAC"], "el engine no puede haber consultado de nuevo"
 
 
@@ -128,7 +133,7 @@ def test_el_memo_no_reconsulta_dentro_del_TTL(monkeypatch):
     llamadas = []
     monkeypatch.setattr("data.providers.second_opinion", lambda t, **k: (llamadas.append(t), 100.0)[1])
     for _ in range(5):
-        assert yfm.independent_price("XXX", allow_network=True) == 100.0
+        assert yfm.independent_prices("XXX", allow_network=True)["finnhub"] == 100.0
     assert len(llamadas) == 1, f"consultó {len(llamadas)} veces dentro del TTL"
 
 
@@ -142,8 +147,8 @@ def test_un_fallo_de_la_fuente_tambien_se_memoiza(monkeypatch):
         raise RuntimeError("sin red")
 
     monkeypatch.setattr("data.providers.second_opinion", _falla)
-    assert yfm.independent_price("YYY", allow_network=True) is None
-    assert yfm.independent_price("YYY", allow_network=True) is None
+    assert yfm.independent_prices("YYY", allow_network=True)["finnhub"] is None
+    assert yfm.independent_prices("YYY", allow_network=True)["finnhub"] is None
     assert len(llamadas) == 1, "el None tiene que quedar memoizado"
 
 
@@ -160,7 +165,7 @@ def test_el_fetch_y_el_engine_siguen_coincidiendo_con_el_flag_ON(disputa, monkey
 
     fuente_fetch = inspect.getsource(yfm._reject_if_out_of_band)
     assert "unreliable_reference" in fuente_fetch
-    assert "independent_price" not in fuente_fetch, (
+    assert "independent_prices" not in fuente_fetch, (
         "la segunda opinión no puede vivir en el guard del fetch: rompería la simetría "
         "con el engine y dejaría posiciones sin poder venderse"
     )
