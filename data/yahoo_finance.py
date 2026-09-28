@@ -1360,23 +1360,50 @@ def get_current_price(ticker: str) -> dict | None:
             info["from_cache"] = False
             return info
 
-        # 3. Cache write
-        with session_scope() as session:
-            session.add(
-                PriceCache(
-                    ticker=ticker.upper(),
-                    price=info["price"],
-                    change_pct=info.get("change_pct"),
-                    volume=info.get("volume"),
-                    market_cap=info.get("market_cap"),
+        # 3. Cache write — best-effort y FUERA del camino de retorno (tarea 234). Estaba
+        # adentro del `try` de todo el fetch, así que un `database is locked` al escribir
+        # convertía un precio ya bajado en `None` y se logueaba como «Error fetching».
+        def _escribir() -> None:
+            with session_scope() as session:
+                session.add(
+                    PriceCache(
+                        ticker=ticker.upper(),
+                        price=info["price"],
+                        change_pct=info.get("change_pct"),
+                        volume=info.get("volume"),
+                        market_cap=info.get("market_cap"),
+                    )
                 )
-            )
+
+        _cache_write_best_effort("price_cache", ticker.upper(), _escribir)
         info["from_cache"] = False
         return info
 
     except Exception:
         log.exception("Error fetching price for %s", ticker)
         return None
+
+
+def _cache_write_best_effort(tabla: str, ticker_upper: str, escribir: "Callable[[], None]") -> bool:
+    """Escribe un cache sin que su fallo pueda tumbar el dato que ya se bajó — tarea 234.
+
+    Un cache es una **optimización**: si no se puede escribir, el próximo pedido vuelve a la
+    red, que es exactamente lo que habría pasado sin cache. Lo que no puede pasar es lo que
+    pasaba: que el fallo de la escritura se propague al `except` del fetch y el caller reciba
+    *«no hay dato»* por un precio que sí estaba.
+
+    **Sin reintento, a propósito** (a diferencia de ``_write_earnings_cache``): el
+    ``busy_timeout`` de la conexión ya esperó 30 s por el lock, y reintentar sólo multiplica
+    esa espera en el hilo del que llama. El aviso es una línea WARNING —no un traceback
+    ERROR—: es fail-open esperable bajo contención, y el traceback enterraba errores reales.
+    """
+    try:
+        escribir()
+        return True
+    except Exception as exc:
+        primera = (str(exc).splitlines() or [type(exc).__name__])[0]
+        log.warning("%s write failed for %s (se devuelve el dato igual): %s", tabla, ticker_upper, primera)
+        return False
 
 
 def _safe_fast_info(info: object, name: str, default: T | None = None) -> T | None:
@@ -2002,15 +2029,19 @@ def get_dividends_since(ticker: str, since_date: datetime) -> float:
         # 2. Network fetch (no DB session held)
         total = _fetch_dividends_since(ticker, since_date)
 
-        # 3. Cache write
-        with session_scope() as session:
-            session.add(
-                DividendCache(
-                    ticker=ticker.upper(),
-                    since_date=normalized_since,
-                    total_per_share=total,
+        # 3. Cache write — best-effort (tarea 234). Adentro del `try` general, un lock al
+        # escribir devolvía 0.0: «no pagó dividendos» por un total que ya se había bajado.
+        def _escribir() -> None:
+            with session_scope() as session:
+                session.add(
+                    DividendCache(
+                        ticker=ticker.upper(),
+                        since_date=normalized_since,
+                        total_per_share=total,
+                    )
                 )
-            )
+
+        _cache_write_best_effort("dividend_cache", ticker.upper(), _escribir)
         return total
 
     except Exception:
