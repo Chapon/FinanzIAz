@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 170 — Corrida `/audit desvios` CERRADA 2026-09-27 — el motor vivo no tiene conducta sin declarar; el agujero está en lo que se enciende sin commit** (`docs/auditoria_desvios_2026-09-27.md`). Deja las tareas **231**, **232** y **233**, las tres MEDIA o menos; mapeo uno a uno en el §5 del informe.
+- **WIP 170 — Corrida `/audit desvios` CERRADA 2026-09-27 — el motor vivo no tiene conducta sin declarar; el agujero está en lo que se enciende sin commit** (`614cf61`; `docs/auditoria_desvios_2026-09-27.md`). Deja las tareas **231**, **232** y **233**, las tres MEDIA o menos; mapeo uno a uno en el §5 del informe.
   - **Por qué ahora:** la cola estaba en la 206, bloqueada, y desde el 2026-09-11 el motor había cambiado de contabilidad (222) y ganado un camino de precio condicional (201).
   - **El hallazgo que más importa es de un guard, no del motor.** El de la 185 descubre las **claves** pero enumera los **archivos**, y la segunda opinión —que Chapa tiene pendiente prender— vive en `data/yahoo_finance.py`, afuera. Se midió con las funciones del propio guard importadas, no copiadas, para que la única variable fuera el conjunto de archivos.
   - **Un «ya declarado» que no lo estaba:** la edad mínima de la venta por señal figura como cubierta por `reentry_gates`, cuyo texto no la nombra, y el harness la modela con un literal que coincide con el vivo por casualidad.
