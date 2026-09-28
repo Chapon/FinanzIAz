@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 172 — Tarea 232 (MIN-AGE-SIN-ESPEJO) CERRADA 2026-09-28 — el Gate 2b del harness lee los espejos, y la prueba que importa es la del caso DEGENERADO** (`analysis/harness_config.py`, `analysis/scaleout_replay.py`, `tests/test_espejos_vivos_t130.py`, `tests/test_espejos_direccion_faltante_t185.py`, `tests/test_signal_exit_delay_t219.py`, `tests/test_min_age_espejo_t232.py` **nuevo**).
+- **WIP 172 — Tarea 232 (MIN-AGE-SIN-ESPEJO) CERRADA 2026-09-28 — el Gate 2b del harness lee los espejos, y la prueba que importa es la del caso DEGENERADO** (`0547c8f`; `analysis/harness_config.py`, `analysis/scaleout_replay.py`, `tests/test_espejos_vivos_t130.py`, `tests/test_espejos_direccion_faltante_t185.py`, `tests/test_signal_exit_delay_t219.py`, `tests/test_min_age_espejo_t232.py` **nuevo**).
   - **Espejo `LIVE_SIGNAL_SELL_MIN_AGE_BDAYS = 3`** en la tabla de la 130, y la clave sale de `SIN_ESPEJO` de la 185, donde figuraba «ya declarada por `reentry_gates`», una clave que sólo nombra los Gates 5/5b.
   - **`ScaleOutParams` lee los dos espejos** en vez de repetir `3` y `0.25`. El del bypass existía desde la 219 y el default no lo leía: el guard de la 130 verificaba un espejo que el harness no usaba.
   - **Por qué el test es por AST y no por igualdad:** hoy literal y espejo valen lo mismo, así que `ScaleOutParams().min_age_bdays == LIVE_...` pasa **con el defecto puesto**. Las mutaciones M1 y M2 son exactamente ese caso —devolver el literal igual al vivo— y las dos quedan rojas.
