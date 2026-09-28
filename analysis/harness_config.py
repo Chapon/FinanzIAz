@@ -154,8 +154,9 @@ LIVE_VOL_OVERLAY_ENABLED = True
 LIVE_VOL_TARGET_ANNUAL = 0.12
 
 # Escalado por régimen R2b (tarea 95). En risk-off las BUY entran a un cuarto del
-# tamaño. **Nunca disparó en vivo** —0 de 62 BUY filled— pero **15,96%** de las
-# ruedas de la ventana del harness son risk-off, así que sí muerde en backtest.
+# tamaño. **Nunca disparó en vivo** —0 de 80 BUY filled al 2026-09-27 (eran 0 de 62
+# cuando se escribió; tarea 233)— pero **15,96%** de las ruedas de la ventana del
+# harness son risk-off, así que sí muerde en backtest.
 #
 # **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
 # Chapa)**, así que el número de la T20 que este comentario citaba (+0,59 pp de
@@ -234,6 +235,47 @@ LIVE_EARNINGS_BLACKOUT_DAYS = 2
 # vivas lo dispararon»*. Medido por la tarea 129 el 2026-09-09: sobre los 128 del
 # universo vivo el screen **no excluye a nadie**, así que hoy la brecha es de cero.
 LIVE_UNIVERSE_SCREEN_ENABLED = True
+# Sus dos patas — Tarea 233. El texto del desvío decía *«dropea por ADV$/fragilidad
+# fundamental»* con el piso de ADV$ en **0**, que en `UniverseThresholds` es *«0
+# disables the liquidity leg»*: el texto lo respaldaba el código y lo desmentía el
+# valor vivo de una sub-perilla. Ahora el texto se deriva de estos dos espejos, que
+# `tests/test_espejos_vivos_t130.py` compara contra el settings vivo.
+LIVE_UNIVERSE_MIN_ADV_DOLLARS = 0.0
+LIVE_UNIVERSE_FUNDAMENTALS_ENABLED = True
+
+
+def universe_screen_patas() -> tuple[str, ...]:
+    """Las patas del screen E1b que corren en vivo, según los espejos.
+
+    Mismas condiciones que ``paper_trading.universe.screen_candidate``: la de liquidez
+    sólo con un piso ``> 0``, la fundamental sólo con su master switch.
+    """
+    patas = []
+    if LIVE_UNIVERSE_MIN_ADV_DOLLARS > 0:
+        patas.append(f"ADV$ por debajo de {LIVE_UNIVERSE_MIN_ADV_DOLLARS:,.0f} USD")
+    if LIVE_UNIVERSE_FUNDAMENTALS_ENABLED:
+        patas.append("fragilidad fundamental (EDGAR: pérdidas sostenidas y casi sin revenue)")
+    return tuple(patas)
+
+
+def universe_screen_desc() -> str:
+    """El texto de la clave ``universe_screen``, derivado de las patas vivas (tarea 233)."""
+    patas = universe_screen_patas()
+    if patas:
+        que = "en vivo dropea candidatos de BUY por " + " o por ".join(patas)
+        if len(patas) == 1:
+            que += " (la única pata encendida)"
+        que += " antes de que el motor los mire, y el harness entra en todos"
+    else:
+        que = "en vivo está encendido con sus dos patas apagadas, así que no dropea a nadie"
+    return (
+        f"NO se modela el screen de universo E1b (encendido en vivo el 2026-09-07): {que}. "
+        "Es un drop DINÁMICO "
+        "por scan, así que el desvío de tamaño del universo no lo cubre. Medido sobre los "
+        "128 del universo vivo (T129, 2026-09-09): hoy no excluye a nadie, así que la "
+        "brecha es de CERO — pero eso depende de los datos de EDGAR, no del código"
+    )
+
 
 # Cap de liquidez por ADV, Gate 3b — Tarea 184 (ADVCAP-SIN-DECLARAR).
 #
@@ -2269,23 +2311,14 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
         _add(
             "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
-            f"risk-off): 0 de 62 BUY vivas lo dispararon, pero el 15.96% de las ruedas de "
+            f"risk-off): 0 de 80 BUY vivas lo dispararon al 2026-09-27, pero el 15.96% de las ruedas de "
             f"la ventana son risk-off. Vale +0.93pp de CAGR y −4.5pp de maxDD (T115, el "
             f"factor vivo desde el 2026-09-07; el +0.59pp/−2.5pp que decía antes era de "
             f"×0.50, que ya no corre)",
         )
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
-        _add(
-            "universe_screen",
-            "NO se modela el screen de universo E1b (encendido en vivo el 2026-09-07): "
-            "en vivo dropea candidatos de BUY por ADV$/fragilidad fundamental antes de "
-            "que el motor los mire, y el harness entra en todos. Es un drop DINÁMICO "
-            "por scan, así que el desvío de tamaño del universo no lo cubre. Medido "
-            "sobre los 128 del universo vivo (T129, 2026-09-09): hoy no excluye a "
-            "nadie, así que la brecha es de CERO — pero eso depende de los datos de "
-            "EDGAR, no del código",
-        )
+        _add("universe_screen", universe_screen_desc())
     # Tarea 184 — prendido en vivo, sin modelar, e inerte en la muestra de hoy.
     if LIVE_ADV_CAP_PCT > 0:
         _add("adv_cap", adv_cap_desc())
@@ -2310,9 +2343,11 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
             f"hay fechas de earnings point-in-time a 10 años",
         )
-    # Tarea 220 — INCONDICIONAL: no depende de `cfg` ni de ningún flag. El harness no
-    # tiene forma de no cobrarlos (las barras vienen ajustadas) y el motor no tiene forma
-    # de cobrarlos (no los mira). Se declara siempre, hasta que la 221 lo cierre.
+    # Tarea 220 — INCONDICIONAL: no depende de `cfg` ni de ningún flag. Desde la 222 los
+    # dos lados cobran: el harness REINVIERTE (las barras vienen ajustadas) y el motor
+    # acredita a la caja al ex-date, que queda quieta hasta la compra siguiente. El
+    # desvío no se cerró, se re-describió (tarea 233: este comentario seguía diciendo
+    # que el motor no los mira).
     _add("dividendos", dividendos_desc())
     if cfg.per_trade:
         _add("reentry_gates_no_cartera", REENTRY_GATES_NO_CARTERA_DESC)

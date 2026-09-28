@@ -67,6 +67,9 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     ("LIVE_STOP_MULT", "atr_stop_mult"),
     ("LIVE_TRAIL_MULT", "atr_trail_mult"),
     ("LIVE_UNIVERSE_SCREEN_ENABLED", "paper_universe_screen_enabled"),
+    # Tarea 233 — sus dos patas: el texto de `universe_screen` se deriva de éstas.
+    ("LIVE_UNIVERSE_MIN_ADV_DOLLARS", "paper_universe_min_adv_dollars"),
+    ("LIVE_UNIVERSE_FUNDAMENTALS_ENABLED", "paper_universe_fundamentals_enabled"),
     ("LIVE_ADV_CAP_PCT", "paper_adv_cap_pct"),
     ("LIVE_VOL_OVERLAY_ENABLED", "vol_overlay_enabled"),
     ("LIVE_VOL_TARGET_ANNUAL", "vol_target_portfolio_annual"),

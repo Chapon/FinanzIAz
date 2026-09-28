@@ -177,6 +177,19 @@ no se cuenta nada.
 (`analysis/harness_config.py`, `portfolio_sim`, `replay_cycle`), y buscar dónde difieren sin
 que el banner lo diga.
 
+**Y los textos de lo que SÍ está declarado se contrastan contra el valor vivo, no sólo contra
+el código (tarea 233).** La corrida del 2026-09-11 leyó cada texto de desvío contra el código
+y escribió *«ninguno afirma algo que el código contradiga»*, que era cierto y no alcanzaba: el
+de `universe_screen` decía que el screen dropea *«por ADV$/fragilidad fundamental»*, y el
+código **tiene** la pata de ADV$, pero con `paper_universe_min_adv_dollars = 0.0` está
+**apagada**. Dos reglas:
+
+- Toda afirmación de un desvío sobre **lo que hace el motor** se contrasta contra el valor
+  vivo de **cada** perilla que la gobierna —las sub-perillas incluidas—, no sólo contra el
+  master switch ni contra el código.
+- Todo número que el texto presenta como **estado actual** (*«0 de 62 BUY vivas»*) lleva
+  **fecha** o se **deriva**. Sin fecha, un conteo que caducó no se distingue de uno vigente.
+
 ### D. Guards que degradan en silencio
 
 **Qué.** Fail-open sin log, `except` que traga, defaults que enmascaran, avisos que no

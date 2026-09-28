@@ -45,7 +45,13 @@ def _cfg(**kw) -> HarnessConfig:
 # pre-registro, que es la clase de defecto que la tarea 92 costó 7,16 pp de CAGR.
 _CASOS = [
     ("models_vol_overlay", "vol_overlay", "overlay de volatilidad", "todos los días"),
-    ("models_regime_scale", "regime_scale", "escalado por régimen", "0 de 62"),
+    # Tarea 233: el conteo lleva fecha — «0 de 62» sin fecha se leía como actual.
+    (
+        "models_regime_scale",
+        "regime_scale",
+        "escalado por régimen",
+        "0 de 80 BUY vivas lo dispararon al 2026-09-27",
+    ),
     ("models_earnings_blackout", "earnings_blackout", "blackout de earnings", "15.8%"),
 ]
 

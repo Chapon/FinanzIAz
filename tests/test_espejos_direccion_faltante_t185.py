@@ -161,15 +161,10 @@ SIN_ESPEJO: dict[str, str] = {
         "artefactos con `mixed_scale_frames`/`announce_mixed_scale`, no con este umbral"
     ),
     # El screen E1b: el master switch tiene espejo (131); éstos son sus parámetros.
-    "paper_universe_min_adv_dollars": (
-        "YA_DECLARADO: parámetro del screen E1b, que la clave `universe_screen` declara entero. "
-        "OJO: vale 0.0 en vivo, o sea que la pata de liquidez está APAGADA, y el texto de esa "
-        "clave todavía la nombra — eso lo corrige la tarea 233"
-    ),
-    "paper_universe_fundamentals_enabled": (
-        "YA_DECLARADO: pata fundamental del screen E1b, que la clave `universe_screen` declara "
-        "entero (el harness no modela el screen)"
-    ),
+    # `paper_universe_min_adv_dollars` y `paper_universe_fundamentals_enabled` VIVÍAN acá y
+    # SALIERON con la tarea **233**: deciden qué patas corren, y el texto de `universe_screen`
+    # nombraba la de liquidez con su piso en 0. Ahora tienen espejo y el texto se deriva.
+    # Los dos de abajo sólo calibran la pata fundamental, no la prenden ni la apagan.
     "paper_universe_min_negative_years": (
         "YA_DECLARADO: parámetro de la pata fundamental del screen E1b, declarado entero por la "
         "clave `universe_screen`"
