@@ -85,31 +85,38 @@ class AlertManager:
         este proyecto la app cerrada es el caso normal (es el tema de la tarea 196).
         Acá, en cambio, el primer chequeo del día hace el reset solo, sin importar
         cuánto estuvo apagado.
+
+        **Tres sesiones cortas, y ningún fetch con una escritura pendiente (tarea 237).**
+        Esto era una sola ``session_scope``: el re-arme hace ``UPDATE`` + ``flush()``, que
+        toma el write lock de SQLite, y después se pedían los precios con esa transacción
+        abierta. Cada ``get_current_price`` escribe ``price_cache`` por **otra** conexión,
+        así que esperaba a su propio llamador los 30 s del ``busy_timeout``, ticker por
+        ticker — 163 s medidos con las 10 alertas reales, y durante todo ese tiempo el scan
+        tampoco podía escribir (``docs/lock_arranque_t235_2026-09-28.md``). Ahora el re-arme
+        se commitea antes, los precios se piden sin transacción abierta, y los disparos se
+        marcan en una sesión aparte que no sale a la red.
         """
         triggered: list[Alert] = []
         notices: list[AlertNotice] = []
+        # (1) El re-arme va ANTES de armar el query, no después: si no, el reset recién
+        # se vería en el chequeo siguiente (120 s más tarde) y el estado que muestra la
+        # pantalla llegaría una pasada tarde. Se commitea al salir del bloque.
         with session_scope() as session:
-            # El re-arme va ANTES de armar el query, no después: si no, el reset
-            # recién se vería en el chequeo siguiente (120 s más tarde) y el estado
-            # que muestra la pantalla llegaría una pasada tarde.
             self._rearmar_dia_nuevo(session, portfolio_id)
 
-            # Pausadas (is_paused=True) no se evalúan: no consultan precio ni
-            # disparan popup/Slack (ALRT1). Comparten el query con NOTIF1.
-            query = session.query(Alert).filter(Alert.is_active.is_(True)).filter(Alert.is_paused.is_(False))
-            if portfolio_id is not None:
-                query = query.filter(Alert.portfolio_id == portfolio_id)
-            alerts = query.all()
+        # (2) Qué tickers mirar, y sus precios — sin ninguna escritura pendiente.
+        with session_scope() as session:
+            tickers = sorted({a.ticker for a in self._activas(session, portfolio_id)})
+        prices: dict[str, float] = {}
+        for ticker in tickers:  # agrupado por ticker: una llamada por nombre
+            data = get_current_price(ticker)
+            if data:
+                prices[ticker] = data["price"]
 
-            # Group by ticker to minimize API calls
-            tickers = list({a.ticker for a in alerts})
-            prices: dict[str, float] = {}
-            for ticker in tickers:
-                data = get_current_price(ticker)
-                if data:
-                    prices[ticker] = data["price"]
-
-            for alert in alerts:
+        # (3) Los disparos. Se vuelve a leer: una alerta pausada o borrada mientras se
+        # pedían los precios no tiene que disparar.
+        with session_scope() as session:
+            for alert in self._activas(session, portfolio_id):
                 price = prices.get(alert.ticker)
                 if price is None:
                     continue
@@ -139,6 +146,15 @@ class AlertManager:
         return triggered
 
     @staticmethod
+    def _activas(session, portfolio_id: int | None = None) -> list[Alert]:
+        """Las alertas a evaluar. Pausadas (is_paused=True) no se evalúan: no consultan
+        precio ni disparan popup/Slack (ALRT1). Comparten el query con NOTIF1."""
+        query = session.query(Alert).filter(Alert.is_active.is_(True)).filter(Alert.is_paused.is_(False))
+        if portfolio_id is not None:
+            query = query.filter(Alert.portfolio_id == portfolio_id)
+        return query.all()
+
+    @staticmethod
     def _rearmar_dia_nuevo(session, portfolio_id: int | None = None) -> list[Alert]:
         """Reactiva las alertas que dispararon en un día anterior (tarea 227).
 
@@ -159,10 +175,12 @@ class AlertManager:
             alert.is_active = True
         if rearmadas:
             # `SessionLocal` se construye con **autoflush=False** (``database/models``),
-            # que no es el default de SQLAlchemy: sin este flush el query de abajo sale a
-            # la DB y sigue viendo `is_active=0`, así que el re-arme recién tendría efecto
-            # en el chequeo siguiente — 120 s tarde, y con el comentario de arriba
-            # mintiendo. Lo destapó el test, no la lectura.
+            # que no es el default de SQLAlchemy: sin este flush, un query posterior en
+            # la MISMA sesión sale a la DB y sigue viendo `is_active=0`. Lo destapó el
+            # test de la 227. Desde la 237, `check_alerts` commitea el re-arme y lee en
+            # otra sesión, así que ahí ya no depende de esto; se queda para quien llame
+            # con su propia sesión. Y es lo que toma el write lock: por eso ningún fetch
+            # puede correr con esta sesión abierta.
             session.flush()
         return rearmadas
 
