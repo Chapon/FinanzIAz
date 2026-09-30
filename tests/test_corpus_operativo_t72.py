@@ -27,14 +27,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.corpus_operativo import CORPUS
+
 _REPO = Path(__file__).resolve().parent.parent
 
-# El corpus OPERATIVO: lo que se lee para decidir cómo trabajar, no los veredictos.
-_CORPUS = [
-    _REPO / "CLAUDE.md",
-    *sorted((_REPO / ".claude").rglob("*.md")),
-    _REPO / "docs" / "SETTINGS_REFERENCE.md",
-]
+# El corpus OPERATIVO: lo que se lee para decidir cómo trabajar, no los veredictos. Desde la
+# tarea 239 es UNO para los tres guards de corpus y se deriva de `CLAUDE.md`.
+_CORPUS = CORPUS
 
 # `UN_NOMBRE_ASI` entre backticks: mayúsculas con al menos un guion bajo.
 _EN_BACKTICKS = re.compile(r"`([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`")

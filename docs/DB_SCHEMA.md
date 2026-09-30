@@ -7,8 +7,8 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 ## Paper trading (`paper_trading/models.py`)
 
 ### `paper_accounts` — cuentas de simulación
-`id`, `name` (unique), `strategy` (def `analyze_single`), `mode` (`auto`/`manual`), `allocation_mode`, `max_positions` (5), `initial_capital` (50k), `cash`, `commission` (0.001), `slippage` (0.0005), `drift_threshold`, `monthly_rebalance`, `is_active`, `last_scan_at`, `slack_notify`.
-→ **Cuenta activa: "Sim Principal" (id=1)**, modo kill_only.
+`id`, `name` (unique), `description`, `strategy` (def `analyze_single`), `mode` (`auto`/`manual`), `allocation_mode`, `max_positions` (def 5), `fixed_amount` (def 5.000, sólo con `allocation_mode=fixed_amount`), `initial_capital` (50k), `cash`, `commission` (0.001), `slippage` (0.0005), `drift_threshold`, `monthly_rebalance`, `last_monthly_rebalance`, `is_active`, `last_scan_at`, `slack_notify`.
+→ La cuenta viva es la de `is_active=1` — consultala en la tabla, no la copies acá. Esta línea la afirmaba escrita a mano, y durante tres meses dijo la cuenta 1 (cerrada desde el 2026-09-13) y un «modo kill_only» que no existe: la config de modelo vive en `~/.finanzias/settings.json` (tareas 181 y 239).
 
 ### `paper_watchlist` — tickers por cuenta
 `id`, `account_id` (FK), `ticker`, `added_at`.
@@ -28,7 +28,7 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 
 Desde el 2026-09-25 el motor **acredita a la caja** el efectivo del ex-date (decisión de Chapa entre las tres salidas de la 221, con los costos medidos). Esta tabla registra **qué ya se pagó**: el scan corre varias veces por día y puede correr después de días con la app cerrada, así que sin un registro explícito el mismo ex-date se acreditaría de nuevo en cada pasada — y un doble crédito **no se lee como bug, se lee como rendimiento**. El UNIQUE va en el esquema y no en un `if`, igual que en la 0012 y la 0013.
 
-Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`: el ledger tiene que poder auditarse sin re-derivar nada desde un calendario que para entonces pudo cambiar de fila. **Sólo hacia adelante**: la tabla arranca vacía y el motor acredita desde el primer ex-date de la ventana `(último scan, hoy]`, así que los $322,77 que la cuenta 2 ya había devengado **no** se backfillean y ninguna métrica publicada cambia de base.
+Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`: el ledger tiene que poder auditarse sin re-derivar nada desde un calendario que para entonces pudo cambiar de fila. **Sólo hacia adelante**: la tabla arranca vacía y el motor acredita desde el primer ex-date de la ventana `(último scan, hoy]`, así que los $322,77 que la cuenta 2 ya había devengado al shipear la 222 (2026-09-25) **no** se backfillean y ninguna métrica publicada cambia de base.
 
 ## Núcleo / caches (`database/models.py`)
 
@@ -44,6 +44,7 @@ Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`
 | `historical_data_cache` | **VACÍA y sin escritor desde ARQ1** (2026-07-12): el cache OHLCV vive en `data/parquet/`, y la migración **0011** borró sus 288 filas el 2026-09-02. La tabla se conserva porque el backend `sqlite` sigue siendo un camino válido (`historical_cache_backend`). Leer de acá a mano fue el defecto de la tarea **218** — usá `data/historical_series.py`, que despacha por el backend activo. |
 | `earnings_cache` | Fechas de earnings. |
 | `analyst_data_cache` | Recos + price targets cacheados. |
+| `company_info_cache` | Nombre, sector e industria por ticker (UNIQUE `ticker`), para el panel de concentración del book (V2b, desde el 2026-07-08). Una fila con sector NULL/"N/A" es un resultado negativo cacheado, para no re-scrapear. |
 | `failed_tickers` | Tickers que fallan en Yahoo (`status`: failing/retry) para saltarlos. |
 
 ## Catalyst Engine — append-only point-in-time (`database/models.py`)

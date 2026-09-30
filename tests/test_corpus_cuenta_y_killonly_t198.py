@@ -35,15 +35,13 @@ import re
 from pathlib import Path
 
 from analysis.harness_config import LIVE_ACCOUNT_ID, LIVE_ACCOUNT_NAME
+from tests.corpus_operativo import CORPUS
 
 _REPO = Path(__file__).resolve().parent.parent
 
-_CORPUS = [
-    _REPO / "CLAUDE.md",
-    *sorted((_REPO / ".claude").rglob("*.md")),
-    _REPO / "docs" / "SETTINGS_REFERENCE.md",
-    _REPO / "docs" / "ARCHITECTURE.md",
-]
+# El corpus operativo, el mismo de los otros guards de corpus (tarea 239). Era una lista
+# propia sin `docs/DB_SCHEMA.md`, que afirmaba justo lo que este guard busca.
+_CORPUS = CORPUS
 
 _CITA = re.compile(r"«[^»]*»")
 _CUENTA = re.compile(r"[Cc]uenta activa:\**\s*\**\s*\"([^\"]+)\"\s*\(id=(\d+)\)")

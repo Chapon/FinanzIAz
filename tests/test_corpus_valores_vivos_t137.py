@@ -59,16 +59,13 @@ from pathlib import Path
 import pytest
 
 from config.settings_manager import DEFAULTS
+from tests.corpus_operativo import CORPUS
 
 _REPO = Path(__file__).resolve().parent.parent
 _REFERENCE = _REPO / "docs" / "SETTINGS_REFERENCE.md"
 
-# El corpus operativo, igual que en `test_corpus_operativo_t72.py`.
-_CORPUS = [
-    _REPO / "CLAUDE.md",
-    *sorted((_REPO / ".claude").rglob("*.md")),
-    _REFERENCE,
-]
+# El corpus operativo, el mismo de los otros guards de corpus (tarea 239).
+_CORPUS = CORPUS
 
 _FILA = re.compile(r"^\|\s*`([a-z0-9_]+)`\s*\|\s*`([^`]+)`", re.M)
 
@@ -100,6 +97,10 @@ _CLAIMS_EN_PRESENTE: dict[str, str] = {
     # acoplamiento —su «hoy» estaba a **2741** caracteres de los decimales que lo
     # disparaban, que son de otra regla— y con la ventana ya no casa. Lo detectó el
     # propio `test_el_registro_no_tiene_entradas_FANTASMA`, no una lectura.
+    "DB_SCHEMA.md:los $322,77": (
+        "tarea 239: el «hoy» del bloque es el extremo de la ventana de crédito «(último scan, hoy]», "
+        "no una afirmación; el número está FECHADO (lo devengado al shipear la 222, 2026-09-25)"
+    ),
     "SETTINGS_REFERENCE.md:que hoy coincide **por casualidad**": (
         "tarea 179: la fila de `atr_tp_mult` afirma que el literal del harness (4.0) coincide "
         "HOY con el valor vivo, y eso es el hallazgo, no un dato de color — es el `FALTA_ESPEJO` "
