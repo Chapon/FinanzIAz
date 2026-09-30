@@ -164,6 +164,12 @@ fuente caída de RAÍZ deja de ser invisible»*: sin `FINNHUB_API_KEY` se iba el
 el aviso de *Acciones manuales* le promete que sí. El registro de la opinión (`_record_opinion`)
 guarda `tiingo: None` igual que si Tiingo no hubiera contestado.
 
+**Alcance del impacto, verificado con Chapa después de publicar (2026-09-30):** en **esta** máquina
+las dos keys están como variables de entorno de usuario y la app viva (arrancada 14:32) las heredó,
+así que hoy la regla de tres corre. El hallazgo queda **latente**: el riesgo es otro entorno (la Pi
+de la 196), no el actual. No cambia la severidad —ya estaba marcada latente— pero sí el orden: la
+241 baja detrás de la 245.
+
 **¿Por qué no antes? (a) NO EXISTÍA** — la regla de tres es de la 206 (2026-09-28).
 
 **Acción.** Antes de prender el flag: con `price_second_opinion_enabled` ON, avisar **una vez por
