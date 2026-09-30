@@ -31,7 +31,7 @@ Nunca declarar "listo" con tests rojos, ruff en rojo, el modo sin estado vivo en
 
 Toda feature que toque decisiones de trading se diseña con **criterios de aceptación/kill ANTES de codear**. Si el backtest/replay no supera el umbral pre-registrado, se documenta y **no se shipea**. Ejemplos: `docs/exit_replay_t61_2026-06-10.md`, `docs/catalyst_t_cat_6_reeval_2026-06-12.md`. No se construyen features especulativas sin justificación medida. Roadmap debt máximo: 2 meses.
 
-Features nuevas de scoring/valuación entran primero como **display-only**, NO cableadas a sizing ni a los gates, hasta validarlas con backtest. Razón medida: la auditoría 2026-06-17 mostró que `buy_score` no predice el forward-return a 5 días.
+Features nuevas de scoring/valuación entran primero como **display-only**, NO cableadas a sizing ni a los gates, hasta validarlas con backtest. **La razón no es un coeficiente: es que no se cablea lo que no se backtesteó** (regla 3 de `CLAUDE.md`). Acá decía *«razón medida: la auditoría 2026-06-17 mostró que el `buy_score` no predice el fwd5»*, y la tarea 73 mostró que esa muestra (n=21) **no podía afirmarlo** —sólo detectaba |r| > 0.58—; re-medido con n=85 no se detecta relación, sin poder para descartar una chica (`docs/buyscore_fwd5_t73_2026-09-01.md`). La corrección llegó a `CLAUDE.md` y a `fair-value-feature` y no acá (tarea 240).
 
 ## Trampas conocidas (no repetir)
 

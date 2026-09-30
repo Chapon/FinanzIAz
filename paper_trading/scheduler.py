@@ -31,9 +31,8 @@ Independent triggers, all gated by user settings:
 
 5. **Daily catalyst refresh** (``catalyst_refresh_on_open``, default on) —
    harvest (T-CAT-1) + classify (T-CAT-2) in-process, primera vez que la app
-   abre en el día. El Task Scheduler nocturno (18:30 ART) sigue existiendo,
-   pero las noticias dan ventaja DURANTE el día: este trigger garantiza datos
-   frescos a la mañana sin depender de aquel. Idempotente (content_hash +
+   abre en el día. Es **el único** que corre el pipeline completo: desde el 2026-07-12 no hay ninguna tarea del Task Scheduler de Windows (se removieron al pasar todo in-app; verificado con `Get-ScheduledTask` el 2026-09-30, tarea 240),
+   así que con la app cerrada no hay harvest ni classify. Idempotente (content_hash +
    UPDATE solo de filas NULL) y gated: corre a lo sumo una vez por día
    calendario y solo si ``refresh_due`` (sin harvest hoy, o backlog sin
    clasificar). Emite ``catalyst_refresh_completed`` para que la UI refresque
@@ -42,8 +41,9 @@ Independent triggers, all gated by user settings:
 6. **Hourly catalyst harvest** (``catalyst_hourly_harvest_enabled``, default
    on; ``catalyst_hourly_harvest_minutes``, default 60, piso 15) — tarea 10,
    decisión de Chapa 2026-07-07: el harvest intradía es responsabilidad de la
-   app (solo corre con la app abierta), Windows Task Scheduler corre solo el
-   pipeline completo de las 15:00. Rides el tick por minuto del daily timer:
+   app (solo corre con la app abierta); el pipeline completo lo corre el
+   refresh diario de arriba (el Task Scheduler que lo hacía ya no existe,
+   tarea 240). Rides el tick por minuto del daily timer:
    durante RTH lanza un harvest-only (sin classify → sin GPU) cada N minutos.
    Caso motivador: TSLA 2026-07-06, noticia publicada 14:45 ET ingresada
    19:05 por el run único diario.

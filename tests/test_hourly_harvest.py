@@ -1,8 +1,9 @@
 """Tests del harvest horario in-app (tarea 10) — gate puro ``hourly_harvest_due``.
 
 La decisión de Chapa 2026-07-07: el harvest intradía corre SOLO con la app
-abierta (rides el tick por minuto del PaperScheduler); Windows Task Scheduler
-queda únicamente con el pipeline completo diario de las 15:00.
+abierta (rides el tick por minuto del PaperScheduler). El pipeline completo diario lo
+corre el refresh in-app de la primera apertura del día: la tarea del Task Scheduler de
+las 15:00 se removió el 2026-07-12 (tarea 240).
 """
 
 from datetime import datetime, timedelta

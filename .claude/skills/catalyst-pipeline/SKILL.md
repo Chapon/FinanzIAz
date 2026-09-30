@@ -46,15 +46,21 @@ python scripts/classify_catalysts.py --reclassify
 
 **La cadencia sale del artefacto (tarea 160).** El scheduler regenera cada `surprise_build_interval_days` (default 7) contando desde el `_meta.built_at` del propio JSON — `analysis.surprise_score.last_build_iso`. Antes la marca vivía en `settings['surprise_last_build']`, así que **correr el script a mano no reseteaba el reloj**; ahora sí. Y si el artefacto no está, corresponde rebuild (antes el scheduler esperaba la semana igual). La ruta la declara `analysis.surprise_score.PROFILES_PATH`: el que escribe y el que lee tienen que hablar del mismo archivo.
 
-**Caveat**: yfinance da el estimate *actual* por trimestre, no el consenso del día previo al print → sesgo de revisión/look-ahead. Es bootstrap. La forma final (T-CAT-5b, consenso point-in-time desde `analyst_estimate_snapshots`) está **BLOQUEADA hasta ~fines jul 2026** por falta de datos acumulados (necesita ≥1 temporada capturada, ~40 pares).
+**Caveat**: yfinance da el estimate *actual* por trimestre, no el consenso del día previo al print → sesgo de revisión/look-ahead. Es bootstrap. La forma final (T-CAT-5b, consenso point-in-time desde `analyst_estimate_snapshots`) está **BLOQUEADA** por falta de datos acumulados (necesita ≥1 temporada capturada, ~40 pares). La fecha vive en *Bloqueado* del backlog —acá decía *«hasta ~fines jul 2026»*, y el hueco del 25/07 al 08/08 la corrió a la temporada Q3—; no se copia acá para que no vuelva a caducar.
 
 ## Reacción histórica
 
 `scripts/build_historical_reaction.py` — forward returns por `event_type` (point-in-time, entry primer día hábil). Módulo `analysis/catalyst_reaction.py`.
 
-## Scheduler diario
+## Scheduler: corre ADENTRO de la app
 
-`scripts/daily_catalyst_harvest.bat` corre vía Task Scheduler de Windows. **El .bat DEBE tener CRLF** o muere en silencio (ver `finanzias-conventions`). Es lo que hace avanzar el reloj de T-CAT-5b — confirmar periódicamente que corre (verificado funcionando 2026-06-09).
+**Desde el 2026-07-12 no hay ninguna tarea del Task Scheduler de Windows** (verificado con `Get-ScheduledTask` el 2026-09-30, tarea 240). Acá decía que `daily_catalyst_harvest.bat` corría vía Task Scheduler y mandaba a *«confirmar periódicamente que corre»*: no había nada que confirmar. Todo corre en `paper_trading/scheduler.py`, **sólo con la app abierta**:
+
+- **Refresh diario** — la primera apertura del día corre harvest + classify.
+- **Harvest horario** — durante RTH, harvest-only cada `catalyst_hourly_harvest_minutes` (default 60).
+- **Rebuild de surprise** — cada `surprise_build_interval_days`, con backoff tras un fallo (tarea 197).
+
+Para diagnosticar, mirar en `~/.finanzias/finanzias.log` las líneas `Harvest: X/Y tickers …` (ver arriba) y `hourly catalyst harvest done`. **App cerrada = no se captura nada**, y eso es lo que frena el reloj de T-CAT-5b: la solución de fondo es la recolección en la Pi (tarea 196, y la 245 para sincronizar lo que falte). `scripts/daily_catalyst_harvest.bat` sigue en el repo y se puede correr a mano; **si se vuelve a programar, tiene que tener CRLF** o `cmd.exe` lo mata en silencio (ver `finanzias-conventions`).
 
 ## Estado de los gates
 

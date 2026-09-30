@@ -442,6 +442,36 @@ eligió una celda distinta cada vez porque estaba leyendo ruido.** Doc:
    T170 escribió «NO MOVER» en el pre-registro y exigió **todas** las condiciones para el cambio: así
    *no mover* queda medido y no es inercia.
 
+## Demorar la salida por señal (Gate 2b) está CERRADO — y `stop_mult=0.0` NO apaga el stop (T219)
+
+Antes de pre-registrar otro barrido de `paper_signal_sell_min_age_bdays` o de la demora de la venta
+por señal, leer esto. **Veredicto: NO-SHIP, ningún brazo pasa, eje cerrado.** El efecto es real,
+grande y monótono en la muestra completa, pero se compra con tiempo de tenencia, sube el drawdown en
+los brazos que más ganan y **se da vuelta en las ventanas de stress**: la misma forma que mató al
+brazo C_A4 de la T7, replicada sobre otra perilla y otra población. Doc:
+`docs/signal_exit_delay_t219_2026-09-22.md`.
+
+**La trampa, que produjo un primer intento decidible y FALSO.** `stop_mult=0.0` no es «stop
+apagado»: pone el stop **en el precio de entrada**, y dispara ante cualquier baja. El centinela de
+«sin stop» es `_NO_STOP = 1e9` (`analysis/scaleout_replay.py`). El intento inválido dio 8.838 trades
+de 1,6 días y CAGR del baseline −17,89% —contra 2.531 trades y +8,78% en la corrida válida— y **los
+sanity de oráculo y contabilidad pasaban**, con Δ entre brazos razonables y una curva monótona. Lo
+cazó comparar el baseline contra un número **ya publicado** (el `soff_t2.0` de la T170). Dos reglas:
+
+1. **Para apagar una barrera, usá el centinela del módulo, nunca `0.0`.**
+2. **Todo runner nuevo ancla su baseline a un número publicado del mismo brazo** cuando existe:
+   es el único sanity que ve un brazo mal configurado que sigue siendo coherente consigo mismo.
+
+## La reconciliación vivo ↔ harness por equity NO es decidible con la muestra de la cuenta (T220)
+
+Antes de pedir *«corré el harness sobre la ventana de la cuenta y compará la equity»*: la ventana de
+la cuenta 2 atraviesa **tres configuraciones** (stop duro ON hasta el 2026-08-26, factor de régimen
+0,50 hasta el 2026-09-06, screen de universo desde el 2026-09-07), y el tramo más largo tiene **43**
+round-trips. Con esa muestra sólo se detectan desvíos de equity mayores a ~7,6%, y el de la T33 —que
+dio vuelta un veredicto— valía ~1,2 pp en un trimestre. **Lo que sí funcionó fue buscar el desvío
+por mecanismo**, no por resultado: así apareció el de dividendos (2,54%/año, que pasó a ser la
+clave `dividendos` de `deviations_keyed()`). Doc: `docs/reconciliacion_vivo_harness_t220_2026-09-21.md`.
+
 ## El control IGUALADO EN TASA es lo que convierte un descriptivo en veredicto (T26 → T49)
 
 Cuando un brazo **elige un subconjunto** —qué stops saltear (T26), a qué candidatos darles el

@@ -3,8 +3,9 @@ T-CAT-0 harvester — daily point-in-time ingest of news + analyst consensus.
 
 Sprint 5 · Catalyst Intelligence Engine · gate cero.
 
-Runs once per day (recommended: ~16:30 ET via Windows Task Scheduler, decoupled
-from the trading scans). Idempotent: re-running the same day adds no duplicates.
+Runs in-app: the daily refresh on the first launch of the day and the hourly
+harvest during RTH (``paper_trading/scheduler.py``). There is no Windows Task
+Scheduler job since 2026-07-12 (tarea 240); it can still be run by hand. Idempotent: re-running the same day adds no duplicates.
 It only writes the two append-only tables ``news_events`` and
 ``analyst_estimate_snapshots`` — no alpha, no classification, no scoring. The
 whole point is that *tomorrow there is one more day of point-in-time data than

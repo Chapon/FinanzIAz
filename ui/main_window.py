@@ -144,8 +144,8 @@ class MainWindow(QMainWindow):
         self.paper_scheduler.scan_started.connect(self._on_paper_scan_started)
         self.paper_scheduler.scan_completed.connect(self._on_paper_scan_completed)
         self.paper_scheduler.scan_failed.connect(self._on_paper_scan_failed)
-        # Daily catalyst refresh (noticias frescas a la mañana, sin esperar al
-        # Task Scheduler nocturno de las 18:30).
+        # Daily catalyst refresh: la primera apertura del día corre harvest +
+        # classify (desde el 2026-07-12 no hay Task Scheduler que lo haga, tarea 240).
         self.paper_scheduler.catalyst_refresh_started.connect(self._on_catalyst_refresh_started)
         self.paper_scheduler.catalyst_refresh_completed.connect(self._on_catalyst_refresh_completed)
         self.paper_scheduler.catalyst_refresh_failed.connect(self._on_catalyst_refresh_failed)

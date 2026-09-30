@@ -385,8 +385,9 @@ def default_window(days: int = 1, *, now: datetime | None = None) -> tuple[datet
 
 # ── 4) In-app daily refresh (PaperScheduler trigger) ─────────────────────────
 #
-# Las noticias dan ventaja DURANTE el día, pero el Task Scheduler de Windows
-# corre a las ~18:30 ART. Estos helpers soportan el trigger in-app (mismo
+# Las noticias dan ventaja DURANTE el día. Estos helpers soportan el trigger in-app
+# —que desde el 2026-07-12 es el único: no queda ninguna tarea del Task Scheduler
+# de Windows (tarea 240)— (mismo
 # patrón que el surprise rebuild semanal): la primera vez que la app abre en
 # el día, lanza harvest + classify en un worker. Todo idempotente: el
 # harvester de-dupea por content_hash y el classifier solo toca filas NULL.
@@ -425,8 +426,8 @@ def run_catalyst_harvest_only(*, harvest_main=None) -> dict:
     """
     Corre SOLO el harvest (T-CAT-1) in-process, sin classify — para el harvest
     horario in-app del PaperScheduler (tarea 10): noticias frescas durante RTH
-    sin tocar la GPU cada hora. El classify pesado corre 1x/día (Task Scheduler
-    15:00 y/o el refresh diario in-app).
+    sin tocar la GPU cada hora. El classify pesado corre 1x/día, en el refresh
+    diario in-app (el Task Scheduler de las 15:00 ya no existe, tarea 240).
 
     Mismas fuentes que el .bat (yfinance, sec, finnhub — el collector de
     finnhub se saltea solo si falta FINNHUB_API_KEY). ``harvest_main``
