@@ -301,13 +301,19 @@ SCHEMA: dict[str, SettingSpec] = {
         bool,
         False,
         doc=(
-            "Task 127. When True, a price that is out of band against a DISPUTED cached "
-            "reference gets a second opinion from an independent provider before being "
-            "accepted. If the independent source backs the reference, the price is "
-            "rejected (the KLAC case). OFF = current behaviour: such a price is accepted, "
-            "because blocking on a doubtful reference leaves the position with no exit. "
-            "Only runs on the exception path; the result is memoised so the engine guard "
-            "benefits without hitting the network mid-fill."
+            "Tasks 127/201/206/241. When True, a price that is out of band against a "
+            "DISPUTED cached reference goes to a vote of THREE prices: Yahoo's, Finnhub's "
+            "and Tiingo's (the cached close does not vote: it is Yahoo's too). If both "
+            "independent sources agree with each other and not with Yahoo, the majority "
+            "wins -- whether or not it backs the cached close -- and the scan uses that "
+            "price: stops fire, signal SELLs wait for manual approval, BUYs are blocked "
+            "(the KLAC case). No majority -> no price that scan. Only one source answering "
+            "falls back to the two-source rule; none -> Yahoo's price is accepted. A source "
+            "without its API key (FINNHUB_API_KEY / TIINGO_API_KEY) is logged once per "
+            "process. OFF = such a price is accepted, because blocking on a doubtful "
+            "reference leaves the position with no exit. Only runs on the exception path; "
+            "the result is memoised so the engine guard benefits without hitting the "
+            "network mid-fill."
         ),
     ),
     "paper_vol_penalty_coef": SettingSpec(

@@ -1049,6 +1049,9 @@ def _arbitrate_price(
 
         return arbitrate_votes(float(price), float(reference), opiniones, band=_price_sanity_band())
     except Exception:
+        # Tarea 241: la conducta no cambia (sin veredicto, el guard queda como estaba), pero
+        # deja de ser muda — si no, una regla rota era indistinguible de «no hubo disputa».
+        log.exception("segunda opinión: la regla de mayoría falló — sin veredicto, se acepta el precio")
         return "sin_opinion", None
 
 
@@ -1099,8 +1102,8 @@ def _record_opinion(
 def price_dispute(ticker: str) -> dict | None:
     """El último veredicto de la segunda opinión para el ticker, si sigue vigente.
 
-    ``verdict`` es ``"reference"`` (el precio de Yahoo es el podrido), ``"ninguno"``
-    (la fuente independiente no coincide con ninguno) o ``"price"``. Copia, para que
+    ``verdict`` es ``"reference"`` (la mayoría contradice al precio de Yahoo), ``"ninguno"``
+    (sin mayoría: los tres precios discrepan) o ``"price"`` (tarea 206). Copia, para que
     nadie mute el registro.
     """
     with _opinion_log_lock:

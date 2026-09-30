@@ -46,6 +46,8 @@ _DEFINICION = re.compile(r"^\s*([A-Z][A-Z0-9_]+)\s*[:=]", re.M)
 # por qué (mismo criterio que `ARTIFACT_REFRESH_EXCEPTIONS` de la tarea 30).
 _NO_SON_CONSTANTES: dict[str, str] = {
     "FINNHUB_API_KEY": "variable de entorno que lee el harvest; no vive en el código",
+    "FINNHUB_TOKEN": "variable de entorno alternativa de Finnhub, la lee la segunda opinión (tarea 241)",
+    "TIINGO_API_KEY": "variable de entorno de Tiingo, la lee la segunda opinión (tareas 206 y 241)",
     "SLACK_BOT_TOKEN": "variable de entorno del notificador; no vive en el código",
     "SLACK_CHANNEL": "variable de entorno del notificador; no vive en el código",
     "FINANZIAS_BLOQUEAR_RED": (

@@ -1622,12 +1622,17 @@ def _maybe_notify_slack(
 
 # ── Segunda opinión en el scan — tarea 201 ───────────────────────────────────
 #
-# Decisión de Chapa (2026-09-13), para una posición cuyo precio de Yahoo vino fuera de
-# banda con los frames cacheados en disputa:
-#   · la fuente independiente respalda el CIERRE GUARDADO → el scan usa su precio; los
-#     stops salen solos; una venta por señal queda pendiente de aprobación, y avisa;
-#   · no coincide con NINGUNO → sin precio ese scan, y avisa con los tres precios;
-#   · respalda el precio de Yahoo, o no contesta → como siempre.
+# Decisiones de Chapa (2026-09-13 y, con tres fuentes, 2026-09-28 — tareas 201 y 206), para
+# una posición cuyo precio de Yahoo vino fuera de banda con los frames cacheados en disputa.
+# Votan TRES precios —Yahoo, Finnhub y Tiingo—; el cierre guardado no vota, porque también
+# es de Yahoo y es lo que está en disputa (`data.providers.arbitrate_votes`):
+#   · las dos externas coinciden entre sí y no con Yahoo → manda la mayoría, **avalen o no
+#     el cierre guardado**: el scan usa ese precio; los stops salen solos; una venta por
+#     señal queda pendiente de aprobación, las compras se bloquean, y avisa;
+#   · sin mayoría (los tres discrepan) → sin precio ese scan, y avisa con lo de cada fuente;
+#   · Yahoo coincide con alguna externa, o no contesta ninguna → como siempre;
+#   · contesta una sola externa → la regla de DOS fuentes de la 127/201 (¿a quién respalda:
+#     al precio o al cierre guardado?), degradado a propósito y avisado (tarea 241).
 # Todo esto existe sólo con `price_second_opinion_enabled`: con el flag apagado el
 # registro de veredictos queda vacío y `_scan_price_disputes` devuelve {}.
 
@@ -1671,10 +1676,20 @@ def _scan_price_disputes(tickers: list[str], prices: dict[str, float]) -> dict[s
 
 
 def _dispute_note(d: dict) -> str:
+    # Tarea 241: con tres fuentes, «la fuente independiente» ya no es una. Se nombra lo que
+    # dijo cada una; sin ese detalle (registros anteriores a la 206), el precio que se usó.
+    opiniones = d.get("opiniones") or {}
+    if opiniones:
+        externas = ", ".join(
+            f"{f} {px:.2f}" if px is not None else f"{f} sin respuesta" for f, px in opiniones.items()
+        )
+        quien = f"las fuentes independientes dicen {externas}"
+    else:
+        quien = f"la fuente independiente dice {d['independent']:.2f}"
     return (
         f"{DISPUTE_NOTE_TAG} Yahoo dio {d['price']:.2f}, el cierre guardado es {d['reference']:.2f} y "
-        f"la fuente independiente dice {d['independent']:.2f}: el precio de Yahoo se descartó y la "
-        "venta espera tu aprobación. Al aprobar se vuelve a pedir el precio."
+        f"{quien}: el precio de Yahoo se descartó y la venta espera tu aprobación "
+        f"(se usa {d['independent']:.2f}). Al aprobar se vuelve a pedir el precio."
     )
 
 

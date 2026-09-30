@@ -365,12 +365,49 @@ def tiingo_quote(ticker: str, *, timeout: float = 10.0, api_key: str | None = No
     return px if px > 0 else None
 
 
+# Tarea 241 — las variables de entorno de cada fuente de ``QUOTE_SOURCES``. Sin la key, la
+# fuente devuelve ``None`` igual que si no hubiera contestado, y la regla de tres cae a la de
+# dos (o a ``sin_opinion``, que acepta el precio de Yahoo) **sin decirlo**: la forma que la 217
+# le sacó al harvest, acá en el camino de precios.
+QUOTE_SOURCE_KEYS: dict[str, tuple[str, ...]] = {
+    "finnhub": ("FINNHUB_API_KEY", "FINNHUB_TOKEN"),
+    "tiingo": ("TIINGO_API_KEY",),
+}
+
+# Las fuentes cuya falta de key ya se avisó en este proceso: una vez, no en cada disputa.
+_sin_key_avisadas: set[str] = set()
+
+
+def fuentes_sin_key() -> list[str]:
+    """Las fuentes de ``QUOTE_SOURCES`` sin ninguna de sus variables de entorno."""
+    return [f for f in QUOTE_SOURCES if not any(os.environ.get(v) for v in QUOTE_SOURCE_KEYS.get(f, ()))]
+
+
+def _avisar_fuentes_sin_key() -> None:
+    nuevas = [f for f in fuentes_sin_key() if f not in _sin_key_avisadas]
+    if not nuevas:
+        return
+    _sin_key_avisadas.update(nuevas)
+    faltan = ", ".join(f"{f} (sin {' ni '.join(QUOTE_SOURCE_KEYS[f])})" for f in nuevas)
+    quedan = len(QUOTE_SOURCES) - len(fuentes_sin_key())
+    efecto = (
+        "ninguna fuente independiente: la segunda opinión no puede votar y el precio de Yahoo se acepta"
+        if quedan == 0
+        else "queda una sola fuente independiente: la regla de TRES cae a la de DOS"
+    )
+    log.warning("Segunda opinión — FUENTE NO DISPONIBLE: %s. %s (tarea 241).", faltan, efecto)
+
+
 def second_opinions(ticker: str, *, timeout: float = 10.0) -> dict[str, float | None]:
     """El precio actual según **cada** fuente de ``QUOTE_SOURCES``: cuál contestó qué.
 
     ``None`` para la que no contestó. Las funciones se resuelven al llamar (no al importar)
     para que un stub de ``second_opinion`` en un test siga surtiendo efecto.
+
+    Una fuente **sin key** se avisa una vez por proceso (tarea 241) y se consulta igual: la
+    función devuelve ``None`` sola, y un stub de test sigue surtiendo efecto.
     """
+    _avisar_fuentes_sin_key()
     consultas = {"finnhub": second_opinion, "tiingo": tiingo_quote}
     out: dict[str, float | None] = {}
     for fuente in QUOTE_SOURCES:
