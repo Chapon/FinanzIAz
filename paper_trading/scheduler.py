@@ -58,6 +58,11 @@ Independent triggers, all gated by user settings:
    8:00 — ahora solo con la app abierta. Puramente local (sin red); no-op
    silencioso si la DB o el artifact no existen en la máquina.
 
+8. **Daily intraday-tape archive** (``price_tape_archive_enabled``, default on) —
+   tarea 244. 1×/día calendario al abrir la app (y el tick diario pasada la
+   medianoche) archiva a Parquet la cinta de ``price_cache`` más vieja que 7
+   días, con el invariante de la 81: escribir → verificar → borrar.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -310,6 +315,44 @@ class CatalystHarvestWorker(QThread):
             self.harvest_failed.emit(f"{type(e).__name__}: {e}")
 
 
+def price_tape_archive_due(*, enabled: bool, today: date, last: date | None, worker_running: bool) -> bool:
+    """¿Toca archivar la cinta intradía de ``price_cache``? (tarea 244) — pura, testeable offline.
+
+    Una vez por día calendario, la primera vez que la app lo chequea. El día se estampa
+    **antes** de lanzar, así que un fallo reintenta al día siguiente y no en cada tick por
+    minuto: el archivador no borra nada que no haya verificado en el Parquet, así que un
+    fallo no pierde datos, sólo posterga el archivo.
+    """
+    if not enabled or worker_running:
+        return False
+    return last != today
+
+
+class PriceTapeArchiveWorker(QThread):
+    """Archiva la cinta intradía de ``price_cache`` a Parquet fuera del UI thread (tarea 244).
+
+    La tarea 81 decidió **archivar, no podar** —es la única serie intradía del proyecto— pero
+    dejó el archivador como script manual, y corrió una sola vez: el 2026-09-02. Para el
+    2026-09-30 la tabla había vuelto a ~200k filas sin archivar. Esto lo corre 1×/día con el
+    mismo invariante del script: **escribir → releer los ids → recién ahí borrar**.
+    Emits ``archive_completed(resumen)`` or ``archive_failed(error)``.
+    """
+
+    archive_completed = pyqtSignal(object)  # dict de archivar()
+    archive_failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from database import models
+            from scripts.archive_price_cache import DEFAULT_KEEP_DAYS, archivar
+
+            # La ruta se lee al correr, no al importar: es la que `FINANZIAS_DB_PATH`
+            # redirige (tarea 108), y en la suite apunta a la DB temporal.
+            self.archive_completed.emit(archivar(models.DB_PATH, DEFAULT_KEEP_DAYS))
+        except Exception as e:
+            self.archive_failed.emit(f"{type(e).__name__}: {e}")
+
+
 class DashboardRefreshWorker(QThread):
     """Regenera el snapshot del dashboard fuera del UI thread (trigger 7).
 
@@ -384,8 +427,8 @@ class PaperScheduler(QObject):
         self._last_catalyst_refresh: date | None = None
 
         # Hourly harvest-only refresh durante RTH (tarea 10) — solo con la app
-        # abierta, por decisión de Chapa 2026-07-07 (Windows corre únicamente
-        # el pipeline completo de las 15:00).
+        # abierta, por decisión de Chapa 2026-07-07. (Decía que Windows corría el
+        # pipeline completo de las 15:00: esa tarea ya no existe, tarea 240/244.)
         self._hourly_harvest_worker: CatalystHarvestWorker | None = None
         self._last_hourly_harvest: datetime | None = None
 
@@ -394,6 +437,10 @@ class PaperScheduler(QObject):
         # de la cuenta del dashboard. Reemplaza la tarea del Task Scheduler.
         self._dashboard_worker: DashboardRefreshWorker | None = None
         self._last_dashboard_refresh: date | None = None
+
+        # Archivo diario de la cinta intradía de price_cache (tarea 244).
+        self._tape_worker: PriceTapeArchiveWorker | None = None
+        self._last_tape_archive: date | None = None
 
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
@@ -437,6 +484,10 @@ class PaperScheduler(QObject):
         # tick diario re-chequea pasada la medianoche y cada scan lo re-dispara.
         QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_refresh_dashboard)
 
+        # Archivo de la cinta intradía (tarea 244) — primera apertura del día; el
+        # tick diario re-chequea pasada la medianoche.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_archive_price_tape)
+
     def stop(self) -> None:
         """Stop all timers and wait briefly for any running worker."""
         self._interval_timer.stop()
@@ -456,6 +507,9 @@ class PaperScheduler(QObject):
         if self._dashboard_worker is not None:
             self._dashboard_worker.wait(2_000)
             self._dashboard_worker = None
+        if self._tape_worker is not None:
+            self._tape_worker.wait(2_000)
+            self._tape_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -507,6 +561,9 @@ class PaperScheduler(QObject):
         # Dashboard: garantiza el refresh 1×/día aunque la app quede abierta
         # pasada la medianoche (no-op el resto del día por el gate por fecha).
         self._maybe_refresh_dashboard()
+
+        # Cinta intradía (tarea 244): 1×/día, no-op el resto del día.
+        self._maybe_archive_price_tape()
 
         if not settings.get("paper_daily_scan_enabled", True):
             return
@@ -883,6 +940,50 @@ class PaperScheduler(QObject):
     def _reap_dashboard_worker(self) -> None:
         w = self._dashboard_worker
         self._dashboard_worker = None
+        if w is not None:
+            w.deleteLater()
+
+    def _maybe_archive_price_tape(self) -> None:
+        """Archiva la cinta intradía 1×/día (tarea 244). Ver ``price_tape_archive_due``."""
+        today = utcnow_naive().date()
+        running = self._tape_worker is not None and self._tape_worker.isRunning()
+        if not price_tape_archive_due(
+            enabled=bool(settings.get("price_tape_archive_enabled", True)),
+            today=today,
+            last=self._last_tape_archive,
+            worker_running=running,
+        ):
+            return
+        self._last_tape_archive = today
+        worker = PriceTapeArchiveWorker(parent=self)
+        worker.archive_completed.connect(self._on_tape_archive_completed)
+        worker.archive_failed.connect(self._on_tape_archive_failed)
+        worker.finished.connect(self._reap_tape_worker)
+        self._tape_worker = worker
+        worker.start()
+
+    def _on_tape_archive_completed(self, res) -> None:
+        if isinstance(res, dict) and res.get("candidatas"):
+            log.info(
+                "cinta intradía archivada: %s de %s candidatas a Parquet (%s)",
+                res.get("archivadas"),
+                res.get("candidatas"),
+                ", ".join(f"{m}: {n}" for m, n in sorted((res.get("meses") or {}).items())),
+            )
+        if isinstance(res, dict) and res.get("archivadas", 0) < res.get("candidatas", 0):
+            log.warning(
+                "cinta intradía: %s filas NO se verificaron en el Parquet y quedaron en la DB",
+                res.get("candidatas", 0) - res.get("archivadas", 0),
+            )
+
+    def _on_tape_archive_failed(self, err: str) -> None:
+        log.warning(
+            "archivo de la cinta intradía falló (reintenta mañana, no se borró nada sin verificar): %s", err
+        )
+
+    def _reap_tape_worker(self) -> None:
+        w = self._tape_worker
+        self._tape_worker = None
         if w is not None:
             w.deleteLater()
 

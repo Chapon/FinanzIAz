@@ -855,6 +855,15 @@ SCHEMA: dict[str, SettingSpec] = {
         True,
         doc="Refresco diario del dashboard (job 7 del scheduler).",
     ),
+    "price_tape_archive_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Tarea 244: archivo diario de la cinta intradía de price_cache a "
+            "data/price_tape/ (job 8 del scheduler). Escribe, verifica y recién ahí borra "
+            "lo más viejo que 7 días; con False, la tabla vuelve a crecer sin archivar."
+        ),
+    ),
     "surprise_build_enabled": SettingSpec(
         bool,
         True,

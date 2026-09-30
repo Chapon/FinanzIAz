@@ -209,6 +209,11 @@ SIN_ESPEJO: dict[str, str] = {
     ),
     "surprise_build_interval_days": "NO_ES_DECISION: cadencia del rebuild de `surprise_profiles`, que no entra en ninguna orden",
     "dashboard_refresh_enabled": "NO_ES_DECISION: regenera el dashboard in-app (1×/día y post-scan); es display, posterior a toda decisión",
+    "price_tape_archive_enabled": (
+        "NO_ES_DECISION: archiva a Parquet la cinta intradía de price_cache más vieja que 7 días (tarea "
+        "244); el TTL del único lector de la tabla es de 5 minutos, así que no toca ningún precio que "
+        "decida"
+    ),
     "slack_data_outage_enabled": (
         "NO_ES_DECISION: avisa por Slack de una caída de datos; el aviso es posterior al scan y "
         "no cambia qué se compra ni a qué tamaño"
