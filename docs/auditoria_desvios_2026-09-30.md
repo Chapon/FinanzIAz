@@ -99,9 +99,9 @@ Ubicación: `analysis/harness_config.py:2311-2318` (el texto) y `:161-166` (el c
 **Evidencia.** El texto que imprime **todo** runner: *«Vale +0.93pp de CAGR y −4.5pp de maxDD (T115,
 el factor vivo desde el 2026-09-07…)»*. Ese número es de la **Corrida A** de la T115: *«5 slots, 41
 tickers, 4015 entradas»* (`docs/t20_killgate_t115_2026-09-07.md:29,42`). En el marco de la cuenta
-—10 slots, universo vivo— la T121 midió para el mismo `f025` **ΔCAGR −0,47 pp** y ΔSharpe −0,01, con
-maxDD 33,7% → 28,9% (**−4,8 pp**), y esa corrida quedó **sin veredicto** (`docs/BACKLOG.md`, tarea
-121). El comentario del fuente, además, lo presenta como *«re-medido hoy sobre la muestra viva del
+—10 slots, universo vivo, gates modelados— la T121 midió para el mismo `f025` **ΔCAGR −0,34 pp** y
+ΔSharpe −0,00, con maxDD 33,7% → 28,9% (**−4,8 pp**), en una corrida **VÁLIDA** que da *«no cumple»*
+el criterio de la T20 (`docs/f025_validar_t121_2026-09-07.md`; sin gates, −0,47 pp). El comentario del fuente, además, lo presenta como *«re-medido hoy sobre la muestra viva del
 harness»*.
 
 **Razonamiento.** Los runners que imprimen ese banner corren, por default, sobre 10 slots y el
@@ -113,8 +113,16 @@ slots/41 tickers»*). Además es **pre-refresh** (2026-09-07) y el runner que lo
 ningún índice dice sobre qué muestra se midió.
 
 **Impacto.** Quien lee el banner para decidir si el desvío no modelado puede mover su veredicto lee
-*«+0,93 pp a favor del vivo»*; en su marco, lo medido es *«−0,47 pp y en el ruido»*. La parte de
+*«+0,93 pp a favor del vivo»*; en su marco, lo medido es *«−0,34 pp, no cumple»*. La parte de
 drawdown sí es del mismo orden en los dos marcos.
+
+**Corrección posterior (2026-09-30, al trabajar la tarea 242) — error mío de instrumento, el
+hallazgo se sostiene.** La primera versión de este informe decía *«−0,47 pp… y esa corrida quedó
+**sin veredicto**»*. Las dos cosas estaban mal: las leí del **enunciado** de la tarea 121 en el
+backlog, escrito **antes** de correrla, que citaba la corrida B de la T115 (sin gates, cayó por un
+sanity). El doc de veredicto de la 121 dice otra cosa: corrida **válida**, −0,34 pp con gates. El
+signo contrario —que es el hallazgo— no cambia. Es la forma de [[validar-el-instrumento-antes-del-numero]]:
+un enunciado no es un veredicto, y el número se lee del doc que lo publicó.
 
 **Verificación.** No hay test que fije ese texto a la Corrida A; el test de la 43 cubre la T9 y no
 este número.
@@ -124,8 +132,8 @@ este número.
 vivo** y fechar los conteos. No pide contrastar el **marco** en que se midió un número contra el
 marco del que lo va a leer. Ver §6.
 
-**Acción.** Que el texto diga el marco del número, o que cite el del marco vivo (T121) con su
-salvedad de *sin veredicto*; corregir el comentario de `:164`.
+**Acción.** Que el texto diga el marco del número, o que cite el del marco vivo (T121); corregir
+el comentario de `:164`.
 
 ---
 

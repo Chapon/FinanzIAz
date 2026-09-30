@@ -161,9 +161,15 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
 # Chapa)**, así que el número de la T20 que este comentario citaba (+0,59 pp de
 # CAGR, maxDD 21,6% → 19,1%) era el de `f050` y ya no describe lo que corre.
-# Re-medido hoy sobre la muestra viva del harness, con los gates modelados:
-# **ΔCAGR +0,93 pp, ΔSharpe +0,15 y maxDD 25,0% → 20,5%**
-# (`docs/t20_killgate_t115_2026-09-07.md` §1).
+# Re-medido el 2026-09-07 con los gates modelados, **en dos marcos que dan cosas distintas**
+# (tarea 242 — este comentario decía *«sobre la muestra viva del harness»* y era el marco
+# publicado de la T20, no el de la cuenta):
+# - **5 slots, 41 tickers** (T115, Corrida A): ΔCAGR **+0,93 pp**, ΔSharpe +0,15, maxDD 25,0% →
+#   20,5% (`docs/t20_killgate_t115_2026-09-07.md` §1).
+# - **10 slots, 127 tickers** —la config de la cuenta— con los gates modelados (T121, corrida
+#   **VÁLIDA**): ΔCAGR **−0,34 pp** (−0,47 sin gates), ΔSharpe −0,00, maxDD 33,7% → 28,9%. **No
+#   cumple** el criterio de la T20: sólo pasa el de drawdown (`docs/f025_validar_t121_2026-09-07.md`).
+# Lo que coincide es el alivio de drawdown. El banner cita los dos, cada uno con su marco.
 # Penalidad de volatilidad en la SELECCION (tarea 42). `compute_signal_probability`
 # le resta al score `risk_score x coef`. Se espeja aca —igual que el overlay y el
 # escalado— para que el harness de la T21 deje de duplicar el literal: lo tenia
@@ -2217,7 +2223,7 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             "barrier_eval",
             f"barreras ATR decididas al {PIT_EXIT_EVAL_DESC} vs {LIVE_EXIT_EVAL_DESC} "
             f"en vivo (cota INFERIOR de frecuencia de disparo: mide +3.39pp de CAGR "
-            f"de más que la regla viva, T26b §1){_sin_barreras_vivas}",
+            f"de más que la regla viva a 10 slots, 127 tickers, T26b §1){_sin_barreras_vivas}",
         )
     else:
         _add(
@@ -2290,7 +2296,8 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
                 "atr_hard_stop",
                 f"stop duro {estado_h} en el harness vs {estado_v} en la cuenta "
                 f"{LIVE_ACCOUNT_ID} (desde el 2026-08-27, `soff_t2.0` de la T37): "
-                f"vale 7.16pp de CAGR sobre la muestra de esa tarea (2.01% vs 9.17%)",
+                f"vale 7.16pp de CAGR sobre la muestra de esa tarea (10 slots, 127 tickers; "
+                f"2.01% vs 9.17%)",
             )
         if abs(cfg.effective_trail_mult - LIVE_TRAIL_MULT) > 1e-9:
             _add(
@@ -2312,9 +2319,11 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
             f"risk-off): 0 de 80 BUY vivas lo dispararon al 2026-09-27, pero el 15.96% de las ruedas de "
-            f"la ventana son risk-off. Vale +0.93pp de CAGR y −4.5pp de maxDD (T115, el "
-            f"factor vivo desde el 2026-09-07; el +0.59pp/−2.5pp que decía antes era de "
-            f"×0.50, que ya no corre)",
+            f"la ventana son risk-off. Con la config de la cuenta (10 slots, 127 tickers, gates "
+            f"modelados, T121, corrida VÁLIDA del 2026-09-07) el factor vivo mide −0.34pp de CAGR y "
+            f"−4.8pp de maxDD: NO cumple el criterio de la T20, sólo alivia el drawdown; el "
+            f"+0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers (otro marco) y NO describe a la "
+            f"cuenta",
         )
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
