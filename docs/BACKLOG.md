@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 180 — Tanda `/audit` de las CINCO áreas CERRADA 2026-09-30 — ningún HIGH, y el hallazgo de más forma es que las correcciones viejas no se buscaron en todo el repo** (`89c7b59` congela los cinco kill-criteria antes de mirar; `docs/auditoria_{claims,muestra,desvios,guards,estado}_2026-09-30.md`). Pedido de Chapa: *«hagamos todas las auditorías nuevamente»*. READ-ONLY: no se tocó código. **14 hallazgos → 10 tareas (239 a 248)**, mapeo uno a uno en el §5 de cada informe.
+- **WIP 180 — Tanda `/audit` de las CINCO áreas CERRADA 2026-09-30 — ningún HIGH, y el hallazgo de más forma es que las correcciones viejas no se buscaron en todo el repo** (`f13e8a6`; `89c7b59` congela los cinco kill-criteria antes de mirar; `docs/auditoria_{claims,muestra,desvios,guards,estado}_2026-09-30.md`). Pedido de Chapa: *«hagamos todas las auditorías nuevamente»*. READ-ONLY: no se tocó código. **14 hallazgos → 10 tareas (239 a 248)**, mapeo uno a uno en el §5 de cada informe.
   - **Por qué ahora:** 111 commits desde la tanda del 2026-09-11, con el motor ganando la regla de tres fuentes (206), los dividendos a caja (222), cuatro rehechuras del VS SPY, y la ventana del harness tres semanas sin refresh.
   - **Lo que más importa antes de que Chapa toque nada:** la segunda opinión, que está en *Acciones manuales* para prenderse, tiene cinco textos con la regla vieja —uno es la propia instrucción de la acción— y se degrada **en silencio** sin keys: el caso KLAC pasa sin una línea de log → **241**, primera.
   - **Lo que tiene reloj:** el reloj de T-CAT-5b perdió 6 de 12 días hábiles desde que se abrió la 196, y Q3 empieza en ~2 semanas → **245**.
