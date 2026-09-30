@@ -101,21 +101,79 @@ def test_es_idempotente(tmp_path):
     assert len(df) == 4 and df["id"].is_unique
 
 
-def test_una_segunda_corrida_suma_al_mismo_mes_sin_pisar(tmp_path):
-    """Lo archivado antes tiene que seguir estando después — el mes se funde, no se reemplaza."""
-    db = _db(tmp_path, [("AAPL", 100.0, None, None, None, _cuando(30))])
+def _dias_que_parten_30_y_29(anio: int) -> list[datetime]:
+    """Los días en que «hace 30 días» y «hace 29 días» caen en meses distintos (tarea 248).
+
+    Es la forma en que este test estuvo rojo el 2026-09-30: sembraba ``_cuando(30)`` y
+    ``_cuando(29)`` —que casi siempre son del mismo mes— y leía **un** Parquet. Se derivan
+    en vez de escribirse para que la lista no pueda quedar vieja.
+    """
+    dia = datetime(anio, 1, 1, 12, tzinfo=timezone.utc)
+    out = []
+    while dia.year == anio:
+        if (dia - timedelta(days=30)).month != (dia - timedelta(days=29)).month:
+            out.append(dia)
+        dia += timedelta(days=1)
+    return out
+
+
+def _dos_instantes_del_mismo_mes(hoy: datetime) -> tuple[str, str]:
+    """El 10 y el 11 de un mes que termina ≥ 40 días antes de ``hoy``: mismo mes, y los dos
+    más viejos que cualquier ``keep_days`` de estos tests, sea cual sea el día."""
+    base = (hoy.replace(day=1) - timedelta(days=40)).replace(
+        day=10, hour=12, minute=0, second=0, microsecond=0
+    )
+    fmt = "%Y-%m-%d %H:%M:%S"
+    return base.strftime(fmt), (base + timedelta(days=1)).strftime(fmt)
+
+
+def _fijar_reloj(monkeypatch, hoy: datetime) -> None:
+    """El corte del archivador sale de ``datetime.now`` en su módulo: se fija ahí."""
+
+    class _Reloj(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return hoy if tz is not None else hoy.replace(tzinfo=None)
+
+    monkeypatch.setattr(mod, "datetime", _Reloj)
+
+
+def test_los_dias_rojos_existen_y_son_los_medidos():
+    """Contraprueba del parametrizado de abajo: si esta derivación diera vacío, el test
+    del mes pasaría sin probar ningún día rojo. En 2026 son 12 (medido en la tarea 248)."""
+    dias = _dias_que_parten_30_y_29(2026)
+    assert len(dias) == 12
+    assert datetime(2026, 9, 30, 12, tzinfo=timezone.utc) in dias
+
+
+@pytest.mark.parametrize(
+    "hoy",
+    [datetime(2026, 9, 15, 12, tzinfo=timezone.utc), *_dias_que_parten_30_y_29(2026)],
+    ids=lambda d: d.strftime("%m-%d"),
+)
+def test_una_segunda_corrida_suma_al_mismo_mes_sin_pisar(tmp_path, monkeypatch, hoy):
+    """Lo archivado antes tiene que seguir estando después — el mes se funde, no se reemplaza.
+
+    Las dos filas son **del mismo mes** por construcción, no por casualidad del calendario
+    (tarea 248), y el reloj del archivador se fija en cada día en que la versión vieja caía.
+    """
+    _fijar_reloj(monkeypatch, hoy)
+    primero, segundo = _dos_instantes_del_mismo_mes(hoy)
+    db = _db(tmp_path, [("AAPL", 100.0, None, None, None, primero)])
     mod.archivar(db, keep_days=7)
     con = sqlite3.connect(db)
     con.execute(
         "INSERT INTO price_cache (ticker, price, fetched_at) VALUES ('MSFT', 50.0, ?)",
-        (_cuando(29),),
+        (segundo,),
     )
     con.commit()
     con.close()
 
     mod.archivar(db, keep_days=7)
 
-    df = pq.read_table(next((tmp_path / "price_tape").glob("*.parquet"))).to_pandas()
+    archivos = list((tmp_path / "price_tape").glob("*.parquet"))
+    assert len(archivos) == 1, f"las dos filas eran del mismo mes: {archivos}"
+    df = pq.read_table(archivos[0]).to_pandas()
     assert sorted(df["ticker"]) == ["AAPL", "MSFT"]
 
 
