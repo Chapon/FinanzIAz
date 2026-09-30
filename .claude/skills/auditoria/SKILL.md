@@ -80,6 +80,16 @@ qué no.
 argumento no dependía de ellos: sólo de que el repo sea grande, que lo es cada vez más. Si
 querés los de hoy, contalos: `git ls-files '*.py' | wc -l` y `pytest --collect-only -q`.)*
 
+**El «alcance real» del informe se escribe como LISTA, nunca como conteo (tanda 2026-09-30).**
+La corrida del 2026-09-11 escribió que miró *«las 5 skills»* con **8** en disco, y la skill que no
+leyó mandaba a verificar un Task Scheduler que no existe desde julio. Un conteo no se puede
+contrastar contra la población; una lista sí. Es la categoría B aplicada a la auditoría misma.
+
+**Una exclusión de alcance lleva su motivo, y el motivo se re-verifica en la corrida siguiente.**
+El pipeline de catalysts se excluyó de `guards` dos veces con razón —no tenía guards propios— y la
+razón caducó el 2026-09-15 (tarea 207) sin que nadie la re-mirara. Copiar la exclusión del informe
+anterior no es declararla.
+
 Una corrida de auditoría **es una tarea del backlog**, con el WIP de 1. No se cuelga como
 paso extra de otra cosa ni se corre en un hook.
 
@@ -108,6 +118,14 @@ runners durante semanas estando construida sobre un artefacto congelado.
 midió? ¿esa muestra todavía existe? ¿alguien lo está usando **como si fuera actual**? Ojo
 especial con los números que aparecen **en dos lugares**: si difieren, uno de los dos
 caducó.
+
+**Y las correcciones viejas se BUSCAN en todo el repo, no se leen (tanda 2026-09-30).** Por cada
+claim que una tarea cerrada corrigió, buscar la **frase original** con `grep` en todo el repo — no
+en el corpus de un guard, que es justamente lo que tenía el agujero. Así sobrevivieron dos: la 73
+corrigió el *«`buy_score` no predice el fwd5»* en dos lugares de tres (quedó
+`finanzias-conventions`), y la 181 y la 198 corrigieron *«cuenta activa id=1, kill_only»* en siete
+y quedó `DB_SCHEMA.md`. Las corridas posteriores **leyeron** los dos archivos y no lo vieron:
+leer no es buscar.
 
 ### B. Chequeos por cantidad, ciegos a la muestra
 
@@ -189,6 +207,11 @@ código **tiene** la pata de ADV$, pero con `paper_universe_min_adv_dollars = 0.
   master switch ni contra el código.
 - Todo número que el texto presenta como **estado actual** (*«0 de 62 BUY vivas»*) lleva
   **fecha** o se **deriva**. Sin fecha, un conteo que caducó no se distingue de uno vigente.
+- **Todo número de magnitud declara su MARCO** —slots, universo, ventana— y se contrasta contra
+  el marco por default de los runners que lo imprimen (tanda 2026-09-30). El de `regime_scale`
+  tenía fuente, tarea y fecha, pasaba las dos reglas de arriba, y era de 5 slots/41 tickers: en el
+  marco de la cuenta el CAGR da el signo contrario. Es la lección de la 43 y la 119, que el método
+  de esta área no tenía escrita.
 
 ### D. Guards que degradan en silencio
 
@@ -237,6 +260,12 @@ contrato de frescura, sin dueño.
 
 **Cómo se audita.** Por cada store: ¿quién lo regenera, cada cuánto, y **qué pasa si no**?
 ¿Hay algo que compare su frescura contra la de sus pares?
+
+**Y por cada OPERACIÓN MANUAL que una tarea cerrada dejó y tiene que repetirse** —archivar,
+compactar, rotar a mano—: ¿quién la dispara? *«Quién lo regenera»* es la pregunta de un cache, y
+una operación periódica no se regenera: se **olvida**. Así se pasó la cinta intradía de
+`price_cache` (tarea 81): se archivó una vez, a mano, y la corrida del 2026-09-11 la tenía en su
+alcance con nueve días de filas sin archivar.
 
 ### Las genéricas
 
