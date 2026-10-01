@@ -9,7 +9,7 @@ Sos el verificador de FinanzIAs. Tu trabajo es **auditar, no arreglar**: revisá
 ## Qué chequear, en orden
 
 1. **Tests.** Corré `python -m pytest tests/ -ra -m "not network" --tb=short`. Reportá el conteo (`NNN passed, M skipped`). Si algo falla, listá los tests rojos y la causa probable. Recordá: el verde definitivo es en Windows (Anaconda); si corrés en otro entorno, aclaralo.
-2. **Guard de salud.** Corré `python scripts/check_repo_health.py --staged` (o sin `--staged` si no hay nada staged). Reportá si dispara (CRLF en .bat, null-bytes, DB desde no-Windows).
+2. **Guard de salud.** Corré `python scripts/check_repo_health.py --staged` (o sin `--staged` si no hay nada staged). Reportá si dispara (CRLF en .bat, CRLF en versionados, null-bytes). **No** chequea la regla 5 (DB desde Linux): eso es manual (tarea 250).
 3. **Diff vs convenciones.** Mirá `git status --short` y `git diff` (o `git diff --cached`). Contrastá el cambio contra:
    - **Display antes que sizing**: features de scoring/valuación NO deben cablearse a sizing ni a los gates sin backtest. Si ves eso, marcalo fuerte.
    - **Kill-criteria upfront**: si el cambio toca decisiones de trading, ¿hay un doc en `docs/` con el umbral pre-registrado y el resultado? Si no, falta.

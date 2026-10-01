@@ -27,8 +27,9 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
 3. Si pasa todo:
    a. Corré los **dos** guards de `--staged`, que son el único cableado operativo que tienen
       (no hay hooks de git instalados en este repo — tarea 97):
-      - `python scripts/check_repo_health.py --staged` — reglas 4 y 5 de `CLAUDE.md`. Si
-        reporta problemas (CRLF en .bat, null-bytes, DB desde no-Windows), **PARÁ** y arreglalos.
+      - `python scripts/check_repo_health.py --staged` — regla 4 de `CLAUDE.md` y los null-bytes.
+        Si reporta problemas (CRLF en .bat, CRLF en versionados, null-bytes), **PARÁ** y arreglalos.
+        La regla 5 (no escribir la DB desde Linux) **no** la chequea: es manual (tarea 250).
       - `python scripts/check_backlog_integrity.py --staged` — integridad de `docs/BACKLOG.md`.
         Es la mitad del guard de la tarea 66 que **necesita el diff** y por lo tanto no puede
         correr en la suite: frena un commit que le saque más de 60 líneas netas al backlog,

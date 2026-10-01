@@ -40,7 +40,9 @@ Features nuevas de scoring/valuación entran primero como **display-only**, NO c
 - **Null-byte padding tras edits grandes.** Las ediciones que achican un archivo pueden dejar nulls al final. Verificar con `read_bytes().count(b'\x00')`.
 
 **Guard MANUAL, y la palabra importa (tarea 98):** `python scripts/check_repo_health.py` chequea
-las tres trampas de arriba (CRLF en .bat, null-bytes, DB desde no-Windows). Acá decía *"Guard
+**dos** de las tres trampas de arriba (CRLF en .bat —y en cualquier versionado—, null-bytes). La
+tercera, **DB desde Linux, no la chequea nadie: es manual.** Decía que sí, y el chequeo buscaba la DB
+entre los archivos staged cuando la DB está gitignoreada: no podía dispararse (tarea 250). Acá decía *"Guard
 automático"* y **era falso**: no está en `.pre-commit-config.yaml`, no está en el CI y no lo
 llama ningún test. Su único invocador es el **paso 3a de `/ship`**, o sea que depende de que
 alguien lo corra. Un adjetivo equivocado en una skill que se lee cada sesión no es cosmético:

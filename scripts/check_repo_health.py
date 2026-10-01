@@ -2,7 +2,7 @@
 """
 check_repo_health.py — guard contra los footguns documentados de FinanzIAs.
 
-Chequea, en orden, los cuatro bugs caros que ya nos mordieron (ver CLAUDE.md /
+Chequea, en orden, tres bugs caros que ya nos mordieron (ver CLAUDE.md /
 skill finanzias-conventions):
 
   1. .bat sin CRLF  — cmd.exe los mata en silencio (rompio el scheduler del
@@ -13,8 +13,12 @@ skill finanzias-conventions):
      al comparar, asi que `git status` queda limpio y el desvio se acumula solo.
   3. Null-byte padding — los edits que achican un archivo pueden dejar \x00 al
      final; corrompe el fuente sin error visible.
-  4. Escritura de finanzias.db desde un entorno no-Windows — corrupcion
-     intermitente via mounts de Linux/sandbox.
+
+Lo que NO chequea, y antes decia que si (tarea 250): la regla 5 de CLAUDE.md —no
+escribir finanzias.db desde Linux/sandbox—. Habia un cuarto chequeo que buscaba
+finanzias.db entre los archivos staged; la DB esta en .gitignore y no versionada, asi
+que no podia aparecer nunca, y ademas miraba COMMITEAR cuando la regla prohibe
+ESCRIBIR. Inerte desde que se creo (2026-06-24). Se saco: la regla 5 es manual.
 
 Uso:
     python scripts/check_repo_health.py            # chequea todo el repo
@@ -27,7 +31,6 @@ pre-commit. NO depende de paquetes externos (solo stdlib).
 from __future__ import annotations
 
 import argparse
-import platform
 import subprocess
 import sys
 from fnmatch import fnmatch
@@ -161,21 +164,6 @@ def check_null_bytes(files: list[Path]) -> list[str]:
     return problems
 
 
-def check_db_write_env(files: list[Path], *, staged_only: bool) -> list[str]:
-    # Solo es un riesgo si la DB esta por COMMITEARSE desde un entorno no-Windows.
-    # En el scan de todo el repo la DB siempre existe, asi que ese chequeo solo
-    # corre en modo --staged (donde la lista son cambios reales por commitear).
-    if not staged_only or platform.system() == "Windows":
-        return []
-    touching_db = [p for p in files if p.name == "finanzias.db"]
-    if touching_db:
-        return [
-            "  [DB desde no-Windows] finanzias.db aparece en los cambios y NO estas en Windows. "
-            "No escribas la DB desde Linux/sandbox (corrupcion via mounts). Ver CLAUDE.md."
-        ]
-    return []
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Guard de salud del repo FinanzIAs.")
     ap.add_argument("--staged", action="store_true", help="Chequear solo archivos staged (pre-commit).")
@@ -188,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     problems += check_bat_crlf(files)
     problems += check_crlf_en_working_tree(files)
     problems += check_null_bytes(files)
-    problems += check_db_write_env(files, staged_only=args.staged)
 
     if problems:
         print(f"check_repo_health: PROBLEMAS encontrados ({scope}):", file=sys.stderr)
