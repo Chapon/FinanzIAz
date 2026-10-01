@@ -1815,6 +1815,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-01f** tras abrir y cerrar la **254**, que salió de una pregunta de Chapa y **no deja tareas nuevas**. Sin cambios: el orden queda **196 → 245**, las dos esperando el dato de la Pi.
 
+> **Repriorizado 2026-10-01g** tras tres preguntas de Chapa sobre la app. La del score dio la **254** (cerrada). Las otras dos dejan la **255** (el impacto de noticias es una tabla de búsqueda) y la **256** (el scan no registra candidatos). Las dos van **adelante** de la 196 y la 245, que siguen esperando el dato de la Pi. La **255** primero: la pestaña muestra hoy un número que se lee como medición, y su primer paso es medir, que es barato. El orden queda **255 → 256 → 196 → 245**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3199,6 +3201,22 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** *«None are marked yet»* (hay uno desde la 211); la tabla *«What's covered»* lista 8 archivos de test cuando hay cientos; el *Quick start* no menciona los cuatro comandos del *done*. La 247 corrigió la misma frase en `CLAUDE.md` sin buscarla en el resto del repo.
 - **Kill-criteria.** Documentación. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
+
+### 255. NOTICIAS-IMPACTO-CONSTANTE — El impacto de la pestaña Noticias es una tabla de búsqueda: toda noticia de resultados o FDA da ±0.36, y la confianza no pesa  ·  origen: pregunta de Chapa (2026-10-01, *«¿por qué el impacto es siempre 0.36?»*) · severidad **MEDIA** (display-only, pero se lee como una medición)
+
+- **Qué pasa, medido.** `ui/news_tab.py:125` llama `rank_news(rows)` **sin** `reaction_table` ni `market_cap_loader`, así que `score_event` va siempre por el camino `prior`: `valor = signo(sentimiento) × EVENT_PRIORS[tipo] × CONF_FLOOR`. Con `sample_factor=0` la confianza del clasificador **no entra** (la columna CONF muestra 0.60 o 1.00 y el impacto es el mismo). `earnings_results` y `clinical_fda` tienen prior 0.90 → **0.90 × 0.40 = 0.36**; hay 17 tipos, o sea ~17 valores posibles en toda la pestaña.
+- **Por qué cablear la tabla que ya existe NO lo arregla.** `data/catalyst/historical_reaction.json` (2026-09-11) es por `(ticker, tipo)` **sin condicionar al sentimiento**: la dirección saldría de la media histórica del tipo, no de esta noticia —un beat y un miss de ACN darían el mismo signo—. Y lo que mide es ruido: `earnings_results` global, n=365, media 5d **+0,5%**, hit rate **47%** → magnitud `tanh(0.005/0.05)` ≈ 0.10. `analyst_rating` tiene n=0, `clinical_fda` n=2.
+- **Alcance propuesto.** (1) **Medir antes de cambiar la fórmula** (reglas 2 y 3): sobre las noticias clasificadas con precio, ¿el `sentimiento × tipo` predice el retorno a 5d? Reportar con `n` e IC, como la 73. (2) Según lo que dé: reacción condicionada a `(tipo, sentimiento)` si hay señal; si no, que la pestaña lo diga —mostrar la base (`prior` / `reacción`) y no presentar el número como impacto esperado—. **Decisión de Chapa** entre las dos ramas, con la medición delante.
+- **Kill-criteria (a fijar antes de medir).** Umbral de |r| o de diferencia de medias por signo que justifique mostrar un impacto direccional; si no se pasa, la columna no puede llamarse *impacto esperado*.
+- **Dependencias:** ninguna.
+
+### 256. SCAN-SIN-REGISTRO-DE-CANDIDATOS — El scan vivo no guarda qué candidatos vio ni por qué no los compró, y *«¿por qué no compramos X?»* no tiene respuesta  ·  origen: pregunta de Chapa (2026-10-01, *«¿por qué no compramos ACN en julio?»*) · severidad **MEDIA**
+
+- **Qué pasa, medido.** `paper_orders` sólo tiene lo que se **ejecutó**; el log sólo trae avisos de cobertura y resúmenes. Para ACN en julio lo único disponible es el store PIT del harness: **BUY del 06-07 al 24-07 con score 0.52–0.68**, mientras la cuenta 2 estaba llena (10 posiciones, a veces 11 —el sobrellenado de la 93, anterior a su arreglo—) y cada slot liberado se lo llevó un candidato con score vivo 0.72–0.85.
+- **Por qué eso no alcanza para contestar.** El score vivo de los 19 BUY de julio sale **~0.1 por encima** de su PIT del mismo día (intradía contra cierre, y otro instrumento), y en días como el 06-07 el PIT de ACN (0.68) estaba a la par del de lo que se compró (PSX, 0.72). La explicación más probable es capacidad + ranking, pero **no es verificable**.
+- **Alcance propuesto.** Que cada scan persista, por cuenta, el ranking de candidatos BUY con su score y el motivo de descarte (sin slot, gate N, cooldown, earnings blackout…). Diseño a decidir: tabla nueva (migración alembic) o una línea JSON por scan. Retención acotada (la 81 ya mostró lo que cuesta no definirla).
+- **Kill-criteria.** Con un scan simulado de 12 candidatos y 2 slots, quedan registrados los 12, los 2 comprados y 10 descartes con su motivo. Re-escanear no duplica. Los cuatro comandos en verde.
+- **Dependencias:** ninguna. No toca decisiones: es registro.
 
 ### 254. ~~METRICAS-ABRE-EN-LA-CUENTA-CERRADA — La pestaña Métricas (y Paper) abren en la cuenta 1, cerrada, y su score se lee como el de la cuenta viva~~ · **CERRADA 2026-10-01 — fallback a la primera cuenta activa en las dos pestañas** · **movida a *En curso* con el detalle**  ·  origen: pregunta de Chapa (*«¿por qué tenemos cero de score en 4 meses en Sim Segundo?»*) · severidad **MEDIA** (dirige mal la lectura del desempeño)
 
