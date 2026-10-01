@@ -2,28 +2,25 @@
 
 ## Quick start
 
-```powershell
-# minimal run (existing FinanzIAs venv)
-pip install pytest
-pytest tests/
+El *done* del proyecto son **cuatro comandos en verde, en Windows** (ver `CLAUDE.md`, regla 1),
+y `/test` los corre con el intérprete correcto (Anaconda):
 
-# full dev install (recommended for repeat runs)
-pip install -r requirements-dev.txt
-pytest tests/ -ra
+```powershell
+python -m pytest tests/ -ra -m "not network" --tb=short
+python -m ruff check .
+python -m ruff format --check .
+python scripts/run_suite_sin_estado_vivo.py   # la suite en la condición del CI: HOME vacío
 ```
 
 ## What's covered
 
-| File                    | Module under test                       |
-|-------------------------|-----------------------------------------|
-| `test_database.py`      | `database/models.py` (cascades, indexes, `session_scope`) |
-| `test_indicators.py`    | `analysis/technical.py` (RSI, MACD, Bollinger, SMA, EMA) |
-| `test_data_quality.py`  | `data/quality.py` (NaN, gaps, zero prices) |
-| `test_settings.py`      | `config/settings_manager.py` (schema validation) |
-| `test_validators.py`    | `ui/validators.py` (ticker validator + locale-aware decimals) |
-| `test_backtest.py`      | `analysis/backtest.py` (no-lookahead, cost tracking) |
-| `test_costs.py`         | `paper_trading/costs.py` (commission/slippage models) |
-| `test_rate_limiter.py`  | `data/market_data_service.py` token-bucket |
+Casi todo el código de la app, con un archivo de test por módulo o por tarea
+(`test_<tema>_t<NNN>.py` cuando nace de una tarea del backlog). Acá había una tabla de ocho
+archivos, de mayo de 2026, que había quedado muy corta (tarea 252); para la lista de hoy:
+
+```powershell
+python -m pytest tests/ --collect-only -q
+```
 
 ## Fixtures
 
@@ -38,9 +35,13 @@ pytest tests/ -ra
 
 ## Marks
 
-Tests marked `@pytest.mark.network` hit real Yahoo Finance and are
-excluded in CI (`pytest -m "not network"`). None are marked yet — add
-the marker to any new tests that go to the network.
+`@pytest.mark.network` marca los tests que pegan a la red de verdad; se excluyen con
+`-m "not network"`. Al 2026-10-01 hay **uno**, y no pega a nada:
+`test_cortafuegos_subproceso_t211.py::test_un_test_MARCADO_no_le_pasa_el_corte_a_su_hijo`, marcado
+porque lo que prueba es el escape del marcador — es el `1 deselected` de cada corrida. Acá decía
+que no había ninguno (tarea 252). Desde la tarea 209 el autouse `_cortafuegos_de_red` de
+`conftest.py` **corta** la red en todo test sin el marcador, así que olvidarse de marcar uno no
+sale a internet: falla.
 
 ## Notes / known issues
 

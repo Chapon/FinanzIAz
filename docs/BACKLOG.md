@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 194 — Tarea 252 (TESTS-README-CADUCO) CERRADA 2026-10-01 — esta vez la frase se buscó en todo el repo antes de corregir** (`tests/README.md`). Suite Windows (Anaconda) **3975 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3972 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
+  - **Primero el `git grep`, que es lo que la 247 no hizo:** la afirmación *«ningún test está marcado `network`»* sólo quedaba en `tests/README.md` (la línea del `conftest` que matchea dice otra cosa, y es cierta).
+  - **Las tres secciones:** el *quick start* pasa a ser los cuatro comandos del *done*; la tabla de ocho archivos de mayo se reemplaza por la remisión a `pytest --collect-only` —sin conteo, que caduca—; y el marcador `network` dice cuál es el test marcado, **con fecha**, y que desde la 209 olvidarse de marcar uno falla en vez de salir a internet.
+  - **Un tropiezo mío en el camino, el de siempre:** la primera versión decía *«Hay **uno**»*, un conteo en presente sin fecha. Fechado antes de cerrar.
+
 - **WIP 193 — Tarea 251 (SPY-REGIMEN-FUERA-DEL-COHORTE) CERRADA 2026-10-01 — la pregunta era de cobertura, no de alineación; y el job 9 deja de tocar el sustrato del harness** (`ec3d054`; `analysis/harness_config.py`, `scripts/run_market_regime_r2.py`, `scripts/run_sizing_exposure_t10_t20.py`, `scripts/run_anom_regime_t38.py`, `scripts/refresh_cohort.py`, `data/historical_series.py`, `paper_trading/scheduler.py`, `tests/test_spy_regimen_cobertura_t251.py` **nuevo**, `tests/test_vs_spy_sin_vencimiento_t246.py`). Suite Windows (Anaconda) **3975 passed, 1 skipped, 1 deselected** (+12), ruff limpio, sin estado vivo **3972 passed, 4 skipped**. **No deja tareas nuevas; deja una acción manual.**
   - **Cobertura, no alineación:** el `verificador` midió que una SPY más larga que el cohorte —por cualquier punta— no cambia el régimen de la ventana. Lo que sí lo rompe es que SPY **termine antes** (régimen congelado en la cola) o que no tenga 200 ruedas antes de la primera entrada (fail-open). `spy_coverage_problems` chequea esas dos, con la tolerancia de la T30, y `SpyCoverageError` **hereda de `StaleArtifactError`**: los tres runners ya atrapaban esa clase, así que abortan igual que con el cohorte y `--allow-stale-artifacts` sigue siendo el escape.
   - **Verificado con los datos reales:** acusa exactamente lo que vio la auditoría —SPY termina el 2026-09-01, 6 ruedas antes que el cohorte—.
@@ -1796,6 +1801,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-09-14b** tras cerrar la **203**, que **no dejó tareas nuevas** — y eso es información, no un hueco. Los tres guards de esquema que aparecieron ciegos a los índices por expresión (`missing_declared_indexes`, el de unicidad de la 74 y el de equivalencia de `test_alembic_catchup`) se arreglaron **en la misma pasada**, porque el índice de la 203 era el primero de esa forma en el repo y sin el arreglo no había manera de dejarlos en verde: no eran deuda separable, eran parte de shipear el índice. La cuarta aparición —la revisión `0009`— quedó **sin tocar a propósito**: su lista está congelada y no tiene ninguno por expresión, así que su chequeo es correcto. Sin cambios de criterio arriba: se consume el ítem y el orden queda **202 → 204 → 197**. La **202** encabeza por ser la que estaba, es análisis y no bloquea a nadie; la **204** sigue detrás por lo mismo que el 13 (in-app sólo molesta, muerde si la 196 se implementa); la **197** última, que sigue sin fallar. Y sigue la **196** fuera de la cola, esperando la decisión de Chapa entre Raspberry Pi y AWS.
 
+> **Repriorizado 2026-10-01d** tras cerrar la **252**, que **no deja tareas nuevas**. Con esto se consumen las cuatro tareas de la segunda tanda `/audit`. El orden queda **196 → 245**: las dos esperan el dato de la Pi, que Chapa dejó para el final.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3175,7 +3182,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un `bars_by` sintético con SPY corrido más que la tolerancia pone rojo/aborta; alineado, pasa. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 252. TESTS-README-CADUCO — `tests/README.md` repite el claim que la 247 corrigió en `CLAUDE.md`, y su tabla de cobertura es de mayo  ·  origen: `docs/auditoria_claims_2026-09-30b.md` [C-1] · severidad **BAJA**
+### 252. ~~TESTS-README-CADUCO — `tests/README.md` repite el claim que la 247 corrigió en `CLAUDE.md`, y su tabla de cobertura es de mayo~~ · **CERRADA 2026-10-01 — y esta vez la frase se buscó en todo el repo antes de corregirla** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_claims_2026-09-30b.md` [C-1] · severidad **BAJA**
 
 - **Qué pasa.** *«None are marked yet»* (hay uno desde la 211); la tabla *«What's covered»* lista 8 archivos de test cuando hay cientos; el *Quick start* no menciona los cuatro comandos del *done*. La 247 corrigió la misma frase en `CLAUDE.md` sin buscarla en el resto del repo.
 - **Kill-criteria.** Documentación. Los cuatro comandos en verde.
