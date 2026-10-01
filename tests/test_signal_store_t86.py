@@ -209,6 +209,10 @@ def test_sin_strict_declara_pero_no_aborta(store, capsys):
 # alcanzaba como proxy del store. Dejó de alcanzar — y la exclusión va con motivo
 # escrito, no por prefijo (mismo criterio que la 101).
 _NO_LEE_EL_STORE = {
+    "measure_news_tone_fwd5_t258.py": (
+        "Mide el tono de las noticias contra retornos de los frames `2y` de la app: cero "
+        "señales precomputadas, no toca data/pit_signals/ (tarea 258)."
+    ),
     "measure_news_sentiment_fwd5_t255.py": (
         "Mide noticias contra retornos de los frames `1y` de la app viva: cero "
         "señales precomputadas, no toca data/pit_signals/ (tarea 255)."

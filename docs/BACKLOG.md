@@ -18,11 +18,15 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 199 — Tarea 258 (NOTICIAS-ESCALA-7-NIVELES) EN CURSO — parte 1 hecha: la pestaña muestra el tono −3…+3 y nada dice *impacto esperado*; falta la medición (parte 2)** (`analysis/news_digest.py`, `ui/news_tab.py`, `tests/test_news_tono_t258.py` **nuevo**, `tests/test_news_digest.py`, `tests/test_news_tab_hora_local_t257.py`). Suite Windows (Anaconda) **4022 passed, 1 skipped, 1 deselected** (+24), ruff limpio, sin estado vivo **4019 passed, 4 skipped**.
+- **WIP 199 — Tarea 258 (NOTICIAS-ESCALA-7-NIVELES) CERRADA 2026-10-01 — la pestaña muestra el tono −3…+3, y la medición dio NO PASA: el nivel no ordena el retorno, así que la columna se queda como «Tono»** (`2555a60` la parte 1, `0a5738e` el pre-registro de la parte 2; `analysis/news_digest.py`, `ui/news_tab.py`, `tests/test_news_tono_t258.py` **nuevo**, `tests/test_news_digest.py`, `tests/test_news_tab_hora_local_t257.py`; parte 2: `docs/noticias_tono_t258_2026-10-01.md`, `scripts/measure_news_tone_fwd5_t258.py` **nuevo**, `tests/test_news_tone_fwd5_t258.py` **nuevo**, exclusiones con motivo en los guards del cohorte). Suite Windows (Anaconda) **4030 passed, 1 skipped, 1 deselected** (+8), ruff limpio, sin estado vivo **4027 passed, 4 skipped**. **Deja la 259.**
   - **El nivel:** `tone_level` = `round(3 × sentiment_score)` redondeando .5 hacia afuera; sin polaridad (filas de antes de OPS1) cae a ±1 por el sentimiento. El `DigestItem` cambia `impact`/`direction`/`basis` por `tone` y `sentiment_score`; el digest deja de llamar a `score_event` (que sigue vivo para el Gate 2c, sin tocar). Ranking por |tono|, desempate por recencia; entre duplicados queda el de tono más fuerte y, a igual tono, el de mayor confianza.
   - **Texto:** columna «Tono» con tooltip que dice que no es pronóstico (con la 255 como fuente), color por intensidad, y el briefing de qwen recibe `[+3]` y la instrucción de no presentarlo como pronóstico.
   - **Un bug que cazó el test antes de shipear:** `min(1.0, nan)` devuelve `1.0`, así que una polaridad NaN salía como +3. El NaN se descarta antes de recortar.
   - **Mutación: seis, las seis rojas** — tono desde el sentimiento, orden con signo, NaN sin chequear, dedup sin confianza, el prompt viejo y el redondeo bancario de `round()`. Esta última sobrevivía: el caso 0,5 da 1,5, donde los dos redondeos coinciden; se agregó 1/6, que da 0,5.
+  - **Parte 2, la medición pre-registrada:** 4.082 unidades `(ticker, rueda)` en 59 ruedas, tono = media de los niveles (neutrales incluidas, como control). Spearman `ρ = −0,018`, IC95 `[−0,055, +0,016]`, signo distinto en cada mitad: **fallan tres de cuatro**. El `Δ_ext` de +0,66 pp pasa el piso con 78 unidades del lado negativo y una serie por nivel que no es monótona (+3 rinde 0,55 pp **menos** que +2), así que no sostiene nada solo.
+  - **Antes del número, un hallazgo en los conteos:** la escala es **casi categórica**. De 53.788 filas: 33.364 en 0, 8.030 en −2, 6.610 en +2, 5.556 en +3, y apenas 99 / 112 / 17 en −3 / −1 / +1. Va como **259**.
+  - **El instrumento:** reusa entrada, ventana y exceso de la 255 y el `tone_level` de la pestaña (se mide lo que se ve). Mutaciones: rangos sin promediar empates, Pearson en vez de Spearman, tono máximo en vez de media, extremo estricto y **sin restar SPY**. Esta última sobrevivió **otra vez por la misma razón que en la 255**: el SPY del test tenía retorno 0. Ahora tiene retorno; las cinco, rojas.
+  - **Queda sin hacer, a pedido:** la hipótesis de contexto (el tono contra la reacción que el precio ya tuvo al abrir) espera que Chapa la confirme.
 
 - **WIP 198 — Tarea 257 (NOTICIAS-HORA-EN-UTC) CERRADA 2026-10-01 — la celda pasa por `fmt_local`** (`f6c8e50`; `ui/news_tab.py`, `tests/test_news_tab_hora_local_t257.py` **nuevo**). Suite Windows (Anaconda) **3998 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **3995 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El test no compara contra la hora de la máquina:** en el CI la zona es UTC y ahí el defecto y el arreglo dan lo mismo. Reemplaza `fmt_local` por un centinela y verifica que la celda pase por él. Volver al `strftime` directo lo pone en rojo.
@@ -1838,6 +1842,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-01i** tras cerrar la **257**, que **no deja tareas nuevas**. El orden queda **258 → 256 → 196 → 245**.
 
+> **Repriorizado 2026-10-01j** tras cerrar la **258** (NO PASA), que deja la **259**. La **259** va **última**: es BAJA, y más resolución en un tono que no predice no cambia ninguna decisión. Encabeza la **256**, que es la única desbloqueada con algo que contestar (*«¿por qué no compramos X?»*). El orden queda **256 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3229,7 +3235,15 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 258. NOTICIAS-ESCALA-7-NIVELES — Que la pestaña diga si la noticia empuja al alza o a la baja, en 7 niveles (−3…+3), y que el nivel se gane el nombre de impacto con medición  ·  pedido de Chapa (2026-10-01) · severidad **MEDIA** · **display-only**
+### 259. QWEN-POLARIDAD-CATEGORICA — La polaridad de qwen viene agrupada en cuatro valores, así que la escala de 7 niveles muestra en la práctica −2, 0, +2 y +3  ·  origen: conteos del pre-registro de la 258 · severidad **BAJA**
+
+- **Qué pasa, medido.** De las 53.788 noticias con `sentiment_score` desde junio, `round(3 × score)` da: −3: 99 · −2: 8.030 · −1: 112 · 0: 33.364 · +1: 17 · +2: 6.610 · +3: 5.556. El prompt de `data/catalyst_classifier.py` pide un número en [−1, +1] sin una guía de qué significa cada tramo, y el modelo devuelve pocos valores (27 distintos con dos decimales). Los niveles ±1 y el −3 casi no existen.
+- **Por qué es BAJA:** la 255 y la 258 midieron que ni el signo ni la intensidad anticipan el retorno, así que más resolución no cambia ninguna decisión. Lo que sí cambia es la lectura: un «+2» y un «+3» se ven distintos en la pestaña y casi no lo son.
+- **Alcance propuesto (decisión de Chapa):** (a) aceptarlo y decirlo en el tooltip; o (b) pedirle a qwen el nivel −3…+3 directamente, con una rúbrica por nivel, y reclasificar una ventana para comparar la distribución. (b) cuesta una reclasificación y **no** promete predicción: si se hace, se re-corre `measure_news_tone_fwd5_t258.py` sobre lo nuevo.
+- **Kill-criteria (b).** Con la rúbrica, ningún nivel queda con menos del 3% de las no neutrales en la ventana reclasificada. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 258. ~~NOTICIAS-ESCALA-7-NIVELES — Que la pestaña diga si la noticia empuja al alza o a la baja, en 7 niveles (−3…+3), y que el nivel se gane el nombre de impacto con medición~~ · **CERRADA 2026-10-01 — tono −3…+3 en la pestaña; la medición dio NO PASA y la columna se queda como «Tono»** · **movida a *En curso* con el detalle**  ·  pedido de Chapa (2026-10-01) · severidad **MEDIA** · **display-only**
 
 - **El pedido.** *«Solo necesitamos saber si la noticia va a impactar al alza o baja sobre el precio y en qué medida… −3 es que sea muy probable que la acción baje, 3 que es muy probable que suba.»*
 - **Lo que ya hay.** El clasificador (`qwen`) devuelve `sentiment_score ∈ [−1, +1]` desde OPS1 (2026-07-09): 53.788 filas desde junio, con 27 valores distintos (medias: positivas +0,84, negativas −0,64). Con eso, `nivel = round(3 × sentiment_score)` da los 7 niveles sin pedirle nada nuevo al modelo.

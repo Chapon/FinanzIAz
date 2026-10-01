@@ -1432,6 +1432,10 @@ _NO_LE_CORRESPONDE_EL_GUARD = {
         "chequea announce_artifacts es la de otro sustrato. Declara la frescura de sus "
         "propios frames al correr (tarea 255)."
     ),
+    "measure_news_tone_fwd5_t258.py": (
+        "Lee los frames `2y` que mantiene la app viva, NO el cohorte `10y`, igual que el "
+        "de la 255; declara la frescura de sus frames al correr (tarea 258)."
+    ),
     "benchmark_historical_cache.py": (
         "Mide COSTO DE I/O, no produce un número de trading. Un cohorte torcido no "
         "invalida un benchmark de lectura; le cambia los milisegundos y nada más."

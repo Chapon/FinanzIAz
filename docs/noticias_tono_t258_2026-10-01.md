@@ -62,6 +62,40 @@ permiten (las dos del mismo signo con muestra).
 
 Display. No se cablea nada a sizing ni a gates (regla 3), pase lo que pase.
 
-## Resultado
+## Resultado (2026-10-01) — **NO PASA**
 
-*(se completa después de correr el script; el pre-registro de arriba no se toca)*
+Corrida: `python scripts/measure_news_tone_fwd5_t258.py`. El pre-registro de arriba no se tocó.
+53.710 noticias con polaridad desde el 2026-07-01, 131 tickers con frame `2y` (4 atrasados:
+AAPL, AVB, MLTX, TEAM). **4.082 unidades en 59 ruedas.**
+
+| | valor | condición |
+|---|---|---|
+| `ρ` (Spearman) | **−0,018** | > 0 → **falla** |
+| IC 95% de `ρ` | [−0,055, +0,016] | límite inferior > 0 → **falla** |
+| MDE de `ρ` | ≈ 0,050 | |
+| `ρ` por mitad | −0,058 \| +0,003 | mismo signo → **falla** |
+| `Δ_ext` (≥ +1,5: n=362 · ≤ −1,5: n=78) | +0,66 pp | ≥ 0,5 pp → cumple |
+
+Exceso medio a 5 días por nivel redondeado de la unidad:
+
+| −2 | −1 | 0 | +1 | +2 | +3 |
+|---|---|---|---|---|---|
+| −1,02 pp (n=78) | −0,44 pp (n=400) | −0,46 pp (n=2.143) | −0,80 pp (n=1.099) | −0,21 pp (n=267) | −0,77 pp (n=95) |
+
+**+3 contra +2: −0,55 pp** (n=95 / 267). La intensidad tampoco ordena dentro de las positivas.
+
+**Qué dice y qué no:**
+
+- **El nivel no ordena el retorno.** `ρ` es prácticamente cero, con el IC centrado en el cero y
+  sin signo estable entre mitades. Esta muestra descarta `|ρ|` mayores que ~0,05.
+- **El `Δ_ext` que pasa el piso no alcanza solo:** el grupo negativo tiene 78 unidades y la
+  serie por nivel no es monótona (el +1 rinde peor que el 0, y el +3 peor que el +2). Un extremo
+  que pasa sin un orden que lo sostenga es ruido, y por eso el pre-registro pidió las cuatro.
+- **Junto con la 255:** ni el signo (3 niveles) ni la intensidad (7) de lo que el clasificador
+  lee en el titular anticipan el retorno desde la apertura siguiente.
+
+**Límites:** 59 ruedas (julio–septiembre 2026, un único régimen); la escala es casi categórica
+(ver arriba), así que en la práctica se compararon −2, 0, +2 y +3, y la media por unidad genera
+los niveles intermedios.
+
+**Consecuencia, según lo pre-registrado:** la columna sigue llamándose **«Tono»**, sin cambios.
