@@ -315,7 +315,10 @@ def _monthly_perf(
 
     trades, _ = fifo_match(fills)
     monthly = monthly_breakdown(snapshots, trades)
-    spy = _load_close_series(con, "SPY")  # V1 benchmark (cache diario)
+    # V1 benchmark, empalmada hacia atrás con los frames más viejos (tarea 246).
+    from data.historical_series import empalmar
+
+    spy = empalmar(_load_close_series(con, "SPY"), "SPY")
     capital = _initial_capital(con, account_id)
     primer_mes = next((r["month"] for r in monthly if r.get("start_day")), None)
     # Primer día con snapshot de toda la cuenta: el origen desde el que se acumulan los

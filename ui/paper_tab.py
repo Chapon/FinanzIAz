@@ -1292,7 +1292,7 @@ class PaperTradingTab(QWidget):
             import sqlite3
             from pathlib import Path
 
-            from analysis.metrics_panel import BENCHMARK_TICKER, load_close_series
+            from analysis.metrics_panel import load_benchmark_series
             from database.models import DB_PATH
             from ui.paper.equity_chart import (
                 build_benchmark_overlay,
@@ -1302,7 +1302,7 @@ class PaperTradingTab(QWidget):
 
             con = sqlite3.connect(f"file:{Path(DB_PATH).as_posix()}?mode=ro", uri=True)
             try:
-                spy = load_close_series(con, BENCHMARK_TICKER)
+                spy = load_benchmark_series(con)  # empalmada (tarea 246)
                 capital = None
                 if account_id is not None:
                     fila = con.execute(

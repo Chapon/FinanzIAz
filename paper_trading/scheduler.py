@@ -63,6 +63,10 @@ Independent triggers, all gated by user settings:
    medianoche) archiva a Parquet la cinta de ``price_cache`` más vieja que 7
    días, con el invariante de la 81: escribir → verificar → borrar.
 
+9. **SPY long frame** — tarea 246. 1×/día chequea la edad del ``10y`` de SPY y
+   lo baja de nuevo si tiene más de 90 días: el VS SPY lo empalma con el ``2y``
+   rodante para cubrir la cuenta desde su arranque, y sin solape no hay empalme.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -353,6 +357,24 @@ class PriceTapeArchiveWorker(QThread):
             self.archive_failed.emit(f"{type(e).__name__}: {e}")
 
 
+class BenchmarkLargoWorker(QThread):
+    """Mantiene vivo el frame ``10y`` de SPY que empalma el VS SPY (tarea 246). Sale a la red.
+
+    Emits ``refresh_completed(dict)`` or ``refresh_failed(error)``.
+    """
+
+    refresh_completed = pyqtSignal(object)
+    refresh_failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from data.historical_series import refrescar_benchmark_largo
+
+            self.refresh_completed.emit(refrescar_benchmark_largo(hoy=utcnow_naive().date().isoformat()))
+        except Exception as e:
+            self.refresh_failed.emit(f"{type(e).__name__}: {e}")
+
+
 class DashboardRefreshWorker(QThread):
     """Regenera el snapshot del dashboard fuera del UI thread (trigger 7).
 
@@ -442,6 +464,10 @@ class PaperScheduler(QObject):
         self._tape_worker: PriceTapeArchiveWorker | None = None
         self._last_tape_archive: date | None = None
 
+        # Frame largo de SPY para el empalme del VS SPY (tarea 246): chequeo 1×/día.
+        self._bench_worker: BenchmarkLargoWorker | None = None
+        self._last_bench_check: date | None = None
+
         # Heartbeat: per-account timestamps of the most recent scan so the
         # UI / status bar can flag accounts that haven't been scanned in a
         # suspiciously long time (scheduler stalled or worker thread died).
@@ -488,6 +514,9 @@ class PaperScheduler(QObject):
         # tick diario re-chequea pasada la medianoche.
         QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_archive_price_tape)
 
+        # Frame largo de SPY (tarea 246): 1×/día chequea su edad; baja de nuevo cada ~90 días.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_refresh_benchmark_largo)
+
     def stop(self) -> None:
         """Stop all timers and wait briefly for any running worker."""
         self._interval_timer.stop()
@@ -510,6 +539,9 @@ class PaperScheduler(QObject):
         if self._tape_worker is not None:
             self._tape_worker.wait(2_000)
             self._tape_worker = None
+        if self._bench_worker is not None:
+            self._bench_worker.wait(2_000)
+            self._bench_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -564,6 +596,9 @@ class PaperScheduler(QObject):
 
         # Cinta intradía (tarea 244): 1×/día, no-op el resto del día.
         self._maybe_archive_price_tape()
+
+        # Frame largo de SPY (tarea 246): 1×/día, no-op el resto del día.
+        self._maybe_refresh_benchmark_largo()
 
         if not settings.get("paper_daily_scan_enabled", True):
             return
@@ -980,6 +1015,39 @@ class PaperScheduler(QObject):
         log.warning(
             "archivo de la cinta intradía falló (reintenta mañana, no se borró nada sin verificar): %s", err
         )
+
+    def _maybe_refresh_benchmark_largo(self) -> None:
+        """Chequea 1×/día la edad del ``10y`` de SPY (tarea 246). El gate es el de la 244."""
+        today = utcnow_naive().date()
+        running = self._bench_worker is not None and self._bench_worker.isRunning()
+        if not price_tape_archive_due(
+            enabled=True, today=today, last=self._last_bench_check, worker_running=running
+        ):
+            return
+        self._last_bench_check = today
+        worker = BenchmarkLargoWorker(parent=self)
+        worker.refresh_completed.connect(self._on_bench_completed)
+        worker.refresh_failed.connect(self._on_bench_failed)
+        worker.finished.connect(self._reap_bench_worker)
+        self._bench_worker = worker
+        worker.start()
+
+    def _on_bench_completed(self, res) -> None:
+        if isinstance(res, dict) and res.get("refrescado"):
+            log.info(
+                "frame largo de SPY refrescado: hasta %s (antes %s)",
+                res.get("ultimo_dia"),
+                res.get("ultimo_dia_antes"),
+            )
+
+    def _on_bench_failed(self, err: str) -> None:
+        log.warning("refresh del frame largo de SPY falló (reintenta mañana): %s", err)
+
+    def _reap_bench_worker(self) -> None:
+        w = self._bench_worker
+        self._bench_worker = None
+        if w is not None:
+            w.deleteLater()
 
     def _reap_tape_worker(self) -> None:
         w = self._tape_worker

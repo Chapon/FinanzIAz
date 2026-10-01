@@ -210,6 +210,17 @@ def load_close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, f
     return historical_series.close_series(con, ticker)
 
 
+def load_benchmark_series(con: sqlite3.Connection) -> list[tuple[str, float]] | None:
+    """La serie de SPY del benchmark, empalmada hacia atrás con los frames más viejos (tarea 246).
+
+    El ``2y`` que lee ``load_close_series`` rueda y el arranque de la cuenta no: sin el
+    empalme, el guard de la 225 apaga el VS SPY para siempre hacia mediados de 2028. Ver
+    ``data.historical_series.empalmar``. Pasa por ``load_close_series`` a propósito: es lo que
+    los tests del panel stubbean.
+    """
+    return historical_series.empalmar(load_close_series(con, BENCHMARK_TICKER), BENCHMARK_TICKER)
+
+
 def load_ohlc_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float, float]] | None:
     """Lista ``(YYYY-MM-DD, high, low)`` ascendente, o ``None`` si no hay serie.
 
@@ -1176,7 +1187,7 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "base_equity": start_eq if start_eq > 0 else None,
         "base_anclaje": base_anclaje,
     }
-    spy = load_close_series(con, BENCHMARK_TICKER)
+    spy = load_benchmark_series(con)
     if not spy or start_day is None or end_day is None:
         return {
             **empty,

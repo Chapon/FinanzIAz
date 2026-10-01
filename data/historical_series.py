@@ -84,6 +84,11 @@ def _filas_parquet(ticker: str) -> list[_Fila] | None:
     except Exception:
         log.exception("parquet latest_1d fallo para %s", ticker)
         return None
+    return _filas_de_frame(df)
+
+
+def _filas_de_frame(df) -> list[_Fila] | None:
+    """``[(YYYY-MM-DD, close, high, low)]`` de un frame OHLC, o ``None``."""
     if df is None or getattr(df, "empty", True):
         return None
     out: list[_Fila] = []
@@ -168,6 +173,111 @@ def _filas_1d(con: sqlite3.Connection, ticker: str) -> list[_Fila] | None:
     # fuerza acá y no en cada lector, que es lo que hacia que dependiera de la fuente.
     filas = sorted((f for f in filas if f[1] > 0), key=lambda f: f[0])
     return filas or None
+
+
+def empalmar(
+    base: list[tuple[str, float]] | None, ticker: str, *, frames: list | None = None
+) -> list[tuple[str, float]] | None:
+    """``base`` extendida hacia ATRÁS con los frames ``1d`` más viejos del ticker (tarea 246).
+
+    **Por qué existe.** ``close_series`` lee ``latest_1d``, el frame **más fresco** —para
+    SPY, el ``2y`` que el scan refresca—, y ese frame es una ventana **rodante** mientras el
+    arranque de una cuenta queda **fijo**. El guard de la 225 lo midió: el colchón se achica
+    ~1 rueda por día, y cuando el inicio del ``2y`` pase al de la cuenta (~mediados de 2028
+    para la 2) el VS SPY se apaga para siempre. Pero el cache ya tiene un ``10y`` de SPY que
+    arranca en 2016: sólo nadie lo leía.
+
+    **Cómo empalma, y por qué así.** Con ``auto_adjust`` cada fetch re-escala la historia por
+    los dividendos que hubo hasta ese día, así que dos frames del mismo ticker bajados en
+    fechas distintas difieren por un factor. Pegarlos tal cual mete un salto falso en la
+    junta. Se toma la **primera fecha en común** y el tramo viejo se multiplica por la razón
+    de los dos cierres ahí: los retornos de cada tramo quedan intactos y la junta, continua.
+    Un frame sin fechas en común **no se empalma** — no hay con qué escalarlo.
+
+    Sólo con backend ``parquet``/``dual`` (``frames=None``): con ``sqlite`` hay un solo frame
+    por ticker y no hay qué empalmar. ``frames`` se inyecta en los tests.
+    """
+    if not base:
+        return base
+    if frames is None:
+        if backend_activo() not in ("parquet", "dual"):
+            return base
+        try:
+            from data import parquet_cache
+
+            frames = parquet_cache.all_1d(ticker.upper())
+        except Exception:
+            log.exception("empalme: no se pudieron leer los frames 1d de %s", ticker)
+            return base
+    out = dict(base)
+    tramos = []
+    for df in frames or []:
+        filas = _filas_de_frame(df)
+        if filas:
+            tramos.append({dia: cl for dia, cl, _hi, _lo in filas if cl > 0})
+    # Del que empieza más tarde al que empieza más temprano: cada uno extiende lo ya armado.
+    for tramo in sorted((t for t in tramos if t), key=min, reverse=True):
+        inicio = min(out)
+        viejos = {d: c for d, c in tramo.items() if d < inicio}
+        comunes = sorted(d for d in tramo if d in out)
+        if not viejos or not comunes:
+            continue
+        factor = out[comunes[0]] / tramo[comunes[0]]
+        out.update({d: c * factor for d, c in viejos.items()})
+    return sorted(out.items())
+
+
+# El frame LARGO del benchmark (tarea 246). `empalmar` necesita que se SOLAPE con el `2y`
+# rodante; el `10y` de SPY no está en el universo del cohorte, así que nadie lo refrescaba, y
+# sin refresh el solape se acaba ~2 años después de su último día. Con este umbral se baja de
+# nuevo cada ~3 meses: un fetch, y el solape nunca baja de ~21 meses.
+BENCHMARK_LARGO_PERIOD = "10y"
+BENCHMARK_LARGO_MAX_EDAD_DIAS = 90
+
+
+def benchmark_largo_vencido(
+    ultimo_dia: str | None, hoy: str, max_edad_dias: int = BENCHMARK_LARGO_MAX_EDAD_DIAS
+) -> bool:
+    """¿Hay que volver a bajar el frame largo? Puro: sin frame, o con el último día viejo."""
+    if not ultimo_dia:
+        return True
+    try:
+        from datetime import date
+
+        edad = (date.fromisoformat(hoy[:10]) - date.fromisoformat(ultimo_dia[:10])).days
+    except ValueError:
+        return True
+    return edad > max_edad_dias
+
+
+def refrescar_benchmark_largo(ticker: str = "SPY", *, hoy: str, fetch=None) -> dict:
+    """Baja de nuevo el frame ``10y`` del benchmark si está vencido (tarea 246). Red: sí.
+
+    Lee el último día del frame ``10y`` del parquet; si está vencido, lo pide a Yahoo con
+    ``get_historical_data`` (que escribe el cache). ``fetch`` se inyecta en los tests.
+    """
+    ultimo = None
+    try:
+        from data import parquet_cache
+
+        for etiqueta, df in parquet_cache.labelled_1d(ticker.upper()):
+            if etiqueta == BENCHMARK_LARGO_PERIOD:
+                filas = _filas_de_frame(df)
+                ultimo = filas[-1][0] if filas else None
+                break
+    except Exception:
+        log.exception("benchmark largo: no se pudo leer el frame %s de %s", BENCHMARK_LARGO_PERIOD, ticker)
+    if not benchmark_largo_vencido(ultimo, hoy):
+        return {"refrescado": False, "ultimo_dia": ultimo}
+    if fetch is None:
+        from data.yahoo_finance import get_historical_data as fetch
+    df = fetch(ticker.upper(), period=BENCHMARK_LARGO_PERIOD, interval="1d")
+    filas = _filas_de_frame(df)
+    return {
+        "refrescado": filas is not None,
+        "ultimo_dia_antes": ultimo,
+        "ultimo_dia": filas[-1][0] if filas else None,
+    }
 
 
 def close_series(con: sqlite3.Connection, ticker: str) -> list[tuple[str, float]] | None:
