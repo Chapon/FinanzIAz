@@ -15,7 +15,9 @@ un paso de distancia de la operación normal.
 Después de refrescar, el store de señales PIT queda **atrás del cohorte** y hay que
 recomputarlo antes de correr cualquier harness (T111/T117), y las constantes de
 reproducción quedan **INDETERMINADAS** porque la ventana se movió (T48/T68). El script
-lo dice al final en vez de dejarlo para que alguien se acuerde.
+lo dice al final en vez de dejarlo para que alguien se acuerde — salvo que lo único
+refrescado sea sustrato fuera del universo (SPY, ``--tickers SPY``), que no mueve ninguna
+de las dos cosas (tarea 253).
 
 Uso:
     python scripts/refresh_cohort.py --dry-run          # qué haría, sin bajar nada
@@ -122,6 +124,16 @@ def main(argv: list[str] | None = None) -> int:
 
     res = get_historical_data_batch(a_refrescar, period=args.period)
     print(f"\nRefrescados: {len(res)} de {len(a_refrescar)}")
+
+    # Tarea 253 — si sólo se refrescó sustrato fuera del universo (SPY), el checklist no aplica:
+    # el store PIT es por ticker del universo y los runners de régimen no anclan constantes de
+    # reproducción. Imprimirlo igual mandaba a re-precomputar y re-anclar por nada.
+    if a_refrescar and all(t.upper() in SUSTRATO_FUERA_DEL_UNIVERSO for t in a_refrescar):
+        print(
+            f"\nSólo se refrescó sustrato fuera del universo ({', '.join(a_refrescar)}): ni el "
+            "store PIT ni las constantes de reproducción dependen de él, así que no hay checklist."
+        )
+        return 0
 
     print(
         "\nDESPUÉS DE ESTO, y antes de correr cualquier harness:\n"
