@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 189 — Tarea 247 (CLAIMS-MENORES-2026-09-30) CERRADA 2026-09-30 — los cinco restos, y la misma oración tenía un sexto** (`CLAUDE.md`, `docs/BACKLOG.md`, `scripts/harvest_catalysts.py`, `data/news_sources.py`). Suite Windows (Anaconda) **3955 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3952 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
+- **WIP 189 — Tarea 247 (CLAIMS-MENORES-2026-09-30) CERRADA 2026-09-30 — los cinco restos, y la misma oración tenía un sexto** (`31046a6`; `CLAUDE.md`, `docs/BACKLOG.md`, `scripts/harvest_catalysts.py`, `data/news_sources.py`). Suite Windows (Anaconda) **3955 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3952 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
   - **`CLAUDE.md`, el marcador `network`:** decía que no lo usaba ningún test; desde la 211 lo usa uno, que no pega a la red —prueba el escape del marcador— y es el `1 deselected` de cada corrida. Dicho con su nombre.
   - **`CLAUDE.md`, los aislamientos — y el sexto resto:** la lista *«cinco aislamientos: log, DB, fetch de tooltip, Slack y red»* no nombraba el del settings, y la misma oración seguía *«los dos últimos de esa lista —DB y red—»*, cuando los dos últimos eran Slack y red. Ahora nombra settings y memos de Yahoo, **no cuenta** (mi primera corrección decía «seis» y también se quedaba corta: el conftest aísla además el breaker de throttle) y remite al `conftest` como la lista.
   - **RSS:** tres comentarios que la nombraban como fuente viva, en el harvester y en `news_sources`.
