@@ -45,6 +45,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.logging_config import get_logger
+from ui.metrics_tab import pick_initial_account_index
 from ui.styles import PALETTE
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips
 from ui.time_utils import fmt_local as _fmt_local
@@ -516,13 +517,13 @@ class PaperTradingTab(QWidget):
                 if not a.is_active:
                     label += "  (inactiva)"
                 self.account_combo.addItem(label, userData=int(a.id))
-            # Restore previous selection if still present
-            target_idx = 0
-            if self._current_account_id is not None:
-                for i, a in enumerate(self._accounts):
-                    if int(a.id) == self._current_account_id:
-                        target_idx = i
-                        break
+            # Restore previous selection if still present; si no hay, la primera cuenta
+            # ACTIVA — el índice 0 es la cuenta 1, cerrada (tarea 254).
+            target_idx = pick_initial_account_index(
+                [int(a.id) for a in self._accounts],
+                self._current_account_id,
+                {int(a.id) for a in self._accounts if a.is_active},
+            )
             self.account_combo.setCurrentIndex(target_idx)
             self._current_account_id = self.account_combo.itemData(target_idx)
         self.account_combo.blockSignals(False)

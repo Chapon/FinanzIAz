@@ -58,8 +58,14 @@ _REPO_DIR = Path(__file__).resolve().parents[1]
 _TABLE_HEIGHT = 460
 
 
-def pick_initial_account_index(account_ids: list[int], preferred_id: int | None) -> int:
-    """Índice de ``preferred_id`` en ``account_ids``; si no está (o es None), 0.
+def pick_initial_account_index(
+    account_ids: list[int], preferred_id: int | None, active_ids: set[int] | frozenset[int] = frozenset()
+) -> int:
+    """Índice de ``preferred_id`` en ``account_ids``; si no está (o es None), la primera
+    cuenta **activa**; si no hay ninguna, 0.
+
+    Tarea 254: el fallback era el índice 0, que es la cuenta 1 —cerrada desde el 2026-07-01—, y
+    la pestaña abría mostrando su score (cero desde julio) como si fuera el de la cuenta viva.
 
     Función pura para testear la selección inicial del combo sin un event loop Qt.
     """
@@ -67,6 +73,9 @@ def pick_initial_account_index(account_ids: list[int], preferred_id: int | None)
         for i, aid in enumerate(account_ids):
             if aid == preferred_id:
                 return i
+    for i, aid in enumerate(account_ids):
+        if aid in active_ids:
+            return i
     return 0
 
 
@@ -434,9 +443,9 @@ class PerformanceScorePanel(QFrame):
 class MetricsTab(QWidget):
     """Pestaña de métricas de funcionamiento del modelo."""
 
-    def __init__(self, account_id: int = 1, parent=None):
+    def __init__(self, account_id: int | None = None, parent=None):
         super().__init__(parent)
-        self.account_id = account_id
+        self.account_id = account_id  # None = la primera cuenta activa (tarea 254)
         self._worker: MetricsWorker | None = None
         self._loaded_at: float | None = None
         self._build_ui()
@@ -804,7 +813,9 @@ class MetricsTab(QWidget):
                 if not a.is_active:
                     label += "  (inactiva)"
                 self.account_combo.addItem(label, userData=int(a.id))
-            idx = pick_initial_account_index([int(a.id) for a in accounts], self.account_id)
+            idx = pick_initial_account_index(
+                [int(a.id) for a in accounts], self.account_id, {int(a.id) for a in accounts if a.is_active}
+            )
             self.account_combo.setCurrentIndex(idx)
             data = self.account_combo.itemData(idx)
             if data is not None:

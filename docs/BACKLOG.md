@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 196 — Tarea 254 (METRICAS-ABRE-EN-LA-CUENTA-CERRADA) CERRADA 2026-10-01 — el «score 0 desde julio en Sim Segundo» era el score de la cuenta 1** (`ui/metrics_tab.py`, `ui/paper_tab.py`, `tests/test_metrics_tab_selector.py`). Suite Windows (Anaconda) **3985 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **3982 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **Lo que vio Chapa:** el panel de score con abril–julio operados y cero de agosto a octubre, *«43 round-trips cerrados · 5 posiciones abiertas»*. Medido contra la DB (solo lectura): es la **cuenta 1** —43 ventas, abiertas SBUX, LRCX, MO, KO y CL—. Sim Segundo tiene 10 posiciones y vendió todos los meses; su score es **jun 23 · jul 35 · ago 8 (−$1.692) · sep 12 (+$114)**.
+  - **La causa:** `MainWindow` crea `MetricsTab()` sin cuenta y el default del constructor era `account_id=1`; el `PaperTradingTab`, sin selección previa, caía al índice 0, que es la misma cuenta 1. Ahora las dos usan `pick_initial_account_index` con la **primera cuenta activa** como fallback.
+  - **Mutación:** sacar el fallback a la activa pone dos tests en rojo; los casos ponen la cuenta cerrada primera, donde el fallback viejo y el nuevo difieren.
+
 - **WIP 195 — Tarea 253 (REFRESH-SPY-CON-CHECKLIST-AJENO) CERRADA 2026-10-01 — se corrió la acción manual de la 251, y el script mandaba a re-precomputar y re-anclar por nada** (`b251f9b`; `scripts/refresh_cohort.py`, `tests/test_refresh_sustrato_sin_checklist_t253.py` **nuevo**). Suite Windows (Anaconda) **3979 passed, 1 skipped, 1 deselected** (+4), ruff limpio, sin estado vivo **3976 passed, 4 skipped**. **No deja tareas nuevas.**
   - **La acción manual, hecha a pedido de Chapa:** `refresh_cohort.py --tickers SPY` (dry-run primero). SPY quedó 2016-10-03 → 2026-10-01 y `spy_coverage_problems` da `[]` contra el cohorte real (termina 2026-09-09): los tres runners de régimen dejan de abortar. La última barra es la de la sesión del día sin asentar (T112), pero cae fuera de la ventana del cohorte.
   - **El hallazgo:** al terminar imprimió el checklist entero del refresh del cohorte —re-precomputar el store PIT, re-anclar constantes—. Nada de eso depende de SPY: no está en el store PIT, y los tres runners de régimen no anclan constantes de reproducción (verificado con `grep`). Ahora, si todo lo refrescado es `SUSTRATO_FUERA_DEL_UNIVERSO`, lo dice en una línea y no imprime el checklist; con cualquier ticker del universo en la lista, sí.
@@ -1808,6 +1813,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-01e** tras abrir y cerrar la **253**, que salió de correr la acción manual de SPY y **no deja tareas nuevas**. Sin cambios: el orden queda **196 → 245**, las dos esperando el dato de la Pi.
 
+> **Repriorizado 2026-10-01f** tras abrir y cerrar la **254**, que salió de una pregunta de Chapa y **no deja tareas nuevas**. Sin cambios: el orden queda **196 → 245**, las dos esperando el dato de la Pi.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3191,6 +3198,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Qué pasa.** *«None are marked yet»* (hay uno desde la 211); la tabla *«What's covered»* lista 8 archivos de test cuando hay cientos; el *Quick start* no menciona los cuatro comandos del *done*. La 247 corrigió la misma frase en `CLAUDE.md` sin buscarla en el resto del repo.
 - **Kill-criteria.** Documentación. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 254. ~~METRICAS-ABRE-EN-LA-CUENTA-CERRADA — La pestaña Métricas (y Paper) abren en la cuenta 1, cerrada, y su score se lee como el de la cuenta viva~~ · **CERRADA 2026-10-01 — fallback a la primera cuenta activa en las dos pestañas** · **movida a *En curso* con el detalle**  ·  origen: pregunta de Chapa (*«¿por qué tenemos cero de score en 4 meses en Sim Segundo?»*) · severidad **MEDIA** (dirige mal la lectura del desempeño)
+
+- **Qué pasa.** `MetricsTab(account_id=1)` por default y `PaperTradingTab` al índice 0: las dos abren en Sim Principal, cerrada desde el 2026-07-01, con el score en cero desde agosto.
+- **Kill-criteria.** Sin preferencia, con la cuenta cerrada primera en la lista, se elige la activa; una preferida existente gana. Mutación del fallback en rojo. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
 ### 253. ~~REFRESH-SPY-CON-CHECKLIST-AJENO — `refresh_cohort.py --tickers SPY` imprime el checklist del refresh del cohorte, que no aplica~~ · **CERRADA 2026-10-01 — con sólo sustrato refrescado, una línea en vez del checklist** · **movida a *En curso* con el detalle**  ·  origen: correr la acción manual de la 251 · severidad **BAJA**
