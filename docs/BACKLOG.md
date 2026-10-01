@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 196 — Tarea 254 (METRICAS-ABRE-EN-LA-CUENTA-CERRADA) CERRADA 2026-10-01 — el «score 0 desde julio en Sim Segundo» era el score de la cuenta 1** (`ui/metrics_tab.py`, `ui/paper_tab.py`, `tests/test_metrics_tab_selector.py`). Suite Windows (Anaconda) **3985 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **3982 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 196 — Tarea 254 (METRICAS-ABRE-EN-LA-CUENTA-CERRADA) CERRADA 2026-10-01 — el «score 0 desde julio en Sim Segundo» era el score de la cuenta 1** (`21457e8`; `ui/metrics_tab.py`, `ui/paper_tab.py`, `tests/test_metrics_tab_selector.py`). Suite Windows (Anaconda) **3985 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **3982 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Lo que vio Chapa:** el panel de score con abril–julio operados y cero de agosto a octubre, *«43 round-trips cerrados · 5 posiciones abiertas»*. Medido contra la DB (solo lectura): es la **cuenta 1** —43 ventas, abiertas SBUX, LRCX, MO, KO y CL—. Sim Segundo tiene 10 posiciones y vendió todos los meses; su score es **jun 23 · jul 35 · ago 8 (−$1.692) · sep 12 (+$114)**.
   - **La causa:** `MainWindow` crea `MetricsTab()` sin cuenta y el default del constructor era `account_id=1`; el `PaperTradingTab`, sin selección previa, caía al índice 0, que es la misma cuenta 1. Ahora las dos usan `pick_initial_account_index` con la **primera cuenta activa** como fallback.
   - **Mutación:** sacar el fallback a la activa pone dos tests en rojo; los casos ponen la cuenta cerrada primera, donde el fallback viejo y el nuevo difieren.
