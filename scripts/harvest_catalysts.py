@@ -354,7 +354,7 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
 
     Two dedup layers:
       1. URL: the same article URL (canonicalized) from any source collapses —
-         catches a story carried by both Finnhub and Yahoo/RSS in the same run,
+         catches a story carried by both Finnhub and Yahoo in the same run,
          where the titles differ so ``content_hash`` would not catch it.
       2. content_hash: (ticker, normalized title, hour) — the original guard for
          items without a URL or with differing URLs but the same headline.
@@ -520,7 +520,7 @@ def _collect_fase1(
 ) -> list[tuple[str, _CollectResult]]:
     """Fase 1 — recolectar (RED) FUERA de toda sesión, con techo de wall-clock (T204).
 
-    Tener la conexión tomada durante los fetch de red (yfinance/SEC/RSS, ~90s para 52
+    Tener la conexión tomada durante los fetch de red (yfinance/SEC/Finnhub, ~90s para 52
     tickers) era un lock-holder enorme que chocaba con el scan/bulk-fetch paralelo →
     "database is locked" + agotamiento del QueuePool. Mismo patrón que classify_events.
 

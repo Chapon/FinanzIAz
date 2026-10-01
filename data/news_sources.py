@@ -458,7 +458,8 @@ def collect_yfinance_earnings_history(ticker: str, limit: int = 16) -> list[tupl
 # can later weight by publisher credibility without a schema change. Requires a
 # free API key in ``FINNHUB_API_KEY`` (or ``FINNHUB_TOKEN``); if it's missing
 # the source logs once and returns [] so the MVP keeps running on the free
-# sources alone — same contract as the SEC/RSS collectors.
+# sources alone — same contract as the SEC collector. Desde la 217 eso sale como
+# ``unavailable`` en el reporte, no como un silencio.
 #
 # Endpoint: GET /company-news?symbol=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD&token=…
 # Item shape: {datetime: epoch-s, headline, summary, url, source: "<Outlet>",
