@@ -58,3 +58,40 @@ de esos lectores lo trata como congelado sin saberlo.
 ### 1.7 Alcance — qué NO se mira, dicho antes
 
 - `.venv`; temporales de sesión.
+
+---
+
+## 2. Alcance real
+
+**Mirado:** escritores y lectores de `data/parquet/SPY__*` y `data/price_tape/`; el orden entre el
+backup diario (`main.py:45`) y el arranque del scheduler (`ui/main_window.py:152`); el crecimiento de
+`data/price_tape/`; las migraciones de `alembic/versions/` que tocan `price_cache` (0009, 0010).
+
+**Fase adversarial:** el único candidato de esta área —el job 9 pisando un artefacto del cohorte—
+es el [D-1] de `docs/auditoria_desvios_2026-09-30b.md`, que pasó por el `verificador` y bajó a BAJA.
+No se re-reporta acá.
+
+---
+
+## 3. Hallazgos
+
+**Ninguno propio de esta área. Barrido limpio.**
+
+## 4. Las dos direcciones
+
+**Dirección 1.**
+- **El primer arranque del job 8 está respaldado:** el backup diario se toma en `main.py:45`, antes
+  de crear la ventana y el scheduler; los 7 diarios cubren cualquier error, y el archivador sólo
+  borra ids que releyó del Parquet.
+- **`data/price_tape/`:** 4,6 MB por ~3,5 meses de cinta, gitignoreado. Crece ~1,5 MB/mes; no hace
+  falta poda.
+- **Esquema:** el `DELETE … WHERE id IN (…)` del archivador va por la PK; la 0010 sacó los índices de
+  `fetched_at` a propósito (medido en la 81).
+
+**Dirección 2.** Los archivos que reescriben los jobs nuevos tienen nombrados sus lectores: el
+Parquet de la cinta no lo lee ningún proceso vivo; `SPY__10y` lo leen el empalme y los tres runners de
+régimen —eso es el [D-1] de `desvios`.
+
+## 5. Mapeo hallazgo → tarea
+
+Sin hallazgos propios. El candidato de esta área es la tarea **251** (vía `desvios` [D-1]).

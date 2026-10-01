@@ -57,3 +57,40 @@ todo umbral nuevo atado al reloj está fijado por los dos lados.
 ### 1.7 Alcance — qué NO se mira, dicho antes
 
 - El motor vivo y `ui/`.
+
+---
+
+## 2. Alcance real
+
+**Mirado:** los guards y tests nuevos de `f13e8a6..HEAD` (contrapruebas de población y bordes de
+umbral); `tests/` entero con un instrumento de fechas relativas a `now()`/`today()` combinadas con
+cortes de calendario.
+
+**Validación del instrumento — falló una vez, y se corrigió antes de creerle.** La primera versión
+pedía `now()` **vacío** y **no veía la t81 vieja** (`datetime.now(timezone.utc)` lleva argumento):
+habría dado un barrido limpio y falso. Corregido a `now(`, ve la t81 vieja (`git show fad0f1d^`) y
+encuentra tres archivos: la t81 (ya arreglada), `test_analyst_data.py` (falso positivo conocido: el
+«mes −1m» es una etiqueta de período) y `test_archivo_diario_cinta_t244.py`, que se leyó: sus fechas
+quedan lejos del corte de 7 días y no dependen del mes.
+
+**Fase adversarial: PROPIA.** Sin hallazgos.
+
+---
+
+## 3. Hallazgos
+
+**Ninguno. Barrido limpio**, y se publica como tal.
+
+## 4. Las dos direcciones
+
+**Dirección 1.** Los guards nuevos tienen contraprueba de población: la 239
+(`test_la_seccion_se_parsea_de_verdad`), la 242 (`test_la_poblacion_no_esta_vacia`), la 240
+(`test_la_tabla_se_parsea_de_verdad`, ≥ 10 filas). Los umbrales nuevos atados al reloj están fijados
+por los dos lados: los 90 días (01/07 no vence, 30/06 sí) y el día calendario de los jobs (tres
+días de ticks por minuto ⇒ tres corridas).
+
+**Dirección 2.** Ningún test de `tests/` depende del día en que corre sin fijar el reloj.
+
+## 5. Mapeo hallazgo → tarea
+
+Sin hallazgos, sin tareas.

@@ -60,3 +60,66 @@ empalme, aviso de key, aviso de barra provisional) aparece donde el operador lo 
 
 - Los docs de veredicto de tareas cerradas.
 - Lo ya barrido esta mañana y no tocado después.
+
+---
+
+## 2. Alcance real
+
+**Mirado:** los textos agregados por `git diff f13e8a6..HEAD` en los 39 archivos (backlog, skills,
+`CLAUDE.md`, `SETTINGS_REFERENCE.md`, `DB_SCHEMA.md`, docstrings de los módulos tocados); `README.md`
+y `tests/README.md`; los textos de `ui/` sobre VS SPY y fuentes de noticias.
+
+**NO mirado:** docs de veredicto de tareas cerradas.
+
+**Fase adversarial: PROPIA.** Ningún hallazgo llegó a HIGH.
+
+---
+
+## 3. Hallazgos
+
+### [C-1] `tests/README.md` repite el claim que la 247 corrigió en `CLAUDE.md`, y su tabla de cobertura es de mayo
+
+Severidad: **BAJA** · Confianza: ALTA · Categoría: [C-dosLugares] + [C-presente]
+Ubicación: `tests/README.md:40-43` y `:16-27`
+
+**Evidencia.** *«Tests marked `@pytest.mark.network` … None are marked yet»*: hay uno desde la 211, el
+mismo que la **247** nombró en `CLAUDE.md` esta tarde. La tabla *«What's covered»* lista **8**
+archivos de test; hay cientos. El *Quick start* no menciona los cuatro comandos del *done*.
+
+**¿Por qué no antes?** **(b)** para la corrida de la mañana, que excluyó el README de forma
+explícita. Pero la mitad del *«None are marked»* es **deuda de la tarea 247**: corrigió la frase en
+`CLAUDE.md` sin buscarla en el resto del repo, que es exactamente la lección que la tanda de la
+mañana escribió en la skill (*«las correcciones viejas se BUSCAN, no se leen»*).
+
+**Acción.** Corregir la frase, reemplazar la tabla por una remisión (`pytest --collect-only`) y
+apuntar el quick start al `/test`.
+
+---
+
+## 4. Barrido limpio en el resto del área — las dos direcciones
+
+**Dirección 1.** Lo que los arreglos escribieron como verificado lo está: el Task Scheduler vacío
+(`Get-ScheduledTask`), las keys como variables de usuario, la serie empalmada desde 2016-09-01 con la
+junta al decimal, el solape mínimo de ~21 meses (2 años − 90 días), los dos marcos de la T115/T121.
+**Una excepción, reportada en `guards`:** `finanzias-conventions` anuncia que `check_repo_health`
+chequea *«DB desde no-Windows»*, y ese chequeo es inerte ([G-2] de ese informe).
+
+**Dirección 2.** Los mecanismos nuevos están donde se buscan: la perilla del job 8 en
+`SETTINGS_REFERENCE.md`, los jobs 8 y 9 en el docstring del scheduler, el aviso de key en la fila de
+la segunda opinión. El job 9 no tiene perilla (no hace falta fila).
+
+---
+
+## 5. Mapeo hallazgo → tarea
+
+| hallazgo | severidad | tarea |
+|---|---|---|
+| [C-1] `tests/README.md`: «None are marked», tabla de mayo | BAJA | **252** |
+
+---
+
+## 6. Deuda de método
+
+Ninguna de la skill. **Una de mi trabajo de la tarde:** la 247 no aplicó la lección que la tanda de la
+mañana acababa de escribir. Una lección en la skill no la aplica sola quien no relee la skill al
+cerrar una tarea de texto; queda dicho acá, no como tarea.

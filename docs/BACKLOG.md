@@ -18,6 +18,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 190 — Segunda tanda `/audit` de las CINCO áreas CERRADA 2026-09-30 — sobre los arreglos de la tarde: un HIGH que el `verificador` bajó a BAJA, y dos defectos que introduje yo** (`e849e38` congela los cinco kill-criteria antes de mirar; `docs/auditoria_{claims,muestra,desvios,guards,estado}_2026-09-30b.md`). Pedido de Chapa: *«hacer todas las auditorías nuevamente»*. READ-ONLY. **4 hallazgos → 4 tareas (249 a 252)**; `muestra` y `estado`, barrido limpio.
+  - **Por qué de nuevo y con qué foco:** las nueve tareas de la tarde cambiaron 39 archivos, con dos jobs nuevos que escriben estado y cuatro guards nuevos. La mañana no podía verlos.
+  - **El que entró como HIGH:** el job 9 de la 246 reescribe `SPY__10y`, que es la serie de régimen de tres runners de harness, por fuera de `refresh_cohort`, y nada chequea la alineación de SPY con el cohorte. El `verificador`, con el mandato de refutar, **lo redujo a BAJA midiendo**: el régimen no cambia en ningún día hasta ~18 meses de desalineación. Sobrevive el hueco del cohorte (hoy SPY está 6 ruedas atrás, desde antes de la 246) → **251**.
+  - **Dos defectos que introduje esta tarde, y se dice cuál tarea:** la **239** dejó afuera del corpus todo el backlog, incluido el header y las acciones manuales donde vivían dos hallazgos de la mañana (**249**); la **247** corrigió *«no hay tests network»* en `CLAUDE.md` y no lo buscó en `tests/README.md` (**252**) —la lección que la misma mañana escribió en la skill—.
+  - **Uno viejo, (c-metodo):** el chequeo *«DB desde no-Windows»* de `check_repo_health.py` no puede dispararse —la DB está gitignoreada— desde el 2026-06-24, y la corrida de `guards` del 2026-09-11 lo leyó (**250**).
+  - **Mi instrumento falló una vez y se corrigió antes de creerle:** el barrido de tests dependientes del calendario pedía `now()` vacío y no veía la t81 vieja; validado contra ella, da limpio.
+  - **Fase adversarial:** independiente para el HIGH, propia para el resto.
+
 - **WIP 189 — Tarea 247 (CLAIMS-MENORES-2026-09-30) CERRADA 2026-09-30 — los cinco restos, y la misma oración tenía un sexto** (`31046a6`; `CLAUDE.md`, `docs/BACKLOG.md`, `scripts/harvest_catalysts.py`, `data/news_sources.py`). Suite Windows (Anaconda) **3955 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3952 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
   - **`CLAUDE.md`, el marcador `network`:** decía que no lo usaba ningún test; desde la 211 lo usa uno, que no pega a la red —prueba el escape del marcador— y es el `1 deselected` de cada corrida. Dicho con su nombre.
   - **`CLAUDE.md`, los aislamientos — y el sexto resto:** la lista *«cinco aislamientos: log, DB, fetch de tooltip, Slack y red»* no nombraba el del settings, y la misma oración seguía *«los dos últimos de esa lista —DB y red—»*, cuando los dos últimos eran Slack y red. Ahora nombra settings y memos de Yahoo, **no cuenta** (mi primera corrección decía «seis» y también se quedaba corta: el conftest aísla además el breaker de throttle) y remite al `conftest` como la lista.
@@ -1767,6 +1775,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-09-14b** tras cerrar la **203**, que **no dejó tareas nuevas** — y eso es información, no un hueco. Los tres guards de esquema que aparecieron ciegos a los índices por expresión (`missing_declared_indexes`, el de unicidad de la 74 y el de equivalencia de `test_alembic_catchup`) se arreglaron **en la misma pasada**, porque el índice de la 203 era el primero de esa forma en el repo y sin el arreglo no había manera de dejarlos en verde: no eran deuda separable, eran parte de shipear el índice. La cuarta aparición —la revisión `0009`— quedó **sin tocar a propósito**: su lista está congelada y no tiene ninguno por expresión, así que su chequeo es correcto. Sin cambios de criterio arriba: se consume el ítem y el orden queda **202 → 204 → 197**. La **202** encabeza por ser la que estaba, es análisis y no bloquea a nadie; la **204** sigue detrás por lo mismo que el 13 (in-app sólo molesta, muerde si la 196 se implementa); la **197** última, que sigue sin fallar. Y sigue la **196** fuera de la cola, esperando la decisión de Chapa entre Raspberry Pi y AWS.
 
+> **Repriorizado 2026-09-30m** tras la segunda tanda `/audit` del día (`docs/auditoria_*_2026-09-30b.md`), que deja **cuatro** tareas, ninguna HIGH. Criterio de siempre: el guard antes que la cosa que protege. La **249** encabeza (un corpus que no lee el texto operativo donde esta mañana hubo dos hallazgos), detrás la **250** (un guard inerte que dos textos anuncian), la **251** (BAJA, medida) y la **252** (texto). La **196** y la **245** siguen al final, esperando la Pi. El orden queda **249 → 250 → 251 → 252 → 196 → 245**.
+
 > **Repriorizado 2026-09-30l** tras cerrar la **247**, que **no deja tareas nuevas**. Con esto se consumen las diez tareas de la tanda `/audit` del 2026-09-30 salvo la **245**, que espera a la 196. El orden queda **196 → 245**: las dos esperan el dato de la Pi, que Chapa dejó para el final.
 
 > **Repriorizado 2026-09-30k** tras cerrar la **246**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **247 → 196 → 245**.
@@ -3114,6 +3124,35 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Los cinco textos, describiendo la regla de tres, el degradado a dos y el `sin_opinion`. (2) Con `price_second_opinion_enabled` ON, avisar **una vez por proceso** qué fuentes no tienen key (el `unavailable` de la 217). (3) Loguear la excepción de `_arbitrate_price`.
 - **Kill-criteria.** Con el flag ON y sin `TIINGO_API_KEY`, el primer arbitraje deja **un** aviso que nombra a Tiingo y el segundo no lo repite; con una excepción inyectada en `arbitrate_votes`, queda un registro de log. Mutación: sacar cada aviso pone su test en rojo. Los cuatro comandos en verde.
 - **Dependencias:** ninguna. Emparenta con la **196** (el entorno de la Pi).
+
+### 249. CORPUS-SIN-SECCIONES-OPERATIVAS-DEL-BACKLOG — El corpus de la 239 excluye todo `BACKLOG.md`, y su header y sus acciones manuales son texto operativo en presente  ·  origen: `docs/auditoria_guards_2026-09-30b.md` [G-1] · severidad **MEDIA**
+
+- **Qué pasa.** `tests/corpus_operativo.py` excluye `docs/BACKLOG.md` entero con el motivo *«las cerradas citan a propósito las afirmaciones viejas que corrigieron»*. Vale para el historial, no para el **header**, *Acciones manuales pendientes*, *Bloqueado* ni *Calidad de datos*. Mutación en el sentido del falso positivo: *«Cuenta activa: "Sim Principal" (id=1), modo kill_only.»* en *Acciones manuales pendientes* → la función de la 198 la marca y el guard queda **verde**. Esta mañana dos hallazgos vivían ahí (la instrucción de la segunda opinión y el «modo kill_only» del header).
+- **Introducido por la 239** (`d20b884`).
+- **Alcance.** Que el corpus incluya esas secciones, recortadas por encabezado, y siga excluyendo el historial; que el docstring diga qué secciones entran y por qué.
+- **Kill-criteria.** La mutación de arriba pone rojo el guard de la 198; un recorte que dejara las secciones vacías pone rojo una contraprueba. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 250. GUARD-DB-NO-WINDOWS-INERTE — El chequeo «DB desde no-Windows» de `check_repo_health.py` no puede dispararse, y dos textos lo anuncian  ·  origen: `docs/auditoria_guards_2026-09-30b.md` [G-2] · severidad **MEDIA-BAJA**
+
+- **Qué pasa.** `check_db_write_env` sólo corre con `--staged` y busca `finanzias.db` entre lo staged; la DB está en `.gitignore:40` y no versionada, así que nunca aparece (salvo `git add -f`). Además pregunta otra cosa: la regla 5 prohíbe **escribir** la DB desde Linux, no commitearla. Así desde el 2026-06-24, sin test. `finanzias-conventions` y el docstring del script lo cuentan entre *«las tres trampas»* que chequea.
+- **Alcance (decidir):** (a) un chequeo de lo que la regla prohíbe —abrir la DB para escritura desde un entorno no-Windows, en `database/models.py`—, o (b) sacar el chequeo y corregir los dos textos.
+- **Kill-criteria.** (a): con `platform.system` simulado a `Linux`, abrir la DB para escritura falla o avisa, y para lectura no. (b): ningún texto anuncia un chequeo que no existe. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 251. SPY-REGIMEN-FUERA-DEL-COHORTE — La serie de régimen de SPY no tiene chequeo de alineación con el cohorte, y el job 9 la reescribe por fuera de `refresh_cohort`  ·  origen: `docs/auditoria_desvios_2026-09-30b.md` [D-1] · severidad **BAJA** (era HIGH; la redujo el `verificador`, con medición)
+
+- **Qué pasa.** `run_market_regime_r2.py:79` (`load_spy_bars`), que usan también `run_sizing_exposure_t10_t20.py` y `run_anom_regime_t38.py`, lee `data/parquet/SPY__10y__1d.parquet` como serie de régimen. `stale_artifacts` recorre los tickers del universo y SPY no está; `refresh_cohort.py` tampoco lo refresca. Hoy SPY termina el 2026-09-01 y el cohorte el 2026-09-09: 6 ruedas con el régimen congelado en la última bandera, sin aviso. El job 9 de la **246** reescribe ese archivo cuando tiene más de 90 días.
+- **Por qué BAJA:** el `verificador` midió que el régimen que ven los runners no cambia en ningún día hasta que SPY se corre ~18 meses respecto del cohorte (las entradas arrancan a las 250 ruedas de warmup; los dividendos no mueven `close < SMA200`). Lo único que se mueve antes es el `risk_off_share` impreso, que es cosmético.
+- **Alcance.** Meter SPY en el chequeo de cohorte de los runners de régimen, o abortar si `spy[-1]` es anterior al final de `artifact_window`; que el docstring del job 9 diga que escribe un archivo que leen esos runners.
+- **Kill-criteria.** Un `bars_by` sintético con SPY corrido más que la tolerancia pone rojo/aborta; alineado, pasa. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 252. TESTS-README-CADUCO — `tests/README.md` repite el claim que la 247 corrigió en `CLAUDE.md`, y su tabla de cobertura es de mayo  ·  origen: `docs/auditoria_claims_2026-09-30b.md` [C-1] · severidad **BAJA**
+
+- **Qué pasa.** *«None are marked yet»* (hay uno desde la 211); la tabla *«What's covered»* lista 8 archivos de test cuando hay cientos; el *Quick start* no menciona los cuatro comandos del *done*. La 247 corrigió la misma frase en `CLAUDE.md` sin buscarla en el resto del repo.
+- **Kill-criteria.** Documentación. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
 
 ### 245. SNAPSHOTS-SIN-MONITOR — El reloj de T-CAT-5b perdió 6 de 12 días hábiles desde que se abrió la 196, y nada lo mide  ·  origen: `docs/auditoria_estado_2026-09-30.md` [E-2] · severidad **MEDIA**
 

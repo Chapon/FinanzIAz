@@ -195,6 +195,11 @@ no se cuenta nada.
 (`analysis/harness_config.py`, `portfolio_sim`, `replay_cycle`), y buscar dónde difieren sin
 que el banner lo diga.
 
+**La severidad de un desvío de SUSTRATO se mide en el veredicto, no en el archivo.** Que un proceso
+reescriba un artefacto que lee un runner es el mecanismo; el daño es cuánto cambia lo que el runner
+mide. El job que reescribe `SPY__10y` entró como HIGH y el `verificador` lo bajó a BAJA midiendo: el
+régimen no cambia en ningún día hasta ~18 meses de desalineación (tanda 2026-09-30b, tarea 251).
+
 **Y los textos de lo que SÍ está declarado se contrastan contra el valor vivo, no sólo contra
 el código (tarea 233).** La corrida del 2026-09-11 leyó cada texto de desvío contra el código
 y escribió *«ninguno afirma algo que el código contradiga»*, que era cierto y no alcanzaba: el
@@ -242,6 +247,12 @@ veces con el comentario correcto al lado — **leerlo no alcanza**.
 rompo lo que chequea?»* —eso suele funcionar— sino **poner la declaración que dice lo contrario y
 exigir que se ponga rojo**. Si pasa en verde, está matcheando el nombre. Los cuatro se
 encontraron así, ninguno leyéndolo.
+
+**Y la mutación vale también para los guards de PROCESO** (`scripts/check_*.py`), no sólo para los
+tests: construí el caso que lo debería disparar y fijate si la población del guard **puede
+contenerlo**. El chequeo *«DB desde no-Windows»* de `check_repo_health.py` busca `finanzias.db` entre
+los archivos staged, y la DB está gitignoreada: no se disparó nunca, desde el 2026-06-24, y una
+corrida que lo leyó no lo vio (tanda 2026-09-30b, tarea 250).
 
 **Corolario: cuando un guard declara su propio punto ciego, ese punto ciego ES un hallazgo.** No
 es una nota de color ni una muestra de honestidad. El guard de la 130 escribió *«una perilla viva

@@ -56,3 +56,76 @@ runner lo declare o lo excluya.
 ### 1.7 Alcance — qué NO se mira, dicho antes
 
 - `run_scan` entero; la cuenta 1.
+
+---
+
+## 2. Alcance real
+
+**Mirado:** los textos de `deviations_keyed()` reescritos por la 242 contra los docs de veredicto que
+citan (T115 Corrida A, T121, T26b §1, T37 §2); quién lee `data/parquet/SPY__*` entre runners y
+`analysis/`; lo que escribe el job 9.
+
+**NO mirado:** `run_scan` entero; la cuenta 1.
+
+**Fase adversarial: INDEPENDIENTE.** [D-1] entró como **HIGH** y pasó por el agente `verificador`
+con el mandato de refutarlo. **Lo redujo a BAJA, con medición**; ver §3.
+
+---
+
+## 3. Hallazgos
+
+### [D-1] La serie de régimen de SPY no tiene chequeo de alineación con el cohorte — hoy está corrida 6 ruedas, y el job 9 la reescribe por fuera de `refresh_cohort`
+
+Severidad: **BAJA** (era HIGH; reducida por el `verificador`) · Confianza: ALTA · Categoría: [D-sustrato]
+Ubicación: `scripts/run_market_regime_r2.py:79` (`load_spy_bars`), que usan también
+`run_sizing_exposure_t10_t20.py` y `run_anom_regime_t38.py`; `analysis/harness_config.py:776`
+(`stale_artifacts`); `data/historical_series.py` (`refrescar_benchmark_largo`, job 9).
+
+**Evidencia.** Los tres runners de régimen leen `data/parquet/SPY__10y__1d.parquet` como serie de
+régimen (`SPY < SMA200`). El chequeo de frescura del cohorte recorre `bars_by` —los tickers del
+universo— y SPY no está en el universo, así que **su alineación con el cohorte no la mira nadie**.
+`refresh_cohort.py` tampoco la refresca. Hoy SPY termina el **2026-09-01** y el cohorte el
+**2026-09-09**: 6 ruedas, y en ese tramo `is_risk_off` arrastra la última bandera (bisect) sin aviso.
+El job 9 que agregó la **246** reescribe ese mismo archivo cuando tiene más de 90 días.
+
+**Lo que el `verificador` refutó — la consecuencia, no el mecanismo.** Midió el régimen que ven los
+runners recortando SPY a distintos inicios: **0 días distintos** con inicio en 2016-12, 2017-03,
+2017-06 y 2017-09 (las entradas arrancan a las 250 ruedas de warmup, 2017-08-30), y recién **29**
+con inicio en 2018-03. Hacen falta ~6 refreshes del job 9 sin un refresh del cohorte en el medio
+(~18 meses). Y los ajustes por dividendo no mueven `close < SMA200` (es invariante a la escala). Es
+reversible (SPY se re-baja entero; no es el caso AVB de la 156). **Lo único que se mueve desde el
+primer refresh es cosmético:** el `risk_off_share` impreso se calcula sobre toda la serie de SPY.
+Y trajo un matiz mejor: el job 9 **achica** el desvío del final (hoy 6 ruedas) a cambio de mover el
+inicio, que mientras haya holgura no cuenta.
+
+**¿Por qué no antes?** La mitad del cohorte es **(c-alcance)**: las corridas de `desvios` miraron los
+textos y el camino del motor, no qué artefacto lee cada runner de régimen. La mitad del job 9 es
+**(a)**, introducida por la **246** esta tarde.
+
+**Acción.** Meter SPY en el chequeo de cohorte de los runners de régimen (o abortar si `spy[-1]` es
+anterior al final de `artifact_window`), y que el job 9 lo deje dicho en su docstring.
+
+---
+
+## 4. Barrido limpio en el resto del área
+
+- Los cuatro números en pp del banner coinciden con su doc de veredicto y su marco: +0,93/−4,5 (T115
+  Corrida A, 5 slots/41), −0,34/−4,8 (T121, gates ON, 10 slots/127), +3,39 (T26b, 10 slots/127),
+  7,16 (T37 §2, 10 slots/127).
+- Los jobs 8 y 9, el aviso de key y el de barra provisional no tocan órdenes, precio, tamaño ni caja.
+
+---
+
+## 5. Mapeo hallazgo → tarea
+
+| hallazgo | severidad | tarea |
+|---|---|---|
+| [D-1] SPY de régimen sin chequeo de cohorte; el job 9 la reescribe | BAJA | **251** |
+
+---
+
+## 6. Deuda de método
+
+Ninguna (c-metodo). Una nota: el HIGH con el que entró [D-1] salió de medir **que se escribe** y no
+**qué cambia en el resultado** —el agujero de instrumento que el `verificador` atacó primero—. La
+severidad de un desvío de sustrato se mide en el veredicto, no en el archivo.
