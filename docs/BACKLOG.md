@@ -18,6 +18,10 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 198 — Tarea 257 (NOTICIAS-HORA-EN-UTC) CERRADA 2026-10-01 — la celda pasa por `fmt_local`** (`ui/news_tab.py`, `tests/test_news_tab_hora_local_t257.py` **nuevo**). Suite Windows (Anaconda) **3998 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **3995 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **El test no compara contra la hora de la máquina:** en el CI la zona es UTC y ahí el defecto y el arreglo dan lo mismo. Reemplaza `fmt_local` por un centinela y verifica que la celda pase por él. Volver al `strftime` directo lo pone en rojo.
+  - **El ordenamiento por fecha** usa `published_at.timestamp()`, que interpreta el naive como local; no se tocó porque el orden relativo es el mismo.
+
 - **WIP 197 — Tarea 255 (NOTICIAS-IMPACTO-CONSTANTE) CERRADA 2026-10-01 — NO PASA: el sentimiento de la noticia no predice el retorno a 5 días, y un efecto positivo de ≥0,5 pp queda descartado** (`8697722`, `be2edf1` el pre-registro; `docs/noticias_impacto_t255_2026-10-01.md`, `scripts/measure_news_sentiment_fwd5_t255.py` **nuevo**, `tests/test_news_sentiment_fwd5_t255.py` **nuevo**, exclusiones con motivo en `tests/test_harness_config.py` y `tests/test_signal_store_t86.py`). Suite Windows (Anaconda) **3996 passed, 1 skipped, 1 deselected** (+11), ruff limpio, sin estado vivo **3993 passed, 4 skipped**. **Deja la 257 y la 258.**
   - **Pre-registro commiteado antes de mirar un retorno:** entrada en la primera apertura posterior a la publicación (hora NY), salida al cierre de la quinta rueda, exceso contra SPY, unidad `(ticker, rueda)` con sentimiento neto, IC por bootstrap de ruedas, cuatro condiciones para PASA.
   - **Resultado:** 2.532 unidades en 81 ruedas. `Δ = −0,42 pp`, IC95 `[−0,93, +0,10]`; `earnings_results`: `−0,66 pp` `[−1,59, +0,28]`. Fallan tres de las cuatro condiciones. El límite superior queda debajo de +0,5 pp, así que **descarta** el efecto, no sólo no lo detecta. El signo negativo encaja con reversión, pero no es significativo y no se cablea.
@@ -1826,6 +1830,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-01h** tras cerrar la **255** (NO PASA), que deja la **257** (la hora en UTC) y la **258** (la escala de 7 niveles que pidió Chapa). La **257** primero porque es un arreglo de una línea en la misma pestaña que va a tocar la 258. El orden queda **257 → 258 → 256 → 196 → 245**.
 
+> **Repriorizado 2026-10-01i** tras cerrar la **257**, que **no deja tareas nuevas**. El orden queda **258 → 256 → 196 → 245**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3211,7 +3217,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Documentación. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 257. NOTICIAS-HORA-EN-UTC — La pestaña Noticias muestra la hora de publicación en UTC como si fuera local  ·  origen: validar el instrumento de la 255 · severidad **BAJA**
+### 257. ~~NOTICIAS-HORA-EN-UTC — La pestaña Noticias muestra la hora de publicación en UTC como si fuera local~~ · **CERRADA 2026-10-01 — la celda pasa por `fmt_local`** · **movida a *En curso* con el detalle**  ·  origen: validar el instrumento de la 255 · severidad **BAJA**
 
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.

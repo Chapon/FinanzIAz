@@ -54,6 +54,7 @@ from analysis.news_digest import (
 )
 from config.logging_config import get_logger
 from ui.styles import PALETTE
+from ui.time_utils import fmt_local
 from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
 
@@ -312,7 +313,8 @@ class NewsTab(QWidget):
         self.table.setRowCount(len(items))
 
         for r_idx, it in enumerate(items):
-            when = it.published_at.strftime("%m-%d %H:%M") if it.published_at else "—"
+            # published_at es UTC naive, como todo lo que persiste la app (tarea 257)
+            when = fmt_local(it.published_at, "%m-%d %H:%M")
             impact_color = "#4ade80" if it.impact > 0 else ("#fb7185" if it.impact < 0 else None)
             conf = f"{it.classifier_confidence:.2f}" if it.classifier_confidence is not None else "—"
             cells = [
