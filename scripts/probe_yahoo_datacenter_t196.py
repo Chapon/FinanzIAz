@@ -16,6 +16,10 @@ resultado verde acá **no** demuestra que Lambda funcione: sólo descarta el fra
 más barato de descubrir. Un resultado rojo, en cambio, sí es concluyente en el sentido
 útil — si ya falla desde Azure, no hace falta abrir nada en AWS.
 
+**Desde AWS (2026-10-01):** el mismo archivo es el handler de una Lambda
+(``lambda_handler``), empaquetada por ``scripts/build_probe_lambda_t196.py``. Es la corrida
+que contesta lo que ésta no puede.
+
 **Por qué el resultado sale por anotaciones.** Los logs de Actions piden
 autenticación; la API de anotaciones responde sin token. Así que el veredicto se
 emite con ``::warning::``/``::error::`` para poder leerlo desde afuera (tarea 65).
@@ -112,45 +116,82 @@ def _probe_yf(ticker: str) -> tuple[bool, str, bool, str]:
     return news_ok, news_det, est_ok, est_det
 
 
+def run_probe(tickers: list[str], *, emit=print) -> dict:
+    """Corre el probe y devuelve el resultado. ``emit`` recibe cada línea de la tabla.
+
+    Es lo que comparten la corrida desde GitHub (``main``) y la de AWS
+    (``lambda_handler``): las dos miden exactamente lo mismo.
+    """
+    ip = _ip_saliente()
+    emit(f"IP saliente: {ip}")
+    emit(f"Tickers: {', '.join(tickers)}\n")
+
+    sec_ok, sec_det = _probe_sec()
+    sec_rotulo = "n/d" if sec_ok is None else ("OK" if sec_ok else "FALLA")
+    emit(f"{'SEC EDGAR':<12} {sec_rotulo:<6} {sec_det}")
+    emit("")
+
+    emit(f"{'ticker':<8} {'news':<6} {'detalle':<46} {'estimates':<10} detalle")
+    filas = []
+    for tk in tickers:
+        n_ok, n_det, e_ok, e_det = _probe_yf(tk)
+        filas.append({"ticker": tk, "news_ok": n_ok, "news": n_det, "estimates_ok": e_ok, "estimates": e_det})
+        emit(f"{tk:<8} {'OK' if n_ok else 'FALLA':<6} {n_det:<46} {'OK' if e_ok else 'FALLA':<10} {e_det}")
+
+    n = len(tickers)
+    news_ok_n = sum(f["news_ok"] for f in filas)
+    est_ok_n = sum(f["estimates_ok"] for f in filas)
+    resumen = (
+        f"T196 probe desde datacenter — yfinance news {news_ok_n}/{n}, "
+        f"yfinance estimates {est_ok_n}/{n}, SEC EDGAR {sec_rotulo} ({sec_det})"
+    )
+    # `sec_ok is None` no cuenta como fallo — no se probó (ver _probe_sec).
+    todo_bien = news_ok_n == n and est_ok_n == n and sec_ok is not False
+    return {
+        "ip": ip,
+        "sec": sec_rotulo,
+        "sec_detalle": sec_det,
+        "tickers": filas,
+        "resumen": resumen,
+        "ok": todo_bien,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tickers", default=",".join(DEFAULT_TICKERS), help="lista separada por comas")
     args = ap.parse_args(argv)
     tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
 
-    print(f"IP saliente: {_ip_saliente()}")
-    print(f"Tickers: {', '.join(tickers)}\n")
-
-    sec_ok, sec_det = _probe_sec()
-    sec_rotulo = "n/d" if sec_ok is None else ("OK" if sec_ok else "FALLA")
-    print(f"{'SEC EDGAR':<12} {sec_rotulo:<6} {sec_det}")
-    print()
-
-    print(f"{'ticker':<8} {'news':<6} {'detalle':<46} {'estimates':<10} detalle")
-    news_ok_n = est_ok_n = 0
-    for tk in tickers:
-        n_ok, n_det, e_ok, e_det = _probe_yf(tk)
-        news_ok_n += n_ok
-        est_ok_n += e_ok
-        print(f"{tk:<8} {'OK' if n_ok else 'FALLA':<6} {n_det:<46} {'OK' if e_ok else 'FALLA':<10} {e_det}")
-
-    n = len(tickers)
-    resumen = (
-        f"T196 probe desde datacenter — yfinance news {news_ok_n}/{n}, "
-        f"yfinance estimates {est_ok_n}/{n}, SEC EDGAR {sec_rotulo} ({sec_det})"
-    )
-    print(f"\n{resumen}")
-
+    r = run_probe(tickers)
+    print(f"\n{r['resumen']}")
     # El veredicto va por anotación: los logs de Actions piden token, las anotaciones no.
     # Por eso el detalle del fallo viaja DENTRO del resumen: una anotación que sólo diga
     # "FALLA" obliga a abrir los logs, que es justo lo que no se puede sin token.
-    # `sec_ok is None` no cuenta como fallo — no se probó (ver _probe_sec).
-    todo_bien = news_ok_n == n and est_ok_n == n and sec_ok is not False
-    nivel = "warning" if todo_bien else "error"
-    print(f"::{nivel}::{resumen}")
+    print(f"::{'warning' if r['ok'] else 'error'}::{r['resumen']}")
 
     # Siempre 0: esto es un diagnóstico, no un gate. Un rojo acá no es un CI roto.
     return 0
+
+
+def lambda_handler(event, context):  # pragma: no cover — corre en AWS
+    """Entrada de AWS Lambda (decisión de Chapa 2026-10-01: Lambda + DynamoDB en vez de la Pi).
+
+    Mide lo mismo que la corrida de GitHub, pero desde una IP de **AWS**, que es la que la
+    corrida de Azure no podía contestar. El evento puede traer ``{"tickers": "NVDA,KO"}``.
+    Devuelve el resultado como JSON, que la consola muestra en *Test*.
+
+    En Lambda sólo ``/tmp`` es escribible: los caches de yfinance (zona horaria y cookie)
+    van ahí, o el primer pedido falla por el disco y se lee como un bloqueo de Yahoo.
+    """
+    import yfinance as yf
+
+    yf.set_tz_cache_location("/tmp/yf-cache")
+    pedidos = (event or {}).get("tickers") or ",".join(DEFAULT_TICKERS)
+    tickers = [t.strip().upper() for t in str(pedidos).split(",") if t.strip()]
+    r = run_probe(tickers)
+    print(r["resumen"])
+    return r
 
 
 if __name__ == "__main__":
