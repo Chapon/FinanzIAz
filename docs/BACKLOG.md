@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 199 — Tarea 258 (NOTICIAS-ESCALA-7-NIVELES) EN CURSO — parte 1 hecha: la pestaña muestra el tono −3…+3 y nada dice *impacto esperado*; falta la medición (parte 2)** (`analysis/news_digest.py`, `ui/news_tab.py`, `tests/test_news_tono_t258.py` **nuevo**, `tests/test_news_digest.py`, `tests/test_news_tab_hora_local_t257.py`). Suite Windows (Anaconda) **4022 passed, 1 skipped, 1 deselected** (+24), ruff limpio, sin estado vivo **4019 passed, 4 skipped**.
+  - **El nivel:** `tone_level` = `round(3 × sentiment_score)` redondeando .5 hacia afuera; sin polaridad (filas de antes de OPS1) cae a ±1 por el sentimiento. El `DigestItem` cambia `impact`/`direction`/`basis` por `tone` y `sentiment_score`; el digest deja de llamar a `score_event` (que sigue vivo para el Gate 2c, sin tocar). Ranking por |tono|, desempate por recencia; entre duplicados queda el de tono más fuerte y, a igual tono, el de mayor confianza.
+  - **Texto:** columna «Tono» con tooltip que dice que no es pronóstico (con la 255 como fuente), color por intensidad, y el briefing de qwen recibe `[+3]` y la instrucción de no presentarlo como pronóstico.
+  - **Un bug que cazó el test antes de shipear:** `min(1.0, nan)` devuelve `1.0`, así que una polaridad NaN salía como +3. El NaN se descarta antes de recortar.
+  - **Mutación: seis, las seis rojas** — tono desde el sentimiento, orden con signo, NaN sin chequear, dedup sin confianza, el prompt viejo y el redondeo bancario de `round()`. Esta última sobrevivía: el caso 0,5 da 1,5, donde los dos redondeos coinciden; se agregó 1/6, que da 0,5.
+
 - **WIP 198 — Tarea 257 (NOTICIAS-HORA-EN-UTC) CERRADA 2026-10-01 — la celda pasa por `fmt_local`** (`f6c8e50`; `ui/news_tab.py`, `tests/test_news_tab_hora_local_t257.py` **nuevo**). Suite Windows (Anaconda) **3998 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **3995 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El test no compara contra la hora de la máquina:** en el CI la zona es UTC y ahí el defecto y el arreglo dan lo mismo. Reemplaza `fmt_local` por un centinela y verifica que la celda pase por él. Volver al `strftime` directo lo pone en rojo.
   - **El ordenamiento por fecha** usa `published_at.timestamp()`, que interpreta el naive como local; no se tocó porque el orden relativo es el mismo.

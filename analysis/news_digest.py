@@ -2,15 +2,19 @@
 Daily news digest — ranked headlines + optional LLM briefing (UI: Noticias tab).
 
 Read-only consumer of the catalyst pipeline that's already running daily:
-harvest (T-CAT-1) → classification (T-CAT-2) → impact scoring (T-CAT-4).
+harvest (T-CAT-1) → classification (T-CAT-2).
 This module does NOT touch the trading hot-path; it only composes those
 pieces into a glanceable "what mattered today" view:
 
 1. :func:`fetch_news_window` — pure SELECT over ``news_events`` for a window.
-2. :func:`rank_news` — scores each row with :func:`analysis.impact_score.score_event`
-   and sorts by |impact| (conviction), recency as tie-break. With no reaction
-   table / market cap (the UI default) the score degrades gracefully to
-   event-type prior × sentiment × confidence — deterministic and instant.
+2. :func:`rank_news` — gives each row its **tone** (:func:`tone_level`, −3…+3, from
+   the classifier's ``sentiment_score``) and sorts by |tone|, recency as tie-break.
+   **Tone is what the news says, not a price forecast** (tarea 258): the tarea 255
+   measured that the classifier's sign does not predict the 5-day return
+   (``docs/noticias_impacto_t255_2026-10-01.md``). Until a level passes its own
+   pre-registered test, nothing here is called *expected impact*. It used to rank by
+   ``score_event``, which with no reaction table was a lookup (±0.36 for every
+   earnings or FDA headline).
 3. Briefing: :func:`make_ollama_briefer` (qwen local, same server the daily
    classifier uses) with :func:`fallback_briefing` as the deterministic,
    offline fallback. The LLM is presentation-layer only — it summarises the
@@ -21,6 +25,7 @@ Everything is fail-soft and offline-testable (``http_post`` injectable).
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -73,9 +78,8 @@ class DigestItem:
     event_type: str | None
     sentiment: str | None
     classifier_confidence: float | None
-    impact: float  # signed score_event().value — sign = expected direction
-    direction: int  # -1 | 0 | +1
-    basis: str  # "reaction" | "prior"
+    sentiment_score: float | None  # polaridad del clasificador, [−1, +1] (OPS1)
+    tone: int  # −3…+3, :func:`tone_level` — tono de la noticia, NO pronóstico (tarea 258)
 
     @property
     def event_label(self) -> str:
@@ -137,6 +141,7 @@ def fetch_news_window(
                 event_type=r.event_type,
                 sentiment=r.sentiment,
                 classifier_confidence=r.classifier_confidence,
+                sentiment_score=r.sentiment_score,
             )
             for r in rows
         ]
@@ -155,6 +160,7 @@ class _Row:
     event_type: str | None
     sentiment: str | None
     classifier_confidence: float | None
+    sentiment_score: float | None = None
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
@@ -168,7 +174,7 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
     (scripts/classify_catalysts.py, qwen) remains the source of truth and will
     overwrite nothing because these rows stay NULL in ``news_events``.
 
-    Without this, a window full of fresh rows renders as Otro/Neutral/impact 0
+    Without this, a window full of fresh rows renders as Otro/Neutral/tone 0
     whenever the tab is opened before the nightly classification ran.
     """
     from data.catalyst_classifier import heuristic_classify
@@ -191,6 +197,7 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
                     event_type=c.event_type,
                     sentiment=c.sentiment,
                     classifier_confidence=c.confidence,
+                    sentiment_score=c.sentiment_score,
                 )
             )
         except Exception:
@@ -201,77 +208,71 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
 
 # ── 2) Ranking ────────────────────────────────────────────────────────────────
 
+TONE_LEVELS = 3  # la escala es −3…+3 (pedido de Chapa, tarea 258)
+_SENTIMENT_SIGN = {"positive": 1, "negative": -1}
 
-def rank_news(
-    rows: Iterable,
-    *,
-    reaction_table: dict | None = None,
-    market_cap_loader: Callable[[str], float | None] | None = None,
-    top_n: int | None = DEFAULT_TOP_N,
-) -> list[DigestItem]:
+
+def tone_level(sentiment_score: float | None, sentiment: str | None) -> int:
+    """Tono de la noticia en −3…+3: ``round(3 × sentiment_score)``, redondeando .5 hacia afuera.
+
+    ``sentiment_score`` es la polaridad que devuelve el clasificador desde OPS1 (2026-07-09).
+    Las filas clasificadas antes no la tienen: caen a ±1 según ``sentiment`` (0 si neutral o
+    sin clasificar), que es lo único que se sabe de ellas.
+
+    **Es el tono, no un pronóstico del precio** (tarea 255: el signo no predice el retorno
+    a 5 días). Si un nivel se gana el nombre de impacto, lo dice su propia medición.
     """
-    Score each row with ``score_event`` and rank by |impact| desc (recency breaks
-    ties). Duplicate headlines (same ticker+title from several feeds) keep only
-    the best-scored copy. Never raises; a row that fails to score gets 0.0.
-
-    ``reaction_table`` / ``market_cap_loader`` are optional richness hooks —
-    the UI passes None today (prior-based ranking), the same inputs T-CAT-4
-    uses are accepted so the panel upgrades for free when we wire them.
-    """
-    from analysis.impact_score import score_event
-
-    items: list[DigestItem] = []
-    for r in rows:
-        mcap = None
-        if market_cap_loader is not None:
-            try:
-                mcap = market_cap_loader(r.ticker)
-            except Exception:
-                log.exception("news_digest: market_cap_loader failed for %s", r.ticker)
+    if sentiment_score is not None:
         try:
-            sc = score_event(
-                r.ticker,
-                r.event_type,
-                r.sentiment,
-                r.classifier_confidence,
-                reaction_table=reaction_table,
-                headline=r.title,
-                market_cap=mcap,
-            )
-            impact, direction, basis = sc.value, sc.direction, sc.basis
-        except Exception:
-            log.exception("news_digest: score_event failed for news id=%s", getattr(r, "id", "?"))
-            impact, direction, basis = 0.0, 0, "prior"
-        items.append(
-            DigestItem(
-                news_id=r.id,
-                ticker=r.ticker,
-                title=r.title,
-                source=r.source,
-                url=r.url,
-                published_at=r.published_at,
-                event_type=r.event_type,
-                sentiment=r.sentiment,
-                classifier_confidence=r.classifier_confidence,
-                impact=float(impact),
-                direction=int(direction),
-                basis=basis,
-            )
-        )
+            x = float(sentiment_score)
+        except (TypeError, ValueError):
+            x = math.nan
+        # NaN se descarta ANTES de recortar: min(1.0, nan) devuelve 1.0 y daba un +3
+        if math.isfinite(x) or math.isinf(x):
+            x = max(-1.0, min(1.0, x))
+            nivel = math.floor(abs(x) * TONE_LEVELS + 0.5)
+            return int(math.copysign(nivel, x)) if nivel else 0
+    return _SENTIMENT_SIGN.get(sentiment or "", 0)
 
-    # de-dup (ticker, normalized title) keeping the highest |impact|
+
+def rank_news(rows: Iterable, *, top_n: int | None = DEFAULT_TOP_N) -> list[DigestItem]:
+    """
+    Le da a cada fila su tono y ordena por |tono| descendente (recencia como desempate).
+    Los titulares duplicados (mismo ticker + título desde varios feeds) dejan una sola
+    copia: la de tono más fuerte y, a igual tono, la de mayor confianza. Nunca levanta.
+    """
+    items = [
+        DigestItem(
+            news_id=r.id,
+            ticker=r.ticker,
+            title=r.title,
+            source=r.source,
+            url=r.url,
+            published_at=r.published_at,
+            event_type=r.event_type,
+            sentiment=r.sentiment,
+            classifier_confidence=r.classifier_confidence,
+            sentiment_score=getattr(r, "sentiment_score", None),
+            tone=tone_level(getattr(r, "sentiment_score", None), r.sentiment),
+        )
+        for r in rows
+    ]
+
+    def _fuerza(it: DigestItem) -> tuple[int, float]:
+        return abs(it.tone), it.classifier_confidence or 0.0
+
     best: dict[tuple[str, str], DigestItem] = {}
     for it in items:
         key = (it.ticker, " ".join(it.title.lower().split()))
         prev = best.get(key)
-        if prev is None or abs(it.impact) > abs(prev.impact):
+        if prev is None or _fuerza(it) > _fuerza(prev):
             best[key] = it
 
     def _sort_key(it: DigestItem):
         # NOTA: nada de datetime.min.timestamp() — en Windows timestamp() de
         # fechas pre-epoch tira OSError 22. Sin fecha → -inf (al final del empate).
         ts = it.published_at.timestamp() if it.published_at else float("-inf")
-        return (-abs(it.impact), -ts)
+        return (-abs(it.tone), -ts)
 
     ranked = sorted(best.values(), key=_sort_key)
     return ranked[:top_n] if top_n else ranked
@@ -281,8 +282,10 @@ def rank_news(
 
 _BRIEFING_SYSTEM = (
     "Sos un analista financiero que escribe el briefing matinal de un porfolio. "
-    "Recibís los titulares más relevantes del día (ya rankeados por impacto "
-    "esperado, con categoría y sentimiento). Escribí UN solo párrafo en español "
+    "Recibís los titulares del día ordenados por la intensidad de su tono (de -3, muy "
+    "negativa para la empresa, a +3, muy positiva), con categoría y sentimiento. El tono "
+    "dice qué cuenta la noticia, no adónde va a ir el precio: no lo presentes como "
+    "pronóstico. Escribí UN solo párrafo en español "
     "rioplatense (4-7 oraciones), sobrio y concreto: qué pasó, a qué tickers "
     "afecta y qué conviene mirar hoy. No inventes datos que no estén en los "
     "titulares, no des recomendaciones de compra/venta, no uses listas ni títulos."
@@ -294,12 +297,10 @@ def briefing_prompt(items: Sequence[DigestItem], max_items: int = BRIEFING_HEADL
     lines = []
     for it in items[:max_items]:
         when = it.published_at.strftime("%Y-%m-%d") if it.published_at else "s/f"
-        sign = "+" if it.impact > 0 else ("-" if it.impact < 0 else "·")
         lines.append(
-            f"[{sign}|{abs(it.impact):.2f}] {it.ticker} · {it.event_label} · "
-            f"{it.sentiment_label} · {when} · {it.title}"
+            f"[{it.tone:+d}] {it.ticker} · {it.event_label} · {it.sentiment_label} · {when} · {it.title}"
         )
-    return "Titulares del día (impacto esperado entre corchetes):\n" + "\n".join(lines)
+    return "Titulares del día (tono de -3 a +3 entre corchetes):\n" + "\n".join(lines)
 
 
 # Briefer signature: (items) -> str | None  (None = unavailable, UI falls back)
@@ -371,8 +372,8 @@ def fallback_briefing(items: Sequence[DigestItem]) -> str:
         f"{len(items)} noticias en la ventana: {sents.get('positive', 0)} positivas, "
         f"{sents.get('negative', 0)} negativas, {sents.get('neutral', 0)} neutrales. "
         f"Categorías principales: {top_cats}. "
-        f"Mayor impacto esperado: {top.ticker} — {top.title} "
-        f"({top.event_label}, {top.sentiment_label.lower()}, score {top.impact:+.2f}). "
+        f"Tono más fuerte: {top.ticker} — {top.title} "
+        f"({top.event_label}, {top.sentiment_label.lower()}, tono {top.tone:+d}). "
         f"(Briefing IA no disponible — resumen automático.)"
     )
 

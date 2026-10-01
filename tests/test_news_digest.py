@@ -38,6 +38,7 @@ def _row(
     event_type=None,
     sentiment=None,
     conf=None,
+    score=None,
 ):
     return _Row(
         id=id,
@@ -49,75 +50,69 @@ def _row(
         event_type=event_type,
         sentiment=sentiment,
         classifier_confidence=conf,
+        sentiment_score=score,
     )
 
 
 # ── rank_news ────────────────────────────────────────────────────────────────
 
 
-def test_rank_orders_by_abs_impact_desc():
+def test_rank_orders_by_abs_tone_desc():
     rows = [
-        _row(id=1, title="ruido", event_type="stock_movement", sentiment="positive", conf=0.6),
-        _row(id=2, title="guidance cut", event_type="guidance_cut", sentiment="negative", conf=0.9),
-        _row(id=3, title="m&a", event_type="mna", sentiment="positive", conf=0.9),
+        _row(id=1, title="leve", sentiment="positive", conf=0.6, score=0.2),  # +1
+        _row(id=2, title="guidance cut", sentiment="negative", conf=0.9, score=-0.95),  # -3
+        _row(id=3, title="m&a", sentiment="positive", conf=0.9, score=0.6),  # +2
     ]
     ranked = rank_news(rows)
-    # prior(mna)=0.85 y prior(guidance_cut)=0.80 >> prior(stock_movement)=0.15
-    assert [it.news_id for it in ranked][:2] == [3, 2]
-    assert ranked[-1].news_id == 1
-    # el negativo conserva signo negativo, el ranking usa |impacto|
-    cut = next(it for it in ranked if it.news_id == 2)
-    assert cut.impact < 0 and cut.direction == -1
+    # por |tono|: el -3 va primero aunque sea negativo
+    assert [it.news_id for it in ranked] == [2, 3, 1]
+    assert [it.tone for it in ranked] == [-3, 2, 1]
 
 
 def test_rank_unclassified_rows_sink_but_dont_crash():
     rows = [
-        _row(id=1, title="sin clasificar"),  # event_type/sentiment/conf = None
-        _row(id=2, title="resultados", event_type="earnings_results", sentiment="positive", conf=0.8),
+        _row(id=1, title="sin clasificar"),  # event_type/sentiment/score = None
+        _row(
+            id=2, title="resultados", event_type="earnings_results", sentiment="positive", conf=0.8, score=0.7
+        ),
     ]
     ranked = rank_news(rows)
     assert ranked[0].news_id == 2
-    # neutral/None → direction 0 → impacto 0
-    assert ranked[1].impact == 0.0
+    assert ranked[1].tone == 0
 
 
-def test_rank_dedups_same_ticker_title_keeps_best():
+def test_rank_dedups_same_ticker_title_keeps_strongest():
     rows = [
         _row(
             id=1,
             title="NVDA beats estimates",
             source="finnhub:Yahoo",
-            event_type="stock_movement",
             sentiment="positive",
             conf=0.5,
+            score=0.6,
         ),
+        _row(id=2, title="NVDA beats  estimates", source="sec_8k", sentiment="positive", conf=0.9, score=0.6),
         _row(
-            id=2,
-            title="NVDA beats  estimates",
-            source="sec_8k",
-            event_type="earnings_results",
-            sentiment="positive",
-            conf=0.9,
+            id=3, title="nvda beats estimates", source="yfinance", sentiment="positive", conf=0.4, score=0.9
         ),
     ]
     ranked = rank_news(rows)
     assert len(ranked) == 1
-    assert ranked[0].news_id == 2  # se queda la copia mejor clasificada
+    assert ranked[0].news_id == 3  # tono +3 le gana a dos +2
+
+
+def test_rank_dedup_tie_on_tone_keeps_higher_confidence():
+    rows = [
+        _row(id=1, title="NVDA beats estimates", sentiment="positive", conf=0.5, score=0.6),
+        _row(id=2, title="NVDA beats estimates", sentiment="positive", conf=0.9, score=0.6),
+    ]
+    assert rank_news(rows)[0].news_id == 2
 
 
 def test_rank_top_n_and_empty():
     assert rank_news([]) == []
     rows = [_row(id=i, title=f"t{i}", event_type="mna", sentiment="positive", conf=0.9) for i in range(10)]
     assert len(rank_news(rows, top_n=3)) == 3
-
-
-def test_rank_failsoft_on_bad_market_cap_loader():
-    def boom(_ticker):
-        raise RuntimeError("yfinance down")
-
-    rows = [_row(id=1, event_type="mna", sentiment="positive", conf=0.9)]
-    ranked = rank_news(rows, market_cap_loader=boom)
-    assert len(ranked) == 1 and ranked[0].impact > 0
 
 
 # ── classify_missing ─────────────────────────────────────────────────────────
@@ -140,8 +135,10 @@ def test_classify_missing_then_rank_gives_nonzero_impact():
     rows = [
         _row(id=1, title="Company raises full-year guidance after record quarter"),
     ]
-    ranked = rank_news(classify_missing(rows))
-    # con clasificación al vuelo el impacto ya no queda clavado en 0 genérico
+    out = classify_missing(rows)
+    # la heurística también trae polaridad: el tono no queda en 0 por falta de dato
+    assert out[0].sentiment_score is not None
+    ranked = rank_news(out)
     assert ranked[0].event_type is not None
 
 
@@ -157,6 +154,7 @@ def _items(n=2):
             event_type="mna",
             sentiment="positive",
             conf=0.9,
+            score=0.9,
             published_at=datetime(2026, 6, 12, 9, 0),
         )
         for i in range(n)

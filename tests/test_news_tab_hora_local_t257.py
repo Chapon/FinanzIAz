@@ -40,9 +40,8 @@ def _item(published_at):
         event_type="earnings_results",
         sentiment="positive",
         classifier_confidence=0.6,
-        impact=0.36,
-        direction=1,
-        basis="prior",
+        sentiment_score=0.84,
+        tone=3,
     )
 
 

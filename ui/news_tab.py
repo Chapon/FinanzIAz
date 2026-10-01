@@ -2,8 +2,10 @@
 Noticias tab — resumen diario de las noticias más relevantes.
 
 Lee el output del pipeline catalyst que ya corre solo todos los días
-(harvest T-CAT-1 → clasificación T-CAT-2) y lo rankea con el Impact Score
-(T-CAT-4). Arriba muestra un briefing narrativo generado por qwen local
+(harvest T-CAT-1 → clasificación T-CAT-2) y lo ordena por la intensidad del
+**tono** de cada noticia, de −3 a +3 (tarea 258). El tono es lo que dice la
+noticia, no un pronóstico del precio: la tarea 255 midió que el signo del
+clasificador no predice el retorno a 5 días. Arriba muestra un briefing narrativo generado por qwen local
 (mismo servidor Ollama del classifier); si Ollama no está corriendo cae a un
 resumen determinístico. Solo lectura — nunca toca el hot-path de trading.
 
@@ -13,7 +15,7 @@ Layout
   │  Ventana (días) · Briefing IA ☑ · Actualizar · estado                │
   ├─ Briefing card ──────────────────────────────────────────────────────┤
   ├─ Tabla ──────────────────────────────────────────────────────────────┤
-  │  Fecha · Ticker · Impacto · Categoría · Sentimiento · Conf · Fuente  │
+  │  Fecha · Ticker · Tono · Categoría · Sentimiento · Conf · Fuente     │
   │        · Titular                                                     │
   └──────────────────────────────────────────────────────────────────────┘
 
@@ -65,14 +67,25 @@ AUTO_REFRESH_MINUTES = 30
 
 SENTIMENT_COLORS = {"positive": "#4ade80", "negative": "#fb7185", "neutral": "#94a3b8"}
 
+# Más intenso el color, más fuerte el tono (tarea 258). El 0 va sin color.
+TONE_COLORS = {
+    3: "#22c55e",
+    2: "#4ade80",
+    1: "#86efac",
+    -1: "#fda4af",
+    -2: "#fb7185",
+    -3: "#f43f5e",
+}
+
 COLUMNS: list[tuple[str, str]] = [
     ("Fecha", "Fecha que declara la fuente (— si la fuente no la trae)."),
     ("Ticker", "Símbolo al que la noticia fue asociada por el harvester."),
     (
-        "Impacto",
-        "Impact Score heurístico (T-CAT-4): dirección × magnitud × confianza.\n"
-        "Signo = dirección esperada del precio; |valor| = convicción.\n"
-        "Sin historial de reacción usa priors por categoría — orientativo, no señal.",
+        "Tono",
+        "Tono de la noticia para el ticker, de −3 (muy negativa) a +3 (muy positiva),\n"
+        "según la polaridad del clasificador (qwen local o heurística).\n"
+        "NO es un pronóstico del precio: la tarea 255 midió que el signo no predice\n"
+        "el retorno a 5 días. Si un nivel lo predice, lo dirá su propia medición (tarea 258).",
     ),
     ("Categoría", "Una de las 17 categorías de la taxonomía catalyst (T-CAT-2)."),
     ("Sentimiento", "Clasificado por qwen local o heurística, desde la óptica del ticker."),
@@ -86,8 +99,8 @@ class _SortItem(QTableWidgetItem):
     """Item que ordena por el valor crudo (UserRole) si ambos lo tienen.
 
     El sort default de QTableWidgetItem compara el texto visible, lo que rompe
-    columnas numéricas con signo ("-0.72" > "+0.85" lexicográficamente). Acá la
-    columna Impacto ordena por |impacto| (lo material primero, sin importar signo).
+    columnas numéricas con signo ("-2" > "+3" lexicográficamente). Acá la
+    columna Tono ordena por |tono| (lo más fuerte primero, sin importar signo).
     """
 
     def __lt__(self, other):
@@ -121,7 +134,7 @@ class NewsDigestWorker(BaseWorker):
         since, until = default_window(self.days)
         rows = fetch_news_window(since, until=until)
         # Filas que el classifier nocturno todavía no tocó → heurística al
-        # vuelo (display-only). Sin esto, todo sale Otro/Neutral/impacto 0.
+        # vuelo (display-only). Sin esto, todo sale Otro/Neutral/tono 0.
         rows = classify_missing(rows)
         items = rank_news(rows)
         self.rows_ready.emit(items)
@@ -139,7 +152,7 @@ class NewsDigestWorker(BaseWorker):
 
 
 class NewsTab(QWidget):
-    """Resumen diario de noticias rankeadas por impact score + briefing IA."""
+    """Resumen diario de noticias ordenadas por intensidad del tono + briefing IA."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -192,7 +205,7 @@ class NewsTab(QWidget):
         root.addLayout(header)
 
         self.status_lbl = QLabel(
-            "Noticias del harvest diario, rankeadas por impacto esperado (T-CAT-4). "
+            "Noticias del harvest diario, ordenadas por la intensidad del tono (−3 a +3). "
             "Solo lectura: nada de esto opera por sí solo."
         )
         self.status_lbl.setStyleSheet("color: #94a3b8; font-size: 12px;")
@@ -287,7 +300,7 @@ class NewsTab(QWidget):
         if items:
             self.status_lbl.setText(
                 f"{len(items)} noticias en los últimos {self.days_input.value()} día(s), "
-                f"rankeadas por impacto esperado · doble click abre la noticia."
+                f"ordenadas por intensidad del tono · doble click abre la noticia."
             )
             self.briefing_lbl.setText("Generando briefing…")
             self.briefing_card.setVisible(True)
@@ -315,12 +328,11 @@ class NewsTab(QWidget):
         for r_idx, it in enumerate(items):
             # published_at es UTC naive, como todo lo que persiste la app (tarea 257)
             when = fmt_local(it.published_at, "%m-%d %H:%M")
-            impact_color = "#4ade80" if it.impact > 0 else ("#fb7185" if it.impact < 0 else None)
             conf = f"{it.classifier_confidence:.2f}" if it.classifier_confidence is not None else "—"
             cells = [
                 (when, None),
                 (it.ticker, None),
-                (f"{it.impact:+.2f}", impact_color),
+                (f"{it.tone:+d}" if it.tone else "0", TONE_COLORS.get(it.tone)),
                 (it.event_label, None),
                 (it.sentiment_label, SENTIMENT_COLORS.get(it.sentiment or "neutral")),
                 (conf, None),
@@ -352,8 +364,8 @@ class NewsTab(QWidget):
         if col_idx == 0:
             return it.published_at.timestamp() if it.published_at else 0.0
         if col_idx == 2:
-            # orden por |impacto|: lo material primero, sin importar el signo
-            return abs(it.impact)
+            # orden por |tono|: lo más fuerte primero, sin importar el signo
+            return abs(it.tone)
         if col_idx == 5:
             return it.classifier_confidence if it.classifier_confidence is not None else -1.0
         return None
