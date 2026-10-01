@@ -48,6 +48,10 @@ _NO_SON_CONSTANTES: dict[str, str] = {
     "FINNHUB_TOKEN": "variable de entorno alternativa de Finnhub, la lee la segunda opinión (tarea 241)",
     "TIINGO_API_KEY": "variable de entorno de Tiingo, la lee la segunda opinión (tareas 206 y 241)",
     "SLACK_BOT_TOKEN": "variable de entorno del notificador; no vive en el código",
+    "SEC_EDGAR_USER_AGENT": (
+        "variable de entorno / secret de GitHub que pide SEC EDGAR; la nombra *Acciones manuales* "
+        "desde que el backlog entra al corpus (tarea 249)"
+    ),
     "SLACK_CHANNEL": "variable de entorno del notificador; no vive en el código",
     "FINANZIAS_BLOQUEAR_RED": (
         "nombre de variable de entorno (tarea 211), como FINNHUB_API_KEY y SLACK_BOT_TOKEN de "

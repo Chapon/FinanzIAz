@@ -97,6 +97,10 @@ _CLAIMS_EN_PRESENTE: dict[str, str] = {
     # acoplamiento —su «hoy» estaba a **2741** caracteres de los decimales que lo
     # disparaban, que son de otra regla— y con la ventana ya no casa. Lo detectó el
     # propio `test_el_registro_no_tiene_entradas_FANTASMA`, no una lectura.
+    "BACKLOG.md:reclasificar hoy una noticia de junio": (
+        "tarea 249: el «hoy» es «reclasificar ahora», no una afirmación sobre un número; el "
+        "decimal que lo aparea es de otra frase del mismo bloque"
+    ),
     "DB_SCHEMA.md:los $322,77": (
         "tarea 239: el «hoy» del bloque es el extremo de la ventana de crédito «(último scan, hoy]», "
         "no una afirmación; el número está FECHADO (lo devengado al shipear la 222, 2026-09-25)"

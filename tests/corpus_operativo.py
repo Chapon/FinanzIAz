@@ -10,7 +10,9 @@ parseo de la 198 usa como ejemplo. Lo encontró la auditoría del 2026-09-30 ([G
 
 **La población se deriva de lo que `CLAUDE.md` declara**, no se enumera: `CLAUDE.md`, todo
 `.claude/**/*.md`, y los docs de su sección *Documentación de referencia*. Un doc de esa
-sección que no deba leerse va en ``FUERA_DEL_CORPUS`` **con el motivo**, y
+sección que no deba leerse va en ``FUERA_DEL_CORPUS`` **con el motivo**; uno que deba leerse
+**en parte** (el backlog: header y secciones operativas, no el historial) va en
+``RECORTADOS`` con las secciones que entran (tarea 249); y
 ``tests/test_corpus_unico_t239.py`` falla si aparece uno nuevo sin clasificar.
 
 **Lo que NO ve, dicho:** un doc operativo que `CLAUDE.md` no declare de referencia.
@@ -30,15 +32,49 @@ _ITEM = re.compile(r"^- `([^`]+\.md)`", re.M)
 # Doc de referencia → por qué NO entra al corpus operativo. Dict y no lista: excluir obliga
 # a escribir el motivo (el criterio de `_NO_SON_CONSTANTES` de la 72).
 FUERA_DEL_CORPUS: dict[str, str] = {
-    "docs/BACKLOG.md": (
-        "es historia además de cola: las tareas cerradas CITAN a propósito las afirmaciones "
-        "viejas que corrigieron, y su propio guard (tarea 66) cubre la estructura"
-    ),
     "docs/roadmap_v3_2026-06-09.md": (
         "doc estratégico FECHADO en su nombre: dice lo que era verdad el 2026-06-09, como un "
         "doc de veredicto de una tarea cerrada"
     ),
 }
+
+
+# Tarea 249 — el backlog entra RECORTADO. Hasta acá estaba entero en `FUERA_DEL_CORPUS`, con
+# el motivo de que las tareas cerradas citan a propósito lo que corrigieron; eso vale para el
+# HISTORIAL, no para el texto operativo en presente. Esta mañana dos hallazgos vivían ahí (la
+# instrucción de la segunda opinión en *Acciones manuales* y el «modo kill_only» del header).
+# Entra el header (todo lo anterior a la primera sección) y estas secciones, por su título:
+RECORTADOS: dict[str, tuple[str, ...]] = {
+    "docs/BACKLOG.md": (
+        "Acciones manuales pendientes",
+        "Bloqueado",
+        "Calidad de datos",
+    ),
+}
+
+
+def recortar(texto: str, secciones: tuple[str, ...]) -> str:
+    """El header (lo anterior al primer ``## ``) más el cuerpo de las secciones nombradas."""
+    partes = re.split(r"(?m)^## ", texto)
+    # El párrafo «_Última actualización: …_» del header es una BITÁCORA fechada (la de agosto
+    # de 2026, abandonada): historia, como las tareas cerradas. Se saca del recorte.
+    bloques = re.split(r"\n\s*\n", partes[0])
+    header = "\n\n".join(b for b in bloques if not b.startswith("_Última actualización"))
+    elegidas = [header]
+    for parte in partes[1:]:
+        titulo = parte.split("\n", 1)[0]
+        if any(titulo.startswith(s) for s in secciones):
+            elegidas.append("## " + parte)
+    return "\n".join(elegidas)
+
+
+class _Recorte(type(Path())):
+    """Un archivo del corpus del que se lee sólo un recorte: los guards siguen llamando
+    ``read_text`` y ``relative_to`` sin saber que es un pedazo (tarea 249)."""
+
+    def read_text(self, encoding=None, errors=None, newline=None):
+        rel = self.relative_to(REPO).as_posix()
+        return recortar(super().read_text(encoding=encoding or "utf-8", errors=errors), RECORTADOS[rel])
 
 
 def docs_de_referencia(texto: str | None = None) -> list[str]:
@@ -53,7 +89,11 @@ def docs_de_referencia(texto: str | None = None) -> list[str]:
 
 def corpus() -> list[Path]:
     """`CLAUDE.md` + `.claude/**/*.md` + los docs de referencia que no están excluidos."""
-    refs = [REPO / d for d in docs_de_referencia() if d not in FUERA_DEL_CORPUS]
+    refs = [
+        _Recorte(REPO / d) if d in RECORTADOS else REPO / d
+        for d in docs_de_referencia()
+        if d not in FUERA_DEL_CORPUS
+    ]
     return [CLAUDE_MD, *sorted((REPO / ".claude").rglob("*.md")), *refs]
 
 
