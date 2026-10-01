@@ -798,6 +798,82 @@ def stale_artifacts(
     return tuple(sorted(fuera, key=lambda s: -abs(s.lag_days)))
 
 
+# ── La serie de régimen de SPY — Tarea 251 ───────────────────────────────────
+#
+# Los runners de régimen (`run_market_regime_r2`, `run_sizing_exposure_t10_t20`,
+# `run_anom_regime_t38`) leen `SPY__10y` como serie de régimen (SPY < SMA200), y SPY **no
+# está en el universo**: `stale_artifacts` nunca lo miró. Al 2026-09-30 terminaba 6 ruedas
+# antes que el cohorte, y en esas ruedas `is_risk_off` arrastraba la última bandera sin aviso.
+#
+# **La pregunta es de COBERTURA, no de alineación.** El `verificador` lo midió en la segunda
+# tanda `/audit` del 2026-09-30: una SPY más larga que el cohorte —por cualquier punta— no
+# cambia el régimen en ningún día de la ventana mientras alcance para la SMA, y un dividendo
+# no mueve `close < SMA200` (es invariante a la escala). Lo que sí lo rompe es que SPY
+# **termine antes** que el cohorte, o que no tenga `SMA_WINDOW` ruedas antes de la primera
+# entrada posible. Esas dos cosas se chequean, con la misma tolerancia que la frescura (T30).
+
+
+class SpyCoverageError(StaleArtifactError):
+    """La serie de régimen de SPY no cubre la ventana del cohorte (tarea 251).
+
+    Hereda de ``StaleArtifactError`` a propósito: los runners ya atrapan esa clase y abortan,
+    y ``--allow-stale-artifacts`` sigue siendo el escape declarado.
+    """
+
+
+def spy_coverage_problems(
+    spy: Sequence, bars_by: dict[str, list], *, warmup: int, max_lag_days: int = ARTIFACT_MAX_LAG_DAYS
+) -> list[str]:
+    """Qué le falta a la serie de régimen de SPY para cubrir el cohorte. ``[]`` = cubre."""
+    from analysis.market_regime import SMA_WINDOW
+
+    if not spy:
+        return ["no hay serie de SPY"]
+    ref = cohort_end(bars_by)
+    problemas: list[str] = []
+    atras = _busday_lag(spy[-1][0], ref) if ref else 0
+    if atras > max_lag_days:
+        problemas.append(
+            f"SPY termina el {spy[-1][0]}, {atras} ruedas antes que el cohorte ({ref}): en esas "
+            f"ruedas el régimen queda congelado en la última bandera"
+        )
+    calendario = max(bars_by.values(), key=len, default=[])
+    if len(calendario) > warmup:
+        primera = calendario[warmup][0]
+        previas = sum(1 for b in spy if b[0] < primera)
+        if previas < SMA_WINDOW:
+            problemas.append(
+                f"SPY tiene {previas} ruedas antes de la primera entrada posible ({primera}) y la "
+                f"SMA necesita {SMA_WINDOW}: el régimen arranca en fail-open (risk-on)"
+            )
+    return problemas
+
+
+def announce_spy_coverage(
+    spy: Sequence,
+    bars_by: dict[str, list],
+    *,
+    warmup: int,
+    strict: bool = True,
+    file: TextIO | None = None,
+) -> list[str]:
+    """Declara si la serie de régimen de SPY cubre el cohorte, y aborta si no (tarea 251)."""
+    out = file if file is not None else sys.stdout
+    problemas = spy_coverage_problems(spy, bars_by, warmup=warmup)
+    if not problemas:
+        print(f"SPY de régimen: cubre el cohorte ({spy[0][0]} → {spy[-1][0]}).", file=out)
+        return []
+    detalle = "; ".join(problemas)
+    remedio = (
+        "Refrescá SPY con el cohorte (`python scripts/refresh_cohort.py`, que lo incluye desde la "
+        "tarea 251) o declarálo y corré con --allow-stale-artifacts"
+    )
+    if strict:
+        raise SpyCoverageError(f"la serie de régimen de SPY no cubre el cohorte: {detalle}. {remedio}.")
+    print(f"AVISO — la serie de régimen de SPY no cubre el cohorte: {detalle}.", file=out)
+    return problemas
+
+
 def declared_exceptions(bars_by: dict[str, list]) -> tuple[StaleArtifact, ...]:
     """Los artefactos desalineados que están **declarados** como excepción (T30).
 

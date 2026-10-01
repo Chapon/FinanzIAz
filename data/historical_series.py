@@ -228,10 +228,15 @@ def empalmar(
 
 
 # El frame LARGO del benchmark (tarea 246). `empalmar` necesita que se SOLAPE con el `2y`
-# rodante; el `10y` de SPY no está en el universo del cohorte, así que nadie lo refrescaba, y
-# sin refresh el solape se acaba ~2 años después de su último día. Con este umbral se baja de
-# nuevo cada ~3 meses: un fetch, y el solape nunca baja de ~21 meses.
-BENCHMARK_LARGO_PERIOD = "10y"
+# rodante; con este umbral se baja de nuevo cada ~3 meses: un fetch, y el solape nunca baja de
+# ~21 meses.
+#
+# **Es un frame PROPIO, `max`, y no el `10y` (tarea 251).** El `10y` de SPY es sustrato del
+# harness —la serie de régimen de tres runners— y lo refresca `refresh_cohort` junto con el
+# universo. La primera versión de este job reescribía ese `10y` por fuera del cohorte; la
+# segunda tanda `/audit` del 2026-09-30 lo vio. `max` además nunca deja de cubrir el arranque
+# de la cuenta.
+BENCHMARK_LARGO_PERIOD = "max"
 BENCHMARK_LARGO_MAX_EDAD_DIAS = 90
 
 
@@ -251,10 +256,11 @@ def benchmark_largo_vencido(
 
 
 def refrescar_benchmark_largo(ticker: str = "SPY", *, hoy: str, fetch=None) -> dict:
-    """Baja de nuevo el frame ``10y`` del benchmark si está vencido (tarea 246). Red: sí.
+    """Baja de nuevo el frame largo (``max``) del benchmark si está vencido (tareas 246/251). Red: sí.
 
-    Lee el último día del frame ``10y`` del parquet; si está vencido, lo pide a Yahoo con
-    ``get_historical_data`` (que escribe el cache). ``fetch`` se inyecta en los tests.
+    Lee el último día de ese frame en el parquet; si está vencido o no existe, lo pide a Yahoo
+    con ``get_historical_data`` (que escribe el cache). **No toca el ``10y``**, que es del
+    cohorte del harness. ``fetch`` se inyecta en los tests.
     """
     ultimo = None
     try:

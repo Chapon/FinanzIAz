@@ -63,9 +63,10 @@ Independent triggers, all gated by user settings:
    medianoche) archiva a Parquet la cinta de ``price_cache`` más vieja que 7
    días, con el invariante de la 81: escribir → verificar → borrar.
 
-9. **SPY long frame** — tarea 246. 1×/día chequea la edad del ``10y`` de SPY y
-   lo baja de nuevo si tiene más de 90 días: el VS SPY lo empalma con el ``2y``
-   rodante para cubrir la cuenta desde su arranque, y sin solape no hay empalme.
+9. **SPY long frame** — tareas 246/251. 1×/día chequea la edad del frame ``max``
+   de SPY y lo baja de nuevo si tiene más de 90 días: el VS SPY lo empalma con el
+   ``2y`` rodante para cubrir la cuenta desde su arranque. **No** toca el ``10y``,
+   que es la serie de régimen del harness y la refresca ``refresh_cohort``.
 
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
@@ -358,7 +359,7 @@ class PriceTapeArchiveWorker(QThread):
 
 
 class BenchmarkLargoWorker(QThread):
-    """Mantiene vivo el frame ``10y`` de SPY que empalma el VS SPY (tarea 246). Sale a la red.
+    """Mantiene vivo el frame ``max`` de SPY que empalma el VS SPY (tareas 246/251). Sale a la red.
 
     Emits ``refresh_completed(dict)`` or ``refresh_failed(error)``.
     """
@@ -1017,7 +1018,7 @@ class PaperScheduler(QObject):
         )
 
     def _maybe_refresh_benchmark_largo(self) -> None:
-        """Chequea 1×/día la edad del ``10y`` de SPY (tarea 246). El gate es el de la 244."""
+        """Chequea 1×/día la edad del frame largo de SPY (tareas 246/251). El gate es el de la 244."""
         today = utcnow_naive().date()
         running = self._bench_worker is not None and self._bench_worker.isRunning()
         if not price_tape_archive_due(

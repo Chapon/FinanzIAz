@@ -47,6 +47,7 @@ from analysis.harness_config import (
     announce,
     announce_artifacts,
     announce_signal_store,
+    announce_spy_coverage,
     artifact_window,
 )
 from analysis.market_regime import build_regime_series, make_entry_filter
@@ -225,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts)
         announce_signal_store(bars_by, args.period, args.warmup, strict=not args.allow_stale_artifacts)
+        announce_spy_coverage(spy, bars_by, warmup=args.warmup, strict=not args.allow_stale_artifacts)
     except (StaleArtifactError, SignalStoreGapError) as exc:
         print(f"*** ABORTA — {exc} ***", file=sys.stderr)
         return 3

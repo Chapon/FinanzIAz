@@ -70,6 +70,15 @@ def particionar(tickers: list[str], forzados: set[str]) -> tuple[list[str], list
     return a_refrescar, exentos
 
 
+# Tarea 251 — tickers que NO están en el universo pero sí son sustrato del harness. SPY es la
+# serie de régimen de `run_market_regime_r2`, `run_sizing_exposure_t10_t20` y
+# `run_anom_regime_t38`, y como no estaba en el universo nadie lo refrescaba: el 2026-09-30
+# terminaba 6 ruedas antes que el cohorte. Entra con el universo vivo (no con `--tickers`).
+SUSTRATO_FUERA_DEL_UNIVERSO: dict[str, str] = {
+    "SPY": "serie de régimen (SPY < SMA200) de los runners de régimen — tarea 251",
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Refresca el cohorte Parquet del universo vivo.")
     p.add_argument("--period", default="10y", help="período del cohorte (default 10y)")
@@ -92,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"No existe el universo: {ruta}", file=sys.stderr)
             return 2
         tickers = universo_vivo(ruta)
+        tickers += [t for t in SUSTRATO_FUERA_DEL_UNIVERSO if t not in tickers]
 
     forzados = {t.strip().upper() for t in args.force.split(",") if t.strip()}
     a_refrescar, exentos = particionar(tickers, forzados)

@@ -13,7 +13,9 @@ El cache ya tenía un ``10y`` de SPY que arranca en 2016; nadie lo leía, y nadi
    fetch); sin fechas en común no empalma.
 2. Con backend ``sqlite`` no hace nada (un frame por ticker).
 3. El kill-criteria: una cuenta que arranca **antes** del ``2y`` igual tiene VS SPY.
-4. El ``10y`` se vuelve a bajar cuando tiene más de 90 días, y el job está cableado.
+4. El frame largo se vuelve a bajar cuando tiene más de 90 días, y el job está cableado. Desde la
+   **251** es un frame propio (``max``): el ``10y`` es la serie de régimen del harness y lo
+   refresca ``refresh_cohort``.
 """
 
 from __future__ import annotations
@@ -110,7 +112,7 @@ def test_el_frame_largo_se_baja_de_nuevo_pasados_90_dias(ultimo, vencido):
     assert hs.benchmark_largo_vencido(ultimo, "2026-09-29") is vencido
 
 
-def test_refrescar_pide_el_10y_solo_si_esta_vencido(monkeypatch):
+def test_refrescar_pide_el_frame_largo_solo_si_esta_vencido(monkeypatch):
     from data import parquet_cache
 
     pedidos = []
@@ -119,11 +121,12 @@ def test_refrescar_pide_el_10y_solo_si_esta_vencido(monkeypatch):
         pedidos.append((t, period, interval))
         return _df([("2026-09-29", 600.0)])
 
-    monkeypatch.setattr(parquet_cache, "labelled_1d", lambda t: [("10y", _df([("2026-09-01", 590.0)]))])
+    monkeypatch.setattr(parquet_cache, "labelled_1d", lambda t: [("max", _df([("2026-09-01", 590.0)]))])
     assert hs.refrescar_benchmark_largo(hoy="2026-09-30", fetch=_fetch)["refrescado"] is False
-    monkeypatch.setattr(parquet_cache, "labelled_1d", lambda t: [("2y", _df([("2026-09-29", 600.0)]))])
+    # Un `10y` fresco no cuenta: es del cohorte del harness, no del benchmark (tarea 251).
+    monkeypatch.setattr(parquet_cache, "labelled_1d", lambda t: [("10y", _df([("2026-09-29", 600.0)]))])
     r = hs.refrescar_benchmark_largo(hoy="2026-09-30", fetch=_fetch)
-    assert r["refrescado"] is True and pedidos == [("SPY", "10y", "1d")]
+    assert r["refrescado"] is True and pedidos == [("SPY", "max", "1d")]
 
 
 def test_los_tres_consumidores_usan_la_serie_empalmada():
