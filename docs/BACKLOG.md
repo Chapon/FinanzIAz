@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 194 — Tarea 252 (TESTS-README-CADUCO) CERRADA 2026-10-01 — esta vez la frase se buscó en todo el repo antes de corregir** (`tests/README.md`). Suite Windows (Anaconda) **3975 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3972 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
+- **WIP 194 — Tarea 252 (TESTS-README-CADUCO) CERRADA 2026-10-01 — esta vez la frase se buscó en todo el repo antes de corregir** (`e2ec147`; `tests/README.md`). Suite Windows (Anaconda) **3975 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **3972 passed, 4 skipped**. Sólo texto. **No deja tareas nuevas.**
   - **Primero el `git grep`, que es lo que la 247 no hizo:** la afirmación *«ningún test está marcado `network`»* sólo quedaba en `tests/README.md` (la línea del `conftest` que matchea dice otra cosa, y es cierta).
   - **Las tres secciones:** el *quick start* pasa a ser los cuatro comandos del *done*; la tabla de ocho archivos de mayo se reemplaza por la remisión a `pytest --collect-only` —sin conteo, que caduca—; y el marcador `network` dice cuál es el test marcado, **con fecha**, y que desde la 209 olvidarse de marcar uno falla en vez de salir a internet.
   - **Un tropiezo mío en el camino, el de siempre:** la primera versión decía *«Hay **uno**»*, un conteo en presente sin fecha. Fechado antes de cerrar.
