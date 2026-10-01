@@ -36,6 +36,10 @@ _ESPERADOS = (
     "_split_factor_cache",
     "_second_opinion_cache",
     "_opinion_log",
+    # Tarea 243: un set y una list, no dicts. Lo que importa es que el nombre EXISTA y se
+    # pueda vaciar: el fixture llama `.clear()` sobre lo que encuentre.
+    "_PROVISIONAL_AVISADO",
+    "_PROVISIONAL_PENDIENTES",
 )
 
 
@@ -48,8 +52,9 @@ def test_la_lista_del_fixture_nombra_memos_que_existen():
     """
     assert set(_MEMOS_POR_TICKER) == set(_ESPERADOS)
     for nombre in _ESPERADOS:
-        assert isinstance(getattr(yfm, nombre), dict), (
-            f"{nombre} dejó de ser un dict module-level: el fixture de aislamiento "
+        # `hasattr` y no `getattr(..., {})`: el default es justo lo que haría pasar un typo.
+        assert hasattr(yfm, nombre) and isinstance(getattr(yfm, nombre), (dict, set, list)), (
+            f"{nombre} dejó de ser un contenedor module-level: el fixture de aislamiento "
             "(tests/conftest.py) hay que actualizarlo junto con el cambio."
         )
 
@@ -60,6 +65,8 @@ def test_memos_1_este_test_los_ensucia():
     yfm._split_factor_cache["ZZZZ"] = (0.0, 10.0)
     yfm._second_opinion_cache["ZZZZ"] = (0.0, 123.0)
     yfm._opinion_log["ZZZZ"] = {"veredicto": "sucio"}
+    yfm._PROVISIONAL_AVISADO.add("ZZZZ")
+    yfm._PROVISIONAL_PENDIENTES.append("ZZZZ")
 
     for nombre in _ESPERADOS:
         assert getattr(yfm, nombre), f"{nombre} tenía que quedar sucio"
@@ -72,7 +79,7 @@ def test_memos_2_arrancan_vacios_pese_a_lo_que_dejo_el_anterior():
     que, sin este archivo, la suite entera dejaba pasar en verde.
     """
     for nombre in _ESPERADOS:
-        assert getattr(yfm, nombre) == {}, (
+        assert not getattr(yfm, nombre), (
             f"{nombre} llegó con estado del test anterior. Eso hace que el resultado de "
             "un test dependa del ORDEN de ejecución — y en el caso de "
             "`_out_of_band_streak` decide además si se sale o no a la red (tarea 213)."
@@ -104,5 +111,12 @@ def test_cada_memo_se_aisla_por_separado(nombre):
     Lo pide la mutación *«se aísla la racha pero NO el cache de splits»*, que con una
     aserción sobre el conjunto entero podría pasar desapercibida según el orden.
     """
-    assert getattr(yfm, nombre) == {}
-    getattr(yfm, nombre)["ZZZZ"] = (1, "x", "")
+    memo = getattr(yfm, nombre)
+    assert not memo, f"{nombre} llegó con estado del test anterior"
+    # Se ensucia para el siguiente parametrizado, con la forma de cada contenedor.
+    if isinstance(memo, dict):
+        memo["ZZZZ"] = (1, "x", "")
+    elif isinstance(memo, set):
+        memo.add("ZZZZ")
+    else:
+        memo.append("ZZZZ")

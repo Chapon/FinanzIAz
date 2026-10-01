@@ -180,6 +180,8 @@ _MEMOS_POR_TICKER = (
     "_split_factor_cache",  # lo contrario: un factor cacheado EVITA ese fetch
     "_second_opinion_cache",  # el memo de la segunda opinión (tarea 200)
     "_opinion_log",  # el veredicto que lee el guard del engine (tarea 201)
+    "_PROVISIONAL_AVISADO",  # qué tickers ya avisaron barra provisional (tarea 112)
+    "_PROVISIONAL_PENDIENTES",  # los que esperan el resumen de una línea (tarea 243)
 )
 
 

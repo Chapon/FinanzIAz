@@ -100,6 +100,7 @@ def test_el_aviso_sale_al_cachear_y_dice_la_consecuencia(monkeypatch, caplog, ho
 
     with caplog.at_level(logging.WARNING):
         yf._finalize_historical("ZZTOP", _frame(["2026-08-03", "2026-08-04"]), "2y", "1d")
+        yf._avisar_provisionales()  # tarea 243: el resumen lo emite el llamador público
 
     msgs = [r.getMessage() for r in caplog.records]
     assert any("no asento" in m for m in msgs), msgs
@@ -117,6 +118,7 @@ def test_el_aviso_sale_UNA_vez_por_ticker(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         for _ in range(4):
             yf._finalize_historical("ZZTOP", _frame(["2026-08-03", "2026-08-04"]), "2y", "1d")
+            yf._avisar_provisionales()
 
     assert sum("no asento" in r.getMessage() for r in caplog.records) == 1
 
@@ -131,6 +133,7 @@ def test_con_la_barra_asentada_no_avisa_nada(monkeypatch, caplog):
 
     with caplog.at_level(logging.WARNING):
         yf._finalize_historical("ZZTOP", _frame(["2026-08-03", "2026-08-04"]), "2y", "1d")
+        yf._avisar_provisionales()
 
     assert not any("no asento" in r.getMessage() for r in caplog.records)
 

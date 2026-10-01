@@ -1750,6 +1750,36 @@ def _normalize_ohlcv(df: pd.DataFrame | None) -> pd.DataFrame | None:
 # que se sabe es que **3-7 minutos NO alcanzan**.
 _SETTLE_MARGIN_MIN = 30
 _PROVISIONAL_AVISADO: set[str] = set()
+# Tarea 243 — los tickers con barra provisional que todavía no se resumieron. El aviso
+# salía UNO POR TICKER: 132 WARNING por cada arranque en horario de mercado, el 68% de los
+# 2.215 del log al 2026-09-30, y tapaban al único que importaba (un harvest con 0/4 fuentes).
+# Ahora `_finalize_historical` anota acá (a DEBUG) y `_avisar_provisionales` emite UNA
+# línea al final de cada camino público de fetch — el warm-up del arranque es un solo lote.
+_PROVISIONAL_PENDIENTES: list[str] = []
+_provisional_lock = threading.Lock()
+_PROVISIONAL_MUESTRA = 8
+
+
+def _avisar_provisionales() -> None:
+    """Una línea WARNING con los tickers anotados desde el último resumen, y los vacía."""
+    with _provisional_lock:
+        pendientes = list(_PROVISIONAL_PENDIENTES)
+        _PROVISIONAL_PENDIENTES.clear()
+    if not pendientes:
+        return
+    muestra = ", ".join(pendientes[:_PROVISIONAL_MUESTRA])
+    resto = len(pendientes) - _PROVISIONAL_MUESTRA
+    if resto > 0:
+        muestra += f" y {resto} más"
+    log.warning(
+        "%d ticker(s) cachean la barra de la sesion de HOY, que todavia no asento "
+        "(margen %d min desde el cierre): %s. Se cachea igual, pero el cierre puede "
+        "moverse: medido, un error de 0,32%% cambia la señal en el 7%% de los tickers. "
+        "Tarea 112 (una línea por lote, tarea 243; el detalle por ticker va a DEBUG).",
+        len(pendientes),
+        _SETTLE_MARGIN_MIN,
+        muestra,
+    )
 
 
 def last_bar_is_provisional(df, now_et=None) -> bool:
@@ -1810,18 +1840,12 @@ def _finalize_historical(
         log.info("Historical data for %s: %s", ticker_upper, report.summary())
 
     if last_bar_is_provisional(df) and ticker_upper not in _PROVISIONAL_AVISADO:
-        # Una vez por ticker y por proceso: esto corre por cada uno del universo.
+        # Una vez por ticker y por proceso: esto corre por cada uno del universo. Se ANOTA
+        # y el resumen lo emite el llamador público al terminar (tarea 243).
         _PROVISIONAL_AVISADO.add(ticker_upper)
-        log.warning(
-            "%s (%s/%s): la ultima barra es de la sesion de HOY y todavia no asento "
-            "(faltan %d min desde el cierre). Se cachea igual, pero el cierre puede "
-            "moverse: medido, un error de 0,32%% cambia la señal en el 7%% de los "
-            "tickers. Tarea 112.",
-            ticker_upper,
-            period,
-            interval,
-            _SETTLE_MARGIN_MIN,
-        )
+        with _provisional_lock:
+            _PROVISIONAL_PENDIENTES.append(ticker_upper)
+        log.debug("%s (%s/%s): la ultima barra es de HOY y todavia no asento", ticker_upper, period, interval)
 
     _write_historical_cache(ticker_upper, period, interval, df)
     # Descarga exitosa — limpiar registro de fallos previos si existía.
@@ -1869,7 +1893,9 @@ def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -
         default=None,
     )
     # 3. QA + cache + record (shared finalizer)
-    return _finalize_historical(ticker_upper, df, period, interval)
+    out = _finalize_historical(ticker_upper, df, period, interval)
+    _avisar_provisionales()
+    return out
 
 
 def _chunked(seq: list[str], size: int):
@@ -2024,6 +2050,7 @@ def get_historical_data_batch(
             df_t = _slice_ticker(batch, t)
             result[t] = _finalize_historical(t, df_t, period, interval)
 
+    _avisar_provisionales()
     return result
 
 
