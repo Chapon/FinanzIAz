@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 198 — Tarea 257 (NOTICIAS-HORA-EN-UTC) CERRADA 2026-10-01 — la celda pasa por `fmt_local`** (`ui/news_tab.py`, `tests/test_news_tab_hora_local_t257.py` **nuevo**). Suite Windows (Anaconda) **3998 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **3995 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 198 — Tarea 257 (NOTICIAS-HORA-EN-UTC) CERRADA 2026-10-01 — la celda pasa por `fmt_local`** (`f6c8e50`; `ui/news_tab.py`, `tests/test_news_tab_hora_local_t257.py` **nuevo**). Suite Windows (Anaconda) **3998 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **3995 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El test no compara contra la hora de la máquina:** en el CI la zona es UTC y ahí el defecto y el arreglo dan lo mismo. Reemplaza `fmt_local` por un centinela y verifica que la celda pase por él. Volver al `strftime` directo lo pone en rojo.
   - **El ordenamiento por fecha** usa `published_at.timestamp()`, que interpreta el naive como local; no se tocó porque el orden relativo es el mismo.
 
