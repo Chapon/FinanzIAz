@@ -1427,6 +1427,11 @@ _NO_LE_CORRESPONDE_EL_GUARD = {
         "cohorte está desalineado sería abortar justo al que lo viene a alinear."
     ),
     "precompute_pit_risk_score.py": "PRODUCTOR, igual que precompute_pit_signals.py.",
+    "measure_news_sentiment_fwd5_t255.py": (
+        "Lee los frames `1y` que mantiene la app viva, NO el cohorte `10y`: la ventana que "
+        "chequea announce_artifacts es la de otro sustrato. Declara la frescura de sus "
+        "propios frames al correr (tarea 255)."
+    ),
     "benchmark_historical_cache.py": (
         "Mide COSTO DE I/O, no produce un número de trading. Un cohorte torcido no "
         "invalida un benchmark de lectura; le cambia los milisegundos y nada más."
