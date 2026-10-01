@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 200 — Tarea 196 (HARVEST-EN-LA-NUBE): decisión de Chapa por AWS Lambda + DynamoDB, y el probe empaquetado para correr desde AWS** (`scripts/probe_yahoo_datacenter_t196.py`, `scripts/build_probe_lambda_t196.py` **nuevo**, `tests/test_probe_lambda_t196.py` **nuevo**). Suite Windows (Anaconda) **4037 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4034 passed, 4 skipped**. **La 196 sigue abierta:** espera la salida del probe.
+- **WIP 200 — Tarea 196 (HARVEST-EN-LA-NUBE): decisión de Chapa por AWS Lambda + DynamoDB, y el probe empaquetado para correr desde AWS** (`c33a447`; `scripts/probe_yahoo_datacenter_t196.py`, `scripts/build_probe_lambda_t196.py` **nuevo**, `tests/test_probe_lambda_t196.py` **nuevo**). Suite Windows (Anaconda) **4037 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4034 passed, 4 skipped**. **La 196 sigue abierta:** espera la salida del probe.
   - **El probe es el mismo:** `main` (GitHub) y `lambda_handler` (AWS) pasan por `run_probe`, así que las dos corridas miden lo mismo. El handler manda los caches de yfinance (zona horaria **y** cookie) a `/tmp`, que es lo único escribible en Lambda: si no, el primer pedido falla por el disco y se lee como un bloqueo de Yahoo.
   - **El zip:** yfinance y curl_cffi en las versiones de `requirements.lock` (1.4.1 y 0.15.0, la app corre ésas, no la última de PyPI), wheels de Linux, sin `__pycache__` ni `tests`. **39,8 MB** zipeado (límite de la consola: 50) y 128 MB descomprimido (límite: 250); el script falla si pasa los 50.
   - **Mutación:** sin el `/tmp` y sin el filtro de basura del zip, las dos rojas.
