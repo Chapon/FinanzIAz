@@ -149,3 +149,34 @@ def resumen_home(session, nombre: str = CARTERA_HOME) -> dict | None:
         "alertas_disparadas": alertas,
         "precio_mas_viejo": min(fechas) if fechas else None,
     }
+
+
+# ── Dividendos cobrados, por lote (tarea 281) ─────────────────────────────────
+
+
+def dividendos_cobrados(eventos: list[tuple[str, float]], calendario: list[tuple[str, float]]) -> float:
+    """Efectivo de dividendos que cobró una posición, lote por lote. Puro.
+
+    ``eventos`` son ``(día 'YYYY-MM-DD', acciones con signo)`` de sus transacciones —BUY
+    positivo, SELL negativo—; ``calendario`` son ``(ex_date, $/acción)``.
+
+    Reemplaza el cálculo de la pestaña Portfolio, que multiplicaba el dividendo por acción
+    desde **una sola** fecha (``purchase_date``) por la cantidad **actual**: en una posición
+    comprada en tramos contaba dividendos de acciones que todavía no se tenían
+    (``docs/auditoria_pantalla_resto_2026-10-02.md`` [P-2]). Acá cobra, en cada ex-date,
+    lo que había **antes** de esa fecha — la convención de la 222 (``acciones_antes_del_ex_date``):
+    una compra del mismo día del ex-date no cobra.
+    """
+    from paper_trading.dividends import acciones_antes_del_ex_date
+
+    total = 0.0
+    for ex_date, monto in calendario:
+        # Un ex-date anterior a la primera compra (o el centinela «no paga») no necesita un
+        # filtro propio: ahí `acciones_antes_del_ex_date` da 0. Probado por mutación: un
+        # `ex_date <= primera_compra` acá no cambiaba nada, y se sacó.
+        if not monto:
+            continue
+        acciones = acciones_antes_del_ex_date(eventos, ex_date)
+        if acciones > 0:
+            total += acciones * float(monto)
+    return total

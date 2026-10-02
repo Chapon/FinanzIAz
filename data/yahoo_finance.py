@@ -2319,32 +2319,6 @@ def _write_earnings_cache(ticker_upper: str, earnings_dt: "datetime | None", *, 
             return
 
 
-def get_bulk_dividends(tickers_since: dict[str, datetime]) -> dict[str, float]:
-    """
-    Fetch dividends for multiple tickers in parallel.
-    tickers_since: {ticker: purchase_date}
-    Returns: {ticker: total_dividends_per_share}
-    """
-    if not tickers_since:
-        return {}
-
-    results: dict[str, float] = {}
-    max_workers = min(BULK_FETCH_WORKERS, len(tickers_since))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_ticker = {
-            executor.submit(get_dividends_since, ticker, since): ticker
-            for ticker, since in tickers_since.items()
-        }
-        for future in as_completed(future_to_ticker):
-            ticker = future_to_ticker[future]
-            try:
-                results[ticker] = future.result()
-            except Exception:
-                log.exception("Bulk dividend fetch failed for %s", ticker)
-                results[ticker] = 0.0
-    return results
-
-
 # ── Calendario de ex-dates (tarea 221) ────────────────────────────────────────
 #
 # Hermano de `get_dividends_since`, con OTRA pregunta. Aquél devuelve el acumulado

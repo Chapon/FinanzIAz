@@ -23,8 +23,8 @@ from PyQt6.QtWidgets import (
 
 from config.logging_config import get_logger
 from config.settings_manager import settings
-from data.yahoo_finance import get_bulk_dividends, get_bulk_prices
-from database.models import Portfolio, Position, session_scope
+from data.yahoo_finance import get_bulk_dividend_calendar, get_bulk_prices
+from database.models import Portfolio, Position, Transaction, session_scope
 from ui.dialogs import (
     AddPortfolioDialog,
     AddPositionDialog,
@@ -50,6 +50,32 @@ _SIGNAL_LABELS = {
 }
 
 
+def totales_cartera(positions, prices: dict, dividends: dict, show_dividends: bool) -> dict:
+    """Las cuentas de las tarjetas de Portfolio (tarea 281). Pura, para poder testearla.
+
+    [P-1] Una posición **sin precio no se valúa al costo en silencio**: antes entraba al valor
+    con P&L cero y la tarjeta no lo decía. Valor y ganancia se calculan sobre las que tienen
+    precio, el % sobre el costo de esas mismas, y ``sin_precio`` las nombra.
+    [P-2] ``dividends`` es efectivo cobrado por posición (lote por lote), no $/acción.
+    """
+    con_precio = [p for p in positions if prices.get(p.ticker)]
+    valor = sum(p.quantity * prices[p.ticker]["price"] for p in con_precio)
+    invertido_con_precio = sum(p.quantity * p.avg_buy_price for p in con_precio)
+    pl_precio = valor - invertido_con_precio
+    divs = sum(dividends.get(p.ticker, 0.0) for p in positions) if show_dividends else 0.0
+    pl_total = pl_precio + divs
+    return {
+        "invertido": sum(p.quantity * p.avg_buy_price for p in positions),
+        "valor": valor,
+        "sin_precio": sorted(p.ticker for p in positions if not prices.get(p.ticker)),
+        "pl_precio": pl_precio,
+        "dividendos": divs,
+        "pl_total": pl_total,
+        # Sobre el costo de las que TIENEN precio: la ganancia de precio sólo las cuenta a ellas.
+        "pl_pct": (pl_total / invertido_con_precio * 100) if invertido_con_precio > 0 else 0.0,
+    }
+
+
 class PriceWorker(BaseWorker):
     prices_ready = pyqtSignal(dict)
 
@@ -67,14 +93,22 @@ class PriceWorker(BaseWorker):
 class DividendWorker(BaseWorker):
     """Background thread to fetch cumulative dividends per position."""
 
-    dividends_ready = pyqtSignal(dict)  # {ticker: total_div_per_share}
+    dividends_ready = pyqtSignal(dict)  # {ticker: efectivo cobrado} — tarea 281
 
-    def __init__(self, tickers_since: dict):
+    def __init__(self, lotes: dict):
         super().__init__()
-        self.tickers_since = tickers_since  # {ticker: purchase_date}
+        self.lotes = lotes  # {ticker: [(día, acciones con signo), ...]}
 
     def do_work(self) -> dict:
-        return get_bulk_dividends(self.tickers_since)
+        """Tarea 281: efectivo cobrado lote por lote, con el calendario de ex-dates.
+
+        Antes era el dividendo por acción desde UNA fecha por la cantidad ACTUAL, que en una
+        posición comprada en tramos contaba dividendos de acciones que todavía no se tenían.
+        """
+        from database.cartera_real import dividendos_cobrados
+
+        calendario = get_bulk_dividend_calendar(sorted(self.lotes))
+        return {t: dividendos_cobrados(ev, calendario.get(t, [])) for t, ev in self.lotes.items()}
 
     def on_success(self, result: dict) -> None:
         self.dividends_ready.emit(result)
@@ -157,7 +191,7 @@ class PortfolioTab(QWidget):
         self._current_portfolio_id = None
         self._positions = []
         self._prices = {}
-        self._dividends = {}  # {ticker: total_div_per_share}
+        self._dividends = {}  # {ticker: efectivo cobrado} — tarea 281
         self._signals = {}  # {ticker: yahoo_level_str}
         self._show_dividends = True  # toggle
         self._price_worker = None
@@ -411,10 +445,25 @@ class PortfolioTab(QWidget):
             return
         if self._div_worker and self._div_worker.isRunning():
             return
-        tickers_since = {p.ticker: (p.purchase_date or p.created_at) for p in self._positions}
-        self._div_worker = DividendWorker(tickers_since)
+        self._div_worker = DividendWorker(self._lotes())
         self._div_worker.dividends_ready.connect(self._on_dividends_ready)
         self._div_worker.start()
+
+    def _lotes(self) -> dict:
+        """``{ticker: [(día, acciones con signo)]}`` desde las transacciones (tarea 281)."""
+        from paper_trading.dividends import dia
+
+        por_id = {p.id: p for p in self._positions}
+        lotes: dict = {p.ticker: [] for p in self._positions}
+        with session_scope() as session:
+            for t in session.query(Transaction).filter(Transaction.position_id.in_(list(por_id))).all():
+                pos = por_id[t.position_id]
+                d = dia(t.date or pos.purchase_date or pos.created_at)
+                if d is None:
+                    continue
+                signo = 1.0 if str(t.transaction_type).upper() == "BUY" else -1.0
+                lotes[pos.ticker].append((d, signo * float(t.quantity)))
+        return lotes
 
     def _fetch_signals(self):
         """Fetch technical signals for all positions in background."""
@@ -462,8 +511,7 @@ class PortfolioTab(QWidget):
             pl_price = (current_val - invested) if current_val is not None else None
 
             # Dividends
-            div_per_share = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
-            div_total = div_per_share * pos.quantity if div_per_share else 0.0
+            div_total = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
 
             # Total P&L = price gain + dividends
             pl_total = ((pl_price or 0.0) + div_total) if pl_price is not None else None
@@ -562,24 +610,20 @@ class PortfolioTab(QWidget):
         table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
     def _update_cards(self):
-        total_invested = sum(p.quantity * p.avg_buy_price for p in self._positions)
-        total_value = sum(
-            p.quantity * (self._prices[p.ticker]["price"] if self._prices.get(p.ticker) else p.avg_buy_price)
-            for p in self._positions
-        )
-        pl_price = total_value - total_invested
-
-        # Dividends
-        total_divs = (
-            sum((self._dividends.get(p.ticker, 0.0) * p.quantity) for p in self._positions)
-            if self._show_dividends
-            else 0.0
+        t = totales_cartera(self._positions, self._prices, self._dividends, self._show_dividends)
+        total_invested, total_value, sin_precio = t["invertido"], t["valor"], t["sin_precio"]
+        pl_price, total_divs, pl_total, pl_pct_div = (
+            t["pl_precio"],
+            t["dividendos"],
+            t["pl_total"],
+            t["pl_pct"],
         )
 
-        pl_total = pl_price + total_divs
-        pl_pct_div = (pl_total / total_invested * 100) if total_invested > 0 else 0
-
-        self.card_total.set_value(f"${total_value:,.2f}")
+        faltan = f"  ({len(sin_precio)} sin precio)" if sin_precio else ""
+        self.card_total.set_value(f"${total_value:,.2f}{faltan}")
+        self.card_total.setToolTip(
+            "Sin precio, fuera del valor y de la ganancia: " + ", ".join(sin_precio) if sin_precio else ""
+        )
         self.card_invested.set_value(f"${total_invested:,.2f}")
         self.card_pl.set_value(
             f"{'+' if pl_price >= 0 else ''}${pl_price:,.2f}",
