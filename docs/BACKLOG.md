@@ -1878,6 +1878,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02b** tras cerrar la **261**, que deja siete tareas. Encabeza la **262** (CRÍTICA: contabilidad que puede realizar una pérdida ficticia; sin exposición hoy, pero con un caso real en el universo este año); detrás la **263** (ALTA: una cuenta que deja de operar sin aviso), y después las MEDIAS en el orden en que Chapa las ve —**264** (Home → cartera real) → **266** (cuadre) → **265** (texto del desvío) → **267** (resto de pantallas)—, y la **268** (BAJA) antes de las que esperan algo de afuera. El orden queda **262 → 263 → 264 → 266 → 265 → 267 → 268 → 269 → 196 → 245 → 259**. La **269** (BAJA, test de tiempo que falla bajo carga) salió del cierre de la propia 261.
 
+> **Repriorizado 2026-10-02c** al chequear la cobertura de las auditorías (pedido de Chapa): entra la **270** (BAJA, un docstring que afirma un gate que R1 decidió no cablear), al lado de las otras BAJAS. El orden queda **262 → 263 → 264 → 266 → 265 → 267 → 268 → 269 → 270 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3267,6 +3269,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 270. DOCSTRING-DD-BREAKER-CABLEADO — `paper_trading/dd_breaker.py` dice en presente que un gate de `run_scan` lo consume, y R1 cerró NO-SHIP: el motor no lo importa  ·  origen: el chequeo de cobertura de auditorías (2026-10-02, pedido de Chapa) · severidad **BAJA**
+
+- **Qué pasa.** El docstring (`paper_trading/dd_breaker.py:1-25`) afirma *«When armed, the consuming gate in ``run_scan`` suppresses **BUYs only**»*. Ningún módulo de `paper_trading/` ni de `ui/` lo importa: lo usa sólo `scripts/run_dd_breaker_validation.py`. La tarea 4 (R1) cerró **NO-SHIP** el 2026-07-09 y decidió **no** cablear gate, flags ni UI.
+- **Por qué importa aunque sea BAJA:** quien lea el módulo cree que la cuenta viva tiene un freno por drawdown, y no lo tiene. Es la forma de *«declarado no es cableado»* (la 97).
+- **Alcance.** Reescribir el docstring: detector puro, sin consumidor vivo, NO-SHIP con la referencia a `docs/dd_breaker_r1_2026-07-08.md`.
+- **Kill-criteria.** El docstring no afirma un consumidor que no existe; los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
 ### 269. TEST-LOCK-MIDE-LATENCIA — `test_con_una_alerta_para_REARMAR…` (t237) asserta tiempo de pared, y bajo carga falla sin que haya ningún lock  ·  origen: el cierre de la 261 (suite del 2026-10-02) · severidad **BAJA**
