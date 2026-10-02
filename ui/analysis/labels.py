@@ -123,7 +123,11 @@ TOOLTIPS: dict[str, str] = {
         "• 35-65%: <span style='color:#fbbf24'>Neutral</span><br>"
         "• 25-35%: <span style='color:#fb923c'>Vender</span><br>"
         "• &lt;25%: <span style='color:#f87171'>Venta Fuerte</span> — patrones bajistas sólidos.<br><br>"
-        "<b>Split de entrenamiento:</b> 80% histórico (entrenamiento) / 20% más reciente (validación).<br>"
+        "<b>Entrenamiento:</b> walk-forward en 5 ventanas temporales (con 5 días de separación "
+        "entre entrenamiento y validación) y calibración isotónica; con pocos datos cae a un "
+        "split 80/20. La «precisión histórica» que muestra la fila es la de ese walk-forward.<br>"
+        "<i>Es la probabilidad que da el modelo, calibrada sobre la historia del propio ticker; "
+        "si anticipa el retorno no está medido (tarea 282).</i><br>"
         "<i>Requiere <code>pip install xgboost</code>.</i>"
     ),
     "Volumen": (

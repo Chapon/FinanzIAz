@@ -61,7 +61,7 @@ Severidad: **MEDIUM** · Confianza: **ALTA**
 - Es la forma de la 255: el rótulo promete una medición que no existe. El número nunca se validó como probabilidad, porque no hay medición de calibración contra el retorno.
 - La medición más cercana (la 73, `docs/buyscore_fwd5_t73_2026-09-01.md`) no detectó relación con el retorno a 5 días: r = −0,05, n = 85.
 - El tooltip de XGBoost describe un *«split de entrenamiento 80/20»*, cuando `analysis/ml_signals.py` hace walk-forward con `TimeSeriesSplit` y calibración isotónica.
-- Los umbrales del tooltip (75/65/35/25) no son los de la barra (65/55/45/35).
+- Los umbrales del tooltip (75/65/35/25) no son los de la barra (65/55/45/35). **Corregido al cerrar la 282: esta pata era falsa.** Esos umbrales describen la **fila de XGBoost**, no la barra, y coinciden con su código (`analysis/ml_signals.py`, `prob_up >= 0.65` / `>= 0.75`). Comparé dos widgets distintos. El resto del hallazgo (el rótulo de la barra y el método del tooltip) se sostiene.
 
 **Impacto:** quien mira Analysis lee *«72% de compra»* como una probabilidad, y no lo es.
 

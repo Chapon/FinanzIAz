@@ -252,12 +252,14 @@ class AnalysisTab(QWidget):
         self.prob_bar.setFixedHeight(22)
         self.prob_bar.setTextVisible(True)
         self.prob_bar.setToolTip(
-            "<b>Probabilidad cuantitativa de compra</b><br><br>"
-            "Combina el consenso de todos los indicadores (incluyendo XGBoost si está disponible) "
-            "ajustado por el régimen de mercado y la volatilidad actual.<br><br>"
-            "• &gt;65%: zona de compra probable<br>"
-            "• 35-65%: neutral / mantener<br>"
-            "• &lt;35%: zona de venta probable"
+            "<b>Puntaje de consenso de los indicadores (0-100)</b><br><br>"
+            "Combina las señales de todos los indicadores (XGBoost incluido, si está "
+            "disponible) ajustadas por el régimen de mercado. <b>No es una probabilidad</b>: "
+            "nunca se midió contra lo que hace el precio después, y la medición más cercana "
+            "(tarea 73, buy_score contra el retorno a 5 días) no encontró relación.<br><br>"
+            "• ≥55: los indicadores se inclinan al alza<br>"
+            "• 45-55: neutral<br>"
+            "• &lt;45: los indicadores se inclinan a la baja"
         )
         self._update_prob_bar(0.50)  # neutral default
         ctx_layout.addWidget(self.prob_bar)
@@ -408,7 +410,8 @@ class AnalysisTab(QWidget):
 
     def _update_prob_bar(self, prob: float):
         """
-        Update the probability bar value, label and colour.
+        Update the consensus bar value, label and colour (tarea 282: es un puntaje de
+        consenso, no una probabilidad — el rótulo no dice «Compra 72%»).
 
         prob 0-1:
           <0.35 → red   (venta)
@@ -422,19 +425,19 @@ class AnalysisTab(QWidget):
 
         if prob >= 0.65:
             color = "#22c55e"
-            label = f"▲ Compra  {val}%"
+            label = f"▲ Consenso alcista  {val}/100"
         elif prob >= 0.55:
             color = "#4ade80"
-            label = f"▲ Compra  {val}%"
+            label = f"▲ Consenso alcista  {val}/100"
         elif prob >= 0.45:
             color = "#fbbf24"
-            label = f"⟶ Neutral  {val}%"
+            label = f"⟶ Neutral  {val}/100"
         elif prob >= 0.35:
             color = "#fb923c"
-            label = f"▼ Venta  {100 - val}%"
+            label = f"▼ Consenso bajista  {val}/100"
         else:
             color = "#f87171"
-            label = f"▼ Venta  {100 - val}%"
+            label = f"▼ Consenso bajista  {val}/100"
 
         self.prob_bar.setFormat(label)
         self.prob_bar.setStyleSheet(f"""
