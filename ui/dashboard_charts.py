@@ -134,8 +134,9 @@ class AreaChartHero(QWidget):
         self.ax.set_yticks([])
         self.canvas.draw()
 
-    def set_data(self, snapshots: list) -> None:
-        """Render from a list of ``PaperEquitySnapshot`` (``snapshot_at``/``total_equity``)."""
+    def set_data(self, snapshots: list, ylabel: str = "Equity ($)") -> None:
+        """Render from objects with ``snapshot_at``/``total_equity`` (a ``PaperEquitySnapshot``
+        or, since la tarea 264, el capital invertido de la cartera real)."""
         if not snapshots:
             self._render_empty()
             return
@@ -150,7 +151,7 @@ class AreaChartHero(QWidget):
         _gradient_under_line(self.ax, x_num, ys, PALETTE["accent"])
         if len(ys) > 1:
             self.ax.axhline(ys[0], color=PALETTE["text3"], linestyle="--", linewidth=0.6, alpha=0.7)
-        self.ax.set_ylabel("Equity ($)", color=PALETTE["text2"], fontsize=10)
+        self.ax.set_ylabel(ylabel, color=PALETTE["text2"], fontsize=10)
         self.ax.xaxis_date()
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
         self.figure.autofmt_xdate(rotation=15)

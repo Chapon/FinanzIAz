@@ -1,15 +1,20 @@
 """
 Home dashboard tab — Fuse-style analytics layout.
 
-Top hero equity area-chart, a row of KPI tiles, then a bottom row with the
+Top hero area-chart, a row of KPI tiles, then a bottom row with the
 welcome/health card, a portfolio-allocation donut, and quick settings.
-All metrics come from the active paper-trading account (real data).
+
+**Todo sale de la cartera REAL «Mis Acciones»** (tarea 264, decisión de Chapa: *«home debería
+mostrar el portfolio, no las cuentas de sim de paper trading»*). Antes salía de una cuenta de
+paper trading —y encima de la 1, cerrada, elegida por id fijo—. El paper trading tiene su lugar
+en Paper y Métricas. Los números se arman en ``database.cartera_real.resumen_home``.
 """
 
 from __future__ import annotations
 
 import contextlib
 from collections import Counter
+from types import SimpleNamespace
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -23,6 +28,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config.logging_config import get_logger
 from data.yahoo_finance import is_market_open
 from ui.dashboard_charts import AreaChartHero, DonutChart, KpiCard
 from ui.styles import PALETTE
@@ -43,17 +49,7 @@ def _abbrev(n: float) -> str:
     return f"{int(n)}"
 
 
-def _resolve_account_id() -> int | None:
-    """Active paper account id — prefers id=1 ("Sim Principal"), else first active."""
-    try:
-        from paper_trading.account import get_account, list_accounts
-
-        if get_account(1) is not None:
-            return 1
-        accounts = list_accounts(active_only=True) or list_accounts()
-        return accounts[0].id if accounts else None
-    except Exception:
-        return None
+log = get_logger(__name__)
 
 
 class WelcomeCard(QFrame):
@@ -97,7 +93,7 @@ class WelcomeCard(QFrame):
         layout.addStretch()
 
         # Navigate link
-        self.portfolio_btn = QPushButton("Ver Paper Trading  →")
+        self.portfolio_btn = QPushButton("Ver Portafolio  →")
         self.portfolio_btn.setStyleSheet(
             f"background-color: {PALETTE['accent_bg']}; "
             f"color: {PALETTE['accent']}; "
@@ -115,7 +111,9 @@ class WelcomeCard(QFrame):
                 f"{sign}{pl_pct:.2f}%",
                 color=PALETTE["positive"] if ok else PALETTE["red"],
             )
-            self.status_rows["alerts"].set_status("Sin disparar" if n_alerts == 0 else f"{n_alerts} activas")
+            self.status_rows["alerts"].set_status(
+                "Sin disparar" if n_alerts == 0 else f"{n_alerts} disparada(s)"
+            )
 
 
 class PlatformSettingsCard(QFrame):
@@ -191,9 +189,7 @@ class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_ui()
-        # Initial load from the DB; guarded so an empty/fresh DB can't crash the UI.
-        with contextlib.suppress(Exception):
-            self.load_paper_data()
+        self.load_data()
 
     def _build_ui(self):
         scroll = QScrollArea(self)
@@ -220,11 +216,11 @@ class HomeTab(QWidget):
         hero_layout.setContentsMargins(20, 16, 20, 16)
         hero_layout.setSpacing(6)
 
-        hero_title = QLabel("Curva de Equity")
-        hero_title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 16px; font-weight: 700;")
-        hero_sub = QLabel("Evolución del capital de la cuenta de paper trading")
+        self.hero_title = QLabel("Mis Acciones — capital invertido neto")
+        self.hero_title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 16px; font-weight: 700;")
+        hero_sub = QLabel("Compras menos ventas acumuladas, a precio de transacción (no es valor de mercado)")
         hero_sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
-        hero_layout.addWidget(hero_title)
+        hero_layout.addWidget(self.hero_title)
         hero_layout.addWidget(hero_sub)
 
         self.hero_chart = AreaChartHero()
@@ -236,8 +232,8 @@ class HomeTab(QWidget):
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(16)
 
-        self.kpi_pl = KpiCard("P/L TOTAL", kind="area", color=PALETTE["accent"])
-        self.kpi_trades = KpiCard("OPERACIONES", kind="bar", color=PALETTE["orange"])
+        self.kpi_pl = KpiCard("VALOR Y P/L", kind="area", color=PALETTE["accent"])
+        self.kpi_trades = KpiCard("TRANSACCIONES", kind="bar", color=PALETTE["orange"])
         self.kpi_positions = KpiCard("POSICIONES ABIERTAS", kind="spike", color=PALETTE["purple"])
 
         for card in (self.kpi_pl, self.kpi_trades, self.kpi_positions):
@@ -250,7 +246,7 @@ class HomeTab(QWidget):
         bottom.setSpacing(16)
 
         self.welcome_card = WelcomeCard()
-        self.welcome_card.portfolio_btn.clicked.connect(lambda: self.navigate.emit("paper"))
+        self.welcome_card.portfolio_btn.clicked.connect(lambda: self.navigate.emit("portfolio"))
         bottom.addWidget(self.welcome_card)
 
         self.donut = DonutChart("Distribución de cartera")
@@ -285,65 +281,58 @@ class HomeTab(QWidget):
         root.addStretch()
 
     # ── Data loading ────────────────────────────────────────────────────────
-    def load_paper_data(self) -> None:
-        """Populate hero chart, KPI tiles, and donut from the active paper account."""
-        from paper_trading.account import (
-            count_orders,
-            get_account,
-            get_equity_curve,
-            get_orders,
-            get_positions,
+    def load_data(self) -> None:
+        """Llena Home con la cartera real «Mis Acciones» (tarea 264).
+
+        Si falla, lo **loguea y lo dice** en la pantalla: antes corría bajo
+        ``suppress(Exception)`` y Home quedaba con los números viejos sin avisar.
+        """
+        from database.cartera_real import CARTERA_HOME, resumen_home
+        from database.models import session_scope
+
+        try:
+            with session_scope() as session:
+                r = resumen_home(session)
+        except Exception:
+            log.exception("Home: no se pudo cargar la cartera %s", CARTERA_HOME)
+            self.kpi_pl.set_value("—", delta="error al cargar (ver el log)", delta_positive=False)
+            return
+        if r is None:
+            # No se elige otra cartera en silencio: se dice.
+            self.hero_title.setText(f"No encontré la cartera «{CARTERA_HOME}»")
+            self.kpi_pl.set_value("—", delta=f"no existe «{CARTERA_HOME}»", delta_positive=None)
+            self.kpi_positions.set_value("0", delta="", delta_positive=None)
+            self.donut.set_data([])
+            self.hero_chart.set_data([])
+            self.welcome_card.update_status(0, 0.0, 0)
+            return
+
+        self.hero_title.setText(f"{r['nombre']} — capital invertido neto")
+        self.hero_chart.set_data(
+            [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
+            ylabel="Invertido neto ($)",
         )
 
-        acct_id = _resolve_account_id()
-        if acct_id is None:
-            return
-        acct = get_account(acct_id)
+        # Valor y P&L sólo sobre las posiciones CON precio; las que no tienen, se dicen.
+        delta = f"{'+' if r['pl'] >= 0 else ''}${r['pl']:,.0f}  ({r['pl_pct']:+.2f}%)"
+        if r["sin_precio"]:
+            delta += f" · {len(r['sin_precio'])} sin precio"
+        self.kpi_pl.set_value(f"${r['valor']:,.0f}", delta=delta, delta_positive=(r["pl"] >= 0))
+        self.kpi_pl.set_series([v for _, v in r["invertido_neto"][-40:]])
 
-        # Equity curve → hero + P/L KPI
-        curve = get_equity_curve(acct_id)
-        self.hero_chart.set_data(curve)
+        self.kpi_trades.set_value(_abbrev(r["transacciones"]), delta="registradas", delta_positive=None)
+        por_dia = Counter(r["tx_por_dia"])
+        if por_dia:
+            self.kpi_trades.set_series([por_dia[d] for d in sorted(por_dia)[-14:]])
 
-        initial = float(getattr(acct, "initial_capital", 0.0) or 0.0)
-        if curve:
-            last_eq = float(curve[-1].total_equity)
-            pl = last_eq - initial if initial else 0.0
-            pl_pct = (pl / initial * 100.0) if initial else 0.0
-            self.kpi_pl.set_value(
-                f"${last_eq:,.0f}",
-                delta=f"{'+' if pl >= 0 else ''}${pl:,.0f}  ({pl_pct:+.2f}%)",
-                delta_positive=(pl >= 0),
-            )
-            self.kpi_pl.set_series([float(s.total_equity) for s in curve[-40:]])
-        else:
-            self.kpi_pl.set_value(f"${initial:,.0f}", delta="Sin movimientos", delta_positive=None)
-            pl_pct = 0.0
+        self.kpi_positions.set_value(str(r["posiciones"]), delta="abiertas", delta_positive=None)
+        if r["torta"]:
+            self.kpi_positions.set_series([v for _, v in r["torta"]])
+        # A valor de mercado: la torta usaba el costo y se rotulaba «distribución».
+        self.donut.set_data(r["torta"])
 
-        # Orders → trades KPI (filled), with a daily bar sparkline
-        n_filled = count_orders(acct_id, status="filled")
-        self.kpi_trades.set_value(_abbrev(n_filled), delta="órdenes ejecutadas", delta_positive=None)
-        recent = get_orders(acct_id, status="filled", limit=500)
-        by_day: Counter = Counter()
-        for o in recent:
-            ts = getattr(o, "filled_at", None) or getattr(o, "created_at", None)
-            if ts is not None:
-                by_day[ts.date()] += 1
-        if by_day:
-            days = sorted(by_day)[-14:]
-            self.kpi_trades.set_series([by_day[d] for d in days])
-
-        # Positions → positions KPI + donut
-        positions = get_positions(acct_id)
-        self.kpi_positions.set_value(str(len(positions)), delta="en cartera", delta_positive=None)
-        cost_bases = [float(p.shares) * float(p.avg_cost) for p in positions]
-        if cost_bases:
-            self.kpi_positions.set_series(sorted(cost_bases, reverse=True))
-        self.donut.set_data([(p.ticker, float(p.shares) * float(p.avg_cost)) for p in positions])
-
-        # Welcome card health rows
-        self.welcome_card.update_status(len(positions), pl_pct, 0)
+        self.welcome_card.update_status(r["posiciones"], r["pl_pct"], r["alertas_disparadas"])
 
     def refresh(self, portfolio_tab=None) -> None:
-        """Called by the main window on data refresh. Reloads paper-account data."""
-        with contextlib.suppress(Exception):
-            self.load_paper_data()
+        """Called by the main window on data refresh. Reloads the real portfolio."""
+        self.load_data()

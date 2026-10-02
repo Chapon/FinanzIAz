@@ -57,3 +57,95 @@ def reabrir_si_cerrada(pos: Position, fecha: datetime | None) -> None:
     """
     if not esta_abierta(pos):
         pos.purchase_date = fecha or utcnow_naive()
+
+
+# ── Home (tarea 264) ─────────────────────────────────────────────────────────
+
+# La cartera que muestra Home. Decisión de Chapa (2026-10-02): *«sólo Mis Acciones»*. Se
+# resuelve por NOMBRE —el que él ve en Portfolio— y no por id fijo: un id fijo es la forma
+# exacta del defecto que la 264 vino a sacar (Home elegía la cuenta paper 1 por id).
+CARTERA_HOME = "Mis Acciones"
+
+
+def resumen_home(session, nombre: str = CARTERA_HOME) -> dict | None:
+    """Lo que Home muestra de la cartera real ``nombre``, o ``None`` si no existe.
+
+    **Sin red:** los precios salen de la última fila de ``price_cache`` de cada ticker, que
+    escribe el resto de la app. Un ticker sin fila queda en ``sin_precio`` y **no** se valúa
+    al costo: valor y P&L se calculan sólo sobre las posiciones con precio, y Home dice
+    cuántas faltan (la lección de la 268 [F-2] y la 281 [P-1]).
+    """
+    from sqlalchemy import func
+
+    from database.models import Alert, Portfolio, PriceCache
+
+    pf = session.query(Portfolio).filter(Portfolio.name == nombre).first()
+    if pf is None:
+        return None
+    abiertas = [
+        p
+        for p in session.query(Position)
+        .filter(Position.portfolio_id == pf.id)
+        .order_by(Position.ticker)
+        .all()
+        if esta_abierta(p)
+    ]
+    tickers = sorted({p.ticker for p in abiertas})
+    precios: dict[str, tuple[float, datetime | None]] = {}
+    if tickers:
+        ultimo = (
+            session.query(PriceCache.ticker, func.max(PriceCache.fetched_at).label("f"))
+            .filter(PriceCache.ticker.in_(tickers))
+            .group_by(PriceCache.ticker)
+            .subquery()
+        )
+        for t, px, f in (
+            session.query(PriceCache.ticker, PriceCache.price, PriceCache.fetched_at)
+            .join(ultimo, (PriceCache.ticker == ultimo.c.ticker) & (PriceCache.fetched_at == ultimo.c.f))
+            .all()
+        ):
+            if px and px > 0:
+                precios[t] = (float(px), f)
+
+    con_precio = [p for p in abiertas if p.ticker in precios]
+    valor = sum(float(p.quantity) * precios[p.ticker][0] for p in con_precio)
+    costo_con_precio = sum(float(p.quantity) * float(p.avg_buy_price) for p in con_precio)
+    pl = valor - costo_con_precio
+    txs = (
+        session.query(Transaction)
+        .join(Position, Transaction.position_id == Position.id)
+        .filter(Position.portfolio_id == pf.id)
+        .order_by(Transaction.date)
+        .all()
+    )
+    invertido_neto = []  # (fecha, compras − ventas acumuladas, a precio de transacción)
+    acum = 0.0
+    for t in txs:
+        signo = 1.0 if str(t.transaction_type).upper() == "BUY" else -1.0
+        acum += signo * float(t.quantity) * float(t.price)
+        if t.date is not None:
+            invertido_neto.append((t.date, acum))
+    alertas = (
+        session.query(Alert).filter(Alert.portfolio_id == pf.id).filter(Alert.is_active.is_(False)).count()
+    )
+    fechas = [f for _, f in precios.values() if f is not None]
+    return {
+        "portfolio_id": pf.id,
+        "nombre": pf.name,
+        "posiciones": len(abiertas),
+        "valor": valor,
+        "costo_con_precio": costo_con_precio,
+        "costo_total": sum(float(p.quantity) * float(p.avg_buy_price) for p in abiertas),
+        "pl": pl,
+        "pl_pct": (pl / costo_con_precio * 100.0) if costo_con_precio > 0 else 0.0,
+        "sin_precio": sorted(p.ticker for p in abiertas if p.ticker not in precios),
+        "torta": sorted(
+            ((p.ticker, float(p.quantity) * precios[p.ticker][0]) for p in con_precio),
+            key=lambda x: -x[1],
+        ),
+        "transacciones": len(txs),
+        "tx_por_dia": [t.date.date() for t in txs if t.date is not None],
+        "invertido_neto": invertido_neto,
+        "alertas_disparadas": alertas,
+        "precio_mas_viejo": min(fechas) if fechas else None,
+    }
