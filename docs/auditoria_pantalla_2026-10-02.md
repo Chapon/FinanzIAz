@@ -72,6 +72,8 @@ Severidad: **MEDIUM** (la misma con que la 254 calificó el mismo defecto en Mé
 
 **Acción:** tarea **264**.
 
+**Remedio redefinido por Chapa (2026-10-02, después de publicar este informe):** el defecto es más ancho que *«la cuenta equivocada»*. Home **no debe mostrar paper trading en absoluto**, sino la cartera real **«Mis Acciones»**. El hallazgo queda igual (lo que Home muestra hoy no es lo que el usuario toma por cierto); lo que cambió es el arreglo, y la 264 se reescribió con ese alcance.
+
 ### [F-2] Paper pinta un precio faltante como «sin ganancia ni pérdida», en verde
 Severidad: **LOW** · Confianza: **ALTA** · Categoría: F1
 
