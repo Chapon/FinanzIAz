@@ -34,6 +34,17 @@ def main():
     log = get_logger(__name__)
     log.info("Iniciando FinanzIAs")
 
+    # Tarea 278 — antes de abrir ninguna conexión: (1) el restore que el botón de Settings
+    # dejó programado (copiar encima de una base en WAL con la app abierta no restauraba), y
+    # (2) un backup si `init_db` va a migrar (el diario se toma después y una vez por día).
+    try:
+        from database.backup import apply_pending_restore, backup_if_migration_pending
+
+        apply_pending_restore()
+        backup_if_migration_pending()
+    except Exception:
+        log.exception("Restore programado / backup pre-migración fallaron; el arranque sigue")
+
     # Initialize DB (creates tables + default portfolio if needed)
     init_db()
 

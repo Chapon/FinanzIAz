@@ -256,7 +256,7 @@ class SettingsTab(QWidget):
         self._refresh_backup_list()
 
     def _on_restore(self) -> None:
-        from database.backup import list_backups, restore_database
+        from database.backup import list_backups, schedule_restore
 
         paths = list_backups()
         if not paths:
@@ -269,7 +269,8 @@ class SettingsTab(QWidget):
         choice, ok = QInputDialog.getItem(
             self,
             "Restaurar backup",
-            "Elegí qué backup restaurar (la base actual se guardará como <name>.before-restore):",
+            "Elegí qué backup restaurar. Se aplica al REINICIAR la app; la base actual se guarda "
+            "como <name>.before-restore:",
             names,
             0,
             False,
@@ -283,26 +284,28 @@ class SettingsTab(QWidget):
         confirm = QMessageBox.question(
             self,
             "Confirmar restore",
-            f"¿Reemplazar la base de datos actual con:\n\n{target.name}?\n\n"
-            "Cerrá manualmente el portafolio antes de continuar.\n"
-            "Esta acción no se puede deshacer (la copia previa se guarda).",
+            f"¿Reemplazar la base de datos con:\n\n{target.name}?\n\n"
+            "El restore se aplica al REINICIAR la app (tarea 278): con la app abierta la base "
+            "está en uso y copiar encima no restaura. La base actual se guarda antes como "
+            "<name>.before-restore.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        ok = restore_database(target)
-        if ok:
+        if schedule_restore(target):
             QMessageBox.information(
                 self,
-                "Restore exitoso",
-                "Base restaurada. Reiniciá la app para que los cambios surtan efecto.",
+                "Restore programado",
+                f"Listo: {target.name} se restaura en el próximo arranque.\n\n"
+                "Cerrá la app y volvé a abrirla. Hasta entonces la base actual sigue en uso.",
             )
         else:
             QMessageBox.critical(
                 self,
                 "Error",
-                "No se pudo restaurar el backup. Revisá el log para detalles.",
+                "No se pudo programar el restore: el backup no existe o no pasa el chequeo de "
+                "integridad. Revisá el log para detalles.",
             )
         self._refresh_backup_list()
 

@@ -11,11 +11,14 @@ Public API
                                               a backup if today's hasn't been
                                               made yet, then rotates and prunes.
 ``list_backups()``                         — list existing snapshot files.
-``restore_database(backup_path)``          — atomically replace the live DB
-                                              with a backup (returns True on
-                                              success). Caller is responsible
-                                              for closing all open sessions
-                                              before invoking this.
+``schedule_restore(backup_path)``         — lo que usa el botón de Settings: deja
+                                              el restore PROGRAMADO (tarea 278).
+``apply_pending_restore()``                — lo ejecuta en ``main.py`` al arrancar,
+                                              antes de ``init_db``, sin conexiones.
+``restore_database(backup_path)``          — el restore en sí, por la API de backup
+                                              de SQLite; sólo sin conexiones abiertas.
+``backup_if_migration_pending()``          — backup ``pre-migration`` antes de que
+                                              ``init_db`` migre (tarea 278, [B-2]).
 
 Backups are stored in ``<DB_DIR>/backups/`` next to ``finanzias.db`` so they
 move with the project folder. Filenames look like
@@ -61,6 +64,7 @@ from pathlib import Path
 
 from config.logging_config import get_logger
 from database.models import DB_PATH
+from database.readonly import readonly_uri
 
 log = get_logger(__name__)
 
@@ -259,30 +263,178 @@ def maybe_rotate_daily(*, keep: int = 7) -> Path | None:
         return None
 
 
-def restore_database(backup_path: Path | str) -> bool:
+def _sqlite_copy(src: Path, dst: Path) -> None:
+    """Copia ``src`` sobre ``dst`` con la API de backup de SQLite.
+
+    A diferencia de ``shutil.copy2``, lee la base **a través de SQLite**: incluye lo que
+    todavía está en el ``-wal`` de ``src``, y del lado de ``dst`` SQLite primero recupera su
+    propio WAL y después reemplaza todas las páginas. Por eso es la única forma correcta de
+    copiar una base en modo WAL (tarea 278).
     """
-    Replace the live DB with the contents of ``backup_path`` atomically.
+    s = sqlite3.connect(str(src))
+    d = sqlite3.connect(str(dst))
+    try:
+        s.backup(d)
+        d.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        d.close()
+        s.close()
 
-    The caller is responsible for closing all open SQLAlchemy sessions
-    BEFORE invoking this; the function itself just performs the file swap.
-    The previous DB is preserved alongside as ``<name>.before-restore.db``
-    so you can roll back if the restored copy turns out to be bad.
 
-    Returns True on success, False otherwise.
+def _quick_check(path: Path) -> bool:
+    try:
+        c = sqlite3.connect(readonly_uri(path), uri=True)
+        try:
+            return c.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        finally:
+            c.close()
+    except Exception:
+        return False
+
+
+def restore_database(backup_path: Path | str) -> bool:
+    """Reemplaza la base viva por ``backup_path`` y guarda la anterior como ``<name>.before-restore``.
+
+    **Sólo con la base sin conexiones abiertas** — hoy la llama únicamente
+    ``apply_pending_restore`` al arrancar, antes de ``init_db``. Era el botón de Settings
+    con la app corriendo, y con la base en WAL eso no funcionaba (tarea 278, medido): según
+    el tamaño del WAL el restore se revertía solo al cerrar la app o dejaba la base
+    corrupta, y el ``.before-restore`` —hecho con ``shutil.copy2``— perdía lo que estaba
+    en el WAL. Las dos copias van ahora por la API de backup de SQLite.
+
+    Devuelve True si la base quedó igual al backup y pasa ``quick_check``.
     """
     try:
         backup = Path(backup_path)
         if not backup.exists() or not backup.is_file():
             log.error("restore_database: %s does not exist", backup)
             return False
+        if not _quick_check(backup):
+            log.error("restore_database: %s no pasa quick_check — no se restaura", backup)
+            return False
         live = Path(DB_PATH)
         if live.exists():
             rollback = live.with_suffix(live.suffix + ".before-restore")
-            shutil.copy2(live, rollback)
+            if rollback.exists():
+                rollback.unlink()
+            _sqlite_copy(live, rollback)
             log.info("Existing DB saved to %s before restore", rollback)
-        shutil.copy2(backup, live)
+        _sqlite_copy(backup, live)
+        if not _quick_check(live):
+            log.error("restore_database: la base restaurada no pasa quick_check")
+            return False
         log.info("Database restored from %s", backup)
         return True
     except Exception:
         log.exception("restore_database failed")
         return False
+
+
+# ── Restore programado (tarea 278) ──────────────────────────────────────────
+
+
+def _pending_marker() -> Path:
+    """Marcador del restore pendiente, al lado de la base viva."""
+    live = Path(DB_PATH)
+    return live.with_name(live.name + ".restore-pending")
+
+
+def schedule_restore(backup_path: Path | str) -> bool:
+    """Deja programado el restore de ``backup_path`` para el próximo arranque.
+
+    Lo llama el botón de Settings. **No toca la base**: con la app corriendo hay
+    conexiones abiertas y un WAL vivo, y copiar encima no restaura (tarea 278). El restore
+    lo hace ``apply_pending_restore`` en ``main.py``, antes de abrir ninguna conexión.
+    """
+    backup = Path(backup_path)
+    if not backup.is_file() or not _quick_check(backup):
+        log.error("schedule_restore: %s no existe o no pasa quick_check", backup)
+        return False
+    try:
+        _pending_marker().write_text(str(backup.resolve()), encoding="utf-8")
+    except Exception:
+        log.exception("schedule_restore: no se pudo escribir el marcador")
+        return False
+    log.info("Restore programado para el próximo arranque: %s", backup)
+    return True
+
+
+def pending_restore() -> Path | None:
+    """El backup que quedó programado, o ``None``."""
+    m = _pending_marker()
+    if not m.exists():
+        return None
+    try:
+        return Path(m.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+
+
+def apply_pending_restore() -> Path | None:
+    """Ejecuta el restore programado, si hay uno. Va en ``main.py`` **antes** de ``init_db``.
+
+    Devuelve el backup restaurado, o ``None`` si no había nada o falló. Si falla, el
+    marcador se renombra a ``.failed`` para no reintentar en cada arranque, y la base queda
+    como estaba (el ``.before-restore`` se escribe antes de tocarla).
+    """
+    m = _pending_marker()
+    if not m.exists():
+        return None
+    backup = pending_restore()
+    ok = backup is not None and restore_database(backup)
+    try:
+        if ok:
+            m.unlink()
+        else:
+            m.replace(m.with_name(m.name + ".failed"))
+    except Exception:
+        log.exception("apply_pending_restore: no se pudo limpiar el marcador")
+    if ok:
+        log.warning("Restore programado aplicado al arrancar: %s", backup)
+        return backup
+    log.error("Restore programado FALLÓ (%s): la base queda como estaba", backup)
+    return None
+
+
+# ── Backup antes de migrar (tarea 278, [B-2]) ───────────────────────────────
+
+
+def migration_pending(db_path: Path | str | None = None) -> bool:
+    """True si la base tiene ``alembic_version`` y no está en el head de los scripts.
+
+    Una base nueva (sin ``alembic_version``) no cuenta: no hay nada que proteger.
+    """
+    path = Path(db_path) if db_path is not None else Path(DB_PATH)
+    if not path.exists():
+        return False
+    try:
+        c = sqlite3.connect(readonly_uri(path), uri=True)
+        try:
+            fila = c.execute("SELECT version_num FROM alembic_version").fetchone()
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return False
+    if not fila:
+        return False
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "alembic"))
+    return fila[0] != ScriptDirectory.from_config(cfg).get_current_head()
+
+
+def backup_if_migration_pending() -> Path | None:
+    """Backup ``pre-migration`` si ``init_db`` va a migrar. Va en ``main.py`` antes de ``init_db``.
+
+    El backup diario se toma **después** de ``init_db`` y una vez por día: una migración nueva
+    corría sin copia tomada justo antes, y si fallaba la app no arrancaba y el backup del día
+    no se tomaba nunca. Best-effort: un error se loguea y el arranque sigue.
+    """
+    try:
+        if migration_pending():
+            return backup_database(reason="pre-migration")
+    except Exception:
+        log.exception("backup_if_migration_pending failed")
+    return None
