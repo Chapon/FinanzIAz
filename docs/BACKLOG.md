@@ -3263,6 +3263,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 ### 261. AUDITORIA-AREAS-DE-PRODUCTO — Primera tanda de `pantalla`, `cuentas` y `operacion`, las tres áreas que nunca se auditaron  ·  origen: pedido de Chapa (2026-10-02) y la **260** · severidad **MEDIA**
 
 - **Qué.** Correr `/audit` sobre las tres áreas nuevas de la skill, con el kill-criteria de **las tres congelado junto** antes de abrir el primer archivo (regla de la skill), un informe por área (`docs/auditoria_<área>_2026-10-02.md`), el `verificador` sobre todo HIGH/CRITICAL, y la tabla `hallazgo → tarea` sin filas vacías.
+- **Lo que entra ya visto (de la 260), para que no se pierda:** en `cuentas`, la caja y las posiciones de las cuentas 1 y 2 cuadran al centavo contra fills, comisiones y dividendos (2026-10-02), pero **ningún chequeo hace ese cuadre**: `reconcile_account` sólo expira pendientes. La corrida decide si eso es un hallazgo (guard faltante) con su severidad, o se descarta con el motivo escrito.
 - **Por qué primero las nuevas:** decisión de Chapa. Las cinco viejas corrieron el 2026-09-30 (dos tandas); éstas no corrieron nunca y concentran los defectos que encontró él a mano.
 - **Kill-criteria.** El de cada área se escribe en su informe antes de mirar, con la condición de barrido limpio en las dos direcciones. Todo hallazgo accionable con tarea propia.
 - **Dependencias:** la 260.
