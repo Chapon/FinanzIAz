@@ -221,7 +221,8 @@ class TiingoProvider:
         try:
             resp = requests.get(
                 self.URL.format(ticker=ticker.strip().upper()),
-                params={"startDate": desde, "format": "json", "token": self._key},
+                params={"startDate": desde, "format": "json"},
+                headers={"Authorization": f"Token {self._key}"},  # tarea 276: no en la URL
                 timeout=self.timeout,
             )
             resp.raise_for_status()
@@ -324,7 +325,8 @@ def second_opinion(ticker: str, *, timeout: float = 10.0, api_key: str | None = 
     try:
         resp = requests.get(
             "https://finnhub.io/api/v1/quote",
-            params={"symbol": ticker.strip().upper(), "token": key},
+            params={"symbol": ticker.strip().upper()},
+            headers={"X-Finnhub-Token": key},  # tarea 276: no en la URL
             timeout=timeout,
         )
         resp.raise_for_status()
@@ -351,7 +353,8 @@ def tiingo_quote(ticker: str, *, timeout: float = 10.0, api_key: str | None = No
     try:
         resp = requests.get(
             "https://api.tiingo.com/iex/",
-            params={"tickers": ticker.strip().upper(), "token": key},
+            params={"tickers": ticker.strip().upper()},
+            headers={"Authorization": f"Token {key}"},  # tarea 276: no en la URL
             timeout=timeout,
         )
         resp.raise_for_status()

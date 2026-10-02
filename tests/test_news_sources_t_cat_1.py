@@ -217,16 +217,19 @@ def test_collect_finnhub_uses_injected_session():
     captured = {}
 
     class _Sess:
-        def get(self, url, params=None, timeout=None):
+        def get(self, url, params=None, timeout=None, headers=None):
             captured["url"] = url
             captured["params"] = params
+            captured["headers"] = headers
             return _Resp()
 
     items = collect_finnhub_news("nvda", session=_Sess(), api_key="testkey", days_back=7)
     assert len(items) == 2
     assert captured["url"].endswith("/company-news")
     assert captured["params"]["symbol"] == "NVDA"
-    assert captured["params"]["token"] == "testkey"
+    # Tarea 276: la key va por header; en `params` terminaba en la URL y de ahí en el log.
+    assert "token" not in captured["params"]
+    assert captured["headers"] == {"X-Finnhub-Token": "testkey"}
     assert "from" in captured["params"] and "to" in captured["params"]
 
 

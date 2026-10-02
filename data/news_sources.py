@@ -562,7 +562,10 @@ def _finnhub_news(
         to = now.strftime("%Y-%m-%d")
         r = sess.get(
             f"{FINNHUB_BASE}/company-news",
-            params={"symbol": ticker.upper(), "from": frm, "to": to, "token": key},
+            params={"symbol": ticker.upper(), "from": frm, "to": to},
+            # Tarea 276: la key por header, no en la URL — un error de `requests` escribe
+            # la URL completa en el log, y con `?token=` la key quedaba en texto plano.
+            headers={"X-Finnhub-Token": key},
             timeout=20,
         )
         r.raise_for_status()

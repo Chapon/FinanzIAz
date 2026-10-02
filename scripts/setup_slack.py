@@ -51,7 +51,7 @@ from integrations.slack import (
 
 
 def _mask(token: str) -> str:
-    """xoxb-3770039559041-… — muestra solo el prefijo, oculta el secreto."""
+    """xoxb-0000000000000-… — muestra solo el prefijo, oculta el secreto."""
     if not token:
         return "<vacío>"
     head = token[:14]

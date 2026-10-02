@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -100,6 +101,35 @@ class _RepeatFilter(logging.Filter):
         return False
 
 
+# Tarea 276: valores de credenciales en lo que se escribe al log. La key de Finnhub viajaba
+# como `?token=` en la URL, y un error de `requests` escribe la URL completa: quedaba 450
+# veces en texto plano en `finanzias.log`. Los proveedores ya la mandan por header; esto es
+# la segunda capa, para cualquier URL o mensaje que la traiga.
+_SECRETOS = re.compile(
+    r"(?P<k>\b(?:token|apikey|api_key|apiKey|access_token|X-Finnhub-Token)[\"']?\s*[=:]\s*[\"']?)"
+    r"(?P<v>[A-Za-z0-9_\-\.]{6,})"
+)
+_SLACK = re.compile(r"\bxox[abprs]-[0-9A-Za-z\-]{6,}")
+
+
+def enmascarar(texto: str) -> str:
+    """Reemplaza por ``***`` el valor de una credencial en ``texto``. Puro."""
+    texto = _SECRETOS.sub(lambda m: m.group("k") + "***", texto)
+    return _SLACK.sub("xox?-***", texto)
+
+
+class FormatterQueEnmascara(logging.Formatter):
+    """``logging.Formatter`` que enmascara credenciales en el texto **ya formateado**.
+
+    Va en el formatter y no en un ``Filter`` porque el traceback (``exc_text``) se arma
+    adentro de ``format()``: un filtro sobre el mensaje no lo ve, y era justamente ahí
+    —en el ``MaxRetryError`` con la URL— donde estaba la key.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return enmascarar(super().format(record))
+
+
 def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -> None:
     """
     Initialize the root logger. Idempotent — safe to call multiple times.
@@ -137,7 +167,7 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
             # console-only logging instead of crashing the app on startup.
             log_file = None
 
-    formatter = logging.Formatter(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT)
+    formatter = FormatterQueEnmascara(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT)  # tarea 276
 
     handlers: list[logging.Handler] = []
 
