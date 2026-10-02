@@ -100,7 +100,7 @@ paso extra de otra cosa ni se corre en un hook.
 Son de este repo, no genéricas. Cada una salió de un defecto real, y ese defecto está citado
 para que se entienda qué forma tiene la cosa que se busca.
 
-**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02); I mira el contenido del dato de entrada (tarea 271).** Hasta esa
+**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02); I mira el contenido del dato de entrada (tarea 271); J y K, rendimiento y dependencias (tarea 274).** Hasta esa
 fecha las cinco primeras eran todas, y todas preguntan si una **conclusión** sigue siendo cierta.
 Ninguna preguntaba si lo que Chapa **ve en la pantalla, tiene en la cuenta o recibe del log** es
 cierto, y los informes lo declaraban: *«NO mirado: los guards de la UI»*, *«NO mirado: `run_scan`
@@ -268,6 +268,13 @@ contenerlo**. El chequeo *«DB desde no-Windows»* de `check_repo_health.py` bus
 los archivos staged, y la DB está gitignoreada: no se disparó nunca, desde el 2026-06-24, y una
 corrida que lo leyó no lo vio (tanda 2026-09-30b, tarea 250).
 
+**El CI es un guard de proceso y entra acá (tarea 274).** `.github/workflows/` decide qué se
+considera verde fuera de la máquina de Chapa. Las preguntas son las de esta categoría aplicadas al
+workflow: ¿un job con `continue-on-error` o *best-effort* puede tapar un rojo real?; ¿el CI corre
+lo mismo que el *done* de `CLAUDE.md` (los cuatro comandos), o algo menos?; ¿la versión de Python
+y de las dependencias del CI es la de la máquina donde corre la app? La 176 existe porque el CI
+estuvo rojo 35 corridas sin que el proceso se enterara.
+
 **Corolario: cuando un guard declara su propio punto ciego, ese punto ciego ES un hallazgo.** No
 es una nota de color ni una muestra de honestidad. El guard de la 130 escribió *«una perilla viva
 que no tiene espejo le es invisible»*, las tareas 131 y 132 taparon los dos casos **conocidos**, y
@@ -403,10 +410,51 @@ mano contra el texto de la noticia, el filing o el sitio del proveedor; **(4)** 
 **Queda afuera:** si el dato **predice** algo. Eso es una medición con pre-registro (la 255, la
 258), no una auditoría.
 
+### J. Rendimiento: algo tarda tanto que cambia lo que pasa
+
+**Qué.** Tiempos que alteran la conducta, no la comodidad: locks de SQLite que frenan una
+escritura, consultas sin índice en el camino caliente, jobs sin techo de tiempo, scans que tardan
+más que su intervalo.
+
+**Por qué rinde acá.** `check_alerts` pedía precios con una transacción de escritura abierta y
+retenía el lock 30 s por ticker sin cache: 163 s medidos, y el scan tampoco podía escribir (237).
+Había índices declarados en los models que no existían en la DB, y el lookup más caliente de la
+GUI era ~1.800× más lento (74). Con la red caída el harvest tardaba 16× más y nada lo cortaba (204).
+
+**Cómo se audita.** **(1)** Del log: la duración de cada scan contra `paper_scan_interval_minutes`
+(un scan que tarda más que su intervalo se saltea el siguiente), y los `database is locked`.
+**(2)** De la DB: `EXPLAIN QUERY PLAN` de las consultas que corren en cada scan y en cada
+refresco de pantalla; un `SCAN TABLE` sobre una tabla que crece es el hallazgo. **(3)** Por cada
+job de fondo: ¿tiene techo de tiempo?, ¿qué pasa si no termina antes del próximo disparo?
+
+**Queda afuera:** la optimización que no cambia conducta. Que algo tarde 2 s en vez de 1 no es un
+hallazgo si nada depende de eso.
+
+### K. Dependencias: lo que corre no es lo que se declara
+
+**Qué.** `requirements.txt`, `requirements-dev.txt` y `requirements.lock` contra lo que de verdad
+importa el código y lo que está instalado en los entornos que lo corren (la Anaconda de Chapa, el
+`.venv`, el CI).
+
+**Por qué rinde acá.** `feedparser` no era dependencia de nada, así que `--sources rss` recolectaba
+cero y se reportaba como `skipped`, que por diseño no alarma (212). La Anaconda y el `.venv` son
+entornos separados y divergen: al `.venv` le faltan `platformdirs` y un parser de HTML, y da otro
+conteo de tests. El stack está pineado a propósito (numpy<2, scikit-learn<1.8, PyQt6<6.8) porque
+subirlo rompe, y eso es una decisión que caduca.
+
+**Cómo se audita.** **(1)** Cada `import` de terceros del código contra lo declarado (con imports
+locales y opcionales incluidos: el caso de la 212 era un import opcional). **(2)** Lo declarado
+contra lo instalado en cada entorno, versión por versión. **(3)** Los pines: ¿el motivo de cada
+uno sigue siendo cierto?, ¿hay avisos de seguridad sobre la versión pineada?
+
+**Queda afuera:** actualizar. Esta área dice qué diverge; subir versiones es la tarea propia de
+*Ideas* («Actualizar dependencias»), con su riesgo medido.
+
 ### Las genéricas
 
-Dead code, performance, dependencias, seguridad: **disponibles pero no obligatorias**. Se
-piden explícitamente. Para *security* está `security-review`; para el diff, `/code-review`.
+Dead code y seguridad: **disponibles pero no obligatorias**. Se piden explícitamente. Para
+*security* está `security-review`; para el diff, `/code-review`. **Performance y dependencias
+dejaron de ser genéricas** (tarea 274): son las categorías J y K.
 
 **Antes de declarar código muerto**, verificar imports dinámicos, inyección de dependencias,
 reflection, decoradores, eventos, callbacks, configuración, hooks de framework, código
@@ -518,6 +566,20 @@ artefacto de comparar **dos instrumentos**. Re-medido con la misma regex en las 
 validar produce exactamente lo que viene a cazar — un número limpio que significa otra cosa
 ([[validar-el-instrumento-antes-del-numero]]). **Los hallazgos retirados se publican con el
 motivo**, en su propia sección.
+
+**Tres formas del mismo error, de la tanda del 2026-10-02 (tarea 275):**
+
+- **Reproducí con la configuración REAL, no con la por defecto.** El hallazgo de la venta total
+  de la cartera real se reprodujo con una sesión `autoflush=True` y daba *«se borran la compra y
+  la venta»*; la app usa `autoflush=False` y la venta **sobrevive huérfana**. El `verificador`
+  lo vio leyendo `sessionmaker(...)`. Antes de reproducir, copiá la configuración de la app
+  (sesión, `PRAGMA`s, journal mode, settings), no la de la librería.
+- **Un barrido que puede cortar en silencio no es un barrido.** `git log -p | grep` paró en
+  *«Binary file matches»* a mitad de la historia y devolvía una lista corta que parecía
+  completa. Con `-a` (y `--text` en `git log`) se repitió.
+- **El cuarto comando del done no se corre con el repo en movimiento.** Escribir informes
+  mientras corre `run_suite_sin_estado_vivo.py` dispara el guard de la 236 (`rc=3`, *«la suite
+  dejó cambios en el repo»*): no es un fallo de la suite, pero esa corrida no vale como done.
 
 ## Salida
 

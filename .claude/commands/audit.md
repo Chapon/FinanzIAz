@@ -1,5 +1,5 @@
 ---
-description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion / datos)
+description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion / datos / rendimiento / dependencias)
 ---
 
 Invocá la skill `auditoria` y corré una auditoría READ-ONLY del área: **$ARGUMENTS**
@@ -12,12 +12,14 @@ un barrido de todas juntas.
 | `claims` | afirmaciones y números que el proyecto usa hoy y ya no son ciertos |
 | `muestra` | chequeos por cantidad que son ciegos a la ventana/población |
 | `desvios` | desvíos harness↔engine que `deviations()` no declara |
-| `guards` | guards que fallan en silencio o rechazan el dato bueno |
+| `guards` | guards que fallan en silencio o rechazan el dato bueno (el CI incluido) |
 | `estado` | caches y artefactos regenerables que nadie regenera |
 | `pantalla` | números de la UI que no son lo que el rótulo dice, o que pintan un vacío como dato |
 | `cuentas` | la cartera (paper o real) viola un límite que declara, o órdenes/posiciones/caja no cuadran |
 | `operacion` | jobs de fondo que fallan, se repiten o no corren; avisos que no llegan; backups y restore |
 | `datos` | el contenido de una fuente (noticias, consenso, fundamentals, universo) no dice lo que se cree |
+| `rendimiento` | algo tarda tanto que cambia lo que pasa (locks, índices, jobs sin techo) |
+| `dependencias` | lo que corre no es lo que se declara (imports, entornos, pines) |
 
 El orden de la corrida:
 

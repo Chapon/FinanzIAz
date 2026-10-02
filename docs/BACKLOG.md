@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 205 — Tareas 272, 273, 267 y 275 CERRADAS 2026-10-02 — la tanda completa: doce corridas de auditoría, ninguna área de la skill sin correr; 20 hallazgos publicados, dos de ellos ALTOS nuevos, y once tareas (276–286)** (`HASH`; doce informes `docs/auditoria_*_2026-10-02.md` + `docs/auditoria_tanda_killcriteria_2026-10-02.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4042 passed, 4 skipped** (corrida sin escribir en el repo).
+  - **Kill-criteria de las doce congelado junto** antes de abrir la primera, con la contaminación declarada y la aclaración de que *«100%»* no se afirma: se promete que ninguna área quede sin correr y que cada exclusión tenga motivo o tarea.
+  - **Los dos ALTOS nuevos, los dos pasados por el `verificador`:** **[B-1]** el restore de Settings no restaura con la app abierta en WAL — según el WAL se revierte solo o **corrompe** la DB, y el `.before-restore` pierde lo último (→ **278**, con [B-2]: las migraciones corren antes del backup); **[R-1]** vender entera una posición **real** borra su compra y su costo y deja la venta huérfana e invisible (→ **277**). El `verificador` corrigió mi instrumento en los dos: R-1 usaba otra configuración de sesión que la app (bajó de CRÍTICO a ALTO: es latente, nunca pasó) y B-1 resultó **peor** con el autocheckpoint por default.
+  - **MEDIOS:** la key de Finnhub en el log (→ **276**), el consenso sin ajuste por split para T-CAT-5b (→ **279**), los totales de Portfolio que valúan al costo sin precio (→ **281**), la barra de Analysis que dice *probabilidad* (→ **282**), y el entorno real distinto del declarado: 75 paquetes fuera del lock, `pyarrow` bajo el mínimo y vulnerabilidades que el CI no ve (→ **284**). **BAJOS:** duplicados de noticias y cobertura parcial (→ **280**), toggles que no hacen nada (→ **283**), el guard de SPY ciego a huecos internos (→ **285**), frames `1y` congelados y el JSON sin commit (→ **286**), y [M-1] en el enunciado de la 263.
+  - **Áreas en limpio:** `rendimiento` (ningún scan por encima de su intervalo; los locks son anteriores a la 234/237), `claims`, `desvios` (sin nuevos: los de esta forma ya son la 262/265/270). Hallazgos retirados antes de publicar, con motivo en cada informe: el EPS de MU (era real), la poda que recorría la tabla (era mi consulta), el `TypeError` de EDGAR (era mi instrumento), la caja negativa de la 261 y la frase de XGBoost.
+  - **Lecciones de método (escritas en la skill, sección *validá tu propio instrumento*):** (1) reproducir con la **configuración real** de la sesión (`autoflush`), no con la por defecto — R-1; (2) un `grep` sobre la salida de `git log -p` corta en contenido binario sin avisar: usar `-a` — seguridad; (3) correr el cuarto comando sin escribir en el repo, porque el guard de la 236 acusa archivos nuevos (le pasó a esta tanda: `rc=3`).
+
 - **WIP 204 — Tarea 271 (AUDITORIA-COBERTURA-INCOMPLETA) CERRADA 2026-10-02 — la skill cubre ahora la cartera real (`cuentas`), backups/restore/migraciones (`operacion`) y el contenido del dato de entrada (área nueva `datos`); `/security-review` queda como tarea** (`c092dd0`; `.claude/skills/auditoria/SKILL.md`, `.claude/commands/audit.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4042 passed, 4 skipped**. Deja la **272** y la **273**.
   - **Cómo se midió la cobertura.** Por **práctica**: qué archivos de código (sin tests ni migraciones) nombró alguna vez un informe de auditoría — `paper_trading/` 11 de 14, `data/` 7 de 15, `ui/` 16 de 40, `analysis/` 12 de 36, `scripts/` 48 de 82, `config/` 1 de 6. Por **diseño**: a qué área le toca cada parte.
   - **Los cuatro huecos, y Chapa eligió cerrar los cuatro:** (1) la **cartera real** (`positions`/`transactions`/CSV/cruce paper→real), fuera de `cuentas` y que la 264 pone en Home — cuadra hoy, 29 posiciones con 29 compras; (2) **backups, restore y migraciones** — el botón de restore reemplaza la DB viva y nadie lo había auditado; (3) **seguridad** — nunca se corrió, con el repo público (→ **272**); (4) el **contenido** del dato de entrada — ninguna área preguntaba si la fuente dice la verdad, y la 259, la 149 y la 63 se vieron de pasada.
@@ -1888,6 +1895,10 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02d** tras cerrar la **271**, que deja la **272** y la **273**. La **272** (seguridad) va detrás de la 263: es barata, y si hay un secreto en la historia de un repo público, cada día cuenta. La **273** va detrás de la 264, que cambia lo que Home lee de la cartera real. El orden queda **262 → 263 → 272 → 264 → 273 → 266 → 265 → 267 → 268 → 269 → 270 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02e** por pedido de Chapa: **correr todas las auditorías antes de seguir arreglando**. Pasan adelante, en orden de riesgo, la **272** (seguridad: repo público), la **273** (cartera real, backups/restore, `datos`), la **267** (resto de `pantalla`) y la **275** (rendimiento, dependencias y las cinco originales). Detrás, los arreglos en el orden que ya tenían. El orden queda **272 → 273 → 267 → 275 → 262 → 263 → 264 → 266 → 265 → 268 → 269 → 270 → 196 → 245 → 259**.
+
+> **Repriorizado 2026-10-02f** tras cerrar la tanda completa (272, 273, 267, 275), que deja once tareas. Orden por severidad y, dentro de cada una, por plata en juego: **262** (CRÍTICA, splits) → **278** y **277** (ALTAS, el restore y la venta real, las dos de pérdida de datos) → **263** (ALTA, el scan que falla en silencio) → **276** (la key en el log: barata y de seguridad) → **264** (Home, después de la 277 porque pasa a mostrar la cartera real) → **281** (con la 264) → **284** (entorno) → **282** → **266** → **265** → **279** → las BAJAS. El orden queda **262 → 278 → 277 → 263 → 276 → 264 → 281 → 284 → 282 → 266 → 265 → 279 → 280 → 283 → 268 → 269 → 270 → 285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3279,7 +3290,103 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 273. AUDITORIA-COBERTURA-AMPLIADA — Primera corrida de lo que la 271 sumó: la cartera real en `cuentas`, backups/restore en `operacion`, y el área nueva `datos`  ·  origen: la **271** · severidad **MEDIA**
+### 286. ESTADO-FRAMES-1Y-Y-JSON-SIN-COMMIT — Los frames `1y` quedan congelados si nadie los pide (115 en el 2026-09-09), y `surprise_profiles.json` se regenera versionado sin que nadie dispare el commit  ·  origen: `docs/auditoria_estado_2026-10-02.md` [E-1] y [E-2] · severidad **BAJA**
+
+- **[E-1]** Los consumidores vivos piden por `get_historical_data` con TTL y se refrescan solos; el riesgo es el script que lee `parquet_cache.read` directo, como la 255 y la 258 (que declaran la frescura; nada obliga al próximo). La 255 lo vio (*«123 de 131 terminan el 2026-09-09»*) y **no abrió tarea**. Alcance: un chequeo de frescura reusable para lectores directos (la forma de `announce_spy_coverage`), o un aviso en `parquet_cache.read` si el frame terminó hace más de N ruedas.
+- **[E-2]** `data/catalyst/surprise_profiles.json` es versionado por decisión (la 173) y lo reescribe el rebuild semanal: el del 2026-09-27 lleva cinco días sin commitear (último commit `6d19390`, 09-21) y cada sesión arranca con el árbol sucio. Decidir: commitear el refresh en un paso conocido (cierre de tarea o `/ship`) o dejar de versionarlo revisando la 173.
+- **Kill-criteria.** (E-1) un lector directo de un frame atrasado recibe el aviso, verificado con un frame sintético; (E-2) la decisión escrita y aplicada. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 285. GUARD-SPY-HUECO-INTERNO — El guard de cobertura de SPY de la 251 acepta una serie con 40 ruedas faltantes en medio del cohorte  ·  origen: `docs/auditoria_guards_2026-10-02.md` [GD-1] · severidad **BAJA**
+
+- **Qué pasa.** `spy_coverage_problems` (`analysis/harness_config.py:824-848`) mira la última fecha y un **conteo** de ruedas previas; un hueco interno le es invisible (mutación: `[]` con y sin el hueco 2026-06-17…08-11). Congela el régimen en esas ruedas, el daño que la 251 tapó en la cola. Hoy `SPY__10y` no tiene huecos contra el calendario del cohorte.
+- **Alcance.** Comparar fechas: las ruedas del calendario del cohorte que faltan en SPY.
+- **Kill-criteria.** El test de la mutación (hueco interno) en rojo antes y verde después; la SPY real sigue cubriendo. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 284. ENTORNO-REAL-NO-ES-EL-DECLARADO — La Anaconda (donde corre la app) difiere del lock en 75 paquetes, viola `pyarrow>=16` con 14.0.2 y tiene vulnerabilidades conocidas en 4 paquetes que el `pip-audit` del CI no ve  ·  origen: `docs/auditoria_dependencias_2026-10-02.md` [K-1]–[K-4] · severidad **MEDIA**
+
+- **[K-2]** `requirements.lock` dice en su encabezado *«Python 3.12.4 Anaconda»* y coincide exacto con el `.venv`; la Anaconda difiere en 75 de 100 (runtime: `pyarrow` 25→14.0.2, `sqlalchemy` 2.0.51→2.0.30, `matplotlib` 3.11→3.8.4, `requests`, `reportlab`, `openpyxl`, `alembic`). El CI corre Python 3.11 sin lock. El núcleo (numpy, pandas, sklearn, yfinance, xgboost, PyQt6) coincide en los tres.
+- **[K-3]** La Anaconda tiene `pyarrow 14.0.2` contra `pyarrow>=16.0` declarado, y `historical_cache_backend = parquet` (837 frames): el cache de producción corre en una versión que el proyecto declara no soportada.
+- **[K-4]** `pip-audit` sobre las versiones de la Anaconda: 21 avisos en `pyarrow` (PYSEC-2024-161, fix 17.0.0), `requests` (fix 2.32.4/2.33.0), `scikit-learn` 1.4.2 (fix 1.5.0, dentro del pin `<1.8`) y `urllib3` 2.2.2 (fix 2.5–2.8). El job `pip-audit` del CI da `success` porque audita lo que instala el CI. Explotabilidad baja acá, pero son los paquetes de red de la app que maneja la cuenta.
+- **[K-1]** `urllib3` se importa a nivel de módulo (`data/yahoo_finance.py:31`) sin estar declarado.
+- **Alcance.** Actualizar en la Anaconda `requests`, `urllib3`, `pyarrow` (≥16, compatible con `numpy<2`) y `scikit-learn` a 1.5.x si la suite lo tolera; regenerar el lock **desde la Anaconda** (o que el encabezado diga de qué entorno sale); declarar `urllib3`; decidir si el CI corre con el lock. Backup antes, y la suite como red.
+- **Kill-criteria.** `pip-audit` sobre las versiones de la Anaconda sin avisos de esos cuatro; la Anaconda dentro de todos los especificadores de `requirements.txt`; el lock reproduce la Anaconda. Los cuatro comandos en verde **en la Anaconda actualizada**.
+- **Dependencias:** ninguna. Con la app cerrada (actualiza paquetes que la app tiene cargados).
+
+### 283. TOGGLES-DECORATIVOS — `notif`, `pre_market` y `realtime` no hacen nada aunque su rótulo promete una conducta  ·  origen: `docs/auditoria_pantalla_resto_2026-10-02.md` [ST-1] · severidad **BAJA**
+
+- **Qué pasa.** `notif` (*«Notificaciones al disparar alertas»*) sólo lo lee la tarjeta de Home, que repite el toggle: ningún código de alertas lo consulta, apagarlo no apaga nada. `pre_market` (*«Mostrar precios pre/post mercado»*) no tiene lector. `realtime` (*«Precios en tiempo real»*, tarjeta de Home) no tiene lector ni está en el schema. (`perf_log` tampoco hace nada pero su texto dice *«función futura»*.)
+- **Alcance.** Cablearlos o sacarlos de Settings y de Home.
+- **Kill-criteria.** Ningún toggle visible sin lector que cambie conducta (un test que barre las claves de las dos pantallas contra sus lectores). Los cuatro comandos en verde.
+- **Dependencias:** conviene con la 264, que toca la tarjeta de Home.
+
+### 282. ANALYSIS-PROBABILIDAD-NO-VALIDADA — La barra de Analysis presenta un número no validado como «Probabilidad cuantitativa de compra» y «zona de compra probable»  ·  origen: `docs/auditoria_pantalla_resto_2026-10-02.md` [A-1] · severidad **MEDIA**
+
+- **Qué pasa.** `ui/analysis_tab.py:254-261` y `:409-440` rotulan *«▲ Compra 72%»* y *«zona de compra/venta probable»*. Nunca se midió como probabilidad, y la medición más cercana (la 73) no detectó relación con el fwd5 (r = −0,05, n = 85). Es la forma de la 255, que se arregló en News sin buscarla en las otras pantallas. Además el tooltip de XGBoost (`ui/analysis/labels.py:110-125`) dice *«split 80/20»* y el código hace walk-forward con calibración isotónica (`analysis/ml_signals.py`), y sus umbrales (75/65/35/25) no son los de la barra (65/55/45/35).
+- **Alcance.** Rotular la barra como lo que es (puntaje de consenso de indicadores), sin *«probable»* hasta que una medición lo sostenga; corregir método y umbrales del tooltip de XGBoost.
+- **Kill-criteria.** Ningún texto de la pestaña afirma probabilidad; el tooltip describe el método del código. Test que lo fija. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 281. PORTFOLIO-TOTALES-Y-DIVIDENDOS — Las tarjetas de Portfolio valúan al costo, sin avisarlo, una posición sin precio, y «Dividendos cobrados» cuenta dividendos de acciones que todavía no se tenían  ·  origen: `docs/auditoria_pantalla_resto_2026-10-02.md` [P-1] y [P-2] · severidad **MEDIA**
+
+- **[P-1]** `ui/portfolio_tab.py:565-568`: *Valor total*, *P&L* y *%* suman una posición sin precio **al costo** (P&L cero) y no lo dicen, mientras la tabla muestra `—`. Son los números titulares de la cartera real, y la **264** los lleva a Home.
+- **[P-2]** `:413`, `:463`, `:573`: dividendos por acción desde **una** fecha por posición (`purchase_date or created_at`) por la cantidad **actual**; al sumar acciones, `ui/dialogs.py:301` conserva la primera fecha. Sobreestima en compras por tramos; el rótulo dice *cobrados*.
+- **Alcance.** (P-1) *«N sin precio»* en las tarjetas, o excluirlos diciéndolo; (P-2) calcular por transacción o rotular *estimados*.
+- **Kill-criteria.** Test con una posición sin precio: las tarjetas lo dicen; test con dos compras en fechas distintas: los dividendos cuentan cada tramo desde su fecha (o el rótulo dice *estimados*). Los cuatro comandos en verde.
+- **Dependencias:** hacerla junto con la **264** o antes, porque Home va a reusar estas cifras.
+
+### 280. DATOS-DEDUP-Y-COBERTURA-PARCIAL — La misma nota de Yahoo entra dos veces (yfinance y Finnhub) porque el dedup incluye la hora; SPG llega al screen sin net income y la cobertura de la 149 no cuenta huecos parciales; y lo que la corrida de `datos` no miró  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-1], [D-3] y §1 · severidad **BAJA**
+
+- **[D-1]** `content_hash` = `(ticker, título, published_at)` (`data/news_sources.py:183`): 1.988 pares misma nota/misma ticker de fuentes distintas a <24 h (2,7% de la tabla), casi todos `yfinance` ↔ `finnhub:Yahoo`. La pestaña muestra duplicados; `historical_reaction` y las mediciones 255/258 inflan `n` ~3% (veredictos sin cambio). Deduplicar por ticker + título normalizado en una ventana corta entre fuentes.
+- **[D-3]** De los 127 del universo, SPG tiene revenue y **no** net income (además de ASML, TSM y XOM sin nada, ya declarados por la 149/156); la pata de rentabilidad del screen no lo juzga. Contar la cobertura por pata, no por ticker.
+- **Diferimiento de la corrida:** `earnings_cache` y una muestra de noticias contra el texto del artículo original no se miraron. Correrlos.
+- **Kill-criteria.** (D-1) la misma nota por dos canales queda una vez, verificado con dos filas sintéticas; (D-3) la cobertura declarada nombra a SPG. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 279. TCAT5B-CONSENSO-SIN-AJUSTE-POR-SPLIT — Los snapshots de consenso no se ajustan por split y el revenue viene en la moneda de reporte: una revisión medida a través de un split da −90%  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-2] · severidad **MEDIA**
+
+- **Qué pasa.** `analyst_estimate_snapshots` guarda el valor de Yahoo tal cual. KLAC del 2026-06-11 al 06-12: EPS y precio objetivo caen 10× el mismo día (su split 10:1). TSM: revenue de consenso en **TWD** (7,3 billones `+1y`) con EPS por ADR en USD. Hoy nadie decide con esta tabla; su consumidor previsto es **T-CAT-5b** (revisiones de consenso), el dataset que la 196 y la 245 acumulan.
+- **Alcance.** Que el pre-registro de T-CAT-5b ajuste por split (splits de yfinance) y trabaje en cocientes dentro de cada ticker, o lo declare; anotarlo donde *Bloqueado* describe T-CAT-5b.
+- **Kill-criteria.** El pre-registro de T-CAT-5b (cuando se escriba) nombra los dos casos; un test de la función de revisión con un split sintético da revisión 0.
+- **Dependencias:** T-CAT-5b (bloqueada por datos).
+
+### 278. RESTORE-NO-RESTAURA — El restore de Settings copia el archivo con la app abierta en WAL: según el tamaño del WAL el restore se revierte solo o corrompe la DB, y la copia para deshacer pierde lo último; además las migraciones corren antes del backup diario  ·  origen: `docs/auditoria_operacion_backups_2026-10-02.md` [B-1] y [B-2] · severidad **ALTA**
+
+- **[B-1]** `restore_database` (`database/backup.py:262-289`) hace `shutil.copy2` del backup sobre la DB viva y del vivo al `.before-restore`; `ui/settings_tab.py:255-300` lo llama con la app corriendo (scheduler activo, engine abierto) y la DB está en WAL (`database/models.py:91`; `finanzias.db-wal` de 6,2 MB al medir). Medido por el `verificador` con el autocheckpoint por default: con WAL chico (41 KB / 420 KB) **el restore se revierte solo** al cerrar la app; con WAL grande la DB queda **corrupta** (`integrity_check` falla; la conexión viva lee *«database disk image is malformed»*); el `.before-restore` siempre pierde lo que no se había volcado. Settings dice *«Restore exitoso»* y *«Reiniciá la app»*, que empeora el caso. Ningún código de producción hace `dispose()` ni `wal_checkpoint`; el único test de restore (`tests/test_backup.py:126`) es sin WAL.
+- **[B-2]** `main.py:38-45`: `init_db()` (que corre `upgrade head`) va **antes** del backup diario; una migración nueva corre sin copia tomada justo antes, y si falla la app no arranca y el backup del día no se toma.
+- **Alcance.** (B-1) que el restore corra sin conexiones abiertas: dejarlo pendiente y ejecutarlo en `main.py` al arrancar, antes de `init_db`; o parar el scheduler, `engine.dispose()` y usar la API de backup de SQLite en las dos direcciones (también para el `.before-restore`). (B-2) backup antes de `init_db`, al menos cuando hay migración pendiente.
+- **Kill-criteria.** Test con una DB en WAL, una conexión abierta y un WAL con filas sin volcar: después del restore y de cerrar, la DB es el backup, pasa `integrity_check`, y el rollback contiene las filas del WAL. Test de (B-2): con una migración pendiente, el backup del día existe antes del `upgrade`. Mutación: copiar con `copy2` pone rojo. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 277. VENTA-TOTAL-BORRA-HISTORIAL-REAL — Vender entera una posición de la cartera real borra su compra, su ticker y su costo base, y deja la venta huérfana e invisible  ·  origen: `docs/auditoria_cuentas_real_2026-10-02.md` [R-1] · severidad **ALTA**
+
+- **Qué pasa.** `SellPositionDialog` (`ui/dialogs.py:515-529`) agrega la SELL y, en venta total, `session.delete(pos)`; `Position.transactions` tiene `cascade="all, delete-orphan"`. Con la sesión de la app (`autoflush=False`, `database/models.py:100`) el BUY se borra y la SELL queda **huérfana** (su `position_id` no existe): se pierden ticker, `avg_buy_price`, fecha de compra y notas, y la venta es invisible (`reports/excel_report.py:206-213`, `:252-259` filtran por posiciones existentes). Sin `PRAGMA foreign_keys`, nada lo nota. Desde el commit inicial (`3438b85`).
+- **Por qué ALTA y no CRÍTICA (el `verificador`):** latente — `max(id) = count = 29` en `positions` y `transactions`, nunca se borró una posición. Cuando pase, es irreversible y silencioso sobre plata real.
+- **Alcance.** La venta total deja la posición en cantidad 0 (o archivada) con sus transacciones; las vistas filtran las de cantidad 0; revisar que ningún otro `delete` deje huérfanos.
+- **Kill-criteria.** Test con la sesión real (`autoflush=False`): tras la venta total quedan la compra y la venta, ligadas a la posición, y la cartera no la muestra. Mutación: volver al `delete` pone rojo. Los cuatro comandos en verde.
+- **Dependencias:** ninguna. Antes de la **264**, que pone esta cartera en Home.
+
+### 276. KEY-FINNHUB-EN-EL-LOG — La API key de Finnhub queda en texto plano en el log dentro de las URLs de las excepciones, y el id del workspace de Slack está versionado en un repo público  ·  origen: `docs/auditoria_seguridad_2026-10-02.md` [S-2] y [S-1] · severidad **MEDIA**
+
+- **[S-2]** `token=<key>` en 240 líneas de `finanzias.log` y 208 de `.log.1`: `urllib3`/`requests` arman el mensaje con la URL completa (`/api/v1/company-news?...&token=...`) y el `log.exception` lo escribe tal cual. El log es lo primero que se comparte cuando algo falla. Alcance: mandar la key por header (Finnhub acepta `X-Finnhub-Token`) o un filtro de logging que enmascare `token=`; revisar los demás proveedores. **Rotar la key es decisión de Chapa.**
+- **[S-1]** `scripts/setup_slack.py:54` versiona `xoxb-3770039559041-…`, el prefijo **real** del token vivo (identifica el workspace; no es una credencial). Reemplazarlo por uno ficticio.
+- **Kill-criteria.** Un test que provoca un error de red con una key sintética y exige que la key no aparezca en el log; el prefijo real fuera del árbol. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 275. ~~AUDITORIA-TANDA-COMPLETA — Correr las áreas que la 261/271/274 no cubren todavía: `rendimiento`, `dependencias` y las cinco originales (`claims`, `muestra`, `desvios`, `guards` con el CI, `estado`)~~ · **CERRADA 2026-10-02 — junto con la 272, 273 y 267: doce corridas, ninguna área sin correr** · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-02, *«correr todas las auditorías, quiero 100% de cobertura o cercano»*) · severidad **MEDIA**
+
+- **Qué.** Junto con la **272** (seguridad), la **273** (cartera real, backups/restore, `datos`) y la **267** (el resto de `pantalla`), esto completa una pasada de **todas** las áreas de la skill. El kill-criteria de **todas** las corridas de la tanda se congela junto, antes de abrir la primera (regla de la skill), un informe por área, el `verificador` sobre todo HIGH/CRITICAL y la tabla `hallazgo → tarea` sin filas vacías.
+- **Cobertura, dicha como lista y no como porcentaje:** cada informe declara qué miró y qué no; lo que una corrida difiera vuelve como tarea. «100%» no es un número que una auditoría pueda afirmar (la skill: *una auditoría que declara una exhaustividad que no puede entregar es ella misma un claim falso*); lo que sí se puede es que **ninguna área quede sin correr** y que cada exclusión tenga motivo.
+- **Kill-criteria.** El de cada categoría de la skill, con las dos direcciones.
+- **Dependencias:** la 274.
+
+### 274. ~~AUDITORIA-SIN-RENDIMIENTO-NI-DEPENDENCIAS — Performance y dependencias eran «genéricas, no obligatorias» y nunca se corrieron; el CI no estaba nombrado en ningún área~~ · **CERRADA 2026-10-02 — áreas nuevas `rendimiento` (J) y `dependencias` (K), y el CI entra en `guards`**  ·  pedido de Chapa (2026-10-02, *«agregar todas las áreas»*) · severidad **MEDIA**
+
+- **Evidencia de que las dos rendían:** rendimiento — la 237 (lock de 30 s por ticker, 163 s medidos), la 74 (~1.800× en el lookup más caliente de la GUI), la 204 (harvest 16× más lento sin techo); dependencias — la 212 (`feedparser` no declarado, RSS recolectaba cero como `skipped`), y la divergencia Anaconda/`.venv`/CI (Python 3.11 en el CI). El CI: la 176 existe porque estuvo rojo 35 corridas sin que el proceso se enterara.
+- **Kill-criteria.** Cada área nueva cita la evidencia, dice cómo se audita y qué queda afuera; `/audit` las lista. Los cuatro comandos en verde.
+
+### 273. ~~AUDITORIA-COBERTURA-AMPLIADA — Primera corrida de lo que la 271 sumó: la cartera real en `cuentas`, backups/restore en `operacion`, y el área nueva `datos`~~ · **CERRADA 2026-10-02 en la tanda de la 275** ·  origen: la **271** · severidad **MEDIA**
 
 - **Qué.** `/audit` sobre los tres alcances nuevos, con el kill-criteria de los tres **congelado junto** antes de mirar, un informe por alcance y la tabla `hallazgo → tarea` sin filas vacías:
   - **`cuentas` (cartera real):** `positions` ↔ `transactions` (cantidad y `avg_buy_price`), la importación de CSV y el cruce paper→real de `ui/paper/real_portfolio.py`.
@@ -3289,7 +3396,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** El de cada categoría de la skill, con las dos direcciones. Barrido limpio es un resultado válido.
 - **Dependencias:** la 271. Conviene después de la 264, que cambia lo que Home lee de la cartera real.
 
-### 272. SECURITY-REVIEW-NUNCA-CORRIDO — Ninguna revisión de seguridad en la vida del repo, con el repo público y tokens vivos en el entorno  ·  origen: el chequeo de cobertura de auditorías (2026-10-02), decisión de Chapa · severidad **MEDIA**
+### 272. ~~SECURITY-REVIEW-NUNCA-CORRIDO — Ninguna revisión de seguridad en la vida del repo, con el repo público y tokens vivos en el entorno~~ · **CERRADA 2026-10-02 en la tanda de la 275 (`docs/auditoria_seguridad_2026-10-02.md`)** ·  origen: el chequeo de cobertura de auditorías (2026-10-02), decisión de Chapa · severidad **MEDIA**
 
 - **Qué pasa.** No hay ningún doc ni tarea de seguridad (`grep` sobre `docs/`). El repo es **público** (la 196 lo dice al hablar del secret de GitHub), y el entorno tiene `SLACK_BOT_TOKEN`, la key de Tiingo y la de Finnhub. Lo que nunca se miró: secretos versionados en la historia de git, valores sensibles que terminen en el log o en artefactos versionados, lo que exponen los workflows de `.github/`, y entradas no confiables (CSV importado, texto de noticias que llega a un prompt de LLM).
 - **Alcance.** Correr `/security-review` (la skill genérica que la skill de auditoría ya nombra) sobre el repo entero, más un barrido de la **historia** de git por secretos (no sólo el árbol actual). Cada hallazgo, con su tarea.
@@ -3324,7 +3431,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Test con una posición sin precio que pide P&L no numérico; el `.html` fuera del árbol y ninguna referencia rota. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 267. PANTALLA-ALCANCE-DIFERIDO — La primera corrida de `pantalla` no barrió Analysis, Leads, Portfolio, Failed tickers, News, Alerts ni el cruce de Settings  ·  origen: `docs/auditoria_pantalla_2026-10-02.md` §2 (diferimiento, regla de la skill) · severidad **MEDIA**
+### 267. ~~PANTALLA-ALCANCE-DIFERIDO — La primera corrida de `pantalla` no barrió Analysis, Leads, Portfolio, Failed tickers, News, Alerts ni el cruce de Settings~~ · **CERRADA 2026-10-02 en la tanda de la 275 (`docs/auditoria_pantalla_resto_2026-10-02.md`)** ·  origen: `docs/auditoria_pantalla_2026-10-02.md` §2 (diferimiento, regla de la skill) · severidad **MEDIA**
 
 - **Qué.** Correr `/audit pantalla` sobre lo que la 261 dejó afuera por tamaño: **Analysis, Leads, Portfolio, Failed tickers, News, Alerts**, y en **Settings** el cruce de cada fila contra el fallback con que la lee el motor (el extractor de la 261 no encontró las listas de secciones: arreglar el instrumento primero, validándolo contra una clave conocida).
 - **Kill-criteria.** El de la categoría F de la skill, congelado antes de mirar, con las dos direcciones. Barrido limpio es un resultado válido.
@@ -3366,6 +3473,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Qué pasa.** `PaperScanWorker.run` (`paper_trading/scheduler.py:166-176`) atrapa y sólo emite `scan_failed`; el receptor (`ui/main_window.py:334`) muestra la barra de estado 10 s y un toast de 4 s sólo si la cuenta está seleccionada (`ui/paper_tab.py:1489`). `run_scan` no tiene `try` de nivel superior, `session_scope` relanza sin loguear, y el excepthook global no ve una excepción ya atrapada en un `QThread`. Ningún test cubre `scan_failed`. `PaperScheduler.status()` calcula `stale_accounts` y **no tiene llamadores**.
 - **Alcance propuesto.** (1) `log.exception` en el worker, con la cuenta. (2) Slack al fallar, con dedupe (un aviso por racha, no uno por scan) y otro al recuperarse — el patrón de `format_outage_message`. (3) Cablear `stale_accounts` o borrarlo: un vigilante sin llamador es la forma que la skill cataloga en *guards*.
+- **Y [M-1] de `docs/auditoria_muestra_2026-10-02.md`:** `scripts/por_que_no_compramos.py:68-69` rotula *«sin scans (la app no corrió)»* a todo día sin snapshot, y un scan que falla tampoco deja snapshot: con esta tarea abierta, un día de scans fallidos se lee como app cerrada. Rotular *«sin scans completados»* o usar el registro de fallas que agregue esta tarea.
 - **Kill-criteria.** Test con un `run_scan` que lanza: el log tiene el traceback y sale **un** Slack para tres fallas seguidas, y uno de recuperación. Mutación: sacar el `log.exception` o el dedupe pone rojo. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
