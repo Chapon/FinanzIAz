@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 202 — Tarea 260 (AUDITORIA-SIN-AREAS-DE-PRODUCTO) CERRADA 2026-10-02 — la skill de auditoría suma tres áreas que miran el producto en uso: `pantalla`, `cuentas` y `operacion`** (`HASH`; `.claude/skills/auditoria/SKILL.md`, `.claude/commands/audit.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected** (sin cambios: no toca código), ruff limpio, sin estado vivo **4042 passed, 4 skipped**. Deja la **261** (la primera tanda de las tres).
+  - **Por qué, medido:** las cinco áreas existentes preguntan si una conclusión del análisis sigue siendo cierta, y los informes declaraban *«NO mirado: los guards de la UI»* y *«NO mirado: `run_scan` entero»*. La contabilidad aparece en 3 de 25 informes y `reports/` en ninguno. Los defectos que encontró **Chapa** mirando la app o el log caen casi todos afuera: 22, 218, 227, 254 y 255 (pantalla), 93, 220 y 221 (cuentas), 148, 197 y 234 (operación).
+  - **«Links» se midió y no entró** (decisión de Chapa con la medición delante): de 2.561 referencias a archivos en los `.md` faltan 26, casi todas a propósito (plantillas `_tNN_run.json`, archivos planeados de fair value, rutas relativas entre skills), y ninguna en `CLAUDE.md` ni en las referencias de `docs/`; las 72.542 URLs de `news_events` son todas `http`.
+  - **Una medición de `cuentas` ya hecha, read-only:** caja y posiciones de las cuentas 1 y 2 cuadran **al centavo** contra fills, comisiones y dividendos. El slippage va **dentro** del `fill_price` (restarlo aparte descuadra una cuenta sana; quedó escrito en la skill como trampa del instrumento). No hay ningún chequeo que haga este cuadre: `reconcile_account` sólo expira pendientes. Eso es material de la 261, no de esta.
+  - Las categorías dejaron de llamarse *«las cinco»* en el encabezado: es un conteo que caduca con la próxima (lección de la 135).
+
 - **WIP 201 — Tarea 256 (SCAN-SIN-REGISTRO-DE-CANDIDATOS) CERRADA 2026-10-01 — cada scan registra los candidatos a compra que evaluó y cómo terminó cada uno, y *«¿por qué no compramos X?»* tiene una consulta** (`f3a9dbe`; `paper_trading/scan_candidates.py` **nuevo**, `paper_trading/models.py`, `alembic/versions/0015_paper_scan_candidates.py` **nuevo**, `paper_trading/strategies.py`, `paper_trading/engine.py`, `scripts/por_que_no_compramos.py` **nuevo**, `docs/DB_SCHEMA.md`, `tests/test_scan_candidates_t256.py` **nuevo**). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected** (+8), ruff limpio, sin estado vivo **4042 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El diseño (el que propuse y Chapa aceptó con un «seguir»):** tabla `paper_scan_candidates` con migración 0015, una fila por candidato y por scan, retención de 90 días podada por el propio scan. `outcome`: `sin_datos`, `screen`, `sin_lugar`, `sin_tamano`, `comprado`, `encolado` o `bloqueado` con el texto del gate. **No** se registran los tickers en cartera ni los HOLD/SELL: si un ticker no aparece, ese scan no lo vio como compra.
   - **Cómo se engancha sin tocar decisiones:** el engine abre un colector (`ContextVar`) alrededor de la estrategia, que anota el ranking entero; después del loop de gates, cada `elegido` se resuelve con lo que hizo el engine (las órdenes nuevas y el aviso del gate). Un aviso de **recorte** por ADV no cuenta como bloqueo. Sin colector, anotar es un no-op: el harness no cambia. Las filas se escriben **después del commit y en sesión propia**, fail-soft.
@@ -1861,6 +1867,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-01l** tras cerrar la **256**, que **no deja tareas nuevas**. La 196 y la 245 siguen esperando la salida del probe de Lambda. El orden queda **196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02** tras cerrar la **260**, que deja la **261**. Chapa pidió auditorías nuevas de todo empezando por las tres áreas que nunca se auditaron, así que la **261** encabeza; la 196 y la 245 siguen esperando la salida del probe de Lambda y la 259 su decisión. El orden queda **261 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3251,6 +3259,18 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
+
+### 261. AUDITORIA-AREAS-DE-PRODUCTO — Primera tanda de `pantalla`, `cuentas` y `operacion`, las tres áreas que nunca se auditaron  ·  origen: pedido de Chapa (2026-10-02) y la **260** · severidad **MEDIA**
+
+- **Qué.** Correr `/audit` sobre las tres áreas nuevas de la skill, con el kill-criteria de **las tres congelado junto** antes de abrir el primer archivo (regla de la skill), un informe por área (`docs/auditoria_<área>_2026-10-02.md`), el `verificador` sobre todo HIGH/CRITICAL, y la tabla `hallazgo → tarea` sin filas vacías.
+- **Por qué primero las nuevas:** decisión de Chapa. Las cinco viejas corrieron el 2026-09-30 (dos tandas); éstas no corrieron nunca y concentran los defectos que encontró él a mano.
+- **Kill-criteria.** El de cada área se escribe en su informe antes de mirar, con la condición de barrido limpio en las dos direcciones. Todo hallazgo accionable con tarea propia.
+- **Dependencias:** la 260.
+
+### 260. ~~AUDITORIA-SIN-AREAS-DE-PRODUCTO — Las cinco áreas de auditoría miran el análisis y ninguna mira lo que Chapa ve, tiene en la cuenta o recibe del log~~ · **CERRADA 2026-10-02 — tres áreas nuevas en la skill: `pantalla`, `cuentas`, `operacion`** · **movida a *En curso* con el detalle**  ·  pedido de Chapa (2026-10-02, *«investigá si es necesario crear otro grupo de auditorías, como front end, cuentas, links»*) · severidad **MEDIA**
+
+- **El pedido.** Antes de auditar todo de nuevo, ver si las áreas alcanzan. Se midió la cobertura de los informes y quién encontró cada defecto; el detalle está en *En curso*.
+- **Kill-criteria.** Cada área nueva cita los defectos reales que la justifican, dice cómo se audita y qué queda afuera; el comando `/audit` las lista; los cuatro comandos en verde.
 
 ### 259. QWEN-POLARIDAD-CATEGORICA — La polaridad de qwen viene agrupada en cuatro valores, así que la escala de 7 niveles muestra en la práctica −2, 0, +2 y +3  ·  origen: conteos del pre-registro de la 258 · severidad **BAJA**
 

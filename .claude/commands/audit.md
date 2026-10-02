@@ -1,11 +1,11 @@
 ---
-description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado)
+description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion)
 ---
 
 Invocá la skill `auditoria` y corré una auditoría READ-ONLY del área: **$ARGUMENTS**
 
-Si no te pasé área, mostrame las cinco y **preguntame cuál** antes de empezar — no arranques
-un barrido de las cinco juntas.
+Si no te pasé área, mostrame las áreas y **preguntame cuál** antes de empezar — no arranques
+un barrido de todas juntas.
 
 | área | qué busca |
 |---|---|
@@ -14,6 +14,9 @@ un barrido de las cinco juntas.
 | `desvios` | desvíos harness↔engine que `deviations()` no declara |
 | `guards` | guards que fallan en silencio o rechazan el dato bueno |
 | `estado` | caches y artefactos regenerables que nadie regenera |
+| `pantalla` | números de la UI que no son lo que el rótulo dice, o que pintan un vacío como dato |
+| `cuentas` | la cartera viola un límite que declara, o órdenes/posiciones/caja no cuadran |
+| `operacion` | jobs de fondo que fallan, se repiten o no corren; avisos que no llegan |
 
 El orden de la corrida:
 

@@ -1,6 +1,6 @@
 ---
 name: auditoria
-description: Auditoría profunda READ-ONLY de FinanzIAs, por área y con kill-criteria declarado antes de mirar. NO busca bugs de código (para eso están la suite, el CI y /code-review) — busca lo que esos no pueden ver: afirmaciones que dejaron de ser ciertas, chequeos que pasan midiendo la cosa equivocada, y estado que se desalinea en silencio. Usar después de mover la muestra (refresh de artefactos, re-precómputo, cambio de universo), antes de congelar un pre-registro que se apoye en números viejos, al cerrar una serie larga de tareas, o cuando un número no cierra en dos lugares.
+description: Auditoría profunda READ-ONLY de FinanzIAs, por área y con kill-criteria declarado antes de mirar. NO busca bugs de código (para eso están la suite, el CI y /code-review) — busca lo que esos no pueden ver: afirmaciones que dejaron de ser ciertas, chequeos que pasan midiendo la cosa equivocada, estado que se desalinea en silencio, y —desde la tarea 260— lo que la pantalla muestra, la cuenta registra o el log repite sin que sea cierto. Usar después de mover la muestra (refresh de artefactos, re-precómputo, cambio de universo), antes de congelar un pre-registro que se apoye en números viejos, al cerrar una serie larga de tareas, cuando un número no cierra en dos lugares, o cuando la pantalla, la cuenta o el log muestran algo que no cierra.
 ---
 
 # Auditoría profunda — FinanzIAs
@@ -95,10 +95,19 @@ paso extra de otra cosa ni se corre en un hook.
 
 ---
 
-## Las cinco categorías
+## Las categorías
 
 Son de este repo, no genéricas. Cada una salió de un defecto real, y ese defecto está citado
 para que se entienda qué forma tiene la cosa que se busca.
+
+**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02).** Hasta esa
+fecha las cinco primeras eran todas, y todas preguntan si una **conclusión** sigue siendo cierta.
+Ninguna preguntaba si lo que Chapa **ve en la pantalla, tiene en la cuenta o recibe del log** es
+cierto, y los informes lo declaraban: *«NO mirado: los guards de la UI»*, *«NO mirado: `run_scan`
+entero»*. La evidencia de que ese hueco costaba es de quién encontró qué: la 22, 218, 227, 254 y
+255 (pantalla), la 93, 220 y 221 (cuentas) y la 148, 197 y 234 (operación) las encontró **Chapa
+mirando la app o el log**, no una corrida. F–H siguen siendo READ-ONLY y siguen sin ser
+`/code-review`: no buscan el bug del diff, buscan **lo que el usuario toma por cierto y no lo es**.
 
 ### A. Claims caducados
 
@@ -277,6 +286,79 @@ compactar, rotar a mano—: ¿quién la dispara? *«Quién lo regenera»* es la 
 una operación periódica no se regenera: se **olvida**. Así se pasó la cinta intradía de
 `price_cache` (tarea 81): se archivó una vez, a mano, y la corrida del 2026-09-11 la tenía en su
 alcance con nueve días de filas sin archivar.
+
+### F. Pantalla: el número que se muestra no es el que el rótulo dice
+
+**Qué.** Cada número, color y selección por defecto de `ui/` que Chapa lee para decidir, trazado
+hasta su fuente y contrastado contra la DB viva.
+
+**Por qué rinde acá.** Es el área con más defectos encontrados **a mano**. La línea SPY de la
+curva se congelaba en silencio y corrompía el *VS SPY* (22). El panel de Métricas leía una tabla
+que la 0011 había vaciado, así que *VS SPY*, MAE/MFE y el fwd-5d estaban **apagados** sin decirlo
+(218). Una alerta disparada quedaba disparada para siempre, y el panel mostraba *«por encima»* y
+*«por debajo»* del mismo ticker, las dos en rojo (227). Métricas y Paper abrían en la cuenta
+**cerrada** y su score se leía como el de la viva (254). El impacto de Noticias daba ±0.36 para
+toda noticia de resultados o FDA, porque `rank_news` se llamaba sin la tabla de reacción (255).
+Ninguno era un bug de código: los cinco hacían lo que el código decía.
+
+**Cómo se audita.** Por cada número visible: **¿de dónde sale?** (función, tabla y columna), y
+**¿qué muestra cuando la fuente está vacía, vieja o en la cuenta equivocada?** Un vacío que se
+pinta como `0`, `—` o el último valor conocido, sin decir que lo es, es el hallazgo típico. Tres
+preguntas más, una por defecto citado: **¿el rótulo promete más de lo que mide?** (*«impacto
+esperado»* sobre un prior constante); **¿la selección por defecto es la viva?** (cuenta, ventana,
+benchmark); **¿el estado se re-arma solo o queda trabado?** Para contrastar, abrí la DB en solo
+lectura (`file:finanzias.db?mode=ro`) y calculá el número a mano; no alcanza con leer el widget.
+
+**Queda afuera:** estética, layout y performance de la GUI, salvo que oculten un número.
+
+### G. Cuentas: la cartera viola una regla que declara, o no cuadra
+
+**Qué.** Los invariantes de la contabilidad del motor vivo (`paper_trading/`): que órdenes,
+posiciones, caja, dividendos y snapshots cuenten la misma historia, y que la cuenta respete sus
+propios límites (`max_positions`, caja no negativa, cuenta cerrada que nadie toca).
+
+**Por qué rinde acá.** La cuenta 2 llegó a **12 posiciones con `max_positions=10`**, en nueve
+episodios y con hasta $51.093 de exposición sobre $50.000 de capital, porque los slots se
+contaban descontando ventas que los gates podían frenar (93). El motor no acreditaba dividendos
+mientras el harness corría sobre series total-return (221/222). Y nadie había corrido el harness
+sobre la ventana de la cuenta para ver si su CAGR se parecía al vivo (220). Las tres eran
+**reglas**, no sumas: la contabilidad aritmética cuadraba.
+
+**Cómo se audita.** Dos pasadas. **(1) El cuadre**, por cuenta: `initial_capital` + ventas −
+compras (a `fill_price × fill_shares`) − `commission_paid` + `paper_dividend_credits.cash` contra
+`paper_accounts.cash`, y las acciones netas por ticker contra `paper_positions`. **Ojo con el
+instrumento:** el slippage ya va **dentro** del `fill_price`, así que restar además
+`slippage_cost` descuadra una cuenta sana. Medido así el 2026-10-02, las cuentas 1 y 2 cerraron
+**al centavo**, y **no hay ningún chequeo que lo haga solo**: `reconcile_account` sólo expira
+órdenes pendientes. **(2) Las reglas**: por cada límite que la cuenta declara, buscar en
+`paper_orders` y `paper_equity_snapshots` un momento en que se haya violado, y por cada flujo de
+plata que el harness modela (dividendos, splits, costos), verificar que el motor también lo haga.
+
+**Queda afuera:** si las decisiones fueron **buenas**. Eso es trading y va por backtest con
+kill-criteria (regla 2), no por auditoría.
+
+### H. Operación: lo que corre de fondo falla, se repite o no corre
+
+**Qué.** El log de producción (`~/.finanzias/finanzias.log*`, `catalyst_harvest.log`), el
+scheduler y los jobs de fondo, el harvest, y los canales de aviso (Slack).
+
+**Por qué rinde acá.** Un rebuild de surprise que fallaba reintentaba **cada 60 segundos sin
+límite**: 389 fallos seguidos en el log vivo (197). `get_current_price` bajaba el precio bien y
+devolvía `None` porque no había podido **escribir** el cache (234). Cada corrida de la suite le
+mandaba mensajes reales a Slack (148). Y desde que se abrió la 196 el reloj de T-CAT-5b perdió
+días hábiles porque con la app cerrada no se recolecta, y nada lo medía (245). Todos estaban en el
+log o en el canal; nadie los leía con una pregunta.
+
+**Cómo se audita.** Sobre una ventana declarada del log: **(1)** agrupar por mensaje normalizado
+(sin tickers ni números) y ordenar por frecuencia; un mensaje que se repite sin cambiar es un
+retry sin tope o un aviso que no escala. **(2)** Por cada job declarado en el scheduler, ¿hay
+evidencia de que corrió en cada día hábil de la ventana? Los huecos de `paper_equity_snapshots`
+son la vara para el scan. **(3)** Por cada `except` que loguea y sigue en un camino de fondo,
+¿el resultado que entrega después es el dato bueno, uno viejo o un vacío? Es la pregunta de D,
+pero mirando lo que **pasó** en el log y no lo que dice el código. **(4)** Slack: lo que se manda,
+¿llega una vez, llega a quien tiene que llegar, y lo que **debería** avisar avisa?
+
+**Queda afuera:** la infraestructura nueva de la 196 (Lambda/DynamoDB), hasta que exista.
 
 ### Las genéricas
 
