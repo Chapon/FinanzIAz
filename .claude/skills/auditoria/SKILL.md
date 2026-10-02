@@ -1,6 +1,6 @@
 ---
 name: auditoria
-description: Auditoría profunda READ-ONLY de FinanzIAs, por área y con kill-criteria declarado antes de mirar. NO busca bugs de código (para eso están la suite, el CI y /code-review) — busca lo que esos no pueden ver: afirmaciones que dejaron de ser ciertas, chequeos que pasan midiendo la cosa equivocada, estado que se desalinea en silencio, y —desde la tarea 260— lo que la pantalla muestra, la cuenta registra o el log repite sin que sea cierto. Usar después de mover la muestra (refresh de artefactos, re-precómputo, cambio de universo), antes de congelar un pre-registro que se apoye en números viejos, al cerrar una serie larga de tareas, cuando un número no cierra en dos lugares, o cuando la pantalla, la cuenta o el log muestran algo que no cierra.
+description: Auditoría profunda READ-ONLY de FinanzIAs, por área y con kill-criteria declarado antes de mirar. NO busca bugs de código (para eso están la suite, el CI y /code-review) — busca lo que esos no pueden ver: afirmaciones que dejaron de ser ciertas, chequeos que pasan midiendo la cosa equivocada, estado que se desalinea en silencio, y —desde la tarea 260— lo que la pantalla muestra, la cuenta registra, el log repite o la fuente dice sin que sea cierto. Usar después de mover la muestra (refresh de artefactos, re-precómputo, cambio de universo), antes de congelar un pre-registro que se apoye en números viejos, al cerrar una serie larga de tareas, cuando un número no cierra en dos lugares, o cuando la pantalla, la cuenta o el log muestran algo que no cierra.
 ---
 
 # Auditoría profunda — FinanzIAs
@@ -100,7 +100,7 @@ paso extra de otra cosa ni se corre en un hook.
 Son de este repo, no genéricas. Cada una salió de un defecto real, y ese defecto está citado
 para que se entienda qué forma tiene la cosa que se busca.
 
-**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02).** Hasta esa
+**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02); I mira el contenido del dato de entrada (tarea 271).** Hasta esa
 fecha las cinco primeras eran todas, y todas preguntan si una **conclusión** sigue siendo cierta.
 Ninguna preguntaba si lo que Chapa **ve en la pantalla, tiene en la cuenta o recibe del log** es
 cierto, y los informes lo declaraban: *«NO mirado: los guards de la UI»*, *«NO mirado: `run_scan`
@@ -339,6 +339,13 @@ instrumento:** el slippage ya va **dentro** del `fill_price`, así que restar ad
 `paper_orders` y `paper_equity_snapshots` un momento en que se haya violado, y por cada flujo de
 plata que el harness modela (dividendos, splits, costos), verificar que el motor también lo haga.
 
+**Y la cartera REAL entra igual (tarea 271).** `portfolios`, `positions` y `transactions` (lo
+que se importa por CSV y lo que `ui/paper/real_portfolio.py` cruza desde una orden paper) son
+plata de Chapa, y desde la 264 son lo que muestra Home. Las mismas dos pasadas: que
+`positions.quantity` cuadre con la suma de sus `transactions` y que `avg_buy_price` salga de
+ellas; y que el cruce paper→real no duplique ni pierda una transacción. Medido el 2026-10-02
+cuadraba (cada posición con su compra), pero ninguna corrida lo había mirado.
+
 **Queda afuera:** si las decisiones fueron **buenas**. Eso es trading y va por backtest con
 kill-criteria (regla 2), no por auditoría.
 
@@ -363,7 +370,38 @@ son la vara para el scan. **(3)** Por cada `except` que loguea y sigue en un cam
 pero mirando lo que **pasó** en el log y no lo que dice el código. **(4)** Slack: lo que se manda,
 ¿llega una vez, llega a quien tiene que llegar, y lo que **debería** avisar avisa?
 
+**Backups, restore y migraciones entran acá (tarea 271).** No son estado regenerable —un backup es
+justo lo que **no** se puede regenerar— y por eso `estado` no los mira. Las preguntas: ¿el backup
+diario se toma, y se puede **restaurar** (no sólo existe)? El botón de Settings llama
+`restore_database` (`database/backup.py`) y **reemplaza la DB viva**: ¿qué pasa si el backup
+elegido es de un esquema anterior, o si la app tiene la DB abierta? ¿La rotación de `backups/`
+(la 187) corre? ¿Una migración de `alembic` que falla a medio camino deja la DB en un estado que
+`init_db` reconoce?
+
 **Queda afuera:** la infraestructura nueva de la 196 (Lambda/DynamoDB), hasta que exista.
+
+### I. Datos: el contenido del dato de entrada no dice lo que se cree
+
+**Qué.** Lo que el sistema toma por cierto de sus fuentes, mirado por su **contenido**: la
+clasificación de noticias (tipo, polaridad e intensidad que devuelve qwen), el consenso de
+analistas (`analyst_estimate_snapshots`), los fundamentals (facts de EDGAR) y el universo.
+
+**Por qué rinde acá.** Las otras áreas preguntan si el dato está **fresco** (E) o en **escala**
+(D); ninguna pregunta si **dice la verdad**. La polaridad de qwen viene agrupada en cuatro valores
+y la escala de siete niveles muestra en la práctica −2, 0, +2 y +3 (259). Cuatro nombres del
+universo vivo llegaban al screen sin facts y el screen los dejaba pasar (149). Yahoo le aplicó a
+AVB un split fantasma de 2,793 a un frame y no a los otros (63). Las tres se vieron de pasada o
+por una pregunta, no por una corrida.
+
+**Cómo se audita.** Por cada fuente: **(1)** la **distribución**: un campo con pocos valores
+distintos, o con uno que domina, es un dato degenerado (la forma de la 259); **(2)** la
+**cobertura por ticker del universo vivo**: un hueco que no avisa es la forma de la 149;
+**(3)** una **muestra contra la fuente primaria**: unas filas elegidas al azar, contrastadas a
+mano contra el texto de la noticia, el filing o el sitio del proveedor; **(4)** la
+**consistencia entre fuentes** cuando hay más de una para el mismo dato.
+
+**Queda afuera:** si el dato **predice** algo. Eso es una medición con pre-registro (la 255, la
+258), no una auditoría.
 
 ### Las genéricas
 

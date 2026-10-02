@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 204 — Tarea 271 (AUDITORIA-COBERTURA-INCOMPLETA) CERRADA 2026-10-02 — la skill cubre ahora la cartera real (`cuentas`), backups/restore/migraciones (`operacion`) y el contenido del dato de entrada (área nueva `datos`); `/security-review` queda como tarea** (`HASH`; `.claude/skills/auditoria/SKILL.md`, `.claude/commands/audit.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4042 passed, 4 skipped**. Deja la **272** y la **273**.
+  - **Cómo se midió la cobertura.** Por **práctica**: qué archivos de código (sin tests ni migraciones) nombró alguna vez un informe de auditoría — `paper_trading/` 11 de 14, `data/` 7 de 15, `ui/` 16 de 40, `analysis/` 12 de 36, `scripts/` 48 de 82, `config/` 1 de 6. Por **diseño**: a qué área le toca cada parte.
+  - **Los cuatro huecos, y Chapa eligió cerrar los cuatro:** (1) la **cartera real** (`positions`/`transactions`/CSV/cruce paper→real), fuera de `cuentas` y que la 264 pone en Home — cuadra hoy, 29 posiciones con 29 compras; (2) **backups, restore y migraciones** — el botón de restore reemplaza la DB viva y nadie lo había auditado; (3) **seguridad** — nunca se corrió, con el repo público (→ **272**); (4) el **contenido** del dato de entrada — ninguna área preguntaba si la fuente dice la verdad, y la 259, la 149 y la 63 se vieron de pasada.
+  - **Lo que queda afuera a propósito:** que las fórmulas de `analysis/` calculen bien (la suite y `/code-review`) y que predigan (backtest con pre-registro). Por eso muchos de esos archivos nunca se nombraron, y está bien.
+  - **De pasada salió la 270:** el docstring de `paper_trading/dd_breaker.py` afirma un gate en `run_scan` que R1 decidió no cablear.
+
 - **WIP 203 — Tarea 261 (AUDITORIA-AREAS-DE-PRODUCTO) CERRADA 2026-10-02 — primera corrida de `pantalla`, `cuentas` y `operacion`: seis hallazgos, uno CRÍTICO, y siete tareas (262–268)** (`27eabd7`; `docs/auditoria_pantalla_2026-10-02.md`, `docs/auditoria_cuentas_2026-10-02.md` y `docs/auditoria_operacion_2026-10-02.md` **nuevos**, `.claude/skills/auditoria/SKILL.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected** —la primera corrida dio **1 rojo intermitente** (t237, assert de tiempo bajo carga; solo 8/8 verde) → **269**—, ruff limpio, sin estado vivo **4042 passed, 4 skipped**.
   - **Kill-criteria de las tres congelado junto** a las 14:29, antes de abrir código, con la contaminación declarada (lo que la 260 ya había visto).
   - **Lo que encontró:** **[G-1] CRÍTICO** — un split en una posición abierta no ajusta `shares`/`avg_cost`/HWM: la equity cae (1−1/N) en el primer scan y la posición se vende con pérdida ficticia (→ **262**). **[H-2] ALTO** — una excepción de `run_scan` no queda en el log ni en Slack, y el vigilante `stale_accounts` no tiene llamadores (→ **263**). **[F-1] MEDIO** — Home muestra la cuenta 1 cerrada (→ **264**; **Chapa redefinió el remedio**: Home no debe mostrar paper trading sino la cartera real «Mis Acciones»). **[H-1] MEDIO** — el desvío `barrier_eval` afirma evaluación cada ~15 min y hubo 22 días hábiles sin scan (→ **265**). **[G-2] MEDIO** — nada cuadra caja contra órdenes (→ **266**). **[F-2]/[F-3] BAJOS** (→ **268**). El diferimiento de pantallas no barridas → **267**. Y del cierre: un rojo intermitente de la suite (t237, assert de tiempo de pared bajo carga) → **269**.
@@ -1880,6 +1886,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02c** al chequear la cobertura de las auditorías (pedido de Chapa): entra la **270** (BAJA, un docstring que afirma un gate que R1 decidió no cablear), al lado de las otras BAJAS. El orden queda **262 → 263 → 264 → 266 → 265 → 267 → 268 → 269 → 270 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02d** tras cerrar la **271**, que deja la **272** y la **273**. La **272** (seguridad) va detrás de la 263: es barata, y si hay un secreto en la historia de un repo público, cada día cuenta. La **273** va detrás de la 264, que cambia lo que Home lee de la cartera real. El orden queda **262 → 263 → 272 → 264 → 273 → 266 → 265 → 267 → 268 → 269 → 270 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3270,6 +3278,28 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
+
+### 273. AUDITORIA-COBERTURA-AMPLIADA — Primera corrida de lo que la 271 sumó: la cartera real en `cuentas`, backups/restore en `operacion`, y el área nueva `datos`  ·  origen: la **271** · severidad **MEDIA**
+
+- **Qué.** `/audit` sobre los tres alcances nuevos, con el kill-criteria de los tres **congelado junto** antes de mirar, un informe por alcance y la tabla `hallazgo → tarea` sin filas vacías:
+  - **`cuentas` (cartera real):** `positions` ↔ `transactions` (cantidad y `avg_buy_price`), la importación de CSV y el cruce paper→real de `ui/paper/real_portfolio.py`.
+  - **`operacion` (backups/restore):** que el backup diario exista **y se pueda restaurar**; qué hace `restore_database` con un backup de esquema anterior o con la DB abierta; que la rotación de la 187 corra; que una migración que falla a medio camino deje una DB que `init_db` reconozca.
+  - **`datos`:** distribución, cobertura por ticker del universo vivo, muestra contra la fuente primaria y consistencia entre fuentes, para la clasificación de noticias, el consenso, los fundamentals y el universo.
+- **Ya medido (de la 271, para que no se pierda):** las 29 posiciones de las dos carteras reales cuadran con sus 29 transacciones (todas BUY) al 2026-10-02.
+- **Kill-criteria.** El de cada categoría de la skill, con las dos direcciones. Barrido limpio es un resultado válido.
+- **Dependencias:** la 271. Conviene después de la 264, que cambia lo que Home lee de la cartera real.
+
+### 272. SECURITY-REVIEW-NUNCA-CORRIDO — Ninguna revisión de seguridad en la vida del repo, con el repo público y tokens vivos en el entorno  ·  origen: el chequeo de cobertura de auditorías (2026-10-02), decisión de Chapa · severidad **MEDIA**
+
+- **Qué pasa.** No hay ningún doc ni tarea de seguridad (`grep` sobre `docs/`). El repo es **público** (la 196 lo dice al hablar del secret de GitHub), y el entorno tiene `SLACK_BOT_TOKEN`, la key de Tiingo y la de Finnhub. Lo que nunca se miró: secretos versionados en la historia de git, valores sensibles que terminen en el log o en artefactos versionados, lo que exponen los workflows de `.github/`, y entradas no confiables (CSV importado, texto de noticias que llega a un prompt de LLM).
+- **Alcance.** Correr `/security-review` (la skill genérica que la skill de auditoría ya nombra) sobre el repo entero, más un barrido de la **historia** de git por secretos (no sólo el árbol actual). Cada hallazgo, con su tarea.
+- **Kill-criteria.** Un informe `docs/auditoria_seguridad_<fecha>.md` con alcance mirado y no mirado; si aparece un secreto en la historia, se trata como CRÍTICO (rotarlo es de Chapa) aunque el archivo ya no exista.
+- **Dependencias:** ninguna.
+
+### 271. ~~AUDITORIA-COBERTURA-INCOMPLETA — Las áreas de auditoría no cubrían la cartera real, los backups/restore, la seguridad ni el contenido del dato de entrada~~ · **CERRADA 2026-10-02 — `cuentas` y `operacion` ampliadas, área nueva `datos`, y `/security-review` como tarea (272)** · **movida a *En curso* con el detalle**  ·  pedido de Chapa (2026-10-02, *«verificar si con estas auditorías cubrimos toda la app»*) · severidad **MEDIA**
+
+- **El pedido.** Después de la 261, verificar si las áreas cubren la app entera. Se midió por diseño (a qué área le toca cada parte) y por práctica (qué archivos nombró alguna vez un informe); el detalle está en *En curso*.
+- **Kill-criteria.** Cada alcance nuevo cita la evidencia que lo justifica, dice cómo se audita y qué queda afuera; el comando `/audit` lo lista; los cuatro comandos en verde.
 
 ### 270. DOCSTRING-DD-BREAKER-CABLEADO — `paper_trading/dd_breaker.py` dice en presente que un gate de `run_scan` lo consume, y R1 cerró NO-SHIP: el motor no lo importa  ·  origen: el chequeo de cobertura de auditorías (2026-10-02, pedido de Chapa) · severidad **BAJA**
 

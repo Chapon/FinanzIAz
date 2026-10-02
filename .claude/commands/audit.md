@@ -1,5 +1,5 @@
 ---
-description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion)
+description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion / datos)
 ---
 
 Invocá la skill `auditoria` y corré una auditoría READ-ONLY del área: **$ARGUMENTS**
@@ -15,8 +15,9 @@ un barrido de todas juntas.
 | `guards` | guards que fallan en silencio o rechazan el dato bueno |
 | `estado` | caches y artefactos regenerables que nadie regenera |
 | `pantalla` | números de la UI que no son lo que el rótulo dice, o que pintan un vacío como dato |
-| `cuentas` | la cartera viola un límite que declara, o órdenes/posiciones/caja no cuadran |
-| `operacion` | jobs de fondo que fallan, se repiten o no corren; avisos que no llegan |
+| `cuentas` | la cartera (paper o real) viola un límite que declara, o órdenes/posiciones/caja no cuadran |
+| `operacion` | jobs de fondo que fallan, se repiten o no corren; avisos que no llegan; backups y restore |
+| `datos` | el contenido de una fuente (noticias, consenso, fundamentals, universo) no dice lo que se cree |
 
 El orden de la corrida:
 
