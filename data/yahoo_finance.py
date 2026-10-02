@@ -711,6 +711,46 @@ def recent_split_factor(
     return factor
 
 
+# Eventos de split por ticker, memoizados con el mismo TTL que el factor (tarea 262).
+_split_events_cache: dict[str, tuple[float, list[tuple[str, float]]]] = {}
+
+
+def get_split_events(ticker: str, allow_network: bool = True) -> list[tuple[str, float]]:
+    """``[(ex_date 'YYYY-MM-DD', ratio), ...]`` de todos los splits que reporta Yahoo.
+
+    Lo usa el ajuste de posiciones de la 262 (``paper_trading/splits.py``). El warm-up del
+    scan lo llama **con** red, antes de abrir la escritura; el ajuste lo lee **sin** red
+    (``allow_network=False``), que responde sólo con lo memoizado — el mismo contrato que
+    ``recent_split_factor``. Fail-safe: cualquier error devuelve ``[]``, que es no ajustar
+    nada, o sea la conducta de antes de la tarea.
+    """
+    key = ticker.upper()
+    now = time.time()
+    with _split_cache_lock:
+        hit = _split_events_cache.get(key)
+        if hit is not None and now - hit[0] < _SPLIT_CACHE_TTL_SECONDS:
+            return list(hit[1])
+    if not allow_network:
+        return []
+
+    eventos: list[tuple[str, float]] = []
+    try:
+        splits = _run_with_timeout(lambda: _ticker(key).splits, default=None)
+        if splits is not None and len(splits) > 0:
+            idx = pd.to_datetime(splits.index, utc=True, errors="coerce")
+            serie = pd.to_numeric(pd.Series(splits.values, index=idx), errors="coerce").dropna()
+            eventos = [
+                (ts.strftime("%Y-%m-%d"), float(r)) for ts, r in serie.items() if r > 0 and ts is not pd.NaT
+            ]
+    except Exception:
+        log.exception("get_split_events failed for %s", key)
+        return []
+
+    with _split_cache_lock:
+        _split_events_cache[key] = (now, eventos)
+    return list(eventos)
+
+
 def split_explains(
     price: float | None,
     reference: float | None,

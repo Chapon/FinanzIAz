@@ -282,6 +282,40 @@ class PaperDividendCredit(Base):
     cash: Mapped[float] = mapped_column(Float, nullable=False)
     credited_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
 
+
+class PaperSplitAdjustment(Base):
+    """Un split ya aplicado a una posición abierta: el ledger de la tarea 262.
+
+    **Qué sostiene.** Un split N:1 no cambia la plata de la posición, pero sí su escala:
+    sin ajustar, el primer scan con el precio post-split ve una caída de (1−1/N) y el
+    trailing (o la señal) vende con una pérdida que no existe. Desde la 262 el scan ajusta
+    acciones, costo promedio y máximo; esta tabla es el registro de **qué split ya se
+    aplicó**, porque el scan corre muchas veces y un doble ajuste duplicaría las acciones.
+
+    El UNIQUE ``(account_id, ticker, ex_date)`` va en el esquema, como en los dividendos.
+    El antes y el después de cada campo quedan guardados para auditar el ajuste sin
+    depender del calendario de splits, que para entonces pudo cambiar.
+    """
+
+    __tablename__ = "paper_split_adjustments"
+    __table_args__ = (
+        Index("ix_paper_splitadj_account", "account_id"),
+        Index("ux_paper_splitadj_account_ticker_exdate", "account_id", "ticker", "ex_date", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    ex_date: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD'
+    ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_before: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_after: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost_before: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost_after: Mapped[float] = mapped_column(Float, nullable=False)
+    hwm_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hwm_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+
     def __repr__(self) -> str:
         return f"<PaperDividendCredit({self.ticker} {self.ex_date} ${self.cash:,.2f})>"
 

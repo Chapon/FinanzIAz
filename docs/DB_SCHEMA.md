@@ -35,6 +35,11 @@ Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`
 
 `paper_orders` guarda lo que se **ejecutó**; esta tabla guarda también lo que **no**, para poder contestar *«¿por qué no compramos X?»*. `outcome` es uno de `sin_datos`, `screen`, `sin_lugar`, `sin_tamano`, `comprado`, `encolado` o `bloqueado` (con el texto del gate en `detail`). **No registra** los tickers en cartera ni los que dieron HOLD/SELL: si un ticker no aparece en un scan, ese scan no lo vio como compra. Sólo registro —el motor no la lee—, escrita en sesión propia después del commit del scan y podada a **90 días** por el propio scan. Se consulta con `python scripts/por_que_no_compramos.py <TICKER>`.
 
+### `paper_split_adjustments` — el ledger de splits aplicados a posiciones abiertas (tarea 262)
+`id`, `account_id` (FK), `ticker`, `ex_date` (`YYYY-MM-DD`), `ratio`, `shares_before`, `shares_after`, `avg_cost_before`, `avg_cost_after`, `hwm_before`, `hwm_after`, `applied_at`. Índice `ix_paper_splitadj_account` y UNIQUE `ux_paper_splitadj_account_ticker_exdate`; migración **0016**.
+
+Un split N:1 sin ajustar dejaba la posición en la escala vieja y el primer scan con el precio nuevo veía una caída de (1−1/N): el trailing vendía con una pérdida que no existe. Desde la 262 el scan (`paper_trading/splits.py`, antes de la equity y de los stops) multiplica por N las acciones que había **antes** del ex-date, conserva el costo total y divide el máximo por N; esta tabla es lo que impide aplicarlo dos veces. Sólo splits **plausibles** (no el 2,793 fantasma de AVB), y sólo si la historia de órdenes reproduce las acciones de la posición: si no, no ajusta y avisa. El antes y el después se guardan para auditar sin depender del calendario de splits.
+
 ## Núcleo / caches (`database/models.py`)
 
 | Tabla | Para qué |

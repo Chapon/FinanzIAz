@@ -51,6 +51,7 @@ from paper_trading.models import (
     PaperPosition,
     PaperWatchlistItem,
 )
+from paper_trading.splits import aplicar_splits
 from paper_trading.strategies import (
     HistoryProvider,
     TargetTrade,
@@ -262,6 +263,35 @@ def _warm_up_dividend_calendar(tickers: list[str]) -> None:
         get_bulk_dividend_calendar(sorted(set(tickers)))
     except Exception:
         get_logger(__name__).exception("Dividend calendar warm-up failed; el scan sigue sin acreditar")
+
+
+def _warm_up_split_events(tickers: list[str]) -> None:
+    """Llena el memo de ``get_split_events`` para las posiciones abiertas (tarea 262).
+
+    Con red, al lado del warm-up de barras y del calendario de dividendos, **antes** de
+    abrir la escritura: el ajuste lee después sin red. Best-effort: si falla, el ajuste no
+    encuentra eventos y la posición queda como antes de esta tarea.
+    """
+    if not tickers:
+        return
+    from config.logging_config import get_logger
+
+    try:
+        from data.yahoo_finance import get_split_events
+
+        for t in sorted(set(tickers)):
+            get_split_events(t, allow_network=True)
+    except Exception:
+        get_logger(__name__).exception("Split events warm-up failed; el scan sigue sin ajustar splits")
+
+
+def _split_events_for(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """Los eventos de split memoizados, **sin red** (tarea 262). Separado para los tests."""
+    try:
+        from data.yahoo_finance import get_split_events
+    except Exception:  # pragma: no cover — sin yfinance no hay splits que ajustar
+        return {}
+    return {t: get_split_events(t, allow_network=False) for t in sorted(set(tickers))}
 
 
 def _declare_scale_drift(tickers: list[str]) -> list[str]:
@@ -840,6 +870,7 @@ def run_scan(
         if tickers and not history_was_injected:
             _warm_up_history_cache(tickers)
             _warm_up_dividend_calendar(sorted({p.ticker for p in positions}))
+            _warm_up_split_events(sorted({p.ticker for p in positions}))
 
         # ── Dividendos al ex-date (tarea 222) ───────────────────────────────
         # Va ANTES de la estrategia porque el efectivo tiene que participar del sizing
@@ -868,6 +899,25 @@ def run_scan(
             for c in dividend_credits
         ]
 
+        # ── Splits de las posiciones abiertas (tarea 262) ───────────────────
+        # Antes de la equity, de los stops ATR y del máximo: un split sin ajustar se lee
+        # como una caída de (1−1/N) y el trailing vende. Sin red: los eventos salen del
+        # memo que el warm-up de arriba llenó. Un ajuste que la historia de órdenes no
+        # reproduce NO se aplica y se avisa (ver `paper_trading/splits.py`).
+        split_adjustments, split_alerts = aplicar_splits(
+            session, acct, positions, _split_events_for([p.ticker for p in positions])
+        )
+        split_msgs = [
+            f"{a['ticker']}: split {a['ratio']:g}:1 del {a['ex_date']} aplicado — "
+            f"{a['shares_before']:g} → {a['shares_after']:g} acciones, costo ${a['avg_cost_after']:,.2f}"
+            for a in split_adjustments
+        ] + split_alerts
+        if split_msgs:
+            from config.logging_config import get_logger
+
+            for m in split_msgs:
+                get_logger(__name__).warning("Scan %s (cuenta %d): %s", account_name, account_id, m)
+
         prices = prices_provider(tickers) if tickers else {}
         # Tarea 201: qué tickers llegaron con el precio de la segunda opinión, y cuáles
         # quedaron sin precio porque la fuente independiente no avaló a nadie.
@@ -884,7 +934,7 @@ def run_scan(
         # precio — ahí un stop que debería evaluarse no pudo correr este scan.
         missing_tickers = [t for t in tickers if t not in prices]
         held_without_price = sorted(p.ticker for p in positions if p.ticker not in prices)
-        scan_warnings: list[str] = list(dividend_msgs)  # tarea 222: los créditos se reportan
+        scan_warnings: list[str] = list(dividend_msgs) + split_msgs  # tareas 222 y 262: se reportan
         # T64 — drift de escala por DEBAJO de la banda: acá, después del warm-up,
         # porque es el cache más fresco que va a haber este scan.
         scan_warnings.extend(_declare_scale_drift(tickers))

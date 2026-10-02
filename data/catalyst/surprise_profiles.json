@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-09-20T23:06:22.541793+00:00",
+    "built_at": "2026-09-28T00:42:02.078230+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -285,10 +285,10 @@
       "n_quarters": 24,
       "beat_rate": 0.75,
       "miss_rate": 0.2083,
-      "mean_surprise": 0.028042,
+      "mean_surprise": 0.024701,
       "median_surprise": 0.017984,
-      "last_surprise": -0.008048,
-      "directional_score": 0.3474
+      "last_surprise": 0.033691,
+      "directional_score": 0.3448
     },
     "CRM": {
       "ticker": "CRM",
@@ -465,10 +465,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.125,
-      "mean_surprise": 0.059663,
-      "median_surprise": 0.062282,
-      "last_surprise": 0.1875,
-      "directional_score": 0.4977
+      "mean_surprise": 0.055173,
+      "median_surprise": 0.055476,
+      "last_surprise": 0.041667,
+      "directional_score": 0.4941
     },
     "GM": {
       "ticker": "GM",
