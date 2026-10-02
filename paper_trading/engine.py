@@ -1631,6 +1631,17 @@ def run_scan(
         _get_logger(__name__).exception("scan_candidates: no se pudo resolver el scan")
     scan_candidates.persist(account_id, result.scan_at, candidatos)
 
+    # Tarea 266 — la caja y las posiciones cuadran contra las órdenes. Después del commit, en
+    # sesión propia y fail-soft: un cuadre que falla nunca tumba un scan.
+    try:
+        from paper_trading import cuadre
+
+        result.warnings.extend(cuadre.chequear_y_avisar(account_id, account_name))
+    except Exception:
+        from config.logging_config import get_logger as _get_logger
+
+        _get_logger(__name__).exception("cuadre: no se pudo correr")
+
     # OPS1(c) — timing por fase. ``process`` absorbe el loop de gates+fill más el
     # snapshot/slack del final; fetch+analyze+process == scan_seconds exacto.
     t_scan_end = perf_counter()
