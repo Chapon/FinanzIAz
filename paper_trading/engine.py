@@ -41,6 +41,7 @@ from integrations.slack import (
     format_scan_summary,
     select_notifiable,
 )
+from paper_trading import scan_candidates
 from paper_trading.account import record_equity_snapshot
 from paper_trading.dividends import acreditar_dividendos
 from paper_trading.dividends import dia as _dia_iso
@@ -916,7 +917,11 @@ def run_scan(
 
         # Run the strategy (reads detached attributes, so safe)
         strategy_fn = get_strategy_fn(acct.strategy)
-        strategy_trades: list[TargetTrade] = strategy_fn(acct, watchlist, positions, prices, history_provider)
+        # Tarea 256 — la estrategia anota sus candidatos a compra en este colector.
+        with scan_candidates.collecting() as candidatos:
+            strategy_trades: list[TargetTrade] = strategy_fn(
+                acct, watchlist, positions, prices, history_provider
+            )
 
         # Dedup: if ATR forces a SELL for a ticker, drop any strategy-emitted
         # SELL for the same ticker — the ATR trigger wins (more specific +
@@ -1563,6 +1568,18 @@ def run_scan(
     # or a notifier that raises must never affect the scan result.
     _maybe_notify_slack(result, account_name, account_slack_notify, slack_notifier)
     _maybe_notify_price_disputes(result, account_name, account_slack_notify, slack_notifier)
+
+    # Tarea 256 — qué candidatos a compra vio este scan y cómo terminó cada uno. Después del
+    # commit y en sesión propia: el registro nunca puede tumbar un scan.
+    try:
+        scan_candidates.resolve_engine_outcomes(
+            candidatos, result.new_orders, result.warnings, market_blocked=market_blocked
+        )
+    except Exception:
+        from config.logging_config import get_logger as _get_logger
+
+        _get_logger(__name__).exception("scan_candidates: no se pudo resolver el scan")
+    scan_candidates.persist(account_id, result.scan_at, candidatos)
 
     # OPS1(c) — timing por fase. ``process`` absorbe el loop de gates+fill más el
     # snapshot/slack del final; fetch+analyze+process == scan_seconds exacto.

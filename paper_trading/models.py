@@ -284,3 +284,32 @@ class PaperDividendCredit(Base):
 
     def __repr__(self) -> str:
         return f"<PaperDividendCredit({self.ticker} {self.ex_date} ${self.cash:,.2f})>"
+
+
+class PaperScanCandidate(Base):
+    """Un candidato a compra que el scan evaluó, y cómo terminó: el registro de la tarea 256.
+
+    ``paper_orders`` guarda lo que se ejecutó; esta tabla guarda también lo que **no** —sin
+    lugar, frenado por un gate, filtrado por el screen—, que es lo que hace falta para
+    contestar *«¿por qué no compramos X?»*. Sólo registro: el motor no la lee. Los
+    resultados posibles y lo que NO se registra están en ``paper_trading.scan_candidates``.
+    Retención de 90 días, podada por el propio scan.
+    """
+
+    __tablename__ = "paper_scan_candidates"
+    __table_args__ = (
+        Index("ix_paper_scancand_account_scan", "account_id", "scan_at"),
+        Index("ix_paper_scancand_ticker", "ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    scan_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    signal_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<PaperScanCandidate({self.ticker} {self.outcome} {self.scan_at:%Y-%m-%d %H:%M})>"

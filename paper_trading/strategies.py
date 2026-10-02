@@ -42,6 +42,7 @@ from analysis.portfolio_risk import (
 from config.logging_config import get_logger
 from config.settings_manager import DEFAULTS, settings
 from database.models import utcnow_naive
+from paper_trading import scan_candidates as cand_log
 from paper_trading.gates import (
     VOL_TRIM_REASON_PREFIX,
     compute_vol_overlay,
@@ -440,12 +441,15 @@ def generate_trades_analyze_single(
             continue
         df = history_provider(t)
         if df is None or df.empty:
+            cand_log.note(t, cand_log.SIN_DATOS, detail="sin historia")  # tarea 256
             continue
         res = analyze(t, df)
         if res is None:
+            cand_log.note(t, cand_log.SIN_DATOS, detail="analyze sin resultado")
             continue
         if res.overall_signal == "BUY":
             if screen_thresholds is not None and _screen_out_candidate(t, df, screen_thresholds):
+                cand_log.note(t, cand_log.SCREEN, score=_default_strength("BUY", res.ml_probability))
                 continue
             strength = _default_strength("BUY", res.ml_probability)
             ranked.append((strength, t))
@@ -502,6 +506,18 @@ def generate_trades_analyze_single(
     # to free_slots. See docs/sprint2_kill_criteria.md (Enmienda 2).
     picks = [t for _, t in ranked][:free_slots]
 
+    # Tarea 256 — el ranking entero, con lo que le tocó a cada uno. `elegido` es transitorio:
+    # el engine lo resuelve en comprado / encolado / bloqueado según lo que hagan los gates.
+    contexto = f"{len(ranked)} candidatos BUY · {free_slots} lugar(es) libre(s)"
+    for i, (sc, t) in enumerate(ranked):
+        cand_log.note(
+            t,
+            cand_log.ELEGIDO if i < free_slots else cand_log.SIN_LUGAR,
+            score=sc,
+            rank=i + 1,
+            detail=contexto,
+        )
+
     if not picks:
         return trades
 
@@ -513,6 +529,8 @@ def generate_trades_analyze_single(
             est_proceeds += pos.shares * (px or pos.avg_cost) * (1 - account.commission)
     available = account.cash + est_proceeds
     if available <= 0:
+        for t in picks:
+            cand_log.mark(t, cand_log.SIN_TAMANO, f"sin caja disponible (${available:,.2f})")
         return trades
 
     # ── Per-pick target dollars under the active sizing mode ──────────────────
@@ -568,6 +586,7 @@ def generate_trades_analyze_single(
     for t in picks:
         d = dollars.get(t, 0.0)
         if d <= 0:  # Kelly may skip a pick; overlay may shrink a tiny slice
+            cand_log.mark(t, cand_log.SIN_TAMANO, "el sizing le dio $0 (Kelly u overlay)")
             continue
         trades.append(
             TargetTrade(

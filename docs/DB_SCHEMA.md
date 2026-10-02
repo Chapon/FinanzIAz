@@ -30,6 +30,11 @@ Desde el 2026-09-25 el motor **acredita a la caja** el efectivo del ex-date (dec
 
 Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`: el ledger tiene que poder auditarse sin re-derivar nada desde un calendario que para entonces pudo cambiar de fila. **Sólo hacia adelante**: la tabla arranca vacía y el motor acredita desde el primer ex-date de la ventana `(último scan, hoy]`, así que los $322,77 que la cuenta 2 ya había devengado al shipear la 222 (2026-09-25) **no** se backfillean y ninguna métrica publicada cambia de base.
 
+### `paper_scan_candidates` — qué candidatos a compra evaluó cada scan (tarea 256)
+`id`, `account_id` (FK), `scan_at` (UTC, el mismo del scan), `ticker`, `outcome`, `signal_score`, `rank`, `detail`. Índices `ix_paper_scancand_account_scan` y `ix_paper_scancand_ticker`, sin UNIQUE; migración **0015**.
+
+`paper_orders` guarda lo que se **ejecutó**; esta tabla guarda también lo que **no**, para poder contestar *«¿por qué no compramos X?»*. `outcome` es uno de `sin_datos`, `screen`, `sin_lugar`, `sin_tamano`, `comprado`, `encolado` o `bloqueado` (con el texto del gate en `detail`). **No registra** los tickers en cartera ni los que dieron HOLD/SELL: si un ticker no aparece en un scan, ese scan no lo vio como compra. Sólo registro —el motor no la lee—, escrita en sesión propia después del commit del scan y podada a **90 días** por el propio scan. Se consulta con `python scripts/por_que_no_compramos.py <TICKER>`.
+
 ## Núcleo / caches (`database/models.py`)
 
 | Tabla | Para qué |
