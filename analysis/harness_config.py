@@ -415,13 +415,77 @@ PIT_WINDOW_DESC = "expandida (250 → ~2.514 barras)"
 # La 26b lo **cuantificó** en el múltiplo vivo y a 10 slots: el modo ``close``
 # mide **+3.39 pp de CAGR por encima** de la regla que el engine ejecuta.
 # Ninguno de los dos modos ES producción: ``close`` es la cota **inferior** de
-# frecuencia de disparo y ``touch`` la **superior**; el engine samplea c/15 min,
-# así que queda entre las dos y más cerca de ``touch``.
+# frecuencia de disparo y ``touch`` la **superior**. Los días con la app abierta el
+# engine samplea c/15 min y queda entre las dos, más cerca de ``touch``; **los días sin
+# scan no evalúa nada, ni al close, y queda por DEBAJO de la cota inferior** (tarea 265:
+# esto decía sólo lo primero, medido por la perilla y no por lo que corrió).
 #
 # El intervalo del scan era un literal adentro de este texto —una copia de
 # `paper_scan_interval_minutes` sin espejo— y ahora sale del espejo (tarea 231).
 LIVE_SCAN_INTERVAL_MINUTES = 15
-LIVE_EXIT_EVAL_DESC = f"precio corriente intradía (scan ~{LIVE_SCAN_INTERVAL_MINUTES} min)"
+
+
+def cobertura_de_scan(snapshots_utc: list, desde, hasta, feriados: set | frozenset = frozenset()) -> dict:
+    """Cuántos días hábiles de ``[desde, hasta]`` tuvieron scan, desde el REGISTRO (tarea 265).
+
+    ``snapshots_utc`` son los ``snapshot_at`` de ``paper_equity_snapshots`` (UTC naive): un
+    snapshot es un ``run_scan`` **completado** (``engine.py``, ``record_equity_snapshot``).
+    Devuelve ``{"habiles", "sin_scan", "sin_scan_en_sesion"}``; *en sesión* es un scan entre
+    las 9:30 y las 16:00 de Nueva York, que es cuando se evalúan las barreras intradía.
+
+    Existe porque el texto de ``barrier_eval`` afirmaba la frecuencia por la **perilla**
+    (``paper_scan_interval_minutes``) y no por lo que **corrió**: con la app cerrada no hay
+    scan, y entre julio y octubre de 2026 eso fue ~1 de cada 3 días hábiles. Pura: los
+    feriados se pasan (este módulo no tiene calendario, a propósito).
+    """
+    from datetime import date, datetime, time, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    ny = ZoneInfo("America/New_York")
+    con_scan: set = set()
+    en_sesion: set = set()
+    for ts in snapshots_utc:
+        if ts is None:
+            continue
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts[:26])
+        local = ts.replace(tzinfo=timezone.utc).astimezone(ny)
+        con_scan.add(local.date())
+        if time(9, 30) <= local.time() <= time(16, 0):
+            en_sesion.add(local.date())
+    habiles = 0
+    sin = 0
+    sin_sesion = 0
+    d = desde if isinstance(desde, date) else date.fromisoformat(str(desde))
+    fin = hasta if isinstance(hasta, date) else date.fromisoformat(str(hasta))
+    while d <= fin:
+        if d.weekday() < 5 and d not in feriados:
+            habiles += 1
+            sin += d not in con_scan
+            sin_sesion += d not in en_sesion
+        d += timedelta(days=1)
+    return {"habiles": habiles, "sin_scan": sin, "sin_scan_en_sesion": sin_sesion}
+
+
+def desc_eval_vivo(cobertura: dict, desde: str, hasta: str, medido_el: str) -> str:
+    """El texto de cómo evalúa las barreras el vivo, con la frecuencia EFECTIVA (tarea 265)."""
+    return (
+        f"precio corriente intradía (scan ~{LIVE_SCAN_INTERVAL_MINUTES} min) los días con la app "
+        f"abierta — {cobertura['sin_scan_en_sesion']} de {cobertura['habiles']} días hábiles "
+        f"sin ningún scan en sesión ({desde}→{hasta}, medido el {medido_el}); esos días no evalúa "
+        "ni al close"
+    )
+
+
+# Tarea 265 — la frecuencia EFECTIVA, medida con `scripts/medir_cobertura_de_scan_t265.py`
+# sobre la cuenta viva. Lleva fecha (regla de la 233): es un número de estado, y caduca.
+SCAN_COBERTURA = {"habiles": 66, "sin_scan": 22, "sin_scan_en_sesion": 34}
+SCAN_COBERTURA_DESDE = "2026-07-01"
+SCAN_COBERTURA_HASTA = "2026-10-02"
+SCAN_COBERTURA_MEDIDA = "2026-10-02"
+LIVE_EXIT_EVAL_DESC = desc_eval_vivo(
+    SCAN_COBERTURA, SCAN_COBERTURA_DESDE, SCAN_COBERTURA_HASTA, SCAN_COBERTURA_MEDIDA
+)
 PIT_EXIT_EVAL_DESC = "close diario"
 TOUCH_EXIT_EVAL_DESC = "toque intradía del extremo de la barra"
 

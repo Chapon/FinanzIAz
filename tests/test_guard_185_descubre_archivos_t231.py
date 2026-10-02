@@ -131,7 +131,14 @@ def test_LIVE_EXIT_EVAL_DESC_se_deriva_del_espejo_y_no_de_un_literal():
     ]
     assert len(asignaciones) == 1
     valor = asignaciones[0]
-    assert isinstance(valor, ast.JoinedStr), "LIVE_EXIT_EVAL_DESC volvió a ser un literal"
+    # Desde la tarea 265 el texto lo arma `desc_eval_vivo(...)` (agrega la frecuencia EFECTIVA,
+    # medida y fechada); el f-string con el espejo del intervalo vive adentro de esa función.
+    # Lo que este guard cuida no cambió: que no sea un literal y que el intervalo salga del espejo.
+    assert isinstance(valor, (ast.JoinedStr, ast.Call)), "LIVE_EXIT_EVAL_DESC volvió a ser un literal"
+    if isinstance(valor, ast.Call):
+        nombre_fn = getattr(valor.func, "id", None)
+        fn = next(n for n in ast.walk(arbol) if isinstance(n, ast.FunctionDef) and n.name == nombre_fn)
+        valor = fn
     nombres = {n.id for n in ast.walk(valor) if isinstance(n, ast.Name)}
     assert "LIVE_SCAN_INTERVAL_MINUTES" in nombres
     assert f"~{hc.LIVE_SCAN_INTERVAL_MINUTES} min" in hc.LIVE_EXIT_EVAL_DESC
