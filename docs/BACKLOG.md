@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 203 — Tarea 261 (AUDITORIA-AREAS-DE-PRODUCTO) CERRADA 2026-10-02 — primera corrida de `pantalla`, `cuentas` y `operacion`: seis hallazgos, uno CRÍTICO, y siete tareas (262–268)** (`HASH`; `docs/auditoria_pantalla_2026-10-02.md`, `docs/auditoria_cuentas_2026-10-02.md` y `docs/auditoria_operacion_2026-10-02.md` **nuevos**, `.claude/skills/auditoria/SKILL.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected** —la primera corrida dio **1 rojo intermitente** (t237, assert de tiempo bajo carga; solo 8/8 verde) → **269**—, ruff limpio, sin estado vivo **4042 passed, 4 skipped**.
+  - **Kill-criteria de las tres congelado junto** a las 14:29, antes de abrir código, con la contaminación declarada (lo que la 260 ya había visto).
+  - **Lo que encontró:** **[G-1] CRÍTICO** — un split en una posición abierta no ajusta `shares`/`avg_cost`/HWM: la equity cae (1−1/N) en el primer scan y la posición se vende con pérdida ficticia (→ **262**). **[H-2] ALTO** — una excepción de `run_scan` no queda en el log ni en Slack, y el vigilante `stale_accounts` no tiene llamadores (→ **263**). **[F-1] MEDIO** — Home muestra la cuenta 1 cerrada (→ **264**, con tres menores de la misma pantalla en el enunciado). **[H-1] MEDIO** — el desvío `barrier_eval` afirma evaluación cada ~15 min y hubo 22 días hábiles sin scan (→ **265**). **[G-2] MEDIO** — nada cuadra caja contra órdenes (→ **266**). **[F-2]/[F-3] BAJOS** (→ **268**). El diferimiento de pantallas no barridas → **267**. Y del cierre: un rojo intermitente de la suite (t237, assert de tiempo de pared bajo carga) → **269**.
+  - **El `verificador` (independiente) no tumbó ninguno entero:** subió el impacto de G-1 (la equity se corrompe aunque el trailing no venda), bajó F-1 a MEDIO (la severidad de la 254 para el mismo defecto) y H-1 a MEDIO tumbando *«nadie lo declara»* — los huecos están en la 196 y la 224/225; sobrevive sólo el texto del desvío.
+  - **Dos errores propios, corregidos antes de publicar:** una reconstrucción de caja que daba −$64 y 267 snapshots «descuadrados» en la cuenta 1 (eran las dos KLAC que E5 anuló el 2026-07-01, que reescriben el pasado del ledger y no el de los snapshots), y la frase *«XGBoost no está cableado a decisiones»* (sí lo está: `xgb_signal_enabled=true`).
+  - **Lección a la skill (c-metodo de H-1):** una afirmación de **frecuencia** del motor vivo se contrasta contra el registro de lo que corrió, no contra la perilla. Va en la categoría C.
+
 - **WIP 202 — Tarea 260 (AUDITORIA-SIN-AREAS-DE-PRODUCTO) CERRADA 2026-10-02 — la skill de auditoría suma tres áreas que miran el producto en uso: `pantalla`, `cuentas` y `operacion`** (`1d123e0`; `.claude/skills/auditoria/SKILL.md`, `.claude/commands/audit.md`). Suite Windows (Anaconda) **4045 passed, 1 skipped, 1 deselected** (sin cambios: no toca código), ruff limpio, sin estado vivo **4042 passed, 4 skipped**. Deja la **261** (la primera tanda de las tres).
   - **Por qué, medido:** las cinco áreas existentes preguntan si una conclusión del análisis sigue siendo cierta, y los informes declaraban *«NO mirado: los guards de la UI»* y *«NO mirado: `run_scan` entero»*. La contabilidad aparece en 3 de 25 informes y `reports/` en ninguno. Los defectos que encontró **Chapa** mirando la app o el log caen casi todos afuera: 22, 218, 227, 254 y 255 (pantalla), 93, 220 y 221 (cuentas), 148, 197 y 234 (operación).
   - **«Links» se midió y no entró** (decisión de Chapa con la medición delante): de 2.561 referencias a archivos en los `.md` faltan 26, casi todas a propósito (plantillas `_tNN_run.json`, archivos planeados de fair value, rutas relativas entre skills), y ninguna en `CLAUDE.md` ni en las referencias de `docs/`; las 72.542 URLs de `news_events` son todas `http`.
@@ -1869,6 +1876,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02** tras cerrar la **260**, que deja la **261**. Chapa pidió auditorías nuevas de todo empezando por las tres áreas que nunca se auditaron, así que la **261** encabeza; la 196 y la 245 siguen esperando la salida del probe de Lambda y la 259 su decisión. El orden queda **261 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02b** tras cerrar la **261**, que deja siete tareas. Encabeza la **262** (CRÍTICA: contabilidad que puede realizar una pérdida ficticia; sin exposición hoy, pero con un caso real en el universo este año); detrás la **263** (ALTA: una cuenta que deja de operar sin aviso), y después las MEDIAS en el orden en que Chapa las ve —**264** (Home) → **266** (cuadre) → **265** (texto del desvío) → **267** (resto de pantallas)—, y la **268** (BAJA) antes de las que esperan algo de afuera. El orden queda **262 → 263 → 264 → 266 → 265 → 267 → 268 → 269 → 196 → 245 → 259**. La **269** (BAJA, test de tiempo que falla bajo carga) salió del cierre de la propia 261.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3260,7 +3269,66 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 261. AUDITORIA-AREAS-DE-PRODUCTO — Primera tanda de `pantalla`, `cuentas` y `operacion`, las tres áreas que nunca se auditaron  ·  origen: pedido de Chapa (2026-10-02) y la **260** · severidad **MEDIA**
+### 269. TEST-LOCK-MIDE-LATENCIA — `test_con_una_alerta_para_REARMAR…` (t237) asserta tiempo de pared, y bajo carga falla sin que haya ningún lock  ·  origen: el cierre de la 261 (suite del 2026-10-02) · severidad **BAJA**
+
+- **Qué pasó.** En la suite completa: `max(fetch.esperas) = 0.688 s` contra el tope `_TIMEOUT_S / 2 = 0.25 s` → rojo. Solo, 8 de 8 verdes (~1,9 s el archivo). Y la corrida sin estado vivo, verde.
+- **Por qué el assert mide otra cosa.** 0,688 s es **más** que el propio `busy_timeout` (0,5 s), y aun así `fetch.bloqueos == []`: si la escritura hubiera esperado un lock, habría terminado en `database is locked`. Lo que se midió es latencia de la primera conexión bajo carga, no espera por lock.
+- **Alcance propuesto.** Que el test decida por `bloqueos == []` y por una señal que separe lock de latencia (p. ej. medir contra un `busy_timeout` largo y exigir que la espera no se acerque a él), no por tiempo de pared absoluto. Revisar los otros usos de `tests/lock_real.py` (la 238) con la misma pregunta.
+- **Kill-criteria.** Con el arreglo de la 237 revertido el test sigue rojo (mutación); con carga artificial (un hilo ocupando CPU) sigue verde. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 268. PANTALLA-MENORES-T261 — Paper pinta un precio faltante como P&L `+0.00%` en verde, y `reports/dashboard_sim_principal.html` es una foto de mayo de la cuenta cerrada  ·  origen: `docs/auditoria_pantalla_2026-10-02.md` [F-2] y [F-3] · severidad **BAJA**
+
+- **[F-2]** `ui/paper_tab.py:1394-1414`: sin precio, la columna precio dice `—` pero el valor de mercado pasa a ser el costo y el P&L queda `+$0.00 / +0.00%` en **verde**. Que diga que no hay P&L (`—`, sin color) en vez de un cero.
+- **[F-3]** `reports/dashboard_sim_principal.html`: último commit `9b4bc00` (2026-05-27), sin referencias en `*.py` ni `*.md`; el dashboard vivo es el artifact de `scripts/refresh_dashboard.py`. Borrarlo del repo.
+- **Kill-criteria.** Test con una posición sin precio que pide P&L no numérico; el `.html` fuera del árbol y ninguna referencia rota. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 267. PANTALLA-ALCANCE-DIFERIDO — La primera corrida de `pantalla` no barrió Analysis, Leads, Portfolio, Failed tickers, News, Alerts ni el cruce de Settings  ·  origen: `docs/auditoria_pantalla_2026-10-02.md` §2 (diferimiento, regla de la skill) · severidad **MEDIA**
+
+- **Qué.** Correr `/audit pantalla` sobre lo que la 261 dejó afuera por tamaño: **Analysis, Leads, Portfolio, Failed tickers, News, Alerts**, y en **Settings** el cruce de cada fila contra el fallback con que la lee el motor (el extractor de la 261 no encontró las listas de secciones: arreglar el instrumento primero, validándolo contra una clave conocida).
+- **Kill-criteria.** El de la categoría F de la skill, congelado antes de mirar, con las dos direcciones. Barrido limpio es un resultado válido.
+- **Dependencias:** ninguna. Va después de la 264, que toca Home.
+
+### 266. CUADRE-SIN-GUARD — Ningún chequeo cuadra caja y posiciones contra órdenes y dividendos; hoy cierra al centavo y nadie se enteraría si deja de cerrar  ·  origen: `docs/auditoria_cuentas_2026-10-02.md` [G-2] · severidad **MEDIA**
+
+- **Qué pasa.** `reconcile_account` (`paper_trading/engine.py:2264`) sólo expira pendientes. El cuadre a mano del 2026-10-02 (`initial_capital` + ventas − compras a `fill_price × fill_shares` − `commission_paid` + `paper_dividend_credits.cash` contra `paper_accounts.cash`; acciones netas por ticker contra `paper_positions`) cierra al centavo en las cuentas 1 y 2. La caja ya se corrigió a mano una vez (las KLAC `voided` de E5).
+- **Alcance propuesto.** Una función pura de cuadre (las órdenes `voided` fuera; el slippage **ya va dentro** del `fill_price` — restarlo aparte descuadra una cuenta sana) y un llamado al final de cada scan que loguee ERROR y avise por Slack **una vez** si el descuadre supera un centavo por fill.
+- **Kill-criteria.** Test con un ledger sano que cuadra y con uno que tiene una venta de más que no; mutación: restar `slippage_cost` o no excluir `voided` pone rojo el caso sano. Los cuatro comandos en verde.
+- **Dependencias:** ninguna. Si la 262 ajusta posiciones por split, el cuadre tiene que contemplar ese ajuste.
+
+### 265. DESVIO-FRECUENCIA-DE-EVALUACION — El desvío `barrier_eval` afirma que el vivo evalúa las barreras cada ~15 min «más cerca de touch», y en 22 días hábiles desde julio no las evaluó nunca  ·  origen: `docs/auditoria_operacion_2026-10-02.md` [H-1] · severidad **MEDIA**
+
+- **Qué pasa.** `analysis/harness_config.py:417-424` (`LIVE_EXIT_EVAL_DESC`, *«precio corriente intradía (scan ~N min)»*). Medido el 2026-10-02 sobre `paper_equity_snapshots` de la cuenta 2 (snapshot = scan completado, `engine.py:1563`): **22 días hábiles sin ningún scan** del 2026-07-01 al 2026-10-02 (feriados NYSE fuera), **34** sin ninguno dentro de la sesión. En esos días el vivo queda **por debajo** de la cota *close*, no entre close y touch.
+- **Lo que ya está dicho y no se repite:** los huecos en sí (la 196, la 224/225, *Ideas*: *«Subir la frecuencia de scan»*). Lo que falta es conectarlos con la **regla de salida** y el cotejo vivo↔harness.
+- **Alcance propuesto.** Que el texto del desvío diga la frecuencia **efectiva**, con fecha o derivada del registro (proporción de días hábiles con scan en sesión), y que la nota de `barrier_eval` deje de afirmar *«más cerca de touch»* como estado actual.
+- **Kill-criteria.** El texto se deriva o lleva fecha (regla de la 233); un test que construye snapshots con un día hábil faltante y exige que el texto lo refleje. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 264. HOME-CUENTA-CERRADA — Home elige la cuenta 1 (cerrada) por id fijo: muestra $49.257, −1,49% en rojo y 5 posiciones con la viva en $51.353, +2,71% y 10  ·  origen: `docs/auditoria_pantalla_2026-10-02.md` [F-1] · severidad **MEDIA**
+
+- **Qué pasa.** `ui/home_tab.py:46-56` (`_resolve_account_id`, *«prefers id=1»*); `get_account` no filtra `is_active`, así que devuelve siempre 1. Es el defecto que la **254** arregló en Métricas y Paper sin buscar el patrón en todo `ui/`.
+- **En el mismo enunciado, de la misma pantalla:** (a) `update_status(..., 0)` (`:344`) pasa `n_alerts=0` fijo — la fila *Alertas* dice siempre *«Sin disparar»*; (b) la torta *«Distribución de cartera»* y la sparkline usan **costo** (`shares × avg_cost`, `:338-341`), no valor de mercado; (c) `load_paper_data` corre bajo `suppress(Exception)` (`:195`, `:348`), así que si falla Home queda con los valores viejos sin decirlo.
+- **Alcance.** Reusar el fallback a la primera cuenta activa de la 254; (a) contar las alertas disparadas reales; (b) rotular «al costo» o valuar a mercado (la más simple y honesta); (c) loguear la falla y mostrarla.
+- **Kill-criteria.** Test con una cuenta 1 inactiva y una 2 activa que exige que Home cargue la 2; test de (a) con una alerta disparada. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 263. SCAN-FALLA-EN-SILENCIO — Una excepción que se escapa de `run_scan` no queda en el log ni llega a Slack: la cuenta puede dejar de operar y de correr stops con un texto de 10 segundos como única señal  ·  origen: `docs/auditoria_operacion_2026-10-02.md` [H-2] · severidad **ALTA**
+
+- **Qué pasa.** `PaperScanWorker.run` (`paper_trading/scheduler.py:166-176`) atrapa y sólo emite `scan_failed`; el receptor (`ui/main_window.py:334`) muestra la barra de estado 10 s y un toast de 4 s sólo si la cuenta está seleccionada (`ui/paper_tab.py:1489`). `run_scan` no tiene `try` de nivel superior, `session_scope` relanza sin loguear, y el excepthook global no ve una excepción ya atrapada en un `QThread`. Ningún test cubre `scan_failed`. `PaperScheduler.status()` calcula `stale_accounts` y **no tiene llamadores**.
+- **Alcance propuesto.** (1) `log.exception` en el worker, con la cuenta. (2) Slack al fallar, con dedupe (un aviso por racha, no uno por scan) y otro al recuperarse — el patrón de `format_outage_message`. (3) Cablear `stale_accounts` o borrarlo: un vigilante sin llamador es la forma que la skill cataloga en *guards*.
+- **Kill-criteria.** Test con un `run_scan` que lanza: el log tiene el traceback y sale **un** Slack para tres fallas seguidas, y uno de recuperación. Mutación: sacar el `log.exception` o el dedupe pone rojo. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 262. SPLIT-NO-AJUSTA-POSICIONES — Un split en una posición abierta deja `shares`, `avg_cost` y el HWM en la escala vieja: la equity cae (1−1/N) en el primer scan y la posición se vende con una pérdida que no existe  ·  origen: `docs/auditoria_cuentas_2026-10-02.md` [G-1] · severidad **CRÍTICA** · **gate técnico de contabilidad, no decide trading**
+
+- **Qué pasa.** Ningún código de `paper_trading/` ajusta posiciones por split (`avg_cost` se escribe sólo en la compra, `engine.py:2125`; el HWM sólo sube, `:657-675`). El guard de precio (`data/yahoo_finance.py:1213-1228`) **acepta** el precio post-split al tercer rechazo (~45 min), o antes si el cache se rebajó. Desde ese scan `compute_equity` valúa acciones viejas a precio nuevo. Si el HWM superó alguna vez al `avg_cost`, el trailing (`gates.py:146-152`, con una ATR nueva N veces más chica) vende en ese mismo scan, y las salidas de riesgo no pasan por gates; si no, vende la señal después. El harness corre sobre `auto_adjust=True` (split-neutral) y `deviations()` no lo declara.
+- **Por qué CRÍTICA sin exposición hoy:** es un resultado de trading incorrecto y realizado (−50% en un 2:1, −96% en un 25:1). BKNG tuvo un 25:1 el 2026-04-06: el caso existe en el universo este año. La cuenta 2 compró BKNG **después**, y no hubo nunca una venta a <75% del último BUY.
+- **Alcance propuesto.** Al aceptar un precio con split plausible confirmado (`recent_split_factor`), ajustar en la misma transacción `shares × N`, `avg_cost / N` y `high_water_mark / N` de la posición abierta, con una nota auditable (qué factor, de qué fuente) y Slack. Sin red en medio del fill: reusar el memo, como el guard. Una posición cuyo split no se puede confirmar queda sin precio (lo de hoy en los rechazos 1-2), no se ajusta a ciegas.
+- **Kill-criteria.** Test con una posición abierta y un split 2:1 confirmado: después del scan, shares ×2, avg_cost /2, HWM /2, equity sin salto (± costos) y **ninguna** orden de venta; con un ratio no plausible (2.793): sin ajuste y sin venta. Mutación: no ajustar el HWM, o ajustar sólo shares, pone rojo. Los cuatro comandos en verde.
+- **Dependencias:** ninguna. Va **primera**.
+
+### 261. ~~AUDITORIA-AREAS-DE-PRODUCTO — Primera tanda de `pantalla`, `cuentas` y `operacion`, las tres áreas que nunca se auditaron~~ · **CERRADA 2026-10-02 — seis hallazgos (uno CRÍTICO), siete tareas: 262–268** · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-02) y la **260** · severidad **MEDIA**
 
 - **Qué.** Correr `/audit` sobre las tres áreas nuevas de la skill, con el kill-criteria de **las tres congelado junto** antes de abrir el primer archivo (regla de la skill), un informe por área (`docs/auditoria_<área>_2026-10-02.md`), el `verificador` sobre todo HIGH/CRITICAL, y la tabla `hallazgo → tarea` sin filas vacías.
 - **Lo que entra ya visto (de la 260), para que no se pierda:** en `cuentas`, la caja y las posiciones de las cuentas 1 y 2 cuadran al centavo contra fills, comisiones y dividendos (2026-10-02), pero **ningún chequeo hace ese cuadre**: `reconcile_account` sólo expira pendientes. La corrida decide si eso es un hallazgo (guard faltante) con su severidad, o se descarta con el motivo escrito.

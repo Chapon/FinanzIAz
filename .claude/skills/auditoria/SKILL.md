@@ -226,6 +226,11 @@ código **tiene** la pata de ADV$, pero con `paper_universe_min_adv_dollars = 0.
   tenía fuente, tarea y fecha, pasaba las dos reglas de arriba, y era de 5 slots/41 tickers: en el
   marco de la cuenta el CAGR da el signo contrario. Es la lección de la 43 y la 119, que el método
   de esta área no tenía escrita.
+- **Toda afirmación de FRECUENCIA del motor vivo se contrasta contra el REGISTRO de lo que corrió,
+  no contra la perilla que la configura** (tarea 261). El desvío `barrier_eval` decía que el vivo
+  evalúa las barreras *«cada ~15 min, más cerca de touch»*, y la perilla lo confirmaba; los
+  snapshots de la cuenta 2 mostraban 22 días hábiles sin ningún scan entre julio y octubre. La
+  perilla dice cada cuánto **intenta**; `paper_equity_snapshots` dice cada cuánto **corrió**.
 
 ### D. Guards que degradan en silencio
 
