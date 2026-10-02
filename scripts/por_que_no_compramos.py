@@ -68,7 +68,9 @@ def resumen_por_dia(filas: list[tuple], scans_por_dia: dict[str, int]) -> list[d
 
 def leyenda(r: dict) -> str:
     if r["scans"] == 0 and r["apariciones"] == 0:
-        return "sin scans (la app no corrió)"
+        # Tarea 263 [M-1]: un día sin snapshot es «sin scans COMPLETADOS». Puede ser la app
+        # cerrada o scans que fallaron (no dejan snapshot); el log dice cuál.
+        return "sin scans completados (app cerrada o scans fallidos: ver el log)"
     if r["apariciones"] == 0:
         return f"{r['scans']} scans: nunca fue candidato a compra (HOLD/SELL o ya en cartera)"
     partes = ", ".join(f"{k} {v}" for k, v in r["resultados"].items())

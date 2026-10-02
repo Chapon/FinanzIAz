@@ -218,6 +218,24 @@ def format_outage_message(kind: str, *, minutes: float, level: int) -> str:
     return ""
 
 
+def format_scan_failure_message(kind: str, *, account: str, n: int, minutes: float, error: str = "") -> str:
+    """Mensaje de un scan que se cae (tarea 263). Puro / testeable.
+
+    ``kind`` ∈ {"open", "recovered"}: el primero sale con la **primera** falla de una
+    racha, el segundo con el primer scan que vuelve a completar. Un kind desconocido
+    devuelve ``""``, con el mismo contrato que ``format_outage_message``.
+    """
+    if kind == "open":
+        detalle = f": `{error[:300]}`" if error else ""
+        return (
+            f"🛑 *FinanzIAs · el scan de {account} falló*{detalle} — la cuenta no opera ni "
+            "corre stops hasta que vuelva. Traceback en el log. Aviso una vez por racha."
+        )
+    if kind == "recovered":
+        return f"✅ *FinanzIAs · el scan de {account} volvió* tras {n} falla(s) en ~{minutes:.0f} min."
+    return ""
+
+
 # ── Price alerts (NOTIF1) ────────────────────────────────────────────────────
 
 

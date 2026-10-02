@@ -714,7 +714,9 @@ SCHEMA: dict[str, SettingSpec] = {
             "period (NET1 breaker escalates to level ≥2): one message when the "
             "outage persists and one on recovery. Independent of "
             "slack_notifications_enabled. No-op without a token/channel "
-            "(fail-open); reuses the same SLACK_BOT_TOKEN / channel."
+            "(fail-open); reuses the same SLACK_BOT_TOKEN / channel. Desde la tarea 263 "
+            "gobierna también el aviso de un scan que lanza una excepción (uno por racha, "
+            "y otro al volver)."
         ),
     ),
     "slack_price_alerts_enabled": SettingSpec(

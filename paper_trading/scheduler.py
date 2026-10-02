@@ -100,6 +100,7 @@ from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from config.logging_config import get_logger
 from config.settings_manager import settings
 from database.models import utcnow_naive
+from paper_trading.scan_health import RachasDeScan
 
 log = get_logger(__name__)
 
@@ -153,6 +154,29 @@ def _is_market_open_now() -> bool:
 # ── Worker thread ─────────────────────────────────────────────────────────────
 
 
+# Lo que emite el worker cuando ``run_scan`` devuelve ``None``: no es una falla del scan
+# (la cuenta se pausó o no existe) y no abre una racha (tarea 263).
+CUENTA_INACTIVA = "Cuenta inactiva o no encontrada."
+
+# Hook para los tests; ``None`` → ``integrations.slack.default_notifier``.
+_scan_alert_notifier = None
+
+
+def _avisar_salud(texto: str) -> None:
+    """Slack de salud del scan (tarea 263). Mismo gate que el outage de Yahoo
+    (``slack_data_outage_enabled``): los dos son «el sistema dejó de ver». Fail-open."""
+    if not texto:
+        return
+    try:
+        if not bool(settings.get("slack_data_outage_enabled", True)):
+            return
+        from integrations.slack import default_notifier
+
+        (_scan_alert_notifier or default_notifier)(texto)
+    except Exception:
+        log.debug("Slack de salud del scan falló (fail-open)", exc_info=True)
+
+
 class PaperScanWorker(QThread):
     """Runs a single ``run_scan(account_id)`` on a background thread."""
 
@@ -169,10 +193,13 @@ class PaperScanWorker(QThread):
 
             result = run_scan(self.account_id)
             if result is None:
-                self.scan_failed.emit(self.account_id, "Cuenta inactiva o no encontrada.")
+                self.scan_failed.emit(self.account_id, CUENTA_INACTIVA)
             else:
                 self.scan_completed.emit(result)
         except Exception as e:
+            # Tarea 263: esto antes sólo se emitía, y la UI lo mostraba 10 s. El traceback
+            # tiene que quedar en el log: es lo único que permite saber POR QUÉ.
+            log.exception("run_scan falló para la cuenta %d", self.account_id)
             self.scan_failed.emit(self.account_id, f"{type(e).__name__}: {e}")
 
 
@@ -469,10 +496,12 @@ class PaperScheduler(QObject):
         self._bench_worker: BenchmarkLargoWorker | None = None
         self._last_bench_check: date | None = None
 
-        # Heartbeat: per-account timestamps of the most recent scan so the
-        # UI / status bar can flag accounts that haven't been scanned in a
-        # suspiciously long time (scheduler stalled or worker thread died).
-        self._last_scan_at: dict[int, datetime] = {}
+        # Tarea 263: rachas de scans fallidos por cuenta, para avisar una vez por racha.
+        # Acá había un heartbeat (`_last_scan_at`) que alimentaba un `status()` con
+        # `stale_accounts`, y ese `status()` no tenía NINGÚN llamador: un vigilante que no
+        # vigilaba. Se sacó en vez de cablearse porque, como estaba, habría dado una falsa
+        # alarma cada noche (sin mercado no hay scans, y eso es lo normal).
+        self._rachas = RachasDeScan()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -659,21 +688,30 @@ class PaperScheduler(QObject):
             return  # previous scan for this account still in flight
         worker = PaperScanWorker(account_id, parent=self)
         worker.scan_completed.connect(self._on_scan_completed)
-        worker.scan_failed.connect(self.scan_failed.emit)
+        worker.scan_failed.connect(self._on_scan_failed)
         worker.finished.connect(lambda aid=account_id: self._reap_worker(aid))
         self._workers[account_id] = worker
         self.scan_started.emit(account_id)
         worker.start()
 
     def _on_scan_completed(self, result) -> None:
-        """Stamp heartbeat, refresh the dashboard, then forward the result."""
-        aid = 0
+        """Close a failure streak if any (tarea 263), refresh the dashboard, then forward the result."""
         try:
             aid = int(getattr(result, "account_id", 0)) or 0
-            if aid:
-                self._last_scan_at[aid] = utcnow_naive()
-        except Exception:
-            pass
+        except (TypeError, ValueError):
+            aid = 0
+        # Tarea 263: el primer scan completo después de una racha de fallas avisa que volvió.
+        cerro = self._rachas.exito(aid) if aid else None
+        if cerro is not None:
+            n, minutos = cerro
+            log.warning("Scan de la cuenta %d volvió tras %d falla(s) en ~%.0f min", aid, n, minutos)
+            from integrations.slack import format_scan_failure_message
+
+            _avisar_salud(
+                format_scan_failure_message(
+                    "recovered", account=self._nombre_cuenta(aid), n=n, minutes=minutos
+                )
+            )
         # Dashboard "Ambos": tras cada scan de la cuenta del dashboard re-genera
         # el snapshot (ungated; el path 1×/día vive en _maybe_refresh_dashboard).
         if aid and aid == self._dashboard_account_id():
@@ -682,6 +720,34 @@ class PaperScheduler(QObject):
             except Exception:
                 log.exception("post-scan dashboard refresh failed")
         self.scan_completed.emit(result)
+
+    def _on_scan_failed(self, account_id: int, error: str) -> None:
+        """Tarea 263: una falla abre (o sigue) la racha; sólo la primera avisa por Slack."""
+        if error != CUENTA_INACTIVA:
+            n_previas = self._rachas.en_falla(account_id)
+            if self._rachas.fallo(account_id):
+                from integrations.slack import format_scan_failure_message
+
+                _avisar_salud(
+                    format_scan_failure_message(
+                        "open", account=self._nombre_cuenta(account_id), n=1, minutes=0.0, error=error
+                    )
+                )
+            else:
+                log.error(
+                    "Scan de la cuenta %d sigue fallando (%d seguidas): %s", account_id, n_previas + 1, error
+                )
+        self.scan_failed.emit(account_id, error)
+
+    @staticmethod
+    def _nombre_cuenta(account_id: int) -> str:
+        try:
+            from paper_trading.account import get_account
+
+            acct = get_account(account_id)
+            return f"{acct.name} (#{account_id})" if acct is not None else f"la cuenta #{account_id}"
+        except Exception:
+            return f"la cuenta #{account_id}"
 
     def _reap_worker(self, account_id: int) -> None:
         w = self._workers.pop(account_id, None)
@@ -1055,30 +1121,6 @@ class PaperScheduler(QObject):
         self._tape_worker = None
         if w is not None:
             w.deleteLater()
-
-    # ── Status / health ───────────────────────────────────────────────────────
-
-    def status(self) -> dict:
-        """
-        Return a snapshot suitable for the UI status bar / debugging:
-        active workers, last-scan timestamps, and stale accounts (no scan
-        in over 2× the configured interval).
-        """
-        now = utcnow_naive()
-        interval_min = max(1, int(settings.get("paper_scan_interval_minutes", 15)))
-        stale_threshold = 2 * interval_min * 60  # seconds
-
-        stale = []
-        for aid, ts in self._last_scan_at.items():
-            if (now - ts).total_seconds() > stale_threshold:
-                stale.append(aid)
-        return {
-            "started": self._started,
-            "active_workers": list(self._workers.keys()),
-            "last_scans": {a: ts.isoformat() for a, ts in self._last_scan_at.items()},
-            "stale_accounts": stale,
-            "interval_min": interval_min,
-        }
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

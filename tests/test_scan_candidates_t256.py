@@ -212,7 +212,7 @@ def test_la_consulta_distingue_no_candidato_de_app_cerrada():
     assert "blackout" in leyenda(r["2026-10-02"])
     assert "nunca fue candidato" in leyenda(r["2026-10-03"])
     assert "2026-10-04" not in r
-    assert "la app no corrió" in leyenda({"scans": 0, "apariciones": 0})
+    assert "sin scans completados" in leyenda({"scans": 0, "apariciones": 0})
 
 
 def test_la_consulta_contra_una_db_con_el_esquema_real(tmp_path, capsys):
