@@ -295,6 +295,10 @@ class AddPositionDialog(QDialog):
             )
 
             if existing:
+                # Tarea 277: una posición cerrada (cantidad 0) arranca un lote nuevo.
+                from database.cartera_real import reabrir_si_cerrada
+
+                reabrir_si_cerrada(existing, purchase_dt)
                 # Update average price; keep the earliest purchase_date
                 total_qty = existing.quantity + qty
                 avg = ((existing.avg_buy_price * existing.quantity) + (price * qty)) / total_qty
@@ -512,20 +516,11 @@ class SellPositionDialog(QDialog):
             if pos is None:
                 return
 
-            tx = Transaction(
-                position_id=pos.id,
-                transaction_type="SELL",
-                quantity=qty,
-                price=price,
-                fees=self.fees_spin.value(),
-            )
-            session.add(tx)
+            # Tarea 277: una venta total deja la posición en cantidad 0 con sus
+            # transacciones. Borrarla se llevaba la compra por la cascada.
+            from database.cartera_real import registrar_venta
 
-            if abs(pos.quantity - qty) < 1e-8:
-                session.delete(pos)
-            else:
-                pos.quantity -= qty
-                pos.updated_at = utcnow_naive()
+            registrar_venta(session, pos, qty, price, self.fees_spin.value())
         self.accept()
 
 

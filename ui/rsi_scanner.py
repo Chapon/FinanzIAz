@@ -138,7 +138,12 @@ class RsiScanDialog(QDialog):
 
     def _start_scan(self):
         with session_scope() as session:
-            positions = session.query(Position).filter(Position.portfolio_id == self.portfolio_id).all()
+            positions = (
+                session.query(Position)
+                .filter(Position.portfolio_id == self.portfolio_id)
+                .filter(Position.quantity > 0)  # tarea 277
+                .all()
+            )
             self._tickers = [p.ticker for p in positions]
 
         if not self._tickers:

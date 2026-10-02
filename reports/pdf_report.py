@@ -92,6 +92,10 @@ def generate_portfolio_pdf(
     story.append(HRFlowable(width="100%", thickness=1, color=C_BORDER, spaceAfter=16))
 
     # ── Summary metrics ──────────────────────────────────────────────────────
+    # Tarea 277: las tenencias son las abiertas; el historial de transacciones usa TODAS,
+    # porque una posición vendida entera queda en cantidad 0 con su compra y su venta.
+    todas = list(positions)
+    positions = [p for p in todas if (p.quantity or 0) > 0]
     total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
     total_value = 0.0
     for p in positions:
@@ -200,7 +204,7 @@ def generate_portfolio_pdf(
             from database.models import Transaction, session_scope
 
             with session_scope() as session:
-                pos_ids = [p.id for p in positions if hasattr(p, "id")]
+                pos_ids = [p.id for p in todas if hasattr(p, "id")]
                 txs = (
                     session.query(Transaction)
                     .filter(Transaction.position_id.in_(pos_ids))
@@ -209,7 +213,7 @@ def generate_portfolio_pdf(
                     .all()
                 )
                 # Build ticker lookup
-                pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
+                pos_map = {p.id: p.ticker for p in todas if hasattr(p, "id")}
                 session.expunge_all()
 
             if txs:

@@ -380,6 +380,7 @@ class PortfolioTab(QWidget):
             self._positions = (
                 session.query(Position)
                 .filter(Position.portfolio_id == self._current_portfolio_id)
+                .filter(Position.quantity > 0)  # tarea 277: las vendidas enteras quedan en 0
                 .order_by(Position.ticker)
                 .all()
             )

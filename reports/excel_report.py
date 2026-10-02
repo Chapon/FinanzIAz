@@ -78,6 +78,10 @@ def generate_portfolio_excel(
     ws.row_dimensions[2].height = 20
 
     # ── Metrics block ────────────────────────────────────────────────────────
+    # Tarea 277: las tenencias son las abiertas; el historial de transacciones usa TODAS,
+    # porque una posición vendida entera queda en cantidad 0 con su compra y su venta.
+    todas = list(positions)
+    positions = [p for p in todas if (p.quantity or 0) > 0]
     total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
     total_value = 0.0
     for p in positions:
@@ -206,14 +210,14 @@ def generate_portfolio_excel(
     from database.models import Transaction, session_scope
 
     with session_scope() as session:
-        pos_ids = [p.id for p in positions]
+        pos_ids = [p.id for p in todas]
         txs = (
             session.query(Transaction)
             .filter(Transaction.position_id.in_(pos_ids))
             .order_by(Transaction.date.desc())
             .all()
         )
-        pos_map = {p.id: p.ticker for p in positions}
+        pos_map = {p.id: p.ticker for p in todas}
         for tx in txs:
             ticker = pos_map.get(tx.position_id, "?")
             bg = C_BG if tx_row % 2 == 0 else C_CARD
@@ -252,7 +256,7 @@ def generate_portfolio_excel(
             from database.models import Transaction, session_scope
 
             with session_scope() as session:
-                pos_ids = [p.id for p in positions if hasattr(p, "id")]
+                pos_ids = [p.id for p in todas if hasattr(p, "id")]
                 txs = (
                     session.query(Transaction)
                     .filter(Transaction.position_id.in_(pos_ids))
@@ -260,7 +264,7 @@ def generate_portfolio_excel(
                     .limit(500)
                     .all()
                 )
-                pos_map = {p.id: p.ticker for p in positions if hasattr(p, "id")}
+                pos_map = {p.id: p.ticker for p in todas if hasattr(p, "id")}
                 session.expunge_all()
 
             if txs:

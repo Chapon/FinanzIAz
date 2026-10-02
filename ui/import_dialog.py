@@ -423,6 +423,10 @@ class ImportDialog(QDialog):
                 .first()
             )
             if existing:
+                # Tarea 277: una posición cerrada (cantidad 0) arranca un lote nuevo.
+                from database.cartera_real import reabrir_si_cerrada
+
+                reabrir_si_cerrada(existing, utcnow_naive())
                 # Merge: recalculate avg price
                 total_qty = existing.quantity + item["quantity"]
                 avg = (
