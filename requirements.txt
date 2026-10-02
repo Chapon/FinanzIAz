@@ -11,7 +11,10 @@ PyQt6>=6.7.1,<6.8
 
 # Market data
 yfinance>=0.2.40           # frequent releases — Yahoo Finance API drifts
-requests>=2.32.0           # was 2.31.0; bumped for CVE-2024-35195 (cert verify)
+requests>=2.33.0           # tarea 284: 2.32.2 tenia PYSEC-2026-1872/-2275 (fix 2.32.4 / 2.33.0)
+# urllib3: el codigo lo importa DIRECTO (data/yahoo_finance.py, Retry), asi que se declara
+# aunque llegue con requests (tarea 284, [K-1]). 2.8.0 corrige PYSEC-2026-4175/-4177.
+urllib3>=2.8.0
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
@@ -40,7 +43,7 @@ numpy>=1.26.4,<2.0
 # Reemplaza el JSON-en-SQLite (pd.read_json en cada lectura). Ambas son self-
 # contained: pyarrow depende solo de numpy (compatible con el cap <2.0; NO fuerza
 # el bump) y duckdb no tiene deps. Ver docs/arq1_parquet_cache.md.
-pyarrow>=16.0
+pyarrow>=17.0               # tarea 284: 14.0.2 violaba el >=16 y tenia PYSEC-2024-161 (fix 17.0.0)
 duckdb>=1.0
 
 # Charts
@@ -58,6 +61,9 @@ arch>=6.0
 # CAPEADA a <1.8 porque 1.8 removio CalibratedClassifierCV(cv="prefit"), que usa
 # analysis/ml_signals.py (_build_calibrator). El entorno real corre 1.4.2.
 # Levantar el cap (y migrar a FrozenEstimator) es la tarea de upgrade del backlog.
+# Tarea 284: pip-audit marca PYSEC-2024-110 en 1.4.2 (fix 1.5.0). Riesgo ACEPTADO, no
+# olvidado: el aviso es sobre TfidfVectorizer (stop_words_ con datos del corpus) y el
+# proyecto no usa ningun vectorizador de texto (git grep, 2026-10-02).
 scikit-learn>=1.4.2,<1.8
 # xgboost: clasificador ML del engine (buy_score / ml_probability). El codigo
 # degrada con gracia si falta (ml_signals._XGB_OK -> 0.5 neutral), pero el
