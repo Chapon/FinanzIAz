@@ -213,6 +213,10 @@ _NO_LEE_EL_STORE = {
         "Mide el tono de las noticias contra retornos de los frames `2y` de la app: cero "
         "señales precomputadas, no toca data/pit_signals/ (tarea 258)."
     ),
+    "measure_entrada_intradia_t293.py": (
+        "Re-corre `analyze()` en el momento sobre los frames `2y` de la app para los BUY "
+        "reales de la cuenta: cero señales precomputadas, no toca data/pit_signals/ (tarea 293)."
+    ),
     "measure_news_sentiment_fwd5_t255.py": (
         "Mide noticias contra retornos de los frames `1y` de la app viva: cero "
         "señales precomputadas, no toca data/pit_signals/ (tarea 255)."

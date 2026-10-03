@@ -396,6 +396,20 @@ SP500_UNIVERSE_FILE = "data/sp500_universe.txt"
 LIVE_HISTORY_BARS = 504
 PIT_WINDOW_DESC = "expandida (250 → ~2.514 barras)"
 
+# ── La ENTRADA: barra parcial en sesión vs close — tarea 293 ─────────────────
+# El harness decide y entra al close de la barra con señal BUY; el scan vivo corre en
+# sesión, decide con la barra del día todavía abierta y llena a ese precio. No estaba
+# declarado (``docs/auditoria_tanda_2026-10-03.md`` [C-2]). Medido sobre los BUY reales
+# de la cuenta con ``scripts/measure_entrada_intradia_t293.py``; el detalle y el
+# kill-criteria, en ``docs/entrada_intradia_t293_2026-10-03.md``.
+ENTRADA_INTRADIA_DESC = (
+    "entrada al close de la barra con señal vs en sesión, con la barra del día abierta, en vivo. "
+    "Medido el 2026-10-03 sobre 64 BUY en sesión de la cuenta 2 (tarea 293): la señal "
+    "sigue siendo BUY con la barra completa en 63 de 64 (IC95 de las que no: 0,3–8,3%), y "
+    "el fill queda a −0,002% del close crudo en promedio (IC95 por día −0,26% a +0,32%; "
+    "|desvío| medio 0,64%): ruido simétrico, sin sesgo detectable"
+)
+
 # ── Precio de evaluación de las barreras — el desvío que destapó la T26 ──────
 # ``scaleout_replay.replay_cycle`` decide **toda** salida ATR contra el **close
 # diario** (``atr_exit(current_price=close_i, …)``): una barra cuyo *mínimo*
@@ -2368,6 +2382,8 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
         "analyze_window",
         f"ventana de analyze() {PIT_WINDOW_DESC} vs {LIVE_HISTORY_BARS} barras fijas en vivo",
     )
+    # Tarea 293 — también estructural (todo runner entra al close), así que va siempre.
+    _add("entrada_intradia", ENTRADA_INTRADIA_DESC)
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
     # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
     # depende del brazo es de qué lado del engine cae el desvío.

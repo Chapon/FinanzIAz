@@ -1436,6 +1436,11 @@ _NO_LE_CORRESPONDE_EL_GUARD = {
         "Lee los frames `2y` que mantiene la app viva, NO el cohorte `10y`, igual que el "
         "de la 255; declara la frescura de sus frames al correr (tarea 258)."
     ),
+    "measure_entrada_intradia_t293.py": (
+        "Lee los frames `2y` que mantiene la app viva, NO el cohorte `10y`, igual que el "
+        "de la 258: mide los BUY reales de la cuenta contra la barra de su día, y declara "
+        "la última barra de sus frames al correr (tarea 293)."
+    ),
     "benchmark_historical_cache.py": (
         "Mide COSTO DE I/O, no produce un número de trading. Un cohorte torcido no "
         "invalida un benchmark de lectura; le cambia los milisegundos y nada más."

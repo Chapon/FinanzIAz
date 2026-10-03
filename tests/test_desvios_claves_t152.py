@@ -51,6 +51,7 @@ CLAVES_CONOCIDAS = frozenset(
         "slots",
         "universo_size",
         "analyze_window",
+        "entrada_intradia",
         "barrier_eval",
         "barrier_fill",
         "barrier_fill_lookahead",
@@ -176,6 +177,8 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
     """
     assert {d.clave for d in deviations_keyed(_cfg())} == {
         "analyze_window",
+        # Tarea 293 — INCONDICIONAL: todo runner entra al close; el vivo, en sesión.
+        "entrada_intradia",
         "barrier_eval",
         "barrier_fill",
         "artifact_window_undeclared",
