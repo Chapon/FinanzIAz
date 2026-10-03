@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 226 — Tarea 285 (GUARD-SPY-HUECO-INTERNO) CERRADA 2026-10-02 — el guard de SPY ve los huecos internos** (`HASH`; `analysis/harness_config.py`, `tests/test_spy_hueco_interno_t285.py` **nuevo**). Suite Windows (Anaconda) **4211 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4208 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 226 — Tarea 285 (GUARD-SPY-HUECO-INTERNO) CERRADA 2026-10-02 — el guard de SPY ve los huecos internos** (`c6cfc82`; `analysis/harness_config.py`, `tests/test_spy_hueco_interno_t285.py` **nuevo**). Suite Windows (Anaconda) **4211 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4208 passed, 4 skipped**. **No deja tareas nuevas.**
   - **`huecos_de_spy`** (pura): las ruedas que opera **la mayoría** del cohorte, dentro del rango de SPY, que SPY no tiene. `spy_coverage_problems` lo suma como tercer problema, con conteo y extremos. **Calendario de la mayoría, no de la serie más larga:** con la más larga, un ticker de otra bolsa (el universo tiene `.TW`) haría rojo a una SPY sana por un feriado de EE.UU. que esa bolsa operó. **Sólo dentro del rango de SPY:** las puntas ya las miden la cola y la SMA, y contarlas dos veces duplicaría el aviso.
   - **La SPY real sigue cubriendo:** `SPY__10y` (2.513 ruedas, 2016-10-03 → 2026-10-01) contra el cohorte del universo legacy (41 tickers, calendario de 2.512 ruedas): **0 faltantes**.
   - **Mutación: tres, las tres rojas** — sin el chequeo (el estado previo: el hueco de 40 ruedas daba `[]`), calendario de la serie más larga, y sin el recorte al rango.
