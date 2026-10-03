@@ -51,7 +51,7 @@ if str(ROOT) not in sys.path:
 from sqlalchemy.exc import IntegrityError
 
 from config.logging_config import get_logger
-from data.news_sources import _CollectResult, collect_all
+from data.news_sources import _CollectResult, cerrar_corrida_de_fallas, collect_all
 from database.models import (
     AnalystEstimateSnapshot,
     NewsEvent,
@@ -510,6 +510,20 @@ def _loguear(report: HarvestReport, prefijo: str = "") -> None:
     (log.warning if grave else log.info)("%s%s", prefijo, report.summary())
 
 
+def _resumir_fallas_de_red() -> None:
+    """Una línea con las fallas de red que fueron sin traceback (tarea 289).
+
+    Con la red caída, cada fuente escribe su primer traceback completo y las demás en una
+    línea; esto deja el total de la corrida en un solo lugar, en vez de que haya que
+    contarlas en el log."""
+    suprimidas = cerrar_corrida_de_fallas()
+    if suprimidas:
+        log.warning(
+            "harvest: fallas de red sin traceback en esta corrida — %s",
+            ", ".join(f"{fuente}: {n}" for fuente, n in sorted(suprimidas.items())),
+        )
+
+
 def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
     """Vuelca los ``SourceOutcome`` del ticker a los contadores del reporte (T207).
 
@@ -616,6 +630,7 @@ def harvest(
     presupuesto y va dicho.
     """
     t0 = time.monotonic()
+    cerrar_corrida_de_fallas()  # tarea 289: cada corrida escribe su primer traceback por fuente
     universe = tickers if tickers is not None else resolve_universe(account_id)
     # Tarea 208 — el orden decide QUIÉN se pierde cuando el presupuesto corta, así que
     # va acá y no adentro de `resolve_universe`: esa función la usan también
@@ -638,6 +653,7 @@ def harvest(
             report.est_new += len(res.estimates)
         report.elapsed_s = time.monotonic() - t0
         _loguear(report, prefijo="[dry-run] ")
+        _resumir_fallas_de_red()
         return report
 
     collected = _collect_fase1(universe, sources, collector, report, deadline)
@@ -671,6 +687,7 @@ def harvest(
 
     report.elapsed_s = time.monotonic() - t0
     _loguear(report)
+    _resumir_fallas_de_red()
     return report
 
 

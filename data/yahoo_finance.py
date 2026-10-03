@@ -2586,6 +2586,17 @@ def validate_ticker(ticker: str) -> bool:
     return ok
 
 
+def _es_cierre_del_interprete(exc: BaseException) -> bool:
+    """¿Es el ``RuntimeError`` de encolar en un pool ya apagado? (tarea 289)
+
+    Al cerrar la app con un ``get_bulk_prices`` en vuelo, Python apaga ``_TIMEOUT_POOL`` y
+    cada hilo que seguía falla al encolar: el 2026-09-30 eso escribió 48 ERROR con
+    traceback por un cierre normal. No es una falla del fetch, así que no va como ERROR.
+    El texto es el de ``concurrent.futures`` (``cannot schedule new futures after
+    shutdown`` y su variante ``after interpreter shutdown``)."""
+    return isinstance(exc, RuntimeError) and "cannot schedule new futures after" in str(exc)
+
+
 def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     """
     Fetch current prices for multiple tickers efficiently.
@@ -2680,15 +2691,25 @@ def get_bulk_prices(tickers: list[str]) -> dict[str, dict | None]:
     # 2. Parallel live fetches — pure network I/O, no DB locks
     live_results: dict[str, dict | None] = {}
     max_workers = min(BULK_FETCH_WORKERS, len(cache_misses))
+    cortados_por_cierre: list[str] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {executor.submit(_fetch_ticker_info, ticker): ticker for ticker in cache_misses}
         for future in as_completed(future_to_ticker):
             ticker = future_to_ticker[future]
             try:
                 live_results[ticker] = future.result()
-            except Exception:
-                log.exception("Parallel fetch failed for %s", ticker)
+            except Exception as exc:
+                if _es_cierre_del_interprete(exc):
+                    cortados_por_cierre.append(ticker)
+                else:
+                    log.exception("Parallel fetch failed for %s", ticker)
                 live_results[ticker] = None
+    if cortados_por_cierre:
+        log.info(
+            "Parallel fetch cortado por el cierre de la app: %d tickers sin precio (%s)",
+            len(cortados_por_cierre),
+            ", ".join(sorted(cortados_por_cierre)),
+        )
 
     # 2b. Guard de sanity (E5): descartar cotizaciones con escala corrupta
     # (~10× tipo KLAC) antes de cachearlas/mergearlas. Solo sobre los fetch en

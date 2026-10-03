@@ -49,12 +49,61 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+
+# ── Fallas de red: un traceback por fuente y tipo, no uno por ticker (tarea 289) ──
+#
+# El 2026-09-21, sin internet, cada `ticker × fuente` del harvest escribió un
+# `log.exception` completo: 362 ERROR y 1.202 tracebacks idénticos en un día, que
+# entierran cualquier otro error del log. Una falla de red (`OSError`: ahí caen las de
+# `requests` y las de `curl_cffi`, DNS incluido) es de la FUENTE, no del ticker: el
+# primer traceback por `(fuente, tipo)` va completo y los siguientes van en una línea
+# y se cuentan. Lo que NO es de red (un bug de parseo) sigue con traceback cada vez:
+# dos tickers distintos pueden romper por razones distintas.
+_fallas_lock = threading.Lock()
+_fallas_vistas: set[tuple[str, str]] = set()
+_fallas_suprimidas: dict[str, int] = {}
+
+
+def registrar_falla(fuente: str, ticker: str, e: BaseException) -> None:
+    """Loguea la falla de ``fuente`` para ``ticker``; llamar desde un ``except``."""
+    if not isinstance(e, OSError):
+        log.exception("%s failed for %s", fuente, ticker)
+        return
+    clave = (fuente, type(e).__name__)
+    with _fallas_lock:
+        primera = clave not in _fallas_vistas
+        _fallas_vistas.add(clave)
+        if not primera:
+            _fallas_suprimidas[fuente] = _fallas_suprimidas.get(fuente, 0) + 1
+    if primera:
+        log.exception(
+            "%s failed for %s (falla de red: las siguientes de %s van sin traceback)",
+            fuente,
+            ticker,
+            clave[1],
+        )
+    else:
+        log.warning("%s failed for %s: %s", fuente, ticker, _brief(e))
+
+
+def cerrar_corrida_de_fallas() -> dict[str, int]:
+    """Devuelve ``{fuente: fallas de red sin traceback}`` y arranca una corrida nueva.
+
+    La llama el harvest al empezar y al terminar: así cada corrida vuelve a escribir su
+    primer traceback por fuente, y el resumen del conteo sale una vez."""
+    with _fallas_lock:
+        out = dict(_fallas_suprimidas)
+        _fallas_vistas.clear()
+        _fallas_suprimidas.clear()
+    return out
 
 
 # ── Dataclasses ──────────────────────────────────────────────────────────────
@@ -278,7 +327,7 @@ def _yf_news(ticker: str) -> tuple[list[NewsItem], SourceOutcome]:
             if item is not None:
                 out.append(item)
     except Exception as e:
-        log.exception("yfinance news fetch failed for %s", ticker)
+        registrar_falla("yfinance news fetch", ticker, e)
         return out, SourceOutcome("yfinance_news", "failed", len(out), _brief(e))
     return out, SourceOutcome("yfinance_news", "ok", len(out))
 
@@ -572,7 +621,7 @@ def _finnhub_news(
         out = parse_finnhub_news(ticker, r.json())
         return out, SourceOutcome("finnhub", "ok", len(out))
     except Exception as e:
-        log.exception("collect_finnhub_news failed for %s", ticker)
+        registrar_falla("collect_finnhub_news", ticker, e)
         return [], SourceOutcome("finnhub", "failed", 0, _brief(e))
 
 
@@ -811,7 +860,7 @@ def _sec_8k(
         out = parse_edgar_submissions(ticker, r.json(), cik=cik, max_filings=max_filings)
         return out, SourceOutcome("sec", "ok", len(out))
     except Exception as e:
-        log.exception("collect_sec_8k failed for %s", ticker)
+        registrar_falla("collect_sec_8k", ticker, e)
         return [], SourceOutcome("sec", "failed", 0, _brief(e))
 
 
