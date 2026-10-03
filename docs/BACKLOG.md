@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 223 — Tarea 269 (TEST-LOCK-MIDE-LATENCIA) CERRADA 2026-10-02 — el test de la 237 deja de medir tiempo de pared** (`HASH`; `tests/test_alertas_no_traban_la_db_t237.py`). Suite Windows (Anaconda) **4200 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4197 passed, 4 skipped** —corrida limpia, sin tocar el repo: revalida también la 268. **No deja tareas nuevas.**
+- **WIP 223 — Tarea 269 (TEST-LOCK-MIDE-LATENCIA) CERRADA 2026-10-02 — el test de la 237 deja de medir tiempo de pared** (`4c97b4c`; `tests/test_alertas_no_traban_la_db_t237.py`). Suite Windows (Anaconda) **4200 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4197 passed, 4 skipped** —corrida limpia, sin tocar el repo: revalida también la 268. **No deja tareas nuevas.**
   - **Qué se sacó:** `assert max(fetch.esperas) < _TIMEOUT_S / 2`. El defecto que el test cuida —el fetch esperando el lock de su propio llamador— termina **siempre** en `database is locked`, porque el llamador no suelta el lock hasta después del fetch: lo caza `fetch.bloqueos == []`. El tiempo de pared no agregaba señal y bajo carga daba rojos falsos (0,69 s sin ningún lock). En su lugar, `assert fetch.esperas`: que el fetch se haya llamado, para que el test no pase sin probar nada.
   - **Se descartó** la variante del alcance (medir contra un `busy_timeout` largo): agrega un umbral de tiempo nuevo para una señal que `bloqueos` ya da de forma binaria.
   - **El otro uso de `tests/lock_real.py`** (`test_fetch_fuera_de_la_sesion_t238.py:229`) ya decidía sólo por `bloqueos` y `esperas` no vacío: sin cambios.
