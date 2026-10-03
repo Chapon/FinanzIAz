@@ -31,7 +31,11 @@ import tempfile
 # cada traceback de un test queda ahí como si fuera un defecto de la app —
 # medido, **551 líneas por corrida**. ``setdefault`` a propósito: se puede
 # exportar la variable con una ruta para depurar una corrida puntual.
-os.environ.setdefault("FINANZIAS_LOG_FILE", "")
+# El valor es el centinela ``logging_config.SIN_ARCHIVO`` y no la vacía (tarea 294): en
+# Windows una variable vacía no se hereda, y cada test que lanzaba un subproceso escribía en
+# el log de producción. Va escrito acá porque importar el proyecto antes de esta línea es
+# justamente lo que no se puede.
+os.environ.setdefault("FINANZIAS_LOG_FILE", ":sin-archivo:")
 
 # Los fetch de tooltip no corren en la suite (tarea 82). No es sólo por el crash
 # de salida: el runnable pide **red** y toca la **DB** desde un hilo del pool

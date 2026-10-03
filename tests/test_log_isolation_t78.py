@@ -37,9 +37,12 @@ def test_ningun_handler_apunta_al_log_de_produccion():
     assert prod not in destinos, f"la suite está escribiendo en el log vivo: {destinos}"
 
 
-def test_la_variable_esta_seteada_vacia_por_el_conftest():
-    """Y el motivo por el que no apunta ahí es explícito, no un accidente de import."""
-    assert os.environ.get("FINANZIAS_LOG_FILE") == ""
+def test_la_variable_esta_seteada_sin_archivo_por_el_conftest():
+    """Y el motivo por el que no apunta ahí es explícito, no un accidente de import.
+
+    Desde la 294 es el centinela y no la vacía, que en Windows no llega a los subprocesos.
+    """
+    assert os.environ.get("FINANZIAS_LOG_FILE") == lc.SIN_ARCHIVO
 
 
 def test_setup_logging_sin_archivo_cuando_la_variable_esta_vacia(monkeypatch):

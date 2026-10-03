@@ -33,6 +33,10 @@ from pathlib import Path
 # ── File location ────────────────────────────────────────────────────────────
 LOG_DIR = Path.home() / ".finanzias"
 LOG_FILE = LOG_DIR / "finanzias.log"
+# Valor de ``FINANZIAS_LOG_FILE`` que pide «sin archivo» (tarea 294). La vacía también lo
+# pide, pero en Windows una variable vacía **no se hereda**: el hijo la ve sin setear y cae al
+# log de producción. El ``:`` hace que no pueda ser una ruta válida en Windows.
+SIN_ARCHIVO = ":sin-archivo:"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEFAULT_LEVEL = logging.INFO
@@ -172,15 +176,16 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
     Dónde escribe, por precedencia (tarea 78):
 
     1. el argumento ``log_file``, si viene;
-    2. la variable de entorno ``FINANZIAS_LOG_FILE`` — una ruta, o **vacía para
-       no escribir ningún archivo** (sólo consola);
+    2. la variable de entorno ``FINANZIAS_LOG_FILE`` — una ruta, o ``SIN_ARCHIVO``
+       (o vacía) para **no escribir ningún archivo** (sólo consola);
     3. ``~/.finanzias/finanzias.log``.
 
     El (2) existe porque la **suite escribía en el log de producción**: 551
     líneas por corrida, con tracebacks de `tests/` que se leen como defectos de
     la app. Eso es una fábrica de falsos positivos para cualquier triage que use
     el log como evidencia — y este proyecto lo usa (de ahí salieron las tareas
-    18, 19 y 25). ``tests/conftest.py`` la setea vacía.
+    18, 19 y 25). ``tests/conftest.py`` la setea en ``SIN_ARCHIVO``: vacía, los
+    subprocesos de la suite la perdían en Windows y escribían acá (tarea 294).
     """
     global _INITIALIZED
     if _INITIALIZED:
@@ -189,8 +194,9 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
     if log_file is None:
         env = os.environ.get("FINANZIAS_LOG_FILE")
         if env is not None:
-            # Vacía = a propósito sin archivo. Es distinto de "no seteada".
-            log_file = Path(env) if env.strip() else None
+            # Centinela o vacía = a propósito sin archivo. Es distinto de "no seteada".
+            sin_archivo = not env.strip() or env.strip() == SIN_ARCHIVO
+            log_file = None if sin_archivo else Path(env)
         else:
             log_file = LOG_FILE
     if log_file is not None:
