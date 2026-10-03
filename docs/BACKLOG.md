@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 233 — Tarea 296 (CLAIMS-DE-LA-TANDA-Y-SKILL-DE-AUDITORIA) CERRADA 2026-10-03 — tres textos corregidos contra el código y tres lecciones de método en la skill** (`docs/SETTINGS_REFERENCE.md`, `config/settings_manager.py`, `.claude/commands/ship.md`, `.claude/skills/catalyst-pipeline/SKILL.md`, `.claude/skills/auditoria/SKILL.md`). Suite Windows (Anaconda) **4242 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4239 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **[A-1]** `slack_data_outage_enabled`: el doc y el `doc=` del spec dicen ahora que gobierna también el aviso de descuadre de la 266, y que apagarla para callar a Yahoo apaga los otros dos (verificado en `paper_trading/cuadre.py:168`).
+  - **[A-2]** `catalyst-pipeline`: el traceback por fuente y tipo de falla de la 289, con su línea de resumen literal, y las dos escalas de tono de la 259 (sufijo `-7n`, `SUFIJO_ESCALA_7`, lo viejo agrupado y sin reclasificar).
+  - **[A-3]** `/ship` 3b: sólo `surprise_profiles.json` lo reescribe el scheduler. `historical_reaction.json` sale únicamente de `scripts/build_historical_reaction.py`, a mano (`git grep` en todo el repo, no sólo en `paper_trading/`); si aparece modificado, alguien corrió el script.
+  - **§5, en la skill `auditoria`:** una clasificación *«NO_MODELABLE: …»* se contrasta contra el valor vivo, y el horario va con el calendario de la bolsa, no con el reloj (sumado el Labor Day de la 293); el censo de logs atribuye a un proceso con nombre lo que aparece con la app cerrada; y *crudo contra crudo*, con el spin-off de HON como caso de un desvío enorme que hay que mirar en barras horarias. El encabezado de esa lista decía *«Tres formas»* y pasó a ser una lista abierta.
+  - **El guard de la 72 frenó la primera versión:** había escrito `` `NO_MODELABLE` `` entre backticks, que el guard lee como una constante, y no existe. Es el prefijo de un texto en `tests/test_espejos_direccion_faltante_t185.py`; ahora va citado.
+
 - **WIP 232 — Tarea 293 (ENTRADA-INTRADIA-VS-CLOSE-SIN-CLAVE) CERRADA 2026-10-03 — la entrada en sesión queda declarada y medida: chica, sin sesgo, y no reabre veredictos** (`b2bde21`; `analysis/harness_config.py`, `scripts/measure_entrada_intradia_t293.py` **nuevo**, `docs/entrada_intradia_t293_2026-10-03.md` **nuevo**, `tests/test_desvios_claves_t152.py`, `tests/test_harness_config.py`, `tests/test_signal_store_t86.py`). Suite Windows (Anaconda) **4242 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4239 passed, 4 skipped**. **Deja la 297.**
   - **Kill-criteria pre-registrado** en la tarea, commiteado en `edb8c9a` antes de escribir el instrumento: >10% de BUY en sesión que no sobreviven al close, o |desvío medio de precio| >0,5%, abre una re-evaluación de veredictos.
   - **Instrumento validado antes de creerle:** el mismo `analyze()` del motor (504 barras, `HARNESS_MODEL_TOGGLES`, frame `2y`) reproduce **22 de 22** BUY llenados fuera de sesión, donde el motor vio barras completas. El precio se compara crudo contra crudo (fill sin slippage contra el close con `auto_adjust=False`), por el sesgo que el `verificador` le marcó a [C-1].
@@ -2127,6 +2134,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-03e** tras cerrar la **293**, que **deja la 297** (spin-offs sin tratar, latente). Entra detrás de la 296: es BAJA, ninguna posición pasó nunca por un spin-off, y su parte (2) es una decisión de Chapa. El orden queda **292 → 296 → 297 → 196 → 245 → 290**.
 
+> **Repriorizado 2026-10-03f** tras cerrar la **296**, que **no deja tareas nuevas**. El orden queda **292 → 297 → 196 → 245 → 290** —la 292 espera una decisión de Chapa (¿el `False` de `paper_enforce_market_hours` es deliberado?), igual que la parte (2) de la 297; la parte (1) de la 297, el aviso, se puede hacer sin esperar—.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3526,7 +3535,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Test con una posición abierta y un factor no plausible al ex-date: el aviso sale; si se implementa (2), la equity no cae por la escisión y el stop no dispara por ella. Los cuatro comandos en verde.
 - **Dependencias:** la decisión de Chapa para (2).
 
-### 296. CLAIMS-DE-LA-TANDA-Y-SKILL-DE-AUDITORIA — Tres textos que no dicen lo que hace el código desde ayer y hoy, y tres lecciones de método para la skill de auditoría  ·  origen: `docs/auditoria_tanda_2026-10-03.md` [A-1], [A-2], [A-3] y §5 · severidad **BAJA**
+### 296. ~~CLAIMS-DE-LA-TANDA-Y-SKILL-DE-AUDITORIA — Tres textos que no dicen lo que hace el código desde ayer y hoy, y tres lecciones de método para la skill de auditoría~~ · **CERRADA 2026-10-03 — los tres textos dicen lo que hace el código y las tres lecciones están en la skill** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-03.md` [A-1], [A-2], [A-3] y §5 · severidad **BAJA**
 
 - **[A-1]** `slack_data_outage_enabled` también silencia el aviso de descuadre de la 266 (`paper_trading/cuadre.py:168`), y ni `docs/SETTINGS_REFERENCE.md:145` ni el `doc=` de `config/settings_manager.py:716` lo dicen: quien la apague para callar a Yahoo pierde, sin saberlo, el aviso de que la cuenta no cuadra.
 - **[A-2]** `.claude/skills/catalyst-pipeline/SKILL.md` no menciona el resumen `harvest: fallas de red sin traceback …` de la 289, ni el sufijo `-7n` de `classified_by` de la 259, ni que lo viejo tiene la escala agrupada.

@@ -723,7 +723,8 @@ SCHEMA: dict[str, SettingSpec] = {
             "slack_notifications_enabled. No-op without a token/channel "
             "(fail-open); reuses the same SLACK_BOT_TOKEN / channel. Desde la tarea 263 "
             "gobierna también el aviso de un scan que lanza una excepción (uno por racha, "
-            "y otro al volver)."
+            "y otro al volver), y desde la 266 el de una cuenta que no cuadra "
+            "(paper_trading/cuadre.py). Apagarla para callar a Yahoo apaga también esos dos."
         ),
     ),
     "slack_price_alerts_enabled": SettingSpec(

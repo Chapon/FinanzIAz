@@ -37,12 +37,14 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
         la tarea 195, frena también un commit que **escriba una repriorización** dejando fuera
         del `El orden queda …` una tarea abierta — así se perdió la 180 el 2026-09-12.
    b. Mostrame `git status --short` y `git diff --stat` para confirmar qué entra.
-      **Si aparecen `data/catalyst/surprise_profiles.json` o `data/catalyst/historical_reaction.json`
-      modificados y la tarea no los tocó** (tarea 286): los reescribe el rebuild del scheduler, y
-      son versionados por decisión (la 173). Van en un commit **aparte**, antes del de la tarea:
-      `chore(catalyst): refresh <archivo> (rebuild del scheduler <fecha>)` —en `surprise_profiles` la fecha es `_meta.built_at`—, como
+      **Si aparece `data/catalyst/surprise_profiles.json` modificado y la tarea no lo tocó**
+      (tarea 286): lo reescribe el rebuild semanal del scheduler, y es versionado por decisión (la
+      173). Va en un commit **aparte**, antes del de la tarea:
+      `chore(catalyst): refresh surprise_profiles.json (rebuild del scheduler <fecha>)` —la fecha es `_meta.built_at`—, como
       `6d19390`. Nunca dentro del commit de la tarea —así se coló en el de la 262— y nunca
-      descartados con `git checkout`: es el artefacto que lee la app.
+      descartados con `git checkout`: es el artefacto que lee la app. (`historical_reaction.json`
+      **no** lo reescribe ningún job: sólo `scripts/build_historical_reaction.py`, a mano, y lo lee
+      un backtest. Si aparece modificado, alguien corrió ese script — tarea 296.)
    c. Hacé `git add` de la unidad lógica completa (código + tests + docs).
    d. Commiteá siguiendo la skill `git-workflow`: subject `tipo(scope): ...` o `T<n>: ...` en español, cuerpo con qué/por qué + línea `Suite: NNN passed`, y trailer `Co-Authored-By`.
 4. **Si el cambio movió una CONSTANTE, un DEFAULT o el nombre de un símbolo, barré el corpus

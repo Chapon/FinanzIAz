@@ -231,6 +231,13 @@ código **tiene** la pata de ADV$, pero con `paper_universe_min_adv_dollars = 0.
   evalúa las barreras *«cada ~15 min, más cerca de touch»*, y la perilla lo confirmaba; los
   snapshots de la cuenta 2 mostraban 22 días hábiles sin ningún scan entre julio y octubre. La
   perilla dice cada cuánto **intenta**; `paper_equity_snapshots` dice cada cuánto **corrió**.
+- **Una clasificación *«NO_MODELABLE: …»* también es una afirmación sobre el motor**, y su perilla
+  se contrasta contra el valor vivo como cualquier otra (tanda 2026-10-03, [C-1] → tarea 292). El
+  guard de la 185 (`tests/test_espejos_direccion_faltante_t185.py`) clasificaba `paper_enforce_market_hours` como *«no modelable: horario de mercado
+  real»*, y la tanda del 2026-10-02 lo leyó así sin mirar que en vivo está en `False`: con ese
+  valor, el harness modela **justamente** el motor (scan al cierre, fill al close). Y el horario se
+  cuenta con el **calendario de la bolsa**, no con el reloj: un feriado (Labor Day) cae en «horario
+  de sesión» por reloj.
 
 ### D. Guards que degradan en silencio
 
@@ -476,7 +483,11 @@ hallazgo (el arreglo no arregló). **(5)** Lo que no aparece y debería: un `exc
 cualquier otro proceso terminan en `  [proceso: <script>]` (los jobs que lanza la app, los runners,
 las pruebas a mano). El censo separa las firmas por origen **antes** de clasificar: una firma que
 sólo aparece con `[proceso: python -c]` es de una prueba, no de la app. La primera corrida tuvo que
-deducirlo del traceback.
+deducirlo del traceback. **Y una firma que aparece con la app cerrada se ATRIBUYE a un proceso con
+nombre, no a «corridas a mano»** (tanda 2026-10-03, [L-1] → tarea 294): las 22 líneas
+`[proceso: dashboard_data]` de una noche se habían dado por pruebas manuales, y eran los
+subprocesos de la suite escribiendo en el log de producción. Si la marca no alcanza para saber
+quién lo lanzó, cruzar los horarios contra las corridas conocidas (el done, el scheduler).
 
 **Barrido limpio:** ninguna firma queda sin clasificar, y ninguna *conocida* sigue apareciendo
 después del cierre de su tarea.
@@ -600,7 +611,7 @@ validar produce exactamente lo que viene a cazar — un número limpio que signi
 ([[validar-el-instrumento-antes-del-numero]]). **Los hallazgos retirados se publican con el
 motivo**, en su propia sección.
 
-**Tres formas del mismo error, de la tanda del 2026-10-02 (tarea 275):**
+**Formas del mismo error, de las tandas del 2026-10-02 (tarea 275) y del 2026-10-03 (tarea 291):**
 
 - **Reproducí con la configuración REAL, no con la por defecto.** El hallazgo de la venta total
   de la cartera real se reprodujo con una sesión `autoflush=True` y daba *«se borran la compra y
@@ -610,6 +621,14 @@ motivo**, en su propia sección.
 - **Un barrido que puede cortar en silencio no es un barrido.** `git log -p | grep` paró en
   *«Binary file matches»* a mitad de la historia y devolvía una lista corta que parecía
   completa. Con `-a` (y `--text` en `git log`) se repitió.
+- **Un precio CRUDO no se compara contra un frame `auto_adjust`** (tanda 2026-10-03, [C-1], lo
+  refutó el `verificador`). Los fills de la cuenta son precios crudos; los frames del cache vienen
+  ajustados por los dividendos **posteriores**, así que el `Open` o el `Close` de un día viejo
+  queda más bajo que el que se operó. Comparar los dos sesga las compras hacia «desventaja» y
+  agranda el |desvío|. Crudo contra crudo (`auto_adjust=False`), o una razón sobre el **mismo**
+  frame (gap `Open_siguiente / Close_previo`), que cancela el ajuste. Con un spin-off, Yahoo
+  publica además un «split» no plausible (HON 0,9535): un desvío enorme de un día puntual se mira
+  contra las barras horarias antes de excluirlo o de creerle.
 - **El cuarto comando del done no se corre con el repo en movimiento.** Escribir informes
   mientras corre `run_suite_sin_estado_vivo.py` dispara el guard de la 236 (`rc=3`, *«la suite
   dejó cambios en el repo»*): no es un fallo de la suite, pero esa corrida no vale como done.

@@ -26,6 +26,8 @@ python scripts/harvest_catalysts.py --budget-seconds 780   # techo de 13 min (0 
 
 **Y una fuente puede estar caída de RAÍZ sin fallar nunca (tarea 217): eso sale como `FUENTE NO DISPONIBLE: <fuente> (<motivo>)`.** Si falta la dependencia o la key, la fuente no corre para **ningún** ticker, así que no tiene tasa de falla y `FUENTES CAIDAS` no la menciona nunca. Hasta la 217 lo único que se movía era el **denominador** de `fuentes X/Y limpias` — de `4/4` a `3/3` —, que no se puede leer sin saber de memoria cuántas fuentes se pidieron. Ahora se dice, **una vez por fuente** (no una por ticker), y el resumen sube a `WARNING`. Importa porque sin `FINNHUB_API_KEY` se va el **56,6%** del volumen de `news_events`. **No entra al gate del 20%**, que está calibrado sobre fuentes que sí corrieron.
 
+**Con la red caída hay UN traceback por fuente y tipo de falla, no uno por ticker (tarea 289).** La primera falla de red (`OSError`, donde caen las de `requests` y `curl_cffi`, DNS incluido) de cada `(fuente, tipo)` escribe su traceback con *«las siguientes de <tipo> van sin traceback»*; las demás van en una línea `WARNING` con el error resumido, y al final la corrida escribe `harvest: fallas de red sin traceback en esta corrida — <fuente>: N`. Para contar cuántos tickers fallaron, sumá esa línea y no los tracebacks. Una falla que **no** es de red (un bug de parseo) sigue con traceback cada vez. La salud por fuente de la 207 no cambia: cada falla cuenta.
+
 **Sin `--account-id` el harvest resuelve la cuenta viva contra `is_active` (tarea 70).** Este bloque decía `--account-id 1` y esa cuenta está pausada desde el 2026-07-01: el harvest —y el que corre el scheduler cada hora, que llama sin flag— recolectaba para los **52** tickers de la cuenta 1 en vez de los **128** de la viva. Pasarle un id explícito sigue funcionando, y ahora avisa fuerte si apunta a una cuenta pausada.
 
 Finnhub requiere `FINNHUB_API_KEY` en el entorno (source tag `finnhub:<Outlet>`).
@@ -39,6 +41,8 @@ python scripts/classify_catalysts.py --limit 200
 python scripts/classify_catalysts.py --source sec_8k
 python scripts/classify_catalysts.py --reclassify
 ```
+
+**El tono tiene dos escalas según la fecha (tarea 259).** Desde el 2026-10-03, qwen califica en **7 niveles** (`sentiment_level` de −3 a +3, con rúbrica) y el score se guarda como `nivel / 3`; esas filas llevan el sufijo **`-7n`** en `classified_by` (`ollama-7n`, `llm-7n`, ver `SUFIJO_ESCALA_7`). Lo anterior quedó con la escala **agrupada** de 4 valores y **no se reclasificó** (decisión de Chapa); una respuesta del LLM sin nivel válido también toma el camino viejo, sin sufijo. Al contar distribuciones de tono, separá por sufijo: mezclarlas compara dos escalas. Al diagnosticar el classify, un `classified_by` con `-7n` es LLM, no una caída a heurística. Si los extremos ±3 son raros es la pregunta de la tarea 290.
 
 ## Perfiles de sorpresas (T-CAT-5a)
 
