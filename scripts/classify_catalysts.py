@@ -37,7 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config.logging_config import get_logger
-from data.catalyst_classifier import Classification, classify
+from data.catalyst_classifier import SUFIJO_ESCALA_7, Classification, classify
 from database.models import NewsEvent, session_scope, utcnow_naive
 
 log = get_logger(__name__)
@@ -149,7 +149,12 @@ def classify_events(
         report.by_event[c.event_type] += 1
         report.by_sentiment[c.sentiment] += 1
         report.by_classifier[c.classifier] += 1
-        if llm_tag and c.classifier != llm_tag and src not in llm_exempt_sources:
+        # Tarea 259: el tag del LLM puede venir con el sufijo de la escala de 7 (`ollama-7n`).
+        if (
+            llm_tag
+            and c.classifier.removesuffix(SUFIJO_ESCALA_7) != llm_tag
+            and src not in llm_exempt_sources
+        ):
             report.llm_fallbacks += 1
         report.classified += 1
         if show:

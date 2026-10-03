@@ -193,19 +193,53 @@ def _coerce(c: Classification) -> Classification:
 
 # ── Optional LLM backend (lazy, off by default) ──────────────────────────────
 
+# Tarea 259 — escala de 7 niveles. Antes el prompt pedía un número en [-1, +1] sin decir qué
+# significaba cada tramo, y qwen devolvía en la práctica cuatro valores: de 53.788 noticias,
+# `round(3 × score)` dio −2, 0, +2 o +3 en el 99,6%; ±1 y −3 casi no existían. Ahora se le pide
+# el NIVEL entero con una rúbrica por nivel, y el score se guarda como ``nivel / 3`` (la columna
+# sigue en [−1, +1]). Las filas clasificadas así llevan el sufijo ``-7n`` en ``classified_by``;
+# las viejas quedan como están (decisión de Chapa, 2026-10-03) y la pestaña lo dice.
+# La rúbrica también fija los dos errores de la muestra de la 280: un *preview* no es un
+# resultado, y el impacto se juzga para el ticker dado aunque la nota sea de otra empresa.
+SUFIJO_ESCALA_7 = "-7n"
+
+
+def es_escala_7(classified_by: str | None) -> bool:
+    """¿La fila se clasificó con la escala de 7 niveles (tarea 259)?"""
+    return bool(classified_by) and classified_by.endswith(SUFIJO_ESCALA_7)
+
+
 _LLM_SYSTEM = (
     "You are a financial news classifier. You are given a stock TICKER and a "
     "headline (plus an optional summary). Return ONLY a compact JSON object with "
     'these keys: "event_type" (one of the allowed types), "sentiment" '
-    '("positive"|"neutral"|"negative"), "confidence" (0..1), "sentiment_score" '
-    "(-1..1, how positive or negative the news is FOR THE GIVEN TICKER: -1 very "
-    'negative, 0 neutral, +1 very positive), "relevance" (0..1, how much the '
+    '("positive"|"neutral"|"negative"), "confidence" (0..1), "sentiment_level" '
+    "(an INTEGER from -3 to +3: how positive or negative the news is FOR THE GIVEN "
+    'TICKER, using the rubric below), "relevance" (0..1, how much the '
     "headline is actually about and material to the GIVEN ticker: 0 = only "
     "mentions it in passing or is about another company, 1 = squarely about it). "
     "Allowed event_type values: %s. Pick the single most material event for the "
     "GIVEN ticker. If the headline is not actually about that ticker, return "
-    '"other" with low confidence, sentiment_score 0 and relevance near 0. '
-    "Sentiment is from the perspective of the given ticker."
+    '"other" with low confidence, sentiment_level 0 and relevance near 0. '
+    "Sentiment is from the perspective of the given ticker. "
+    "Rubric for sentiment_level — use the WHOLE scale, every level is valid: "
+    "+3 = major, clearly value-changing good news for the ticker (results that beat and raise "
+    "guidance, being acquired at a premium, approval of a key product, a large contract won); "
+    "+2 = clearly positive but of moderate weight (a beat without a raise, an upgrade, a notable "
+    "contract or partnership); "
+    "+1 = mildly positive or low-materiality good news (a minor deal, favorable commentary, "
+    "optimistic expectations); "
+    "0 = neutral, mixed, purely informational, or not about the ticker; "
+    "-1 = mildly negative or low-materiality bad news (a minor setback, cautious commentary, "
+    "lowered expectations); "
+    "-2 = clearly negative but of moderate weight (a miss, a downgrade, a lost contract, a "
+    "notable lawsuit or probe); "
+    "-3 = major, clearly value-changing bad news (results that miss and cut guidance, a failed "
+    "key trial, fraud, bankruptcy risk, a large recall). "
+    "Two rules: a PREVIEW of upcoming results is not the results themselves (it is about "
+    "expectations, usually level -1..+1, and not earnings_results); and judge the impact for "
+    "the GIVEN ticker even when the article is about another company (a rival winning a "
+    "contract the ticker competed for is negative for the ticker)."
 )
 
 # OPS1(a): schema JSON para los structured outputs de Ollama (``format`` acepta
@@ -217,10 +251,10 @@ _OLLAMA_FORMAT: dict = {
         "event_type": {"type": "string"},
         "sentiment": {"type": "string", "enum": ["positive", "neutral", "negative"]},
         "confidence": {"type": "number"},
-        "sentiment_score": {"type": "number"},
+        "sentiment_level": {"type": "integer", "enum": [-3, -2, -1, 0, 1, 2, 3]},
         "relevance": {"type": "number"},
     },
-    "required": ["event_type", "sentiment", "confidence", "sentiment_score", "relevance"],
+    "required": ["event_type", "sentiment", "confidence", "sentiment_level", "relevance"],
 }
 
 
@@ -301,15 +335,35 @@ def _parse_llm_json(text: str, tag: str = "llm") -> Classification:
         return Classification("other", "neutral", _CONF_NONE, tag)
     data = json.loads(m.group(0))
     sentiment = str(data.get("sentiment", "neutral"))
-    # OPS1(a): si el modelo no devolvió el score numérico, derivarlo del categórico.
+    nivel = _nivel(data.get("sentiment_level"))
+    if nivel is not None:
+        # Tarea 259: el nivel es lo que se pidió; el score es su traducción a [−1, +1].
+        score, tag = nivel / 3, tag + SUFIJO_ESCALA_7
+    else:
+        # Sin nivel (un modelo que no siguió el formato): el camino viejo, y SIN el sufijo,
+        # porque no es la escala de 7. OPS1(a): sin score numérico, se deriva del categórico.
+        score = _as_float(data.get("sentiment_score"), _SENTIMENT_SCORE.get(sentiment, 0.0))
     return Classification(
         str(data.get("event_type", "other")),
         sentiment,
         _as_float(data.get("confidence"), 0.5),
         tag,
-        _as_float(data.get("sentiment_score"), _SENTIMENT_SCORE.get(sentiment, 0.0)),
+        score,
         _as_float(data.get("relevance"), 0.5),
     )
+
+
+def _nivel(value: object) -> int | None:
+    """El ``sentiment_level`` como entero en −3…+3, o ``None`` si no vino o no es un número."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    if x != x:  # NaN
+        return None
+    return int(max(-3, min(3, round(x))))
 
 
 def make_ollama_backend(

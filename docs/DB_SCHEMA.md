@@ -61,7 +61,7 @@ Un split N:1 sin ajustar dejaba la posición en la escala vieja y el primer scan
 
 ### `news_events` — noticias crudas
 Append-only: una fila por (noticia, fuente) **observada**. `id`, `ticker`, `title`, `content`, `source` ("yfinance"/"sec_8k"/"finnhub:*"; la rama `rss` se borró en la tarea 212 y **cero** filas la usaban), `url`, `published_at` (declara la fuente), **`fetched_at`** (cuándo LO VIMOS), `content_hash` (sha1 UNIQUE → idempotencia).
-Campos de clasificación (NULL hasta T-CAT-2, UPDATE in-place): `event_type`, `sentiment`, `classifier_confidence`, `classified_at`, `classified_by` ("heuristic"/"ollama"/"llm"/"fallback").
+Campos de clasificación (NULL hasta T-CAT-2, UPDATE in-place): `event_type`, `sentiment`, `classifier_confidence`, `classified_at`, `classified_by` ("heuristic"/"ollama"/"llm"/"fallback"; desde la tarea 259, 2026-10-03, "ollama-7n"/"llm-7n" = el LLM calificó el tono en 7 niveles y `sentiment_score` es `nivel/3` — las filas anteriores tienen la polaridad agrupada en 4 valores y quedan así).
 
 ### `analyst_estimate_snapshots` — consenso diario
 Append-only: ≤1 fila por (ticker, metric, period_label, día). Es lo que permite leer el consenso **tal como estaba el día antes del earnings** (base del surprise score / T-CAT-5b). `id`, `ticker`, `metric` ("eps"/"revenue"/"rec_mean"/"price_target"), `period_label` ("0q"/"+1q"/"0y"/"+1y" o "2026-09"), `consensus_value`, `num_analysts`, `snapshot_date` (medianoche), `fetched_at`.

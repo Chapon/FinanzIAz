@@ -488,7 +488,8 @@ class NewsEvent(Base):
     sentiment: Mapped[str | None] = mapped_column(String(12), nullable=True)  # positive / neutral / negative
     classifier_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Backend que produjo el label ("heuristic" / "ollama" / "llm" / "fallback").
+    # Backend que produjo el label ("heuristic" / "ollama" / "llm" / "fallback"; con sufijo
+    # "-7n" desde la tarea 259: el LLM calificó el tono en 7 niveles, score = nivel/3).
     # T7.4: habilita QA por backend y detectar corridas con Ollama caído a posteriori.
     classified_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # OPS1(a): polaridad numérica point-in-time (misma llamada del classify, costo

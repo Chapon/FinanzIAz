@@ -80,6 +80,9 @@ class DigestItem:
     classifier_confidence: float | None
     sentiment_score: float | None  # polaridad del clasificador, [−1, +1] (OPS1)
     tone: int  # −3…+3, :func:`tone_level` — tono de la noticia, NO pronóstico (tarea 258)
+    # Tarea 259: ¿el tono viene de la escala de 7 niveles? Las filas clasificadas antes
+    # tenían la polaridad agrupada en −2, 0, +2 y +3, y la pestaña lo aclara.
+    escala_7: bool = False
 
     @property
     def event_label(self) -> str:
@@ -142,6 +145,7 @@ def fetch_news_window(
                 sentiment=r.sentiment,
                 classifier_confidence=r.classifier_confidence,
                 sentiment_score=r.sentiment_score,
+                classified_by=r.classified_by,
             )
             for r in rows
         ]
@@ -161,6 +165,7 @@ class _Row:
     sentiment: str | None
     classifier_confidence: float | None
     sentiment_score: float | None = None
+    classified_by: str | None = None
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
@@ -198,6 +203,7 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
                     sentiment=c.sentiment,
                     classifier_confidence=c.confidence,
                     sentiment_score=c.sentiment_score,
+                    classified_by=c.classifier,
                 )
             )
         except Exception:
@@ -241,6 +247,8 @@ def rank_news(rows: Iterable, *, top_n: int | None = DEFAULT_TOP_N) -> list[Dige
     Los titulares duplicados (mismo ticker + título desde varios feeds) dejan una sola
     copia: la de tono más fuerte y, a igual tono, la de mayor confianza. Nunca levanta.
     """
+    from data.catalyst_classifier import es_escala_7
+
     items = [
         DigestItem(
             news_id=r.id,
@@ -254,6 +262,7 @@ def rank_news(rows: Iterable, *, top_n: int | None = DEFAULT_TOP_N) -> list[Dige
             classifier_confidence=r.classifier_confidence,
             sentiment_score=getattr(r, "sentiment_score", None),
             tone=tone_level(getattr(r, "sentiment_score", None), r.sentiment),
+            escala_7=es_escala_7(getattr(r, "classified_by", None)),
         )
         for r in rows
     ]

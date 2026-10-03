@@ -77,6 +77,14 @@ TONE_COLORS = {
     -3: "#f43f5e",
 }
 
+# Tarea 259 — las noticias viejas se quedan con su tono (decisión de Chapa, 2026-10-03), pero la
+# celda lo dice: un +2 y un +3 de esa época casi no se distinguían.
+TONO_ESCALA_VIEJA = (
+    "Clasificación anterior a la escala de 7 niveles (tarea 259): qwen agrupaba la\n"
+    "polaridad en −2, 0, +2 y +3, así que ±1 y −3 casi no aparecen y un +2 y un +3\n"
+    "son casi lo mismo. O es una clasificación heurística, que sólo da −1, 0 o +1."
+)
+
 COLUMNS: list[tuple[str, str]] = [
     ("Fecha", "Fecha que declara la fuente (— si la fuente no la trae)."),
     ("Ticker", "Símbolo al que la noticia fue asociada por el harvester."),
@@ -85,7 +93,9 @@ COLUMNS: list[tuple[str, str]] = [
         "Tono de la noticia para el ticker, de −3 (muy negativa) a +3 (muy positiva),\n"
         "según la polaridad del clasificador (qwen local o heurística).\n"
         "NO es un pronóstico del precio: la tarea 255 midió que el signo no predice\n"
-        "el retorno a 5 días. Si un nivel lo predice, lo dirá su propia medición (tarea 258).",
+        "el retorno a 5 días. Si un nivel lo predice, lo dirá su propia medición (tarea 258).\n"
+        "Las noticias clasificadas antes del 2026-10-03 usan una escala agrupada: qwen\n"
+        "devolvía casi sólo −2, 0, +2 y +3. Desde entonces califica en los 7 niveles (tarea 259).",
     ),
     ("Categoría", "Una de las 17 categorías de la taxonomía catalyst (T-CAT-2)."),
     ("Sentimiento", "Clasificado por qwen local o heurística, desde la óptica del ticker."),
@@ -349,6 +359,8 @@ class NewsTab(QWidget):
                     item.setForeground(QColor(color))
                 if c_idx in (2, 5):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if c_idx == 2 and not it.escala_7:
+                    item.setToolTip(TONO_ESCALA_VIEJA)
                 if c_idx == 7:
                     item.setToolTip(it.title + (f"\n{it.url}" if it.url else ""))
                     # guardamos la URL en la celda del titular para el doble click
