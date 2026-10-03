@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 227 — Tarea 286 (ESTADO-FRAMES-1Y-Y-JSON-SIN-COMMIT) CERRADA 2026-10-02 — un frame atrasado ya no se lee en silencio, y el refresh del JSON tiene un paso conocido** (`HASH`; `data/parquet_cache.py`, `.claude/commands/ship.md`, `tests/test_frame_atrasado_avisa_t286.py` **nuevo**). Suite Windows (Anaconda) **4215 passed, 1 skipped, 1 deselected** (+4), ruff limpio, sin estado vivo **4212 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **[E-1] Aviso en el lector, no en cada script:** `parquet_cache.read(..., ttl_hours=None)` sobre un frame `1d` que terminó hace **más de 5 ruedas** (`FRAME_MAX_ATRASO_RUEDAS`, la tolerancia de `ARTIFACT_MAX_LAG_DAYS`) escribe un WARNING con ticker, período, fecha y ruedas de atraso, que sale también por stderr. **Uno por proceso:** los siguientes van a DEBUG, porque un harness lee cientos de frames (la lección de la 289). Con TTL no avisa: el consumidor vivo se refresca solo. Así el próximo lector directo queda cubierto sin tener que acordarse, que era el hueco de la 255 y la 258.
+  - **[E-2] Decisión: se sigue versionando (la 173) y el refresh se commitea en un paso conocido.** `/ship` 3b: si aparecen `surprise_profiles.json` o `historical_reaction.json` modificados y la tarea no los tocó, van en un `chore(catalyst): refresh …` **aparte**, antes del commit de la tarea (el patrón de `6d19390`). Nunca adentro del de la tarea —así se coló en el de la 262— ni descartados con `git checkout`, porque es el artefacto que lee la app. **El refresh del 2026-09-27 que motivó el hallazgo ya está commiteado**, por accidente, en `c341da2` (la 262, declarado ahí).
+  - **Mutación: cuatro, las cuatro rojas** — sin el aviso, sin la deduplicación, el umbral corrido una rueda (`<` por `<=`), y avisando también con TTL.
+
 - **WIP 226 — Tarea 285 (GUARD-SPY-HUECO-INTERNO) CERRADA 2026-10-02 — el guard de SPY ve los huecos internos** (`c6cfc82`; `analysis/harness_config.py`, `tests/test_spy_hueco_interno_t285.py` **nuevo**). Suite Windows (Anaconda) **4211 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4208 passed, 4 skipped**. **No deja tareas nuevas.**
   - **`huecos_de_spy`** (pura): las ruedas que opera **la mayoría** del cohorte, dentro del rango de SPY, que SPY no tiene. `spy_coverage_problems` lo suma como tercer problema, con conteo y extremos. **Calendario de la mayoría, no de la serie más larga:** con la más larga, un ticker de otra bolsa (el universo tiene `.TW`) haría rojo a una SPY sana por un feriado de EE.UU. que esa bolsa operó. **Sólo dentro del rango de SPY:** las puntas ya las miden la cola y la SMA, y contarlas dos veces duplicaría el aviso.
   - **La SPY real sigue cubriendo:** `SPY__10y` (2.513 ruedas, 2016-10-03 → 2026-10-01) contra el cohorte del universo legacy (41 tickers, calendario de 2.512 ruedas): **0 faltantes**.
@@ -2080,6 +2085,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02aa** tras cerrar la **285**, que **no deja tareas nuevas**. El orden queda **286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02ab** tras cerrar la **286**, que **no deja tareas nuevas**. El orden queda **196 → 245 → 259** —las tres esperan a Chapa: 196 y 245 el probe de Lambda, la 259 la elección entre (a) y (b)—.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3490,7 +3497,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Kill-criteria.** El área en la skill y en `/audit`, con método y barrido limpio; la primera corrida con cada firma clasificada y la tabla `hallazgo → tarea`. Los cuatro comandos en verde.
 
-### 286. ESTADO-FRAMES-1Y-Y-JSON-SIN-COMMIT — Los frames `1y` quedan congelados si nadie los pide (115 en el 2026-09-09), y `surprise_profiles.json` se regenera versionado sin que nadie dispare el commit  ·  origen: `docs/auditoria_estado_2026-10-02.md` [E-1] y [E-2] · severidad **BAJA**
+### 286. ~~ESTADO-FRAMES-1Y-Y-JSON-SIN-COMMIT — Los frames `1y` quedan congelados si nadie los pide (115 en el 2026-09-09), y `surprise_profiles.json` se regenera versionado sin que nadie dispare el commit~~ · **CERRADA 2026-10-02 — el lector directo de un frame atrasado recibe el aviso; el refresh del JSON se commitea aparte en `/ship`** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_estado_2026-10-02.md` [E-1] y [E-2] · severidad **BAJA**
 
 - **[E-1]** Los consumidores vivos piden por `get_historical_data` con TTL y se refrescan solos; el riesgo es el script que lee `parquet_cache.read` directo, como la 255 y la 258 (que declaran la frescura; nada obliga al próximo). La 255 lo vio (*«123 de 131 terminan el 2026-09-09»*) y **no abrió tarea**. Alcance: un chequeo de frescura reusable para lectores directos (la forma de `announce_spy_coverage`), o un aviso en `parquet_cache.read` si el frame terminó hace más de N ruedas.
 - **[E-2]** `data/catalyst/surprise_profiles.json` es versionado por decisión (la 173) y lo reescribe el rebuild semanal: el del 2026-09-27 lleva cinco días sin commitear (último commit `6d19390`, 09-21) y cada sesión arranca con el árbol sucio. Decidir: commitear el refresh en un paso conocido (cierre de tarea o `/ship`) o dejar de versionarlo revisando la 173.

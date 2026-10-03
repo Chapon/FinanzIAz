@@ -37,6 +37,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -139,6 +140,54 @@ def _restore_frame(path: Path) -> pd.DataFrame | None:
         return None
 
 
+# ── Frescura para lectores directos (tarea 286) ──────────────────────────────
+#
+# Los consumidores vivos piden por `get_historical_data` con TTL y se refrescan solos. El
+# riesgo es el script que lee con `read(..., ttl_hours=None)`: recibe lo que haya, aunque el
+# frame haya terminado hace semanas (la 255 vio *«123 de 131 terminan el 2026-09-09»* y no
+# lo avisó nada). Las 255 y 258 declaraban la frescura a mano; nada obligaba al próximo.
+# Ahora el aviso sale de acá, una vez por proceso con nombre y fecha, y los siguientes van a
+# DEBUG: un harness lee cientos de frames y repetirlo enterraría el log (la lección de la 289).
+FRAME_MAX_ATRASO_RUEDAS = 5
+_atraso_lock = threading.Lock()
+_atraso_avisado = False
+
+
+def _hoy() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def ruedas_de_atraso(df: pd.DataFrame, hoy: datetime) -> int:
+    """Ruedas hábiles entre la última barra del frame y ``hoy`` (0 = termina hoy)."""
+    if df is None or df.empty:
+        return 0
+    ultima = pd.Timestamp(df.index.max()).date()
+    return max(0, int(np.busday_count(ultima, hoy.date())))
+
+
+def _avisar_si_atrasado(ticker: str, period: str, df: pd.DataFrame) -> None:
+    global _atraso_avisado
+    atraso = ruedas_de_atraso(df, _hoy())
+    if atraso <= FRAME_MAX_ATRASO_RUEDAS:
+        return
+    with _atraso_lock:
+        primero = not _atraso_avisado
+        _atraso_avisado = True
+    fin = pd.Timestamp(df.index.max()).date()
+    if primero:
+        log.warning(
+            "parquet_cache: %s %s se lee directo (sin TTL) y termina el %s, hace %d ruedas: lo "
+            "que se mida sobre él no llega a hoy. Refrescalo (`python scripts/refresh_cohort.py`) "
+            "o declaralo. Los siguientes frames atrasados de este proceso van a DEBUG.",
+            ticker,
+            period,
+            fin,
+            atraso,
+        )
+    else:
+        log.debug("parquet_cache: %s %s termina el %s (%d ruedas de atraso)", ticker, period, fin, atraso)
+
+
 # ── API pública (drop-in del cache OHLCV) ────────────────────────────────────
 
 
@@ -200,7 +249,10 @@ def read(ticker: str, period: str, interval: str, ttl_hours: float | None) -> pd
         cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
         if fetched < cutoff:
             return None
-    return _restore_frame(path)
+    df = _restore_frame(path)
+    if ttl_hours is None and df is not None and interval == "1d":
+        _avisar_si_atrasado(ticker, period, df)
+    return df
 
 
 def _candidates_1d(ticker: str) -> list[Path]:
