@@ -180,3 +180,24 @@ def dividendos_cobrados(eventos: list[tuple[str, float]], calendario: list[tuple
         if acciones > 0:
             total += acciones * float(monto)
     return total
+
+
+def valor_y_pl(positions, prices: dict) -> dict:
+    """Valor, P&L y % de las posiciones **con precio**, y cuáles no lo tienen (tareas 281/268).
+
+    Una posición sin precio **no** se valúa al costo en silencio: queda en ``sin_precio`` y fuera
+    del valor y de la ganancia; el % es sobre el costo de las que sí tienen precio. ``prices`` es
+    ``{ticker: {"price": float, ...}}``, el formato de la pestaña Portfolio. Lo usan los reportes
+    Excel y PDF, que tenían el mismo defecto que las tarjetas de la 281.
+    """
+    con = [p for p in positions if prices.get(p.ticker)]
+    valor = sum(p.quantity * prices[p.ticker]["price"] for p in con)
+    costo_con = sum(p.quantity * p.avg_buy_price for p in con)
+    pl = valor - costo_con
+    return {
+        "valor": valor,
+        "invertido": sum(p.quantity * p.avg_buy_price for p in positions),
+        "pl": pl,
+        "pl_pct": (pl / costo_con * 100.0) if costo_con > 0 else 0.0,
+        "sin_precio": sorted(p.ticker for p in positions if not prices.get(p.ticker)),
+    }

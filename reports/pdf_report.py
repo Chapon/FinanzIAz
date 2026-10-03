@@ -96,19 +96,20 @@ def generate_portfolio_pdf(
     # porque una posición vendida entera queda en cantidad 0 con su compra y su venta.
     todas = list(positions)
     positions = [p for p in todas if (p.quantity or 0) > 0]
-    total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
-    total_value = 0.0
-    for p in positions:
-        d = prices.get(p.ticker)
-        total_value += (p.quantity * d["price"]) if d else (p.quantity * p.avg_buy_price)
+    # Tarea 268: el resumen valuaba al costo, sin decirlo, una posición sin precio (el
+    # defecto de las tarjetas de la 281). Ahora: valor y P&L sólo con precio, y se nombran.
+    from database.cartera_real import valor_y_pl
 
-    pl = total_value - total_invested
-    pl_pct = (pl / total_invested * 100) if total_invested > 0 else 0.0
+    _t = valor_y_pl(positions, prices)
+    total_invested, total_value, pl, pl_pct = _t["invertido"], _t["valor"], _t["pl"], _t["pl_pct"]
+    sin_precio_txt = (
+        f" ({len(_t['sin_precio'])} sin precio: {', '.join(_t['sin_precio'])})" if _t["sin_precio"] else ""
+    )
     pl_color = C_GREEN if pl >= 0 else C_RED
 
     summary_data = [
         ["Métrica", "Valor"],
-        ["Valor total del portafolio", f"{currency} {total_value:,.2f}"],
+        ["Valor total del portafolio", f"{currency} {total_value:,.2f}{sin_precio_txt}"],
         ["Total invertido", f"{currency} {total_invested:,.2f}"],
         ["P&L total", f"{'+' if pl >= 0 else ''}{currency} {pl:,.2f}"],
         ["Rendimiento", f"{pl_pct:+.2f}%"],

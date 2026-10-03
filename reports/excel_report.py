@@ -38,6 +38,18 @@ def _border():
     return Border(left=side, right=side, top=side, bottom=side)
 
 
+def total_de_transaccion(tipo: str, cantidad: float, precio: float, comision: float | None) -> float:
+    """El efectivo de una transacción, con el signo de la comisión según el tipo (tarea 268).
+
+    En una compra la comisión se suma a lo que se paga; en una venta se resta de lo que entra.
+    ``Transaction.total_value`` la suma siempre, y la segunda hoja que se sacó la restaba
+    siempre: las dos estaban mal en una de las dos patas.
+    """
+    bruto = float(cantidad) * float(precio)
+    fee = float(comision or 0.0)
+    return bruto + fee if str(tipo).upper() == "BUY" else bruto - fee
+
+
 def generate_portfolio_excel(
     output_path: str,
     portfolio_name: str,
@@ -82,16 +94,18 @@ def generate_portfolio_excel(
     # porque una posición vendida entera queda en cantidad 0 con su compra y su venta.
     todas = list(positions)
     positions = [p for p in todas if (p.quantity or 0) > 0]
-    total_invested = sum(p.quantity * p.avg_buy_price for p in positions)
-    total_value = 0.0
-    for p in positions:
-        d = prices.get(p.ticker)
-        total_value += (p.quantity * d["price"]) if d else (p.quantity * p.avg_buy_price)
-    pl = total_value - total_invested
-    pl_pct = (pl / total_invested * 100) if total_invested > 0 else 0.0
+    # Tarea 268: el resumen valuaba al costo, sin decirlo, una posición sin precio (el
+    # defecto de las tarjetas de la 281). Ahora: valor y P&L sólo con precio, y se nombran.
+    from database.cartera_real import valor_y_pl
+
+    _t = valor_y_pl(positions, prices)
+    total_invested, total_value, pl, pl_pct = _t["invertido"], _t["valor"], _t["pl"], _t["pl_pct"]
+    sin_precio_txt = (
+        f" ({len(_t['sin_precio'])} sin precio: {', '.join(_t['sin_precio'])})" if _t["sin_precio"] else ""
+    )
 
     metrics = [
-        ("Valor Total", f"{currency} {total_value:,.2f}", C_BLUE),
+        ("Valor Total", f"{currency} {total_value:,.2f}{sin_precio_txt}", C_BLUE),
         ("Invertido", f"{currency} {total_invested:,.2f}", C_MUTED),
         ("P&L", f"{'+' if pl >= 0 else ''}{currency} {pl:,.2f}", C_GREEN if pl >= 0 else C_RED),
         ("Rendimiento", f"{pl_pct:+.2f}%", C_GREEN if pl_pct >= 0 else C_RED),
@@ -227,7 +241,7 @@ def generate_portfolio_excel(
                 tx.quantity,
                 tx.price,
                 tx.fees,
-                tx.total_value,
+                total_de_transaccion(tx.transaction_type, tx.quantity, tx.price, tx.fees),
                 tx.date.strftime("%d/%m/%Y") if tx.date else "",
                 tx.notes or "",
             ]
@@ -250,70 +264,11 @@ def generate_portfolio_excel(
     for i, w in enumerate(tx_widths, 1):
         ws_tx.column_dimensions[get_column_letter(i)].width = w
 
-    # ── Sheet 2: Transaction history (optional) ───────────────────────────────
-    if include_tx:
-        try:
-            from database.models import Transaction, session_scope
-
-            with session_scope() as session:
-                pos_ids = [p.id for p in todas if hasattr(p, "id")]
-                txs = (
-                    session.query(Transaction)
-                    .filter(Transaction.position_id.in_(pos_ids))
-                    .order_by(Transaction.date.desc())
-                    .limit(500)
-                    .all()
-                )
-                pos_map = {p.id: p.ticker for p in todas if hasattr(p, "id")}
-                session.expunge_all()
-
-            if txs:
-                wt = wb.create_sheet("Transacciones")
-                wt.sheet_view.showGridLines = False
-                # `row_i`/`col_i` y no `row`/`col`: más arriba, en esta misma
-                # función, `row` es la TUPLA de celdas que devuelve `iter_rows`.
-                # Reusar el nombre para un índice entero es lo que hacía chillar a
-                # mypy, y de paso confunde al leerlo.
-                for col_i in range(1, 8):
-                    for row_i in range(1, len(txs) + 50):
-                        wt.cell(row_i, col_i).fill = _fill(C_BG)
-
-                tx_headers = ["Fecha", "Ticker", "Tipo", "Cantidad", "Precio", "Comisión", "Total"]
-                for ci, h in enumerate(tx_headers, 1):
-                    cell = wt.cell(1, ci, h)
-                    cell.font = _font(bold=True, color=C_MUTED, size=10)
-                    cell.fill = _fill(C_HEADER)
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    cell.border = _border()
-
-                for ri, tx in enumerate(txs, 2):
-                    ticker = pos_map.get(tx.position_id, "?")
-                    total = tx.quantity * tx.price - (tx.fees or 0)
-                    row_data = [
-                        tx.date.strftime("%d/%m/%Y") if tx.date else "—",
-                        ticker,
-                        tx.transaction_type,
-                        tx.quantity,
-                        tx.price,
-                        tx.fees or 0.0,
-                        total,
-                    ]
-                    tx_color = C_GREEN if tx.transaction_type == "BUY" else C_RED
-                    bg = C_CARD if ri % 2 == 0 else C_BG
-                    for ci, val in enumerate(row_data, 1):
-                        cell = wt.cell(ri, ci, val)
-                        cell.font = _font(color=tx_color if ci == 3 else C_TEXT, size=9)
-                        cell.fill = _fill(bg)
-                        cell.border = _border()
-                        cell.alignment = Alignment(
-                            horizontal="right" if ci > 3 else "left", vertical="center"
-                        )
-
-                col_ws = [12, 8, 10, 12, 12, 12, 14]
-                for ci, w in enumerate(col_ws, 1):
-                    wt.column_dimensions[get_column_letter(ci)].width = w
-        except Exception:
-            log.exception("Excel transaction sheet generation failed")
+    # Tarea 268: acá se armaba una SEGUNDA hoja «Transacciones» (openpyxl la renombraba
+    # «Transacciones1») con lo mismo, y la primera se armaba siempre aunque `tx_history`
+    # estuviera apagado. Queda una, y sólo si se pidió.
+    if not include_tx:
+        wb.remove(ws_tx)
 
     wb.save(output_path)
     return output_path

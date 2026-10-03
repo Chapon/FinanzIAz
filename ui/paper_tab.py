@@ -106,6 +106,21 @@ def needs_pause_confirmation(positions, pending) -> bool:
 # ── Main paper-trading tab ────────────────────────────────────────────────────
 
 
+def textos_pnl(px: float | None, shares: float, avg_cost: float) -> tuple[str, str, bool | None]:
+    """El P&L de una posición para la tabla de Paper: ``(usd, %, positivo)`` (tarea 268).
+
+    Sin precio, el P&L **no se conoce**: ``("—", "—", None)``, sin color. Antes el valor de
+    mercado caía al costo y la celda pintaba ``+$0.00 / +0.00%`` en verde, que se lee como
+    «sin ganancia ni pérdida» (``docs/auditoria_pantalla_2026-10-02.md`` [F-2]).
+    """
+    if px is None:
+        return "—", "—", None
+    cost = shares * avg_cost
+    pnl = px * shares - cost
+    pct = (pnl / cost * 100.0) if cost > 0 else 0.0
+    return f"{'+' if pnl >= 0 else '-'}${abs(pnl):,.2f}", f"{pct:+.2f}%", pnl >= 0
+
+
 class PaperTradingTab(QWidget):
     """IQON-style paper-trading dashboard."""
 
@@ -1395,22 +1410,23 @@ class PaperTradingTab(QWidget):
             price_txt = f"${px:,.2f}" if px is not None else "—"
             self.positions_table.setItem(row, 4, QTableWidgetItem(price_txt))
             mv = (px * p.shares) if px is not None else p.shares * p.avg_cost
-            self.positions_table.setItem(row, 5, QTableWidgetItem(f"${mv:,.2f}"))
+            # Tarea 268 [F-2]: sin precio, el valor de mercado NO es el costo. El peso de
+            # abajo sí usa el costo como aproximación (dicho en el tooltip de la celda).
+            self.positions_table.setItem(row, 5, QTableWidgetItem(f"${mv:,.2f}" if px is not None else "—"))
             # Peso % del nombre en el book (rojo si ≥ 30% — sobre-concentrado).
             weight = (mv / total_mv) if total_mv > 0 else 0.0
             weight_item = QTableWidgetItem(f"{weight * 100:.1f}%")
             if weight >= 0.30:
                 weight_item.setForeground(QColor(PALETTE["red"]))
             self.positions_table.setItem(row, 6, weight_item)
-            cost = p.shares * p.avg_cost
-            pnl_usd = mv - cost
-            pnl_pct = ((mv - cost) / cost * 100.0) if cost > 0 else 0.0
-            color = PALETTE["positive"] if pnl_usd >= 0 else PALETTE["red"]
-            pnl_usd_item = QTableWidgetItem(f"{'+' if pnl_usd >= 0 else '-'}${abs(pnl_usd):,.2f}")
-            pnl_usd_item.setForeground(QColor(color))
+            txt_usd, txt_pct, positivo = textos_pnl(px, p.shares, p.avg_cost)
+            pnl_usd_item = QTableWidgetItem(txt_usd)
+            pnl_item = QTableWidgetItem(txt_pct)
+            if positivo is not None:
+                color = PALETTE["positive"] if positivo else PALETTE["red"]
+                pnl_usd_item.setForeground(QColor(color))
+                pnl_item.setForeground(QColor(color))
             self.positions_table.setItem(row, 7, pnl_usd_item)
-            pnl_item = QTableWidgetItem(f"{pnl_pct:+.2f}%")
-            pnl_item.setForeground(QColor(color))
             self.positions_table.setItem(row, 8, pnl_item)
 
             # Comisión estimada de cierre — qué pagarías si cerrás ahora a
