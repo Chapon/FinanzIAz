@@ -91,6 +91,9 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     # hace aparecer la clave `second_opinion` en `deviations_keyed()`.
     ("LIVE_PRICE_SECOND_OPINION_ENABLED", "price_second_opinion_enabled"),
     ("LIVE_SCAN_INTERVAL_MINUTES", "paper_scan_interval_minutes"),
+    # Tarea 292 — estaba en la 185 como «no modelable»; en vivo vale False a propósito y el
+    # harness modela justamente ese valor, así que es un espejo, no una excepción.
+    ("LIVE_ENFORCE_MARKET_HOURS", "paper_enforce_market_hours"),
 )
 
 # Los ``LIVE_*`` que **no** salen del settings, con el motivo. No es una excepción:

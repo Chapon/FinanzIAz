@@ -64,7 +64,7 @@ Antes de escribir que algo "corre automáticamente", verificá quién lo llama.
 Núcleo de decisiones en `paper_trading/engine.py`, función `run_scan`. **Cuenta activa: "Sim Segundo" (id=2)** — `auto`, `equal_weight`, `max_positions=10`. La **cuenta 1 ("Sim Principal") está CERRADA** (pausada desde 2026-07-01, dada por cerrada por Chapa el 2026-09-13; en la DB sigue `is_active=0`, último scan 2026-07-01): docs viejos la llaman "la cuenta activa" — confirmar contra `paper_accounts.is_active` antes de sacar conclusiones de comportamiento vivo. Config de modelo viva: `hmm_enabled`/`stacking_enabled` **OFF**, XGBoost y vol_overlay **ON** — pero eso lo dice `~/.finanzias/settings.json`, **no un mecanismo**: «kill_only» es sólo el nombre de esa config, nada la fuerza, y el código lee hmm/stacking con `default=True` (tarea 181). Lo que el repo declara es `HARNESS_MODEL_TOGGLES`, que los productores de artefactos fijan en memoria.
 
 Gates en orden (ver comentarios en `engine.py`):
-- **Gate 1** — market hours.
+- **Gate 1** — market hours. **Apagado en vivo a propósito** (`paper_enforce_market_hours=False`, tarea 292): sin eso el cron de las 16:05 ET no llenaría nunca; el scan llena también fuera de sesión, al último cierre.
 - **Gate 2** — min holding period (bloquea SELLs prematuros).
 - **Gate 2b** — histéresis por score (T6.4): SELLs de señal esperan 3 días hábiles salvo score < 0.25.
 - **Gate 2c** — exit-veto por catalyst (T-CAT-4). **DEFAULT OFF.**

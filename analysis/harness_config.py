@@ -410,6 +410,25 @@ ENTRADA_INTRADIA_DESC = (
     "|desvío| medio 0,64%): ruido simétrico, sin sesgo detectable"
 )
 
+# ── Fills con el mercado cerrado — tarea 292 ──────────────────────────────────
+# ``paper_enforce_market_hours`` está en ``False`` en vivo **a propósito** (decisión de
+# Chapa, 2026-10-03): es lo que le permite llenar al cron diario de las 16:05 ET, que con
+# el default ``True`` no llenaría nunca. Con ``False`` el scan llena también de noche, en
+# fin de semana y en feriados, al último cierre regular. Era la perilla que la 185
+# clasificaba *«no modelable»*, y es al revés: el harness modela justamente esto (decide
+# al close y llena al close). Lo que el harness no tiene es la información posterior al
+# cierre con la que decide un scan fuera de sesión; la 292 midió si eso da ventaja.
+LIVE_ENFORCE_MARKET_HOURS = False
+FUERA_DE_SESION_DESC = (
+    "en vivo el scan también llena con el mercado CERRADO (`paper_enforce_market_hours` en "
+    "False, deliberado: es lo que deja llenar al cron de las 16:05 ET), al último cierre "
+    "regular, pero decidiendo con información posterior a ese cierre; el harness decide y "
+    "llena al close sin ella. Medido el 2026-10-03 (tarea 292) sobre 56 fills por señal fuera "
+    "de sesión de las dos cuentas: gap con signo hasta la apertura siguiente −0,16% en "
+    "promedio (IC95 por día −0,62% a +0,26%): no se detecta ventaja, y la muestra no descarta "
+    "una de hasta +0,26%"
+)
+
 # ── Precio de evaluación de las barreras — el desvío que destapó la T26 ──────
 # ``scaleout_replay.replay_cycle`` decide **toda** salida ATR contra el **close
 # diario** (``atr_exit(current_price=close_i, …)``): una barra cuyo *mínimo*
@@ -2384,6 +2403,9 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     )
     # Tarea 293 — también estructural (todo runner entra al close), así que va siempre.
     _add("entrada_intradia", ENTRADA_INTRADIA_DESC)
+    # Tarea 292 — condicional: con el flag en True no hay fills fuera de sesión que declarar.
+    if not LIVE_ENFORCE_MARKET_HOURS:
+        _add("fills_fuera_de_sesion", FUERA_DE_SESION_DESC)
     # Ídem el precio contra el que se deciden las barreras ATR: es estructural de
     # ``replay_cycle``, así que no depende de cómo se llame al harness. Lo que sí
     # depende del brazo es de qué lado del engine cae el desvío.

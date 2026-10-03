@@ -96,7 +96,6 @@ SIN_ESPEJO: dict[str, str] = {
     # ── NO_MODELABLE — el harness diario no puede representarlos ──
     "paper_min_holding_minutes": "NO_MODELABLE: tiempo intradía; el harness decide sobre barras diarias",
     "paper_anti_flap_minutes": "NO_MODELABLE: ventana intradía entre órdenes, sin equivalente en barras diarias",
-    "paper_enforce_market_hours": "NO_MODELABLE: horario de mercado real; el harness no tiene reloj de sesión",
     "paper_history_period": "NO_MODELABLE: es el período que pide el engine a Yahoo; el harness usa su propio cohorte",
     # ── NO_ES_DECISION — no entran en qué se compra o se vende ──
     "slack_notifications_enabled": (

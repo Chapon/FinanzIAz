@@ -19,7 +19,7 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 ## Gates de ejecución
 | Flag | Default | Gate | Qué hace |
 |------|---------|------|----------|
-| `paper_enforce_market_hours` | `True` | 1 | El engine no llena con mercado cerrado. |
+| `paper_enforce_market_hours` | `True` (**vivo: `False`, deliberado** — tarea 292) | 1 | Con `True` el engine no llena con mercado cerrado. **Acople:** el cron diario (`paper_daily_scan_time_et`, 16:05 ET, *«scan end-of-day»*) corre después del cierre, así que con `True` **no llena nunca**; el `False` vivo es lo que lo hace funcionar. Con `False` el scan llena también de noche, en fin de semana y en feriados, al último cierre regular. El look-ahead de esos fills se midió (−0,16% con signo, IC95 −0,62% a +0,26%, n=56; `docs/fuera_de_sesion_t292_2026-10-03.md`) y queda declarado como `fills_fuera_de_sesion`. Espejo: `LIVE_ENFORCE_MARKET_HOURS`. |
 | `paper_min_holding_minutes` | `60` | 2 | No vender una posición abierta hace < N min. |
 | `paper_signal_sell_min_age_bdays` | `3` | 2b | SELLs de señal esperan esta edad (días hábiles). 0=off. (T6.4) |
 | `paper_signal_sell_bypass_score` | `0.25` | 2b | SELLs con score < umbral ejecutan directo (convicción alta). |

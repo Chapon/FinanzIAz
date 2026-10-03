@@ -110,7 +110,16 @@ SCHEMA: dict[str, SettingSpec] = {
     "paper_scan_on_startup": SettingSpec(bool, True, doc="Scan all active accounts at app launch"),
     "paper_market_hours_only": SettingSpec(bool, True, doc="Interval ticks skip outside RTH"),
     # Paper trading guardrails (lite-pro execution gates)
-    "paper_enforce_market_hours": SettingSpec(bool, True, doc="Engine refuses to fill when market is closed"),
+    "paper_enforce_market_hours": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Engine refuses to fill when market is closed. OJO: el cron diario de las 16:05 ET "
+            "(paper_daily_scan_time_et) corre después del cierre, así que con True no llena "
+            "nunca. En vivo vale False a propósito (tarea 292): llena al último cierre regular, "
+            "también de noche, en fin de semana y en feriados. Espejo: LIVE_ENFORCE_MARKET_HOURS."
+        ),
+    ),
     "paper_min_holding_minutes": SettingSpec(
         int, 60, min=0, max=10_080, doc="Cannot SELL a position opened within last N min"
     ),
