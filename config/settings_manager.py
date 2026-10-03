@@ -67,7 +67,9 @@ def _is_hhmm(value: Any) -> bool:
 
 SCHEMA: dict[str, SettingSpec] = {
     # General
-    "notif": SettingSpec(bool, True, doc="Show notifications when alerts fire"),
+    "notif": SettingSpec(
+        bool, True, doc="Popup al disparar una alerta de precio (tarea 283: antes nadie lo leia)"
+    ),
     "auto_refresh": SettingSpec(bool, True, doc="Refresh portfolio prices every 60 s"),
     "default_home": SettingSpec(bool, True, doc="Open Home tab on startup (False → Portfolio)"),
     "confirm_sell": SettingSpec(bool, True, doc="Show extra confirmation before selling"),
@@ -84,7 +86,12 @@ SCHEMA: dict[str, SettingSpec] = {
         choices=("sqlite", "parquet", "dual"),
         doc="Backend del cache OHLCV: sqlite (legacy) | parquet (ARQ1) | dual (migración)",
     ),
-    "pre_market": SettingSpec(bool, False, doc="Show pre/post-market label in status bar"),
+    "pre_market": SettingSpec(
+        bool,
+        False,
+        doc="SIN USO (tarea 283): no hay implementacion detras; el toggle se saco de Settings. "
+        "La clave se conserva para no invalidar settings.json que ya la tengan.",
+    ),
     "perf_log": SettingSpec(bool, True, doc="Save P&L history"),
     # Technical analysis
     "bb": SettingSpec(bool, True, doc="Show Bollinger Bands on chart"),

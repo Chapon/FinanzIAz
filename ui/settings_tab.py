@@ -100,11 +100,9 @@ class SettingsTab(QWidget):
                         "Reutiliza el precio guardado si fue actualizado hace menos de 5 min. "
                         "Desactivar para obtener precios en tiempo real (más llamadas a la API).",
                     ),
-                    (
-                        "pre_market",
-                        "Mostrar precios pre/post mercado",
-                        "Muestra etiquetas 'Pre-market' y 'After-hours' en la barra de estado.",
-                    ),
+                    # Tarea 283: acá había un toggle «Mostrar precios pre/post mercado»
+                    # (`pre_market`) que ningún código leía. Se sacó: un toggle que no hace
+                    # nada es un rótulo que miente.
                     (
                         "perf_log",
                         "Guardar historial de rendimiento",

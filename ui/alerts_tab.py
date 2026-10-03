@@ -291,6 +291,13 @@ class AlertsTab(QWidget):
         self.check_btn.setEnabled(True)
 
     def _on_alert_triggered(self, notice: AlertNotice):
+        # Tarea 283: «Notificaciones al disparar alertas» (`notif`) era un toggle que nadie
+        # leía — apagarlo no apagaba nada. Ahora gobierna este popup. El Slack de alertas
+        # tiene su propio switch (`slack_price_alerts_enabled`).
+        from config.settings_manager import settings
+
+        if not bool(settings.get("notif", True)):
+            return
         QMessageBox.information(
             self,
             "🔔 Alerta Disparada",

@@ -165,7 +165,6 @@ class PlatformSettingsCard(QFrame):
         layout.addSpacing(8)
 
         system_settings = [
-            ("realtime", "Precios en tiempo real", False),
             ("perf_log", "Guardar historial P&L", True),
         ]
         for key, label, default in system_settings:
