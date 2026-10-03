@@ -21,7 +21,6 @@ from datetime import timedelta
 
 from alerts.alert_manager import AlertManager
 from database.models import Alert, Portfolio, session_scope, utcnow_naive
-from tests.lock_real import TIMEOUT_S as _TIMEOUT_S
 from tests.lock_real import FetchQueEscribeElCache as _FetchQueEscribeElCache
 
 
@@ -54,7 +53,13 @@ def test_con_una_alerta_para_REARMAR_el_fetch_escribe_el_cache_sin_esperar(db_ar
     disparadas = AlertManager(notifier=lambda t: True).check_alerts()
 
     assert fetch.bloqueos == []
-    assert max(fetch.esperas) < _TIMEOUT_S / 2, fetch.esperas
+    # Tarea 269: acá había `assert max(fetch.esperas) < _TIMEOUT_S / 2`. Medía tiempo de
+    # pared, no lock: bajo carga dio 0,69 s con `bloqueos == []` —más que el propio
+    # `busy_timeout`, o sea que no esperaba un lock: era latencia—. El defecto que este test
+    # cuida (el fetch esperando el lock de su propio llamador) termina SIEMPRE en
+    # `database is locked`, porque el llamador no suelta el lock hasta después del fetch: lo
+    # caza `bloqueos`. Verificado por mutación: con el arreglo de la 237 revertido, rojo.
+    assert fetch.esperas, "el fetch no se llamó: el test no probó nada"
     # Y el re-arme de la 227 se ve en el MISMO chequeo: CRM, disparada ayer, vuelve a disparar hoy.
     assert [a.ticker for a in disparadas] == ["CRM"]
 

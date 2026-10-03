@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 223 — Tarea 269 (TEST-LOCK-MIDE-LATENCIA) CERRADA 2026-10-02 — el test de la 237 deja de medir tiempo de pared** (`HASH`; `tests/test_alertas_no_traban_la_db_t237.py`). Suite Windows (Anaconda) **4200 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4197 passed, 4 skipped** —corrida limpia, sin tocar el repo: revalida también la 268. **No deja tareas nuevas.**
+  - **Qué se sacó:** `assert max(fetch.esperas) < _TIMEOUT_S / 2`. El defecto que el test cuida —el fetch esperando el lock de su propio llamador— termina **siempre** en `database is locked`, porque el llamador no suelta el lock hasta después del fetch: lo caza `fetch.bloqueos == []`. El tiempo de pared no agregaba señal y bajo carga daba rojos falsos (0,69 s sin ningún lock). En su lugar, `assert fetch.esperas`: que el fetch se haya llamado, para que el test no pase sin probar nada.
+  - **Se descartó** la variante del alcance (medir contra un `busy_timeout` largo): agrega un umbral de tiempo nuevo para una señal que `bloqueos` ya da de forma binaria.
+  - **El otro uso de `tests/lock_real.py`** (`test_fetch_fuera_de_la_sesion_t238.py:229`) ya decidía sólo por `bloqueos` y `esperas` no vacío: sin cambios.
+  - **Kill-criteria:** mutación —el arreglo de la 237 revertido en `alerts/alert_manager.py`— **rojo**; con 16 procesos quemando CPU, **5 de 5 verdes**.
+
 - **WIP 222 — Tarea 268 (PANTALLA-MENORES-T261) CERRADA 2026-10-02 — Paper no pinta un precio faltante como cero verde, el dashboard viejo se fue, el Excel tiene una sola hoja de transacciones, y el resumen de los reportes deja de valuar al costo** (`1d1f783`; `ui/paper_tab.py`, `reports/excel_report.py`, `reports/pdf_report.py`, `database/cartera_real.py`, `reports/dashboard_sim_principal.html` **borrado**, `tests/test_pantalla_menores_t268.py` **nuevo**). Suite Windows (Anaconda) **4200 passed, 1 skipped, 1 deselected** (+8), ruff limpio, sin estado vivo **4197 passed, 4 skipped**. *(La corrida se superpuso con ediciones de la 269 —un error mío de proceso—; el done de la 269, corrido sin tocar el repo, revalida los dos cambios juntos.)* **No deja tareas nuevas.**
   - **[F-2]** `textos_pnl` (pura): sin precio, P&L `—` sin color y valor de mercado `—` (el peso en el book sigue usando el costo como aproximación). Antes: `+$0.00 / +0.00%` en verde.
   - **[F-3]** `reports/dashboard_sim_principal.html` borrado (`git rm`): foto de mayo de la cuenta cerrada, sin referencias; el dashboard vivo es el artifact de `scripts/refresh_dashboard.py`.
@@ -2051,6 +2057,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02w** tras cerrar la **268**, que **no deja tareas nuevas** (el cuarto menor que apareció se corrigió adentro). El orden queda **269 → 289 → 270 → 285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02x** tras cerrar la **269**, que **no deja tareas nuevas**. El orden queda **289 → 270 → 285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3587,7 +3595,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** El docstring no afirma un consumidor que no existe; los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 269. TEST-LOCK-MIDE-LATENCIA — `test_con_una_alerta_para_REARMAR…` (t237) asserta tiempo de pared, y bajo carga falla sin que haya ningún lock  ·  origen: el cierre de la 261 (suite del 2026-10-02) · severidad **BAJA**
+### 269. ~~TEST-LOCK-MIDE-LATENCIA — `test_con_una_alerta_para_REARMAR…` (t237) asserta tiempo de pared, y bajo carga falla sin que haya ningún lock~~ · **CERRADA 2026-10-02 — el test decide por `bloqueos`, no por tiempo de pared** · **movida a *En curso* con el detalle**  ·  origen: el cierre de la 261 (suite del 2026-10-02) · severidad **BAJA**
 
 - **Qué pasó.** En la suite completa: `max(fetch.esperas) = 0.688 s` contra el tope `_TIMEOUT_S / 2 = 0.25 s` → rojo. Solo, 8 de 8 verdes (~1,9 s el archivo). Y la corrida sin estado vivo, verde.
 - **Por qué el assert mide otra cosa.** 0,688 s es **más** que el propio `busy_timeout` (0,5 s), y aun así `fetch.bloqueos == []`: si la escritura hubiera esperado un lock, habría terminado en `database is locked`. Lo que se midió es latencia de la primera conexión bajo carga, no espera por lock.
