@@ -1,5 +1,14 @@
 """
-Account-level drawdown circuit breaker (R1 — pure detector).
+Account-level drawdown circuit breaker (R1 — pure detector, **NOT wired: R1 closed NO-SHIP**).
+
+**Estado (tarea 270).** Nada en la app consume este módulo: ningún gate de ``run_scan``,
+ninguna setting y ninguna pantalla lo importan; lo usan sólo el harness
+(``scripts/run_dd_breaker_validation.py``) y sus tests. R1 cerró **NO-SHIP** el 2026-07-09
+—el harness falló el kill-criteria de stress— y se decidió **no** cablear gate, flags ni UI
+(``docs/dd_breaker_r1_2026-07-08.md``, *Veredicto*). **La cuenta viva no tiene freno por
+drawdown.** Lo que sigue describe el diseño evaluado, no una conducta vigente: este
+docstring decía *«the consuming gate in ``run_scan`` suppresses BUYs only»*, en presente,
+y ese gate nunca existió.
 
 No live desk lets the strategy keep buying into a deepening account drawdown:
 the standard guardrail is to degrade (smaller size → exits-only → halt). This
@@ -8,9 +17,10 @@ its current equity, is the account in a drawdown deep enough to arm the breaker?
 
 Like the ATR stops, this guardrail does NOT depend on the signal having alpha:
 it reacts to the account's own equity regime, complementing the static
-``kill_only`` mode with a dynamic response. When armed, the consuming gate in
-``run_scan`` suppresses **BUYs only** — SELLs / ATR-exits / signal exits always
-keep running (the breaker never blocks a way out, same rule as the E1b screen).
+``kill_only`` mode with a dynamic response. As designed, an armed breaker would
+suppress **BUYs only** in a gate of ``run_scan`` — SELLs / ATR-exits / signal exits
+would keep running (the breaker never blocks a way out, same rule as the E1b
+screen). That gate was not built (NO-SHIP).
 
 Design (pre-registered 2026-07-08, see ``docs/dd_breaker_r1_2026-07-08.md``):
 
@@ -19,9 +29,9 @@ Design (pre-registered 2026-07-08, see ``docs/dd_breaker_r1_2026-07-08.md``):
   a drawdown the account already digested. The window ties it to the recent
   regime ("drawdown from the peak of the last N days").
 - The current equity is a **peak candidate**: a fresh high today ⇒ drawdown 0,
-  even though the current scan's snapshot isn't persisted yet when the gate runs.
-- This module is pure (no DB, no network, no settings): the gate reads the
-  snapshots and the master switch; the detector only does the arithmetic.
+  even though the current scan's snapshot isn't persisted yet when a gate would run.
+- This module is pure (no DB, no network, no settings): the caller reads the
+  snapshots; the detector only does the arithmetic.
 """
 
 from __future__ import annotations
@@ -37,8 +47,8 @@ class DrawdownState:
     """The account's drawdown vs the rolling-window peak, and whether it arms.
 
     ``triggered`` reflects only the drawdown condition (``drawdown_pct >=
-    threshold_pct``); it does NOT include the master switch — the gate combines
-    this with ``paper_dd_breaker_enabled``.
+    threshold_pct``). The design had a master switch, ``paper_dd_breaker_enabled``,
+    for a gate to combine with this; neither the gate nor the setting exist (NO-SHIP).
 
     ``drawdown_pct`` is a non-negative fraction (0.095 = 9.5 %). ``peak_at`` is
     the snapshot time of the window peak, or ``None`` when the current equity is
@@ -82,8 +92,8 @@ def compute_drawdown_state(
     ]
 
     # Peak = highest equity in the window; current equity is also a candidate so
-    # a brand-new high reads as drawdown 0 (the current scan is not snapshotted
-    # yet when the gate runs).
+    # a brand-new high reads as drawdown 0 (the current scan would not be
+    # snapshotted yet when a gate ran).
     peak_equity = float(current_equity)
     peak_at: datetime | None = None
     for at, eq in in_window:
@@ -111,10 +121,11 @@ def compute_drawdown_state(
 
 
 def format_breaker_warning(state: DrawdownState) -> str:
-    """Human-readable ES message for the scan warning / UI banner.
+    """Human-readable ES message for the designed scan warning / UI banner.
 
     Only meaningful when ``state.triggered``; the caller decides whether to show
-    it. Kept here so the gate and the UI phrase it identically.
+    it. Nothing in the app shows it today (NO-SHIP): it describes what the unbuilt
+    gate would do, so it must not be wired to a live banner as is.
     """
     peak_txt = f" (peak {state.peak_at:%Y-%m-%d})" if state.peak_at is not None else ""
     return (

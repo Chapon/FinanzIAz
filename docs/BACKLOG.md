@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 225 — Tarea 270 (DOCSTRING-DD-BREAKER-CABLEADO) CERRADA 2026-10-02 — `dd_breaker` deja de afirmar un gate que nunca existió** (`HASH`; `paper_trading/dd_breaker.py`, `tests/test_dd_breaker_sin_consumidor_t270.py` **nuevo**). Suite Windows (Anaconda) **4208 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4205 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **El docstring del módulo** abre con *«NOT wired: R1 closed NO-SHIP»* y un párrafo de estado: nada en la app lo consume, la cuenta viva no tiene freno por drawdown, y lo que sigue es el diseño evaluado. **Eran cuatro lugares, no uno:** además del *«consuming gate in `run_scan`»*, `DrawdownState` nombraba como real la setting `paper_dd_breaker_enabled` —**no existe en el código**; sólo en la tabla del doc de diseño—, un comentario hablaba de *«when the gate runs»*, y `format_breaker_warning` decía que la usaban *«el gate y la UI»*. Los cuatro pasan a condicional, con *NO-SHIP*.
+  - **Guard:** barre por AST los paquetes de la app (`paper_trading`, `ui`, `analysis`, `data`, `database`, `alerts`, `reports`, `config`, `main.py`) y exige que **nadie** importe `paper_trading.dd_breaker`: si alguien lo cablea, el test frena hasta que se actualice el estado declarado y se pase el kill-criteria (regla 2). **El instrumento se validó antes de creerle:** sobre `scripts/` tiene que encontrar el único consumidor real, `run_dd_breaker_validation.py`, y lo encuentra.
+  - **Mutación:** importar el detector desde `engine.py` → **rojo**.
+
 - **WIP 224 — Tarea 289 (LOG-RUIDO-RED-CAIDA-Y-CIERRE) CERRADA 2026-10-02 — la red caída y el cierre de la app dejan de enterrar el log** (`a8ad9f4`; `data/news_sources.py`, `scripts/harvest_catalysts.py`, `data/yahoo_finance.py`, `tests/test_log_ruido_red_y_cierre_t289.py` **nuevo**). Suite Windows (Anaconda) **4205 passed, 1 skipped, 1 deselected** (+5), ruff limpio, sin estado vivo **4202 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Red caída:** `news_sources.registrar_falla` reemplaza los tres `log.exception` por ticker (yfinance news, Finnhub, SEC). Una falla de red —`OSError`, donde caen las de `requests` y las de `curl_cffi`, DNS incluido— escribe su traceback **una vez por `(fuente, tipo)`**; las siguientes van en una línea WARNING con el error resumido. Lo que **no** es de red (un bug de parseo) sigue con traceback cada vez. El harvest abre la corrida al empezar y al terminar escribe una línea con el conteo (`harvest: fallas de red sin traceback en esta corrida — fuente: N`) en los dos caminos de salida. La salud por fuente de la 207 no cambia: cada falla sigue contando.
   - **Cierre con fetch en vuelo:** `get_bulk_prices` reconoce el `RuntimeError` *«cannot schedule new futures after …»* (`_es_cierre_del_interprete`) y escribe **un** INFO con los tickers cortados, en vez de un ERROR con traceback por ticker. Otro `RuntimeError` sigue siendo ERROR.
@@ -2066,6 +2071,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02y** tras cerrar la **289**, que **no deja tareas nuevas**. El orden queda **270 → 285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02z** tras cerrar la **270**, que **no deja tareas nuevas**. El orden queda **285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3594,7 +3601,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **El pedido.** Después de la 261, verificar si las áreas cubren la app entera. Se midió por diseño (a qué área le toca cada parte) y por práctica (qué archivos nombró alguna vez un informe); el detalle está en *En curso*.
 - **Kill-criteria.** Cada alcance nuevo cita la evidencia que lo justifica, dice cómo se audita y qué queda afuera; el comando `/audit` lo lista; los cuatro comandos en verde.
 
-### 270. DOCSTRING-DD-BREAKER-CABLEADO — `paper_trading/dd_breaker.py` dice en presente que un gate de `run_scan` lo consume, y R1 cerró NO-SHIP: el motor no lo importa  ·  origen: el chequeo de cobertura de auditorías (2026-10-02, pedido de Chapa) · severidad **BAJA**
+### 270. ~~DOCSTRING-DD-BREAKER-CABLEADO — `paper_trading/dd_breaker.py` dice en presente que un gate de `run_scan` lo consume, y R1 cerró NO-SHIP: el motor no lo importa~~ · **CERRADA 2026-10-02 — el docstring dice NO-SHIP y un guard lo ata a que nadie lo importe** · **movida a *En curso* con el detalle**  ·  origen: el chequeo de cobertura de auditorías (2026-10-02, pedido de Chapa) · severidad **BAJA**
 
 - **Qué pasa.** El docstring (`paper_trading/dd_breaker.py:1-25`) afirma *«When armed, the consuming gate in ``run_scan`` suppresses **BUYs only**»*. Ningún módulo de `paper_trading/` ni de `ui/` lo importa: lo usa sólo `scripts/run_dd_breaker_validation.py`. La tarea 4 (R1) cerró **NO-SHIP** el 2026-07-09 y decidió **no** cablear gate, flags ni UI.
 - **Por qué importa aunque sea BAJA:** quien lea el módulo cree que la cuenta viva tiene un freno por drawdown, y no lo tiene. Es la forma de *«declarado no es cableado»* (la 97).
