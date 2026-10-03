@@ -885,6 +885,19 @@ class SpyCoverageError(StaleArtifactError):
     """
 
 
+def huecos_de_spy(spy: Sequence, bars_by: dict[str, list]) -> list[str]:
+    """Las ruedas que opera la mayoría del cohorte, dentro del rango de SPY, que SPY no tiene."""
+    series = [bars for bars in bars_by.values() if bars]
+    if not spy or not series:
+        return []
+    cuenta = Counter(b[0] for bars in series for b in bars)
+    desde, hasta = spy[0][0], spy[-1][0]
+    tiene = {b[0] for b in spy}
+    return sorted(
+        d for d, n in cuenta.items() if 2 * n >= len(series) and desde <= d <= hasta and d not in tiene
+    )
+
+
 def spy_coverage_problems(
     spy: Sequence, bars_by: dict[str, list], *, warmup: int, max_lag_days: int = ARTIFACT_MAX_LAG_DAYS
 ) -> list[str]:
@@ -900,6 +913,17 @@ def spy_coverage_problems(
         problemas.append(
             f"SPY termina el {spy[-1][0]}, {atras} ruedas antes que el cohorte ({ref}): en esas "
             f"ruedas el régimen queda congelado en la última bandera"
+        )
+    # Tarea 285: la cola y el conteo de ruedas previas no ven un hueco INTERNO —40 ruedas
+    # faltantes en el medio daban `[]`—, y en esas ruedas el régimen también queda congelado.
+    # El calendario es el de la MAYORÍA del cohorte, no el de la serie más larga: un ticker de
+    # otra bolsa (feriados distintos) acusaría a SPY por ruedas que el cohorte no operó. Sólo
+    # dentro del rango de SPY: las puntas ya las miden los otros dos chequeos.
+    faltan = huecos_de_spy(spy, bars_by)
+    if faltan:
+        problemas.append(
+            f"a SPY le faltan {len(faltan)} ruedas del calendario del cohorte entre {faltan[0]} y "
+            f"{faltan[-1]}: en esas ruedas el régimen queda congelado en la bandera anterior"
         )
     calendario = max(bars_by.values(), key=len, default=[])
     if len(calendario) > warmup:

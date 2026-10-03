@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 226 — Tarea 285 (GUARD-SPY-HUECO-INTERNO) CERRADA 2026-10-02 — el guard de SPY ve los huecos internos** (`HASH`; `analysis/harness_config.py`, `tests/test_spy_hueco_interno_t285.py` **nuevo**). Suite Windows (Anaconda) **4211 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4208 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **`huecos_de_spy`** (pura): las ruedas que opera **la mayoría** del cohorte, dentro del rango de SPY, que SPY no tiene. `spy_coverage_problems` lo suma como tercer problema, con conteo y extremos. **Calendario de la mayoría, no de la serie más larga:** con la más larga, un ticker de otra bolsa (el universo tiene `.TW`) haría rojo a una SPY sana por un feriado de EE.UU. que esa bolsa operó. **Sólo dentro del rango de SPY:** las puntas ya las miden la cola y la SMA, y contarlas dos veces duplicaría el aviso.
+  - **La SPY real sigue cubriendo:** `SPY__10y` (2.513 ruedas, 2016-10-03 → 2026-10-01) contra el cohorte del universo legacy (41 tickers, calendario de 2.512 ruedas): **0 faltantes**.
+  - **Mutación: tres, las tres rojas** — sin el chequeo (el estado previo: el hueco de 40 ruedas daba `[]`), calendario de la serie más larga, y sin el recorte al rango.
+
 - **WIP 225 — Tarea 270 (DOCSTRING-DD-BREAKER-CABLEADO) CERRADA 2026-10-02 — `dd_breaker` deja de afirmar un gate que nunca existió** (`0e39333`; `paper_trading/dd_breaker.py`, `tests/test_dd_breaker_sin_consumidor_t270.py` **nuevo**). Suite Windows (Anaconda) **4208 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4205 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El docstring del módulo** abre con *«NOT wired: R1 closed NO-SHIP»* y un párrafo de estado: nada en la app lo consume, la cuenta viva no tiene freno por drawdown, y lo que sigue es el diseño evaluado. **Eran cuatro lugares, no uno:** además del *«consuming gate in `run_scan`»*, `DrawdownState` nombraba como real la setting `paper_dd_breaker_enabled` —**no existe en el código**; sólo en la tabla del doc de diseño—, un comentario hablaba de *«when the gate runs»*, y `format_breaker_warning` decía que la usaban *«el gate y la UI»*. Los cuatro pasan a condicional, con *NO-SHIP*.
   - **Guard:** barre por AST los paquetes de la app (`paper_trading`, `ui`, `analysis`, `data`, `database`, `alerts`, `reports`, `config`, `main.py`) y exige que **nadie** importe `paper_trading.dd_breaker`: si alguien lo cablea, el test frena hasta que se actualice el estado declarado y se pase el kill-criteria (regla 2). **El instrumento se validó antes de creerle:** sobre `scripts/` tiene que encontrar el único consumidor real, `run_dd_breaker_validation.py`, y lo encuentra.
@@ -2073,6 +2078,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02z** tras cerrar la **270**, que **no deja tareas nuevas**. El orden queda **285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02aa** tras cerrar la **285**, que **no deja tareas nuevas**. El orden queda **286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3490,7 +3497,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** (E-1) un lector directo de un frame atrasado recibe el aviso, verificado con un frame sintético; (E-2) la decisión escrita y aplicada. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 285. GUARD-SPY-HUECO-INTERNO — El guard de cobertura de SPY de la 251 acepta una serie con 40 ruedas faltantes en medio del cohorte  ·  origen: `docs/auditoria_guards_2026-10-02.md` [GD-1] · severidad **BAJA**
+### 285. ~~GUARD-SPY-HUECO-INTERNO — El guard de cobertura de SPY de la 251 acepta una serie con 40 ruedas faltantes en medio del cohorte~~ · **CERRADA 2026-10-02 — el guard compara fechas contra el calendario de la mayoría del cohorte** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_guards_2026-10-02.md` [GD-1] · severidad **BAJA**
 
 - **Qué pasa.** `spy_coverage_problems` (`analysis/harness_config.py:824-848`) mira la última fecha y un **conteo** de ruedas previas; un hueco interno le es invisible (mutación: `[]` con y sin el hueco 2026-06-17…08-11). Congela el régimen en esas ruedas, el daño que la 251 tapó en la cola. Hoy `SPY__10y` no tiene huecos contra el calendario del cohorte.
 - **Alcance.** Comparar fechas: las ruedas del calendario del cohorte que faltan en SPY.
