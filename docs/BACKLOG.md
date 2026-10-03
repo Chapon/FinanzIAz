@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 217 — Tarea 279 (TCAT5B-CONSENSO-SIN-AJUSTE-POR-SPLIT) CERRADA 2026-10-02 — queda hecho y testeado el ajuste por split del consenso, y el requisito escrito donde vive T-CAT-5b** (`HASH`; `analysis/consenso_pit.py` **nuevo**, `tests/test_consenso_pit_t279.py` **nuevo**). Suite Windows (Anaconda) **4172 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4169 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **Qué hay:** `ajustar_por_split` lleva una serie de consenso a la escala más reciente (divide las métricas **por acción** —`eps`, `price_target`— por los splits con ex-date posterior; el snapshot del mismo día del ex-date ya está en la escala nueva, la convención de la 262; `revenue` y `rec_mean` no se tocan). `revision` es el cambio relativo dentro del ticker, que además cancela la moneda (el caso TSM). Puro: los splits llegan de `get_split_events` (la 262).
+  - **Verificado con los datos reales:** KLAC `eps 0q` del 2026-06-06 al 06-18 con su split 10:1 del 2026-06-12 (confirmado contra Yahoo): revisión **−89,98%** sin ajustar, **+0,18%** ajustada.
+  - **Dónde queda el requisito:** en *Bloqueado*, en el bloque de T-CAT-5b, para que su pre-registro lo use. Hoy nada decide con esta tabla, así que no se cableó a ningún camino vivo (regla 3).
+  - **Mutación: cuatro, las cuatro rojas** — el día del ex-date como anterior, ajustar también el revenue, no encadenar dos splits, y sin ajuste.
+
 - **WIP 216 — Tarea 265 (DESVIO-FRECUENCIA-DE-EVALUACION) CERRADA 2026-10-02 — el desvío `barrier_eval` dice la frecuencia EFECTIVA del vivo, derivada del registro y fechada** (`be2c9b6`; `analysis/harness_config.py`, `scripts/medir_cobertura_de_scan_t265.py` **nuevo**, `tests/test_frecuencia_efectiva_t265.py` **nuevo**, `tests/test_guard_185_descubre_archivos_t231.py`). Suite Windows (Anaconda) **4165 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4162 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Qué cambió:** `cobertura_de_scan` (pura) cuenta, desde los `snapshot_at` de `paper_equity_snapshots` (un snapshot = un scan completado), los días hábiles **sin scan** y **sin scan en sesión** (9:30–16:00 de Nueva York; los feriados se pasan porque el módulo no tiene calendario, a propósito). `desc_eval_vivo` arma el texto, y `LIVE_EXIT_EVAL_DESC` dice ahora: *«… los días con la app abierta — 34 de 66 días hábiles sin ningún scan en sesión (2026-07-01→2026-10-02, medido el 2026-10-02); esos días no evalúa ni al close»*. El comentario del bloque deja de afirmar sólo *«más cerca de touch»*: los días sin scan el vivo queda **por debajo** de la cota inferior.
   - **El número sale de una medición, con fecha (regla de la 233):** `scripts/medir_cobertura_de_scan_t265.py` (solo lectura, feriados NYSE 2026) mide la cuenta viva; dio **66 hábiles, 22 sin scan, 34 sin scan en sesión** — los mismos 22 y 34 que el `verificador` de la 261. Yo había escrito **65** a mano en la constante antes de correrlo; se corrigió al medido.
@@ -2000,6 +2006,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02q** tras cerrar la **265**, que **no deja tareas nuevas**. El orden queda **279 → 280 → 283 → 268 → 269 → 270 → 285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02r** tras cerrar la **279**, que **no deja tareas nuevas**. El orden queda **280 → 283 → 268 → 269 → 270 → 285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3445,7 +3453,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** (D-1) la misma nota por dos canales queda una vez, verificado con dos filas sintéticas; (D-3) la cobertura declarada nombra a SPG. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 279. TCAT5B-CONSENSO-SIN-AJUSTE-POR-SPLIT — Los snapshots de consenso no se ajustan por split y el revenue viene en la moneda de reporte: una revisión medida a través de un split da −90%  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-2] · severidad **MEDIA**
+### 279. ~~TCAT5B-CONSENSO-SIN-AJUSTE-POR-SPLIT — Los snapshots de consenso no se ajustan por split y el revenue viene en la moneda de reporte: una revisión medida a través de un split da −90%~~ · **CERRADA 2026-10-02 — `analysis/consenso_pit.py` deja hecho el ajuste que el pre-registro de T-CAT-5b tiene que usar** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-2] · severidad **MEDIA**
 
 - **Qué pasa.** `analyst_estimate_snapshots` guarda el valor de Yahoo tal cual. KLAC del 2026-06-11 al 06-12: EPS y precio objetivo caen 10× el mismo día (su split 10:1). TSM: revenue de consenso en **TWD** (7,3 billones `+1y`) con EPS por ADR en USD. Hoy nadie decide con esta tabla; su consumidor previsto es **T-CAT-5b** (revisiones de consenso), el dataset que la 196 y la 245 acumulan.
 - **Alcance.** Que el pre-registro de T-CAT-5b ajuste por split (splits de yfinance) y trabaje en cocientes dentro de cada ticker, o lo declare; anotarlo donde *Bloqueado* describe T-CAT-5b.
@@ -5168,6 +5176,7 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
   - **Causa del hueco: la app no corrió.** No es un bug del harvester — `news_events`, `paper_orders`, `paper_equity_snapshots` y `price_cache` tienen **cero filas** en esa ventana. Desde que todo pasó a correr in-app (decisión 2026-07-12, se removieron las tareas del Task Scheduler), **app cerrada = no se acumula nada**. Es el único hueco grande del histórico (`paper_equity_snapshots` desde mayo tiene solo otro de 5 días, 05-01→05-06). La actividad se reanudó el 2026-08-09 y sigue.
   - **Consecuencia:** la temporada Q2 quedó parcial y no alcanza para el criterio en su forma estricta (consenso del día hábil previo). **La próxima ventana completa es la temporada Q3 (~mediados de octubre a mediados de noviembre 2026)**, y solo si la app corre de forma continua. Alternativa si se quiere avanzar antes: aceptar explícitamente una tolerancia de N días en vez de "el día antes" y trabajar con el subconjunto pre-07-24 — pero eso reintroduce parte del sesgo de revisión que T-CAT-5b existe para eliminar, así que habría que pre-registrarlo como decisión, no asumirlo.
   - **Arrastra:** el **Brazo A de la tarea 11 (PEAD honesto)** sigue bloqueado por lo mismo, y la idea de *delta de revisiones de estimaciones* también.
+  - **Requisito del pre-registro (tarea 279):** `analyst_estimate_snapshots` guarda el consenso **sin ajustar por split** y en la **moneda de reporte**. Comparar un snapshot con el EPS publicado, o medir una revisión, a través de un split mide el split: KLAC 10:1 del 2026-06-12 da **−89,98%** de *revisión* sin ajustar y **+0,18%** ajustado. Usar `analysis/consenso_pit.ajustar_por_split` / `revision` (con `data.yahoo_finance.get_split_events`) y trabajar en **cocientes dentro de cada ticker** (TSM: revenue en TWD, EPS por ADR en USD).
   - Mientras tanto: **mantener la app abierta** es ahora un requisito de acumulación de datos, no una preferencia (ver *Acciones manuales pendientes*).
 
 ## Backlog / ideas (sin priorizar)
