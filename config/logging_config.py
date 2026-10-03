@@ -36,7 +36,9 @@ LOG_FILE = LOG_DIR / "finanzias.log"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEFAULT_LEVEL = logging.INFO
-DEFAULT_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
+# Tarea 288: `%(origen)s` va al FINAL y vale "" para la app, así que una línea de la app es
+# idéntica a la de antes y los que parsean el log (el censo, la telemetría) no se rompen.
+DEFAULT_FORMAT = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s%(origen)s"
 DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
 MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 3
@@ -118,6 +120,38 @@ def enmascarar(texto: str) -> str:
     return _SLACK.sub("xox?-***", texto)
 
 
+def origen_del_proceso(argv: list[str] | None = None) -> str | None:
+    """De qué proceso viene el log: ``None`` para la app (``main.py``), o el nombre del script.
+
+    Tarea 288: ``get_logger`` configura el archivo de producción para **cualquier** proceso que
+    importe un módulo del proyecto, así que un runner, una prueba a mano o un job escribían en
+    ``finanzias.log`` igual que la app. La auditoría de logs encontró dos firmas *desconocidas*
+    que no eran de la app (una corrida a mano del cuadre de la 266 y una prueba de stooq).
+    """
+    argv = sys.argv if argv is None else argv
+    primero = (argv[0] if argv else "") or ""
+    if primero in ("-c", ""):
+        return "python -c"
+    if primero == "-":
+        return "python stdin"
+    nombre = Path(primero).name
+    if nombre == "main.py":
+        return None
+    return nombre[:-3] if nombre.endswith(".py") else nombre
+
+
+class _FiltroOrigen(logging.Filter):
+    """Agrega ``record.origen``: vacío para la app, ``  [proceso: X]`` para cualquier otro."""
+
+    def __init__(self, origen: str | None) -> None:
+        super().__init__()
+        self._sufijo = "" if origen is None else f"  [proceso: {origen}]"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.origen = self._sufijo
+        return True
+
+
 class FormatterQueEnmascara(logging.Formatter):
     """``logging.Formatter`` que enmascara credenciales en el texto **ya formateado**.
 
@@ -168,6 +202,7 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
             log_file = None
 
     formatter = FormatterQueEnmascara(DEFAULT_FORMAT, datefmt=DEFAULT_DATEFMT)  # tarea 276
+    origen = _FiltroOrigen(origen_del_proceso())  # tarea 288
 
     handlers: list[logging.Handler] = []
 
@@ -180,6 +215,7 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
                 encoding="utf-8",
             )
             file_handler.setFormatter(formatter)
+            file_handler.addFilter(origen)
             file_handler.setLevel(level)
             handlers.append(file_handler)
         except Exception as e:  # pragma: no cover — disk-full / perm
@@ -187,6 +223,7 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
 
     stream_handler = logging.StreamHandler(stream=sys.stderr)
     stream_handler.setFormatter(formatter)
+    stream_handler.addFilter(origen)
     stream_handler.setLevel(level)
     handlers.append(stream_handler)
 

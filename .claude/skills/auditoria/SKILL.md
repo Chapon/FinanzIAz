@@ -472,6 +472,12 @@ del cierre de su tarea confirman el arreglo; las que siguen apareciendo después
 hallazgo (el arreglo no arregló). **(5)** Lo que no aparece y debería: un `except` que loguea a
 `debug` en un camino de fondo es invisible en producción (el log corre en INFO).
 
+**Desde la 288 cada línea dice su origen:** las de la app (`main.py`) no llevan marca y las de
+cualquier otro proceso terminan en `  [proceso: <script>]` (los jobs que lanza la app, los runners,
+las pruebas a mano). El censo separa las firmas por origen **antes** de clasificar: una firma que
+sólo aparece con `[proceso: python -c]` es de una prueba, no de la app. La primera corrida tuvo que
+deducirlo del traceback.
+
 **Barrido limpio:** ninguna firma queda sin clasificar, y ninguna *conocida* sigue apareciendo
 después del cierre de su tarea.
 
