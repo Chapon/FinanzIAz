@@ -37,10 +37,12 @@ def main():
     # Tarea 278 — antes de abrir ninguna conexión: (1) el restore que el botón de Settings
     # dejó programado (copiar encima de una base en WAL con la app abierta no restauraba), y
     # (2) un backup si `init_db` va a migrar (el diario se toma después y una vez por día).
+    # El resultado del restore se muestra al abrir la ventana (tarea 295): acá todavía no hay.
+    resultado_restore = None
     try:
         from database.backup import apply_pending_restore, backup_if_migration_pending
 
-        apply_pending_restore()
+        resultado_restore = apply_pending_restore()
         backup_if_migration_pending()
     except Exception:
         log.exception("Restore programado / backup pre-migración fallaron; el arranque sigue")
@@ -73,6 +75,14 @@ def main():
 
     window = MainWindow()
     window.show()
+
+    # Tarea 295 — con la ventana ya a la vista, y desde el loop (singleShot) para no
+    # bloquear el primer pintado.
+    from PyQt6.QtCore import QTimer
+
+    from ui.aviso_restore import mostrar_resultado_del_restore
+
+    QTimer.singleShot(0, lambda: mostrar_resultado_del_restore(window, resultado_restore))
 
     code = app.exec()
 

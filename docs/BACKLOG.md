@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 231 — Tarea 295 (RESTORE-PROGRAMADO-SIN-AVISO) CERRADA 2026-10-03 — el restore programado avisa en pantalla si se aplicó o falló** (`database/backup.py`, `main.py`, `ui/aviso_restore.py` **nuevo**, `ui/settings_tab.py`, `tests/test_restore_programado_t278.py`, `tests/test_aviso_restore_t295.py` **nuevo**). Suite Windows (Anaconda) **4242 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **4239 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **`apply_pending_restore`** devuelve `None` si no había nada programado y si no un `RestoreAlArrancar` (aplicado, backup, motivo, `base_intacta`). `main.py` lo guarda y, con la ventana ya abierta (`QTimer.singleShot(0, …)`), `ui/aviso_restore.py` muestra información con el nombre del backup o un error con el motivo. Settings, al programar, dice que el arranque va a avisar.
+  - **Los motivos de falla se separan:** el marcador ilegible, el backup que desapareció y el que no pasa `quick_check` fallan **antes** de copiar y el aviso dice *«la base no se tocó»*; si falla la copia misma (`restore_database` en `False`), el aviso dice que **puede haber quedado a medias** y dónde está la anterior. **De paso, corregido:** el log de esa rama decía *«la base queda como estaba»*, que con la copia ya hecha no se puede afirmar.
+  - **Mutación: seis, las seis rojas** — `main.py` descartando el resultado, `main.py` sin mostrarlo, el aviso antes del `show`, la falla mostrada como información, sin el chequeo de integridad previo (el motivo cambia y el test lo ve), y `base_intacta` siempre verdadero.
+  - **Entra en vigor en el próximo arranque de la app**, que es justamente cuando corre; no hace falta reiniciar para nada más.
+
 - **WIP 230 — Tarea 294 (LOG-DE-PRODUCCION-DESDE-SUBPROCESOS-DE-TEST) CERRADA 2026-10-03 — los subprocesos de la suite dejan de escribir en el log de producción** (`7c5eafb`; `config/logging_config.py`, `tests/conftest.py`, `tests/test_log_isolation_t78.py`, `tests/test_log_subproceso_t294.py` **nuevo**). Suite Windows (Anaconda) **4236 passed, 1 skipped, 1 deselected** (+4), ruff limpio, sin estado vivo **4233 passed, 4 skipped**. **No deja tareas nuevas.**
   - **El mecanismo, re-medido antes de tocar:** con `FINANZIAS_LOG_FILE=""`, un hijo que **hereda** ve `None` y cae al log de producción; uno lanzado con `env=dict(os.environ)` sí ve `''`. Por eso el test lanza el hijo heredando: con `env=` explícito pasaría con el defecto puesto.
   - **El arreglo:** `logging_config.SIN_ARCHIVO = ":sin-archivo:"` —con `:`, no puede ser una ruta en Windows— significa «sin archivo», y el `conftest` lo usa en vez de la vacía (que se sigue aceptando). El `conftest` lo escribe literal porque no puede importar el proyecto antes de esa línea; un test fija que es el mismo valor.
@@ -2110,6 +2116,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-03c** tras cerrar la **294**, que **no deja tareas nuevas**. El orden queda **295 → 293 → 292 → 296 → 196 → 245 → 290**.
 
+> **Repriorizado 2026-10-03d** tras cerrar la **295**, que **no deja tareas nuevas**. El orden queda **293 → 292 → 296 → 196 → 245 → 290**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3510,7 +3518,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Los tres textos corregidos dicen lo que hace el código (verificado contra el código, no contra el texto viejo); las tres lecciones en la skill. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 295. RESTORE-PROGRAMADO-SIN-AVISO — El restore programado de la 278 no avisa en pantalla si se aplicó o falló  ·  origen: `docs/auditoria_tanda_2026-10-03.md` [H-1] · severidad **MEDIA**
+### 295. ~~RESTORE-PROGRAMADO-SIN-AVISO — El restore programado de la 278 no avisa en pantalla si se aplicó o falló~~ · **CERRADA 2026-10-03 — al abrir la ventana, un aviso de éxito con el backup o un error con el motivo** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-03.md` [H-1] · severidad **MEDIA**
 
 - **Qué pasa.** `main.py` llama `apply_pending_restore()` y descarta el resultado; `database/backup.py:372-396` deja el éxito en WARNING y la falla en ERROR **sólo en el log**. Si falla, el marcador pasa a `.failed`, la base queda como estaba y la app abre normal. Settings dice *«se restaura en el próximo arranque»* y nada confirma ni desmiente. Chapa reinicia y cree estar sobre el backup; el log no se lee (la lección de la 197 y la 234).
 - **Alcance.** `apply_pending_restore` devuelve un resultado (aplicado con qué backup / falló con qué motivo / no había nada) y `main.py` lo muestra al abrir la ventana principal: aviso de éxito o error.

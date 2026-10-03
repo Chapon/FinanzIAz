@@ -59,6 +59,7 @@ from __future__ import annotations
 import re
 import shutil
 import sqlite3
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
@@ -370,30 +371,84 @@ def pending_restore() -> Path | None:
         return None
 
 
-def apply_pending_restore() -> Path | None:
+@dataclass(frozen=True)
+class RestoreAlArrancar:
+    """Qué pasó con el restore programado al arrancar (tarea 295).
+
+    Existe para que ``main.py`` lo **muestre**: antes el resultado iba sólo al log, y Chapa
+    reiniciaba sin saber si estaba sobre el backup que pidió o sobre la base que quería
+    descartar.
+    """
+
+    aplicado: bool
+    backup: Path | None
+    motivo: str = ""  # vacío si se aplicó
+    base_intacta: bool = True  # False sólo si falló con la copia ya hecha
+
+    def aviso(self) -> tuple[str, str]:
+        """``(título, texto)`` para la ventana del arranque."""
+        nombre = self.backup.name if self.backup is not None else "(desconocido)"
+        if self.aplicado:
+            return (
+                "Restore aplicado",
+                f"La app arrancó sobre el backup {nombre}.\n\n"
+                "La base anterior quedó guardada como <name>.before-restore.",
+            )
+        estado = (
+            "La base no se tocó: la app arrancó con la misma que tenía antes."
+            if self.base_intacta
+            else "La copia sobre la base ya se había hecho: puede haber quedado a medias. "
+            "La base anterior está en <name>.before-restore."
+        )
+        return (
+            "El restore programado FALLÓ",
+            f"No se pudo restaurar {nombre}: {self.motivo}.\n\n{estado}\n\n"
+            "No se reintenta en el próximo arranque (el marcador quedó como .failed).",
+        )
+
+
+def apply_pending_restore() -> RestoreAlArrancar | None:
     """Ejecuta el restore programado, si hay uno. Va en ``main.py`` **antes** de ``init_db``.
 
-    Devuelve el backup restaurado, o ``None`` si no había nada o falló. Si falla, el
-    marcador se renombra a ``.failed`` para no reintentar en cada arranque, y la base queda
-    como estaba (el ``.before-restore`` se escribe antes de tocarla).
+    Devuelve ``None`` si no había nada programado, y si no un ``RestoreAlArrancar`` con lo
+    que pasó, que ``main.py`` muestra al abrir la ventana (tarea 295). Si falla, el
+    marcador se renombra a ``.failed`` para no reintentar en cada arranque. Los chequeos de
+    antes de copiar dejan la base sin tocar; si falla la copia misma, ya no se puede
+    afirmar eso y el resultado lo dice (``base_intacta=False``).
     """
     m = _pending_marker()
     if not m.exists():
         return None
     backup = pending_restore()
-    ok = backup is not None and restore_database(backup)
+    if backup is None:
+        resultado = RestoreAlArrancar(False, None, "no se pudo leer el marcador del restore")
+    elif not backup.is_file():
+        resultado = RestoreAlArrancar(False, backup, "el archivo del backup ya no existe")
+    elif not _quick_check(backup):
+        resultado = RestoreAlArrancar(False, backup, "el backup no pasa el chequeo de integridad")
+    elif restore_database(backup):
+        resultado = RestoreAlArrancar(True, backup)
+    else:
+        resultado = RestoreAlArrancar(
+            False, backup, "falló la copia sobre la base (detalle en el log)", base_intacta=False
+        )
     try:
-        if ok:
+        if resultado.aplicado:
             m.unlink()
         else:
             m.replace(m.with_name(m.name + ".failed"))
     except Exception:
         log.exception("apply_pending_restore: no se pudo limpiar el marcador")
-    if ok:
+    if resultado.aplicado:
         log.warning("Restore programado aplicado al arrancar: %s", backup)
-        return backup
-    log.error("Restore programado FALLÓ (%s): la base queda como estaba", backup)
-    return None
+    else:
+        log.error(
+            "Restore programado FALLÓ (%s): %s; %s",
+            backup,
+            resultado.motivo,
+            "la base no se tocó" if resultado.base_intacta else "la copia ya se había hecho",
+        )
+    return resultado
 
 
 # ── Backup antes de migrar (tarea 278, [B-2]) ───────────────────────────────

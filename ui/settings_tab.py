@@ -296,7 +296,8 @@ class SettingsTab(QWidget):
                 self,
                 "Restore programado",
                 f"Listo: {target.name} se restaura en el próximo arranque.\n\n"
-                "Cerrá la app y volvé a abrirla. Hasta entonces la base actual sigue en uso.",
+                "Cerrá la app y volvé a abrirla. Hasta entonces la base actual sigue en uso. "
+                "Al abrirla, la app te dice si el restore se aplicó o falló.",
             )
         else:
             QMessageBox.critical(

@@ -95,7 +95,8 @@ def test_el_restore_programado_RESTAURA_y_la_copia_conserva_el_WAL(rutas):
 
     assert schedule_restore(backup) is True
     assert _filas(live) == 150, "programar NO debe tocar la base"
-    assert apply_pending_restore() == backup.resolve()
+    resultado = apply_pending_restore()
+    assert resultado.aplicado and resultado.backup == backup.resolve()
 
     assert _filas(live) == 10, "la base no quedó igual al backup"
     c = sqlite3.connect(str(live))
@@ -135,7 +136,7 @@ def test_un_restore_que_falla_NO_reintenta_en_cada_arranque_y_deja_la_base(rutas
     assert schedule_restore(backup)
     backup.unlink()  # desapareció entre programar y arrancar
 
-    assert apply_pending_restore() is None
+    assert apply_pending_restore().aplicado is False
     assert _filas(live) == 10  # la de antes: 7 + 3
     marcador = live.with_name(live.name + ".restore-pending")
     assert not marcador.exists()
