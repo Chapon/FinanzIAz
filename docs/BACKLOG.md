@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 218 — Tarea 287 (AUDITORIA-DE-LOGS) CERRADA 2026-10-02 — el área `logs`: un censo que clasifica cada firma de error del log, y su primera corrida** (`HASH`; `.claude/skills/auditoria/SKILL.md`, `.claude/commands/audit.md`, `docs/auditoria_logs_2026-10-02.md` **nuevo**). Suite Windows (Anaconda) **4172 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4169 passed, 4 skipped**. Deja la **288** y la **289**.
+  - **Por qué un área aparte de `operacion` (H):** H busca lo que **se repite** y lo que **no corrió**; un error que aparece tres veces en un mes, o en un camino poco usado, no se ve así. La L hace un **censo**: cada firma (`nivel, módulo, mensaje normalizado`; y `excepción, último frame del repo` para los tracebacks) se clasifica en *conocida* (con tarea), *explicada* (benigna, verificada) o *desconocida* (se investiga). Y se busca lo que sigue apareciendo **después** del cierre de su tarea.
+  - **La primera corrida** (`finanzias.log`, 2026-09-07 → 10-02): **39 firmas** WARNING+ y **10 de traceback** (1.273), todas clasificadas. **Ninguna conocida sigue apareciendo después de su cierre** (234/237 última el 09-28, 197 el 09-11, AVB el 09-10, el aviso viejo de barras el 09-30). Explicadas: la red caída del 09-21, el cierre con fetch en vuelo del 09-30, Ollama caído el 09-15, Slack con timeout el 09-23, el encabezado de dos líneas de yfinance.
+  - **Los dos hallazgos:** **[L-1] MEDIA** — dos firmas *desconocidas* resultaron **no ser de la app**: una corrida mía del cuadre (266) y una prueba de stooq desde el `.venv`, escritas en el log de producción porque `get_logger` configura el archivo para cualquier proceso → **288**. **[L-2] BAJA** — la red caída escribió 1.202 tracebacks en un día y el cierre con fetch en vuelo 48 → **289**.
+  - No hubo HIGH/CRITICAL, así que no pasó por el `verificador`.
+
 - **WIP 217 — Tarea 279 (TCAT5B-CONSENSO-SIN-AJUSTE-POR-SPLIT) CERRADA 2026-10-02 — queda hecho y testeado el ajuste por split del consenso, y el requisito escrito donde vive T-CAT-5b** (`55e754c`; `analysis/consenso_pit.py` **nuevo**, `tests/test_consenso_pit_t279.py` **nuevo**). Suite Windows (Anaconda) **4172 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4169 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Qué hay:** `ajustar_por_split` lleva una serie de consenso a la escala más reciente (divide las métricas **por acción** —`eps`, `price_target`— por los splits con ex-date posterior; el snapshot del mismo día del ex-date ya está en la escala nueva, la convención de la 262; `revenue` y `rec_mean` no se tocan). `revision` es el cambio relativo dentro del ticker, que además cancela la moneda (el caso TSM). Puro: los splits llegan de `get_split_events` (la 262).
   - **Verificado con los datos reales:** KLAC `eps 0q` del 2026-06-06 al 06-18 con su split 10:1 del 2026-06-12 (confirmado contra Yahoo): revisión **−89,98%** sin ajustar, **+0,18%** ajustada.
@@ -2008,6 +2014,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02r** tras cerrar la **279**, que **no deja tareas nuevas**. El orden queda **280 → 283 → 268 → 269 → 270 → 285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02s** tras cerrar la **287** (auditoría de logs, pedido de Chapa), que deja la **288** (MEDIA, el log de producción mezcla la app con scripts corridos a mano) y la **289** (BAJA, ruido de tracebacks). La 288 pasa adelante de las BAJAS: el log es evidencia de auditoría y hoy no se puede saber de qué proceso viene cada línea. El orden queda **288 → 280 → 283 → 268 → 269 → 289 → 270 → 285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3398,6 +3406,25 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
+
+### 289. LOG-RUIDO-RED-CAIDA-Y-CIERRE — Con la red caída el harvest escribió 1.202 tracebacks en un día, y cerrar la app con un fetch en vuelo escribe un ERROR con traceback por ticker  ·  origen: `docs/auditoria_logs_2026-10-02.md` [L-2] · severidad **BAJA**
+
+- **Qué pasa.** 2026-09-21: cada `ticker × fuente` del harvest hizo `log.exception` completo (`ConnectionError`/`DNSError`, `NameResolutionError`): 362 ERROR y 1.202 tracebacks en un día sin internet. 2026-09-30 21:23: la app se cerró con un `get_bulk_prices` en vuelo y cada ticker escribió `Parallel fetch failed` + `RuntimeError: cannot schedule new futures after shutdown` (48). Las dos causas son benignas; el volumen entierra cualquier otro error del log (el daño de la 25 y la 197).
+- **Alcance.** Red caída: un traceback por fuente y por corrida, y un resumen con el conteo. Cierre: reconocer el `cannot schedule new futures after shutdown` y loguearlo como INFO de cierre, sin traceback.
+- **Kill-criteria.** Un harvest con la red cortada (sesión falsa que lanza `ConnectionError`) escribe a lo sumo un traceback por fuente; un `get_bulk_prices` con el pool cerrado no escribe ERROR. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 288. LOG-SIN-ORIGEN — Cualquier script que importe un módulo del proyecto escribe en el log de producción, mezclado con la app y sin nada que los distinga  ·  origen: `docs/auditoria_logs_2026-10-02.md` [L-1] · severidad **MEDIA**
+
+- **Qué pasa.** `config/logging_config.py:233-241`: `get_logger` llama a `setup_logging()` la primera vez, con default `~/.finanzias/finanzias.log`, y el formato no dice de qué proceso viene la línea. La 78 lo cortó para la **suite**; los runners, las verificaciones a mano y los scripts siguen escribiendo ahí. El censo encontró tres: el cuadre corrido a mano en la 266 (`cuadre: no se pudo cuadrar`, 2026-10-02), una prueba de stooq desde el `.venv` (2026-09-07) y líneas de `numexpr` con la app cerrada (2026-09-30).
+- **Por qué importa:** el log es evidencia de auditoría (`operacion`, `rendimiento`, `logs`). Un error de una prueba a mano se lee como de la app, y al revés: una verificación a mano puede *«confirmar»* que algo corrió en vivo.
+- **Alcance.** Que cada línea diga su origen (el script, o `app`), o que un proceso que no sea `main.py` escriba en su propio archivo salvo que lo pida.
+- **Kill-criteria.** Un proceso que no es la app, al loguear, no escribe en `finanzias.log` sin marca (test con `FINANZIAS_LOG_FILE` apuntando a un temporal y un subproceso que importa un módulo). Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 287. ~~AUDITORIA-DE-LOGS — No había una auditoría que buscara en el log los errores que no estamos viendo~~ · **CERRADA 2026-10-02 — área `logs` (categoría L, un censo de cada firma) y su primera corrida: 49 firmas clasificadas, dos hallazgos** · **movida a *En curso* con el detalle**  ·  pedido de Chapa (2026-10-02, *«si no hay, crear una auditoría de logs, para buscar errores que no estemos viendo»*) · severidad **MEDIA**
+
+- **Kill-criteria.** El área en la skill y en `/audit`, con método y barrido limpio; la primera corrida con cada firma clasificada y la tabla `hallazgo → tarea`. Los cuatro comandos en verde.
 
 ### 286. ESTADO-FRAMES-1Y-Y-JSON-SIN-COMMIT — Los frames `1y` quedan congelados si nadie los pide (115 en el 2026-09-09), y `surprise_profiles.json` se regenera versionado sin que nadie dispare el commit  ·  origen: `docs/auditoria_estado_2026-10-02.md` [E-1] y [E-2] · severidad **BAJA**
 

@@ -1,5 +1,5 @@
 ---
-description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion / datos / rendimiento / dependencias)
+description: Auditoría profunda READ-ONLY por área (claims / muestra / desvios / guards / estado / pantalla / cuentas / operacion / datos / rendimiento / dependencias / logs)
 ---
 
 Invocá la skill `auditoria` y corré una auditoría READ-ONLY del área: **$ARGUMENTS**
@@ -20,6 +20,7 @@ un barrido de todas juntas.
 | `datos` | el contenido de una fuente (noticias, consenso, fundamentals, universo) no dice lo que se cree |
 | `rendimiento` | algo tarda tanto que cambia lo que pasa (locks, índices, jobs sin techo) |
 | `dependencias` | lo que corre no es lo que se declara (imports, entornos, pines) |
+| `logs` | el censo: cada firma de error del log clasificada (conocida / explicada / desconocida) |
 
 El orden de la corrida:
 

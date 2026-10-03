@@ -100,7 +100,7 @@ paso extra de otra cosa ni se corre en un hook.
 Son de este repo, no genéricas. Cada una salió de un defecto real, y ese defecto está citado
 para que se entienda qué forma tiene la cosa que se busca.
 
-**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02); I mira el contenido del dato de entrada (tarea 271); J y K, rendimiento y dependencias (tarea 274).** Hasta esa
+**A–E miran el análisis; F–H miran el producto en uso (tarea 260, 2026-10-02); I mira el contenido del dato de entrada (tarea 271); J y K, rendimiento y dependencias (tarea 274); L, el censo del log (tarea 287).** Hasta esa
 fecha las cinco primeras eran todas, y todas preguntan si una **conclusión** sigue siendo cierta.
 Ninguna preguntaba si lo que Chapa **ve en la pantalla, tiene en la cuenta o recibe del log** es
 cierto, y los informes lo declaraban: *«NO mirado: los guards de la UI»*, *«NO mirado: `run_scan`
@@ -449,6 +449,33 @@ uno sigue siendo cierto?, ¿hay avisos de seguridad sobre la versión pineada?
 
 **Queda afuera:** actualizar. Esta área dice qué diverge; subir versiones es la tarea propia de
 *Ideas* («Actualizar dependencias»), con su riesgo medido.
+
+### L. Logs: el censo de cada error que la app registra
+
+**Qué.** El log de producción mirado **como población**: cada firma distinta de WARNING, ERROR,
+CRITICAL y traceback de una ventana declarada, clasificada una por una.
+
+**Por qué rinde acá, y por qué no alcanza con H.** `operacion` (H) mira el log buscando lo que
+**se repite** y lo que **no corrió**; un error que aparece tres veces en un mes, o una excepción
+en un camino poco usado, no se repite lo suficiente para verse. La 234 (el precio bueno
+descartado porque no se pudo escribir el cache) estaba en el log como un puñado de `Error
+fetching price`; la 263 ni siquiera llegaba al log. Pedido de Chapa (2026-10-02, tarea 287):
+*«una auditoría de logs, para buscar errores que no estemos viendo»*.
+
+**Cómo se audita.** **(1)** Normalizar cada línea WARNING+ (tickers → `TK`, números → `N`,
+rutas y URLs fuera) y agrupar por `(nivel, módulo, mensaje)`; por cada traceback, la firma es
+`(tipo de excepción, último frame del repo)`. **(2)** Cada firma se clasifica en **una** de tres:
+*conocida* (tiene tarea, abierta o cerrada: citarla), *explicada* (benigna, con el motivo escrito
+y verificado contra el código), o *desconocida*. **(3)** Toda *desconocida* se investiga hasta su
+causa o se publica como tarea de medición. **(4)** Las firmas que **dejaron** de aparecer después
+del cierre de su tarea confirman el arreglo; las que siguen apareciendo después del cierre son un
+hallazgo (el arreglo no arregló). **(5)** Lo que no aparece y debería: un `except` que loguea a
+`debug` en un camino de fondo es invisible en producción (el log corre en INFO).
+
+**Barrido limpio:** ninguna firma queda sin clasificar, y ninguna *conocida* sigue apareciendo
+después del cierre de su tarea.
+
+**Queda afuera:** el contenido de los INFO, salvo que delaten una falla.
 
 ### Las genéricas
 
