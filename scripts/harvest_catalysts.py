@@ -39,7 +39,7 @@ import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -348,6 +348,29 @@ def _ultimo_consenso_por_ticker() -> dict[str, object]:
         return {}
 
 
+# Tarea 280: dos copias de la misma nota por canales distintos llegan con ~1 h de diferencia
+# (mediana medida); un titular genérico que se repite días después es otra noticia.
+_VENTANA_DUP_CERCANO = timedelta(hours=24)
+
+
+def _duplicado_cercano(session, item) -> bool:
+    """¿Ya hay una nota del mismo ticker con el mismo título normalizado a < 24 h? (tarea 280)"""
+    if item.published_at is None or not item.title:
+        return False
+    from data.news_sources import _norm_title
+
+    p = item.published_at.replace(tzinfo=None) if item.published_at.tzinfo else item.published_at
+    titulo = _norm_title(item.title)
+    candidatos = (
+        session.query(NewsEvent.title)
+        .filter(NewsEvent.ticker == item.ticker)
+        .filter(NewsEvent.published_at >= p - _VENTANA_DUP_CERCANO)
+        .filter(NewsEvent.published_at <= p + _VENTANA_DUP_CERCANO)
+        .all()
+    )
+    return any(_norm_title(t) == titulo for (t,) in candidatos)
+
+
 def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> bool:
     """
     Insert a NewsItem unless it's a duplicate. Returns True if new.
@@ -358,7 +381,13 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
          where the titles differ so ``content_hash`` would not catch it.
       2. content_hash: (ticker, normalized title, hour) — the original guard for
          items without a URL or with differing URLs but the same headline.
-    Both are checked in-run (the sets) and against already-stored rows.
+      3. Tarea 280: mismo ticker y mismo título normalizado a menos de
+         ``_VENTANA_DUP_CERCANO`` de un guardado, de CUALQUIER fuente. La misma nota de
+         Yahoo entraba dos veces —por yfinance y por Finnhub, con URLs distintas y una
+         hora de diferencia, así que caía en otra hora del hash—: 1.988 pares, el 2,7%
+         de la tabla (``docs/auditoria_datos_2026-10-02.md`` [D-1]).
+    Both are checked in-run (the sets) and against already-stored rows; la 3 sólo contra
+    la DB, que ya incluye lo de esta corrida porque cada insert hace ``flush``.
     """
     cu = canonical_url(item.url)
     if cu is not None and cu in seen_urls:
@@ -376,6 +405,8 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
         url_dup = session.query(NewsEvent.id).filter(NewsEvent.url == item.url).first()
         if url_dup is not None:
             return False
+    if _duplicado_cercano(session, item):
+        return False
     session.add(
         NewsEvent(
             ticker=item.ticker,

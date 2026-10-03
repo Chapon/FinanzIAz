@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 220 — Tarea 280 (DATOS-DEDUP-Y-COBERTURA-PARCIAL) CERRADA 2026-10-02 — la misma nota por dos canales entra una vez; la D-3 resultó ser un rótulo; y lo que la corrida de `datos` no miró, corrido** (`HASH`; `scripts/harvest_catalysts.py`, `scripts/run_universe_screen_validation.py`, `docs/auditoria_datos_2026-10-02.md`, `tests/test_dedup_cercano_t280.py` **nuevo**, `tests/test_acct_validador_t128.py`). Suite Windows (Anaconda) **4187 passed, 1 skipped, 1 deselected** (+4), ruff limpio, sin estado vivo **4184 passed, 4 skipped**. **No deja tareas nuevas**; suma una línea a la 259.
+  - **[D-1]** Tercera capa del dedup en `_insert_news_if_new`: mismo ticker y mismo **título normalizado** a menos de **24 h** de una nota ya guardada, de cualquier fuente (cubre la corrida en curso porque cada insert hace `flush`). La primera capa (URL) no las juntaba porque yfinance y Finnhub usan URLs distintas, y la segunda (hash por **hora**) tampoco: las dos copias llegan con ~1 h de diferencia y caen en horas distintas. El test cruza ese borde (14:50 y 15:40). Un titular genérico tres días después y el mismo título en otro ticker siguen siendo noticias distintas. Las 1.988 filas duplicadas ya guardadas **no se borraron**: el dedup es hacia adelante, y reescribir el histórico point-in-time es otra decisión.
+  - **[D-3] era falso, y se corrigió en el informe:** la cobertura de la 149 cuenta por `net_income_recent` —la pata que decide—, y SPG **sí** aparecía, como *«SIN facts»*. Lo engañoso era el rótulo; ahora dice *«SIN net income (la pata que decide)»*.
+  - **Lo diferido:** `earnings_cache` limpio (se llena a demanda; las 11 fechas pasadas nunca se sirven, porque el TTL es de 24 h); la muestra de noticias leídas a mano dio 2 errores de 14, que van a la 259.
+  - **El guard de la 128 fijaba el rótulo viejo** (*«Cobertura de facts»*, *«SIN facts»*) y la primera corrida lo dio rojo; se actualizó al nuevo, que exige lo mismo —que el número llegue al informe— nombrando la pata.
+  - **Mutación: cuatro, las cuatro rojas** — sin la capa, ventana de 30 días, sin filtrar por ticker, sin normalizar el título.
+
 - **WIP 219 — Tarea 288 (LOG-SIN-ORIGEN) CERRADA 2026-10-02 — cada línea del log dice de qué proceso viene, y las de la app quedan idénticas** (`6f8eb36`; `config/logging_config.py`, `.claude/skills/auditoria/SKILL.md`, `tests/test_log_con_origen_t288.py` **nuevo**). Suite Windows (Anaconda) **4183 passed, 1 skipped, 1 deselected** (+11), ruff limpio, sin estado vivo **4180 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Qué cambió:** `origen_del_proceso` (desde `sys.argv[0]`: `None` para `main.py`, el nombre del script si no, `python -c` / `python stdin` para las pruebas a mano) y un filtro en los dos handlers de `setup_logging` que agrega `%(origen)s` **al final** del formato: vacío para la app, `  [proceso: X]` para cualquier otro. Se eligió el sufijo y no redirigir a otro archivo porque los jobs que lanza la app (harvest, clasificador) **tienen** que quedar en el log de producción, y ahora quedan con su nombre.
   - **Por qué al final y vacío para la app:** los que parsean el log (el censo de la 287, la telemetría OPS1, los guards de la 78) leen `fecha [NIVEL] módulo: mensaje`; una línea de la app es byte a byte la de antes.
@@ -2025,6 +2032,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-02t** tras cerrar la **288**, que **no deja tareas nuevas**. El orden queda **280 → 283 → 268 → 269 → 289 → 270 → 285 → 286 → 196 → 245 → 259**.
 
+> **Repriorizado 2026-10-02u** tras cerrar la **280**, que **no deja tareas nuevas** (suma una línea a la 259). El orden queda **283 → 268 → 269 → 289 → 270 → 285 → 286 → 196 → 245 → 259**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3481,7 +3490,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Test con una posición sin precio: las tarjetas lo dicen; test con dos compras en fechas distintas: los dividendos cuentan cada tramo desde su fecha (o el rótulo dice *estimados*). Los cuatro comandos en verde.
 - **Dependencias:** hacerla junto con la **264** o antes, porque Home va a reusar estas cifras.
 
-### 280. DATOS-DEDUP-Y-COBERTURA-PARCIAL — La misma nota de Yahoo entra dos veces (yfinance y Finnhub) porque el dedup incluye la hora; SPG llega al screen sin net income y la cobertura de la 149 no cuenta huecos parciales; y lo que la corrida de `datos` no miró  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-1], [D-3] y §1 · severidad **BAJA**
+### 280. ~~DATOS-DEDUP-Y-COBERTURA-PARCIAL — La misma nota de Yahoo entra dos veces (yfinance y Finnhub) porque el dedup incluye la hora; SPG llega al screen sin net income y la cobertura de la 149 no cuenta huecos parciales; y lo que la corrida de `datos` no miró~~ · **CERRADA 2026-10-02 — dedup por título a <24 h entre fuentes; la D-3 era un rótulo; lo diferido, corrido** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_datos_2026-10-02.md` [D-1], [D-3] y §1 · severidad **BAJA**
 
 - **[D-1]** `content_hash` = `(ticker, título, published_at)` (`data/news_sources.py:183`): 1.988 pares misma nota/misma ticker de fuentes distintas a <24 h (2,7% de la tabla), casi todos `yfinance` ↔ `finnhub:Yahoo`. La pestaña muestra duplicados; `historical_reaction` y las mediciones 255/258 inflan `n` ~3% (veredictos sin cambio). Deduplicar por ticker + título normalizado en una ventana corta entre fuentes.
 - **[D-3]** De los 127 del universo, SPG tiene revenue y **no** net income (además de ASML, TSM y XOM sin nada, ya declarados por la 149/156); la pata de rentabilidad del screen no lo juzga. Contar la cobertura por pata, no por ticker.
@@ -3649,6 +3658,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Qué pasa, medido.** De las 53.788 noticias con `sentiment_score` desde junio, `round(3 × score)` da: −3: 99 · −2: 8.030 · −1: 112 · 0: 33.364 · +1: 17 · +2: 6.610 · +3: 5.556. El prompt de `data/catalyst_classifier.py` pide un número en [−1, +1] sin una guía de qué significa cada tramo, y el modelo devuelve pocos valores (27 distintos con dos decimales). Los niveles ±1 y el −3 casi no existen.
 - **Por qué es BAJA:** la 255 y la 258 midieron que ni el signo ni la intensidad anticipan el retorno, así que más resolución no cambia ninguna decisión. Lo que sí cambia es la lectura: un «+2» y un «+3» se ven distintos en la pestaña y casi no lo son.
+- **Y la muestra de la 280 (2026-10-02):** de 14 noticias clasificadas leídas a mano, **2 errores claros** — un *«Earnings Preview»* de MU clasificado `earnings_results`, y una nota de Boeing asignada a NOC como `mna` positiva (es un contrato, y para NOC, que perdió la licitación, negativa). Si se toca el prompt por (b), que la rúbrica distinga adelanto de resultado y el ticker sujeto de la nota del ticker mencionado.
 - **Alcance propuesto (decisión de Chapa):** (a) aceptarlo y decirlo en el tooltip; o (b) pedirle a qwen el nivel −3…+3 directamente, con una rúbrica por nivel, y reclasificar una ventana para comparar la distribución. (b) cuesta una reclasificación y **no** promete predicción: si se hace, se re-corre `measure_news_tone_fwd5_t258.py` sobre lo nuevo.
 - **Kill-criteria (b).** Con la rúbrica, ningún nivel queda con menos del 3% de las no neutrales en la ventana reclasificada. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.

@@ -77,6 +77,8 @@ Severidad: **LOW** · Confianza: **ALTA**
 
 → tarea **280**.
 
+**Corregido al cerrar la 280: el razonamiento de este hallazgo era falso.** La cobertura de la 149 (`scripts/run_universe_screen_validation.py`) **no** cuenta por *«algún fact»*: cuenta por `net_income_recent`, que es la pata que decide en el screen. SPG **sí** aparece, en la lista de *«SIN facts»*. Lo único engañoso era el rótulo (SPG tiene revenue); se cambió a *«SIN net income (la pata que decide)»*.
+
 ## 3. Barrido limpio en lo demás
 
 - **Clasificación:**
@@ -104,3 +106,9 @@ Severidad: **LOW** · Confianza: **ALTA**
 | D-2 | 279 |
 | D-3 | 280 |
 | diferimiento (`earnings_cache`, muestra de noticias contra el original) | 280 |
+
+
+## 6. Lo diferido, corrido al cerrar la 280
+
+- **`earnings_cache`:** 55 tickers de 127 del universo, y **11 filas** con una *«próxima»* fecha ya pasada (la más nueva: MU, bajada el 08-12 para su reporte del 09-23). **Limpio:** el cache se llena a demanda —sólo con los candidatos que llegan al Gate 6—, y `get_next_earnings_date` sirve únicamente filas con `fetched_at` dentro de `EARNINGS_CACHE_HOURS = 24`; una fila vieja no se sirve nunca como próxima.
+- **Muestra de 14 noticias clasificadas (no `other`, desde el 09-15, `random.seed(280)`), leídas a mano:** 12 razonables y **2 errores claros**. *«Why The Market Is Undervaluing Micron, Again (Earnings Preview)»* quedó `earnings_results`, cuando es un adelanto. Una nota de **Boeing** (*«Boeing Stock Rises After Pentagon Picks It for Navy Fighter»*) quedó asignada a **NOC** como `mna` positiva: es un contrato, y para NOC, que perdió, es más bien negativa. Como la 255 y la 258 midieron que el tono no predice, no abre tarea propia: va al enunciado de la **259** (el prompt de qwen).

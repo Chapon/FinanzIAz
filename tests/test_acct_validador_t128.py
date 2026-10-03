@@ -257,6 +257,7 @@ def test_la_cobertura_llega_al_INFORME_y_no_solo_al_json(sin_red, monkeypatch):
     with contextlib.redirect_stdout(buf):
         runner.main(["--tickers", "AAPL,SINDATOS"])
     texto = buf.getvalue()
-    assert "Cobertura de facts: 1/2 (50.0%)" in texto
-    assert "SIN facts: SINDATOS" in texto
+    # Tarea 280: el rótulo nombra la pata que cuenta (net income), no «facts» en general.
+    assert "Cobertura de net income (la pata que decide): 1/2 (50.0%)" in texto
+    assert "SIN net income: SINDATOS" in texto
     assert "INVISIBLE para ella" in texto

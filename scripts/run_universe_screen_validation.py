@@ -255,8 +255,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Otras exclusiones: ninguna")
     sin_facts = sorted(r["ticker"] for r in results if not r["net_income_recent"])
     print(
-        f"\nCobertura de facts: {len(con_facts)}/{len(results)} ({100 * cobertura:.1f}%)"
-        + (f" — SIN facts: {', '.join(sin_facts)}" if sin_facts else "")
+        f"\nCobertura de net income (la pata que decide): {len(con_facts)}/{len(results)} ({100 * cobertura:.1f}%)"
+        # Tarea 280: decía «SIN facts», pero cuenta por `net_income_recent`: un nombre con
+        # revenue y sin net income (SPG, 2026-10-02) aparecía como «sin facts» teniéndolos.
+        + (f" — SIN net income: {', '.join(sin_facts)}" if sin_facts else "")
     )
     print(
         "  La pata fundamental sólo excluye con evidencia POSITIVA de pérdidas, así que "
