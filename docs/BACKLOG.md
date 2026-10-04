@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 236 — Tarea 299 (AUDITORIA-TANDA-2026-10-04) CERRADA 2026-10-04 — doce corridas en orden, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** (`docs/auditoria_tanda_2026-10-04.md` y `docs/auditoria_tanda_killcriteria_2026-10-04.md`, **nuevos**). READ-ONLY: no toca código. **Deja la 300, la 301 y la 302.**
+- **WIP 236 — Tarea 299 (AUDITORIA-TANDA-2026-10-04) CERRADA 2026-10-04 — doce corridas en orden, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** (`d9f2e00`; `docs/auditoria_tanda_2026-10-04.md` y `docs/auditoria_tanda_killcriteria_2026-10-04.md`, **nuevos**). READ-ONLY: no toca código. **Deja la 300, la 301 y la 302.**
   - **[D-1] → 300 (ALTA):** el CI está **rojo desde el cierre de la 288**, 19 corridas y 17 tareas cerradas con el done en verde. La causa son dos casos de `test_log_con_origen_t288.py` con rutas de Windows que en Linux no se separan. Es la tercera vez (106, 175). La 176 había descartado leer el CI en `/ship`; reabrir esa decisión es de Chapa. La tanda del 2026-10-03 tenía el CI en alcance y lo dio por limpio mirando el yml y no las corridas.
   - **El `verificador` sostuvo [D-1] y le recortó tres partes:** el conteo (17, no 15; faltaba la 269), *«ningún paso lee el CI»* (es una decisión de la 176, no un descuido), y *«tapa otras regresiones»* (hoy es potencial: las corridas muestreadas fallan sólo en esos dos casos).
   - **[A-1] y [A-2] → 301, [I-1] → 302 (BAJAS):** *«5 gates»* en la descripción de `finanzias-conventions`; el flujo de `ARCHITECTURE.md` sin dividendos, splits, cuadre ni candidatos; y 51 noticias con un rótulo que contradice el signo del puntaje.
@@ -3582,7 +3582,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria:** el job `pytest` del CI en verde sobre el commit de cierre (leído por la API, no supuesto); mutación de (1): devolver la ruta de Windows literal tiene que poner rojo el test **en el cuarto comando o en el CI**, y que se diga en cuál; los cuatro comandos en verde.
 - **Dependencias:** ninguna. Va **primero**: mientras el CI siga rojo, cualquier regresión que sólo rompa en Linux queda tapada.
 
-### 299. ~~AUDITORIA-TANDA-2026-10-04 — Correr todas las auditorías en orden, sobre la 292–297 y el estado vivo~~ · **CERRADA 2026-10-04 — doce corridas, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-04, *«ejecutar todas las auditorías en orden»*) · severidad **MEDIA**
+### 299. ~~AUDITORIA-TANDA-2026-10-04 — Correr todas las auditorías en orden, sobre la 292–297 y el estado vivo~~ · **CERRADA 2026-10-04 — doce corridas, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** (`d9f2e00`) · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-04, *«ejecutar todas las auditorías en orden»*) · severidad **MEDIA**
 
 - **Alcance.** Las doce áreas de la skill, en orden, con el kill-criteria congelado antes de abrir el primer archivo (`docs/auditoria_tanda_killcriteria_2026-10-04.md`): lo que cambió desde la tanda del 2026-10-03 (la 292–297) más el estado vivo (DB copiada en sólo lectura, log de producción, `settings.json`, la app abierta). Informe: `docs/auditoria_tanda_2026-10-04.md`.
 
