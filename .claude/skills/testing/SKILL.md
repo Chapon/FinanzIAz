@@ -21,6 +21,7 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
 1. **Nunca tocar la red** — y desde la tarea 209 **no es una regla de buena conducta, es un corte**: el autouse `_cortafuegos_de_red` hace fallar con `RedBloqueadaEnLaSuite` cualquier test sin `@pytest.mark.network` que intente salir. Si te topás con él, la respuesta casi siempre es mockear la fuente, no marcar el test.
 2. **Nunca tocar `finanzias.db` real.** Usar la DB en memoria del fixture.
 3. **Determinismo.** Nada de `datetime.now()` sin control ni random sin seed. Usar `ohlcv_factory` (tiene seed).
+4. **Portable: el test corre en Windows Y en el Linux del CI** (tarea 300). Las rutas se arman con `Path` (`str(Path(_REPO.anchor, "x", "a.py"))`, que da la forma nativa en cada plataforma), nunca como `r"C:\…"`: en Linux `\` no separa y el test rompe **sólo** en el CI. Así quedó rojo 19 corridas mientras 17 tareas se cerraban en verde. Si el caso necesita la forma de Windows en cualquier plataforma, usá `PureWindowsPath` y compará contra ella. `tests/test_sin_rutas_de_windows_t300.py` caza la ruta literal en la suite de Windows; el resto de lo que sólo rompe en Linux (mayúsculas en nombres de archivo, permisos, locale) lo ve únicamente el CI, y por eso la tarea se cierra con `scripts/check_ci.py --esperar` en verde (regla 7 de `CLAUDE.md`).
 
 ## Fixtures disponibles (`tests/conftest.py`)
 
@@ -68,6 +69,8 @@ python scripts/run_suite_sin_estado_vivo.py
 ```
 
 Reportar el conteo (`NNN passed, M skipped`) en el cuerpo del commit (ver skill `git-workflow`).
+
+**Y después del push, el CI (regla 7 de `CLAUDE.md`, tarea 300):** `python scripts/check_ci.py --esperar`. Los cuatro comandos son el done **antes** del commit; la tarea se **cierra** con el CI del commit pusheado en verde, leído y no supuesto.
 
 **Por qué ruff está acá y no sólo en el CI (tarea 106).** Hasta el 2026-09-03 el done era la
 suite sola. El 2026-09-02 el job `lint` del CI quedó en **rojo** —15 errores de ruff y 18

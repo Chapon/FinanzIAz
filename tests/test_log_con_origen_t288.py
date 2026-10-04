@@ -27,13 +27,21 @@ from config.logging_config import (
 _REPO = Path(__file__).resolve().parent.parent
 
 
+# Las rutas absolutas van construidas con ``Path`` y no escritas como ``r"D:\…"``: así son las
+# que el sistema le pasa de verdad a ``argv[0]`` —con ``\`` en Windows, con ``/`` en Linux—. La
+# primera versión las tenía literales de Windows, y en Linux ``\`` no separa: el CI quedó rojo
+# 19 corridas y 17 tareas se cerraron en verde sin enterarse (tarea 300).
+_MAIN_ABSOLUTO = str(Path(_REPO.anchor, "Rodrigo", "FinanzIAs", "main.py"))
+_SCRIPT_ABSOLUTO = str(Path(_REPO.anchor, "x", "scripts", "medir_cobertura_de_scan_t265.py"))
+
+
 @pytest.mark.parametrize(
     "argv,esperado",
     [
-        ([r"D:\Rodrigo\FinanzIAs\FinanzIAs\main.py"], None),
+        ([_MAIN_ABSOLUTO], None),
         (["main.py", "--algo"], None),
         (["scripts/harvest_catalysts.py"], "harvest_catalysts"),
-        ([r"C:\x\scripts\medir_cobertura_de_scan_t265.py"], "medir_cobertura_de_scan_t265"),
+        ([_SCRIPT_ABSOLUTO], "medir_cobertura_de_scan_t265"),
         (["-c"], "python -c"),
         ([], "python -c"),
         (["-"], "python stdin"),

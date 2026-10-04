@@ -136,6 +136,15 @@ corrigió el *«`buy_score` no predice el fwd5»* en dos lugares de tres (quedó
 y quedó `DB_SCHEMA.md`. Las corridas posteriores **leyeron** los dos archivos y no lo vieron:
 leer no es buscar.
 
+**Y dos lugares que declaran el MISMO proceso se comparan entre sí, no cada uno contra el código
+(tarea 300).** `.claude/commands/ship.md` decía *«no pushees salvo que te lo pidan»* y la skill
+`git-workflow`, *«siempre pusheá al cerrar una tarea»* (orden de Chapa del 2026-07-15). Las dos se
+leían bien solas, y ninguna corrida de `claims` lo vio porque contrastaba cada afirmación contra
+el código, y el push no está en el código. Los procesos que se declaran en varios lugares —el
+cierre de una tarea, el done, el arranque de una sesión, el refresh del cohorte— se listan, y cada
+paso se compara **lugar contra lugar**. Lo encontró la tarea que fue a editar los dos, no la
+auditoría: (c-metodo).
+
 ### B. Chequeos por cantidad, ciegos a la muestra
 
 **Qué.** Cualquier invariante verificado **contando** en vez de comparando identidad,
@@ -281,6 +290,14 @@ workflow: ¿un job con `continue-on-error` o *best-effort* puede tapar un rojo r
 lo mismo que el *done* de `CLAUDE.md` (los cuatro comandos), o algo menos?; ¿la versión de Python
 y de las dependencias del CI es la de la máquina donde corre la app? La 176 existe porque el CI
 estuvo rojo 35 corridas sin que el proceso se enterara.
+
+**Y la PRIMERA pregunta es por el RESULTADO, no por la configuración (tarea 300).** Antes del yml:
+`python scripts/check_ci.py --ultimo` y, si da rojo, desde cuándo (el último verde de la lista de
+runs de `main`) y cuántas tareas se cerraron en el medio. La tanda del 2026-10-03 tenía el CI en
+alcance, escribió *«el CI no cambió desde la tanda»* —cierto para `ci.yml`— y el CI llevaba **13
+corridas rojas**: llegó a 19 y 17 tareas cerradas antes de que la tanda siguiente lo leyera.
+**Que la configuración de un guard no cambió no dice nada de lo que el guard está diciendo.** Vale
+para todo guard que emite un veredicto que se puede leer: el CI, el log de un job, un exit code.
 
 **Corolario: cuando un guard declara su propio punto ciego, ese punto ciego ES un hallazgo.** No
 es una nota de color ni una muestra de honestidad. El guard de la 130 escribió *«una perilla viva
@@ -633,7 +650,31 @@ motivo**, en su propia sección.
   mientras corre `run_suite_sin_estado_vivo.py` dispara el guard de la 236 (`rc=3`, *«la suite
   dejó cambios en el repo»*): no es un fallo de la suite, pero esa corrida no vale como done.
 
-## Salida
+**Y de la tanda del 2026-10-04 (tarea 299): siete instrumentos que dieron un número limpio y
+falso, frenados antes de publicarse** (`docs/auditoria_tanda_2026-10-04.md` §2), agrupados en las
+cuatro formas que va a repetir la próxima:
+
+- **El log está en hora LOCAL (UTC−3) y la DB en UTC.** Cruzar `finanzias.log` con
+  `price_cache`, `paper_equity_snapshots` o `paper_orders` sin convertir inventa un hueco de
+  cinta de cuatro días: las 21:39 locales del 09-27 son las 00:39Z del 09-28. Y las líneas de un
+  traceback no traen timestamp: se ubican por el último timestamp anterior, no por un `awk` que
+  compare texto (la 291 ya se había quemado con eso).
+- **Antes de medir la cobertura de un doc, leé qué declara cubrir.** `DB_SCHEMA.md` describe las
+  tablas generales con una línea, a propósito; `SETTINGS_REFERENCE.md` cubre `paper_*` y engine,
+  no la UI; `ARCHITECTURE.md` es de flujo, no un inventario. Un barrido de *«nombres que no
+  aparecen»* contra cualquiera de los tres da decenas de faltantes falsos. Lo que se compara es
+  contra la **granularidad que el doc promete**.
+- **Una divergencia que una tarea cerrada DECIDIÓ no es un hallazgo; es una decisión.** El lock
+  difiere de la Anaconda en 64 paquetes porque la 284 escribió *«el lock describe el `.venv`, y
+  está bien»*; TSM no cobró el dividendo del 09-16 porque la 222 no acredita retroactivo, por
+  elección de Chapa; y no leer el CI fue una decisión de la 176. Antes de publicar, `grep` del
+  tema en el backlog. Si la decisión existe y el dato nuevo la contradice, lo accionable es
+  **reabrirla con ese dato**, no proponer la opción descartada como si fuera nueva: eso es lo que
+  el `verificador` le recortó a [D-1].
+- **Un tamaño raro no es una violación hasta mirar la orden que lo creó.** TSM con 1 acción en un
+  `equal_weight` de 10 slots era una orden de $844 (`target_dollars`): el overlay y la caja.
+  `paper_orders.target_dollars` dice cuánto quiso el motor; `fill_shares`, cuánto le dieron.
+
 
 **Un doc por corrida**, con la convención que ya usa el repo:
 `docs/auditoria_<área>_<fecha>.md`. No se abre un directorio nuevo: `docs/` ya tiene ~20

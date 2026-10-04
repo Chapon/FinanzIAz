@@ -1,6 +1,6 @@
 ---
 description: Corre la suite y, si está verde, commitea según la convención del repo
-allowed-tools: Bash(python -m pytest:*), Bash(python scripts/run_suite_sin_estado_vivo.py:*), Bash(python scripts/check_repo_health.py:*), Bash(python scripts/check_backlog_integrity.py:*), Bash(python -m ruff:*), Bash(git:*)
+allowed-tools: Bash(python -m pytest:*), Bash(python scripts/run_suite_sin_estado_vivo.py:*), Bash(python scripts/check_repo_health.py:*), Bash(python scripts/check_backlog_integrity.py:*), Bash(python scripts/check_ci.py:*), Bash(python -m ruff:*), Bash(git:*)
 ---
 
 Cerrá el trabajo en curso siguiendo el flujo del proyecto:
@@ -62,6 +62,18 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    cubre y hay que mirar a ojo son los **números y las afirmaciones en presente** — una skill
    se lee cada sesión, así que cuando su número deja de valer, **dirige mal**.
 5. Si la tarea estaba en `docs/BACKLOG.md`, movela a *Hecho reciente* con el hash del commit.
-6. NO hagas `git push` salvo que te lo pida.
+6. `git push` a `origin/main`: es parte del cierre (orden de Chapa del 2026-07-15, skill
+   `git-workflow`). Hasta la tarea 300 este paso prohibía pushear sin un pedido explícito, que
+   contradecía esa orden; se corrigió porque el paso 7 necesita el commit pusheado.
+7. **Leé el CI del commit pusheado: `python scripts/check_ci.py --esperar`** (regla 7 de
+   `CLAUDE.md`, tarea 300). Espera a que el run termine (hasta 15 min) y sale `0` verde, `1` rojo
+   o `2` no se sabe.
+   - **Rojo ⇒ la tarea NO está cerrada.** El script muestra el job y los tests que fallaron:
+     arreglalo en un commit nuevo y volvé a este paso. No arranques otra tarea con el CI rojo.
+   - **No se sabe** (sin red, cuota de la API, espera agotada) ⇒ el cierre dice *«CI sin
+     verificar»*, nunca *«verde»*, y la próxima tarea arranca con `--ultimo`.
+   - **Por qué:** los cuatro comandos corren en Windows y lo que sólo rompe en Linux lo ve
+     únicamente el CI. Tres veces quedó rojo mientras las tareas se cerraban en verde: la 106
+     (13 tareas), la 175 (36) y la 300 (17, por un test con rutas de Windows literales).
 
 Recordá que el verde definitivo es en Windows (Anaconda); avisame si esto corre en otro entorno.

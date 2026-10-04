@@ -62,7 +62,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - **Trunk-based**: se trabaja directo sobre `main`. No hay ramas de feature ni PRs en el historial.
 - Push directo: `git push` a `origin/main`.
 - Pushear sólo después de que la suite pase en Windows y el commit esté completo (no fragmentos a medias).
-- **Al cerrar una tarea, después de actualizar el backlog, se pushea a `main`** (orden de Chapa 2026-07-15). El cierre completo es: suite verde → commit → mover la tarea a *Hecho reciente* en el BACKLOG con el hash → `git push origin main`. No dejar tareas cerradas sin pushear.
+- **Al cerrar una tarea, después de actualizar el backlog, se pushea a `main`** (orden de Chapa 2026-07-15). El cierre completo es: suite verde → commit → mover la tarea a *Hecho reciente* en el BACKLOG con el hash → `git push origin main` → **`python scripts/check_ci.py --esperar` en verde** (regla 7 de `CLAUDE.md`, tarea 300). No dejar tareas cerradas sin pushear, ni darlas por cerradas con el CI en rojo.
 
 ## Checklist rápido
 
@@ -72,3 +72,4 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 4. Commit con subject en el formato correcto + cuerpo si el cambio es grande + trailer Co-Authored-By.
 5. Actualizar el BACKLOG (mover la tarea a *Hecho reciente* con el hash) si corresponde.
 6. `git push` a origin/main — **siempre al cerrar una tarea, no queda nada cerrado sin pushear**.
+7. `python scripts/check_ci.py --esperar` — **el CI del commit pusheado en verde, leído y no supuesto.** Rojo ⇒ la tarea no está cerrada; *no se sabe* ⇒ el cierre dice *«CI sin verificar»*. Tres veces el CI quedó rojo con las tareas cerrándose en verde (106, 175, 300): este paso es el que faltaba.

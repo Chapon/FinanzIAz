@@ -153,7 +153,7 @@ Severidad: **LOW** · Confianza: **ALTA** · Categoría: claims
   - [C-1] y [C-2] salen de esta área.
 - **`guards`:**
   - muté en el sentido del falso positivo la 253 (un ticker del universo declarado como sustrato): hoy SPY no está en el universo (`data/harness_universe_live_acct2.txt`, 126 tickers; el que falta contra los 127 vivos es ASML, sin PIT, y está declarado en el archivo);
-  - el CI no cambió desde la tanda;
+  - el CI no cambió desde la tanda; **corrección del 2026-10-04 (tarea 300):** esto miró `ci.yml`, no el resultado de las corridas. En ese momento el job `pytest` llevaba **13 corridas en rojo** (dos casos de `test_log_con_origen_t288.py` con rutas de Windows), y la frase no era una verificación del guard. Ver `docs/auditoria_tanda_2026-10-04.md` [D-1];
   - los guards de la 266, 270, 283, 284, 285 y 286 se mutaron al cerrarlos (cuatro a siete mutaciones cada uno, todas rojas, registradas en el backlog).
 - **`estado`:**
   - el `pre-migration` entra a la poda de sueltos a los 30 días (`_fecha_del_nombre` lo lee);
