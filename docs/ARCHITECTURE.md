@@ -11,9 +11,17 @@ yfinance ──> data/yahoo_finance.py ──> data/parquet/ (ARQ1, desde 2026-0
             analysis/technical.py  ──>  señal técnica + XGBoost + vol_overlay
                   │
                   ▼
+   paper_trading/scheduler.py ── dispara el scan; cuenta las rachas de scans fallidos y avisa
+                  │                (scan_health.py, tarea 263)
+                  ▼
    paper_trading/engine.py :: run_scan(account)
                   │  arma universo (watchlist ∪ posiciones) → warm-up de cache batch
+                  │  ANTES de decidir, la caja y las posiciones se mueven SIN órdenes:
+                  │   · dividendos.py — acredita a la caja los ex-dates desde el scan anterior (222)
+                  │   · splits.py    — ajusta acciones/costo/HWM por split, y avisa los factores
+                  │                    que no son un split, sin ajustarlos (262, 297)
                   │  por ticker: estrategia → propone BUY/SELL
+                  │   (el screen de universo E1b descarta BUYs adentro de strategies.py, universe.py)
                   ▼
             GATES (paper_trading/gates.py + engine.py)   ← filtran/trimean
                   │
@@ -22,6 +30,10 @@ yfinance ──> data/yahoo_finance.py ──> data/parquet/ (ARQ1, desde 2026-0
                   │  auto-fill (mode=auto) o aprobación manual en UI
                   ▼
        paper_positions  +  paper_equity_snapshots
+                  │  DESPUÉS del commit, cada uno en su sesión y sin poder tumbar el scan:
+                  │   · avisos de Slack (órdenes, precios en disputa, factores sin tratar)
+                  │   · scan_candidates.py — qué candidatos vio el scan y cómo terminó cada uno (256)
+                  │   · cuadre.py — caja y acciones contra la historia de órdenes, avisa si no cuadra (266)
                   │
                   ▼
                 ui/ (PyQt6): Portfolio, Analysis, Leads, Noticias, Métricas, ...
@@ -33,6 +45,7 @@ yfinance ──> data/yahoo_finance.py ──> data/parquet/ (ARQ1, desde 2026-0
 - `engine.py` — `run_scan` (el corazón: propone órdenes y aplica los gates), `approve_order` (re-aplica Gates 1+6), `reconcile_account` (barre limbo). Ver la cadena de gates en `finanzias-conventions`.
 - `gates.py` — helpers de los gates (ADV cap, anti-whipsaw, fill model `model_exit_fill_price`, etc.).
 - `strategies.py` — estrategias de señal (`analyze_single`, etc.). `account.py` — operaciones de cuenta/posición. `costs.py` — comisiones IBKR + slippage. `scheduler.py` — scan en background (QTimer). `models.py` — tablas paper_*. `feature_switch.py` — dead-code de switches por régimen.
+- Los pasos del scan que mueven plata o la verifican fuera de `paper_orders`: `dividends.py` (222), `splits.py` (262, 297), `cuadre.py` (266). Y los que registran: `scan_candidates.py` (256), `scan_health.py` (263). Ver el diagrama de arriba para el orden.
 
 ### `analysis/` — cálculo
 - `technical.py` (`analyze`: RSI/MACD/Bollinger/GARCH + XGBoost), `metrics_panel.py` (efectividad del modelo, round-trips FIFO), `performance_score.py` (score mensual de desempeño: 100 = $4.000 realizados en el mes, display-only — tarea 194), `leads.py` (ranking SP500 por consenso), `impact_score.py` (Impact Score + exit-veto T-CAT-4), `surprise_score.py` (prior direccional EPS), `exit_replay.py` (infra de backtest de exits), `catalyst_reaction.py` (forward returns por evento).

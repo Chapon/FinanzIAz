@@ -1,6 +1,6 @@
 ---
 name: finanzias-conventions
-description: Convenciones de trabajo y mapa de arquitectura de FinanzIAs. Usar SIEMPRE al empezar cualquier tarea de desarrollo en este repo — antes de codear, testear, commitear o tocar la base de datos. Cubre el flujo de "done", reglas de .bat/CRLF, seguridad de la DB y el motor de 5 gates.
+description: Convenciones de trabajo y mapa de arquitectura de FinanzIAs. Usar SIEMPRE al empezar cualquier tarea de desarrollo en este repo — antes de codear, testear, commitear o tocar la base de datos. Cubre el flujo de "done", reglas de .bat/CRLF, seguridad de la DB y la cadena de gates del motor.
 ---
 
 # FinanzIAs — Convenciones del proyecto
