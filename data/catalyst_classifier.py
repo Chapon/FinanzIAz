@@ -339,6 +339,11 @@ def _parse_llm_json(text: str, tag: str = "llm") -> Classification:
     if nivel is not None:
         # Tarea 259: el nivel es lo que se pidió; el score es su traducción a [−1, +1].
         score, tag = nivel / 3, tag + SUFIJO_ESCALA_7
+        # Tarea 302: y el rótulo sale del SIGNO del nivel, no del campo `sentiment` que qwen
+        # devuelve aparte. Los dos podían contradecirse (ON, «positive» con −1) y la pestaña
+        # Noticias pinta el rótulo y el color desde uno y el tono desde el otro. El nivel es el
+        # que tiene rúbrica, así que manda.
+        sentiment = "positive" if nivel > 0 else "negative" if nivel < 0 else "neutral"
     else:
         # Sin nivel (un modelo que no siguió el formato): el camino viejo, y SIN el sufijo,
         # porque no es la escala de 7. OPS1(a): sin score numérico, se deriva del categórico.

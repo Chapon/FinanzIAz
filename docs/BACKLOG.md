@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 239 — Tarea 302 (SENTIMIENTO-ROTULO-VS-PUNTAJE) CERRADA 2026-10-04 — en la escala de 7 niveles el rótulo sale del signo del nivel, así que la pestaña Noticias ya no puede mostrar «Positivo» con tono negativo** (`HASH302`; `data/catalyst_classifier.py`, `tests/test_rotulo_coherente_t302.py` **nuevo**). Suite Windows (Anaconda) **4299 passed, 1 skipped, 1 deselected** (+13), ruff limpio, sin estado vivo **4296 passed, 4 skipped**. **CI del commit: CI302.** **No deja tareas nuevas.**
+  - **El arreglo:** `_parse_llm_json` deriva `sentiment` del signo de `sentiment_level` cuando el nivel vino (las filas `-7n`). El nivel es el que tiene rúbrica (la 259); el campo `sentiment` que qwen devuelve aparte se ignora en ese camino. Display-only (regla 3): ningún gate ni sizing lee el rótulo.
+  - **Las 50 filas viejas (`ollama`, escala agrupada) NO se reescriben:** en ellas no se sabe cuál de los dos campos es el correcto, y reescribir la DB viva por una inferencia es peor que el 0,07% que dejan. El camino sin nivel conserva el rótulo de qwen, y un test lo fija.
+  - **Tests con el caso que distingue:** rótulo **contrario** al nivel (el de ON, `positive` con −1, y cuatro más), y la propiedad para los 7 niveles × 3 rótulos. Con un rótulo coherente la versión vieja también pasaba ([[caso-de-prueba-degenerado-no-distingue]]).
+  - **Mutación: sacar la derivación pone 12 de 13 en rojo** (el que queda verde es el del camino viejo, que es justo el que no tiene que cambiar).
+
 - **WIP 238 — Tarea 301 (CLAIMS-TANDA-2026-10-04) CERRADA 2026-10-04 — la descripción de `finanzias-conventions` sin un número que caduque, y el flujo del scan en `ARCHITECTURE.md` con los pasos que mueven o verifican plata fuera de `paper_orders`** (`ee5a39d`; `.claude/skills/finanzias-conventions/SKILL.md`, `docs/ARCHITECTURE.md`). Suite Windows (Anaconda) **4286 passed, 1 skipped, 1 deselected** (=), ruff limpio, sin estado vivo **4283 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-04 23:01Z). **No deja tareas nuevas.**
   - **[A-1]:** *«el motor de 5 gates»* pasa a *«la cadena de gates del motor»*: el número ya había caducado una vez (el Gate 6), y la lista con nombre vive en el cuerpo de la skill.
   - **[A-2]:** el diagrama dice ahora **en qué orden** actúa cada paso, verificado contra `run_scan` y no supuesto: antes de decidir, `dividends.py` (la 222) y `splits.py` (la 262 y la 297, `engine.py:890` y `:911`); adentro de la estrategia, el screen E1b; después del commit y fail-soft, los avisos de Slack, `scan_candidates.py` (la 256) y `cuadre.py` (la 266, `:1638-1663`); y en el scheduler, `scan_health.py` (la 263). No se convirtió el doc en un inventario: entra el flujo que mueve plata.
@@ -2177,6 +2183,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-04d** tras cerrar la **301**, que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 302 → 298**.
 
+> **Repriorizado 2026-10-04e** tras cerrar la **302**, que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 298** —las cuatro esperan algo de afuera: 196 y 245 el probe de Lambda, la 290 dos semanas de clasificaciones, y la 298 un barrido de spin-offs con una fuente que no sea Yahoo.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3568,7 +3576,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 302. SENTIMIENTO-ROTULO-VS-PUNTAJE — 51 noticias clasificadas tienen un rótulo (`sentiment`) que contradice el signo de su puntaje (`sentiment_score`), y la pestaña Noticias muestra los dos  ·  origen: `docs/auditoria_tanda_2026-10-04.md` [I-1] · severidad **BAJA** · **display contradictorio, sin decisión**
+### 302. ~~SENTIMIENTO-ROTULO-VS-PUNTAJE — 51 noticias clasificadas tienen un rótulo (`sentiment`) que contradice el signo de su puntaje (`sentiment_score`), y la pestaña Noticias muestra los dos~~ · **CERRADA 2026-10-04 — en la escala de 7 niveles el rótulo sale del signo del nivel; las 50 viejas quedan** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-04.md` [I-1] · severidad **BAJA** · **display contradictorio, sin decisión**
 
 - **Qué:** qwen devuelve el rótulo y el puntaje por separado, y `data/catalyst_classifier.py:337-345` no exige que coincidan. `ui/news_tab.py:347` pinta rótulo y color desde `sentiment`; `analysis/news_digest.py:221` (`tone_level`) calcula el tono desde `sentiment_score`.
 - **Cuánto vale (medido el 2026-10-04 sobre una copia de la DB):** `ollama` **50** de 68.544; `ollama-7n` **1** de 861 (id 72859, ON, `positive` con −1/3); `heuristic` 0 de 1.729. En total, el 0,07%: Chapa ve «Positivo» en verde con tono −1.
