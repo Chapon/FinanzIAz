@@ -786,6 +786,10 @@ class ScanResult:
     # precio sustituido (``kind="sustituido"``) o sin precio (``kind="sin_precio"``).
     price_disputes: list[dict] = field(default_factory=list)
 
+    # Tarea 297 — factores de Yahoo que no son un split (spin-off o dato podrido) en el
+    # ex-date de una posición abierta: ``{ticker, ex_date, ratio, texto}``. No se ajustan.
+    factores_sin_tratar: list[dict] = field(default_factory=list)
+
     def summary(self) -> str:
         base = (
             f"Scan {self.scan_at:%Y-%m-%d %H:%M} · {self.strategy} · {self.mode}  "
@@ -904,7 +908,7 @@ def run_scan(
         # como una caída de (1−1/N) y el trailing vende. Sin red: los eventos salen del
         # memo que el warm-up de arriba llenó. Un ajuste que la historia de órdenes no
         # reproduce NO se aplica y se avisa (ver `paper_trading/splits.py`).
-        split_adjustments, split_alerts = aplicar_splits(
+        split_adjustments, split_alerts, factores_raros = aplicar_splits(
             session, acct, positions, _split_events_for([p.ticker for p in positions])
         )
         split_msgs = [
@@ -917,6 +921,17 @@ def run_scan(
 
             for m in split_msgs:
                 get_logger(__name__).warning("Scan %s (cuenta %d): %s", account_name, account_id, m)
+        # Tarea 297: un factor que no es un split (un spin-off, o un dato podrido como el
+        # 2,793 de AVB) en el ex-date de una posición abierta. No se ajusta —el signo del
+        # factor no es confiable—, pero se avisa: el scan lo reporta mientras dure la
+        # ventana, y el log y Slack una sola vez por evento.
+        factores_msgs = [_texto_factor_sin_tratar(f) for f in factores_raros]
+        for f, m in zip(factores_raros, factores_msgs, strict=True):
+            if (account_id, f.ticker, f.ex_date) not in _factores_announced:
+                from config.logging_config import get_logger
+
+                get_logger(__name__).warning("Scan %s (cuenta %d): %s", account_name, account_id, m)
+        split_msgs += factores_msgs
 
         prices = prices_provider(tickers) if tickers else {}
         # Tarea 201: qué tickers llegaron con el precio de la segunda opinión, y cuáles
@@ -1015,6 +1030,10 @@ def run_scan(
             ml_training=ml_training,
             garch_no_fit=garch_no_fit,
             price_disputes=list(disputes.values()),
+            factores_sin_tratar=[
+                {"ticker": f.ticker, "ex_date": f.ex_date, "ratio": f.ratio, "texto": m}
+                for f, m in zip(factores_raros, factores_msgs, strict=True)
+            ],
         )
 
         # Process trades in a deterministic order: SELLs first (free up cash), then BUYs.
@@ -1618,6 +1637,7 @@ def run_scan(
     # or a notifier that raises must never affect the scan result.
     _maybe_notify_slack(result, account_name, account_slack_notify, slack_notifier)
     _maybe_notify_price_disputes(result, account_name, account_slack_notify, slack_notifier)
+    _maybe_notify_factores_sin_tratar(result, account_name, account_slack_notify, slack_notifier)
 
     # Tarea 256 — qué candidatos a compra vio este scan y cómo terminó cada uno. Después del
     # commit y en sesión propia: el registro nunca puede tumbar un scan.
@@ -1832,6 +1852,56 @@ def _maybe_notify_price_disputes(
 
         get_logger(__name__).exception(
             "Slack notify (precio en disputa): failed for account %r (fail-open).", account_name
+        )
+
+
+# Tarea 297 — qué factor sin tratar ya se avisó, por (cuenta, ticker, ex-date). Una vez
+# por evento y por proceso: el aviso no corrige nada, y repetirlo cada 15 minutos es el
+# spam que la T25 vino a apagar. Al reiniciar la app se avisa de nuevo, dentro de la
+# ventana de `splits.DIAS_AVISO_FACTOR`.
+_factores_announced: set[tuple[int, str, str]] = set()
+
+
+def _texto_factor_sin_tratar(f) -> str:
+    return (
+        f"{f.ticker}: Yahoo reporta un factor {f.ratio:g} el {f.ex_date} que no es un split "
+        f"(un spin-off, o un dato podrido) y la posición lo atravesó con {f.acciones_al_ex:g} "
+        "acciones — NO se ajusta: la caída del ex-date puede figurar como pérdida y disparar "
+        "el stop. Revisar a mano."
+    )
+
+
+def _maybe_notify_factores_sin_tratar(
+    result: ScanResult,
+    account_name: str,
+    account_slack_notify: bool,
+    slack_notifier: SlackNotifier | None,
+) -> None:
+    """Aviso por Slack de los factores sin tratar del scan (tarea 297). Fail-open.
+
+    Mismo gating que el de precios en disputa: master switch y opt-out por cuenta, no
+    ``slack_notify_on``, porque no es un aviso de órdenes. Marca el evento como avisado
+    aunque Slack esté apagado: el log ya lo dijo, y lo que se dedupea es el evento.
+    """
+    try:
+        nuevos = [
+            f
+            for f in result.factores_sin_tratar
+            if (result.account_id, f["ticker"], f["ex_date"]) not in _factores_announced
+        ]
+        if not nuevos:
+            return
+        for f in nuevos:
+            _factores_announced.add((result.account_id, f["ticker"], f["ex_date"]))
+        if not bool(settings.get("slack_notifications_enabled", False)) or not account_slack_notify:
+            return
+        notifier = slack_notifier or default_notifier
+        notifier(f"🧩 *FinanzIAs · {account_name}* — " + "\n".join(f["texto"] for f in nuevos))
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception(
+            "Slack notify (factor sin tratar): failed for account %r (fail-open).", account_name
         )
 
 

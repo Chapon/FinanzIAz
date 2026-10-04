@@ -38,6 +38,17 @@ que la posición tiene hoy. Si no coinciden —un fill a mano, un ledger borrado
 el calendario cambió— el ajuste no se aplica y se avisa: ajustar a ciegas puede duplicar
 acciones, que es peor que el defecto que esto arregla.
 
+Lo que NO se ajusta: un factor que no es un split (tarea 297)
+-------------------------------------------------------------
+Yahoo publica en la misma serie los spin-offs (HON 2026-06-29 = ``1907:2000``, o sea
+``0,9535``) y algún dato podrido (AVB 2026-08-17 = ``2,793``). Ninguno es una fracción
+simple, así que acá no se ajustan, y está bien: el signo del factor ni siquiera es
+confiable —el spin-off de HON de 2025 viene como ``1,061``, que leído como split baja el
+precio, y el de 2026 como ``0,9535``, que lo sube—. Pero una posición que **atravesó**
+uno de esos ex-dates puede mostrar en la equity una caída que no existió, y un stop
+disparado por ella. Eso no se arregla solo y antes pasaba en silencio:
+``factores_sin_tratar`` lo detecta para que el scan lo avise.
+
 Nada de esto pega a la red: los eventos llegan como parámetro. El engine los lee del memo
 de ``data.yahoo_finance.get_split_events``, que el warm-up del scan llena antes.
 """
@@ -92,6 +103,72 @@ class PosicionInconsistente:
     ticker: str
     esperadas: float
     reales: float
+
+
+@dataclass(frozen=True)
+class FactorSinTratar:
+    """Un factor de Yahoo que no es un split, en el ex-date de una posición abierta."""
+
+    ticker: str
+    ex_date: str
+    ratio: float
+    acciones_al_ex: float  # las que la posición tenía antes del ex-date
+
+
+# Ventana del aviso de un factor sin tratar, en días corridos. El aviso no corrige nada,
+# así que repetirlo mientras dure la posición sería ruido (el caso AVB dejó 927 líneas
+# idénticas en el log); una semana alcanza para que Yahoo lo publique con demora.
+DIAS_AVISO_FACTOR = 7
+
+
+def factores_sin_tratar(
+    fills: list[tuple[str, str, float, str]],
+    eventos: dict[str, list[tuple[str, float]]],
+    posiciones: dict[str, float],
+    hoy: str,
+    dias: int = DIAS_AVISO_FACTOR,
+) -> list[FactorSinTratar]:
+    """Factores no plausibles que una posición abierta atravesó en los últimos ``dias``.
+
+    **Función pura**, con las mismas entradas y la misma convención de fechas que
+    ``ajustes_pendientes``: un fill del día del ex-date ya es posterior, así que comprar
+    ese día no atraviesa el evento.
+    """
+    from datetime import date, timedelta
+
+    try:
+        desde = (date.fromisoformat(hoy) - timedelta(days=dias)).isoformat()
+    except ValueError:
+        return []
+    por_ticker: dict[str, list[tuple[str, float]]] = {}
+    for ticker, side, acciones, filled_at in fills:
+        d = dia(filled_at)
+        if d is None or not acciones:
+            continue
+        signo = 1.0 if str(side).upper() == "BUY" else -1.0
+        por_ticker.setdefault(str(ticker).upper(), []).append((d, signo * float(acciones)))
+
+    hallados: list[FactorSinTratar] = []
+    for ticker, reales in sorted(posiciones.items()):
+        if reales <= _TOL_ACCIONES:
+            continue
+        for ex, r in sorted(eventos.get(ticker, [])):
+            try:
+                ratio = float(r)
+            except (TypeError, ValueError):
+                continue
+            if (
+                not ex
+                or not (desde <= ex <= hoy)
+                or not (ratio > 0)
+                or ratio == 1.0
+                or es_split_plausible(ratio)
+            ):
+                continue
+            antes = sum(a for d, a in por_ticker.get(ticker, []) if d < ex)
+            if antes > _TOL_ACCIONES:
+                hallados.append(FactorSinTratar(ticker, ex, ratio, antes))
+    return hallados
 
 
 def ajustes_pendientes(
@@ -189,11 +266,13 @@ def _acciones_sin(
 
 def aplicar_splits(
     session, acct, positions: list, eventos: dict[str, list[tuple[str, float]]]
-) -> tuple[list[dict], list[str]]:
+) -> tuple[list[dict], list[str], list[FactorSinTratar]]:
     """Ajusta las posiciones abiertas de ``acct`` y escribe el ledger.
 
-    Devuelve ``(ajustes, avisos)``: un dict por ajuste aplicado, para reportar, y un texto
-    por posición que no se pudo ajustar porque su historia no la reproduce.
+    Devuelve ``(ajustes, avisos, sin_tratar)``: un dict por ajuste aplicado, para
+    reportar; un texto por posición que no se pudo ajustar porque su historia no la
+    reproduce; y los factores que no son un split y que una posición atravesó (tarea
+    297), que no se ajustan y el scan avisa.
 
     Corre **adentro de la transacción del scan**, antes de la equity, de los stops ATR y
     del máximo, sobre los mismos objetos ``PaperPosition`` que el scan usa después.
@@ -202,7 +281,7 @@ def aplicar_splits(
 
     abiertas = {str(p.ticker).upper(): p for p in positions if float(p.shares or 0.0) > _TOL_ACCIONES}
     if not abiertas or not any(eventos.get(t) for t in abiertas):
-        return [], []
+        return [], [], []
 
     fills = [
         (o.ticker, o.side, float(o.fill_shares or 0.0), o.filled_at)
@@ -217,13 +296,11 @@ def aplicar_splits(
         (str(a.ticker).upper(), a.ex_date)
         for a in session.query(PaperSplitAdjustment).filter(PaperSplitAdjustment.account_id == acct.id).all()
     }
-    pendientes, inconsistentes = ajustes_pendientes(
-        fills,
-        {t: eventos.get(t, []) for t in abiertas},
-        ya,
-        {t: float(p.shares) for t, p in abiertas.items()},
-        dia(utcnow_naive()) or "",
-    )
+    eventos_abiertas = {t: eventos.get(t, []) for t in abiertas}
+    acciones_hoy = {t: float(p.shares) for t, p in abiertas.items()}
+    hoy = dia(utcnow_naive()) or ""
+    pendientes, inconsistentes = ajustes_pendientes(fills, eventos_abiertas, ya, acciones_hoy, hoy)
+    sin_tratar = factores_sin_tratar(fills, eventos_abiertas, acciones_hoy, hoy)
 
     ajustes: list[dict] = []
     for aj in pendientes:
@@ -265,4 +342,4 @@ def aplicar_splits(
         f"acciones y la posición tiene {x.reales:g} — NO se ajusta; revisar a mano"
         for x in inconsistentes
     ]
-    return ajustes, avisos
+    return ajustes, avisos, sin_tratar

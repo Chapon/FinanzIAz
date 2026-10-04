@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 235 — Tarea 297 (SPINOFF-SIN-TRATAR) CERRADA 2026-10-04 — un factor de Yahoo que no es un split, en el ex-date de una posición abierta, se avisa; el ajuste pasa a la 298** (`paper_trading/splits.py`, `paper_trading/engine.py`, `tests/test_spinoff_aviso_t297.py` **nuevo**). Suite Windows (Anaconda) **4258 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4255 passed, 4 skipped**. **Deja la 298.**
+  - **(1) El aviso:** `factores_sin_tratar` (pura, en `splits.py`) encuentra los factores no plausibles que una posición abierta **atravesó** (acciones antes del ex-date; comprar el día del ex-date no cuenta, la misma convención de la 262) en los últimos `DIAS_AVISO_FACTOR = 7` días. `aplicar_splits` los devuelve como tercer elemento. El scan los reporta en `warnings` y en `ScanResult.factores_sin_tratar` mientras dure la ventana, y el log y Slack los dicen **una vez por (cuenta, ticker, ex-date) y por proceso** (`_factores_announced`), con el gating del aviso de precios en disputa (master switch y opt-out por cuenta). No toca la posición ni el ledger.
+  - **(2) El ajuste no se hizo, y Chapa lo pasó a la 298:** el factor **no es confiable**. Yahoo da el spin-off de HON de 2025-10-30 como `1,061`, que leído como split baja el precio (lo correcto), y el de 2026-06-29 como `1907:2000` = `0,9535`, que lo **sube** un 4,9%. Y el `2,793` de AVB es no plausible sin ser un spin-off: ajustar por él bajaría costo y HWM un 64% y desarmaría el stop.
+  - **Mutación: seis, las seis rojas** — aceptar splits plausibles, contar el fill del día del ex-date, quitar la ventana, no marcar el evento como avisado, no reportarlo en `warnings`, y no llamar al notificador.
+
 - **WIP 234 — Tarea 292 (ENFORCE-MARKET-HOURS-FALSE-SIN-DECLARAR) CERRADA 2026-10-03 — el `False` es deliberado: documentado con su acople al cron, espejado, declarado, y su look-ahead medido** (`fb3c508`; `analysis/harness_config.py`, `config/settings_manager.py`, `docs/SETTINGS_REFERENCE.md`, `.claude/skills/finanzias-conventions/SKILL.md`, `scripts/measure_lookahead_fuera_sesion_t292.py` **nuevo**, `docs/fuera_de_sesion_t292_2026-10-03.md` **nuevo**, `tests/test_espejos_vivos_t130.py`, `tests/test_espejos_direccion_faltante_t185.py`, `tests/test_desvios_claves_t152.py`, `tests/test_fuera_de_sesion_t292.py` **nuevo**). Suite Windows (Anaconda) **4248 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **4245 passed, 4 skipped**. **No deja tareas nuevas.**
   - **Decisión de Chapa:** el `False` es deliberado. Los tres lugares que describen la perilla (el doc, el `doc=` del spec y el Gate 1 de `finanzias-conventions`) dicen ahora el valor vivo y el **acople**: con el default `True`, el cron de las 16:05 ET no llenaría nunca.
   - **De «no modelable» a espejo:** `LIVE_ENFORCE_MARKET_HOURS = False` entra a la tabla de la 130 y sale de la clasificación de la 185, que estaba al revés (el harness decide y llena al close, que es lo que hace el vivo fuera de sesión). Clave nueva `fills_fuera_de_sesion`, condicional al `False`.
@@ -2144,6 +2149,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-03g** tras cerrar la **292** (Chapa: el `False` es deliberado), que **no deja tareas nuevas**. Chapa decidió también la parte (2) de la 297: avisar **y** ajustar. El orden queda **297 → 196 → 245 → 290**.
 
+> **Repriorizado 2026-10-04** tras cerrar la **297** (el aviso), que **deja la 298**: el ajuste por spin-off, que Chapa decidió estudiar aparte porque el factor de Yahoo no es confiable. Va al final por ser latente. El orden queda **196 → 245 → 290 → 298**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3535,7 +3542,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 297. SPINOFF-SIN-TRATAR — Yahoo publica un spin-off como un «split» no plausible (HON, 0,9535, 2026-06-29); la 262 lo rechaza bien, pero nada lo trata, y una posición mantenida registraría la caída del ex-date como pérdida  ·  origen: la medición de la 293 (`docs/entrada_intradia_t293_2026-10-03.md`) · severidad **BAJA** (latente)
+### 298. SPINOFF-AJUSTE — Antes de ajustar una posición por un spin-off hay que saber cómo lo codifica Yahoo: el factor de HON viene en un sentido en 2025 (`1,061`) y en el contrario en 2026 (`0,9535`)  ·  origen: la 297, por decisión de Chapa · severidad **BAJA** (latente)
+
+- **Qué pasa.** La 297 avisa cuando una posición atraviesa un factor no plausible, pero no la ajusta: la caída del ex-date de un spin-off sigue figurando como pérdida y puede disparar el stop. El candidato de la 297 —dividir `avg_cost` y HWM por el factor— **no es seguro**: el sentido del factor cambia entre los dos spin-offs de HON, y un dato podrido (AVB `2,793`) es indistinguible por el factor solo.
+- **Alcance.** Barrer spin-offs conocidos (al menos 5, con el ex-date y el valor de la escindida de una fuente que no sea Yahoo) y comparar el factor de Yahoo contra el gap **crudo** del ex-date. De ahí sale si hay una regla (sentido, rango) que lo explique, o si el ajuste tiene que salir de otro dato.
+- **Kill-criteria (antes de medir).** Una regla de ajuste entra sólo si explica el **sentido** en todos los casos del barrido y la magnitud dentro de 1 pp, y deja afuera el `2,793` de AVB. Si no, queda el aviso de la 297 y el ajuste a mano, y se documenta. Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 297. ~~SPINOFF-SIN-TRATAR — Yahoo publica un spin-off como un «split» no plausible (HON, 0,9535, 2026-06-29); la 262 lo rechaza bien, pero nada lo trata, y una posición mantenida registraría la caída del ex-date como pérdida~~ · **CERRADA 2026-10-04 — el aviso, sí; el ajuste, a la 298 (el factor de Yahoo no es confiable)** · **movida a *En curso* con el detalle**  ·  origen: la medición de la 293 (`docs/entrada_intradia_t293_2026-10-03.md`) · severidad **BAJA** (latente)
 
 - **Qué pasa.** En el ex-date de un spin-off el precio cae por el valor de la escindida y el tenedor recibe sus acciones. El motor no acredita esas acciones ni ajusta la posición: `paper_trading/splits.py` sólo aplica fracciones simples (`es_split_plausible`), y `0,9535` no lo es. Entonces la equity muestra una pérdida que no existió, y con barreras ATR la posición puede salir por un stop que dispara la escisión y no el mercado (el caso de la 262 con splits, en chico).
 - **Por qué BAJA:** es **latente**. Barrido el 2026-10-03: entre los 70 tickers que operaron las dos cuentas, el único factor no plausible desde marzo es HON 2026-06-29, y ninguna cuenta lo tenía ese día (la 2 compró en el ex-date mismo). Tampoco está en la cartera real.
