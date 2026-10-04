@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 236 — Tarea 299 (AUDITORIA-TANDA-2026-10-04) CERRADA 2026-10-04 — doce corridas en orden, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** (`docs/auditoria_tanda_2026-10-04.md` y `docs/auditoria_tanda_killcriteria_2026-10-04.md`, **nuevos**). READ-ONLY: no toca código. **Deja la 300, la 301 y la 302.**
+  - **[D-1] → 300 (ALTA):** el CI está **rojo desde el cierre de la 288**, 19 corridas y 17 tareas cerradas con el done en verde. La causa son dos casos de `test_log_con_origen_t288.py` con rutas de Windows que en Linux no se separan. Es la tercera vez (106, 175). La 176 había descartado leer el CI en `/ship`; reabrir esa decisión es de Chapa. La tanda del 2026-10-03 tenía el CI en alcance y lo dio por limpio mirando el yml y no las corridas.
+  - **El `verificador` sostuvo [D-1] y le recortó tres partes:** el conteo (17, no 15; faltaba la 269), *«ningún paso lee el CI»* (es una decisión de la 176, no un descuido), y *«tapa otras regresiones»* (hoy es potencial: las corridas muestreadas fallan sólo en esos dos casos).
+  - **[A-1] y [A-2] → 301, [I-1] → 302 (BAJAS):** *«5 gates»* en la descripción de `finanzias-conventions`; el flujo de `ARCHITECTURE.md` sin dividendos, splits, cuadre ni candidatos; y 51 noticias con un rótulo que contradice el signo del puntaje.
+  - **Nueve áreas limpias**, con el alcance como lista en el informe. Lo confirmado en vivo: el arreglo de la 294 (0 líneas de subprocesos en el log de producción desde su cierre, con cinco corridas del done después), las cuentas 1 y 2 al centavo, y la equity de Paper igual al cálculo a mano.
+  - **Siete instrumentos míos que no sostuvieron hallazgo**, publicados con el motivo en §2 del informe. El que vale recordar: el log está en **hora local** y `price_cache` en **UTC**, y cruzarlos sin convertir fabrica un hueco de cinta que no existe.
+
 - **WIP 235 — Tarea 297 (SPINOFF-SIN-TRATAR) CERRADA 2026-10-04 — un factor de Yahoo que no es un split, en el ex-date de una posición abierta, se avisa; el ajuste pasa a la 298** (`b2b5a21`; `paper_trading/splits.py`, `paper_trading/engine.py`, `tests/test_spinoff_aviso_t297.py` **nuevo**). Suite Windows (Anaconda) **4258 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4255 passed, 4 skipped**. **Deja la 298.**
   - **(1) El aviso:** `factores_sin_tratar` (pura, en `splits.py`) encuentra los factores no plausibles que una posición abierta **atravesó** (acciones antes del ex-date; comprar el día del ex-date no cuenta, la misma convención de la 262) en los últimos `DIAS_AVISO_FACTOR = 7` días. `aplicar_splits` los devuelve como tercer elemento. El scan los reporta en `warnings` y en `ScanResult.factores_sin_tratar` mientras dure la ventana, y el log y Slack los dicen **una vez por (cuenta, ticker, ex-date) y por proceso** (`_factores_announced`), con el gating del aviso de precios en disputa (master switch y opt-out por cuenta). No toca la posición ni el ledger.
   - **(2) El ajuste no se hizo, y Chapa lo pasó a la 298:** el factor **no es confiable**. Yahoo da el spin-off de HON de 2025-10-30 como `1,061`, que leído como split baja el precio (lo correcto), y el de 2026-06-29 como `1907:2000` = `0,9535`, que lo **sube** un 4,9%. Y el `2,793` de AVB es no plausible sin ser un spin-off: ajustar por él bajaría costo y HWM un 64% y desarmaría el stop.
@@ -2151,6 +2158,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-04** tras cerrar la **297** (el aviso), que **deja la 298**: el ajuste por spin-off, que Chapa decidió estudiar aparte porque el factor de Yahoo no es confiable. Va al final por ser latente. El orden queda **196 → 245 → 290 → 298**.
 
+> **Repriorizado 2026-10-04b** tras cerrar la **299** (tercera tanda de auditorías), que **deja tres: 300–302**. La **300** encabeza: es ALTA y el CI lleva 19 corridas en rojo, así que cualquier regresión que sólo rompa en Linux queda tapada mientras tanto. La **301** y la **302** son BAJAS y van detrás de las que esperan algo de afuera (196 y 245 el probe de Lambda; la 290, dos semanas de clasificaciones). El orden queda **300 → 196 → 245 → 290 → 301 → 302 → 298**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3541,6 +3550,41 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `ui/news_tab.py:315` formatea `published_at` con `strftime` directo. La app guarda todo en UTC naive y el resto de la UI pasa por `ui.time_utils.fmt_local`. *«Accenture (ACN) Tops Q4…»* se publicó a las 06:45 ET y la pestaña dice 10:45 (en Argentina eran las 07:45).
 - **Kill-criteria.** La celda usa `fmt_local`; un test con una hora UTC fija y la zona local forzada da la hora local. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
+
+### 302. SENTIMIENTO-ROTULO-VS-PUNTAJE — 51 noticias clasificadas tienen un rótulo (`sentiment`) que contradice el signo de su puntaje (`sentiment_score`), y la pestaña Noticias muestra los dos  ·  origen: `docs/auditoria_tanda_2026-10-04.md` [I-1] · severidad **BAJA** · **display contradictorio, sin decisión**
+
+- **Qué:** qwen devuelve el rótulo y el puntaje por separado, y `data/catalyst_classifier.py:337-345` no exige que coincidan. `ui/news_tab.py:347` pinta rótulo y color desde `sentiment`; `analysis/news_digest.py:221` (`tone_level`) calcula el tono desde `sentiment_score`.
+- **Cuánto vale (medido el 2026-10-04 sobre una copia de la DB):** `ollama` **50** de 68.544; `ollama-7n` **1** de 861 (id 72859, ON, `positive` con −1/3); `heuristic` 0 de 1.729. En total, el 0,07%: Chapa ve «Positivo» en verde con tono −1.
+- **Por qué NO es automáticamente un error de qwen:** en un M&A el rótulo puede describir el titular (la escindida «soars») y el puntaje al ticker (el comprador paga más). Lo que no puede pasar es que la pantalla muestre las dos cosas sin decir cuál es cuál.
+- **Alcance:** en la escala de 7 niveles, derivar el rótulo del signo del puntaje (o marcar la fila como incoherente); decidir si se recalculan las 50 viejas. **No** toca sizing ni gates (display-only, regla 3).
+- **Kill-criteria:** 0 filas `-7n` nuevas incoherentes, y un test con una respuesta de qwen incoherente. Los cuatro comandos en verde.
+- **Dependencias:** ninguna. Emparenta con la **290**, que mide la escala de 7 niveles.
+
+### 301. CLAIMS-TANDA-2026-10-04 — La descripción de `finanzias-conventions` dice «5 gates» (son seis) y el flujo de `ARCHITECTURE.md` no tiene dividendos, splits, cuadre ni candidatos  ·  origen: `docs/auditoria_tanda_2026-10-04.md` [A-1] y [A-2] · severidad **BAJA** · **docs de referencia incompletos**
+
+- **[A-1]** `.claude/skills/finanzias-conventions/SKILL.md:3` (frontmatter) dice *«el motor de 5 gates»*. El cuerpo dice *«5+»* y lista hasta el Gate 6 (earnings blackout), que `paper_trading/engine.py` tiene. Está así desde `ba6366e` (2026-06-24).
+- **[A-2]** `docs/ARCHITECTURE.md:5-35` (última edición `a136e0c`, 2026-09-21): en el diagrama *«Flujo de datos»* la caja y las posiciones sólo cambian por órdenes. Desde entonces el scan también acredita dividendos (`paper_trading/dividends.py`, la 222), ajusta splits y avisa factores sin tratar (`splits.py`, la 262 y la 297), cuadra la cuenta (`cuadre.py`, la 266), registra candidatos (`scan_candidates.py`, la 256) y mide su salud (`scan_health.py`, la 263). Ninguno de esos cinco módulos aparece en el doc.
+- **Alcance:** las dos correcciones de texto. **No** convertir `ARCHITECTURE.md` en un inventario de módulos: lo que falta es el **flujo** que mueve plata.
+- **Kill-criteria:** cada uno de los cinco módulos nombrado en el paso del flujo donde actúa; la descripción de la skill sin un número que pueda caducar (o con el correcto). Los cuatro comandos en verde.
+- **Dependencias:** ninguna.
+
+### 300. CI-ROJO-TERCERA-VEZ — El CI está rojo desde el cierre de la 288 (19 corridas, 17 tareas cerradas con el done en verde) por un test no portable, y es la tercera vez (106, 175) que el CI rojo pasa sin que el proceso se entere  ·  origen: `docs/auditoria_tanda_2026-10-04.md` [D-1] (sostenido por el `verificador`) · severidad **ALTA** · **el guard del pipeline, inoperante**
+
+- **Qué:** `tests/test_log_con_origen_t288.py:34,37` le pasa a `origen_del_proceso` rutas de Windows literales (`D:\…\main.py`, `C:\x\scripts\….py`). En Linux `Path(...).name` no separa por `\` y los casos `argv0` y `argv3` fallan. La función (`config/logging_config.py:127-144`) está bien en las dos plataformas; lo no portable es la **entrada** del test. El cuarto comando del done declara este mismo punto ciego (*«separadores de path… lo ve únicamente el CI»*), y ningún paso del cierre (`/ship`, `git-workflow` paso 6) lee el resultado del pipeline.
+- **Cuánto vale (medido el 2026-10-04 con la API pública de Actions, sin filtrar por rama ni workflow):** último verde `7ccd8c5` (2026-10-03 00:13Z); **19 rojas** sin ninguna verde en el medio, de `7ba8278` a `7e51a5a`. El job `pytest` (sin `continue-on-error`) falla en las cuatro corridas leídas (la primera, dos del medio y HEAD), en los mismos dos casos y en nada más (`2 failed, 4240 passed`). Los **17 cierres** con el CI en rojo: 288, 280, 283, 268, 269, 289, 270, 285, 286, 259, 291, 294, 295, 293, 296, 292 y 297.
+- **Por qué NO es automáticamente «agregar el paso de leer el CI a `/ship`»:** la **176** evaluó exactamente eso (opción (a)) y lo **descartó** por escrito: el CI corre después del push, así que avisa con retraso uno y no ataca la causa. Chapa eligió la (b), el cuarto comando. Pero la misma 176 calculó que la (a) habría acotado el daño a 1 tarea en vez de 36, y acá serían 1 en vez de 17. Con esta tercera reincidencia, **reabrir esa decisión es de Chapa**, no un reflejo.
+- **Y la auditoría tampoco lo vio:** la tanda del 2026-10-03 tenía el CI en alcance y escribió *«el CI no cambió desde la tanda»* con 13 corridas rojas, porque la sección CI de la skill `auditoria` sólo pregunta por la configuración del workflow, no por la conclusión de las corridas.
+- **Alcance:**
+  1. hacer portable el test, sólo el test (rutas nativas por plataforma, o `PureWindowsPath` en la entrada y en la comparación);
+  2. pedirle a Chapa la decisión sobre la verificación de retraso uno (al abrir o cerrar una tarea, leer la conclusión del último run en `main` con la API pública, sin `gh auth`) y aplicar lo que elija;
+  3. agregar a la sección *«El CI es un guard de proceso»* de `.claude/skills/auditoria/SKILL.md` la pregunta por la **conclusión** de las corridas recientes, antes que la del yml;
+  4. anotar en `docs/auditoria_tanda_2026-10-03.md` §3 (`guards`) que *«el CI no cambió»* no verificó el resultado.
+- **Kill-criteria:** el job `pytest` del CI en verde sobre el commit de cierre (leído por la API, no supuesto); mutación de (1): devolver la ruta de Windows literal tiene que poner rojo el test **en el cuarto comando o en el CI**, y que se diga en cuál; los cuatro comandos en verde.
+- **Dependencias:** ninguna. Va **primero**: mientras el CI siga rojo, cualquier regresión que sólo rompa en Linux queda tapada.
+
+### 299. ~~AUDITORIA-TANDA-2026-10-04 — Correr todas las auditorías en orden, sobre la 292–297 y el estado vivo~~ · **CERRADA 2026-10-04 — doce corridas, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-04, *«ejecutar todas las auditorías en orden»*) · severidad **MEDIA**
+
+- **Alcance.** Las doce áreas de la skill, en orden, con el kill-criteria congelado antes de abrir el primer archivo (`docs/auditoria_tanda_killcriteria_2026-10-04.md`): lo que cambió desde la tanda del 2026-10-03 (la 292–297) más el estado vivo (DB copiada en sólo lectura, log de producción, `settings.json`, la app abierta). Informe: `docs/auditoria_tanda_2026-10-04.md`.
 
 ### 298. SPINOFF-AJUSTE — Antes de ajustar una posición por un spin-off hay que saber cómo lo codifica Yahoo: el factor de HON viene en un sentido en 2025 (`1,061`) y en el contrario en 2026 (`0,9535`)  ·  origen: la 297, por decisión de Chapa · severidad **BAJA** (latente)
 
