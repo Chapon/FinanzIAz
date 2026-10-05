@@ -84,7 +84,16 @@ def main():
 
     QTimer.singleShot(0, lambda: mostrar_resultado_del_restore(window, resultado_restore))
 
+    # Tarea 304 — si el hilo de la GUI se traba, el stack de todos los hilos queda en
+    # ~/.finanzias/congelamientos.log y la duración en el log. Fail-open.
+    from config.logging_config import LOG_DIR
+    from ui.vigia_interfaz import VigiaDeLaInterfaz
+
+    vigia = VigiaDeLaInterfaz(LOG_DIR / "congelamientos.log", parent=app)
+    vigia.iniciar()
+
     code = app.exec()
+    vigia.detener()
 
     # Los fetch de tooltip corren run-and-forget en el QThreadPool global. Cerrar
     # con uno en vuelo mata el proceso (medido: exit 127, 3 de 3 — tarea 82), así

@@ -18,6 +18,17 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 242 — Tarea 305 (HOME-GRAFICA-UN-DIA) CERRADA 2026-10-04 — Home grafica el valor de mercado de «Mis Acciones» por rueda, desde la primera compra, sin red** (`HASH305`; `database/cartera_real.py`, `ui/home_tab.py`, `tests/test_home_valor_diario_t305.py` **nuevo**). Suite y CI: ver la 304, que va en el mismo push. **No deja tareas nuevas.**
+  - **`valor_diario` (pura):** por rueda, las acciones que había ese día × el cierre de ese día. Un ticker sin historia **queda afuera y se dice** (en el título), y la serie **termina** en la última rueda que tienen todos, en vez de congelar a uno en su último cierre. **`cierres_del_cache`:** de los frames `1d` del ticker, el que termina más tarde (`all_1d`; `latest_1d` elige el bajado más recientemente, que no es lo mismo), sin red y sin el aviso de atraso de la 286.
+  - **Con los datos reales:** 120 ruedas, del 14/04 ($31.622) al 02/10 ($39.165); la última coincide con el KPI de valor de Home. Sin cierres en el cache, Home vuelve al invertido neto **y lo dice** en el título. Son cierres ajustados por dividendos (`auto_adjust`): el valor de los días viejos queda apenas por debajo del cobrado.
+  - **Mutación:** extender la serie hasta el ticker más largo, y que Home ignore la serie nueva: **las dos rojas**. Un error de mi test, corregido: descartar la `QApplication` (`instance() or QApplication([])` sin guardarla) aborta el proceso con exit 127 sin ninguna salida.
+
+- **WIP 241 — Tarea 304 (CONGELAMIENTO-SIN-DIAGNOSTICO) CERRADA 2026-10-04 — el próximo congelamiento queda escrito con el stack de todos los hilos; la causa todavía no se sabe** (`HASH304`; `ui/vigia_interfaz.py` **nuevo**, `main.py`, `tests/test_vigia_interfaz_t304.py` **nuevo**). Suite Windows (Anaconda) **4317 passed, 1 skipped, 1 deselected** (+17, con la 305), ruff limpio, sin estado vivo **4314 passed, 4 skipped**. **CI del push: CI304.** **No deja tareas nuevas** — pero si el vigía registra un congelamiento, lo que diga el stack es la tarea.
+  - **Lo que se descartó midiendo:** el `analyze()` del scan en su `QThread` atrasa el hilo principal **67 ms** como máximo (sonda: `QTimer` de 50 ms en el hilo principal mientras 40 tickers corren `analyze()` con los toggles vivos; hacen falta 5 s para que Windows diga *No responde*); las lecturas de la GUI no esperan a un escritor (DB en WAL); `is_market_open()`, que corre cada minuto en la GUI, es cálculo local; la curva de Paper lee el cache de SPY sin red; y qwen corre en una RTX 4080, no en la CPU.
+  - **El vigía:** un `QTimer` de 0,5 s en el hilo de la GUI re-arma `faulthandler.dump_traceback_later(5 s)`. Si la GUI se traba, el hilo vigía **de C** (no necesita el GIL) vuelca el stack de todos los hilos a `~/.finanzias/congelamientos.log`, y al volver deja la hora y la duración en ese archivo y un WARNING en el log. Un atraso de más de 120 s se rotula como suspensión del equipo. Fail-open.
+  - **Tests en un subproceso** (el `faulthandler` es global y pytest también lo usa): una traba de 1,5 s con umbral 0,5 s deja el stack con el nombre de la función que trababa y su línea de hora; sin traba, nada. **Mutación: tres, las tres rojas** (sin re-armar, sin volcar, y un aviso más exigente que el volcado, que era un defecto real de la primera versión: el stack quedaba sin su hora).
+  - **Qué hacer la próxima vez que se trabe:** mandarme `~/.finanzias/congelamientos.log`. Ahí está la línea.
+
 - **WIP 240 — Tarea 298 (SPINOFF-AJUSTE) CERRADA 2026-10-04 — NO PASA, pero la premisa de la 297 era falsa y el aviso decía qué mirar al revés: se corrigieron los dos** (`7b95dc8`; `docs/spinoff_ajuste_t298_2026-10-04.md` **nuevo**, `paper_trading/splits.py`, `paper_trading/engine.py`, `tests/test_spinoff_aviso_t297.py`). Suite Windows (Anaconda) **4300 passed, 1 skipped, 1 deselected** (+1), ruff limpio, sin estado vivo **4297 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-05 01:01Z). **Deja la 303.**
   - **El barrido (siete spin-offs, `q` y `r` de los 8-K y comunicados, no de Yahoo):** el factor de Yahoo es `q + r·P_escindida/P_matriz` por acción vieja. **El sentido coincide en los siete.** La magnitud entra en 1 pp en seis. **HON 2026 no entra con ningún instrumento** (apertura −2,61, cierre −3,18, cinta del motor +1,85 pp), y el kill-criteria pide todos: **NO PASA**. Además, el factor solo no separa el `2,793` podrido de AVB del `2,39` real de DuPont/Qnity; lo separa el salto que vio el motor en la cinta (1,0023, a 64 pp).
   - **La premisa de la 297 era falsa:** HON 2026-06-29 fue Honeywell Aerospace 1 por cada 2 **más un reverse split 1:2** (8-K del 06-29). El `0,9535` es 0,5 × 1,907, el factor correcto de un evento compuesto, y no un sentido invertido.
@@ -2194,6 +2205,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-04f** tras cerrar la **298** (NO PASA), que **deja la 303** (el ajuste a mano de un spin-off no tiene mecanismo). Va al final: es latente y espera una decisión de Chapa (la escindida como caja o reinvertida). El orden queda **196 → 245 → 290 → 303**.
 
+> **Repriorizado 2026-10-04g** tras abrir y cerrar la **304** y la **305**, que salieron de dos reportes de Chapa (la app se traba; Home grafica un día) y **no dejan tareas nuevas**. El orden queda **196 → 245 → 290 → 303**.
+
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
 
 > **Repriorizado 2026-10-01b** tras cerrar la **250**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **251 → 252 → 196 → 245**.
@@ -3619,6 +3632,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 ### 299. ~~AUDITORIA-TANDA-2026-10-04 — Correr todas las auditorías en orden, sobre la 292–297 y el estado vivo~~ · **CERRADA 2026-10-04 — doce corridas, 4 hallazgos (1 ALTO, 3 BAJOS), tres tareas (300–302)** (`d9f2e00`) · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-04, *«ejecutar todas las auditorías en orden»*) · severidad **MEDIA**
 
 - **Alcance.** Las doce áreas de la skill, en orden, con el kill-criteria congelado antes de abrir el primer archivo (`docs/auditoria_tanda_killcriteria_2026-10-04.md`): lo que cambió desde la tanda del 2026-10-03 (la 292–297) más el estado vivo (DB copiada en sólo lectura, log de producción, `settings.json`, la app abierta). Informe: `docs/auditoria_tanda_2026-10-04.md`.
+
+### 305. ~~HOME-GRAFICA-UN-DIA — La curva de Home es el capital invertido neto, que en «Mis Acciones» (siete compras del mismo día) es un solo punto~~ · **CERRADA 2026-10-04 — Home grafica el valor de mercado por rueda desde la primera compra, sin red** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-04, *«el home solo grafica 1 día»*) · severidad **BAJA** (display)
+
+- **Qué pasaba.** La 264 eligió el capital invertido neto acumulado por transacción (*«la cartera real no tiene snapshots de valor»*). «Mis Acciones» tiene 7 transacciones, todas del 2026-04-14: la serie era un día.
+
+### 304. ~~CONGELAMIENTO-SIN-DIAGNOSTICO — La app queda «unresponsive» y no hay con qué saber por qué: el hilo trabado no loguea y Windows sólo registra un cuelgue si el usuario mata la ventana~~ · **CERRADA 2026-10-04 — un vigía deja el stack de todos los hilos cuando la GUI se traba; la causa NO se encontró todavía** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-04, *«la app queda unresponsive»*) · severidad **MEDIA**
+
+- **Qué pasa.** Sin evidencia del momento (la app estaba cerrada al reportarlo, y no hay eventos *Application Hang* de `python.exe` en 14 días), leer el código no alcanza para encontrar la causa.
 
 ### 303. SPINOFF-AJUSTE-MANUAL-SIN-MECANISMO — El plan B de la 298 es «el aviso de la 297 y el ajuste a mano», y no existe ninguna forma de ajustar a mano una posición paper  ·  origen: el cierre de la 298 · severidad **BAJA** (latente) · **un aviso que manda a hacer algo imposible**
 
