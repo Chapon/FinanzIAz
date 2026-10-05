@@ -36,7 +36,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from analysis.technical import get_support_resistance, to_yahoo_level
+from analysis.technical import (
+    NO_RECONSTRUIBLES_POR_DIA,
+    aggregate_signals,
+    get_support_resistance,
+    technical_signals_at,
+    to_yahoo_level,
+)
 from config.settings_manager import settings
 from ui.analysis.catalog import (
     COMPLETION_LIST as _COMPLETION_LIST,
@@ -89,6 +95,10 @@ class AnalysisTab(QWidget):
         super().__init__(parent)
         self._worker = None
         self._current_result = None  # last AnalysisResult, used to restore on hover-leave
+        # Tarea 316: el df y el ticker del último análisis, para evaluar las MISMAS reglas que
+        # `analyze()` en el día seleccionado.
+        self._current_df = None
+        self._current_ticker = ""
         self._current_tooltip = ""  # tooltip HTML for overall badge
         self._build_ui()
 
@@ -349,7 +359,8 @@ class AnalysisTab(QWidget):
             ("RSI", "● RSI", "#a371f7"),
             ("MACD", "● MACD", "#58a6ff"),
             ("Bollinger Bands", "● Bollinger", "#58a6ff"),
-            ("Golden/Death Cross", "● SMA Cross", "#d29922"),
+            ("Golden/Death Cross", "● SMA 50/200", "#d29922"),
+            ("Volumen", "● Volumen", "#8b949e"),
         ]
         for ind_key, display_name, color in _IND_DISPLAY:
             row = QHBoxLayout()
@@ -376,7 +387,7 @@ class AnalysisTab(QWidget):
 
         # Overall signal for the hovered day
         hover_overall_row = QHBoxLayout()
-        hover_day_lbl = QLabel("Señal del día:")
+        hover_day_lbl = QLabel("Señal técnica del día:")
         hover_day_lbl.setStyleSheet("font-size: 12px; font-weight: 600;")
         hover_overall_row.addWidget(hover_day_lbl)
         self.hover_overall_sig_lbl = QLabel("● Mantener")
@@ -385,7 +396,13 @@ class AnalysisTab(QWidget):
         hover_overall_row.addStretch()
         hp_layout.addLayout(hover_overall_row)
 
-        note_lbl = QLabel("Análisis histórico — no predictivo")
+        # Tarea 316: lo que la señal del día NO incluye, dicho, en vez de omitirlo callado.
+        note_lbl = QLabel(
+            "Análisis histórico — no predictivo. Con las reglas de la señal general, sin "
+            + " ni ".join(NO_RECONSTRUIBLES_POR_DIA)
+            + " (se entrenan con la historia hasta hoy) y sin ponderar por régimen."
+        )
+        note_lbl.setWordWrap(True)
         note_lbl.setStyleSheet("font-size: 10px; color: #4b5563; font-style: italic;")
         hp_layout.addWidget(note_lbl)
 
@@ -630,6 +647,8 @@ class AnalysisTab(QWidget):
         if df is None or df.empty:
             self.status_label.setText("❌ No se encontraron datos para este ticker.")
             return
+        self._current_df = df
+        self._current_ticker = ticker
 
         # Company header
         name = company.get("name", ticker) if company else ticker
@@ -763,36 +782,27 @@ class AnalysisTab(QWidget):
 
         # Update indicator rows
         for ind_key, (val_lbl, sig_lbl) in self._hover_ind_widgets.items():
-            match = next((s for s in day_sigs if s[0] == ind_key), None)
+            match = next((s for s in day_sigs if s.indicator == ind_key), None)
             if match:
-                _, raw_sig, raw_str, desc = match
-                yahoo = to_yahoo_level(raw_sig, raw_str)
+                yahoo = to_yahoo_level(match.signal, match.strength)
                 color = _YAHOO_COLORS.get(yahoo, "#fbbf24")
                 label = _YAHOO_LABELS_ES.get(yahoo, yahoo)
                 sig_lbl.setText(f"● {label}")
                 sig_lbl.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {color}; min-width: 100px;")
+                desc = match.description
                 val_lbl.setText(desc[:38] + "…" if len(desc) > 38 else desc)
+                val_lbl.setToolTip(desc)
             else:
                 sig_lbl.setText("● —")
                 sig_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #4b5563; min-width: 100px;")
                 val_lbl.setText("Sin datos")
 
-        # Compute overall signal for this day
+        # La señal técnica del día, con la agregación de `analyze()` (sin régimen: el de un día
+        # pasado no se reconstruye). NO pisa el badge de «Señal general» (tarea 316): ese badge
+        # es el del análisis completo, y la línea de conteos de abajo también; pintar ahí otra
+        # señal dejaba «Compra Fuerte» arriba de «2 alcistas · 1 bajistas · 4 neutrales».
         if day_sigs:
-            WEIGHTS = {"STRONG": 3, "MODERATE": 2, "WEAK": 1}
-            buy_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "BUY")
-            sell_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "SELL")
-            hold_score = sum(WEIGHTS.get(s[2], 1) for s in day_sigs if s[1] == "HOLD")
-            total = buy_score + sell_score + hold_score
-
-            if buy_score == sell_score:
-                day_overall, day_str = "HOLD", "WEAK"
-            else:
-                dominant = max(buy_score, sell_score)
-                day_overall = "BUY" if buy_score > sell_score else "SELL"
-                frac = dominant / total if total > 0 else 0
-                day_str = "STRONG" if frac >= 0.60 else "MODERATE" if frac >= 0.40 else "WEAK"
-
+            day_overall, day_str, _conf = aggregate_signals(day_sigs, None)
             day_yahoo = to_yahoo_level(day_overall, day_str)
             day_color = _YAHOO_COLORS.get(day_yahoo, "#fbbf24")
             day_label = _YAHOO_LABELS_ES.get(day_yahoo, day_yahoo)
@@ -800,79 +810,29 @@ class AnalysisTab(QWidget):
             self.hover_overall_sig_lbl.setStyleSheet(
                 f"font-size: 13px; font-weight: 700; color: {day_color};"
             )
-            # Also update the main overall badge to reflect hovered day
-            self.overall_badge.set_signal(day_yahoo)
         else:
             self.hover_overall_sig_lbl.setText("● —")
 
-    def _compute_day_signals(self, data: dict) -> list[tuple]:
+    def _compute_day_signals(self, data: dict) -> list:
+        """Las señales técnicas de ``analyze()`` en el día seleccionado (tarea 316).
+
+        Antes era una reimplementación propia de la UI —cuatro indicadores, el cruce SMA20/50,
+        Bollinger *Vender* entre la media y la banda superior— y MU el 2026-10-05 daba *Compra
+        Fuerte* con el día seleccionado contra *Mantener* sin seleccionar. Ahora es la misma
+        función que usa ``analyze()``, evaluada en ese día; el día se ubica por FECHA en el df
+        del análisis, no por la posición del gráfico.
         """
-        Compute buy/sell/hold signals for a single day based on indicator values.
-        Returns list of (indicator_name, signal, strength, description) tuples.
-        """
-        signals = []
-        close = data.get("close")
-
-        # ── RSI ──────────────────────────────────────────────────────────────
-        rsi = data.get("rsi")
-        if rsi is not None:
-            if rsi < 30:
-                signals.append(("RSI", "BUY", "STRONG", f"RSI {rsi:.1f} — Sobreventa"))
-            elif rsi < 40:
-                signals.append(("RSI", "BUY", "WEAK", f"RSI {rsi:.1f} — Cerca de sobreventa"))
-            elif rsi > 70:
-                signals.append(("RSI", "SELL", "STRONG", f"RSI {rsi:.1f} — Sobrecompra"))
-            elif rsi > 60:
-                signals.append(("RSI", "SELL", "WEAK", f"RSI {rsi:.1f} — Cerca de sobrecompra"))
-            else:
-                signals.append(("RSI", "HOLD", "WEAK", f"RSI {rsi:.1f} — Neutral (30-70)"))
-
-        # ── MACD ─────────────────────────────────────────────────────────────
-        macd = data.get("macd_line")
-        sig_line = data.get("signal_line")
-        hist = data.get("histogram")
-        if macd is not None and sig_line is not None:
-            if macd > sig_line:
-                strength = "STRONG" if (hist is not None and hist > 0) else "MODERATE"
-                signals.append(("MACD", "BUY", strength, f"MACD {macd:.3f} > señal {sig_line:.3f}"))
-            elif macd < sig_line:
-                strength = "STRONG" if (hist is not None and hist < 0) else "MODERATE"
-                signals.append(("MACD", "SELL", strength, f"MACD {macd:.3f} < señal {sig_line:.3f}"))
-            else:
-                signals.append(("MACD", "HOLD", "WEAK", f"MACD en cruce ({macd:.3f})"))
-
-        # ── Bollinger Bands ───────────────────────────────────────────────────
-        upper = data.get("upper")
-        lower = data.get("lower")
-        middle = data.get("middle")
-        if upper is not None and lower is not None and close is not None:
-            if close < lower:
-                signals.append(("Bollinger Bands", "BUY", "STRONG", f"${close:.2f} < BB inf ${lower:.2f}"))
-            elif close < middle:
-                signals.append(("Bollinger Bands", "BUY", "WEAK", f"${close:.2f} entre inf-media"))
-            elif close > upper:
-                signals.append(("Bollinger Bands", "SELL", "STRONG", f"${close:.2f} > BB sup ${upper:.2f}"))
-            elif close > middle:
-                signals.append(("Bollinger Bands", "SELL", "WEAK", f"${close:.2f} entre media-sup"))
-            else:
-                signals.append(("Bollinger Bands", "HOLD", "WEAK", f"${close:.2f} en banda media"))
-
-        # ── SMA Cross ─────────────────────────────────────────────────────────
-        sma20 = data.get("sma20")
-        sma50 = data.get("sma50")
-        if sma20 is not None and sma50 is not None:
-            if sma20 > sma50:
-                strength = "STRONG" if (close is not None and close > sma20) else "MODERATE"
-                signals.append(
-                    ("Golden/Death Cross", "BUY", strength, f"Golden: SMA20 {sma20:.2f} > SMA50 {sma50:.2f}")
-                )
-            else:
-                strength = "STRONG" if (close is not None and close < sma20) else "MODERATE"
-                signals.append(
-                    ("Golden/Death Cross", "SELL", strength, f"Death: SMA20 {sma20:.2f} < SMA50 {sma50:.2f}")
-                )
-
-        return signals
+        df = getattr(self, "_current_df", None)
+        fecha = data.get("date")
+        if df is None or fecha is None:
+            return []
+        try:
+            pos = df.index.get_indexer([pd.Timestamp(fecha)])[0]
+        except Exception:
+            return []
+        if pos < 0:
+            return []
+        return technical_signals_at(getattr(self, "_current_ticker", ""), df, int(pos))
 
     # ── Dynamic signal tooltip ─────────────────────────────────────────────────
 

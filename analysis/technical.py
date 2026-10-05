@@ -624,40 +624,43 @@ def aggregate_signals(
     return overall, strength, confidence
 
 
-# ── Full analysis ─────────────────────────────────────────────────────────────
+# ── Señales técnicas en una barra cualquiera (tarea 316) ─────────────────────
+
+# Lo que `analyze()` agrega y que NO se puede reconstruir para un día pasado sin re-entrenar
+# con la historia hasta ese día: el panel del día lo nombra en vez de omitirlo callado.
+NO_RECONSTRUIBLES_POR_DIA = ("GARCH", "XGBoost")
 
 
-def analyze(
+def technical_signals_at(
     ticker: str,
     df: pd.DataFrame,
+    idx: int,
     enable_sma_cross: bool = True,
     enable_volume: bool = True,
-    enable_xgboost: bool = True,
-) -> AnalysisResult | None:
-    """
-    Run full technical + ML analysis on a DataFrame of OHLCV data.
+) -> list[TechnicalSignal]:
+    """Las señales TÉCNICAS de ``analyze()`` evaluadas en la barra ``idx`` (posicional).
 
-    Parameters
-    ----------
-    enable_sma_cross : include Golden/Death Cross signal (requires 200 days)
-    enable_volume    : include Volume accumulation/distribution signal
-    enable_xgboost   : train XGBoost classifier and include its signal
-                       (set False for fast batch portfolio scans)
+    Tarea 316: al seleccionar un día, la pestaña Análisis calculaba la señal con una
+    reimplementación propia —cuatro indicadores, el cruce 20/50 en vez de 50/200, Bollinger
+    *Vender* entre la media y la banda superior— y MU el 2026-10-05 daba *Compra Fuerte*
+    seleccionado contra *Mantener* sin seleccionar. Ahora las dos vistas usan estas reglas.
 
-    Returns None if df has fewer than 50 rows.
+    Los indicadores se calculan sobre el ``df`` entero (con el cache compartido) y se cortan en
+    ``idx``: son todos **causales** (el valor del día *t* sólo usa datos hasta *t*), así que
+    cortar después de calcular es lo mismo que calcular sobre ``df[:idx+1]``.
     """
-    if df is None or len(df) < 50:
-        return None
+    if df is None or not (0 <= idx < len(df)):
+        return []
+    hasta = idx + 1
+    indic = get_cached_indicators(ticker, df)
+    rsi_series = indic["rsi"].iloc[:hasta]
+    macd_line, signal_line, histogram = (x.iloc[:hasta] for x in indic["macd"])
+    upper, middle, lower = (x.iloc[:hasta] if x is not None else None for x in indic["bollinger"])
+    sma50 = indic["sma50"].iloc[:hasta] if indic["sma50"] is not None else None
+    sma200 = indic["sma200"].iloc[:hasta] if indic["sma200"] is not None else None
+    dia = df.iloc[:hasta]
 
     signals: list[TechnicalSignal] = []
-
-    # Pull all base indicators from the shared cache (computed once per dataset)
-    indic = get_cached_indicators(ticker, df)
-    rsi_series = indic["rsi"]
-    macd_line, signal_line, histogram = indic["macd"]
-    upper, middle, lower = indic["bollinger"]
-    sma50 = indic["sma50"]
-    sma200 = indic["sma200"]
 
     # ── RSI ───────────────────────────────────────────────────────────────────
     if not rsi_series.dropna().empty:
@@ -676,7 +679,7 @@ def analyze(
 
     # ── Bollinger Bands ───────────────────────────────────────────────────────
     if upper is not None and not upper.dropna().empty:
-        price = df["Close"].iloc[-1]
+        price = dia["Close"].iloc[-1]
         price = float(price.iloc[-1]) if hasattr(price, "__iter__") else float(price)
         signals.append(
             _bollinger_signal(
@@ -707,9 +710,43 @@ def analyze(
 
     # ── Volume trend ──────────────────────────────────────────────────────────
     if enable_volume:
-        vol_sig = _volume_signal(df)
+        vol_sig = _volume_signal(dia)
         if vol_sig:
             signals.append(vol_sig)
+
+    return signals
+
+
+# ── Full analysis ─────────────────────────────────────────────────────────────
+
+
+def analyze(
+    ticker: str,
+    df: pd.DataFrame,
+    enable_sma_cross: bool = True,
+    enable_volume: bool = True,
+    enable_xgboost: bool = True,
+) -> AnalysisResult | None:
+    """
+    Run full technical + ML analysis on a DataFrame of OHLCV data.
+
+    Parameters
+    ----------
+    enable_sma_cross : include Golden/Death Cross signal (requires 200 days)
+    enable_volume    : include Volume accumulation/distribution signal
+    enable_xgboost   : train XGBoost classifier and include its signal
+                       (set False for fast batch portfolio scans)
+
+    Returns None if df has fewer than 50 rows.
+    """
+    if df is None or len(df) < 50:
+        return None
+
+    # Los indicadores técnicos salen de la MISMA función que usa el panel del día de la pestaña
+    # Análisis (tarea 316): evaluada en la última barra, es esto mismo.
+    signals: list[TechnicalSignal] = technical_signals_at(
+        ticker, df, len(df) - 1, enable_sma_cross=enable_sma_cross, enable_volume=enable_volume
+    )
 
     # ── XGBoost ML ────────────────────────────────────────────────────────────
     market_context = None
