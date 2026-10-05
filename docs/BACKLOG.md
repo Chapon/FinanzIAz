@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 255 — Tarea 319 (METRICAS-NO-ENTRA-EN-PANTALLA) CERRADA 2026-10-05 — las doce tarjetas y el gráfico de evolución entran en la primera pantalla** (`ui/dashboard_charts.py`, `ui/metrics_tab.py`, `tests/test_metricas_compacta_t319.py` **nuevo**). Suite Windows (Anaconda) **4398 passed, 1 skipped, 1 deselected** (+12), ruff limpio, sin estado vivo **4395 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **El arreglo:** `KpiCard(compact=True)` (92 px mínimos, valor en 22 px, sparkline de 28, título y subtítulo que cortan línea; Home sigue con la grande). Tres grupos con título —**Resultado** (5), **Decisiones** (4), **Costos y benchmark** (3)— en `_GrupoKpi`, que acomoda las columnas al ancho con `columnas_para` y el **ancho mínimo real** de sus tarjetas. Sale «P/L sin peor nombre», y su ticker pasa al subtítulo de «P/L realizado» (*«sin peor nombre (C): $1,436»*). El panel de score baja de 300 a 220 px mínimos.
+  - **Verificado renderizando la pestaña** (offscreen, con las fuentes de Windows, contra una copia de la DB): a 1.490 px, cinco/cuatro/tres columnas y el gráfico de evolución en la primera pantalla; a 1.100 px, cuatro columnas. **El primer render encontró un defecto propio:** los subtítulos largos fijaban el ancho mínimo de las tarjetas y la fila se pasaba del ancho de la ventana (scroll horizontal, la quinta tarjeta y el score cortados). Se corrigió cortando línea y calculando las columnas con el ancho real; un test lo fija a 700, 1.100 y 1.442 px.
+  - **Mutación: cinco, las cinco rojas** (tarjetas grandes, columnas sin el ancho real, una tarjeta fuera de los grupos, el subtítulo sin el ticker, sin cortar línea).
+
 - **WIP 254 — Tarea 318 (CI-SIN-TECHO-Y-SHA-CORTO) CERRADA 2026-10-05 — un cuelgue del CI ya no deja el run sin veredicto 6 horas, y `--sha` acepta el abreviado** (`8586b51`; `.github/workflows/ci.yml`, `scripts/check_ci.py`, `tests/test_ci_techo_y_sha_corto_t318.py` **nuevo**). Suite Windows (Anaconda) **4386 passed, 1 skipped, 1 deselected** (+5), ruff limpio, sin estado vivo **4383 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-05 17:55Z). **No deja tareas nuevas.**
   - **Los techos:** `lint` 10 min, `typecheck` 15, `audit` 15 y `pytest` **45**: el run lento del 2026-10-05 tardó 21 y terminó en verde, así que un techo de 20 lo habría matado; un test fija que el de `pytest` queda arriba de 21. El test lee los jobs sin `yaml` (PyYAML no está en `requirements` y el test corre en el CI), con un control que verifica que el parser ve un job sin techo.
   - **`--sha`:** se resuelve con `git rev-parse --verify <sha>^{commit}`; uno que no existe es *no se sabe* con el motivo. Contra el repo real, `--sha ecc1a07` pasó de *«no hay ningún run»* a **VERDE**.
@@ -2293,6 +2298,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-05n** tras cerrar la **318**, que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 312 → 315** —las cinco esperan algo de afuera: 196 y 245 el probe de Lambda (con el diseño del lado que lee ya escrito, la 314), la 290 dos semanas de clasificaciones (desde el 2026-10-03), la 312 la decisión sobre las seis posiciones importadas, y la 315 las dos decisiones de arquitectura de julio—.
 
+> **Repriorizado 2026-10-05o** tras abrir y cerrar la **319** (pedido de Chapa: Métricas no entraba en la pantalla), que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 312 → 315**.
+
 
 
 
@@ -3730,6 +3737,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 319. ~~METRICAS-NO-ENTRA-EN-PANTALLA — La pestaña Métricas tiene 13 tarjetas de ~170 px en una grilla fija de 4 y un panel de score de 300 px: el gráfico de evolución y las tablas quedan debajo del borde~~ · **CERRADA 2026-10-05 — tarjetas compactas en tres grupos, columnas según el ancho, sin la tarjeta repetida** · **movida a *En curso* con el detalle**  ·  origen: captura de Chapa (2026-10-05, *«las métricas no entran todas en la pantalla»*); eligió la opción compacta · severidad **BAJA** (UX, display-only)
+
+- **Qué pasaba.** `ui/metrics_tab.py` armaba las tarjetas en `grid.addWidget(card, i // 4, i % 4)` con `KpiCard` de 150 px mínimos (~170 reales) y el `PerformanceScorePanel` con 300 px mínimos. «P/L sin peor nombre» repetía el subtítulo de «P/L realizado».
+- **Decisión de Chapa (2026-10-05):** la versión **compacta**, contra pestañas internas o secciones plegables.
 
 ### 318. ~~CI-SIN-TECHO-Y-SHA-CORTO — Los jobs del CI no tienen `timeout-minutes` (el default de GitHub es 6 h), y `check_ci.py --sha` con un sha abreviado dice «no hay run» en vez de resolverlo~~ · **CERRADA 2026-10-05 — techo en los cuatro jobs y `--sha` resuelto con `git rev-parse`** (`8586b51`) · **movida a *En curso* con el detalle**  ·  origen: el cierre de la 313 (2026-10-05) · severidad **BAJA**
 

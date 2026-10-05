@@ -191,6 +191,67 @@ def _ddmm(day: str | None) -> str:
     return f"{day[8:10]}/{day[5:7]}"
 
 
+# Tarea 319: los grupos de tarjetas de la pestaña, en el orden en que se leen.
+GRUPOS_KPI: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("RESULTADO", ("pnl", "winrate", "pf", "expectancy", "payoff")),
+    ("DECISIONES", ("goodbad", "sellquality", "timing", "excursion")),
+    ("COSTOS Y BENCHMARK", ("costs", "expired", "benchmark")),
+)
+_ANCHO_MIN_TARJETA = 200
+_SEPARACION = 12
+
+
+def columnas_para(ancho: int, n: int, ancho_min: int = _ANCHO_MIN_TARJETA, sep: int = _SEPARACION) -> int:
+    """Cuántas tarjetas entran por fila en ``ancho`` px, sin pasar de ``n`` ni bajar de 1. Pura."""
+    if n <= 0:
+        return 1
+    return max(1, min(n, (max(ancho, 0) + sep) // (ancho_min + sep)))
+
+
+class _GrupoKpi(QWidget):
+    """Un título chico y sus tarjetas, en tantas columnas como entren (tarea 319)."""
+
+    def __init__(self, titulo: str, tarjetas: list, parent=None):
+        super().__init__(parent)
+        self.tarjetas = tarjetas
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self.titulo = QLabel(titulo)
+        self.titulo.setStyleSheet(
+            f"color: {PALETTE['text3']}; font-size: 10px; font-weight: 700; letter-spacing: 0.8px;"
+        )
+        lay.addWidget(self.titulo)
+        self.grid = QGridLayout()
+        self.grid.setSpacing(_SEPARACION)
+        lay.addLayout(self.grid)
+        self.columnas = 0
+        self._acomodar(len(tarjetas))
+
+    def _acomodar(self, columnas: int) -> None:
+        if columnas == self.columnas:
+            return
+        self.columnas = columnas
+        for t in self.tarjetas:
+            self.grid.removeWidget(t)
+        for c in range(self.grid.columnCount()):
+            self.grid.setColumnStretch(c, 0)
+        for i, t in enumerate(self.tarjetas):
+            self.grid.addWidget(t, i // columnas, i % columnas)
+        for c in range(columnas):
+            self.grid.setColumnStretch(c, 1)
+
+    def reacomodar(self, ancho: int) -> None:
+        # El ancho mínimo REAL de las tarjetas, no uno supuesto: un valor largo («-3.9% / +2.5%»)
+        # puede pedir más que el default, y con eso la fila se pasaba del ancho de la ventana.
+        minimo = max([_ANCHO_MIN_TARJETA] + [t.minimumSizeHint().width() for t in self.tarjetas])
+        self._acomodar(columnas_para(ancho, len(self.tarjetas), ancho_min=minimo))
+
+    def resizeEvent(self, event):  # firma de Qt
+        super().resizeEvent(event)
+        self.reacomodar(self.width())
+
+
 class EffectivenessChart(QFrame):
     """P/L realizado acumulado + win-rate móvil, con marcadores de commits."""
 
@@ -310,7 +371,7 @@ class PerformanceScorePanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(220)  # tarea 319: era 300
         _apply_chart_rcparams()
         row = QHBoxLayout(self)
         row.setContentsMargins(18, 16, 18, 14)
@@ -495,10 +556,12 @@ class MetricsTab(QWidget):
         )
         self.root.addWidget(self.score_panel)
 
-        # ── KPI cards (2 filas de 4) ──
+        # ── KPI cards, compactas y en grupos (tarea 319) ──
+        # Eran 13 tarjetas de ~170 px en una grilla fija de 4: con el panel de score, el gráfico
+        # de evolución y las tablas quedaban debajo del borde. Ahora son compactas, agrupadas, y
+        # las columnas salen del ancho de la ventana. «P/L sin peor nombre» se fue: repetía el
+        # subtítulo de «P/L realizado», que ahora lleva también el ticker.
         self.cards: dict[str, KpiCard] = {}
-        grid = QGridLayout()
-        grid.setSpacing(14)
         defs = [
             (
                 "pnl",
@@ -540,13 +603,6 @@ class MetricsTab(QWidget):
                 "Ganancia media de los ganadores ÷ |pérdida media| de los perdedores "
                 "(avg_win / |avg_loss|). Para un sistema asimétrico es el verdadero "
                 "veredicto: con payoff > 1 un win-rate < 50% igual puede ser rentable.",
-            ),
-            (
-                "exworst",
-                "P/L SIN PEOR NOMBRE",
-                "spike",
-                "P/L realizado total excluyendo el ticker que más perdió. Muestra "
-                "cuánto pesa un solo nombre tóxico sobre el resultado.",
             ),
             (
                 "goodbad",
@@ -613,12 +669,15 @@ class MetricsTab(QWidget):
                 "hay menos de 2 snapshots.",
             ),
         ]
-        for i, (key, title, kind, tip) in enumerate(defs):
-            card = KpiCard(title, "—", "", kind=kind)
+        for key, title, kind, tip in defs:
+            card = KpiCard(title, "—", "", kind=kind, compact=True)
             card.setToolTip(tip)
             self.cards[key] = card
-            grid.addWidget(card, i // 4, i % 4)
-        self.root.addLayout(grid)
+        self.grupos: list[_GrupoKpi] = []
+        for titulo, claves in GRUPOS_KPI:
+            grupo = _GrupoKpi(titulo, [self.cards[k] for k in claves])
+            self.grupos.append(grupo)
+            self.root.addWidget(grupo)
 
         # ── gráfico de efectividad ──
         self.chart = EffectivenessChart()
@@ -867,8 +926,11 @@ class MetricsTab(QWidget):
             f"generado {m['generated_at'][:19].replace('T', ' ')}"
         )
         # KPI cards
+        peor = f" ({r['worst_ticker']['ticker']})" if r["worst_ticker"] else ""
         self.cards["pnl"].set_value(
-            _money(r["total_pnl"]), f"sin peor nombre: {_money(r['pnl_ex_worst'])}", r["total_pnl"] > 0
+            _money(r["total_pnl"]),
+            f"sin peor nombre{peor}: {_money(r['pnl_ex_worst'])}",
+            r["total_pnl"] > 0,
         )
         # Win-rate reencuadrado: NO es el veredicto de efectividad (color neutro),
         # el titular real es el payoff ratio (sistema asimétrico).
@@ -881,11 +943,6 @@ class MetricsTab(QWidget):
         payoff = r["payoff_ratio"]
         self.cards["payoff"].set_value(
             f"{payoff:.2f}×" if payoff else "—", "avg win / |avg loss|", (payoff or 0) >= 1.0
-        )
-        self.cards["exworst"].set_value(
-            _money(r["pnl_ex_worst"]),
-            f"peor: {r['worst_ticker']['ticker']}" if r["worst_ticker"] else "",
-            r["pnl_ex_worst"] > 0,
         )
         self.cards["goodbad"].set_value(
             f"{r['n_wins']} / {r['n_losses']}", "buenas / malas", r["n_wins"] >= r["n_losses"]
@@ -1000,7 +1057,7 @@ class MetricsTab(QWidget):
         _spark("timing", fwd5_seq)
         _spark("sellquality", sell_fwd5_seq)
         # Estas son métricas escalares: ocultamos el sparkline vacío.
-        for key in ("pf", "payoff", "exworst", "costs", "expired", "excursion", "benchmark"):
+        for key in ("pf", "payoff", "costs", "expired", "excursion", "benchmark"):
             self.cards[key].spark.hide()
 
         # score mensual (tarea 194)

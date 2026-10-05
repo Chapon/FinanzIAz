@@ -227,6 +227,12 @@ class _Sparkline(QWidget):
 # ──────────────────────────────────────────────────────────────────────────
 # KPI card
 # ──────────────────────────────────────────────────────────────────────────
+# Tarea 319: el alto de la tarjeta compacta y de su sparkline.
+COMPACT_MIN_HEIGHT = 92
+COMPACT_SPARK_HEIGHT = 28
+COMPACT_MIN_WIDTH = 170
+
+
 class KpiCard(QFrame):
     """Big metric + delta + a sparkline below — the Fuse KPI tile."""
 
@@ -239,33 +245,47 @@ class KpiCard(QFrame):
         delta_positive: bool | None = None,
         kind: str = "area",
         color: str | None = None,
+        compact: bool = False,
         parent=None,
     ):
         super().__init__(parent)
         self.setObjectName("card")
-        self.setMinimumHeight(150)
+        # `compact` (tarea 319): la pestaña Métricas tiene 12 tarjetas y no entraban en la pantalla
+        # (~170 px cada una). Home sigue con la grande.
+        self.compact = compact
+        self.setMinimumHeight(COMPACT_MIN_HEIGHT if compact else 150)
         color = color or PALETTE["accent"]
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 16, 18, 14)
-        root.setSpacing(2)
+        root.setContentsMargins(*((14, 10, 14, 10) if compact else (18, 16, 18, 14)))
+        root.setSpacing(1 if compact else 2)
 
         self.title_lbl = QLabel(title)
         self.title_lbl.setStyleSheet(
-            f"color: {PALETTE['text3']}; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;"
+            f"color: {PALETTE['text3']}; font-size: {10 if compact else 11}px; font-weight: 700; "
+            "letter-spacing: 0.6px;"
         )
         root.addWidget(self.title_lbl)
 
         self.value_lbl = QLabel(value)
-        self.value_lbl.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 30px; font-weight: 800;")
+        self.value_lbl.setStyleSheet(
+            f"color: {PALETTE['text1']}; font-size: {22 if compact else 30}px; font-weight: 800;"
+        )
         root.addWidget(self.value_lbl)
 
         self.delta_lbl = QLabel(delta)
         root.addWidget(self.delta_lbl)
         self._set_delta_style(delta_positive)
 
-        root.addSpacing(4)
+        root.addSpacing(2 if compact else 4)
         self.spark = _Sparkline(kind=kind, color=color)
+        if compact:
+            self.spark.setFixedHeight(COMPACT_SPARK_HEIGHT)
+            # Que un subtítulo largo corte línea en vez de fijar el ancho mínimo de la tarjeta:
+            # si no, la fila entera se pasa del ancho de la ventana y aparece el scroll horizontal.
+            for lbl in (self.title_lbl, self.delta_lbl):
+                lbl.setWordWrap(True)
+            self.setMinimumWidth(COMPACT_MIN_WIDTH)
         root.addWidget(self.spark)
 
     def _set_delta_style(self, positive: bool | None) -> None:
