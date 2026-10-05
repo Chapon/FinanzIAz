@@ -566,6 +566,31 @@ class AnalystEstimateSnapshot(Base):
         return f"<AnalystEstimateSnapshot({self.ticker} {self.metric}/{self.period_label}={self.consensus_value} @ {d})>"
 
 
+class ClaudeOpinion(Base):
+    """Una opinión de Claude sobre una acción, pedida desde la pestaña Análisis (tarea 320).
+
+    **Display-only** (regla 3): ningún gate, sizing ni scan la lee. Se guarda para **medir** si
+    acierta (la tarea 321): por eso se registran la recomendación, el precio del momento y los
+    datos que se le mandaron, tal cual. Una por ticker y día (UNIQUE): pedirla de nuevo el mismo
+    día la reemplaza, y la medición no cuenta dos veces la misma decisión.
+    """
+
+    __tablename__ = "claude_opinions"
+    __table_args__ = (Index("ux_claude_opinions_ticker_fecha", "ticker", "fecha", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    fecha: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD', día local del pedido
+    creado_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    recomendacion: Mapped[str] = mapped_column(String(10), nullable=False)  # COMPRAR | MANTENER | VENDER
+    confianza: Mapped[int] = mapped_column(Integer, nullable=False)
+    precio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    modelo: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    respuesta_json: Mapped[str] = mapped_column(Text, nullable=False)
+    datos_json: Mapped[str] = mapped_column(Text, nullable=False)
+    segundos: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class FailedTicker(Base):
     """
     Registro de tickers que fallaron al consultar Yahoo Finance.

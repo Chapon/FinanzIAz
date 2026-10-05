@@ -63,6 +63,7 @@ from ui.analysis.labels import (
 from ui.analysis.labels import (
     get_tooltip as _tt,
 )
+from ui.analysis.opinion_card import OpinionCard
 from ui.analysis.recommendations_card import RecommendationsCard
 from ui.analysis.signal_card import SignalCard
 from ui.analysis.worker import AnalysisWorker
@@ -301,6 +302,10 @@ class AnalysisTab(QWidget):
         # Analyst recommendations + price targets (collapsible, hidden until data arrives)
         self.recommendations_card = RecommendationsCard()
         right_layout.addWidget(self.recommendations_card)
+
+        # Opinión de Claude (tarea 320): a pedido, con los datos de este análisis. Display-only.
+        self.opinion_card = OpinionCard()
+        right_layout.addWidget(self.opinion_card)
 
         right_layout.addWidget(HSeparator())
 
@@ -670,6 +675,14 @@ class AnalysisTab(QWidget):
 
         # Chart
         self.chart.plot_price_with_indicators(ticker, df, show_bb=settings.get("bb"))
+
+        # Opinión de Claude (tarea 320): los datos se arman al pedirla, en el worker (lee noticias).
+        def _datos_para_claude(t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr):
+            from analysis.opinion_claude import armar_datos, noticias_recientes
+
+            return armar_datos(t, d, r, c, a, noticias_recientes(t), s_r)
+
+        self.opinion_card.set_contexto(ticker, _datos_para_claude)
 
         # Signals
         self._clear_signals()
