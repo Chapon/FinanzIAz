@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 249 — Tarea 311 (SPINOFF-DESVIO-SIN-CLAVE) CERRADA 2026-10-05 — el banner de todo runner declara que el harness reinvierte un spin-off y la cuenta lo cobra como caja, a mano** (`analysis/harness_config.py`, `tests/test_desvios_claves_t152.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 249 — Tarea 311 (SPINOFF-DESVIO-SIN-CLAVE) CERRADA 2026-10-05 — el banner de todo runner declara que el harness reinvierte un spin-off y la cuenta lo cobra como caja, a mano** (`759957b`; `analysis/harness_config.py`, `tests/test_desvios_claves_t152.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-05 15:49Z). **No deja tareas nuevas.**
   - **La clave `spinoffs`**, incondicional como `dividendos` (las barras vienen `auto_adjust` para todo runner): el harness reinvierte la escindida; el motor no ajusta solo (298) y hasta que alguien corre `scripts/ajustar_spinoff.py` ve la caída —o acciones de más y una ganancia fantasma, si hubo un split en el mismo evento—; después, caja (303). Magnitud **fechada** y sin `pp` (los guards de la 233 y la 242 pasan): 1 evento en los 70 tickers que operaron las cuentas desde marzo, medido el 2026-10-04.
   - **Mutación:** sin el `_add`, el guard de claves de la 152 da rojo (2 casos: la clave falta del catálogo emitido y de las incondicionales).
 
@@ -3718,7 +3718,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Documentación: las dos corregidas. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 311. ~~SPINOFF-DESVIO-SIN-CLAVE — El harness reinvierte un spin-off (frames `auto_adjust`) y la cuenta lo trata como caja a mano (303), sin ajuste hasta entonces; `deviations_keyed()` no lo declara~~ · **CERRADA 2026-10-05 — clave `spinoffs`, incondicional, con la magnitud fechada** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [C-1] · severidad **BAJA**
+### 311. ~~SPINOFF-DESVIO-SIN-CLAVE — El harness reinvierte un spin-off (frames `auto_adjust`) y la cuenta lo trata como caja a mano (303), sin ajuste hasta entonces; `deviations_keyed()` no lo declara~~ · **CERRADA 2026-10-05 — clave `spinoffs`, incondicional, con la magnitud fechada** (`759957b`) · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [C-1] · severidad **BAJA**
 
 - **Qué pasa.** `grep -i spin analysis/harness_config.py` vacío. Es la forma del desvío `dividendos` (*«los dos cobran, uno reinvierte»*), que sí está declarado; acá, además, hasta que alguien corre el script la cuenta ve la caída o la ganancia fantasma del ex-date (y una caída puede disparar el stop).
 - **Magnitud:** despreciable sobre los veredictos (un solo evento, HON 2026, en los 70 tickers que operaron las cuentas desde marzo, comprado el mismo día del ex-date). Lo que falta es la declaración.
