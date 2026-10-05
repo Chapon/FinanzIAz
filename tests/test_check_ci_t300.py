@@ -59,10 +59,19 @@ _SHA = "a" * 40
 
 
 def _run(
-    conclusion="success", status="completed", sha=_SHA, run_id=1, attempt=1, creado="2026-10-04T10:00:00Z"
+    conclusion="success",
+    status="completed",
+    sha=_SHA,
+    run_id=1,
+    attempt=1,
+    creado="2026-10-04T10:00:00Z",
+    rama="main",
+    evento="push",
 ):
     return {
         "id": run_id,
+        "head_branch": rama,
+        "event": evento,
         "head_sha": sha,
         "status": status,
         "conclusion": conclusion,
@@ -184,13 +193,61 @@ def test_ultimo_toma_el_ultimo_TERMINADO_de_main():
     assert _consultar(_fetch_de(runs), sha=None)[0] == cc.ROJO
 
 
-def test_la_consulta_filtra_por_workflow_rama_y_commit():
+def test_la_consulta_filtra_por_workflow_y_commit_pero_NO_por_rama():
+    """Tarea 307: el ``branch=`` de la API devolvía un subconjunto atrasado. La rama se filtra acá."""
     fetch = _fetch_de([_run("success")])
     _consultar(fetch)
     url = fetch.llamadas[0]
-    assert (
-        f"/actions/workflows/{cc.WORKFLOW}/runs" in url and "branch=main" in url and f"head_sha={_SHA}" in url
-    )
+    assert f"/actions/workflows/{cc.WORKFLOW}/runs" in url and f"head_sha={_SHA}" in url
+    assert "branch=" not in url
+
+
+def test_la_rama_y_el_evento_se_filtran_del_lado_del_cliente():
+    """Un run verde de otra rama, o de un pull request desde un ``main`` de un fork, no es el de main."""
+    runs = [
+        _run("success", rama="otra", creado="2026-10-04T12:00:00Z", sha="c" * 40),
+        _run("success", evento="pull_request", creado="2026-10-04T11:00:00Z", sha="d" * 40),
+        _run("failure", creado="2026-10-04T10:00:00Z", sha="b" * 40),
+    ]
+    assert _consultar(_fetch_de(runs), sha=None)[0] == cc.ROJO
+
+
+# ── Tarea 307: --ultimo con la lista atrasada ───────────────────────────────
+
+_MAIN = "f" * 40
+
+
+def test_ultimo_con_una_lista_ATRASADA_no_es_verde():
+    """El caso del 2026-10-05: la API devolvió runs de hasta un mes atrás, todos verdes, y ninguno
+    del commit en que está `main`. Antes salía VERDE del más nuevo de ese subconjunto."""
+    viejos = [_run("success", sha="a" * 40, creado="2026-09-08T01:26:26Z")]
+    rc, texto = _consultar(_fetch_de(viejos), sha=None, sha_main=_MAIN)
+    assert rc == cc.NO_SE_SABE and "NO es un verde" in texto and "fffffff" in texto
+
+
+def test_ultimo_con_el_run_de_main_EN_CURSO_lee_el_anterior_y_lo_dice():
+    runs = [
+        _run(None, status="in_progress", sha=_MAIN, creado="2026-10-05T12:00:00Z"),
+        _run("failure", sha="b" * 40, creado="2026-10-05T11:00:00Z"),
+    ]
+    rc, texto = _consultar(_fetch_de(runs), sha=None, sha_main=_MAIN)
+    assert rc == cc.ROJO and "sigue en curso" in texto
+
+
+def test_ultimo_con_el_run_de_main_terminado_es_ese():
+    runs = [_run("success", sha=_MAIN, creado="2026-10-05T12:00:00Z"), _run("failure", sha="b" * 40)]
+    assert _consultar(_fetch_de(runs), sha=None, sha_main=_MAIN)[0] == cc.VERDE
+
+
+def test_la_skill_de_auditoria_compara_el_sha_contra_origin_main():
+    """La skill manda leer el CI primero en `guards`: un VERDE solo no alcanza (la 307)."""
+    texto = (_RAIZ / ".claude/skills/auditoria/SKILL.md").read_text(encoding="utf-8")
+    # El párrafo del resultado del CI, no cualquier línea del archivo: un `in` sobre el archivo
+    # entero se satisface con una mención suelta (la trampa de la 173 y la 176).
+    inicio = texto.index("**Y la PRIMERA pregunta es por el RESULTADO")
+    parrafo = texto[inicio : texto.index("**Corolario:", inicio)]
+    assert "check_ci.py --ultimo" in parrafo
+    assert "git rev-parse origin/main" in parrafo
 
 
 @pytest.mark.parametrize(
@@ -204,3 +261,15 @@ def test_la_consulta_filtra_por_workflow_rama_y_commit():
 )
 def test_repo_de_origin(url, esperado):
     assert cc.repo_de_origin(url) == esperado
+
+
+def test_ultimo_con_el_run_de_main_TERMINADO_pero_otro_mas_nuevo_no_es_verde():
+    """Una lista incoherente: el run de `main` terminó (rojo) y otro commit figura creado después
+    (verde). No es «el de main sigue en curso»: el veredicto de `main` es otro, y se dice que no
+    se sabe en vez de prestarle el verde del otro commit."""
+    runs = [
+        _run("success", sha="b" * 40, creado="2026-10-05T12:00:00Z"),
+        _run("failure", sha=_MAIN, creado="2026-10-05T11:00:00Z"),
+    ]
+    rc, texto = _consultar(_fetch_de(runs), sha=None, sha_main=_MAIN)
+    assert rc == cc.NO_SE_SABE and "sigue en curso" not in texto

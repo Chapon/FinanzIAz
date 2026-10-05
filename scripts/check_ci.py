@@ -24,6 +24,13 @@ cierre lo dice así (*«CI sin verificar»*) y la próxima tarea arranca con ``-
 
 Usa la API **pública** de Actions, sin ``gh auth`` (60 requests/hora por IP): cada consulta son
 1-3 requests, y la espera consulta cada ``--intervalo`` segundos.
+
+**Sin el filtro ``branch`` de la API (tarea 307).** ``…/workflows/ci.yml/runs?branch=main`` devolvía,
+de forma intermitente, un subconjunto **atrasado** de los runs: el 2026-10-05 ``--ultimo`` dijo
+*«CI 48430cd (2026-09-08): VERDE»* con ``main`` un mes más adelante (``total_count`` 135, 357 y 395
+contra 493 sin el filtro). Así que la rama se filtra acá (``head_branch`` y ``event == push``), y
+``--ultimo`` compara el sha del run contra ``origin/main``: si no es ése, sólo vale cuando el run de
+``origin/main`` todavía está en curso (el retraso uno de siempre); si no, es *no se sabe*.
 """
 
 from __future__ import annotations
@@ -76,6 +83,13 @@ def _git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=_REPO, capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def de_la_rama(runs: list[dict]) -> list[dict]:
+    """Los runs de un push a ``RAMA``. Se filtra acá porque el ``branch=`` de la API no es confiable
+    (tarea 307), y por ``event`` porque un pull request desde una rama ``main`` de un fork también
+    trae ``head_branch == "main"``."""
+    return [r for r in runs if r.get("head_branch") == RAMA and r.get("event", "push") == "push"]
 
 
 def run_de_commit(runs: list[dict], sha: str) -> dict | None:
@@ -141,16 +155,22 @@ def consultar(
     dormir: Callable[[float], None] = time.sleep,
     reloj: Callable[[], float] = time.monotonic,
     out=print,
+    sha_main: str | None = None,
 ) -> int:
-    """Consulta (y opcionalmente espera) el CI de ``sha``; con ``sha=None``, el último terminado."""
-    url = f"{_API}/repos/{repo}/actions/workflows/{WORKFLOW}/runs?branch={RAMA}&per_page=30"
+    """Consulta (y opcionalmente espera) el CI de ``sha``; con ``sha=None``, el último terminado.
+
+    ``sha_main`` (sólo con ``sha=None``) es ``origin/main``: si el último run terminado no es de
+    ese commit y tampoco hay un run de ese commit en curso, la lista que devolvió la API está
+    atrasada y el veredicto es *no se sabe* (tarea 307).
+    """
+    url = f"{_API}/repos/{repo}/actions/workflows/{WORKFLOW}/runs?per_page=30"
     if sha:
         url += f"&head_sha={sha}"
     limite = reloj() + timeout_s
     while True:
         try:
             datos = fetch(url)
-            runs = datos.get("workflow_runs", []) if isinstance(datos, dict) else []
+            runs = de_la_rama(datos.get("workflow_runs", []) if isinstance(datos, dict) else [])
         except SinRespuesta as e:
             out(f"CI: no se sabe — la API no contestó ({e}). NO es un verde.")
             return NO_SE_SABE
@@ -166,7 +186,18 @@ def consultar(
         que = f"el commit {sha[:7]}" if sha else f"`{RAMA}`"
         out(f"CI: no se sabe — no hay ningún run de {WORKFLOW} para {que}. NO es un verde.")
         return NO_SE_SABE
-    cab = f"CI {run.get('head_sha', '')[:7]} ({run.get('created_at')}): "
+    nota = ""
+    if not sha and sha_main and run.get("head_sha") != sha_main:
+        en_curso = run_de_commit(runs, sha_main)
+        if en_curso is None or en_curso.get("status") == "completed":
+            out(
+                f"CI: no se sabe — el último run que devolvió la API es de {run.get('head_sha', '')[:7]} "
+                f"({run.get('created_at')}) y `{RAMA}` está en {sha_main[:7]}, sin run en curso: la lista "
+                "llegó atrasada o ese commit no tiene run. NO es un verde."
+            )
+            return NO_SE_SABE
+        nota = f" — el run de {sha_main[:7]} (`{RAMA}`) sigue en curso; éste es el anterior"
+    cab = f"CI {run.get('head_sha', '')[:7]} ({run.get('created_at')}){nota}: "
     if v == NO_SE_SABE:
         out(
             cab
@@ -203,7 +234,14 @@ def main(argv: list[str] | None = None) -> int:
         return NO_SE_SABE
 
     sha = None
-    if not args.ultimo:
+    sha_main = None
+    if args.ultimo:
+        try:
+            sha_main = _git("rev-parse", f"origin/{RAMA}")
+        except subprocess.CalledProcessError:
+            print(f"CI: no se sabe — no se pudo leer origin/{RAMA} para comparar el último run.")
+            return NO_SE_SABE
+    else:
         sha = args.sha or _git("rev-parse", "HEAD")
         if not args.sha:
             try:
@@ -216,7 +254,9 @@ def main(argv: list[str] | None = None) -> int:
                     "pusheá antes de leer el CI del cierre."
                 )
                 return NO_SE_SABE
-    return consultar(repo, sha, esperar=args.esperar, timeout_s=args.timeout, intervalo_s=args.intervalo)
+    return consultar(
+        repo, sha, esperar=args.esperar, timeout_s=args.timeout, intervalo_s=args.intervalo, sha_main=sha_main
+    )
 
 
 if __name__ == "__main__":

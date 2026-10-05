@@ -298,6 +298,12 @@ alcance, escribió *«el CI no cambió desde la tanda»* —cierto para `ci.yml`
 corridas rojas**: llegó a 19 y 17 tareas cerradas antes de que la tanda siguiente lo leyera.
 **Que la configuración de un guard no cambió no dice nada de lo que el guard está diciendo.** Vale
 para todo guard que emite un veredicto que se puede leer: el CI, el log de un job, un exit code.
+**Y el veredicto se lee CON LO QUE MIDIÓ, no solo (tarea 307):** el sha que imprime `--ultimo` se
+compara contra `git rev-parse origin/main`. El 2026-10-05 el primer comando de la tanda dijo *«CI
+48430cd (2026-09-08): VERDE»* con `main` un mes más adelante —el filtro `branch=` de la API
+devolvía un subconjunto atrasado— y casi se escribió *«CI verde»* sobre un run de septiembre.
+Desde la 307 el script hace esa comparación solo, pero la regla vale para todo guard: un VERDE
+que no dice de qué es no es un verde.
 
 **Corolario: cuando un guard declara su propio punto ciego, ese punto ciego ES un hallazgo.** No
 es una nota de color ni una muestra de honestidad. El guard de la 130 escribió *«una perilla viva
