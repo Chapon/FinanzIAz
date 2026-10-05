@@ -67,6 +67,7 @@ CLAVES_CONOCIDAS = frozenset(
         "adv_cap",
         "second_opinion",
         "dividendos",
+        "spinoffs",
         "earnings_blackout",
         "reentry_gates",
         "reentry_gates_no_cartera",
@@ -192,6 +193,8 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
         "adv_cap",
         # Tarea 220 — INCONDICIONAL: el harness cobra dividendos y el motor no.
         "dividendos",
+        # Tarea 311 — INCONDICIONAL: el harness reinvierte la escindida; el motor, caja a mano.
+        "spinoffs",
         "earnings_blackout",
         "reentry_gates",
     }

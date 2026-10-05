@@ -2335,6 +2335,27 @@ def adv_cap_desc() -> str:
     )
 
 
+# Tarea 311 — el spin-off, la forma del desvío `dividendos` con un paso más. Medido el
+# 2026-10-04 en la 298: en los 70 tickers que operaron las dos cuentas, UN solo evento desde
+# marzo (HON 2026-06-29), comprado el mismo día del ex-date.
+SPINOFFS_MEDIDO_EL = "2026-10-04"
+SPINOFFS_N_EVENTOS = 1
+SPINOFFS_N_TICKERS = 70
+
+SPINOFFS_DESC = (
+    "El harness REINVIERTE la escindida de un spin-off y el motor vivo la cobra como CAJA, a mano "
+    "(tarea 311). Los frames vienen con `auto_adjust=True`: el factor de Yahoo suaviza el "
+    "ex-date y la posición simulada sigue entera en la matriz. El motor NO ajusta solo (la 298: el "
+    "factor de Yahoo no alcanza): hasta que alguien corre `scripts/ajustar_spinoff.py` la posición "
+    "ve la caída —que puede disparar el stop— o, si hubo un split en el mismo evento, acciones de "
+    "más y una ganancia fantasma; después, la escindida es caja (decisión de Chapa, 303). Medido el "
+    f"{SPINOFFS_MEDIDO_EL}: {SPINOFFS_N_EVENTOS} evento en los {SPINOFFS_N_TICKERS} tickers que "
+    "operaron las dos cuentas desde marzo (HON 2026-06-29, comprado el mismo día del ex-date), así "
+    "que sobre los veredictos el efecto es despreciable; lo que cambia es la lectura de una posición "
+    "puntual que atraviese un evento"
+)
+
+
 def dividendos_desc() -> str:
     """El texto del desvío `dividendos` (tarea 220), con los números **derivados**.
 
@@ -2560,6 +2581,9 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
     # desvío no se cerró, se re-describió (tarea 233: este comentario seguía diciendo
     # que el motor no los mira).
     _add("dividendos", dividendos_desc())
+    # Tarea 311 — INCONDICIONAL, por la misma razón que `dividendos`: las barras vienen ajustadas
+    # para todo runner, y el motor no ajusta un spin-off solo.
+    _add("spinoffs", SPINOFFS_DESC)
     if cfg.per_trade:
         _add("reentry_gates_no_cartera", REENTRY_GATES_NO_CARTERA_DESC)
     elif not cfg.live_gates:

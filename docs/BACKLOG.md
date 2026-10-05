@@ -18,7 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 248 — Tarea 310 (CLAIMS-TANDA-2026-10-05) CERRADA 2026-10-05 — «terminada» incluye el push y el CI en la skill que se carga siempre, y `ARCHITECTURE.md` nombra el ajuste de spin-off** (`.claude/skills/finanzias-conventions/SKILL.md`, `docs/ARCHITECTURE.md`, `tests/test_check_ci_t300.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected** (+1), ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 249 — Tarea 311 (SPINOFF-DESVIO-SIN-CLAVE) CERRADA 2026-10-05 — el banner de todo runner declara que el harness reinvierte un spin-off y la cuenta lo cobra como caja, a mano** (`analysis/harness_config.py`, `tests/test_desvios_claves_t152.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **La clave `spinoffs`**, incondicional como `dividendos` (las barras vienen `auto_adjust` para todo runner): el harness reinvierte la escindida; el motor no ajusta solo (298) y hasta que alguien corre `scripts/ajustar_spinoff.py` ve la caída —o acciones de más y una ganancia fantasma, si hubo un split en el mismo evento—; después, caja (303). Magnitud **fechada** y sin `pp` (los guards de la 233 y la 242 pasan): 1 evento en los 70 tickers que operaron las cuentas desde marzo, medido el 2026-10-04.
+  - **Mutación:** sin el `_add`, el guard de claves de la 152 da rojo (2 casos: la clave falta del catálogo emitido y de las incondicionales).
+
+- **WIP 248 — Tarea 310 (CLAIMS-TANDA-2026-10-05) CERRADA 2026-10-05 — «terminada» incluye el push y el CI en la skill que se carga siempre, y `ARCHITECTURE.md` nombra el ajuste de spin-off** (`39b1f69`; `.claude/skills/finanzias-conventions/SKILL.md`, `docs/ARCHITECTURE.md`, `tests/test_check_ci_t300.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected** (+1), ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-05 15:36Z). **No deja tareas nuevas.**
   - **[A-1]:** la lista *«Una tarea NO está terminada hasta que»* suma el paso 4 (push + `check_ci.py --esperar`, regla 7) y el *«Nunca declarar listo»* nombra el CI en rojo. **Y la skill entra a `_DECLARAN_EL_CIERRE`**, el guard de la 300 que exige que cada lugar que declara el cierre mande leer el CI: con la skill agregada y **antes** de corregirla, el guard dio **rojo**; después, verde. Es lo que impide que se quede atrás de nuevo, como pasó cuando la 300 corrigió los otros tres.
   - **[A-2]:** `ARCHITECTURE.md` nombra `spinoffs.py` + `scripts/ajustar_spinoff.py` (303) como el camino a mano que mueve caja fuera de `paper_orders`, con su ledger.
 
@@ -2248,6 +2252,9 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-05f** tras cerrar la **310**, que **no deja tareas nuevas**. El orden queda **311 → 196 → 245 → 290 → 312**.
 
+> **Repriorizado 2026-10-05g** tras cerrar la **311**, que **no deja tareas nuevas**. Se consumen las cinco de la tanda del 2026-10-05 salvo la parte que espera a Chapa. El orden queda **196 → 245 → 290 → 312** —las cuatro esperan algo de afuera: 196 y 245 el probe de Lambda, la 290 dos semanas de clasificaciones (desde el 2026-10-03), y la 312 la decisión sobre las seis posiciones importadas—.
+
+
 
 
 
@@ -3704,14 +3711,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Con un ticker vendido cuyo cache termina antes, la serie llega hasta el último cierre de los que siguen en cartera; con un ticker en cartera atrasado, sigue cortando donde corta hoy. Mutación: volver a calcular el corte sobre todos los tickers lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 310. ~~CLAIMS-TANDA-2026-10-05 — `finanzias-conventions` define «terminada» sin el push ni el CI, y `ARCHITECTURE.md` no nombra `spinoffs.py`~~ · **CERRADA 2026-10-05 — los dos textos, y la skill entra al guard de la 300** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [A-1] y [A-2] · severidad **MEDIA** ([A-1]) / **BAJA** ([A-2])
+### 310. ~~CLAIMS-TANDA-2026-10-05 — `finanzias-conventions` define «terminada» sin el push ni el CI, y `ARCHITECTURE.md` no nombra `spinoffs.py`~~ · **CERRADA 2026-10-05 — los dos textos, y la skill entra al guard de la 300** (`39b1f69`) · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [A-1] y [A-2] · severidad **MEDIA** ([A-1]) / **BAJA** ([A-2])
 
 - **[A-1]** `.claude/skills/finanzias-conventions/SKILL.md:12-31`: *«Una tarea NO está terminada hasta que»* lista los cuatro comandos, el commit y la revisión visual; no nombra el push ni `check_ci.py --esperar`, que exigen la regla 7 de `CLAUDE.md`, `ship.md:65-76` y `git-workflow:65,74-75`. Es la skill que se carga siempre: la forma de los tres episodios (106, 175, 300).
 - **[A-2]** `docs/ARCHITECTURE.md:48` lista los módulos que mueven caja fuera de `paper_orders` (`dividends.py`, `splits.py`, `cuadre.py`) y no `spinoffs.py` + `scripts/ajustar_spinoff.py` (303), que acreditan caja y cambian acciones a mano.
 - **Kill-criteria.** Documentación: las dos corregidas. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 311. SPINOFF-DESVIO-SIN-CLAVE — El harness reinvierte un spin-off (frames `auto_adjust`) y la cuenta lo trata como caja a mano (303), sin ajuste hasta entonces; `deviations_keyed()` no lo declara  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [C-1] · severidad **BAJA**
+### 311. ~~SPINOFF-DESVIO-SIN-CLAVE — El harness reinvierte un spin-off (frames `auto_adjust`) y la cuenta lo trata como caja a mano (303), sin ajuste hasta entonces; `deviations_keyed()` no lo declara~~ · **CERRADA 2026-10-05 — clave `spinoffs`, incondicional, con la magnitud fechada** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [C-1] · severidad **BAJA**
 
 - **Qué pasa.** `grep -i spin analysis/harness_config.py` vacío. Es la forma del desvío `dividendos` (*«los dos cobran, uno reinvierte»*), que sí está declarado; acá, además, hasta que alguien corre el script la cuenta ve la caída o la ganancia fantasma del ex-date (y una caída puede disparar el stop).
 - **Magnitud:** despreciable sobre los veredictos (un solo evento, HON 2026, en los 70 tickers que operaron las cuentas desde marzo, comprado el mismo día del ex-date). Lo que falta es la declaración.
