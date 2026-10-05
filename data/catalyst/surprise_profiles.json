@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-09-28T00:42:02.078230+00:00",
+    "built_at": "2026-10-05T00:44:28.836868+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -33,12 +33,12 @@
     "ACN": {
       "ticker": "ACN",
       "n_quarters": 24,
-      "beat_rate": 0.875,
-      "miss_rate": 0.125,
-      "mean_surprise": 0.031749,
-      "median_surprise": 0.036522,
-      "last_surprise": 0.024259,
-      "directional_score": 0.4754
+      "beat_rate": 0.9167,
+      "miss_rate": 0.0833,
+      "mean_surprise": 0.033912,
+      "median_surprise": 0.037972,
+      "last_surprise": 0.034591,
+      "directional_score": 0.5271
     },
     "ADBE": {
       "ticker": "ADBE",
@@ -775,10 +775,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.071868,
-      "median_surprise": 0.08499,
-      "last_surprise": 0.21363,
-      "directional_score": 0.5575
+      "mean_surprise": 0.069238,
+      "median_surprise": 0.071936,
+      "last_surprise": 0.050283,
+      "directional_score": 0.5554
     },
     "NEE": {
       "ticker": "NEE",
@@ -805,10 +805,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9583,
       "miss_rate": 0.0417,
-      "mean_surprise": 0.278729,
-      "median_surprise": 0.254032,
-      "last_surprise": 0.5,
-      "directional_score": 0.773
+      "mean_surprise": 0.261683,
+      "median_surprise": 0.244048,
+      "last_surprise": 0.090909,
+      "directional_score": 0.7593
     },
     "NOC": {
       "ticker": "NOC",
@@ -985,10 +985,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.064071,
+      "mean_surprise": 0.063885,
       "median_surprise": 0.038411,
-      "last_surprise": -0.004505,
-      "directional_score": 0.5263
+      "last_surprise": -0.008969,
+      "directional_score": 0.5261
     },
     "ROST": {
       "ticker": "ROST",
