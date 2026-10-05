@@ -21,7 +21,14 @@ _REPO = "dueno/repo"
 # Los lugares que declaran CÓMO SE CIERRA una tarea. Si el paso del CI falta en uno, ese lugar
 # se sigue leyendo como un cierre completo —la forma de la 66 y de la 72—, y el que lo siga cierra
 # con el CI en rojo sin haber hecho nada mal.
-_DECLARAN_EL_CIERRE = ("CLAUDE.md", ".claude/commands/ship.md", ".claude/skills/git-workflow/SKILL.md")
+# `finanzias-conventions` entra en la 310: define «Una tarea NO está terminada hasta que» y se quedó
+# sin el CI cuando la 300 corrigió los otros tres.
+_DECLARAN_EL_CIERRE = (
+    "CLAUDE.md",
+    ".claude/commands/ship.md",
+    ".claude/skills/git-workflow/SKILL.md",
+    ".claude/skills/finanzias-conventions/SKILL.md",
+)
 
 
 def _cuerpo(rel: str) -> str:

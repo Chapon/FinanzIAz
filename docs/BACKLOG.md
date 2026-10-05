@@ -18,7 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 247 — Tarea 309 (HOME-CURVA-CORTADA-POR-VENDIDO) CERRADA 2026-10-05 — la curva de Home ya no se congela con la primera venta** (`database/cartera_real.py`, `tests/test_home_curva_vendidos_t309.py` **nuevo**). Suite Windows (Anaconda) **4360 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4357 passed, 4 skipped**. **No deja tareas nuevas.**
+- **WIP 248 — Tarea 310 (CLAIMS-TANDA-2026-10-05) CERRADA 2026-10-05 — «terminada» incluye el push y el CI en la skill que se carga siempre, y `ARCHITECTURE.md` nombra el ajuste de spin-off** (`.claude/skills/finanzias-conventions/SKILL.md`, `docs/ARCHITECTURE.md`, `tests/test_check_ci_t300.py`). Suite Windows (Anaconda) **4361 passed, 1 skipped, 1 deselected** (+1), ruff limpio, sin estado vivo **4358 passed, 4 skipped**. **No deja tareas nuevas.**
+  - **[A-1]:** la lista *«Una tarea NO está terminada hasta que»* suma el paso 4 (push + `check_ci.py --esperar`, regla 7) y el *«Nunca declarar listo»* nombra el CI en rojo. **Y la skill entra a `_DECLARAN_EL_CIERRE`**, el guard de la 300 que exige que cada lugar que declara el cierre mande leer el CI: con la skill agregada y **antes** de corregirla, el guard dio **rojo**; después, verde. Es lo que impide que se quede atrás de nuevo, como pasó cuando la 300 corrigió los otros tres.
+  - **[A-2]:** `ARCHITECTURE.md` nombra `spinoffs.py` + `scripts/ajustar_spinoff.py` (303) como el camino a mano que mueve caja fuera de `paper_orders`, con su ledger.
+
+- **WIP 247 — Tarea 309 (HOME-CURVA-CORTADA-POR-VENDIDO) CERRADA 2026-10-05 — la curva de Home ya no se congela con la primera venta** (`f9dff55`; `database/cartera_real.py`, `tests/test_home_curva_vendidos_t309.py` **nuevo**). Suite Windows (Anaconda) **4360 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4357 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-05 15:24Z). **No deja tareas nuevas.**
   - **El arreglo:** `valor_diario` corta la serie en el último cierre común de los tickers **que siguen en cartera** (acciones finales > 0); un vendido vale mientras estuvo y no recorta a los demás. Si se vendió todo, la serie llega al último cierre que haya. La regla de la 305 sigue para lo que está en cartera: un ticker en cartera atrasado sigue cortando.
   - **Con los datos reales no cambia nada** (no hay ventas): 120 ruedas, del 14/04 ($31.622,05) al 02/10 ($39.165,40). **Mutación: tres, las tres rojas** (el corte viejo, no mirar si sigue en cartera, y `min` en vez de `max` con todo vendido). La tercera necesitó un caso con **dos** vendidos: con uno solo, `min` y `max` coinciden.
 
@@ -2242,6 +2246,9 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-05e** tras cerrar la **309**, que **no deja tareas nuevas**. El orden queda **310 → 311 → 196 → 245 → 290 → 312**.
 
+> **Repriorizado 2026-10-05f** tras cerrar la **310**, que **no deja tareas nuevas**. El orden queda **311 → 196 → 245 → 290 → 312**.
+
+
 
 
 > **Repriorizado 2026-10-01c** tras cerrar la **251**, que deja una acción manual (refrescar SPY antes de correr un runner de régimen) y **no deja tareas nuevas**. El orden queda **252 → 196 → 245**.
@@ -3689,7 +3696,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un CSV con `Trade Date` importa la transacción con esa fecha y los dividendos cobrados cuentan los ex-dates posteriores a ella; uno sin la columna avisa. Mutación: ignorar la columna lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** la decisión de Chapa para la parte (2); la (1) no la necesita.
 
-### 309. ~~HOME-CURVA-CORTADA-POR-VENDIDO — La curva de Home termina en el último cierre del ticker más atrasado de toda la historia de la cartera, vendidos incluidos~~ · **CERRADA 2026-10-05 — el corte mira sólo los tickers que siguen en cartera** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [B-1] · severidad **MEDIA** (latente)
+### 309. ~~HOME-CURVA-CORTADA-POR-VENDIDO — La curva de Home termina en el último cierre del ticker más atrasado de toda la historia de la cartera, vendidos incluidos~~ · **CERRADA 2026-10-05 — el corte mira sólo los tickers que siguen en cartera** (`f9dff55`) · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [B-1] · severidad **MEDIA** (latente)
 
 - **Qué pasa.** `database/cartera_real.py:94`: `hasta = min(max(d) …) for t in con_historia`, y `con_historia` sale de todos los eventos, también los de posiciones cerradas. Reproducido con la función pura: A en cartera con cierres al 02/10 y B vendida entera el 01/06 con cierres al 05/06 → la serie termina el **05/06**.
 - **Por qué importa.** Hoy «Mis Acciones» no tiene ventas. Pero AAPL, EMBJ, MLTX y TEAM no están en el universo del scan: su cache se refresca sólo mientras están en cartera. La primera venta de uno de ellos congela el gráfico de Home en esa fecha, con un título que dice *«hasta el dd/mm»* sin decir por qué.
@@ -3697,7 +3704,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Con un ticker vendido cuyo cache termina antes, la serie llega hasta el último cierre de los que siguen en cartera; con un ticker en cartera atrasado, sigue cortando donde corta hoy. Mutación: volver a calcular el corte sobre todos los tickers lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 310. CLAIMS-TANDA-2026-10-05 — `finanzias-conventions` define «terminada» sin el push ni el CI, y `ARCHITECTURE.md` no nombra `spinoffs.py`  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [A-1] y [A-2] · severidad **MEDIA** ([A-1]) / **BAJA** ([A-2])
+### 310. ~~CLAIMS-TANDA-2026-10-05 — `finanzias-conventions` define «terminada» sin el push ni el CI, y `ARCHITECTURE.md` no nombra `spinoffs.py`~~ · **CERRADA 2026-10-05 — los dos textos, y la skill entra al guard de la 300** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-05.md` [A-1] y [A-2] · severidad **MEDIA** ([A-1]) / **BAJA** ([A-2])
 
 - **[A-1]** `.claude/skills/finanzias-conventions/SKILL.md:12-31`: *«Una tarea NO está terminada hasta que»* lista los cuatro comandos, el commit y la revisión visual; no nombra el push ni `check_ci.py --esperar`, que exigen la regla 7 de `CLAUDE.md`, `ship.md:65-76` y `git-workflow:65,74-75`. Es la skill que se carga siempre: la forma de los tres episodios (106, 175, 300).
 - **[A-2]** `docs/ARCHITECTURE.md:48` lista los módulos que mueven caja fuera de `paper_orders` (`dividends.py`, `splits.py`, `cuadre.py`) y no `spinoffs.py` + `scripts/ajustar_spinoff.py` (303), que acreditan caja y cambian acciones a mano.

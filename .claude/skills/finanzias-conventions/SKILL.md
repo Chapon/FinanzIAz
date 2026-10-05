@@ -24,8 +24,9 @@ Una tarea NO está terminada hasta que:
    - **Modo sin estado vivo, 2026-09-11 (tarea 176):** el job `pytest` quedó rojo el 2026-09-09 —en el **mismo commit** que shipeó el guard de la tarea 130— y **36 tareas** se cerraron declarando "suite Windows verde", que era **verdad**. El test leía `~/.finanzias/settings.json`, y en la máquina de Chapa ese archivo **existe**. 35 corridas en rojo; lo reportó Chapa, no el proceso. El cuarto comando corre la misma suite con `HOME`/`USERPROFILE` en un directorio vacío — la condición del CI, sin red y antes de commitear. **Lo que no cubre está en su docstring:** lo que sólo rompe en Linux de verdad (paths, permisos, locale) lo sigue viendo únicamente el CI.
 2. **Se commiteó** con mensaje descriptivo en español (`feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`), pasando antes los dos guards de `--staged` del paso 3a de `/ship` (`check_repo_health.py` y `check_backlog_integrity.py`) — que son **manuales**, ver *Trampas conocidas*.
 3. Si hay GUI, **revisión visual** antes de cerrar.
+4. **Se pusheó y el CI de ese commit está en VERDE, leído y no supuesto**: `git push origin main` y `python scripts/check_ci.py --esperar` (regla 7 de `CLAUDE.md`, tarea 300). Rojo ⇒ la tarea no está cerrada; *no se sabe* ⇒ el cierre dice *«CI sin verificar»*. Los cuatro comandos ven todo lo que se puede ver en Windows; lo que sólo rompe en Linux lo ve **únicamente** el CI, y tres veces quedó rojo mientras las tareas se cerraban en verde (106, 175, 300). Esta lista no lo decía hasta la tarea 310.
 
-Nunca declarar "listo" con tests rojos, ruff en rojo, el modo sin estado vivo en rojo, implementación parcial o sin correr los cuatro comandos en Windows.
+Nunca declarar "listo" con tests rojos, ruff en rojo, el modo sin estado vivo en rojo, el CI del commit en rojo, implementación parcial o sin correr los cuatro comandos en Windows.
 
 ## Metodología: kill-criteria upfront
 
