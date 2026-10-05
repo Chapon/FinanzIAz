@@ -76,7 +76,8 @@ def valor_diario(
 
     - un ticker sin cierres queda **afuera** y se devuelve en la segunda lista, en vez de
       valuarse en cero;
-    - la serie **termina** en la última rueda que tienen todos los tickers con historia: más
+    - la serie **termina** en la última rueda que tienen todos los tickers con historia **que
+      siguen en cartera** (tarea 309; si se vendió todo, en el último cierre que haya): más
       allá, uno de ellos quedaría congelado en su último cierre sin que nada lo diga. Adentro,
       una rueda que le falta a un ticker (un feriado distinto) toma su cierre anterior.
 
@@ -91,7 +92,16 @@ def valor_diario(
     if not con_historia:
         return [], sin_historia
     desde = min(d for d, _, _ in eventos)
-    hasta = min(max(d for d, _ in cierres[t]) for t in con_historia)
+    # El corte mira sólo los tickers que siguen EN CARTERA (tarea 309): uno vendido no aporta
+    # valor después de la venta, y su cache deja de refrescarse (si no está en el universo del
+    # scan, sólo lo refresca Portfolio mientras está en cartera). Antes cortaba en el último
+    # cierre del ticker más atrasado de toda la historia, y la primera venta congelaba el gráfico.
+    finales: dict[str, float] = {}
+    for _, t, q in eventos:
+        finales[t] = finales.get(t, 0.0) + q
+    en_cartera = [t for t in con_historia if finales.get(t, 0.0) > CERRADA_TOL]
+    ultimos = {t: max(d for d, _ in cierres[t]) for t in con_historia}
+    hasta = min(ultimos[t] for t in en_cartera) if en_cartera else max(ultimos.values())
     ruedas = sorted({d for t in con_historia for d, _ in cierres[t] if desde <= d <= hasta})
     por_ticker = {t: dict(cierres[t]) for t in con_historia}
     ordenados = sorted(eventos)
