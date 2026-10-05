@@ -369,6 +369,7 @@ class ImportDialog(QDialog):
                     "company_name": self._company_names.get(r, ticker),
                     "sector": self._company_sectors.get(r, ""),
                     "is_watchlist": getattr(orig, "is_watchlist", False),
+                    "trade_date": getattr(orig, "trade_date", None),
                 }
             )
 
@@ -413,9 +414,17 @@ class ImportDialog(QDialog):
         Returns ``(n_imported, n_merged)``. Runs inside the caller's
         ``session_scope`` so commit/rollback are handled automatically.
         """
+        from datetime import datetime, time
+
         imported = 0
         merged = 0
         for item in rows_to_import:
+            # Tarea 308: la fecha de compra del CSV, si vino; si no, la de hoy (el parser avisa).
+            fecha = (
+                datetime.combine(item["trade_date"], time())
+                if item.get("trade_date") is not None
+                else utcnow_naive()
+            )
             existing = (
                 session.query(Position)
                 .filter(Position.portfolio_id == self.portfolio_id)
@@ -426,7 +435,9 @@ class ImportDialog(QDialog):
                 # Tarea 277: una posición cerrada (cantidad 0) arranca un lote nuevo.
                 from database.cartera_real import reabrir_si_cerrada
 
-                reabrir_si_cerrada(existing, utcnow_naive())
+                reabrir_si_cerrada(existing, fecha)
+                if existing.purchase_date is None or fecha < existing.purchase_date:
+                    existing.purchase_date = fecha
                 # Merge: recalculate avg price
                 total_qty = existing.quantity + item["quantity"]
                 avg = (
@@ -447,7 +458,7 @@ class ImportDialog(QDialog):
                     avg_buy_price=item["price"],
                     sector=item["sector"],
                     notes=note,
-                    purchase_date=utcnow_naive(),
+                    purchase_date=fecha,
                 )
                 session.add(pos)
                 imported += 1
@@ -460,6 +471,7 @@ class ImportDialog(QDialog):
                 quantity=item["quantity"],
                 price=item["price"],
                 fees=item["fee"],
+                date=fecha,
                 notes="Importado desde CSV",
             )
             session.add(tx)

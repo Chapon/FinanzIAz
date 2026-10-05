@@ -383,6 +383,14 @@ plata de Chapa, y desde la 264 son lo que muestra Home. Las mismas dos pasadas: 
 ellas; y que el cruce paper→real no duplique ni pierda una transacción. Medido el 2026-10-02
 cuadraba (cada posición con su compra), pero ninguna corrida lo había mirado.
 
+**Y la FECHA de cada transacción se contrasta contra el precio de ese día (tarea 308).** Cuadrar
+cantidad y precio no ve una fecha falsa: las seis compras importadas por CSV figuraban del
+2026-04-14 03:19 —la hora de la importación— a precios que ese día no existieron (INTC a $30,62
+con un cierre de $63,81), y los dividendos cobrados se contaban desde ahí. Un precio de
+transacción fuera del rango del día de su fecha delata que la fecha no es la de la operación. Lo
+encontró la tanda del 2026-10-05; las cuatro corridas anteriores de `cuentas` habían cuadrado esas
+mismas filas.
+
 **Queda afuera:** si las decisiones fueron **buenas**. Eso es trading y va por backtest con
 kill-criteria (regla 2), no por auditoría.
 

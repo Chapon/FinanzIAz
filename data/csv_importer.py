@@ -8,12 +8,27 @@ Yahoo Finance CSV columns (typical):
 
 Generic fallback (minimum required columns):
   ticker/symbol, quantity/shares, price/buy_price/purchase_price
+
+La fecha de compra (tarea 308)
+------------------------------
+Hasta la 308 ninguna fecha se leía: la transacción quedaba con la hora de la importación, y las
+seis posiciones importadas de «Mis Acciones» figuraban compradas el 2026-04-14 03:19 (AAPL a
+$203,30 un día que cerró a $258,37). Los dividendos cobrados de Portfolio se cuentan desde esa
+fecha. Ahora se lee ``Trade Date`` (y sus alias). **Ojo con ``Date``:** en el export de Yahoo es
+la fecha de la **cotización**, no de la compra; ``date``/``fecha`` a secas sólo se aceptan en el
+formato genérico, donde no hay otra columna de fecha.
+
+Formatos: ``YYYYMMDD`` (el de Yahoo), ``YYYY-MM-DD`` y ``DD/MM/YYYY``. Una fecha con barras en la
+que día y mes son los dos ≤ 12 es **ambigua** (``03/04/2026``: ¿3 de abril o 4 de marzo?) y no se
+adivina: queda sin fecha y se avisa. Una fecha futura, igual.
 """
 
 import contextlib
 import csv
 import io
+import re
 from dataclasses import dataclass, field
+from datetime import date
 
 
 @dataclass
@@ -25,6 +40,7 @@ class ImportRow:
     notes: str = ""
     is_watchlist: bool = False  # True when imported from a watchlist (qty was 0)
     raw: dict = field(default_factory=dict)
+    trade_date: date | None = None  # la fecha de compra del CSV; None = no vino o no se pudo leer
 
 
 @dataclass
@@ -53,6 +69,18 @@ _PRICE_ALIASES = {
 _CURRENT_PRICE_ALIASES = {"current price", "precio actual", "last price", "last"}
 _FEE_ALIASES = {"commission", "comisión", "comision", "fee", "fees"}
 _NOTES_ALIASES = {"comment", "notes", "nota", "notas", "description"}
+_TRADE_DATE_ALIASES = {
+    "trade date",
+    "purchase date",
+    "date acquired",
+    "acquired",
+    "fecha de compra",
+    "fecha compra",
+    "fecha de operacion",
+    "fecha de operación",
+}
+# Sólo en el formato genérico: en el de Yahoo, `Date` es la fecha de la cotización.
+_GENERIC_DATE_ALIASES = {"date", "fecha"}
 
 # Prefixes that identify indices or non-tradeable symbols to skip
 _INDEX_PREFIXES = ("^",)
@@ -68,6 +96,35 @@ def _find_col(headers: list[str], aliases: set) -> str | None:
         if _normalize(h) in aliases:
             return h
     return None
+
+
+def parse_trade_date(texto: str, hoy: date | None = None) -> tuple[date | None, str | None]:
+    """``(fecha, None)`` o ``(None, motivo)``. Vacío ⇒ ``(None, None)``: no es un error."""
+    t = (texto or "").strip()
+    if not t:
+        return None, None
+    hoy = hoy or date.today()
+    fecha = None
+    try:
+        if re.fullmatch(r"\d{8}", t):
+            fecha = date(int(t[:4]), int(t[4:6]), int(t[6:]))
+        elif re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", t):
+            a, m, d = (int(x) for x in t.split("-"))
+            fecha = date(a, m, d)
+        elif m_ := re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", t):
+            d, m, a = (int(x) for x in m_.groups())
+            if d <= 12 and m <= 12 and d != m:
+                return None, f"fecha ambigua '{t}' (¿día/mes o mes/día?)"
+            if m > 12:  # sólo puede ser mes/día
+                d, m = m, d
+            fecha = date(a, m, d)
+    except ValueError:
+        return None, f"fecha inválida '{t}'"
+    if fecha is None:
+        return None, f"formato de fecha no reconocido '{t}'"
+    if fecha > hoy:
+        return None, f"fecha futura '{t}'"
+    return fecha, None
 
 
 def parse_csv(content: str) -> ImportResult:
@@ -104,6 +161,10 @@ def parse_csv(content: str) -> ImportResult:
     col_current = _find_col(headers, _CURRENT_PRICE_ALIASES)
     col_fee = _find_col(headers, _FEE_ALIASES)
     col_notes = _find_col(headers, _NOTES_ALIASES)
+    col_date = _find_col(headers, _TRADE_DATE_ALIASES) or (
+        None if is_yahoo else _find_col(headers, _GENERIC_DATE_ALIASES)
+    )
+    sin_fecha = 0
 
     if not col_ticker:
         return ImportResult([], [], ["No se encontró columna de ticker/símbolo en el CSV."], source_format)
@@ -175,6 +236,14 @@ def parse_csv(content: str) -> ImportResult:
 
         notes = raw.get(col_notes, "") if col_notes else ""
 
+        trade_date = None
+        if col_date:
+            trade_date, motivo = parse_trade_date(raw.get(col_date, ""))
+            if motivo:
+                warnings.append(f"Línea {line_num} ({ticker}): {motivo}; queda con la fecha de hoy.")
+        if trade_date is None and not is_watchlist:
+            sin_fecha += 1
+
         rows.append(
             ImportRow(
                 ticker=ticker,
@@ -184,7 +253,19 @@ def parse_csv(content: str) -> ImportResult:
                 notes=notes,
                 is_watchlist=is_watchlist,
                 raw=raw,
+                trade_date=trade_date,
             )
+        )
+
+    if sin_fecha:
+        donde = (
+            f"la columna '{col_date}'"
+            if col_date
+            else "ninguna columna de fecha de compra (p. ej. 'Trade Date')"
+        )
+        warnings.append(
+            f"{sin_fecha} posición/es sin fecha de compra ({donde}): quedan con la fecha de hoy, "
+            "y los dividendos cobrados se van a contar desde hoy."
         )
 
     if not rows and not skipped:
