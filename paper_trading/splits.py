@@ -40,14 +40,19 @@ acciones, que es peor que el defecto que esto arregla.
 
 Lo que NO se ajusta: un factor que no es un split (tarea 297)
 -------------------------------------------------------------
-Yahoo publica en la misma serie los spin-offs (HON 2026-06-29 = ``1907:2000``, o sea
-``0,9535``) y algún dato podrido (AVB 2026-08-17 = ``2,793``). Ninguno es una fracción
-simple, así que acá no se ajustan, y está bien: el signo del factor ni siquiera es
-confiable —el spin-off de HON de 2025 viene como ``1,061``, que leído como split baja el
-precio, y el de 2026 como ``0,9535``, que lo sube—. Pero una posición que **atravesó**
-uno de esos ex-dates puede mostrar en la equity una caída que no existió, y un stop
-disparado por ella. Eso no se arregla solo y antes pasaba en silencio:
-``factores_sin_tratar`` lo detecta para que el scan lo avise.
+Yahoo publica en la misma serie los spin-offs y algún dato podrido (AVB 2026-08-17 =
+``2,793``, sin ningún evento corporativo). El factor de un spin-off es ``q + r·P_hijo/P_matriz``
+por acción vieja (``q`` acciones nuevas de la matriz, ``r`` de la escindida): mayor que 1 en un
+spin-off puro (HON 2025 = ``1,061``), y **menor que 1 si el mismo día hay un reverse split**
+(HON 2026-06-29 = ``0,9535`` = 0,5 × 1,907: Honeywell Aerospace 1 por cada 2 y un reverse 1:2).
+La tarea **298** barrió siete spin-offs contra la SEC: el sentido coincide en los siete, pero la
+magnitud de HON 2026 queda a 1,9–3,2 pp de la medida independiente, y un factor solo no separa
+el 2,793 podrido de AVB del 2,39 real de DuPont/Qnity. Por eso acá no se ajustan.
+
+Pero una posición que **atravesó** uno de esos ex-dates queda mal: con un spin-off puro muestra
+una caída que no existió (y puede disparar el stop); con un split en el mismo evento, además,
+**la cantidad de acciones no es la real** (HON 2026: el doble) y el valor muestra una ganancia
+fantasma. ``factores_sin_tratar`` lo detecta para que el scan lo avise y se corrija a mano.
 
 Nada de esto pega a la red: los eventos llegan como parámetro. El engine los lee del memo
 de ``data.yahoo_finance.get_split_events``, que el warm-up del scan llena antes.

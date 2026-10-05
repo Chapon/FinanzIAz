@@ -922,8 +922,9 @@ def run_scan(
             for m in split_msgs:
                 get_logger(__name__).warning("Scan %s (cuenta %d): %s", account_name, account_id, m)
         # Tarea 297: un factor que no es un split (un spin-off, o un dato podrido como el
-        # 2,793 de AVB) en el ex-date de una posición abierta. No se ajusta —el signo del
-        # factor no es confiable—, pero se avisa: el scan lo reporta mientras dure la
+        # 2,793 de AVB) en el ex-date de una posición abierta. No se ajusta —un factor solo no
+        # separa un spin-off real de un dato podrido ni dice si hubo un split el mismo día;
+        # ver `splits.py` y la 298—, pero se avisa: el scan lo reporta mientras dure la
         # ventana, y el log y Slack una sola vez por evento.
         factores_msgs = [_texto_factor_sin_tratar(f) for f in factores_raros]
         for f, m in zip(factores_raros, factores_msgs, strict=True):
@@ -1865,9 +1866,11 @@ _factores_announced: set[tuple[int, str, str]] = set()
 def _texto_factor_sin_tratar(f) -> str:
     return (
         f"{f.ticker}: Yahoo reporta un factor {f.ratio:g} el {f.ex_date} que no es un split "
-        f"(un spin-off, o un dato podrido) y la posición lo atravesó con {f.acciones_al_ex:g} "
-        "acciones — NO se ajusta: la caída del ex-date puede figurar como pérdida y disparar "
-        "el stop. Revisar a mano."
+        "simple (un spin-off, a veces con un split el mismo día, o un dato podrido) y la posición "
+        f"lo atravesó con {f.acciones_al_ex:g} acciones — NO se ajusta: el valor puede figurar "
+        "con una pérdida o una ganancia que no existen (y una pérdida puede disparar el stop), y "
+        "si hubo un split en el mismo evento la cantidad de acciones no es la real. Revisar a "
+        "mano contra el comunicado de la empresa."
     )
 
 

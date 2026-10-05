@@ -1,9 +1,9 @@
 """Tarea 297 — un factor de Yahoo que no es un split, en el ex-date de una posición abierta, se avisa.
 
 Yahoo publica el spin-off de HON (2026-06-29) como ``Stock Splits = 0,9535`` (``1907:2000``).
-La 262 no lo ajusta, y hace bien: no es una fracción simple, y el signo ni siquiera es
-confiable (el spin-off de HON de 2025 vino como ``1,061``). Pero antes pasaba en silencio:
-una posición que lo atravesó mostraba la caída del ex-date como pérdida. Ahora el scan lo
+La 262 no lo ajusta, y hace bien: no es una fracción simple. (Ese factor es un spin-off **más un
+reverse split 1:2** el mismo día; la 298 lo verificó contra la SEC y explica por qué no se ajusta
+solo.) Pero antes pasaba en silencio: una posición que lo atravesó quedaba con un valor falso. Ahora el scan lo
 reporta, y el log y Slack lo dicen una vez por evento.
 """
 
@@ -197,3 +197,15 @@ def test_un_segundo_scan_reporta_pero_NO_repite_el_slack(test_db, monkeypatch, _
     segundo = _scan(acct_id, monkeypatch, {"AAA": [(ex, 0.9535)]}, avisos)
     assert len(avisos) == 1
     assert any("no es un split" in w for w in segundo.warnings), "el scan deja de reportarlo"
+
+
+def test_el_aviso_nombra_la_ganancia_fantasma_y_las_acciones_que_no_son_las_reales():
+    """Tarea 298: el aviso decía sólo «la caída puede figurar como pérdida». Con un split en el
+    mismo evento (HON 2026: spin-off + reverse 1:2) pasa lo contrario —una ganancia fantasma— y
+    la posición tiene el doble de acciones. Quien revisa a mano tiene que saber qué mirar."""
+    from paper_trading.engine import _texto_factor_sin_tratar
+    from paper_trading.splits import FactorSinTratar
+
+    texto = _texto_factor_sin_tratar(FactorSinTratar("HON", "2026-06-29", 0.9535, 10.0))
+    assert "ganancia" in texto and "pérdida" in texto
+    assert "cantidad de acciones no es la real" in texto
