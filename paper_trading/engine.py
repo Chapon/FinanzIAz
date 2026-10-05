@@ -1869,8 +1869,8 @@ def _texto_factor_sin_tratar(f) -> str:
         "simple (un spin-off, a veces con un split el mismo día, o un dato podrido) y la posición "
         f"lo atravesó con {f.acciones_al_ex:g} acciones — NO se ajusta: el valor puede figurar "
         "con una pérdida o una ganancia que no existen (y una pérdida puede disparar el stop), y "
-        "si hubo un split en el mismo evento la cantidad de acciones no es la real. Revisar a "
-        "mano contra el comunicado de la empresa."
+        "si hubo un split en el mismo evento la cantidad de acciones no es la real. Con q y r "
+        "del comunicado de la empresa, corregir con scripts/ajustar_spinoff.py (con la app cerrada)."
     )
 
 

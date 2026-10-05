@@ -52,7 +52,9 @@ el 2,793 podrido de AVB del 2,39 real de DuPont/Qnity. Por eso acá no se ajusta
 Pero una posición que **atravesó** uno de esos ex-dates queda mal: con un spin-off puro muestra
 una caída que no existió (y puede disparar el stop); con un split en el mismo evento, además,
 **la cantidad de acciones no es la real** (HON 2026: el doble) y el valor muestra una ganancia
-fantasma. ``factores_sin_tratar`` lo detecta para que el scan lo avise y se corrija a mano.
+fantasma. ``factores_sin_tratar`` lo detecta para que el scan lo avise, y se corrige con
+``scripts/ajustar_spinoff.py`` (tarea 303). Un evento ya corregido así deja de avisarse, y su
+``share_ratio`` cuenta como un split ya aplicado al reconstruir la posición.
 
 Nada de esto pega a la red: los eventos llegan como parámetro. El engine los lee del memo
 de ``data.yahoo_finance.get_split_events``, que el warm-up del scan llena antes.
@@ -132,12 +134,14 @@ def factores_sin_tratar(
     posiciones: dict[str, float],
     hoy: str,
     dias: int = DIAS_AVISO_FACTOR,
+    tratados: frozenset[tuple[str, str]] | set[tuple[str, str]] = frozenset(),
 ) -> list[FactorSinTratar]:
     """Factores no plausibles que una posición abierta atravesó en los últimos ``dias``.
 
     **Función pura**, con las mismas entradas y la misma convención de fechas que
     ``ajustes_pendientes``: un fill del día del ex-date ya es posterior, así que comprar
-    ese día no atraviesa el evento.
+    ese día no atraviesa el evento. ``tratados`` son los ``(ticker, ex_date)`` ya ajustados a
+    mano (tarea 303): no se avisan.
     """
     from datetime import date, timedelta
 
@@ -168,6 +172,7 @@ def factores_sin_tratar(
                 or not (ratio > 0)
                 or ratio == 1.0
                 or es_split_plausible(ratio)
+                or (ticker, ex) in tratados
             ):
                 continue
             antes = sum(a for d, a in por_ticker.get(ticker, []) if d < ex)
@@ -182,6 +187,7 @@ def ajustes_pendientes(
     ya_aplicados: set[tuple[str, str]],
     posiciones: dict[str, float],
     hoy: str,
+    ratios_aplicados: dict[tuple[str, str], float] | None = None,
 ) -> tuple[list[AjustePendiente], list[PosicionInconsistente]]:
     """Qué splits falta aplicar a las posiciones abiertas, y cuáles no se pueden aplicar.
 
@@ -191,6 +197,11 @@ def ajustes_pendientes(
 
     Convención de fechas, la misma que los dividendos (``acciones_antes_del_ex_date``): un
     fill del **mismo día** del ex-date ya es post-split.
+
+    ``ratios_aplicados`` son ``{(ticker, ex_date): ratio}`` de eventos ya registrados que no
+    salen de ``eventos`` —los spin-offs ajustados a mano (tarea 303), cuyo ratio de acciones no
+    es un split plausible—; entran a la línea de tiempo como aplicados, y si coinciden con un
+    evento de Yahoo, mandan ellos.
     """
     pendientes: list[AjustePendiente] = []
     inconsistentes: list[PosicionInconsistente] = []
@@ -206,9 +217,13 @@ def ajustes_pendientes(
         if reales <= _TOL_ACCIONES:
             continue
         fills_t = sorted(por_ticker.get(ticker, []))
-        splits_t = sorted(
-            (ex, float(r)) for ex, r in eventos.get(ticker, []) if ex and ex <= hoy and es_split_plausible(r)
-        )
+        por_fecha = {
+            ex: float(r) for ex, r in eventos.get(ticker, []) if ex and ex <= hoy and es_split_plausible(r)
+        }
+        for (t, ex), r in (ratios_aplicados or {}).items():
+            if t == ticker and ex <= hoy:
+                por_fecha[ex] = float(r)
+        splits_t = sorted(por_fecha.items())
         if not splits_t:
             continue
 
@@ -282,7 +297,7 @@ def aplicar_splits(
     Corre **adentro de la transacción del scan**, antes de la equity, de los stops ATR y
     del máximo, sobre los mismos objetos ``PaperPosition`` que el scan usa después.
     """
-    from paper_trading.models import PaperOrder, PaperSplitAdjustment
+    from paper_trading.models import PaperOrder, PaperSpinoffAdjustment, PaperSplitAdjustment
 
     abiertas = {str(p.ticker).upper(): p for p in positions if float(p.shares or 0.0) > _TOL_ACCIONES}
     if not abiertas or not any(eventos.get(t) for t in abiertas):
@@ -301,11 +316,19 @@ def aplicar_splits(
         (str(a.ticker).upper(), a.ex_date)
         for a in session.query(PaperSplitAdjustment).filter(PaperSplitAdjustment.account_id == acct.id).all()
     }
+    # Tarea 303: los spin-offs ajustados a mano son eventos ya aplicados, con su ratio de acciones.
+    spinoffs = {
+        (str(a.ticker).upper(), a.ex_date): float(a.share_ratio)
+        for a in session.query(PaperSpinoffAdjustment)
+        .filter(PaperSpinoffAdjustment.account_id == acct.id)
+        .all()
+    }
+    ya |= set(spinoffs)
     eventos_abiertas = {t: eventos.get(t, []) for t in abiertas}
     acciones_hoy = {t: float(p.shares) for t, p in abiertas.items()}
     hoy = dia(utcnow_naive()) or ""
-    pendientes, inconsistentes = ajustes_pendientes(fills, eventos_abiertas, ya, acciones_hoy, hoy)
-    sin_tratar = factores_sin_tratar(fills, eventos_abiertas, acciones_hoy, hoy)
+    pendientes, inconsistentes = ajustes_pendientes(fills, eventos_abiertas, ya, acciones_hoy, hoy, spinoffs)
+    sin_tratar = factores_sin_tratar(fills, eventos_abiertas, acciones_hoy, hoy, tratados=set(spinoffs))
 
     ajustes: list[dict] = []
     for aj in pendientes:

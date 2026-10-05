@@ -18,6 +18,9 @@ Dos trampas del instrumento, que el cuadre de la auditoría ya encontró
 Y una tercera, de la 262: las acciones de una posición que atravesó un split no son la suma de
 sus fills. Se reconstruyen con los splits del ledger (``paper_split_adjustments``), con la misma
 función que usa el ajuste.
+
+Y desde la 303, los spin-offs ajustados a mano (``paper_spinoff_adjustments``): su caja entra
+como entran los dividendos, y su ``share_ratio`` reconstruye las acciones como un split más.
 """
 
 from __future__ import annotations
@@ -42,16 +45,17 @@ def descuadres(
     dividendos: float,
     splits: dict[tuple[str, str], float],
     posiciones: dict[str, float],
+    spinoffs: float = 0.0,
 ) -> list[str]:
     """Qué no cuadra, en texto. ``[]`` = cuadra. **Pura.**
 
     ``fills`` son ``(ticker, side, acciones, precio, comisión, filled_at)`` de las órdenes
     ``filled``; ``splits`` es ``{(ticker, ex_date): ratio}`` del ledger; ``posiciones`` son las
-    acciones de hoy por ticker.
+    acciones de hoy por ticker; ``spinoffs`` es la caja acreditada por spin-offs (tarea 303).
     """
     from paper_trading.splits import _acciones_sin
 
-    esperada = float(initial_capital) + float(dividendos)
+    esperada = float(initial_capital) + float(dividendos) + float(spinoffs)
     por_ticker: dict[str, list[tuple[str, float]]] = defaultdict(list)
     for ticker, side, acciones, precio, comision, filled_at in fills:
         notional = float(acciones) * float(precio)
@@ -83,6 +87,64 @@ def descuadres(
     return problemas
 
 
+def cuadrar_en_sesion(s, account_id: int) -> list[str] | None:
+    """Los descuadres de la cuenta leídos en la sesión ``s`` (ve lo no commiteado). ``None`` si no existe.
+
+    Separada de ``cuadrar_cuenta`` para que ``scripts/ajustar_spinoff.py`` pueda cuadrar el
+    resultado de un ajuste **antes** de commitearlo (tarea 303).
+    """
+    from paper_trading.models import (
+        PaperAccount,
+        PaperDividendCredit,
+        PaperOrder,
+        PaperPosition,
+        PaperSpinoffAdjustment,
+    )
+    from paper_trading.spinoffs import eventos_aplicados
+
+    acct = s.query(PaperAccount).filter(PaperAccount.id == account_id).one_or_none()
+    if acct is None:
+        return None
+    fills = [
+        (
+            o.ticker,
+            o.side,
+            float(o.fill_shares),
+            float(o.fill_price),
+            float(o.commission_paid or 0.0),
+            o.filled_at,
+        )
+        for o in s.query(PaperOrder)
+        .filter(PaperOrder.account_id == account_id)
+        .filter(PaperOrder.status == "filled")
+        .filter(PaperOrder.fill_shares.isnot(None))
+        .filter(PaperOrder.fill_price.isnot(None))
+        .all()
+    ]
+    divs = sum(
+        float(c.cash or 0.0)
+        for c in s.query(PaperDividendCredit).filter(PaperDividendCredit.account_id == account_id).all()
+    )
+    spin = sum(
+        float(c.cash or 0.0)
+        for c in s.query(PaperSpinoffAdjustment).filter(PaperSpinoffAdjustment.account_id == account_id).all()
+    )
+    posiciones = {
+        str(p.ticker).upper(): float(p.shares)
+        for p in s.query(PaperPosition).filter(PaperPosition.account_id == account_id).all()
+        if float(p.shares or 0.0) > _TOL_ACCIONES
+    }
+    return descuadres(
+        float(acct.initial_capital),
+        float(acct.cash),
+        fills,
+        divs,
+        eventos_aplicados(s, account_id),
+        posiciones,
+        spinoffs=spin,
+    )
+
+
 def cuadrar_cuenta(account_id: int) -> list[str] | None:
     """Lee la cuenta en una sesión propia y devuelve sus descuadres.
 
@@ -92,52 +154,9 @@ def cuadrar_cuenta(account_id: int) -> list[str] | None:
     """
     try:
         from database.models import session_scope
-        from paper_trading.models import (
-            PaperAccount,
-            PaperDividendCredit,
-            PaperOrder,
-            PaperPosition,
-            PaperSplitAdjustment,
-        )
 
         with session_scope() as s:
-            acct = s.query(PaperAccount).filter(PaperAccount.id == account_id).one_or_none()
-            if acct is None:
-                return None
-            fills = [
-                (
-                    o.ticker,
-                    o.side,
-                    float(o.fill_shares),
-                    float(o.fill_price),
-                    float(o.commission_paid or 0.0),
-                    o.filled_at,
-                )
-                for o in s.query(PaperOrder)
-                .filter(PaperOrder.account_id == account_id)
-                .filter(PaperOrder.status == "filled")
-                .filter(PaperOrder.fill_shares.isnot(None))
-                .filter(PaperOrder.fill_price.isnot(None))
-                .all()
-            ]
-            divs = sum(
-                float(c.cash or 0.0)
-                for c in s.query(PaperDividendCredit)
-                .filter(PaperDividendCredit.account_id == account_id)
-                .all()
-            )
-            splits = {
-                (str(a.ticker).upper(), a.ex_date): float(a.ratio)
-                for a in s.query(PaperSplitAdjustment)
-                .filter(PaperSplitAdjustment.account_id == account_id)
-                .all()
-            }
-            posiciones = {
-                str(p.ticker).upper(): float(p.shares)
-                for p in s.query(PaperPosition).filter(PaperPosition.account_id == account_id).all()
-                if float(p.shares or 0.0) > _TOL_ACCIONES
-            }
-            return descuadres(float(acct.initial_capital), float(acct.cash), fills, divs, splits, posiciones)
+            return cuadrar_en_sesion(s, account_id)
     except Exception:
         log.exception("cuadre: no se pudo cuadrar la cuenta %s", account_id)
         return None

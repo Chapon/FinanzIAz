@@ -317,7 +317,51 @@ class PaperSplitAdjustment(Base):
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
 
     def __repr__(self) -> str:
-        return f"<PaperDividendCredit({self.ticker} {self.ex_date} ${self.cash:,.2f})>"
+        return f"<PaperSplitAdjustment({self.ticker} {self.ex_date} x{self.ratio:g})>"
+
+
+class PaperSpinoffAdjustment(Base):
+    """Un spin-off ya aplicado a mano a una posición abierta: el ledger de la tarea 303.
+
+    **Qué sostiene.** El scan no ajusta spin-offs (la 298: el factor de Yahoo no alcanza), así
+    que se ajustan con ``scripts/ajustar_spinoff.py``, con ``q`` y ``r`` del comunicado. La
+    escindida se acredita **como caja** al precio de su primer día (decisión de Chapa, como los
+    dividendos de la 222). Sin esta tabla esa caja no tendría origen y el cuadre de la 266 la
+    marcaría como descuadre; con ella, el cuadre la suma y reconstruye las acciones con
+    ``share_ratio``.
+
+    ``share_ratio`` es el efectivo —``floor(acciones_al_ex · q) / acciones_al_ex``—, no ``q``:
+    las acciones son enteras y la fracción se paga en caja (``cash`` la incluye).
+    """
+
+    __tablename__ = "paper_spinoff_adjustments"
+    __table_args__ = (
+        Index("ix_paper_spinoffadj_account", "account_id"),
+        Index("ux_paper_spinoffadj_account_ticker_exdate", "account_id", "ticker", "ex_date", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("paper_accounts.id"), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    ex_date: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD'
+    child_ticker: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    q: Mapped[float] = mapped_column(Float, nullable=False)  # acciones de la matriz por acción vieja
+    r: Mapped[float] = mapped_column(Float, nullable=False)  # acciones de la escindida por acción vieja
+    parent_price: Mapped[float] = mapped_column(Float, nullable=False)
+    child_price: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_at_ex: Mapped[float] = mapped_column(Float, nullable=False)
+    share_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_before: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_after: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost_before: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_cost_after: Mapped[float] = mapped_column(Float, nullable=False)
+    hwm_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hwm_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cash: Mapped[float] = mapped_column(Float, nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+
+    def __repr__(self) -> str:
+        return f"<PaperSpinoffAdjustment({self.ticker} {self.ex_date} ${self.cash:,.2f})>"
 
 
 class PaperScanCandidate(Base):

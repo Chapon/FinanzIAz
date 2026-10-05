@@ -40,6 +40,11 @@ Las tres columnas de monto se guardan aunque `cash = shares × amount_per_share`
 
 Un split N:1 sin ajustar dejaba la posición en la escala vieja y el primer scan con el precio nuevo veía una caída de (1−1/N): el trailing vendía con una pérdida que no existe. Desde la 262 el scan (`paper_trading/splits.py`, antes de la equity y de los stops) multiplica por N las acciones que había **antes** del ex-date, conserva el costo total y divide el máximo por N; esta tabla es lo que impide aplicarlo dos veces. Sólo splits **plausibles** (no el 2,793 fantasma de AVB), y sólo si la historia de órdenes reproduce las acciones de la posición: si no, no ajusta y avisa. El antes y el después se guardan para auditar sin depender del calendario de splits.
 
+### `paper_spinoff_adjustments` — el ledger de spin-offs ajustados a mano (tarea 303)
+`id`, `account_id` (FK), `ticker`, `ex_date` (`YYYY-MM-DD`), `child_ticker`, `q`, `r`, `parent_price`, `child_price`, `shares_at_ex`, `share_ratio`, `shares_before`, `shares_after`, `avg_cost_before`, `avg_cost_after`, `hwm_before`, `hwm_after`, `cash`, `applied_at`. Índice `ix_paper_spinoffadj_account` y UNIQUE `ux_paper_spinoffadj_account_ticker_exdate`; migración **0017**.
+
+El scan no ajusta spin-offs (la 298: el factor de Yahoo no alcanza); se ajustan con `python scripts/ajustar_spinoff.py`, dry-run por default, con `q` y `r` del comunicado. La escindida se acredita **como caja** al precio de su primer día (decisión de Chapa, como los dividendos de la 222), las acciones de antes del ex-date pasan a `floor(acciones × q)` con la fracción en caja, el costo total baja en la caja recibida y el máximo se divide por `q + r·P_escindida/P_matriz`. `share_ratio` es el ratio **efectivo** de acciones (`floor(shares_at_ex × q) / shares_at_ex`) y `cash` incluye la fracción. El cuadre (`paper_trading/cuadre.py`) suma `cash` a la caja esperada y reconstruye las acciones con `share_ratio`; el ajuste de splits lo cuenta como evento ya aplicado; y el aviso de la 297 deja de repetirse para ese ex-date.
+
 ## Núcleo / caches (`database/models.py`)
 
 | Tabla | Para qué |
