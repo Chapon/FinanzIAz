@@ -15,7 +15,7 @@ cálculo de dividendos.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from database.models import Position, Transaction, utcnow_naive
 
@@ -59,6 +59,89 @@ def reabrir_si_cerrada(pos: Position, fecha: datetime | None) -> None:
         pos.purchase_date = fecha or utcnow_naive()
 
 
+# ── Valor de mercado diario (tarea 305) ──────────────────────────────────────
+
+
+def valor_diario(
+    eventos: list[tuple[date, str, float]],
+    cierres: dict[str, list[tuple[date, float]]],
+) -> tuple[list[tuple[date, float]], list[str]]:
+    """Valor de mercado de la cartera por rueda, desde la primera transacción. Puro.
+
+    ``eventos`` son ``(día, ticker, acciones con signo)`` —BUY positivo, SELL negativo—, y
+    ``cierres`` el cierre diario de cada ticker. Cada rueda vale ``Σ acciones de ese día ×
+    cierre de ese día`` (una transacción del día ya cuenta ese día).
+
+    Lo que **no** hace, a propósito, para no pintar un hueco como dato:
+
+    - un ticker sin cierres queda **afuera** y se devuelve en la segunda lista, en vez de
+      valuarse en cero;
+    - la serie **termina** en la última rueda que tienen todos los tickers con historia: más
+      allá, uno de ellos quedaría congelado en su último cierre sin que nada lo diga. Adentro,
+      una rueda que le falta a un ticker (un feriado distinto) toma su cierre anterior.
+
+    Antes Home graficaba el capital invertido neto, que en una cartera comprada en un solo
+    día es **un punto**: *«el home solo grafica 1 día»* (Chapa, 2026-10-04).
+    """
+    if not eventos:
+        return [], []
+    tickers = sorted({t for _, t, _ in eventos})
+    sin_historia = [t for t in tickers if not cierres.get(t)]
+    con_historia = [t for t in tickers if cierres.get(t)]
+    if not con_historia:
+        return [], sin_historia
+    desde = min(d for d, _, _ in eventos)
+    hasta = min(max(d for d, _ in cierres[t]) for t in con_historia)
+    ruedas = sorted({d for t in con_historia for d, _ in cierres[t] if desde <= d <= hasta})
+    por_ticker = {t: dict(cierres[t]) for t in con_historia}
+    ordenados = sorted(eventos)
+    acciones: dict[str, float] = dict.fromkeys(con_historia, 0.0)
+    ultimo_cierre: dict[str, float] = {}
+    for t in con_historia:  # el cierre previo a la primera rueda, por si la primera le falta
+        previos = [(d, c) for d, c in cierres[t] if d < desde]
+        if previos:
+            ultimo_cierre[t] = max(previos)[1]
+    serie: list[tuple[date, float]] = []
+    i = 0
+    for dia in ruedas:
+        while i < len(ordenados) and ordenados[i][0] <= dia:
+            _, t, q = ordenados[i]
+            if t in acciones:
+                acciones[t] += q
+            i += 1
+        for t in con_historia:
+            if dia in por_ticker[t]:
+                ultimo_cierre[t] = por_ticker[t][dia]
+        serie.append(
+            (dia, sum(q * ultimo_cierre.get(t, 0.0) for t, q in acciones.items() if q > CERRADA_TOL))
+        )
+    return serie, sin_historia
+
+
+def cierres_del_cache(tickers: list[str]) -> dict[str, list[tuple[date, float]]]:
+    """Cierres diarios del cache local, **sin red** (Home no puede colgarse esperando a Yahoo).
+
+    Por ticker, de todos sus frames ``1d`` (cualquier período), el que **termina más tarde**:
+    el ``1y`` lo refresca la pestaña Portfolio y los largos pueden estar congelados (la 286).
+    No es ``latest_1d``, que elige el bajado más recientemente. Un ticker sin ningún frame
+    no aparece, y ``valor_diario`` lo reporta.
+    """
+    from data import parquet_cache
+
+    out: dict[str, list[tuple[date, float]]] = {}
+    for t in tickers:
+        try:
+            frames = [
+                df for df in parquet_cache.all_1d(t) if df is not None and not df.empty and "Close" in df
+            ]
+        except Exception:
+            frames = []
+        if frames:
+            mejor = max(frames, key=lambda df: df.index.max())
+            out[t] = [(ts.date(), float(c)) for ts, c in mejor["Close"].dropna().items()]
+    return out
+
+
 # ── Home (tarea 264) ─────────────────────────────────────────────────────────
 
 # La cartera que muestra Home. Decisión de Chapa (2026-10-02): *«sólo Mis Acciones»*. Se
@@ -67,13 +150,16 @@ def reabrir_si_cerrada(pos: Position, fecha: datetime | None) -> None:
 CARTERA_HOME = "Mis Acciones"
 
 
-def resumen_home(session, nombre: str = CARTERA_HOME) -> dict | None:
+def resumen_home(session, nombre: str = CARTERA_HOME, cierres=None) -> dict | None:
     """Lo que Home muestra de la cartera real ``nombre``, o ``None`` si no existe.
 
     **Sin red:** los precios salen de la última fila de ``price_cache`` de cada ticker, que
     escribe el resto de la app. Un ticker sin fila queda en ``sin_precio`` y **no** se valúa
     al costo: valor y P&L se calculan sólo sobre las posiciones con precio, y Home dice
     cuántas faltan (la lección de la 268 [F-2] y la 281 [P-1]).
+
+    ``cierres`` (tarea 305) da los cierres diarios por ticker para ``valor_diario``; por
+    default ``cierres_del_cache``, que tampoco usa la red.
     """
     from sqlalchemy import func
 
@@ -125,6 +211,23 @@ def resumen_home(session, nombre: str = CARTERA_HOME) -> dict | None:
         acum += signo * float(t.quantity) * float(t.price)
         if t.date is not None:
             invertido_neto.append((t.date, acum))
+    eventos = [
+        (
+            t.date.date(),
+            t.position.ticker,
+            (1.0 if str(t.transaction_type).upper() == "BUY" else -1.0) * float(t.quantity),
+        )
+        for t in txs
+        if t.date is not None and t.position is not None
+    ]
+    try:
+        provider = cierres or cierres_del_cache
+        serie_valor, sin_historia = valor_diario(eventos, provider(sorted({e[1] for e in eventos})))
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception("Home: no se pudo armar el valor diario; queda el invertido neto")
+        serie_valor, sin_historia = [], []
     alertas = (
         session.query(Alert).filter(Alert.portfolio_id == pf.id).filter(Alert.is_active.is_(False)).count()
     )
@@ -146,6 +249,8 @@ def resumen_home(session, nombre: str = CARTERA_HOME) -> dict | None:
         "transacciones": len(txs),
         "tx_por_dia": [t.date.date() for t in txs if t.date is not None],
         "invertido_neto": invertido_neto,
+        "valor_diario": serie_valor,
+        "valor_diario_sin_historia": sin_historia,
         "alertas_disparadas": alertas,
         "precio_mas_viejo": min(fechas) if fechas else None,
     }

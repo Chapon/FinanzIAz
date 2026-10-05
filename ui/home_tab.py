@@ -306,11 +306,24 @@ class HomeTab(QWidget):
             self.welcome_card.update_status(0, 0.0, 0)
             return
 
-        self.hero_title.setText(f"{r['nombre']} — capital invertido neto")
-        self.hero_chart.set_data(
-            [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
-            ylabel="Invertido neto ($)",
-        )
+        # Tarea 305: el valor de mercado por rueda. El invertido neto queda de respaldo, porque
+        # en una cartera comprada en un solo día es UN punto («el home solo grafica 1 día»).
+        serie = r.get("valor_diario") or []
+        if len(serie) >= 2:
+            titulo = f"{r['nombre']} — valor de mercado, hasta el {serie[-1][0]:%d/%m}"
+            if r.get("valor_diario_sin_historia"):
+                titulo += f" (sin historia: {', '.join(r['valor_diario_sin_historia'])})"
+            self.hero_title.setText(titulo)
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in serie],
+                ylabel="Valor de mercado ($)",
+            )
+        else:
+            self.hero_title.setText(f"{r['nombre']} — capital invertido neto (sin cierres en el cache)")
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
+                ylabel="Invertido neto ($)",
+            )
 
         # Valor y P&L sólo sobre las posiciones CON precio; las que no tienen, se dicen.
         delta = f"{'+' if r['pl'] >= 0 else ''}${r['pl']:,.0f}  ({r['pl_pct']:+.2f}%)"
