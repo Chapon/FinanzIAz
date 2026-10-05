@@ -21,6 +21,7 @@ jobs:
   lint:
     name: lint + format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +47,7 @@ jobs:
   typecheck:
     name: mypy (best-effort)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Best-effort: don't fail the whole pipeline yet — we're migrating
     # to type hints incrementally. Flip ``continue-on-error`` to ``false``
     # once mypy passes cleanly across the codebase.
@@ -79,6 +81,7 @@ jobs:
   audit:
     name: security audit (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true   # advisory only, doesn't block merges
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +120,9 @@ jobs:
   tests:
     name: pytest
     runs-on: ubuntu-latest
+    # Tarea 318: sin techo, un cuelgue deja el run in_progress hasta 6 h (el default de
+    # GitHub) y nadie tiene veredicto. Tarda ~4 min; el run más lento medido, 21 (2026-10-05).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -242,7 +242,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"CI: no se sabe — no se pudo leer origin/{RAMA} para comparar el último run.")
             return NO_SE_SABE
     else:
-        sha = args.sha or _git("rev-parse", "HEAD")
+        # Tarea 318: un sha abreviado se resuelve acá; la API compara contra el completo, y con
+        # `--sha ecc1a07` la respuesta era «no hay ningún run», que no es lo mismo que no saber.
+        try:
+            sha = (
+                _git("rev-parse", "--verify", f"{args.sha}^{{commit}}")
+                if args.sha
+                else _git("rev-parse", "HEAD")
+            )
+        except subprocess.CalledProcessError:
+            print(f"CI: no se sabe — `{args.sha}` no es un commit de este repo.")
+            return NO_SE_SABE
         if not args.sha:
             try:
                 remoto = _git("rev-parse", f"origin/{RAMA}")
