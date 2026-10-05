@@ -26,6 +26,14 @@ suscripción de Chapa (Chapa, 2026-10-05: *«se puede hacer sin pagar extra»*).
 
 ``--bare`` NO sirve: exige ``ANTHROPIC_API_KEY`` y no lee el login de la suscripción.
 
+**Y el proceso se lanza SIN ``ANTHROPIC_API_KEY`` (tarea 322).** Claude Code le da prioridad a esa
+variable sobre el login de claude.ai. En la máquina de Chapa existe a nivel de usuario con un
+valor inválido (10 caracteres), y la primera versión fallaba en la app con *«401 API key is
+invalid»* — tras 185 s de reintentos. La verificación de la 320 no lo vio porque corrió **adentro
+de una sesión de Claude Code**, cuyas variables ``CLAUDE_CODE_*`` autenticaban al hijo por la sesión
+padre. Por eso ``entorno()`` también saca esas: la app nunca corre adentro de una sesión, y una
+verificación tampoco tiene que hacerlo (``scripts/probar_opinion_claude.py``).
+
 **No se manda la posición de Chapa** en la acción (decisión por default de la tarea 320): sólo
 datos de mercado.
 """
@@ -251,6 +259,22 @@ def comando(exe: str, modelo: str = MODELO) -> list[str]:
     ]
 
 
+# Lo que se saca del entorno del proceso: las credenciales de API (le ganan al login de la
+# suscripción) y las variables de una sesión de Claude Code (autentican por la sesión padre).
+_SIN_ESTAS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+_SIN_PREFIJO = ("CLAUDECODE", "CLAUDE_CODE_", "CLAUDE_AGENT_SDK")
+
+
+def entorno(base: dict | None = None) -> dict:
+    """El entorno con que se lanza ``claude``: el de la app, sin credenciales de API ni sesión."""
+    base = dict(os.environ if base is None else base)
+    return {
+        k: v
+        for k, v in base.items()
+        if k.upper() not in _SIN_ESTAS and not k.upper().startswith(_SIN_PREFIJO)
+    }
+
+
 def carpeta_neutra() -> Path:
     """Una carpeta fuera del repo, para que Claude Code no cargue el ``CLAUDE.md`` del proyecto."""
     d = Path(tempfile.gettempdir()) / "finanzias_opinion_claude"
@@ -305,6 +329,7 @@ def pedir_opinion(
             encoding="utf-8",
             timeout=timeout_s,
             cwd=str(carpeta_neutra()),
+            env=entorno(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as e:
@@ -319,6 +344,11 @@ def pedir_opinion(
         raise OpinionError(f"Claude Code no devolvió JSON (código {proc.returncode}): {detalle}") from e
     if salida.get("is_error") or proc.returncode != 0:
         detalle = str(salida.get("result") or proc.stderr or "")[:300]
+        if "401" in detalle or "authenticat" in detalle.lower():
+            detalle += (
+                " — Claude Code no pudo entrar con tu login de claude.ai: abrí Claude Code una vez "
+                "y verificá que estés logueado."
+            )
         raise OpinionError(f"Claude Code devolvió un error: {detalle}")
     op = validar(salida)
     return Opinion(

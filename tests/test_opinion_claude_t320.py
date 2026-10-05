@@ -235,3 +235,31 @@ def test_una_opinion_larga_no_aplasta_el_panel():
     card.mostrar(oc.Opinion("MANTENER", 40, "x " * 800, ["r"] * 4, ["c"] * 3, ["f"] * 2, oc.MODELO, 1.0))
     assert card.cuerpo_scroll.maximumHeight() == CUERPO_MAX_ALTO
     assert _app is not None
+
+
+# ── El entorno del proceso (tarea 322) ───────────────────────────────────────
+
+
+def test_claude_se_lanza_SIN_api_key_ni_variables_de_sesion(monkeypatch):
+    """Lo que falló en la app: con ANTHROPIC_API_KEY en el entorno, Claude Code la usa antes que el
+    login de la suscripción (401). Y las CLAUDE_CODE_* de una sesión autentican por la sesión padre:
+    por eso la verificación de la 320, hecha adentro de una sesión, anduvo."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-xxx")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_CHILD_SESSION", "1")
+    monkeypatch.setenv("CLAUDE_CODE_MESSAGING_TOKEN", "t")
+    monkeypatch.setenv("FINANZIAS_ALGO", "queda")
+    r = _Runner(stdout=_salida(_BUENA))
+    oc.pedir_opinion({}, exe="x", runner=r)
+    env = r.llamadas[0]["env"]
+    assert env is not None, "sin env explícito el proceso hereda la key"
+    prohibidas = [k for k in env if k.startswith(("ANTHROPIC_", "CLAUDECODE", "CLAUDE_CODE_"))]
+    assert prohibidas == []
+    assert env["FINANZIAS_ALGO"] == "queda", "el resto del entorno se conserva (PATH, HOME…)"
+
+
+def test_el_401_explica_que_hacer():
+    r = _Runner(stdout=_salida(_BUENA, is_error=True, result="Failed to authenticate. API Error: 401"))
+    with pytest.raises(oc.OpinionError, match=r"login de claude.ai"):
+        oc.pedir_opinion({}, exe="x", runner=r)
