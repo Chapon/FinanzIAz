@@ -624,6 +624,22 @@ def aggregate_signals(
     return overall, strength, confidence
 
 
+def consenso_txt(puntaje: float) -> str:
+    """El puntaje de consenso de 0 a 1 en palabras, con los MISMOS cortes y el mismo número que la
+    barra de la pestaña Análisis (``AnalysisTab._update_prob_bar``).
+
+    Tarea 317: el resumen decía *«Prob. venta: 45%»*. No es una probabilidad (es el puntaje que la
+    282 dejó de llamar así en la barra), y el 45 es el peso **comprador**: se leía como *45% de
+    bajar*. Además usaba otros cortes (``<= 0,45`` venta) que la barra (``< 0,45`` bajista).
+    """
+    val = round(puntaje * 100)
+    if puntaje >= 0.55:
+        return f"Consenso alcista {val}/100"
+    if puntaje >= 0.45:
+        return f"Consenso neutral {val}/100"
+    return f"Consenso bajista {val}/100"
+
+
 # ── Señales técnicas en una barra cualquiera (tarea 316) ─────────────────────
 
 # Lo que `analyze()` agrega y que NO se puede reconstruir para un día pasado sin re-entrenar
@@ -820,8 +836,7 @@ def analyze(
     }
 
     if ml_probability is not None:
-        direction = "compra" if ml_probability >= 0.55 else "venta" if ml_probability <= 0.45 else "neutral"
-        prob_txt = f"Prob. {direction}: {ml_probability:.0%}."
+        prob_txt = f"{consenso_txt(ml_probability)}."
     else:
         prob_txt = f"Confianza: {confidence:.0f}%."
 
@@ -935,8 +950,8 @@ def analyze_stacked(
                     )
                 result.ml_probability = stacked
                 result.ml_probability_source = "stacking"
-                # Refresh the probability sentence in the summary to match.
-                direction = "compra" if stacked >= 0.55 else "venta" if stacked <= 0.45 else "neutral"
+                # Refresh the consensus sentence in the summary to match (tarea 317: no es una
+                # probabilidad, y el número es el lado comprador).
                 counts = {
                     "BUY": sum(1 for s in result.signals if s.signal == "BUY"),
                     "SELL": sum(1 for s in result.signals if s.signal == "SELL"),
@@ -944,7 +959,7 @@ def analyze_stacked(
                 }
                 result.summary = (
                     f"{counts['BUY']} alcistas · {counts['SELL']} bajistas · "
-                    f"{counts['HOLD']} neutrales. Prob. {direction} (stacking): {stacked:.0%}."
+                    f"{counts['HOLD']} neutrales. {consenso_txt(stacked)} (stacking)."
                 )
     except Exception as exc:
         log.warning("Stacked analysis error for %s: %s", ticker, exc)
