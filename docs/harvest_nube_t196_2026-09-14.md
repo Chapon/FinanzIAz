@@ -595,6 +595,8 @@ que es la fuente sensible al rate limit.
 
 ## 8. Recomendación
 
+> **Actualización 2026-10-05 (tarea 314):** la recomendación de abajo es la del 2026-09-14. El **2026-10-01 Chapa eligió AWS Lambda + DynamoDB** (decisión en la 196 del backlog), y el diseño del lado que lee la app para esa rama está en el **§11**.
+
 **Recomiendo una máquina propia siempre prendida en tu casa, corriendo el harvest que ya
 existe, con el alcance recortado al snapshot de consenso diario.** Si no querés hardware,
 la segunda es AWS always-free, y ahí sí no se avanza hasta tener el smoke test.
@@ -720,6 +722,81 @@ Q3 una vez por esto.
    Arreglado al encontrarlo, antes de que el número se usara para nada. Va igual como
    tarea (**205**, cerrada) porque un instrumento que fabrica un hallazgo falso con
    formato de resultado no se arregla en silencio.
+
+---
+
+## 11. El lado que LEE: cómo la app baja lo que dejó la nube (tarea 314, 2026-10-05)
+
+**Por qué esta sección.** Este doc se escribió recomendando una máquina propia (§8). El 2026-10-01 Chapa eligió **AWS Lambda + DynamoDB** (decisión en la 196 del backlog), y lo de arriba cubre bien cómo **escribe** la nube —costo, techo de 15 min, sin VPC, universo publicado, key en SSM, marca de captura—, pero no cómo **lee** la app: credenciales, dependencia, claves de la tabla, retención, cursor y dónde corre. La revisión de arquitectura del 2026-10-05 ([R-1] de `docs/revision_arquitectura_2026-10-05.md`) lo marcó como lo que hay que decidir **antes** de escribir el recolector, porque la clave de la tabla es lo más caro de cambiar después. La 245 (sincronizar al arrancar) depende de esto.
+
+**El volumen, medido sobre la DB (copia de sólo lectura, 2026-10-05, desde el 2026-09-14):**
+
+| tabla | filas por día | bytes por fila | por día |
+|---|---|---|---|
+| `analyst_estimate_snapshots` | **1.267** (mediana; máx. 1.269) | ~81 | ~100 KB |
+| `news_events` | **1.163** (mediana; máx. 4.302) | ~535 | ~0,6 MB (pico ~2,3 MB) |
+
+Coincide con el §4.1 (~66.000 ítems/mes).
+
+### 11.1 Credenciales de la app — decidido: un usuario IAM de sólo lectura, en un perfil local
+
+- **La Lambda escribe con su rol de ejecución** (sin keys: AWS las rota solo).
+- **La app lee con un usuario IAM propio**, `finanzias-app-lector`, con una política que permite **sólo** `dynamodb:Query` y `dynamodb:GetItem` sobre el ARN de **esa** tabla. Si las keys se filtran, lo único que se puede hacer con ellas es leer noticias y consensos públicos.
+- **Dónde viven:** un perfil con nombre en `~/.aws/credentials` (`[finanzias-lector]`), no variables de entorno sueltas: así no se mezclan con otra cuenta de AWS que Chapa use, y `boto3` lo lee solo (`boto3.Session(profile_name="finanzias-lector")`). **Nunca en el repo, que es público** (la 272 revisó la historia buscando secretos).
+- **Si el perfil no existe**, la sincronización no corre y **lo dice una vez** en el log y en la pantalla (la forma de `FUENTE NO DISPONIBLE` de la segunda opinión), en vez de fallar callada.
+
+### 11.2 La dependencia — recomendado: `boto3`
+
+- `boto3` + `botocore` + `s3transfer` + `jmespath` son **~16,6 MB** de wheels (medido con `pip download`, 2026-10-05; `botocore` es 16 MB) y **no están instalados** en la Anaconda.
+- La alternativa es firmar las requests con SigV4 a mano sobre `urllib` (~80 líneas). Ahorra la dependencia y agrega un código de firma propio, sin tests contra AWS, en el camino de las credenciales. **No vale el ahorro.**
+- **Al implementar:** `boto3` va a `requirements.txt` con rango y al lock (la 284), y se chequea que el `urllib3` que arrastra no choque con el pin del proyecto. Es la tarea de implementación, no ésta.
+
+### 11.3 Las claves de la tabla — decidido: por TIPO y DÍA DE CAPTURA
+
+Una tabla, `finanzias_harvest`:
+
+| atributo | qué es | ejemplo |
+|---|---|---|
+| `pk` (partición) | `{tipo}#{día de captura UTC}` | `consenso#2026-10-05`, `noticia#2026-10-05` |
+| `sk` (orden) | consenso: `{TICKER}`; noticia: `{content_hash}` | `MU`, `9f3c…` |
+| `capturado_at` | timestamp UTC estampado por la Lambda (§6.1) | `2026-10-05T21:04:11Z` |
+| `filas` | consenso: la lista de filas de ese ticker ese día (las ~10 métricas); noticia: el registro | |
+| `expira` | epoch para el TTL (§11.4) | |
+
+**Por qué así, con números:** *«bajar lo pendiente»* es, por cada día desde el cursor, **un `Query` por tipo** (`pk = consenso#2026-10-05`). Un día de consenso son 127 ítems de ~0,8 KB (~100 KB): con lectura eventual (8 KB por RCU), ~13 RCU. Un día de noticias, ~0,6 MB: ~75 RCU, y ~290 en el pico. Con las **25 RCU** gratuitas, una semana de app cerrada se baja en **~30 s** en el caso típico. La alternativa —clave por ticker— obliga a un `Scan` de la tabla entera en cada arranque, que crece con el tiempo: con ~257 MB por año, del orden de **~20 min por año de datos** acumulados.
+
+- **El consenso agrupado por ticker y día** cabe holgado en el límite de 400 KB por ítem, y divide por ~10 la cantidad de ítems.
+- **Las noticias van una por ítem**, con `content_hash` como clave de orden: el mismo hash que hace idempotente a `news_events` (§6.2) deduplica también en la nube.
+- **No hace falta índice secundario**: la app nunca busca por ticker en la nube, sólo por día.
+
+### 11.4 Retención — decidido: TTL de 90 días; la DB de la app es el registro
+
+- Cada ítem lleva `expira = captura + 90 días`, y DynamoDB lo borra solo (TTL: gratis, no consume WCU).
+- **La nube es un buffer, no el archivo.** El registro es `finanzias.db`, con sus backups diarios en `backups/`. DynamoDB sin PITR no tiene backup gratis, y no hace falta.
+- Con 90 días, la tabla queda en ~63 MB, contra 25 GB gratis.
+- **El riesgo que se acepta:** si la app pasa más de 90 días sin abrirse, lo más viejo se pierde. Es 6 veces el corte más largo registrado (el del 25/07 al 08/08), y la 245 avisa por Slack si después de sincronizar falta un día de los últimos 30.
+
+### 11.5 El cursor — decidido: en `finanzias.db`, por tipo, y conservador
+
+- **Una tabla nueva, `cloud_import_cursor`** (`tipo`, `ultimo_dia_importado`, `importado_at`), con su migración de alembic.
+- **Se avanza por día y después del commit**: un día se importa entero en una transacción corta, y recién ahí el cursor pasa a ese día. Si la importación se corta, el próximo arranque repite desde el día siguiente al último completo.
+- **Se re-lee siempre el último día importado**: la Lambda puede seguir escribiendo el día en curso después de la última importación. Re-leer es seguro porque la escritura es idempotente: el UNIQUE de `news_events` (`content_hash`) y el del consenso (`ux_est_ticker_metric_period_dia`, la 203).
+- **El rastro:** cada importación deja una línea de log con tipo, días y filas nuevas.
+
+### 11.6 Dónde corre — decidido: en un worker, sin red adentro de una transacción
+
+- La sincronización corre en un **worker** (`QThread`, como los jobs del scheduler), nunca en el hilo de la GUI (la 304 existe porque la GUI se trabó).
+- **Primero baja, después escribe:** los `Query` se hacen sin ninguna transacción abierta y la escritura va en una sesión corta por día. Es la lección de la 237 (un fetch adentro de una transacción de escritura retuvo el lock 163 s).
+- **Arranca después de `init_db` y del backup diario.** No bloquea el primer scan, que lee el consenso del día y lo encuentra en cuanto se importa.
+
+### 11.7 Lo que queda para Chapa
+
+- **Crear el usuario IAM y el perfil local** (§11.1). Es una acción manual en la consola de AWS, como el probe, y se escribe en *Acciones manuales* cuando se implemente.
+- **El plazo del TTL** (§11.4): 90 días es la recomendación. Más largo cuesta storage (gratis hasta 25 GB) y nada más; más corto achica el margen ante una ausencia larga.
+
+### 11.8 Lo que NO cambia del diseño de arriba
+
+El techo de 15 min por lotes (§7.1), sin VPC (§7.2), el universo publicado desde la app (§7.3), la key de Finnhub en SSM (§7.5), **un solo recolector del consenso** (§7.6: con la nube andando, el harvest in-app **deja de bajar consenso**, o se duplica el pedido a Yahoo), y la marca de captura estampada en la nube (§6.1).
 
 ---
 
