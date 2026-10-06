@@ -164,7 +164,8 @@ def test_el_popup_no_se_abre_desde_el_worker(qapp, portfolio_id, monkeypatch):
     AlertManager.create_alert(portfolio_id, "MARA", "BELOW", 14.0)
     monkeypatch.setattr("alerts.alert_manager.get_current_price", _prices({"MARA": 13.0}))
     popups: list = []
-    monkeypatch.setattr(AlertsTab, "_on_alert_triggered", lambda self, n: popups.append(n))
+    # Desde la 323 el chequeo avisa todas las alertas juntas, en `_avisar`.
+    monkeypatch.setattr(AlertsTab, "_avisar", lambda self, ns: popups.extend(ns))
 
     tab = AlertsTab()
     tab.set_portfolio_id(portfolio_id)

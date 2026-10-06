@@ -88,6 +88,7 @@ class AlertsTab(QWidget):
         self._build_ui()
 
         # Check alerts every 2 minutes
+        self._avisos: list[QMessageBox] = []  # tarea 323: referencias de los avisos no modales abiertos
         self._check_timer = QTimer(self)
         self._check_timer.timeout.connect(self._check_alerts)
         self._check_timer.start(120_000)
@@ -282,8 +283,8 @@ class AlertsTab(QWidget):
         else:
             self.status_label.setText("Sin alertas disparadas.")
         self.check_btn.setEnabled(True)
-        for notice in notices:
-            self._on_alert_triggered(notice)
+        if notices:
+            self._avisar(notices)
 
     def _on_check_error(self, exc: Exception):
         """Fail-open, como el resto de los workers: se avisa y se sigue."""
@@ -291,17 +292,56 @@ class AlertsTab(QWidget):
         self.check_btn.setEnabled(True)
 
     def _on_alert_triggered(self, notice: AlertNotice):
-        # Tarea 283: «Notificaciones al disparar alertas» (`notif`) era un toggle que nadie
-        # leía — apagarlo no apagaba nada. Ahora gobierna este popup. El Slack de alertas
-        # tiene su propio switch (`slack_price_alerts_enabled`).
+        self._avisar([notice])
+
+    def _avisar(self, notices: list) -> None:
+        """Un aviso NO modal con todas las alertas disparadas en el chequeo (tarea 323).
+
+        Era ``QMessageBox.information``, que es **modal**: lo dispara el chequeo automático (un
+        ``QTimer`` cada 120 s), así que una alerta a la noche dejaba la ventana principal
+        deshabilitada hasta que alguien cerrara el aviso — y Qt lo abría en el otro monitor. Chapa
+        lo vio como *«la UI no responde»* el 2026-10-06. Ahora el aviso no bloquea nada, va
+        centrado sobre la ventana principal, y varias alertas del mismo chequeo van en uno solo.
+
+        Tarea 283: «Notificaciones al disparar alertas» (`notif`) gobierna este aviso; el Slack
+        de alertas tiene su propio switch (`slack_price_alerts_enabled`).
+        """
         from config.settings_manager import settings
 
-        if not bool(settings.get("notif", True)):
+        if not bool(settings.get("notif", True)) or not notices:
             return
-        QMessageBox.information(
-            self,
-            "🔔 Alerta Disparada",
-            f"<b>{notice.ticker}</b> alcanzó ${notice.current_price:,.4f}<br>"
-            f"Objetivo: {notice.alert_type} ${notice.target_value:,.4f}<br>"
-            f"{notice.message or ''}",
+        caja = aviso_no_modal(self.window(), texto_avisos(notices))
+        self._avisos.append(caja)
+        caja.destroyed.connect(lambda *_: self._avisos.remove(caja) if caja in self._avisos else None)
+
+
+# ── El aviso de alerta disparada (tarea 323) ─────────────────────────────────
+
+
+def texto_avisos(notices: list) -> str:
+    """El cuerpo del aviso para una o varias alertas. Puro."""
+    filas = []
+    for n in notices:
+        filas.append(
+            f"<b>{n.ticker}</b> alcanzó ${n.current_price:,.4f}<br>"
+            f"Objetivo: {n.alert_type} ${n.target_value:,.4f}" + (f"<br>{n.message}" if n.message else "")
         )
+    return "<br><br>".join(filas)
+
+
+def aviso_no_modal(ventana, html: str) -> QMessageBox:
+    """Un ``QMessageBox`` que NO bloquea la app, centrado sobre ``ventana`` y ya visible."""
+    caja = QMessageBox(ventana)
+    caja.setWindowTitle("🔔 Alerta Disparada")
+    caja.setIcon(QMessageBox.Icon.Information)
+    caja.setTextFormat(Qt.TextFormat.RichText)
+    caja.setText(html)
+    caja.setStandardButtons(QMessageBox.StandardButton.Ok)
+    caja.setWindowModality(Qt.WindowModality.NonModal)
+    caja.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    caja.show()  # primero: el tamaño final recién se conoce al mostrarlo
+    if ventana is not None:
+        centro = ventana.frameGeometry().center()
+        marco = caja.frameGeometry()
+        caja.move(centro.x() - marco.width() // 2, centro.y() - marco.height() // 2)
+    return caja

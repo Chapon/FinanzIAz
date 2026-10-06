@@ -18,16 +18,22 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt6.QtWidgets")
 pytest.importorskip("matplotlib")
 
+
 from PyQt6.QtWidgets import QApplication
 
 from tests.test_metrics_tab_smoke import _payload_with_data
 from ui.dashboard_charts import COMPACT_MIN_HEIGHT, KpiCard
 from ui.metrics_tab import GRUPOS_KPI, MetricsTab, columnas_para
 
+# Una referencia GLOBAL, que vive todo el proceso: un fixture de alcance de módulo soltaba la
+# QApplication al terminar el módulo, Qt la destruía y con ella singletons que usan otros tests
+# (`_TickerInfoCache` de la tarea 80) — tarea 323.
+_APP = QApplication.instance() or QApplication([])
 
-@pytest.fixture(scope="module")
+
+@pytest.fixture
 def qapp():
-    return QApplication.instance() or QApplication([])
+    return _APP
 
 
 @pytest.mark.parametrize(

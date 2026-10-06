@@ -85,9 +85,12 @@ def test_notif_gobierna_el_popup_de_alerta(monkeypatch, prendido, popups):
 
     settings.set("notif", prendido)
     llamadas = []
-    monkeypatch.setattr(alerts_tab.QMessageBox, "information", lambda *a, **k: llamadas.append(a))
+    # Desde la 323 el aviso es no modal (`aviso_no_modal`), no `QMessageBox.information`.
+    caja = SimpleNamespace(destroyed=SimpleNamespace(connect=lambda f: None))
+    monkeypatch.setattr(alerts_tab, "aviso_no_modal", lambda *a, **k: llamadas.append(a) or caja)
     aviso = SimpleNamespace(
         ticker="AAA", current_price=10.0, alert_type="ABOVE", target_value=9.0, message=""
     )
-    alerts_tab.AlertsTab._on_alert_triggered(SimpleNamespace(), aviso)
+    falso = SimpleNamespace(window=lambda: None, _avisos=[])
+    alerts_tab.AlertsTab._avisar(falso, [aviso])
     assert len(llamadas) == popups
