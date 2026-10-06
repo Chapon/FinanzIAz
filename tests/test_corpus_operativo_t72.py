@@ -53,6 +53,11 @@ _NO_SON_CONSTANTES: dict[str, str] = {
         "desde que el backlog entra al corpus (tarea 249)"
     ),
     "SLACK_CHANNEL": "variable de entorno del notificador; no vive en el código",
+    "ANTHROPIC_API_KEY": (
+        "variable de entorno del usuario que Claude Code prioriza sobre el login de claude.ai; la "
+        "opinión de Claude la SACA del entorno del proceso (tarea 322) y *Acciones manuales* "
+        "sugiere borrarla"
+    ),
     "FINANZIAS_BLOQUEAR_RED": (
         "nombre de variable de entorno (tarea 211), como FINNHUB_API_KEY y SLACK_BOT_TOKEN de "
         "arriba — pero con un matiz que aquéllas no tienen: ésta SÍ vive en el código, como el "
