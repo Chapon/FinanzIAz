@@ -45,6 +45,7 @@ Behaviour
 
 from __future__ import annotations
 
+import weakref
 from typing import Any
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -52,6 +53,16 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+# Tarea 330: todos los workers vivos, para que quien va a cerrar la DB pueda esperar a los que
+# están corriendo. Un worker de alertas consultando mientras el teardown de los tests hacía
+# `engine.dispose()` era un segfault intermitente del CI (exit 139). Débil: no los mantiene vivos.
+_VIVOS: weakref.WeakSet = weakref.WeakSet()
+
+
+def workers_corriendo() -> list:
+    """Los ``BaseWorker`` cuyo hilo está corriendo ahora."""
+    return [w for w in list(_VIVOS) if w.isRunning()]
 
 
 class BaseWorker(QThread):
@@ -72,6 +83,7 @@ class BaseWorker(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._cancelled: bool = False
+        _VIVOS.add(self)
 
     # ── Cancellation ──────────────────────────────────────────────────────────
     def cancel(self) -> None:

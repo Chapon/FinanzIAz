@@ -249,6 +249,7 @@ def test_db(monkeypatch) -> Iterator:
 
     db_models.Base.metadata.create_all(test_engine)
     yield test_engine
+    _sin_hilos_de_qt_sobre_la_db()
     db_models.Base.metadata.drop_all(test_engine)
     test_engine.dispose()
 
@@ -356,7 +357,51 @@ def _guard_real_db(request, monkeypatch):
 
     db_models.Base.metadata.create_all(engine)
     yield
+    _sin_hilos_de_qt_sobre_la_db()
     engine.dispose()
+
+
+def _sin_hilos_de_qt_sobre_la_db() -> None:
+    """Espera a los workers de Qt que siguen corriendo antes de cerrar la DB del test (tarea 330).
+
+    Un ``AlertCheckWorker`` consultando mientras el teardown hacía ``engine.dispose()`` cerraba
+    la conexión SQLite debajo de otro hilo: segfault (exit 139), **intermitente** porque
+    depende de cuándo dispara el timer. Lo arrancaba el ``QTimer`` de 120 s de un ``AlertsTab``
+    que un test anterior había dejado vivo. Sin PyQt cargado no hay nada que esperar.
+    """
+    import sys
+
+    if "ui.workers" not in sys.modules:
+        return
+    for w in sys.modules["ui.workers"].workers_corriendo():
+        w.cancel()
+        if not w.wait(10_000):
+            raise RuntimeError(f"{type(w).__name__} sigue corriendo: no se cierra la DB debajo de él")
+
+
+@pytest.fixture(autouse=True)
+def _frenar_timers_de_widgets_sobrevivientes():
+    """Al terminar cada test, frena los ``QTimer`` de los widgets que siguen vivos (tarea 330).
+
+    Una pestaña creada en un test (``AlertsTab``: 120 s; ``PortfolioTab``: 60 s) sobrevive al
+    test, y su timer dispara trabajo real —hilos, DB, red— **durante otro test**, en cuanto
+    alguien procesa eventos. Se verificó: siete widgets con timer activo al terminar los tests
+    de la 80 y la 325.
+    """
+    yield
+    import sys
+
+    if "PyQt6.QtWidgets" not in sys.modules:
+        return
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        return
+    for w in QApplication.allWidgets():
+        for t in w.findChildren(QTimer):
+            if t.isActive():
+                t.stop()
 
 
 @pytest.fixture(autouse=True)

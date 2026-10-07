@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 261 — Tarea 330 (CI-SEGFAULT-SIN-DIAGNOSTICO) CERRADA 2026-10-07 — el segfault intermitente del CI era un worker de alertas consultando la DB mientras el teardown de los tests la cerraba** (`.github/workflows/ci.yml`, `ui/workers.py`, `tests/conftest.py`, `tests/test_ci_segfault_workers_t330.py` **nuevo**). Suite Windows (Anaconda) **4446 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **4443 passed, 4 skipped**.
+  - **El instrumento (`d57caae`):** ante un segfault, la anotación de los últimos 3500 caracteres era la lista de «Extension modules» de `faulthandler`. Ahora va una segunda anotación con el bloque del crash. En el rojo siguiente (`5e8f373`) dijo: hilo `AlertCheckWorker.do_work` → `check_alerts` → query, y el hilo principal en `conftest.py::_guard_real_db` → `engine.dispose()`.
+  - **Por qué intermitente:** lo arrancaba el `QTimer` de 120 s de un `AlertsTab` que los tests de la 80 dejaban vivo, en cuanto otro test procesaba eventos. Verificado: siete widgets con timer activo al terminar los tests de la 80 y la 325; después del arreglo, ninguno.
+  - **El arreglo:** `BaseWorker` registra sus instancias (`WeakSet`) y el teardown de las dos DB de test espera a los workers que corren antes del `dispose()`; un fixture autouse frena los timers de los widgets que sobreviven al test. Mutación: el helper sin esperar → rojo.
+  - **La 328** (los `ERROR` sueltos del `.venv` en `test_ruin_injection_t37`) puede ser de la misma familia; sigue abierta hasta reproducirla.
+
 - **WIP 260 — Tareas 324 (CSV-VENTAS-Y-SPLITS) y 325 (PORTFOLIO-DESPLEGABLE) CERRADAS 2026-10-07 — «Mis Acciones» reconstruida desde el CSV de Yahoo con compras, ventas y el split de NVDA, y Portfolio con un desplegable por ticker** (`3354a54`; `database/lotes.py` **nuevo**, `database/cartera_real.py`, `data/csv_importer.py`, `ui/import_dialog.py`, `ui/portfolio_tab.py`, `ui/portfolio_detalle.py` **nuevo**, `scripts/reemplazar_cartera_csv.py` **nuevo**, `tests/test_cartera_csv_ventas_splits_t324.py` y `tests/test_portfolio_desplegable_t325.py` **nuevos**). **Cierra también la 312.** Suite Windows (Anaconda) **4443 passed, 1 skipped, 1 deselected** (+19), ruff limpio, sin estado vivo **4440 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-07 18:39Z).
   - **El defecto que destapó el CSV:** el importador ignoraba `Transaction Type`, así que **cada venta entraba como una compra**, y una fila sin lotes (TSLA) se volvía una compra inventada de 1 acción al precio del día.
   - **El split, como split (decisión de Chapa):** Yahoo carga el 10:1 de NVDA como venta de 12 a $1200 + compra de 120 a $120. Literal, inventa +$3.438,16 de realizada y deja el costo en $120. Ahora el par se reconoce sólo si todo cierra (notas, ≤ 7 días, venta = tenencia, nocional ±1%) y ajusta los movimientos anteriores: 120 acciones a **$89,85** con las fechas reales (feb y jun 2024), realizada 0.
@@ -2348,6 +2354,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07b** tras cerrar la **324** y la **325**, que cierran también la **312** (el CSV de Yahoo trajo las fechas y toda la historia) y dejan cuatro tareas. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. **Actualizado el mismo día (2026-10-07c):** el CI de `6522c2e` dio rojo por un segfault intermitente (el commit siguiente, mismo código, verde). Entra la **330**, que espera a que vuelva a pasar. El orden queda **326 → 196 → 245 → 290 → 321 → 330 → 329 → 327 → 328**. La **326** encabeza porque es la única que se puede hacer ya y porque, sin ella, la primera venta desde la app deja la fila y el desplegable con costos distintos. 196, 245, 290 y 321 siguen esperando algo de afuera; la **327** espera la respuesta de Chapa, y la **328** va última porque sólo se vio en el `.venv`.
 
+> **Repriorizado 2026-10-07d** tras cerrar la **330** (el segfault del CI tenía causa: un worker de alertas contra la DB que el teardown cerraba), que **no deja tareas nuevas**. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**.
+
 
 
 
@@ -3786,12 +3794,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 330. CI-SEGFAULT-SIN-DIAGNOSTICO — El CI del arreglo de la 325 (`6522c2e`) dio rojo por un **segfault** del proceso de pytest (exit 139), y la anotación no dice qué test se cayó  ·  origen: el cierre de la 325 (2026-10-07) · severidad **MEDIA** (intermitente: el commit siguiente, con el mismo código, dio verde)
+### 330. ~~CI-SEGFAULT-SIN-DIAGNOSTICO — El CI del arreglo de la 325 (`6522c2e`) dio rojo por un **segfault** del proceso de pytest (exit 139), y la anotación no dice qué test se cayó~~ · **CERRADA 2026-10-07 — la anotación nueva lo nombró: un worker de alertas consultando la DB mientras el teardown la cerraba** · **movida a *En curso* con el detalle**  ·  origen: el cierre de la 325 (2026-10-07) · severidad **MEDIA** (intermitente: el commit siguiente, con el mismo código, dio verde)
 
 - **Qué pasó.** El paso de pytest anota los últimos 3500 caracteres de la salida (tarea 65). En un segfault esos caracteres son la lista de «Extension modules» de `faulthandler`, y el bloque que nombra el test (`Fatal Python error … File …, line N in test_…`) queda afuera. Los logs piden token y `gh` no está autenticado: el rojo era indiagnosticable.
 - **Parte 1 (instrumento) — HECHA** (`d57caae`, CI verde): una segunda anotación con el bloque del crash, sin la lista de módulos. Probada con una salida de segfault armada a mano.
 - **No se reprodujo:** `d57caae` tiene el mismo código de app y de tests que `6522c2e` y su CI dio **verde**. El segfault es intermitente; la sospecha de la fuente queda descartada como causa determinística (los anchos de la 325 corrieron en Linux sin fuentes). Podría ser de la misma familia que la **328** (los `ERROR` sueltos en el `.venv`).
-- **Parte 2 (la causa):** la próxima vez que el CI dé 139, la anotación nombra el test; ahí se arregla.
+- **Parte 2 (la causa) — HECHA:** volvió a pasar en `5e8f373` y la anotación lo nombró. Ver WIP 261.
 - **Kill-criteria.** El test causante nombrado y arreglado, o —si en un mes de commits no vuelve a pasar— se cierra diciéndolo.
 
 ### 329. CARTERA-SIN-NOMBRE-DE-EMPRESA — Las cuatro posiciones nuevas de «Mis Acciones» (KO, MARA, MO, MSFT) quedaron sin `company_name`, y EMBJ figura como «ERJ»  ·  origen: la 324 (verificación de la DB después del reemplazo) · severidad **BAJA**
