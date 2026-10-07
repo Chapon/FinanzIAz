@@ -18,7 +18,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 264 — Tarea 335 (TANDA DE AUDITORÍAS 2026-10-07) CERRADA — doce áreas sobre las 307–334 y el estado vivo; nueve hallazgos, dos HIGH** (`docs/auditoria_tanda_killcriteria_2026-10-07.md`, `docs/auditoria_tanda_2026-10-07.md`). Pedido de Chapa: *«luego de terminar correr todas las auditorías»*. READ-ONLY: no toca código.
+- **WIP 264 — Tarea 335 (TANDA DE AUDITORÍAS 2026-10-07) CERRADA — doce áreas sobre las 307–334 y el estado vivo; nueve hallazgos, dos HIGH** (`f281d7b`, CI **VERDE** 2026-10-07 23:48Z; `docs/auditoria_tanda_killcriteria_2026-10-07.md`, `docs/auditoria_tanda_2026-10-07.md`). Pedido de Chapa: *«luego de terminar correr todas las auditorías»*. READ-ONLY: no toca código.
   - **HIGH:** [F-1] Home subvalúa valor y ganancia el primer año (un frame de cierres por ticker y ceros donde no hay cierre) → **336**; [I-1] `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker → **337**. Los dos pasaron por el `verificador` (§3 del informe).
   - **MEDIA:** [A-1] *En curso* tiene 213 ítems contra su «máx 1» → **338**; [D-1] la lección de la 322 no está en `/ship` → **339**; [L-1] «unstable model» en todos los scans → **340** (medición); [I-2] las 14 opiniones son MANTENER y la 321 está 0/8 y 0/8 → enunciado de la **321**.
   - **BAJA:** [A-2] + [A-3] docs de referencia → **341**; [G-1] MLTX comprada un sábado → **342**; [F-2] la sparkline de «VALOR Y P/L» → enunciado de la **334**.
