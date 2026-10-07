@@ -454,6 +454,9 @@ class ImportDialog(QDialog):
         if malas:
             raise ValueError("; ".join(f"{t}: {e}" for t, e in malas.items()))
         out = guardar_armadas(session, self.portfolio_id, armadas, info, nota="Importado desde CSV")
+        from database.cartera_real import completar_nombres
+
+        completar_nombres(session, self.portfolio_id)  # tarea 329: el validador puede no haber terminado
         return out["nuevas"], out["actualizadas"]
 
 

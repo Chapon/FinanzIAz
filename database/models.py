@@ -316,8 +316,17 @@ class DividendCalendarCache(Base):
     derecho (si apareció un ex-date nuevo), así que la frescura se evalúa sobre
     ``fetched_at`` del ticker y no sobre cada fila.
 
-    ``amount`` es en dólares por acción, **sin ajustar por splits posteriores**, que
-    es como lo devuelve ``yfinance`` (``Ticker.dividends``) y como lo midió la T220.
+    ``amount`` es en dólares por acción **ajustado por los splits posteriores**, que es
+    como lo devuelve ``yfinance`` (``Ticker.dividends``). Acá decía lo contrario hasta la
+    tarea 331, y los datos lo desmienten: NVDA, ex-date 2024-03-05, guarda **0.004**; lo
+    pagado ese día fue $0,04 por acción, y $0,004 es ese monto llevado al split 10:1 de
+    junio de 2024. La migración ``0013`` repite la frase vieja en un comentario.
+
+    **Por qué importa:** quien multiplique este monto por acciones tiene que usar acciones
+    **ajustadas** por los mismos splits. La cartera real lo hace (``database/lotes.py``
+    guarda NVDA en acciones de hoy, tarea 324); el motor paper **no** para una posición
+    comprada antes de un split (tarea 333). «Des-ajustar» las cantidades de la 324 por
+    creerle a la frase vieja multiplicaría por 10 los dividendos de NVDA anteriores al split.
     """
 
     __tablename__ = "dividend_calendar_cache"

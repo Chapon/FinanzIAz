@@ -41,7 +41,24 @@ def registrar_venta(session, pos: Position, qty: float, price: float, fees: floa
         price=price,
         fees=fees,
     )
+    # Tarea 326: el costo de lo que queda sale por FIFO, como en la vista de Lotes, la importación
+    # y el reemplazo (la 324). Antes quedaba el promedio, y tras una venta parcial la fila y el
+    # desplegable daban costos distintos. Sólo si las transacciones explican la tenencia: una
+    # posición vieja sin su historia completa sigue con la cuenta de antes.
+    previas = session.query(Transaction).filter(Transaction.position_id == pos.id).all() if pos.id else []
+    from database.lotes import libro_fifo
+
+    historia = libro_fifo(movimientos_de(previas)) if previas else None
     session.add(tx)
+    if (
+        historia is not None
+        and not historia.error
+        and abs(historia.cantidad - float(pos.quantity)) < CERRADA_TOL
+    ):
+        session.flush()
+        error = recalcular_posicion(pos, [*previas, tx])
+        if error is None:
+            return tx
     restante = float(pos.quantity) - float(qty)
     pos.quantity = 0.0 if abs(restante) < CERRADA_TOL else restante
     pos.updated_at = utcnow_naive()
@@ -160,6 +177,36 @@ def guardar_armadas(session, portfolio_id: int, armadas, info: dict | None = Non
     return out
 
 
+def _parece_ticker(nombre: str | None) -> bool:
+    """«ERJ», «AAPL»: un símbolo y no un nombre (mayúsculas, sin espacios, corto)."""
+    n = (nombre or "").strip()
+    return bool(n) and n.isupper() and " " not in n and len(n) <= 6
+
+
+def completar_nombres(session, portfolio_id: int) -> list[tuple[str, str | None, str]]:
+    """Empresa y sector desde ``company_info_cache``, **sin red** (tarea 329).
+
+    Sólo toca una posición sin nombre o cuyo nombre parece un ticker: EMBJ figuraba «ERJ»,
+    su símbolo viejo, y las cuatro que entraron nuevas con la 324 no tenían nombre. Un nombre
+    escrito por alguien no se pisa. Devuelve ``(ticker, antes, después)`` de lo que cambió.
+    """
+    from database.models import CompanyInfoCache
+
+    cambios = []
+    posiciones = session.query(Position).filter(Position.portfolio_id == portfolio_id).all()
+    faltan = {p.ticker: p for p in posiciones if not p.company_name or _parece_ticker(p.company_name)}
+    if not faltan:
+        return cambios
+    for info in session.query(CompanyInfoCache).filter(CompanyInfoCache.ticker.in_(list(faltan))):
+        p = faltan[info.ticker]
+        if info.name and info.name != p.company_name and not _parece_ticker(info.name):
+            cambios.append((p.ticker, p.company_name, info.name))
+            p.company_name = info.name
+            if not p.sector and info.sector:
+                p.sector = info.sector
+    return sorted(cambios)
+
+
 def reemplazar_cartera(session, portfolio_id: int, armadas, nota: str = "") -> dict:
     """Borra las posiciones de la cartera y la reconstruye desde ``armadas``.
 
@@ -176,6 +223,7 @@ def reemplazar_cartera(session, portfolio_id: int, armadas, nota: str = "") -> d
     session.flush()
     out = guardar_armadas(session, portfolio_id, armadas, info, nota)
     out["borradas"] = len(viejas)
+    out["nombres"] = completar_nombres(session, portfolio_id)  # tarea 329
     return out
 
 

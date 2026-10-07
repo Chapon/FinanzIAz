@@ -2420,9 +2420,10 @@ def get_dividend_calendar(ticker: str) -> list[tuple[str, float]]:
 def _fetch_dividend_calendar(ticker: str) -> list[tuple[str, float]]:
     """Fetch crudo del calendario — ``[(YYYY-MM-DD, $/acción)]`` ascendente.
 
-    ``Ticker.dividends`` devuelve una Series indexada por ex-date con el monto **sin
-    ajustar por splits posteriores**, que es la convención con la que la T220 midió
-    los $322,77 — y este módulo reproduce esa tabla ticker por ticker.
+    ``Ticker.dividends`` devuelve una Series indexada por ex-date con el monto **ajustado
+    por los splits posteriores** (NVDA 2024-03-05: 0.004, no los $0,04 pagados; tarea 331 —
+    acá decía «sin ajustar»). Es la tabla con la que la T220 midió los $322,77, y este
+    módulo la reproduce ticker por ticker.
     """
 
     def _do_fetch() -> list[tuple[str, float]]:
