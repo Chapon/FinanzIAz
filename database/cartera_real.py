@@ -248,6 +248,98 @@ def valor_diario(
     return serie, sin_historia
 
 
+def ganancias_diarias(
+    movs: dict[str, list],
+    cierres: dict[str, list[tuple[date, float]]],
+    calendario: dict[str, list[tuple[str, float]]],
+) -> tuple[list[tuple[date, dict]], list[str]]:
+    """La ganancia de la cartera por rueda, separada de la plata puesta (tarea 332). Puro.
+
+    ``movs`` es ``{ticker: [lotes.Movimiento]}``. Por cada rueda de ``valor_diario`` —mismos
+    días, mismo valor— devuelve ``{valor, costo, no_realizado, realizado, dividendos, total}``:
+
+    - ``costo``: lo que siguen costando, por FIFO, las acciones en cartera ese día. Es la
+      «plata puesta»: la app no registra depósitos de efectivo, sólo compras y ventas.
+    - ``no_realizado = valor − costo``. ``valor`` y ``costo`` cuentan sólo los tickers **con**
+      cierres, igual que ``valor_diario``; los otros vuelven en la segunda lista.
+    - ``realizado``: el acumulado de las ventas hasta ese día, con las dos comisiones.
+    - ``dividendos``: el acumulado cobrado hasta ese día (ex-date ≤ día; convención de la 222).
+
+    Las convenciones son las de Portfolio, para que los dos lugares den el mismo número: el
+    costo sin la comisión de compra (``avg_buy_price``), la realizada con comisiones.
+    """
+    from database.lotes import libro_fifo
+
+    eventos = [
+        (m.fecha, t, m.cantidad if m.tipo == "BUY" else -m.cantidad) for t, ms in movs.items() for m in ms
+    ]
+    serie_valor, sin_historia = valor_diario(eventos, cierres)
+    if not serie_valor:
+        return [], sin_historia
+    con_historia = {t for t in movs if cierres.get(t)}
+    detalle_div = {
+        t: dividendos_detalle(
+            [(m.fecha.isoformat(), m.cantidad if m.tipo == "BUY" else -m.cantidad) for m in ms],
+            calendario.get(t, []),
+        )
+        for t, ms in movs.items()
+    }
+    ordenados = {
+        t: sorted(ms, key=lambda m: (m.fecha, 0 if m.tipo == "BUY" else 1)) for t, ms in movs.items()
+    }
+    memo: dict[tuple[str, int], object] = {}  # el libro sólo cambia el día de una transacción
+
+    def libro_al(t: str, dia: date):
+        n = sum(1 for m in ordenados[t] if m.fecha <= dia)
+        if (t, n) not in memo:
+            memo[(t, n)] = libro_fifo(ordenados[t][:n])
+        return memo[(t, n)]
+
+    out = []
+    for dia, valor in serie_valor:
+        libros = {t: libro_al(t, dia) for t in movs}
+        costo = sum(lo.cantidad * lo.precio for t in con_historia for lo in libros[t].lotes)
+        realizado = sum(lb.realizado for lb in libros.values())
+        dividendos = sum(c for t in movs for ex, _, _, c in detalle_div[t] if ex[:10] <= dia.isoformat())
+        no_realizado = valor - costo
+        out.append(
+            (
+                dia,
+                {
+                    "valor": valor,
+                    "costo": costo,
+                    "no_realizado": no_realizado,
+                    "realizado": realizado,
+                    "dividendos": dividendos,
+                    "total": no_realizado + realizado + dividendos,
+                },
+            )
+        )
+    return out, sin_historia
+
+
+def calendario_del_cache(session, tickers: list[str]) -> tuple[dict[str, list[tuple[str, float]]], list[str]]:
+    """Ex-dates de ``dividend_calendar_cache``, **sin red** (Home), y los tickers que no tienen fila.
+
+    Un ticker que nunca se pidió no tiene fila y **no** es lo mismo que «no paga» (que guarda
+    el centinela ``0000-00-00``): se devuelve aparte para decirlo, no se cuenta como cero.
+    """
+    from database.models import DividendCalendarCache
+
+    out: dict[str, list[tuple[str, float]]] = {t: [] for t in tickers}
+    vistos: set[str] = set()
+    if tickers:
+        for f in (
+            session.query(DividendCalendarCache)
+            .filter(DividendCalendarCache.ticker.in_(tickers))
+            .order_by(DividendCalendarCache.ex_date)
+        ):
+            vistos.add(f.ticker)
+            if f.ex_date != "0000-00-00" and f.amount:
+                out[f.ticker].append((f.ex_date, float(f.amount)))
+    return out, sorted(set(tickers) - vistos)
+
+
 def cierres_del_cache(tickers: list[str]) -> dict[str, list[tuple[date, float]]]:
     """Cierres diarios del cache local, **sin red** (Home no puede colgarse esperando a Yahoo).
 
@@ -352,12 +444,28 @@ def resumen_home(session, nombre: str = CARTERA_HOME, cierres=None) -> dict | No
     ]
     try:
         provider = cierres or cierres_del_cache
-        serie_valor, sin_historia = valor_diario(eventos, provider(sorted({e[1] for e in eventos})))
+        dict_cierres = provider(sorted({e[1] for e in eventos}))
+        serie_valor, sin_historia = valor_diario(eventos, dict_cierres)
     except Exception:
         from config.logging_config import get_logger
 
         get_logger(__name__).exception("Home: no se pudo armar el valor diario; queda el invertido neto")
-        serie_valor, sin_historia = [], []
+        serie_valor, sin_historia, dict_cierres = [], [], None
+    # Tarea 332: la ganancia separada de la plata puesta, para el botón de Home.
+    serie_ganancia, sin_calendario = [], []
+    if dict_cierres is not None:
+        try:
+            movs: dict[str, list] = {}
+            for t in txs:
+                if t.date is not None and t.position is not None:
+                    movs.setdefault(t.position.ticker, []).extend(movimientos_de([t]))
+            calendario, sin_calendario = calendario_del_cache(session, sorted(movs))
+            serie_ganancia, _ = ganancias_diarias(movs, dict_cierres, calendario)
+        except Exception:
+            from config.logging_config import get_logger
+
+            get_logger(__name__).exception("Home: no se pudo armar la ganancia diaria")
+            serie_ganancia, sin_calendario = [], []
     alertas = (
         session.query(Alert).filter(Alert.portfolio_id == pf.id).filter(Alert.is_active.is_(False)).count()
     )
@@ -381,6 +489,8 @@ def resumen_home(session, nombre: str = CARTERA_HOME, cierres=None) -> dict | No
         "invertido_neto": invertido_neto,
         "valor_diario": serie_valor,
         "valor_diario_sin_historia": sin_historia,
+        "ganancia_diaria": serie_ganancia,
+        "ganancia_sin_calendario": sin_calendario,
         "alertas_disparadas": alertas,
         "precio_mas_viejo": min(fechas) if fechas else None,
     }

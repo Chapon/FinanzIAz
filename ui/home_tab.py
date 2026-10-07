@@ -187,6 +187,7 @@ class HomeTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._r: dict | None = None  # el último resumen_home: el botón re-pinta sin recalcular
         self._build_ui()
         self.load_data()
 
@@ -215,12 +216,29 @@ class HomeTab(QWidget):
         hero_layout.setContentsMargins(20, 16, 20, 16)
         hero_layout.setSpacing(6)
 
-        self.hero_title = QLabel("Mis Acciones — capital invertido neto")
+        self.hero_title = QLabel("Mis Acciones")
         self.hero_title.setStyleSheet(f"color: {PALETTE['text1']}; font-size: 16px; font-weight: 700;")
-        hero_sub = QLabel("Compras menos ventas acumuladas, a precio de transacción (no es valor de mercado)")
-        hero_sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
-        hero_layout.addWidget(self.hero_title)
-        hero_layout.addWidget(hero_sub)
+        # El subtítulo lo escribe `_pintar_hero`: el fijo decía «capital invertido neto… no es valor
+        # de mercado» desde la 264, y desde la 305 el gráfico ES el valor de mercado.
+        self.hero_sub = QLabel("")
+        self.hero_sub.setWordWrap(True)
+        self.hero_sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
+        # Tarea 332: ocultar la plata puesta y graficar sólo la ganancia.
+        self.ganancia_btn = QPushButton("Ver sólo ganancias")
+        self.ganancia_btn.setCheckable(True)
+        self.ganancia_btn.setMinimumHeight(36)
+        self.ganancia_btn.setToolTip(
+            "Saca del gráfico el costo de las acciones en cartera (la plata puesta) y muestra\n"
+            "la ganancia: no realizada, realizada y dividendos cobrados."
+        )
+        self.ganancia_btn.toggled.connect(self._pintar_hero)
+        cabecera = QHBoxLayout()
+        textos = QVBoxLayout()
+        textos.addWidget(self.hero_title)
+        textos.addWidget(self.hero_sub)
+        cabecera.addLayout(textos, stretch=1)
+        cabecera.addWidget(self.ganancia_btn)
+        hero_layout.addLayout(cabecera)
 
         self.hero_chart = AreaChartHero()
         self.hero_chart.setMinimumHeight(240)
@@ -306,24 +324,8 @@ class HomeTab(QWidget):
             self.welcome_card.update_status(0, 0.0, 0)
             return
 
-        # Tarea 305: el valor de mercado por rueda. El invertido neto queda de respaldo, porque
-        # en una cartera comprada en un solo día es UN punto («el home solo grafica 1 día»).
-        serie = r.get("valor_diario") or []
-        if len(serie) >= 2:
-            titulo = f"{r['nombre']} — valor de mercado, hasta el {serie[-1][0]:%d/%m}"
-            if r.get("valor_diario_sin_historia"):
-                titulo += f" (sin historia: {', '.join(r['valor_diario_sin_historia'])})"
-            self.hero_title.setText(titulo)
-            self.hero_chart.set_data(
-                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in serie],
-                ylabel="Valor de mercado ($)",
-            )
-        else:
-            self.hero_title.setText(f"{r['nombre']} — capital invertido neto (sin cierres en el cache)")
-            self.hero_chart.set_data(
-                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
-                ylabel="Invertido neto ($)",
-            )
+        self._r = r
+        self._pintar_hero()
 
         # Valor y P&L sólo sobre las posiciones CON precio; las que no tienen, se dicen.
         delta = f"{'+' if r['pl'] >= 0 else ''}${r['pl']:,.0f}  ({r['pl_pct']:+.2f}%)"
@@ -344,6 +346,74 @@ class HomeTab(QWidget):
         self.donut.set_data(r["torta"])
 
         self.welcome_card.update_status(r["posiciones"], r["pl_pct"], r["alertas_disparadas"])
+
+    def _pintar_hero(self, *_args) -> None:
+        """El gráfico grande: valor de mercado, o —con el botón— sólo la ganancia (tarea 332)."""
+        self.ganancia_btn.setText(
+            "Ver valor de mercado" if self.ganancia_btn.isChecked() else "Ver sólo ganancias"
+        )
+        r = self._r
+        if r is None:
+            return
+        serie = r.get("valor_diario") or []
+        ganancia = r.get("ganancia_diaria") or []
+        avisos = []
+        if r.get("valor_diario_sin_historia"):
+            avisos.append(f"sin historia: {', '.join(r['valor_diario_sin_historia'])}")
+        primera_tx = min(r.get("tx_por_dia") or [None]) if r.get("tx_por_dia") else None
+        if serie and primera_tx is not None and serie[0][0] > primera_tx:
+            # El cache de cierres arranca después de la primera compra: lo de antes no se grafica.
+            avisos.append(
+                f"cierres desde el {serie[0][0]:%d/%m/%y}; la primera compra es del {primera_tx:%d/%m/%y}"
+            )
+        cola = f"  ·  {' · '.join(avisos)}" if avisos else ""
+
+        if self.ganancia_btn.isChecked() and len(ganancia) >= 2:
+            ult = ganancia[-1][1]
+            self.hero_title.setText(
+                f"{r['nombre']} — ganancia, hasta el {ganancia[-1][0]:%d/%m}: "
+                f"{'+' if ult['total'] >= 0 else ''}${ult['total']:,.0f}"
+            )
+            sin_cal = r.get("ganancia_sin_calendario") or []
+            extra = f" · sin calendario de dividendos: {', '.join(sin_cal)}" if sin_cal else ""
+            self.hero_sub.setText(
+                "Sin la plata puesta (el costo de lo que sigue en cartera). "
+                f"No realizada ${ult['no_realizado']:,.0f} · realizada ${ult['realizado']:,.0f} · "
+                f"dividendos ${ult['dividendos']:,.0f}{extra}{cola}"
+            )
+            xs = [d for d, _ in ganancia]
+            self.hero_chart.set_lineas(
+                xs,
+                [
+                    ("Ganancia total", [x["total"] for _, x in ganancia], PALETTE["accent"]),
+                    ("No realizada", [x["no_realizado"] for _, x in ganancia], PALETTE["orange"]),
+                    ("Realizada", [x["realizado"] for _, x in ganancia], PALETTE["purple"]),
+                    ("Dividendos", [x["dividendos"] for _, x in ganancia], PALETTE["positive"]),
+                ],
+                ylabel="Ganancia ($)",
+            )
+        elif len(serie) >= 2:
+            # Tarea 305: el valor de mercado por rueda.
+            self.hero_title.setText(f"{r['nombre']} — valor de mercado, hasta el {serie[-1][0]:%d/%m}")
+            self.hero_sub.setText(
+                "Acciones en cartera × cierre de cada día: incluye la plata puesta. "
+                f"«Ver sólo ganancias» la saca.{cola}"
+            )
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in serie],
+                ylabel="Valor de mercado ($)",
+            )
+        else:
+            # El invertido neto queda de respaldo: en una cartera comprada en un solo día es UN punto.
+            self.hero_title.setText(f"{r['nombre']} — capital invertido neto (sin cierres en el cache)")
+            self.hero_sub.setText(
+                "Compras menos ventas acumuladas, a precio de transacción (no es valor de mercado)"
+            )
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
+                ylabel="Invertido neto ($)",
+            )
+        self.ganancia_btn.setEnabled(len(ganancia) >= 2)
 
     def refresh(self, portfolio_tab=None) -> None:
         """Called by the main window on data refresh. Reloads the real portfolio."""

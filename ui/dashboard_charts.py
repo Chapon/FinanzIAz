@@ -153,7 +153,45 @@ class AreaChartHero(QWidget):
             self.ax.axhline(ys[0], color=PALETTE["text3"], linestyle="--", linewidth=0.6, alpha=0.7)
         self.ax.set_ylabel(ylabel, color=PALETTE["text2"], fontsize=10)
         self.ax.xaxis_date()
-        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+        # Con año: desde la 305 la serie es diaria y cruza años; «01/01 00:00» no decía de cuál.
+        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%y"))
+        self.figure.autofmt_xdate(rotation=15)
+        self.canvas.draw()
+
+    def set_lineas(self, xs: list, lineas: list[tuple[str, list[float], str]], ylabel: str) -> None:
+        """Varias series sobre una línea de cero, con leyenda (tarea 332: la ganancia de Home).
+
+        ``lineas`` es ``[(rótulo, valores, color), ...]``; la **primera** es la principal (más
+        gruesa, con el degradé). Las fechas van con año: la serie diaria cruza años y el
+        formato de ``set_data`` (``%d/%m %H:%M``) lo escondía.
+        """
+        if not xs or not lineas:
+            self._render_empty()
+            return
+        x_num = mdates.date2num(xs)
+        self.ax.clear()
+        self._style_axes()
+        self.ax.axhline(0, color=PALETTE["text3"], linestyle="--", linewidth=0.7, alpha=0.8)
+        for i, (rotulo, ys, color) in enumerate(lineas):
+            principal = i == 0
+            self.ax.plot(
+                x_num,
+                ys,
+                color=color,
+                linewidth=2.2 if principal else 1.3,
+                zorder=4
+                if principal
+                else 5,  # los componentes encima: hasta la primera venta, el total los tapa
+                label=rotulo,
+            )
+            if principal:
+                _gradient_under_line(self.ax, x_num, ys, color, alpha_top=0.25)
+        leyenda = self.ax.legend(loc="upper left", fontsize=9, frameon=False)
+        for t in leyenda.get_texts():
+            t.set_color(PALETTE["text2"])
+        self.ax.set_ylabel(ylabel, color=PALETTE["text2"], fontsize=10)
+        self.ax.xaxis_date()
+        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%y"))
         self.figure.autofmt_xdate(rotation=15)
         self.canvas.draw()
 

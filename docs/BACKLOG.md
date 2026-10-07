@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 262 — Tarea 332 (HOME-GANANCIAS-SIN-DEPOSITOS) CERRADA 2026-10-07 — Home tiene «Ver sólo ganancias»: saca la plata puesta y grafica la ganancia total, la no realizada, la realizada y los dividendos** (`database/cartera_real.py` —`ganancias_diarias`, `calendario_del_cache`—, `ui/home_tab.py`, `ui/dashboard_charts.py` —`set_lineas`—, `tests/test_home_ganancias_t332.py` **nuevo**). **Display-only.** Suite Windows (Anaconda) **4454 passed, 1 skipped, 1 deselected** (+8), ruff limpio, sin estado vivo **4451 passed, 4 skipped**.
+  - **Contra la DB viva (copia, 2026-10-07):** 501 ruedas; la serie de valor **idéntica** a la de `valor_diario`; el último día, ganancia **+$28.221** = no realizada $24.658 + realizada **$3.281,93** (exactamente AAPL 782,17 + INTC 853,41 + KO 49,23 + META 1.597,12 de la 324) + dividendos $281, sobre $38.761 de costo abierto.
+  - **Lo que se dice en pantalla y no se esconde:** la app no registra depósitos de efectivo, así que «la plata puesta» es el costo FIFO de lo que sigue en cartera; y el cache de cierres arranca el **08/10/24** mientras la primera compra es del **21/02/24**, así que la curva de ganancia no arranca en cero. El subtítulo lo dice, y nombra los tickers sin calendario de dividendos en el cache si los hay.
+  - **De paso, dos defectos de la pantalla:** el subtítulo fijo decía *«no es valor de mercado»* debajo de un gráfico que desde la 305 **es** el valor de mercado; y el eje decía «01/01 00:00» sin año en una serie que cruza dos.
+  - **Mutación: cuatro, las cuatro rojas** (el ex-date con `<`, la realizada fuera del total, y el botón que vuelve a armar el resumen —probada dos veces: la primera variante caía por recursión y no por el assert—).
+  - **Deja la 331:** el docstring de `DividendCalendarCache` dice «sin ajustar por splits» y los datos están ajustados (NVDA 2024-03-05: $0,004).
+
 - **WIP 261 — Tarea 330 (CI-SEGFAULT-SIN-DIAGNOSTICO) CERRADA 2026-10-07 — el segfault intermitente del CI era un worker de alertas consultando la DB mientras el teardown de los tests la cerraba** (`dd2f21b`; `.github/workflows/ci.yml`, `ui/workers.py`, `tests/conftest.py`, `tests/test_ci_segfault_workers_t330.py` **nuevo**). Suite Windows (Anaconda) **4446 passed, 1 skipped, 1 deselected** (+2), ruff limpio, sin estado vivo **4443 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-07 19:41Z).
   - **El instrumento (`d57caae`):** ante un segfault, la anotación de los últimos 3500 caracteres era la lista de «Extension modules» de `faulthandler`. Ahora va una segunda anotación con el bloque del crash. En el rojo siguiente (`5e8f373`) dijo: hilo `AlertCheckWorker.do_work` → `check_alerts` → query, y el hilo principal en `conftest.py::_guard_real_db` → `engine.dispose()`.
   - **Por qué intermitente:** lo arrancaba el `QTimer` de 120 s de un `AlertsTab` que los tests de la 80 dejaban vivo, en cuanto otro test procesaba eventos. Verificado: siete widgets con timer activo al terminar los tests de la 80 y la 325; después del arreglo, ninguno.
@@ -2356,6 +2363,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07d** tras cerrar la **330** (el segfault del CI tenía causa: un worker de alertas contra la DB que el teardown cerraba), que **no deja tareas nuevas**. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**.
 
+> **Repriorizado 2026-10-07e** tras abrir y cerrar la **332** (pedido de Chapa: Home sin la plata puesta), que deja la **331** (un docstring que afirma lo contrario de los datos). El orden queda **326 → 331 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **331** va segunda: es chica y protege la 324 de que alguien «corrija» las cantidades de NVDA.
+
 
 
 
@@ -3793,6 +3802,18 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 332. ~~HOME-GANANCIAS-SIN-DEPOSITOS — Un botón en Home que oculte el capital puesto y grafique sólo la ganancia: realizada, no realizada y dividendos~~ · **CERRADA 2026-10-07 — «Ver sólo ganancias» en Home; los cuatro puntos del kill-criteria con su test** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-07, *«un botón que muestre u oculte los depósitos de dinero, para graficar sólo ganancias/pérdidas o valor de mercado… realizado, no realizado y dividendos»*) · severidad **MEDIA** · **display-only** (no toca decisiones de trading)
+
+- **Lo que se puede y lo que no.** La app **no registra depósitos de efectivo**: sólo compras y ventas. El «depósito» se infiere como el **costo, por FIFO, de las acciones que siguen en cartera** ese día. Así: `valor de mercado(t) = costo abierto(t) + no realizado(t)`, y la ganancia es `no realizado(t) + realizado acumulado(t) + dividendos cobrados acumulados(t)`.
+- **Convenciones (las de Portfolio, para que los dos lugares den lo mismo):** FIFO de `database.lotes`; el costo abierto **sin** la comisión de compra (como `avg_buy_price` y como Yahoo); la realizada **con** las dos comisiones; los dividendos por ex-date con la convención de la 222 (hay que tener la acción antes del ex-date). Home **sin red**: cierres de `parquet_cache` y calendario de `dividend_calendar_cache`; un ticker sin calendario en el cache se dice, no se cuenta en cero en silencio.
+- **Kill-criteria (fijado ANTES de codear).** (1) Cada día, `valor = costo abierto + no realizado`, y la serie de valor es **idéntica** a la de `valor_diario` (la de hoy). (2) El último día, la realizada es la suma de `libro_fifo(...).realizado` de todos los tickers, y los dividendos son la suma de `dividendos_cobrados` con el mismo calendario. (3) Un caso donde la versión correcta y la ingenua **difieren**: una venta mueve plata de no realizada a realizada sin cambiar la ganancia total ese día, y el valor de mercado sí cae. (4) El botón alterna los dos gráficos sin recalcular. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 331. DIVCAL-DOCSTRING-FALSO — El docstring de `DividendCalendarCache` dice que `amount` viene «sin ajustar por splits posteriores», y los datos están ajustados  ·  origen: la 332 (verificación contra la DB, 2026-10-07) · severidad **BAJA**
+
+- **La evidencia.** NVDA, ex-date 2024-03-05: `amount = 0.004`. Lo pagado entonces fue $0,04 por acción; $0,004 es el monto llevado al split 10:1 de junio. yfinance (`Ticker.dividends`) devuelve los montos ajustados.
+- **Por qué importa.** La 324 guarda las cantidades de NVDA ajustadas por el split, y eso es correcto **porque** los montos están ajustados. Quien lea el docstring y lo «corrija» des-ajustando las cantidades multiplica por 10 los dividendos de antes del split.
+- **Kill-criteria.** El docstring dice lo que muestran los datos, con este ejemplo; y un chequeo (en un test que no pegue a la red) de que la T220/VS SPY no dependía del supuesto contrario. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 330. ~~CI-SEGFAULT-SIN-DIAGNOSTICO — El CI del arreglo de la 325 (`6522c2e`) dio rojo por un **segfault** del proceso de pytest (exit 139), y la anotación no dice qué test se cayó~~ · **CERRADA 2026-10-07 — la anotación nueva lo nombró: un worker de alertas consultando la DB mientras el teardown la cerraba** (`d57caae`, `dd2f21b`) · **movida a *En curso* con el detalle**  ·  origen: el cierre de la 325 (2026-10-07) · severidad **MEDIA** (intermitente: el commit siguiente, con el mismo código, dio verde)
 
