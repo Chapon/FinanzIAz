@@ -152,3 +152,26 @@ def test_con_un_desplegable_abierto_cada_fila_es_SU_posicion(tab):
     assert tab.sell_btn.isEnabled()
     tab.table.setCurrentCell(3, 1)  # la cerrada: se analiza, no se vende
     assert not tab.sell_btn.isEnabled() and tab.analyze_btn.isEnabled()
+
+
+# ── Que se lea (captura de Chapa, 2026-10-07: columnas cortadas y filas tapadas) ─
+
+
+def test_ninguna_celda_ni_encabezado_queda_mas_ancho_que_su_columna():
+    """Medido con la fuente y el padding del tema: ``resizeColumnsToContents`` medía sin ellos."""
+    from PyQt6.QtGui import QFont, QFontMetrics
+
+    from ui import portfolio_detalle as pd
+    from ui.portfolio_detalle import DetallePosicion
+
+    d = DetallePosicion(_libro_intc(), 113.15, [("2026-08-07", 0.125, 13.569235, 1.70)])
+    f = QFont(pd._FAMILIA)
+    f.setPixelSize(pd._CELDA_PX)
+    fm = QFontMetrics(f)
+    for i in range(d.count()):
+        t = d.widget(i)
+        for c in range(t.columnCount()):
+            for r in range(t.rowCount()):
+                assert t.columnWidth(c) >= fm.horizontalAdvance(t.item(r, c).text()) + 2 * 14, (i, r, c)
+        # todas las filas entran: alto fijo ≥ encabezado + filas con su padding vertical
+        assert t.height() >= t.rowCount() * (fm.height() + 2 * 10)

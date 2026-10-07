@@ -12,11 +12,21 @@ from __future__ import annotations
 from datetime import date
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QFont, QFontMetrics
 from PyQt6.QtWidgets import QAbstractItemView, QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QTabWidget
 
 from ui.styles import PALETTE
 from ui.widgets import table_header, table_vheader
+
+# Lo que suma el estilo global de las tablas (ui/styles.py, QTableWidget::item y
+# QHeaderView::section): padding 10px 14px, encabezado de 11 px en negrita, en mayúsculas y con
+# 0,8 px entre letras. Más un margen, para que el texto no quede pegado al borde.
+_PAD_H = 2 * 14 + 12
+_PAD_V = 2 * 10 + 4
+_HEADER_PX = 11
+_CELDA_PX = 13  # `QWidget { font-size: 13px }` del tema; la tabla recién creada todavía no lo tiene
+_FAMILIA = "Segoe UI"
+_LETTER_SPACING = 1
 
 COLS_LOTES = [
     "Fecha",
@@ -117,11 +127,33 @@ def _tabla(columnas: list[str], filas: list[list], colores: list[list] | None = 
             if color:
                 it.setForeground(QColor(color))
             t.setItem(r, c, it)
-    t.resizeColumnsToContents()
-    table_header(t).setStretchLastSection(True)
-    table_header(t).setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-    alto = table_header(t).height() + sum(t.rowHeight(r) for r in range(t.rowCount())) + 6
-    t.setFixedHeight(max(alto, 60))
+    # Anchos y altos a mano, con el padding del estilo global incluido. ``resizeColumnsToContents``
+    # mide acá, antes de que la tabla tome el stylesheet de la app (padding 10px 14px por celda y
+    # encabezado, encabezados en mayúscula), así que dejaba cada columna 28 px corta y la tabla
+    # 20 px baja por fila: no se leía nada (captura de Chapa, 2026-10-07).
+    f_celda = QFont(_FAMILIA)
+    f_celda.setPixelSize(_CELDA_PX)
+    fm_celda = QFontMetrics(f_celda)
+    f_header = QFont(_FAMILIA)
+    f_header.setPixelSize(_HEADER_PX)
+    f_header.setBold(True)
+    fm_header = QFontMetrics(f_header)
+    hdr = table_header(t)
+    hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    for c, nombre in enumerate(columnas):
+        ancho_header = fm_header.horizontalAdvance(nombre.upper()) + _LETTER_SPACING * len(nombre)
+        ancho_celdas = max((fm_celda.horizontalAdvance(str(f[c])) for f in filas), default=0)
+        t.setColumnWidth(c, max(ancho_header, ancho_celdas) + _PAD_H)
+    # Sólo se estira la nota: estirar un número lo manda al otro extremo de la pantalla.
+    hdr.setStretchLastSection(columnas[-1] == "Nota")
+    alto_fila = fm_celda.height() + _PAD_V
+    alto_header = fm_header.height() + _PAD_V
+    vh = table_vheader(t)
+    vh.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+    vh.setDefaultSectionSize(alto_fila)
+    hdr.setFixedHeight(alto_header)
+    t.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    t.setFixedHeight(alto_header + alto_fila * len(filas) + 4)
     return t
 
 
@@ -208,7 +240,12 @@ class DetallePosicion(QTabWidget):
                 _tabla(
                     COLS_DIV,
                     [
-                        [ex, f"${m:,.4f}", f"{q:,.4g}", _dinero(c)]
+                        [
+                            date.fromisoformat(ex[:10]).strftime("%d/%m/%Y"),
+                            f"${m:,.4f}",
+                            f"{q:,.4g}",
+                            _dinero(c),
+                        ]
                         for ex, m, q, c in sorted(dividendos, reverse=True)
                     ],
                 ),
