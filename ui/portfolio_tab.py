@@ -50,6 +50,32 @@ _SIGNAL_LABELS = {
 }
 
 
+# Tarea 325: la columna 0 es la flecha del desplegable; el ticker queda limpio en la 1, porque el
+# tooltip lee el ticker del texto de la celda.
+_COLUMNAS = [
+    "",
+    "Ticker",
+    "Estado",
+    "Empresa",
+    "Cant.",
+    "P. Compra",
+    "P. Actual",
+    "Var. Hoy",
+    "Invertido",
+    "Valor",
+    "Ganancia Precio",
+    "Dividendos",
+    "Realizada",
+    "Ganancia Total",
+    "G/P %",
+    "Rend. Total",
+    "Señal Técnica",
+]
+_COL_TICKER = _COLUMNAS.index("Ticker")
+_COL_EMPRESA = _COLUMNAS.index("Empresa")
+_COL_SENAL = _COLUMNAS.index("Señal Técnica")
+
+
 def totales_cartera(positions, prices: dict, dividends: dict, show_dividends: bool) -> dict:
     """Las cuentas de las tarjetas de Portfolio (tarea 281). Pura, para poder testearla.
 
@@ -94,6 +120,7 @@ class DividendWorker(BaseWorker):
     """Background thread to fetch cumulative dividends per position."""
 
     dividends_ready = pyqtSignal(dict)  # {ticker: efectivo cobrado} — tarea 281
+    detalle_ready = pyqtSignal(dict)  # {ticker: dividendos_detalle} — tarea 325
 
     def __init__(self, lotes: dict):
         super().__init__()
@@ -105,13 +132,17 @@ class DividendWorker(BaseWorker):
         Antes era el dividendo por acción desde UNA fecha por la cantidad ACTUAL, que en una
         posición comprada en tramos contaba dividendos de acciones que todavía no se tenían.
         """
-        from database.cartera_real import dividendos_cobrados
+        from database.cartera_real import dividendos_cobrados, dividendos_detalle
 
         calendario = get_bulk_dividend_calendar(sorted(self.lotes))
-        return {t: dividendos_cobrados(ev, calendario.get(t, [])) for t, ev in self.lotes.items()}
+        return {
+            "totales": {t: dividendos_cobrados(ev, calendario.get(t, [])) for t, ev in self.lotes.items()},
+            "detalle": {t: dividendos_detalle(ev, calendario.get(t, [])) for t, ev in self.lotes.items()},
+        }
 
     def on_success(self, result: dict) -> None:
-        self.dividends_ready.emit(result)
+        self.detalle_ready.emit(result["detalle"])
+        self.dividends_ready.emit(result["totales"])
 
 
 class SignalWorker(BaseWorker):
@@ -189,7 +220,12 @@ class PortfolioTab(QWidget):
         super().__init__(parent)
         self._portfolios = []
         self._current_portfolio_id = None
-        self._positions = []
+        self._positions = []  # las ABIERTAS: las que suman las tarjetas
+        self._cerradas = []  # tarea 325: vendidas enteras, rotuladas «Cerrada» y fuera de los totales
+        self._libros = {}  # {ticker: LibroTicker} — el FIFO de sus transacciones (tarea 324)
+        self._div_detalle = None  # {ticker: dividendos_detalle}; None mientras se calcula
+        self._expandidos: set[str] = set()  # tickers con el desplegable abierto
+        self._filas: list[tuple[str, object]] = []  # por fila de la tabla: ("pos"|"detalle", Position)
         self._prices = {}
         self._dividends = {}  # {ticker: efectivo cobrado} — tarea 281
         self._signals = {}  # {ticker: yahoo_level_str}
@@ -335,26 +371,9 @@ class PortfolioTab(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(14)
-        self.table.setHorizontalHeaderLabels(
-            [
-                "Ticker",
-                "Empresa",
-                "Cant.",
-                "P. Compra",
-                "P. Actual",
-                "Var. Hoy",
-                "Invertido",
-                "Valor",
-                "Ganancia Precio",
-                "Dividendos",
-                "Ganancia Total",
-                "G/P %",
-                "Rend. Total",
-                "Señal Técnica",
-            ]
-        )
-        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(len(_COLUMNAS))
+        self.table.setHorizontalHeaderLabels(_COLUMNAS)
+        table_header(self.table).setSectionResizeMode(_COL_EMPRESA, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -364,8 +383,10 @@ class PortfolioTab(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.doubleClicked.connect(self._on_row_double_clicked)
-        # Tooltip on hover over the Ticker column (col 0)
-        install_ticker_tooltips(self.table, 0)
+        # Tarea 325: la flecha de la columna 0 abre y cierra el desplegable del ticker.
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        # Tooltip on hover over the Ticker column
+        install_ticker_tooltips(self.table, _COL_TICKER)
         root.addWidget(self.table, stretch=1)
 
         # ── Bottom bar ─────────────────────────────────────────────────────
@@ -418,14 +439,37 @@ class PortfolioTab(QWidget):
                 .order_by(Position.ticker)
                 .all()
             )
+            # Tarea 325: las cerradas se muestran aparte, rotuladas, y no suman a las tarjetas.
+            self._cerradas = (
+                session.query(Position)
+                .filter(Position.portfolio_id == self._current_portfolio_id)
+                .filter(Position.quantity <= 0)
+                .order_by(Position.ticker)
+                .all()
+            )
+            self._libros = self._armar_libros(session, self._positions + self._cerradas)
             session.expunge_all()
 
+        self._div_detalle = None
         self._signals = {}
         self._render_table()
         if self._positions:
             self._fetch_prices()
             self._fetch_dividends()
             self._fetch_signals()
+
+    @staticmethod
+    def _armar_libros(session, posiciones) -> dict:
+        """``{ticker: LibroTicker}``: el FIFO de las transacciones de cada posición (tarea 324)."""
+        from database.cartera_real import movimientos_de
+        from database.lotes import libro_fifo
+
+        ids = {p.id: p.ticker for p in posiciones}
+        txs: dict[int, list] = {i: [] for i in ids}
+        if ids:
+            for t in session.query(Transaction).filter(Transaction.position_id.in_(list(ids))).all():
+                txs[t.position_id].append(t)
+        return {ids[i]: libro_fifo(movimientos_de(ts)) for i, ts in txs.items()}
 
     def _fetch_prices(self):
         tickers = [p.ticker for p in self._positions]
@@ -441,11 +485,12 @@ class PortfolioTab(QWidget):
 
     def _fetch_dividends(self):
         """Fetch dividends in background — uses purchase date per position."""
-        if not self._positions:
+        if not self._positions and not self._cerradas:
             return
         if self._div_worker and self._div_worker.isRunning():
             return
         self._div_worker = DividendWorker(self._lotes())
+        self._div_worker.detalle_ready.connect(self._on_div_detalle_ready)
         self._div_worker.dividends_ready.connect(self._on_dividends_ready)
         self._div_worker.start()
 
@@ -453,8 +498,8 @@ class PortfolioTab(QWidget):
         """``{ticker: [(día, acciones con signo)]}`` desde las transacciones (tarea 281)."""
         from paper_trading.dividends import dia
 
-        por_id = {p.id: p for p in self._positions}
-        lotes: dict = {p.ticker: [] for p in self._positions}
+        por_id = {p.id: p for p in self._positions + self._cerradas}
+        lotes: dict = {p.ticker: [] for p in por_id.values()}
         with session_scope() as session:
             for t in session.query(Transaction).filter(Transaction.position_id.in_(list(por_id))).all():
                 pos = por_id[t.position_id]
@@ -480,6 +525,9 @@ class PortfolioTab(QWidget):
         self._signals = signals
         self._render_table()
 
+    def _on_div_detalle_ready(self, detalle: dict):
+        self._div_detalle = detalle  # lo pinta el render que dispara _on_dividends_ready
+
     def _on_dividends_ready(self, dividends: dict):
         self._dividends = dividends
         self._render_table()
@@ -498,116 +546,162 @@ class PortfolioTab(QWidget):
     # ── Render ─────────────────────────────────────────────────────────────
 
     def _render_table(self):
+        self.table.clearSpans()
         self.table.setRowCount(0)
-        self.table.setRowCount(len(self._positions))
+        self._filas = []
+        for pos in self._positions + self._cerradas:
+            self._filas.append(("pos", pos))
+            if pos.ticker in self._expandidos:
+                self._filas.append(("detalle", pos))
+        self.table.setRowCount(len(self._filas))
 
-        for row, pos in enumerate(self._positions):
-            d = self._prices.get(pos.ticker)
-            current_price = d["price"] if d else None
-            change_pct = d.get("change_pct") if d else None
-
-            invested = pos.quantity * pos.avg_buy_price
-            current_val = (pos.quantity * current_price) if current_price else None
-            pl_price = (current_val - invested) if current_val is not None else None
-
-            # Dividends
-            div_total = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
-
-            # Total P&L = price gain + dividends
-            pl_total = ((pl_price or 0.0) + div_total) if pl_price is not None else None
-            pl_pct = ((pl_price / invested) * 100) if (pl_price is not None and invested > 0) else None
-            pl_pct_div = (
-                (((pl_price or 0) + div_total) / invested * 100)
-                if invested > 0 and pl_price is not None
-                else None
-            )
-
-            def cell(text, right=False, bold=False):
-                item = QTableWidgetItem(str(text))
-                align = Qt.AlignmentFlag.AlignRight if right else Qt.AlignmentFlag.AlignLeft
-                item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
-                if bold:
-                    f = item.font()
-                    f.setBold(True)
-                    item.setFont(f)
-                return item
-
-            ticker_item = cell(pos.ticker, bold=True)
-            apply_ticker_tooltip(ticker_item, pos.ticker)
-            self.table.setItem(row, 0, ticker_item)
-            self.table.setItem(row, 1, cell(pos.company_name or pos.ticker))
-            self.table.setItem(row, 2, cell(f"{pos.quantity:.1f}", right=True))
-            self.table.setItem(row, 3, cell(f"${pos.avg_buy_price:,.1f}", right=True))
-            self.table.setItem(row, 4, cell(f"${current_price:,.1f}" if current_price else "—", right=True))
-
-            # Daily change
-            chg_item = cell(f"{change_pct:+.2f}%" if change_pct is not None else "—", right=True)
-            if change_pct is not None:
-                chg_item.setForeground(QColor(PALETTE["positive"] if change_pct >= 0 else PALETTE["red"]))
-            self.table.setItem(row, 5, chg_item)
-
-            self.table.setItem(row, 6, cell(f"${invested:,.2f}", right=True))
-            self.table.setItem(row, 7, cell(f"${current_val:,.2f}" if current_val else "—", right=True))
-
-            # P&L Precio
-            pl_p_item = cell(f"${pl_price:,.2f}" if pl_price is not None else "—", right=True, bold=True)
-            if pl_price is not None:
-                pl_p_item.setForeground(QColor(PALETTE["positive"] if pl_price >= 0 else PALETTE["red"]))
-            self.table.setItem(row, 8, pl_p_item)
-
-            # Dividendos cobrados
-            div_item = cell(f"${div_total:,.2f}" if div_total else "—", right=True)
-            if div_total:
-                div_item.setForeground(QColor(PALETTE["positive"]))
-            self.table.setItem(row, 9, div_item)
-
-            # P&L Total (precio + dividendos)
-            pl_t_item = cell(f"${pl_total:,.2f}" if pl_total is not None else "—", right=True, bold=True)
-            if pl_total is not None:
-                pl_t_item.setForeground(QColor(PALETTE["positive"] if pl_total >= 0 else PALETTE["red"]))
-            self.table.setItem(row, 10, pl_t_item)
-
-            # P&L % (solo precio)
-            pct_item = cell(f"{pl_pct:+.2f}%" if pl_pct is not None else "—", right=True)
-            if pl_pct is not None:
-                pct_item.setForeground(QColor(PALETTE["positive"] if pl_pct >= 0 else PALETTE["red"]))
-            self.table.setItem(row, 11, pct_item)
-
-            # Rendimiento total c/dividendos
-            pct_div_item = cell(
-                f"{pl_pct_div:+.2f}%" if pl_pct_div is not None else "—", right=True, bold=True
-            )
-            if pl_pct_div is not None:
-                pct_div_item.setForeground(QColor(PALETTE["positive"] if pl_pct_div >= 0 else PALETTE["red"]))
-            self.table.setItem(row, 12, pct_div_item)
-
-            # Señal técnica — colored badge cell
-            yahoo_level = self._signals.get(pos.ticker)
-            sig_widget = QLabel()
-            sig_widget.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-            if yahoo_level:
-                color = SIGNAL_COLORS.get(yahoo_level, PALETTE["text3"])
-                label = _SIGNAL_LABELS.get(yahoo_level, yahoo_level)
-                sig_widget.setText(f"● {label}")
-                sig_widget.setStyleSheet(
-                    f"color: {color}; font-weight: 700; font-size: 11px; "
-                    f"background-color: {color}18; border-radius: 5px; "
-                    f"padding: 2px 8px;"
-                )
-                sig_widget.setToolTip(
-                    f"<b>Señal Técnica: {label}</b><br>"
-                    "Basada en RSI, MACD, Bandas de Bollinger y SMA50/200.<br>"
-                    "Hacé doble clic para ver el análisis completo."
-                )
+        for row, (tipo, pos) in enumerate(self._filas):
+            if tipo == "detalle":
+                self._render_detalle(row, pos)
+            elif pos.quantity > 0:
+                self._render_abierta(row, pos)
             else:
-                sig_widget.setText("Calculando…")
-                sig_widget.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
-            self.table.setCellWidget(row, 13, sig_widget)
-
-            self.table.setRowHeight(row, 48)
+                self._render_cerrada(row, pos)
 
         self.table.resizeColumnsToContents()
-        table_header(self.table).setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_header(self.table).setSectionResizeMode(_COL_EMPRESA, QHeaderView.ResizeMode.Stretch)
+
+    @staticmethod
+    def _cell(text, right=False, bold=False, color=None):
+        item = QTableWidgetItem(str(text))
+        align = Qt.AlignmentFlag.AlignRight if right else Qt.AlignmentFlag.AlignLeft
+        item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+        if bold:
+            f = item.font()
+            f.setBold(True)
+            item.setFont(f)
+        if color:
+            item.setForeground(QColor(color))
+        return item
+
+    @staticmethod
+    def _color(x):
+        return None if x is None else (PALETTE["positive"] if x >= 0 else PALETTE["red"])
+
+    def _render_comunes(self, row: int, pos, estado: str, color_estado: str):
+        """Flecha, ticker, estado, empresa y realizada: lo que tienen abiertas y cerradas."""
+        cell = self._cell
+        flecha = cell("▾" if pos.ticker in self._expandidos else "▸", color=PALETTE["text3"])
+        flecha.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        flecha.setToolTip("Ver lotes, transacciones y dividendos")
+        self.table.setItem(row, 0, flecha)
+        ticker_item = cell(pos.ticker, bold=True)
+        apply_ticker_tooltip(ticker_item, pos.ticker)
+        self.table.setItem(row, _COL_TICKER, ticker_item)
+        self.table.setItem(row, 2, cell(estado, color=color_estado))
+        self.table.setItem(row, _COL_EMPRESA, cell(pos.company_name or pos.ticker))
+        libro = self._libros.get(pos.ticker)
+        realizada = libro.realizado if libro and any(f.mov.tipo == "SELL" for f in libro.filas) else None
+        texto = f"{'+' if realizada >= 0 else ''}${realizada:,.2f}" if realizada is not None else "—"
+        self.table.setItem(row, 12, cell(texto, right=True, color=self._color(realizada)))
+
+    def _render_abierta(self, row: int, pos):
+        cell = self._cell
+        d = self._prices.get(pos.ticker)
+        current_price = d["price"] if d else None
+        change_pct = d.get("change_pct") if d else None
+
+        invested = pos.quantity * pos.avg_buy_price
+        current_val = (pos.quantity * current_price) if current_price else None
+        pl_price = (current_val - invested) if current_val is not None else None
+
+        # Dividends
+        div_total = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
+
+        # Total P&L = price gain + dividends
+        pl_total = ((pl_price or 0.0) + div_total) if pl_price is not None else None
+        pl_pct = ((pl_price / invested) * 100) if (pl_price is not None and invested > 0) else None
+        pl_pct_div = (
+            (((pl_price or 0) + div_total) / invested * 100)
+            if invested > 0 and pl_price is not None
+            else None
+        )
+
+        def dinero(x, signo=False):
+            return "—" if x is None else f"{'+' if signo and x >= 0 else ''}${x:,.2f}"
+
+        def pct(x):
+            return "—" if x is None else f"{x:+.2f}%"
+
+        self._render_comunes(row, pos, "Abierta", PALETTE["text2"])
+        self.table.setItem(row, 4, cell(f"{pos.quantity:,.4g}", right=True))
+        self.table.setItem(row, 5, cell(f"${pos.avg_buy_price:,.2f}", right=True))
+        self.table.setItem(row, 6, cell(dinero(current_price), right=True))
+        self.table.setItem(row, 7, cell(pct(change_pct), right=True, color=self._color(change_pct)))
+        self.table.setItem(row, 8, cell(dinero(invested), right=True))
+        self.table.setItem(row, 9, cell(dinero(current_val), right=True))
+        self.table.setItem(
+            row, 10, cell(dinero(pl_price), right=True, bold=True, color=self._color(pl_price))
+        )
+        div_color = PALETTE["positive"] if div_total else None
+        self.table.setItem(
+            row, 11, cell(dinero(div_total) if div_total else "—", right=True, color=div_color)
+        )
+        self.table.setItem(
+            row, 13, cell(dinero(pl_total), right=True, bold=True, color=self._color(pl_total))
+        )
+        self.table.setItem(row, 14, cell(pct(pl_pct), right=True, color=self._color(pl_pct)))
+        self.table.setItem(
+            row, 15, cell(pct(pl_pct_div), right=True, bold=True, color=self._color(pl_pct_div))
+        )
+
+        # Señal técnica — colored badge cell
+        yahoo_level = self._signals.get(pos.ticker)
+        sig_widget = QLabel()
+        sig_widget.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        if yahoo_level:
+            color = SIGNAL_COLORS.get(yahoo_level, PALETTE["text3"])
+            label = _SIGNAL_LABELS.get(yahoo_level, yahoo_level)
+            sig_widget.setText(f"● {label}")
+            sig_widget.setStyleSheet(
+                f"color: {color}; font-weight: 700; font-size: 11px; "
+                f"background-color: {color}18; border-radius: 5px; "
+                f"padding: 2px 8px;"
+            )
+            sig_widget.setToolTip(
+                f"<b>Señal Técnica: {label}</b><br>"
+                "Basada en RSI, MACD, Bandas de Bollinger y SMA50/200.<br>"
+                "Hacé doble clic para ver el análisis completo."
+            )
+        else:
+            sig_widget.setText("Calculando…")
+            sig_widget.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 11px;")
+        self.table.setCellWidget(row, _COL_SENAL, sig_widget)
+
+        self.table.setRowHeight(row, 48)
+
+    def _render_cerrada(self, row: int, pos):
+        """Tarea 325: vendida entera. Sin valor ni ganancia de precio; sí su realizada y dividendos."""
+        cell = self._cell
+        gris = PALETTE["text3"]
+        self._render_comunes(row, pos, "Cerrada", gris)
+        div_total = self._dividends.get(pos.ticker, 0.0) if self._show_dividends else 0.0
+        self.table.setItem(row, 4, cell("0", right=True, color=gris))
+        for col in (5, 6, 7, 8, 9, 10, 13, 14, 15):
+            self.table.setItem(row, col, cell("—", right=True, color=gris))
+        texto = f"${div_total:,.2f}" if div_total else "—"
+        self.table.setItem(row, 11, cell(texto, right=True, color=PALETTE["positive"] if div_total else gris))
+        self.table.setItem(row, _COL_SENAL, cell(""))
+        self.table.setRowHeight(row, 40)
+
+    def _render_detalle(self, row: int, pos):
+        from database.lotes import LibroTicker
+        from ui.portfolio_detalle import DetallePosicion
+
+        d = self._prices.get(pos.ticker)
+        detalle = DetallePosicion(
+            self._libros.get(pos.ticker) or LibroTicker([], []),
+            d["price"] if d else None,
+            None if self._div_detalle is None else self._div_detalle.get(pos.ticker, []),
+        )
+        self.table.setSpan(row, 0, 1, self.table.columnCount())
+        self.table.setCellWidget(row, 0, detalle)
+        self.table.setRowHeight(row, detalle.alto_sugerido())
 
     def _update_cards(self):
         t = totales_cartera(self._positions, self._prices, self._dividends, self._show_dividends)
@@ -737,34 +831,53 @@ class PortfolioTab(QWidget):
                     session.delete(p)
             self._load_portfolios()
 
+    def _pos_en(self, row: int):
+        """La posición de la fila ``row``, o ``None`` si es un desplegable o no existe (tarea 325).
+
+        Con los desplegables y las cerradas, la fila de la tabla ya no es el índice en
+        ``self._positions``: indexar así abría el análisis o la venta de otro ticker.
+        """
+        if 0 <= row < len(self._filas) and self._filas[row][0] == "pos":
+            return self._filas[row][1]
+        return None
+
+    def _abierta_en(self, row: int):
+        pos = self._pos_en(row)
+        return pos if pos is not None and pos.quantity > 0 else None
+
+    def _on_cell_clicked(self, row: int, col: int):
+        pos = self._pos_en(row)
+        if col == 0 and pos is not None:
+            self._expandidos.symmetric_difference_update({pos.ticker})
+            self._render_table()
+
     def _sell_position(self):
-        row = self.table.currentRow()
-        if 0 <= row < len(self._positions) and SellPositionDialog(self._positions[row], self).exec():
+        pos = self._abierta_en(self.table.currentRow())
+        if pos is not None and SellPositionDialog(pos, self).exec():
             self._refresh_positions()
 
     def _analyze_selected(self):
-        row = self.table.currentRow()
-        if 0 <= row < len(self._positions):
-            self.position_selected.emit(self._positions[row])
+        pos = self._pos_en(self.table.currentRow())
+        if pos is not None:
+            self.position_selected.emit(pos)
 
     def _on_row_selected(self):
         row = self.table.currentRow()
-        has = 0 <= row < len(self._positions)
-        self.sell_btn.setEnabled(has)
-        self.analyze_btn.setEnabled(has)
+        self.sell_btn.setEnabled(self._abierta_en(row) is not None)
+        self.analyze_btn.setEnabled(self._pos_en(row) is not None)
 
     def _on_row_double_clicked(self, index):
-        row = index.row()
-        if 0 <= row < len(self._positions):
-            self.position_selected.emit(self._positions[row])
+        pos = self._pos_en(index.row())
+        if pos is not None:
+            self.position_selected.emit(pos)
 
     def _show_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
 
         row = self.table.rowAt(pos.y())
-        if row < 0 or row >= len(self._positions):
+        position = self._pos_en(row)
+        if position is None:
             return
-        position = self._positions[row]
 
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -776,7 +889,13 @@ class PortfolioTab(QWidget):
         )
 
         menu.addAction("📈  Analizar", lambda: self.position_selected.emit(position))
-        menu.addAction("💰  Vender", lambda: self._sell_pos_at_row(row))
+        abierto = position.ticker in self._expandidos
+        menu.addAction(
+            "▴  Ocultar lotes y transacciones" if abierto else "▾  Ver lotes y transacciones",
+            lambda: self._on_cell_clicked(row, 0),
+        )
+        if position.quantity > 0:
+            menu.addAction("💰  Vender", lambda: self._sell_pos_at_row(row))
         menu.addAction("✏️  Editar ticker…", lambda: self._edit_ticker_at_row(row))
         menu.addSeparator()
 
@@ -795,20 +914,20 @@ class PortfolioTab(QWidget):
         menu.exec(self.table.mapToGlobal(pos))
 
     def _sell_pos_at_row(self, row: int):
-        if SellPositionDialog(self._positions[row], self).exec():
+        pos = self._abierta_en(row)
+        if pos is not None and SellPositionDialog(pos, self).exec():
             self._refresh_positions()
 
     def _edit_ticker_at_row(self, row: int):
         """Renombra el símbolo de una posición (manteniendo cantidad, precio y transacciones)."""
-        if row < 0 or row >= len(self._positions):
-            return
-        if EditTickerDialog(self._positions[row], self).exec():
+        pos = self._pos_en(row)
+        if pos is not None and EditTickerDialog(pos, self).exec():
             self._refresh_positions()
 
     def _delete_pos_at_row(self, row: int):
-        if row < 0 or row >= len(self._positions):
+        pos = self._pos_en(row)
+        if pos is None:
             return
-        pos = self._positions[row]
 
         # Count transactions to surface what cascades on delete.
         from database.models import Transaction as TxModel

@@ -21,6 +21,14 @@ formato genérico, donde no hay otra columna de fecha.
 Formatos: ``YYYYMMDD`` (el de Yahoo), ``YYYY-MM-DD`` y ``DD/MM/YYYY``. Una fecha con barras en la
 que día y mes son los dos ≤ 12 es **ambigua** (``03/04/2026``: ¿3 de abril o 4 de marzo?) y no se
 adivina: queda sin fecha y se avisa. Una fecha futura, igual.
+
+Compras y ventas (tarea 324)
+----------------------------
+El export de una cartera de Yahoo trae ``Transaction Type`` (``BUY``/``SELL``), y hasta la 324
+se ignoraba: **cada venta entraba como una compra**. Ahora va en ``ImportRow.tipo``. Y en un
+archivo con esa columna, una fila sin cantidad es un ticker de la cartera **sin lotes** (TSLA
+en el CSV de Chapa), no una watchlist: se omite, en vez de inventarle una compra de 1 acción
+al precio actual.
 """
 
 import contextlib
@@ -41,6 +49,7 @@ class ImportRow:
     is_watchlist: bool = False  # True when imported from a watchlist (qty was 0)
     raw: dict = field(default_factory=dict)
     trade_date: date | None = None  # la fecha de compra del CSV; None = no vino o no se pudo leer
+    tipo: str = "BUY"  # "BUY" | "SELL" — tarea 324
 
 
 @dataclass
@@ -79,6 +88,8 @@ _TRADE_DATE_ALIASES = {
     "fecha de operacion",
     "fecha de operación",
 }
+_TIPO_ALIASES = {"transaction type", "type", "tipo", "operacion", "operación", "side"}
+_TIPOS = {"BUY": "BUY", "SELL": "SELL", "COMPRA": "BUY", "VENTA": "SELL"}
 # Sólo en el formato genérico: en el de Yahoo, `Date` es la fecha de la cotización.
 _GENERIC_DATE_ALIASES = {"date", "fecha"}
 
@@ -164,6 +175,14 @@ def parse_csv(content: str) -> ImportResult:
     col_date = _find_col(headers, _TRADE_DATE_ALIASES) or (
         None if is_yahoo else _find_col(headers, _GENERIC_DATE_ALIASES)
     )
+    filas = list(reader)
+    col_tipo = _find_col(headers, _TIPO_ALIASES)
+    # Una watchlist de Yahoo puede traer la columna vacía en todas las filas: ahí sigue el modo
+    # watchlist. Sólo un archivo con alguna operación cargada es una cartera con historia.
+    if col_tipo and not any(
+        (v or "").strip() for r in filas for k, v in r.items() if k and k.strip() == col_tipo
+    ):
+        col_tipo = None
     sin_fecha = 0
 
     if not col_ticker:
@@ -174,7 +193,7 @@ def parse_csv(content: str) -> ImportResult:
             "Se usará 0.00 — podés editarlo después en cada posición."
         )
 
-    for line_num, row in enumerate(reader, start=2):
+    for line_num, row in enumerate(filas, start=2):
         raw = {k.strip(): v.strip() for k, v in row.items() if k}
 
         ticker = raw.get(col_ticker, "").strip().upper()
@@ -203,11 +222,33 @@ def parse_csv(content: str) -> ImportResult:
             except ValueError:
                 warnings.append(f"Línea {line_num}: precio inválido '{price_str}', se usará 0.00.")
 
+        tipo = "BUY"
+        if col_tipo:
+            crudo = raw.get(col_tipo, "").strip().upper()
+            if not crudo and qty <= 0:
+                skipped.append({"line": line_num, "reason": f"{ticker} sin lotes en la cartera", "raw": raw})
+                continue
+            if crudo not in _TIPOS:
+                skipped.append(
+                    {"line": line_num, "reason": f"Tipo de operación desconocido '{crudo}'", "raw": raw}
+                )
+                continue
+            tipo = _TIPOS[crudo]
+            if qty <= 0 or price <= 0:
+                skipped.append(
+                    {
+                        "line": line_num,
+                        "reason": f"{ticker}: cantidad o precio inválido en una operación",
+                        "raw": raw,
+                    }
+                )
+                continue
+
         # ── Watchlist mode ────────────────────────────────────────────────────
         # When qty=0 and purchase_price=0 but current_price is available,
         # treat as a watchlist entry: qty=1, price=current_price.
         is_watchlist = False
-        if qty <= 0 or price <= 0:
+        if (qty <= 0 or price <= 0) and not col_tipo:
             current_price_val = 0.0
             if col_current:
                 cp_str = raw.get(col_current, "").replace(",", "").replace("$", "").strip()
@@ -254,6 +295,7 @@ def parse_csv(content: str) -> ImportResult:
                 is_watchlist=is_watchlist,
                 raw=raw,
                 trade_date=trade_date,
+                tipo=tipo,
             )
         )
 

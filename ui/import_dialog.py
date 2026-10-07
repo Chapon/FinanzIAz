@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 
 from data.csv_importer import ImportResult, ImportRow, parse_csv_file
 from data.yahoo_finance import get_company_info
-from database.models import Position, Transaction, session_scope, utcnow_naive
+from database.models import session_scope, utcnow_naive
 from ui.ticker_tooltip import apply_ticker_tooltip, install_ticker_tooltips, ticker_cache
 from ui.widgets import table_header, table_vheader
 from ui.workers import BaseWorker
@@ -370,6 +370,8 @@ class ImportDialog(QDialog):
                     "sector": self._company_sectors.get(r, ""),
                     "is_watchlist": getattr(orig, "is_watchlist", False),
                     "trade_date": getattr(orig, "trade_date", None),
+                    "tipo": getattr(orig, "tipo", "BUY"),
+                    "notes": getattr(orig, "notes", ""),
                 }
             )
 
@@ -413,72 +415,46 @@ class ImportDialog(QDialog):
 
         Returns ``(n_imported, n_merged)``. Runs inside the caller's
         ``session_scope`` so commit/rollback are handled automatically.
+
+        Tarea 324: pasa por el libro de lotes (``database.lotes``). Una fila ``SELL`` entra como
+        **venta** —antes cada venta del CSV se guardaba como compra—, el par «Stock Split» de
+        Yahoo se convierte en un split, y cada posición se recalcula por FIFO desde todas sus
+        transacciones. Un ticker cuyo libro no cierra (vende más de lo que tiene) frena todo.
         """
-        from datetime import datetime, time
+        from database.cartera_real import guardar_armadas
+        from database.lotes import Movimiento, armar_posiciones
 
-        imported = 0
-        merged = 0
+        hoy = utcnow_naive().date()  # tarea 308: sin fecha en el CSV, la de hoy (el parser avisa)
+        movs: dict[str, list] = {}
+        info: dict[str, tuple] = {}
         for item in rows_to_import:
-            # Tarea 308: la fecha de compra del CSV, si vino; si no, la de hoy (el parser avisa).
-            fecha = (
-                datetime.combine(item["trade_date"], time())
-                if item.get("trade_date") is not None
-                else utcnow_naive()
-            )
-            existing = (
-                session.query(Position)
-                .filter(Position.portfolio_id == self.portfolio_id)
-                .filter(Position.ticker == item["ticker"])
-                .first()
-            )
-            if existing:
-                # Tarea 277: una posición cerrada (cantidad 0) arranca un lote nuevo.
-                from database.cartera_real import reabrir_si_cerrada
-
-                reabrir_si_cerrada(existing, fecha)
-                if existing.purchase_date is None or fecha < existing.purchase_date:
-                    existing.purchase_date = fecha
-                # Merge: recalculate avg price
-                total_qty = existing.quantity + item["quantity"]
-                avg = (
-                    (existing.avg_buy_price * existing.quantity) + (item["price"] * item["quantity"])
-                ) / total_qty
-                existing.quantity = total_qty
-                existing.avg_buy_price = avg
-                existing.updated_at = utcnow_naive()
-                pos = existing
-                merged += 1
-            else:
-                note = "Watchlist — precio referencia" if item.get("is_watchlist") else "Importado desde CSV"
-                pos = Position(
-                    portfolio_id=self.portfolio_id,
-                    ticker=item["ticker"],
-                    company_name=item["company_name"],
-                    quantity=item["quantity"],
-                    avg_buy_price=item["price"],
-                    sector=item["sector"],
-                    notes=note,
-                    purchase_date=fecha,
+            movs.setdefault(item["ticker"], []).append(
+                Movimiento(
+                    fecha=item.get("trade_date") or hoy,
+                    tipo=item.get("tipo", "BUY"),
+                    cantidad=item["quantity"],
+                    precio=item["price"],
+                    comision=item["fee"],
+                    # La nota del CSV va primero: «Stock Split» es lo que reconoce el par del split.
+                    nota=" · ".join(
+                        x
+                        for x in (
+                            item.get("notes", ""),
+                            "Watchlist — precio referencia"
+                            if item.get("is_watchlist")
+                            else "Importado desde CSV",
+                        )
+                        if x
+                    ),
                 )
-                session.add(pos)
-                imported += 1
-
-            session.flush()
-
-            tx = Transaction(
-                position_id=pos.id,
-                transaction_type="BUY",
-                quantity=item["quantity"],
-                price=item["price"],
-                fees=item["fee"],
-                date=fecha,
-                notes="Importado desde CSV",
             )
-            session.add(tx)
-        return imported, merged
-
-
-# ── Drag & Drop Zone ────────────────────────────────────────────────────────
+            info.setdefault(item["ticker"], (item["company_name"], item["sector"]))
+        armadas = armar_posiciones(movs)
+        malas = {a.ticker: a.libro.error for a in armadas if a.libro.error}
+        if malas:
+            raise ValueError("; ".join(f"{t}: {e}" for t, e in malas.items()))
+        out = guardar_armadas(session, self.portfolio_id, armadas, info, nota="Importado desde CSV")
+        return out["nuevas"], out["actualizadas"]
 
 
 class DropZone(QFrame):

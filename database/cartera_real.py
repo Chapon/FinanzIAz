@@ -59,6 +59,126 @@ def reabrir_si_cerrada(pos: Position, fecha: datetime | None) -> None:
         pos.purchase_date = fecha or utcnow_naive()
 
 
+# ── Compras, ventas y splits desde un CSV (tarea 324) ────────────────────────
+
+
+def movimientos_de(txs) -> list:
+    """Las ``Transaction`` de una posición como ``lotes.Movimiento``, para el libro FIFO."""
+    from database.lotes import Movimiento
+
+    return [
+        Movimiento(
+            fecha=t.date.date() if t.date is not None else date.min,
+            tipo="BUY" if str(t.transaction_type).upper() == "BUY" else "SELL",
+            cantidad=float(t.quantity),
+            precio=float(t.price),
+            comision=float(t.fees or 0.0),
+            nota=t.notes or "",
+        )
+        for t in txs
+    ]
+
+
+def recalcular_posicion(pos: Position, txs) -> str | None:
+    """Cantidad, costo y fecha de ``pos`` desde **todas** sus transacciones, por FIFO.
+
+    El costo es el de los lotes abiertos (el que muestra Yahoo, y el de la vista desplegable);
+    sin ventas, es el promedio ponderado de siempre. Una posición cerrada conserva el promedio
+    de sus compras, porque ``avg_buy_price`` no admite nulos. La fecha de compra es la del lote
+    abierto más viejo, que es desde donde cobra dividendos. Devuelve el error del libro, si hubo.
+    """
+    from database.lotes import libro_fifo
+
+    movs = movimientos_de(txs)
+    libro = libro_fifo(movs)
+    if libro.error:
+        return libro.error
+    pos.quantity = libro.cantidad if libro.abierta else 0.0
+    if libro.abierta:
+        pos.avg_buy_price = libro.costo_promedio
+        pos.purchase_date = datetime.combine(libro.fecha_lote_mas_viejo, datetime.min.time())
+    else:
+        compras = [m for m in movs if m.tipo == "BUY"]
+        q = sum(m.cantidad for m in compras)
+        pos.avg_buy_price = sum(m.cantidad * m.precio for m in compras) / q if q else 0.0
+    pos.updated_at = utcnow_naive()
+    return None
+
+
+def guardar_armadas(session, portfolio_id: int, armadas, info: dict | None = None, nota: str = "") -> dict:
+    """Guarda ``armadas`` (de ``lotes.armar_posiciones``) en la cartera ``portfolio_id``.
+
+    Un ticker que ya está en la cartera **suma** sus transacciones y se recalcula entero; uno
+    nuevo se crea. Un ticker cuyo libro da error (vende más de lo que tiene) no se guarda y
+    queda en ``errores``. ``info`` es ``{ticker: (empresa, sector)}`` para las posiciones nuevas.
+    """
+    info = info or {}
+    out: dict = {"nuevas": 0, "actualizadas": 0, "errores": {}}
+    for arm in armadas:
+        if arm.libro.error:
+            out["errores"][arm.ticker] = arm.libro.error
+            continue
+        pos = (
+            session.query(Position)
+            .filter(Position.portfolio_id == portfolio_id)
+            .filter(Position.ticker == arm.ticker)
+            .first()
+        )
+        if pos is None:
+            empresa, sector = info.get(arm.ticker, (None, None))
+            pos = Position(
+                portfolio_id=portfolio_id,
+                ticker=arm.ticker,
+                company_name=empresa,
+                sector=sector,
+                quantity=0.0,
+                avg_buy_price=0.0,
+                notes=nota or None,
+            )
+            session.add(pos)
+            session.flush()
+            out["nuevas"] += 1
+        else:
+            out["actualizadas"] += 1
+        for m in arm.movimientos:
+            session.add(
+                Transaction(
+                    position_id=pos.id,
+                    transaction_type=m.tipo,
+                    quantity=m.cantidad,
+                    price=m.precio,
+                    fees=m.comision,
+                    date=datetime.combine(m.fecha, datetime.min.time()),
+                    notes=m.nota or nota or None,
+                )
+            )
+        session.flush()
+        txs = session.query(Transaction).filter(Transaction.position_id == pos.id).all()
+        error = recalcular_posicion(pos, txs)
+        if error:  # con lo que ya había en la cartera, el libro no cierra: no se guarda nada de este
+            raise ValueError(f"{arm.ticker}: {error}")
+    return out
+
+
+def reemplazar_cartera(session, portfolio_id: int, armadas, nota: str = "") -> dict:
+    """Borra las posiciones de la cartera y la reconstruye desde ``armadas``.
+
+    Conserva empresa y sector de los tickers que ya estaban. Si algún ticker da error, no toca
+    nada: reemplazar a medias dejaría la cartera sin las posiciones que no se pudieron armar.
+    """
+    errores = {a.ticker: a.libro.error for a in armadas if a.libro.error}
+    if errores:
+        return {"nuevas": 0, "actualizadas": 0, "errores": errores, "borradas": 0}
+    viejas = session.query(Position).filter(Position.portfolio_id == portfolio_id).all()
+    info = {p.ticker: (p.company_name, p.sector) for p in viejas}
+    for p in viejas:
+        session.delete(p)  # se lleva sus transacciones por la cascada
+    session.flush()
+    out = guardar_armadas(session, portfolio_id, armadas, info, nota)
+    out["borradas"] = len(viejas)
+    return out
+
+
 # ── Valor de mercado diario (tarea 305) ──────────────────────────────────────
 
 
@@ -282,9 +402,20 @@ def dividendos_cobrados(eventos: list[tuple[str, float]], calendario: list[tuple
     lo que había **antes** de esa fecha — la convención de la 222 (``acciones_antes_del_ex_date``):
     una compra del mismo día del ex-date no cobra.
     """
+    return sum(cobrado for _, _, _, cobrado in dividendos_detalle(eventos, calendario))
+
+
+def dividendos_detalle(
+    eventos: list[tuple[str, float]], calendario: list[tuple[str, float]]
+) -> list[tuple[str, float, float, float]]:
+    """``(ex_date, $/acción, acciones, cobrado)`` de cada pago que cobró la posición. Puro.
+
+    Lo que lista la pestaña «Dividendos» de la vista desplegable (tarea 325), y lo que suma
+    ``dividendos_cobrados``: la misma aritmética en los dos lados.
+    """
     from paper_trading.dividends import acciones_antes_del_ex_date
 
-    total = 0.0
+    out = []
     for ex_date, monto in calendario:
         # Un ex-date anterior a la primera compra (o el centinela «no paga») no necesita un
         # filtro propio: ahí `acciones_antes_del_ex_date` da 0. Probado por mutación: un
@@ -292,9 +423,9 @@ def dividendos_cobrados(eventos: list[tuple[str, float]], calendario: list[tuple
         if not monto:
             continue
         acciones = acciones_antes_del_ex_date(eventos, ex_date)
-        if acciones > 0:
-            total += acciones * float(monto)
-    return total
+        if acciones > CERRADA_TOL:
+            out.append((ex_date, float(monto), acciones, acciones * float(monto)))
+    return out
 
 
 def valor_y_pl(positions, prices: dict) -> dict:

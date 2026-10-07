@@ -18,6 +18,15 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 260 — Tareas 324 (CSV-VENTAS-Y-SPLITS) y 325 (PORTFOLIO-DESPLEGABLE) CERRADAS 2026-10-07 — «Mis Acciones» reconstruida desde el CSV de Yahoo con compras, ventas y el split de NVDA, y Portfolio con un desplegable por ticker** (`database/lotes.py` **nuevo**, `database/cartera_real.py`, `data/csv_importer.py`, `ui/import_dialog.py`, `ui/portfolio_tab.py`, `ui/portfolio_detalle.py` **nuevo**, `scripts/reemplazar_cartera_csv.py` **nuevo**, `tests/test_cartera_csv_ventas_splits_t324.py` y `tests/test_portfolio_desplegable_t325.py` **nuevos**). **Cierra también la 312.** Suite Windows (Anaconda) **4443 passed, 1 skipped, 1 deselected** (+19), ruff limpio, sin estado vivo **4440 passed, 4 skipped**.
+  - **El defecto que destapó el CSV:** el importador ignoraba `Transaction Type`, así que **cada venta entraba como una compra**, y una fila sin lotes (TSLA) se volvía una compra inventada de 1 acción al precio del día.
+  - **El split, como split (decisión de Chapa):** Yahoo carga el 10:1 de NVDA como venta de 12 a $1200 + compra de 120 a $120. Literal, inventa +$3.438,16 de realizada y deja el costo en $120. Ahora el par se reconoce sólo si todo cierra (notas, ≤ 7 días, venta = tenencia, nocional ±1%) y ajusta los movimientos anteriores: 120 acciones a **$89,85** con las fechas reales (feb y jun 2024), realizada 0.
+  - **Aplicado a la DB viva** con la app cerrada (`scripts/reemplazar_cartera_csv.py --aplicar`, backup `backups/finanzias_2026-10-07_15-37-56_pre-reemplazar-cartera-csv.db`): 7 posiciones borradas, 11 creadas (8 abiertas, AAPL/META/KO cerradas), 18 transacciones (las 20 del CSV menos las dos patas del split), **ninguna** con la fecha de importación del 14/04. «Tech» intacta.
+  - **La pantalla (decisión de Chapa: las cerradas se ven):** flecha por ticker → *Lotes* (FIFO, valuados al precio, anual sólo con ≥ 1 año), *Transacciones* (con la realizada por lote y por venta, los % como los calcula Yahoo) y *Dividendos* (por ex-date, la misma aritmética que `dividendos_cobrados`). Columnas nuevas *Estado* y *Realizada*. Las cerradas no suman a las tarjetas.
+  - **Un defecto evitado de paso:** con filas de desplegable y cerradas, `self._positions[row]` ya no es la posición de la fila; analizar, vender y el menú iban al ticker de al lado. Todos pasan por `_pos_en`.
+  - **Mutación: tres, las tres rojas** (el índice viejo de fila, las ventas como compras, el split literal).
+  - **Deja cuatro tareas:** la **326** (una venta desde la app no recalcula el costo por FIFO), la **327** (comisiones negativas en el CSV), la **328** (2 `ERROR` sueltos de `test_ruin_injection_t37` en el `.venv`) y la **329** (las posiciones nuevas sin nombre de empresa).
+
 - **WIP 259 — Tarea 315 (ARQ-DECISIONES-DE-JULIO) CERRADA 2026-10-07 — las dos propuestas de julio tienen decisión escrita** (`7de2b4b`; `analysis/harness_config.py` —sólo el docstring—, `docs/revision_arquitectura_2026-10-05.md`). **No deja tareas nuevas.** Suite Windows (Anaconda) **4424 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4421 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-07 04:03Z).
   - **[R-2] descartada:** XGBoost no pesa en ninguna decisión; re-entrenar al arrancar cuesta latencia (76 s el primer scan), no conducta. Se reabre si un modelo pasa a decidir órdenes.
   - **[R-3] partir al tocar, con la regla donde se lee:** julio dijo *«cuando se los toque»* y `harness_config.py` se tocó 64 veces sin partirse, porque la regla vivía en un doc. Ahora está en el docstring del módulo: la próxima tarea que lo toque separa los guards de artefactos (`cohort_*`, `announce_*`, `mixed_scale_*`, `signal_store_*`) y los reexporta.
@@ -2047,8 +2056,6 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Acá van sólo las acciones ABIERTAS (tarea 199).** Al cerrar una, se **mueve** a *Acciones manuales resueltas* —al final del archivo, antes de *Hecho reciente*— con su fecha y lo que se hizo; **no se tacha en el lugar**. Tacharlas acá dejó la sección con 17 cerradas de 20, lo que tenías que hacer enterrado entre lo hecho, y el guard de la 138 en rojo por tamaño.
 
-- **Pasarme las fechas reales de compra de las seis posiciones de «Mis Acciones» (tarea 312).** AAPL, EMBJ, INTC, META, MLTX y TEAM figuran compradas el 14/04/2026 (el día de la importación), y los dividendos cobrados se cuentan desde ahí. Elegiste corregirlas: alcanza con la fecha de compra de cada una (o el CSV original de Yahoo, que trae `Trade Date`). Las escribo yo, con la app cerrada.
-
 - **Windows tiene registrada una segunda pantalla que no existe (tarea 323).** `DISPLAY23`, 3440×1440 a la derecha de la principal; Chapa tiene un solo monitor. Cualquier ventana que se abra ahí es invisible: así quedó escondido el aviso de alerta que bloqueó la app el 2026-10-06. **Cómo:** *Configuración → Sistema → Pantalla*; si aparece una pantalla 2, elegila y en *Varias pantallas* poné *Mostrar sólo en 1* (o *Desconectar esta pantalla*). Suele ser una tele, un adaptador o una pantalla virtual que quedó configurada.
 
 - **La variable de usuario `ANTHROPIC_API_KEY` tiene un valor que no es una key (tarea 322) — opcional.** Tiene 10 caracteres (una key real tiene más de cien). Desde la 322 la app la ignora al pedir la opinión de Claude, pero cualquier otra herramienta que la lea va a fallar con un 401. Si no la usás para nada, borrala: *Panel de control → Sistema → Variables de entorno → variables de usuario → `ANTHROPIC_API_KEY` → Eliminar*, y reiniciá la app.
@@ -2337,6 +2344,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 > **Repriorizado 2026-10-06** tras abrir y cerrar la **323** (una alerta modal bloqueaba la app), que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 312 → 315 → 321**.
 
 > **Repriorizado 2026-10-07** tras cerrar la **315** con las dos decisiones de Chapa, que **no deja tareas nuevas**. La **312** sigue en la cola, ahora esperando las fechas reales de compra y no una decisión. El orden queda **196 → 245 → 290 → 312 → 321** —las cinco esperan algo de afuera: 196 y 245 el probe de Lambda, la 290 dos semanas de clasificaciones (hasta el ~2026-10-17), la 312 las fechas, y la 321 treinta opiniones con veinte ruedas detrás—.
+
+> **Repriorizado 2026-10-07b** tras cerrar la **324** y la **325**, que cierran también la **312** (el CSV de Yahoo trajo las fechas y toda la historia) y dejan cuatro tareas. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **326** encabeza porque es la única que se puede hacer ya y porque, sin ella, la primera venta desde la app deja la fila y el desplegable con costos distintos. 196, 245, 290 y 321 siguen esperando algo de afuera; la **327** espera la respuesta de Chapa, y la **328** va última porque sólo se vio en el `.venv`.
 
 
 
@@ -3776,6 +3785,38 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 329. CARTERA-SIN-NOMBRE-DE-EMPRESA — Las cuatro posiciones nuevas de «Mis Acciones» (KO, MARA, MO, MSFT) quedaron sin `company_name`, y EMBJ figura como «ERJ»  ·  origen: la 324 (verificación de la DB después del reemplazo) · severidad **BAJA**
+
+- **Qué pasa.** `reemplazar_cartera` conserva empresa y sector de los tickers que ya estaban; los nuevos entran con `NULL` y la columna *Empresa* de Portfolio muestra el ticker. EMBJ ya estaba como «ERJ» (su ticker viejo) desde la importación de abril.
+- **Kill-criteria.** Las 11 posiciones con su nombre (de `company_info` o del cache), sin red en el render de Portfolio. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 328. RUIN-INJECTION-ERROR-EN-VENV — En la suite completa con el `.venv`, `test_ruin_injection_t37.py` dio 2 `ERROR` (de setup); el archivo solo pasa (28 passed) y con Anaconda no aparecen  ·  origen: la corrida del done de la 324 (2026-10-07) · severidad **BAJA**
+
+- **Qué pasó.** `ERROR …::test_el_sorteo_no_depende_del_orden_ni_del_tamano_del_universo` y `…::test_el_evento_cae_dentro_del_rango_de_fechas`, en la corrida completa con `.venv\Scripts\python.exe`. No se guardó el traceback.
+- **Qué hay que hacer.** Reproducir la suite completa con el `.venv` guardando la salida, y ver si es orden (un fixture que otro test deja sucio) o algo transitorio. Si es orden, también puede romper el CI.
+- **Kill-criteria.** La causa nombrada y, si es un defecto, arreglado con un test que lo fije; si no se reproduce en 3 corridas, se cierra diciéndolo.
+
+### 327. CSV-COMISIONES-NEGATIVAS — El CSV de Yahoo de Chapa trae comisiones negativas (MARA BUY −0,83; KO SELL −0,38) y se importaron tal cual  ·  origen: la 324 · severidad **BAJA** · **necesita a Chapa**
+
+- **Qué pasa.** Una comisión negativa en una compra **baja** el costo, y en una venta **sube** la realizada (KO: +$49,23 incluye los $0,38). Puede ser un reintegro real del bróker o un error de carga en Yahoo.
+- **Decisión de Chapa.** ¿Son reintegros reales? Si no, se corrigen a positivas (o a cero) en la DB, con la app cerrada.
+- **Kill-criteria.** Las dos con el signo que Chapa confirme, y la realizada de KO y el costo de MARA recalculados. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 326. VENTA-EN-APP-SIN-FIFO — Una venta desde la app descuenta la cantidad pero no recalcula el costo: la fila queda a precio promedio y el desplegable muestra los lotes por FIFO  ·  origen: la 324 · severidad **MEDIA**
+
+- **Qué pasa.** `cartera_real.registrar_venta` deja `avg_buy_price` igual (costo promedio). Desde la 324 la importación, el reemplazo y la vista de *Lotes* usan FIFO (`recalcular_posicion`). En una posición con lotes a precios distintos, después de una venta desde la app la fila y el desplegable dan costos distintos: INTC hubiera dado ~$52 en la fila y $103,53 en los lotes.
+- **Qué hay que hacer.** Que `registrar_venta` llame a `recalcular_posicion` con las transacciones de la posición, y fijar con un test un caso donde promedio y FIFO **difieran**.
+- **Kill-criteria.** Después de una venta parcial desde la app, `avg_buy_price` = costo de los lotes abiertos por FIFO. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 325. ~~PORTFOLIO-DESPLEGABLE — Que Portfolio muestre las compras y ventas como Yahoo Finance, con un desplegable por ticker~~ · **CERRADA 2026-10-07 — flecha por ticker con Lotes, Transacciones y Dividendos; las cerradas se ven rotuladas** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-07, con dos capturas de Yahoo: *«quiero que el portfolio represente las compras y ventas en la misma forma que lo hace yahoo finance con menús desplegables por ticker»*) · severidad **MEDIA**
+
+- **Decisión de Chapa:** las posiciones cerradas se muestran, como «Cerrada», fuera de las tarjetas.
+- **Lo que no hace, a propósito:** editar un lote o una transacción desde el desplegable (Yahoo lo permite). Es de lectura.
+
+### 324. ~~CSV-VENTAS-Y-SPLITS — El importador ignora `Transaction Type`: cada venta del CSV de Yahoo entra como una compra, y el split de NVDA (una venta y una compra) inventa una ganancia realizada~~ · **CERRADA 2026-10-07 — libro de lotes FIFO con splits; «Mis Acciones» reconstruida desde el CSV (cierra la 312)** · **movida a *En curso* con el detalle**  ·  origen: el CSV de Chapa (2026-10-07) para la 312 · severidad **ALTA** (importar ese CSV duplicaba las posiciones vendidas)
+
+- **Decisiones de Chapa:** reemplazar la cartera desde el CSV (no sumarle lo que falta) y tratar el split como split, aunque los números difieran de los de Yahoo.
+
 ### 323. ~~ALERTA-MODAL-BLOQUEA-LA-APP — El chequeo automático de alertas abre un aviso MODAL: una alerta disparada deja la ventana principal deshabilitada hasta que alguien lo cierre, y Qt lo abrió en una pantalla que Chapa no ve~~ · **CERRADA 2026-10-06 — el aviso es no modal, va centrado sobre la ventana y junta las alertas del chequeo** (`d896f44`) · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-06, *«la app está unresponsive»*, *«la UI no responde»*, *«tengo un solo monitor y no veo la ventana modal»*) · severidad **ALTA** (la app quedaba inutilizable sin ninguna señal)
 
 - **Qué pasaba.** `ui/alerts_tab.py:_on_alert_triggered` abría `QMessageBox.information`, que es **modal**, desde el `QTimer` de 120 s del chequeo de alertas. La ventana principal quedó con `IsWindowEnabled = False`, dueña de un diálogo «🔔 Alerta Disparada» en x = 4170: Windows tiene registrada una segunda pantalla (`DISPLAY23`, 3440–6880 px) y Chapa tiene un solo monitor.
@@ -3847,7 +3888,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Alcance.** READ-ONLY, como las auditorías, pero puntual y no un área de `/audit`: (1) cada propuesta de `docs/architecture_review_2026-07-07.md`, verificada en el código; (2) los archivos de producción de más de 1.500 líneas, con su crecimiento, churn y costo concreto; (3) el diseño de la 196 antes del recolector. Kill-criteria: `docs/revision_arquitectura_killcriteria_2026-10-05.md`. Informe: `docs/revision_arquitectura_2026-10-05.md`.
 
-### 312. CSV-SEIS-YA-IMPORTADAS — Las seis posiciones de «Mis Acciones» importadas antes de la 308 siguen con la fecha de la importación (2026-04-14 03:19), y sus dividendos cobrados se cuentan desde ahí  ·  origen: la 308, parte (2) · severidad **BAJA** · **bloqueada: faltan las fechas reales (Chapa eligió corregirlas)**
+### 312. ~~CSV-SEIS-YA-IMPORTADAS — Las seis posiciones de «Mis Acciones» importadas antes de la 308 siguen con la fecha de la importación (2026-04-14 03:19), y sus dividendos cobrados se cuentan desde ahí~~ · **CERRADA 2026-10-07 — con el CSV de Yahoo que pasó Chapa, «Mis Acciones» se reconstruyó entera con sus fechas reales (tarea 324, WIP 260)**  ·  origen: la 308, parte (2) · severidad **BAJA**
 
 - **Qué pasa.** AAPL, EMBJ, INTC, META, MLTX y TEAM (`transactions.date` 2026-04-14 03:19, `positions.purchase_date` `NULL`). La 308 arregla las importaciones **nuevas**; éstas quedan como están.
 - **Decidido por Chapa el 2026-10-07: (a), corregirlas.** Queda **bloqueada en el dato**: hacen falta las fechas reales de compra de las seis (o el CSV original), que no están en el repo ni en la DB. Ver *Acciones manuales pendientes*.
@@ -5799,6 +5840,8 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Acciones manuales resueltas (historial — tarea 199)
 
 > Las acciones manuales que ya se hicieron, se decidieron o se retiraron, **movidas** desde *Acciones manuales pendientes* con su texto completo. Es historial: lo que afirman en presente vale **a su fecha**. Lo que sigue abierto vive arriba.
+
+- ~~**Pasarme las fechas reales de compra de las seis posiciones de «Mis Acciones» (tarea 312).**~~ **HECHO 2026-10-07 — Chapa pasó el CSV de Yahoo con toda la historia** (compras, ventas y el split de NVDA). No sólo trajo las fechas: «Mis Acciones» se reconstruyó entera desde ahí (tareas 324/325, WIP 260). AAPL, EMBJ, INTC, META, MLTX y TEAM figuran compradas el 14/04/2026 (el día de la importación), y los dividendos cobrados se cuentan desde ahí. Elegiste corregirlas: alcanza con la fecha de compra de cada una (o el CSV original de Yahoo, que trae `Trade Date`). Las escribo yo, con la app cerrada.
 
 - ~~**Reiniciar la app (tareas 262, 278, 277, 263, 276, 264, 281, 282, 266, 288, 283, 268, 289 y 259)**~~ **HECHO 2026-10-03 — Chapa: *«ya se reinició la app»*.** Verificado en el log del arranque (04:46): backup `pre-migration` antes de migrar (la 278), migración **0015 → 0016** aplicada (`paper_split_adjustments`, la 262; `alembic_version` = 0016), backup diario y rotación, primer scan de la cuenta 2 sin errores, y **ningún ERROR** desde el arranque. Las filas de tono con `-7n` (la 259) aparecen cuando termine el primer classify con qwen: eso lo mide la 290. Texto original: cuando quieras, con la app cerrada un momento.** La app abierta corre el código anterior. Al arrancar: `init_db` aplica la migración **0016** (`paper_split_adjustments`, la 262: desde ese scan un split en una posición abierta se ajusta en vez de venderse), y antes toma un backup `pre-migration` (la 278). El botón de restore de Settings pasa a **programar** el restore para el próximo arranque. Y vender entera una posición de la cartera real la deja en cero con su historial, en vez de borrarla (la 277). Y un scan que se cae queda en el log y avisa por Slack (la 263). Y Home pasa a mostrar «Mis Acciones» (la 264).
 
