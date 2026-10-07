@@ -145,6 +145,12 @@ cierre de una tarea, el done, el arranque de una sesión, el refresh del cohorte
 paso se compara **lugar contra lugar**. Lo encontró la tarea que fue a editar los dos, no la
 auditoría: (c-metodo).
 
+**Y los contratos de proceso se contrastan contra la práctica MEDIDA (tanda 2026-10-07, [A-1]).**
+El backlog, `CLAUDE.md` y `/ship` decían *«En curso máx 1; al cerrar, a Hecho reciente»*, y *En
+curso* tenía 213 ítems. Ninguna corrida lo vio porque `claims` contrasta afirmaciones contra el
+código y la DB, y esto es un archivo contra su propio contrato: se cuenta lo que la sección dice
+que puede tener.
+
 ### B. Chequeos por cantidad, ciegos a la muestra
 
 **Qué.** Cualquier invariante verificado **contando** en vez de comparando identidad,
@@ -351,6 +357,14 @@ esperado»* sobre un prior constante); **¿la selección por defecto es la viva?
 benchmark); **¿el estado se re-arma solo o queda trabado?** Para contrastar, abrí la DB en solo
 lectura (`file:finanzias.db?mode=ro`) y calculá el número a mano; no alcanza con leer el widget.
 
+**Una curva no se valida contra la función que la dibuja (tanda 2026-10-07, [F-1]).** La tanda del
+05/10 escribió *«la curva de Home recalculada a mano: igual a `valor_diario`»*, que es el
+instrumento contra sí mismo, sobre una cartera con todas las compras el mismo día. Con la historia
+real, cinco tickers tenían cierres sólo desde el 08/10/2025 y valían **cero** antes: un escalón de
+$4.800 que se leía como suba. Para una serie por día de una cartera: **por cada ticker en cartera,
+¿su historia de precios cubre la serie desde su primera compra?** Y el caso de prueba tiene compras
+en fechas distintas.
+
 **Queda afuera:** estética, layout y performance de la GUI, salvo que oculten un número.
 
 ### G. Cuentas: la cartera viola una regla que declara, o no cuadra
@@ -519,6 +533,12 @@ nombre, no a «corridas a mano»** (tanda 2026-10-03, [L-1] → tarea 294): las 
 `[proceso: dashboard_data]` de una noche se habían dado por pruebas manuales, y eran los
 subprocesos de la suite escribiendo en el log de producción. Si la marca no alcanza para saber
 quién lo lanzó, cruzar los horarios contra las corridas conocidas (el done, el scheduler).
+
+**Una firma *conocida* se clasifica con su TASA (tanda 2026-10-07, [L-1]).** *«XGBoost: unstable
+model»* se dio dos tandas seguidas por *«conocida, por diseño»* con 21 por día, cuando la tarea que
+lo diseñó (la 25) midió 6 en el primer scan y 0 en los siguientes; el 07/10 eran ~10 por scan. Una
+firma conocida que aparece **más** que lo que midió el cierre de su tarea es *«reaparece después del
+cierre»*, no *«por diseño»*.
 
 **Barrido limpio:** ninguna firma queda sin clasificar, y ninguna *conocida* sigue apareciendo
 después del cierre de su tarea.

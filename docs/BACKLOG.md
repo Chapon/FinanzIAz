@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 264 — Tarea 335 (TANDA DE AUDITORÍAS 2026-10-07) CERRADA — doce áreas sobre las 307–334 y el estado vivo; nueve hallazgos, dos HIGH** (`docs/auditoria_tanda_killcriteria_2026-10-07.md`, `docs/auditoria_tanda_2026-10-07.md`). Pedido de Chapa: *«luego de terminar correr todas las auditorías»*. READ-ONLY: no toca código.
+  - **HIGH:** [F-1] Home subvalúa valor y ganancia el primer año (un frame de cierres por ticker y ceros donde no hay cierre) → **336**; [I-1] `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker → **337**. Los dos pasaron por el `verificador` (§3 del informe).
+  - **MEDIA:** [A-1] *En curso* tiene 213 ítems contra su «máx 1» → **338**; [D-1] la lección de la 322 no está en `/ship` → **339**; [L-1] «unstable model» en todos los scans → **340** (medición); [I-2] las 14 opiniones son MANTENER y la 321 está 0/8 y 0/8 → enunciado de la **321**.
+  - **BAJA:** [A-2] + [A-3] docs de referencia → **341**; [G-1] MLTX comprada un sábado → **342**; [F-2] la sparkline de «VALOR Y P/L» → enunciado de la **334**.
+  - **Limpias:** C (desvíos), H (operación), J (rendimiento), K (dependencias). Las cuentas paper cuadran al centavo.
+  - **Tres hallazgos son sobre código de la misma sesión** ([F-1], [A-2], [D-1]): la tanda los encontró y los dice.
+
 - **WIP 263 — Tareas 326 (VENTA-EN-APP-SIN-FIFO) y 331 (DIVCAL-DOCSTRING-FALSO) CERRADAS, y la 329 (CARTERA-SIN-NOMBRE-DE-EMPRESA) con el código hecho, 2026-10-07** (`ab905b9`; `database/cartera_real.py`, `database/models.py`, `data/yahoo_finance.py`, `ui/import_dialog.py`, `scripts/completar_nombres_cartera.py` **nuevo**, tests `test_venta_en_app_fifo_t326.py`, `test_divcal_ajustado_por_split_t331.py` y `test_cartera_nombres_t329.py` **nuevos**). Suite Windows (Anaconda) **4461 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4458 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-07 23:10Z).
   - **326:** `registrar_venta` recalcula la posición por FIFO desde sus transacciones (`recalcular_posicion`), **sólo si** esas transacciones explican la tenencia; una posición vieja sin historia completa sigue con la cuenta de antes. Caso INTC: tras vender el primer lote, $103,53 (FIFO, lo que muestra el desplegable) y no ~$52 (promedio). Mutación: sin el recálculo → rojo.
   - **331:** los dos docstrings dicen ahora **ajustado** por splits posteriores, con la evidencia (NVDA 2024-03-05: 0.004). El test fija la cuenta real: 7 acciones × $0,04 = 70 × $0,004; des-ajustar las cantidades de la 324 lo pone rojo. El comentario de la migración `0013` repite la frase vieja y no se toca (es historia del esquema); el docstring lo dice.
@@ -2076,6 +2083,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Acá van sólo las acciones ABIERTAS (tarea 199).** Al cerrar una, se **mueve** a *Acciones manuales resueltas* —al final del archivo, antes de *Hecho reciente*— con su fecha y lo que se hizo; **no se tacha en el lugar**. Tacharlas acá dejó la sección con 17 cerradas de 20, lo que tenías que hacer enterrado entre lo hecho, y el guard de la 138 en rojo por tamaño.
 
+- **Confirmar la fecha real de compra de MLTX (tarea 342).** El CSV de Yahoo dice 28/06/2025, que fue sábado. ¿Fue el viernes 27, el lunes 30, otro día?
+
 - **Cerrar la app un momento para escribir los nombres de empresa de «Mis Acciones» (tarea 329).** EMBJ figura «ERJ» y KO, MARA, MO y MSFT no tienen nombre. Con la app cerrada: `python scripts/completar_nombres_cartera.py --aplicar` (sin `--aplicar` muestra lo que haría). O avisame y lo corro yo.
 
 - **Windows tiene registrada una segunda pantalla que no existe (tarea 323).** `DISPLAY23`, 3440×1440 a la derecha de la principal; Chapa tiene un solo monitor. Cualquier ventana que se abra ahí es invisible: así quedó escondido el aviso de alerta que bloqueó la app el 2026-10-06. **Cómo:** *Configuración → Sistema → Pantalla*; si aparece una pantalla 2, elegila y en *Varias pantallas* poné *Mostrar sólo en 1* (o *Desconectar esta pantalla*). Suele ser una tele, un adaptador o una pantalla virtual que quedó configurada.
@@ -2374,6 +2383,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 > **Repriorizado 2026-10-07e** tras abrir y cerrar la **332** (pedido de Chapa: Home sin la plata puesta), que deja la **331** (un docstring que afirma lo contrario de los datos). El orden queda **326 → 331 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **331** va segunda: es chica y protege la 324 de que alguien «corrija» las cantidades de NVDA.
 
 > **Repriorizado 2026-10-07f** tras cerrar la **326** y la **331**, que deja la **333**; la **329** queda con el código hecho y espera que la app se cierre. El orden queda **333 → 329 → 196 → 245 → 290 → 321 → 327 → 328**. **Actualizado el mismo día:** entra la **334** (pedido de Chapa, display-only) detrás de la 329. El orden queda **333 → 329 → 334 → 196 → 245 → 290 → 321 → 327 → 328**. La **333** encabeza porque es la única que se puede hacer ya y toca caja de la cuenta viva, aunque hoy sea latente.
+
+> **Repriorizado 2026-10-07g** tras la tanda de auditorías (**335**, `docs/auditoria_tanda_2026-10-07.md`), que deja siete tareas. El orden queda **336 → 337 → 333 → 339 → 329 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. La **336** y la **337** encabezan: son las dos ALTA, y la 336 es la pantalla que Chapa mira primero. La **339** sube porque es barata y evita repetir un rojo de CI. La **338** necesita una decisión de Chapa.
 
 
 
@@ -3813,10 +3824,58 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 342. MLTX-COMPRA-EN-SABADO — La compra de MLTX figura el 2025-06-28, un sábado  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [G-1] · severidad **BAJA** · **necesita a Chapa**
+
+- **Qué pasa.** Viene así del CSV de Yahoo (`Trade Date 20250628`) y entró con la 324. Un sábado no se opera: la fecha real es otra (¿el viernes 27 o el lunes 30?).
+- **Impacto hoy:** ninguno (MLTX no paga dividendos y Home va por rueda). Es una fecha que no puede ser, en plata de Chapa.
+- **Kill-criteria.** La fecha que Chapa confirme, escrita con la app cerrada. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 341. DOCS-REFERENCIA-CARTERA-Y-OPINION — `DB_SCHEMA.md` repite «sin ajustar por splits» y `ARCHITECTURE.md` no nombra la opinión de Claude ni la cartera real  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [A-2] y [A-3] · severidad **BAJA**
+
+- **[A-2]** `docs/DB_SCHEMA.md:59` dice que `dividend_calendar_cache` guarda el monto *«sin ajustar por splits»*. La 331 corrigió dos de los tres lugares (la forma de la 73 y la 181). Evidencia de que está ajustado: NVDA 2024-03-05 = 0,004; AAPL 2020-02-07 = 0,1925 (= $0,77 / 4).
+- **[A-3]** `docs/ARCHITECTURE.md` lista los módulos de `analysis/` uno por uno y no nombra `analysis/opinion_claude.py` (320) **ni su dependencia externa**: el CLI `claude`, que en la máquina de Chapa sale de la extensión de VS Code (`ubicar_claude`). En `database/` no nombra `cartera_real.py` (lo que arma Home, 264), `lotes.py` (324) ni el desplegable `ui/portfolio_detalle.py` (325).
+- **Kill-criteria.** Las dos cosas escritas con la granularidad que cada doc promete; el comentario de la migración `0013` no se toca (es historia del esquema). Los cuatro comandos en verde y el CI del commit en verde.
+
+### 340. XGB-UNSTABLE-POR-SCAN — «XGBoost: unstable model» sale en todos los scans (~10 por scan), no sólo en el primero del día como midió la 25  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
+
+- **Lo que se vio.** 246 WARNING del 05 al 07/10 (117, 63, 66 por día; 66 el 28/09 y 67 el 02/10), en todas las horas. La 25 (`f4f59c6`) midió *«6 en el primer scan del día y 0 en los siguientes»*. Las tandas del 04 y 05/10 lo contaron (×21, ×22) y lo dieron por *«conocida, por diseño»* sin comparar la tasa.
+- **Lo que NO se afirma:** que el cache de la 24 se haya roto. **No se sabe**: el mensaje no dice el ticker, así que no se distingue un re-entrenamiento por scan de las consultas manuales de Análisis.
+- **Qué hay que hacer.** Poner el ticker en el mensaje y contar, en un día de scans, cuántos entrenamientos hay por ticker y por scan. Si es re-entrenamiento por scan, es cómputo que la 24 había sacado (y la causa probable es que la barra provisional de la sesión cambia la huella del frame en cada scan).
+- **Kill-criteria.** La causa nombrada con números de un día real; si es por diseño, la tasa esperada escrita donde la 25 dice 0.
+
+### 339. SHIP-DONE-DESPUES-DEL-BACKLOG — `/ship` corre el done en el paso 1 y edita el backlog en el 5: la lección de la 322 no está donde se lee al cerrar  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [D-1] · severidad **MEDIA**
+
+- **Qué pasa.** La 322 dejó rojo `9884a4e` porque el done corrió antes de escribir el backlog, y el guard de la 72 tomó un nombre del texto nuevo. La lección (*«el done va después de la última edición, también la del backlog»*) quedó sólo en el registro de la 322. El 2026-10-07 la misma sesión cerró cinco veces así (324/325, el fix de la 325, 330, 332, 326/331) y no dio rojo por suerte.
+- **Qué hay que hacer.** Que `.claude/commands/ship.md` ponga la edición del backlog **antes** del done (o que repita el done si el backlog cambió después), y que `git-workflow` y `finanzias-conventions` digan lo mismo.
+- **Kill-criteria.** Los tres lugares con el mismo orden; los cuatro comandos en verde y el CI del commit en verde.
+
+### 338. BACKLOG-CONTRATO-EN-CURSO — El backlog no cumple su propio contrato: *En curso (WIP, máx 1)* tiene 213 ítems y *Hecho reciente* no se usa desde julio  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [A-1] · severidad **MEDIA** · **decisión de Chapa**
+
+- **Qué pasa.** El contrato del header (línea 5), el título de la sección, `CLAUDE.md` (§Backlog) y `.claude/commands/ship.md` (paso 5) dicen: al cerrar, mover a *Hecho reciente* con el hash; *En curso* máximo 1. En la práctica cada cierre se apila en *En curso* como «WIP NNN … CERRADA»: **213** ítems (199 cerrados), 2.055 líneas; *Hecho reciente* tiene 39, de julio. La línea 15 dice *«Última actualización: 2026-08-16»*. Ninguna nota decidió el cambio.
+- **Impacto.** La sección que debería decir qué está en marcha es la historia entera, y cuatro lugares mandan a hacer algo que nadie hace.
+- **Decisión de Chapa.** (a) mover los WIP cerrados a *Hecho reciente* (con el guard de la 66: es un movimiento grande, se hace con un script que verifique que no se pierde ninguna línea, como la 199) y volver al contrato; o (b) reescribir el contrato a la práctica en los cuatro lugares.
+- **Kill-criteria.** Los cuatro lugares dicen lo mismo que el archivo hace; `check_backlog_integrity` en verde.
+
+### 337. OPINION-TICKER-CONTAMINADO — `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker: llamadas duplicadas y la muestra de la 321 inflada  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [I-1] · severidad **ALTA**
+
+- **Qué pasa.** `ui/analysis_tab.py::_run_analysis` (l. 622) corta el texto del campo en « — »; `_on_analysis_done` (l. 640) lo vuelve a leer **sin cortar**, y ese valor va a `opinion_card.set_contexto` → `OpinionWorker` → `opinion_claude.guardar`. En la DB: «MU — MICRON TECHNOLOGY», «TSLA — TESLA INC.», «GOOGL — ALPHABET INC. (GOOGLE)», «PFE — PFIZER INC.»; MU y TSLA tienen además su fila limpia el mismo día, pese al `UNIQUE (ticker, fecha)`.
+- **Impacto.** Una segunda llamada a Claude el mismo día por ticker (la de hoy no se encuentra con la otra clave), y la 321 cuenta *«tickers distintos o días distintos»* y cruza por ticker contra precios: esas filas se inflan o se pierden. Son 12 tickers, no 14.
+- **Más (del `verificador`):** las cuatro opiniones sucias se pidieron **sin noticias** (`noticias_recientes` busca con el ticker sucio; sus `datos_json` no traen `noticias`) y con el nombre de la empresa en el `ticker` del prompt: son otra población y la 321 las excluye o las marca. Riesgo no observado: `_on_analysis_done` lee el campo **al terminar**, así que escribir otro ticker mientras corre guarda la opinión de A como B. El texto sucio sale del autocompletar (`_COMPLETION_LIST`). Menor: `ticker` es `VARCHAR(20)` y la fila de GOOGL tiene 30 caracteres.
+- **Kill-criteria.** El ticker se fija al lanzar el análisis y no se relee del campo; un solo lugar normaliza el ticker de Análisis y lo usan los dos métodos; un test con el texto «MU — MICRON TECHNOLOGY» en el campo que guarde «MU»; las cuatro filas corregidas (con la app cerrada) o declaradas en la 321 —una por (ticker, fecha), sin duplicar—. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 336. HOME-CIERRES-UN-SOLO-FRAME — Home subvalúa el valor y la ganancia de «Mis Acciones» durante todo el primer año: usa un solo frame de cierres por ticker y vale en cero lo que no tiene cierre  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [F-1] · severidad **ALTA**
+
+- **Qué pasa.** `database/cartera_real.py::cierres_del_cache` elige, por ticker, **un** frame 1d: el que termina más tarde. Para AAPL, TEAM, EMBJ, MLTX y MARA es el de 1 año (desde el 07–08/10/2025), aunque TEAM tiene otro 2024-07→2026-07 y AAPL uno de 2016→2026-09. `valor_diario` vale en **0** a un ticker en cartera antes de su primer cierre (`ultimo_cierre.get(t, 0.0)`), contra lo que promete su docstring; `ganancias_diarias` (332) sí suma su costo.
+- **Medido (copia de la DB, 2026-10-07; confirmado por el `verificador`):** el valor salta +$1.464 el 2025-10-07 (entra AAPL) y +$3.343 el 2025-10-08 (TEAM, EMBJ, MLTX) con el costo abierto constante en $18.193. Del 2024-10-08 al 2025-10-07 Home muestra valor y ganancia **de ~$3,5k a ~$4,9k por debajo** según el tramo, y el escalón se lee como una suba.
+- **Dos patas más (del `verificador`):** la serie **arranca el 2024-10-08** aunque la primera compra es del 2024-02-21: 7,5 meses sin graficar, aunque NVDA, INTC, META, MO y MSFT tienen frames 2016→2026; y la elección es **frágil**: con dos frames que terminan el mismo día gana el primero de `all_1d`, y si se refresca el 1y y no el 2y la serie entera arranca en 2025-10 sin que cambie ningún dato.
+- **Qué hay que hacer.** Unir los frames de cada ticker (el más reciente gana en la superposición) y que `valor_diario` no valúe en cero un ticker en cartera sin cierre: la serie arranca donde todos los que están en cartera tienen historia, o el ticker se reporta sin historia esos días, rotulado.
+- **Kill-criteria.** Un test con un ticker cuyos frames son uno largo viejo y uno corto nuevo, y una compra anterior al corto: sin escalón y sin ceros; contra la DB, ningún día con un ticker en cartera valuado en 0. Los cuatro comandos en verde y el CI del commit en verde.
+
 ### 334. HOME-SELECTOR-TRES-VISTAS — Que el botón «Ver sólo ganancias» de Home sea un selector de tres valores: sólo ganancias, valor de mercado y monto invertido  ·  origen: Chapa (2026-10-07, *«que en el home, el botón de sólo ganancias tenga un selector de 3 valores, sólo ganancias, valor de mercado y monto invertido»*) · severidad **BAJA** · **display-only**
 
 - **Qué hay.** Desde la 332, un botón que alterna dos vistas: valor de mercado y ganancia (total, no realizada, realizada, dividendos). El monto invertido sólo aparece hoy como respaldo cuando no hay cierres (*«capital invertido neto»*: compras − ventas a precio de transacción).
 - **Qué hay que decidir al hacerla (y decirlo en pantalla):** qué es «monto invertido». Hay dos series y no son iguales: el **costo abierto** FIFO de lo que sigue en cartera (`ganancias_diarias()[…]["costo"]`, la «plata puesta» de la 332) y el **invertido neto** (compras − ventas a precio de transacción: después de una venta con ganancia baja más que el costo). Por coherencia con la 332, el costo abierto; si Chapa prefiere el otro, se rotula.
+- **De la tanda 2026-10-07 [F-2]:** la sparkline de la tarjeta *«VALOR Y P/L»* grafica el invertido neto (`r["invertido_neto"][-40:]`), no el valor ni la ganancia. Que siga a la vista elegida, o que se rotule.
 - **Kill-criteria.** Un selector de tres valores (no tres botones sueltos); cada vista con su título y subtítulo; cambiar de vista **no** recalcula (como la 332); el día de una venta el test distingue costo abierto de invertido neto. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 333. DIVIDENDOS-PAPER-SIN-SPLIT — El cobro de dividendos del motor paper multiplica fills CRUDOS por montos AJUSTADOS: una posición comprada antes de un split cobraría 1/N  ·  origen: la 331 (2026-10-07) · severidad **MEDIA** (latente: no pasó nunca) · **toca caja de la cuenta 2, que entra al sizing**
@@ -3895,6 +3954,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria (congelado ahora):** el retorno a 20 ruedas, **en exceso sobre SPY**, desde el cierre del día de la opinión. **PASA** si el promedio de los COMPRAR supera al de los VENDER y el intervalo de confianza del 90% (bootstrap por ticker, 10.000 remuestreos) de esa diferencia **excluye el cero**. Cualquier otro resultado es **NO PASA** o **SIN VEREDICTO** (si no se llega al `n`). Secundario, descriptivo y sin decidir nada: el mismo cálculo a 5 ruedas, y si la confianza ordena el retorno dentro de cada recomendación.
 - **Lo que decide:** con PASA, la opinión puede dejar de llevar el rótulo *«no validada»* (sigue sin ir a sizing ni gates hasta un backtest, regla 3). Con NO PASA, se escribe en la tarjeta y se decide con Chapa si sigue.
 - **Dependencias:** que se pidan opiniones (la 320) y el paso del tiempo.
+- **Estado al 2026-10-07 (tanda, [I-2]):** 14 opiniones, **todas MANTENER** (confianza 35–55): **0 de 8 COMPRAR y 0 de 8 VENDER**. Lo que frena la 321 no son las 30 opiniones sino esas dos condiciones, y a este ritmo no se cumplen. Además 4 de las 14 tienen el ticker contaminado (la **337**): son 12 tickers, no 14.
 
 ### 320. ~~OPINION-CLAUDE-EN-ANALISIS — Que la pestaña Análisis le pida a Claude una opinión con recomendación (comprar / mantener / vender) usando los datos de la app, sin pagar la API~~ · **CERRADA 2026-10-05 — vía Claude Code con la suscripción, aislado, validado, registrado; display-only** (`29c9cda`) · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-05: *«que la pestaña de análisis se conecte a Claude… y me dé una opinión»*, *«sin pagar extra»*, *«implementemos algo con Claude Code»*) · severidad **MEDIA**
 
