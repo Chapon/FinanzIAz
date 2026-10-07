@@ -2373,7 +2373,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07e** tras abrir y cerrar la **332** (pedido de Chapa: Home sin la plata puesta), que deja la **331** (un docstring que afirma lo contrario de los datos). El orden queda **326 → 331 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **331** va segunda: es chica y protege la 324 de que alguien «corrija» las cantidades de NVDA.
 
-> **Repriorizado 2026-10-07f** tras cerrar la **326** y la **331**, que deja la **333**; la **329** queda con el código hecho y espera que la app se cierre. El orden queda **333 → 329 → 196 → 245 → 290 → 321 → 327 → 328**. La **333** encabeza porque es la única que se puede hacer ya y toca caja de la cuenta viva, aunque hoy sea latente.
+> **Repriorizado 2026-10-07f** tras cerrar la **326** y la **331**, que deja la **333**; la **329** queda con el código hecho y espera que la app se cierre. El orden queda **333 → 329 → 196 → 245 → 290 → 321 → 327 → 328**. **Actualizado el mismo día:** entra la **334** (pedido de Chapa, display-only) detrás de la 329. El orden queda **333 → 329 → 334 → 196 → 245 → 290 → 321 → 327 → 328**. La **333** encabeza porque es la única que se puede hacer ya y toca caja de la cuenta viva, aunque hoy sea latente.
 
 
 
@@ -3812,6 +3812,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 334. HOME-SELECTOR-TRES-VISTAS — Que el botón «Ver sólo ganancias» de Home sea un selector de tres valores: sólo ganancias, valor de mercado y monto invertido  ·  origen: Chapa (2026-10-07, *«que en el home, el botón de sólo ganancias tenga un selector de 3 valores, sólo ganancias, valor de mercado y monto invertido»*) · severidad **BAJA** · **display-only**
+
+- **Qué hay.** Desde la 332, un botón que alterna dos vistas: valor de mercado y ganancia (total, no realizada, realizada, dividendos). El monto invertido sólo aparece hoy como respaldo cuando no hay cierres (*«capital invertido neto»*: compras − ventas a precio de transacción).
+- **Qué hay que decidir al hacerla (y decirlo en pantalla):** qué es «monto invertido». Hay dos series y no son iguales: el **costo abierto** FIFO de lo que sigue en cartera (`ganancias_diarias()[…]["costo"]`, la «plata puesta» de la 332) y el **invertido neto** (compras − ventas a precio de transacción: después de una venta con ganancia baja más que el costo). Por coherencia con la 332, el costo abierto; si Chapa prefiere el otro, se rotula.
+- **Kill-criteria.** Un selector de tres valores (no tres botones sueltos); cada vista con su título y subtítulo; cambiar de vista **no** recalcula (como la 332); el día de una venta el test distingue costo abierto de invertido neto. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 333. DIVIDENDOS-PAPER-SIN-SPLIT — El cobro de dividendos del motor paper multiplica fills CRUDOS por montos AJUSTADOS: una posición comprada antes de un split cobraría 1/N  ·  origen: la 331 (2026-10-07) · severidad **MEDIA** (latente: no pasó nunca) · **toca caja de la cuenta 2, que entra al sizing**
 
