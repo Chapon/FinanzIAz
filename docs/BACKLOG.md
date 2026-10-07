@@ -2346,7 +2346,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07** tras cerrar la **315** con las dos decisiones de Chapa, que **no deja tareas nuevas**. La **312** sigue en la cola, ahora esperando las fechas reales de compra y no una decisión. El orden queda **196 → 245 → 290 → 312 → 321** —las cinco esperan algo de afuera: 196 y 245 el probe de Lambda, la 290 dos semanas de clasificaciones (hasta el ~2026-10-17), la 312 las fechas, y la 321 treinta opiniones con veinte ruedas detrás—.
 
-> **Repriorizado 2026-10-07b** tras cerrar la **324** y la **325**, que cierran también la **312** (el CSV de Yahoo trajo las fechas y toda la historia) y dejan cuatro tareas. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **326** encabeza porque es la única que se puede hacer ya y porque, sin ella, la primera venta desde la app deja la fila y el desplegable con costos distintos. 196, 245, 290 y 321 siguen esperando algo de afuera; la **327** espera la respuesta de Chapa, y la **328** va última porque sólo se vio en el `.venv`.
+> **Repriorizado 2026-10-07b** tras cerrar la **324** y la **325**, que cierran también la **312** (el CSV de Yahoo trajo las fechas y toda la historia) y dejan cuatro tareas. El orden queda **326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. **Actualizado el mismo día (2026-10-07c):** el CI de `6522c2e` dio rojo por un segfault; la **330** pasa adelante de todo. El orden queda **330 → 326 → 196 → 245 → 290 → 321 → 329 → 327 → 328**. La **326** encabeza porque es la única que se puede hacer ya y porque, sin ella, la primera venta desde la app deja la fila y el desplegable con costos distintos. 196, 245, 290 y 321 siguen esperando algo de afuera; la **327** espera la respuesta de Chapa, y la **328** va última porque sólo se vio en el `.venv`.
 
 
 
@@ -3785,6 +3785,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 330. CI-SEGFAULT-SIN-DIAGNOSTICO — El CI del arreglo de la 325 (`6522c2e`) dio rojo por un **segfault** del proceso de pytest (exit 139), y la anotación no dice qué test se cayó  ·  origen: el cierre de la 325 (2026-10-07) · severidad **ALTA** (CI rojo: la 325 no está cerrada)
+
+- **Qué pasó.** El paso de pytest anota los últimos 3500 caracteres de la salida (tarea 65). En un segfault esos caracteres son la lista de «Extension modules» de `faulthandler`, y el bloque que nombra el test (`Fatal Python error … File …, line N in test_…`) queda afuera. Los logs piden token y `gh` no está autenticado: el rojo era indiagnosticable.
+- **Parte 1 (instrumento):** una segunda anotación con el bloque del crash, sin la lista de módulos. Probada con una salida de segfault armada a mano.
+- **Parte 2 (la causa):** con esa anotación, encontrar qué test se cae en Linux y arreglarlo. Sospecha: los anchos de la 325 miden con `QFont("Segoe UI")`, y el runner no tiene **ninguna** fuente instalada (sólo `libegl1 libgl1 libxkbcommon0 libdbus-1-3`).
+- **Kill-criteria.** El CI de `main` en verde, con el test causante nombrado; la anotación del crash queda.
 
 ### 329. CARTERA-SIN-NOMBRE-DE-EMPRESA — Las cuatro posiciones nuevas de «Mis Acciones» (KO, MARA, MO, MSFT) quedaron sin `company_name`, y EMBJ figura como «ERJ»  ·  origen: la 324 (verificación de la DB después del reemplazo) · severidad **BAJA**
 

@@ -181,5 +181,19 @@ jobs:
             msg=$(tail -c 3500 pytest-output.txt \
               | python3 -c 'import sys;print(sys.stdin.read().replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
             echo "::error title=pytest salió con $code::$msg"
+            # Un segfault (139) termina con la lista de «Extension modules» de faulthandler,
+            # que se come los 3500 caracteres de arriba: la anotación no decía qué test
+            # se cayó (tarea 330). Ésta lleva el bloque del crash, sin esa lista.
+            crash=$(python3 -c '
+          import sys
+          t = open("pytest-output.txt", encoding="utf-8", errors="replace").read()
+          i = t.find("Fatal Python error")
+          if i >= 0:
+              b = t[i:].split("Extension modules")[0]
+              print(b[:3500].replace("%","%25").replace("\r","%0D").replace("\n","%0A"))
+          ')
+            if [ -n "$crash" ]; then
+              echo "::error title=pytest: bloque del crash::$crash"
+            fi
           fi
           exit $code
