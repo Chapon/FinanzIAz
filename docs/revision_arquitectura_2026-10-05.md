@@ -29,6 +29,7 @@ Severidad: **LOW** · Confianza: **ALTA** · Parte 1
 - **Evidencia:** julio propuso entrenar offline y servir un artefacto versionado, como *«prerequisito práctico de la tarea 7»*. La tarea 7 cerró **NO-SHIP** el 2026-07-20. En el backlog no hay ninguna tarea ni decisión sobre el ciclo de vida (`grep` de *lifecycle*, *entrenamiento offline*, *model_version*, *artefacto versionado*: vacío). En el código, el cache de XGBoost sigue siendo **sólo en memoria** (`analysis/ml_signals.py:175`, `_XGB_CACHE`, LRU de 192), así que cada arranque re-entrena los 127 modelos: el primer scan de hoy registró `XGB entrenados=127` con **76 s** de `analyze`, contra 3 s en los scans siguientes.
 - **Impacto:** chico y sin cambio de conducta (134 s contra un intervalo de 15 min). Lo que no existe es la trazabilidad que julio pedía: *«qué modelo decidió esta orden»* no queda en la orden. Lo que importa es que una propuesta de impacto ALTO desapareció sin decisión: la forma de la 97 (*«declarado no es cableado»*) aplicada a una revisión.
 - **Acción:** que Chapa decida y quede escrito: adoptarla (con un motivo nuevo, porque el de la tarea 7 ya no está) o descartarla.
+- **Decisión de Chapa (2026-10-07, tarea 315): DESCARTADA.** Mientras XGBoost no gane peso en una decisión, lo único que se pierde es latencia de arranque. Se reabre si un modelo pasa a decidir órdenes: ahí sí hace falta saber qué modelo decidió cada una.
 
 ### [R-3] La recomendación de julio de partir los archivos grandes *«cuando se los toque»* no tiene decisión; se tocaron decenas de veces y crecieron
 Severidad: **LOW** · Confianza: **ALTA** · Partes 1 y 2
@@ -50,6 +51,7 @@ Severidad: **LOW** · Confianza: **ALTA** · Partes 1 y 2
   - testear `run_scan` es caro pero está contenido: 21 archivos de test lo llaman, con los proveedores inyectados, y los monkeypatches de `engine.*` se concentran en uno (`get_strategy_fn`, 46 veces).
 - **Lo que sí pesa:** `harness_config.py` concentra **2,5×** el churn del segundo archivo, y mezcla cinco cosas: los espejos `LIVE_*`, los textos de los desvíos, los guards de calidad de los artefactos, el parseo y la huella del universo, y el chequeo de reproducción. No se encontró un defecto atribuible a esa mezcla; los cinco guards de texto que lo rodean (130, 185, 231, 233, 242) son por lo que dicen los textos, no por dónde viven.
 - **Acción:** que Chapa decida y quede escrito. Mi recomendación: **no partir nada ahora**, por el *«no refactorizar por deporte»* de julio y porque el costo medido es bajo. Si se toca `harness_config.py` por algo más, separar los guards de artefactos (`cohort_*`, `announce_*`, `mixed_scale_*`, `signal_store_*`) a su propio módulo, que es el corte más limpio.
+- **Decisión de Chapa (2026-10-07, tarea 315): no partir ahora; partir al tocar.** Para que no se repita lo de julio (*«cuando se los toque»* sin dejarlo donde se lee), la regla quedó en el docstring de `analysis/harness_config.py`, que es lo que lee quien lo abre.
 
 ---
 

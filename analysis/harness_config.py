@@ -52,6 +52,16 @@ es que todo coincida a la fuerza, sino que *coincida o que el desvío esté escr
 
 Es lógica pura (stdlib): sin red, sin DB. Los valores se refrescan con
 ``scripts/refresh_live_universe.py``, que sí lee la DB.
+
+Partición pendiente (tarea 315)
+-------------------------------
+Este archivo mezcla cinco cosas y concentra el mayor churn del repo
+(``docs/revision_arquitectura_2026-10-05.md`` [R-3]). Decisión de Chapa del
+2026-10-07: no se parte por deporte, pero **la próxima tarea que lo toque por
+otro motivo separa los guards de artefactos** (``cohort_*``, ``announce_*``,
+``mixed_scale_*``, ``signal_store_*``) a su propio módulo, reexportándolos desde
+acá para no romper a quien los importa. Julio dijo lo mismo sin dejarlo escrito
+donde se lee, y se tocó 64 veces sin hacerlo.
 """
 
 from __future__ import annotations

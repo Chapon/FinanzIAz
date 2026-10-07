@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 259 — Tarea 315 (ARQ-DECISIONES-DE-JULIO) CERRADA 2026-10-07 — las dos propuestas de julio tienen decisión escrita** (`analysis/harness_config.py` —sólo el docstring—, `docs/revision_arquitectura_2026-10-05.md`). **No deja tareas nuevas.**
+  - **[R-2] descartada:** XGBoost no pesa en ninguna decisión; re-entrenar al arrancar cuesta latencia (76 s el primer scan), no conducta. Se reabre si un modelo pasa a decidir órdenes.
+  - **[R-3] partir al tocar, con la regla donde se lee:** julio dijo *«cuando se los toque»* y `harness_config.py` se tocó 64 veces sin partirse, porque la regla vivía en un doc. Ahora está en el docstring del módulo: la próxima tarea que lo toque separa los guards de artefactos (`cohort_*`, `announce_*`, `mixed_scale_*`, `signal_store_*`) y los reexporta.
+  - **La 312 también tiene decisión (a, corregir las fechas)**, pero sigue abierta: necesita las fechas reales de compra, que pasan a *Acciones manuales pendientes*.
+
 - **WIP 258 — Tarea 323 (ALERTA-MODAL-BLOQUEA-LA-APP) CERRADA 2026-10-06 — una alerta disparada ya no bloquea la app** (`d896f44`; `ui/alerts_tab.py`, `tests/test_alerta_no_modal_t323.py` **nuevo**, `tests/test_alerts_worker_t80.py`, `tests/test_toggles_con_lector_t283.py`, `tests/test_metricas_compacta_t319.py`). Suite Windows (Anaconda) **4424 passed, 1 skipped, 1 deselected** (+4), ruff limpio, sin estado vivo **4421 passed, 4 skipped**. **CI del commit: VERDE** (`check_ci.py --esperar`, 2026-10-06 03:16Z). **No deja tareas nuevas**; deja una acción manual (la pantalla fantasma).
   - **El diagnóstico, en vivo:** proceso respondiendo y sin CPU; enumerando las ventanas del proceso (`EnumWindows`), la principal con `enabled = False` y un «🔔 Alerta Disparada» en x = 4170, sobre una segunda pantalla que Windows tiene registrada y Chapa no tiene. **Se movió el aviso al centro de la pantalla** (`SetWindowPos`) para destrabarla en el momento.
   - **El arreglo:** `aviso_no_modal` (`NonModal`, `WA_DeleteOnClose`, centrado sobre la ventana principal **después** de mostrarlo, con su tamaño final) y `_avisar`, que junta en **un** aviso todas las alertas del mismo chequeo. `notif` (283) lo sigue gobernando.
@@ -2042,6 +2047,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Acá van sólo las acciones ABIERTAS (tarea 199).** Al cerrar una, se **mueve** a *Acciones manuales resueltas* —al final del archivo, antes de *Hecho reciente*— con su fecha y lo que se hizo; **no se tacha en el lugar**. Tacharlas acá dejó la sección con 17 cerradas de 20, lo que tenías que hacer enterrado entre lo hecho, y el guard de la 138 en rojo por tamaño.
 
+- **Pasarme las fechas reales de compra de las seis posiciones de «Mis Acciones» (tarea 312).** AAPL, EMBJ, INTC, META, MLTX y TEAM figuran compradas el 14/04/2026 (el día de la importación), y los dividendos cobrados se cuentan desde ahí. Elegiste corregirlas: alcanza con la fecha de compra de cada una (o el CSV original de Yahoo, que trae `Trade Date`). Las escribo yo, con la app cerrada.
+
 - **Windows tiene registrada una segunda pantalla que no existe (tarea 323).** `DISPLAY23`, 3440×1440 a la derecha de la principal; Chapa tiene un solo monitor. Cualquier ventana que se abra ahí es invisible: así quedó escondido el aviso de alerta que bloqueó la app el 2026-10-06. **Cómo:** *Configuración → Sistema → Pantalla*; si aparece una pantalla 2, elegila y en *Varias pantallas* poné *Mostrar sólo en 1* (o *Desconectar esta pantalla*). Suele ser una tele, un adaptador o una pantalla virtual que quedó configurada.
 
 - **La variable de usuario `ANTHROPIC_API_KEY` tiene un valor que no es una key (tarea 322) — opcional.** Tiene 10 caracteres (una key real tiene más de cien). Desde la 322 la app la ignora al pedir la opinión de Claude, pero cualquier otra herramienta que la lea va a fallar con un 401. Si no la usás para nada, borrala: *Panel de control → Sistema → Variables de entorno → variables de usuario → `ANTHROPIC_API_KEY` → Eliminar*, y reiniciá la app.
@@ -2328,6 +2335,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 > **Repriorizado 2026-10-05q** tras abrir y cerrar la **322** (la opinión de Claude fallaba en la app con un 401), que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 312 → 315 → 321**.
 
 > **Repriorizado 2026-10-06** tras abrir y cerrar la **323** (una alerta modal bloqueaba la app), que **no deja tareas nuevas**. El orden queda **196 → 245 → 290 → 312 → 315 → 321**.
+
+> **Repriorizado 2026-10-07** tras cerrar la **315** con las dos decisiones de Chapa, que **no deja tareas nuevas**. La **312** sigue en la cola, ahora esperando las fechas reales de compra y no una decisión. El orden queda **196 → 245 → 290 → 312 → 321** —las cinco esperan algo de afuera: 196 y 245 el probe de Lambda, la 290 dos semanas de clasificaciones (hasta el ~2026-10-17), la 312 las fechas, y la 321 treinta opiniones con veinte ruedas detrás—.
 
 
 
@@ -3825,10 +3834,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** El diseño responde las seis con una decisión cada una (o la deja explícitamente a Chapa), cuantifica el patrón de lectura elegido contra las 25 RCU con los números del doc, y no requiere escribir `finanzias.db` desde fuera de Windows (regla 5). Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna. La 245 y el recolector de la 196 dependen de ésta.
 
-### 315. ARQ-DECISIONES-DE-JULIO — Dos propuestas de la revisión de arquitectura de julio quedaron sin tarea ni decisión: el ciclo de vida del modelo ML y partir los archivos grandes  ·  origen: `docs/revision_arquitectura_2026-10-05.md` [R-2] y [R-3] · severidad **BAJA** · **bloqueada: decisión de Chapa**
+### 315. ~~ARQ-DECISIONES-DE-JULIO — Dos propuestas de la revisión de arquitectura de julio quedaron sin tarea ni decisión: el ciclo de vida del modelo ML y partir los archivos grandes~~ · **CERRADA 2026-10-07 — Chapa decidió: [R-2] descartada, [R-3] partir al tocar, con la regla escrita en el archivo** · **movida a *En curso* con el detalle**  ·  origen: `docs/revision_arquitectura_2026-10-05.md` [R-2] y [R-3] · severidad **BAJA** · **bloqueada: decisión de Chapa**
 
 - **[R-2] El ciclo de vida del modelo ML** (julio #2, impacto ALTO): entrenar offline y servir un artefacto versionado. Su motivo principal era la tarea 7, que cerró NO-SHIP el 2026-07-20; nadie lo escribió. Hoy el cache de XGBoost es sólo en memoria (`analysis/ml_signals.py:175`) y cada arranque re-entrena los 127 modelos (76 s de `analyze` en el primer scan del 2026-10-05, contra 3 s después); la orden no registra qué modelo la decidió. Sin cambio de conducta medido.
 - **[R-3] Partir los archivos grandes** (julio §6, *«cuando se los toque»*): `harness_config.py` 0 → 3.394 líneas y 64 commits (2,5× el segundo), `yahoo_finance.py` 1.533 → 3.001, `engine.py` 1.702 → 2.469 con `run_scan` de 580 a 853 líneas. El costo medido es bajo: los pasos nuevos del scan viven en módulos propios, y los dos defectos de mezcla de `yahoo_finance.py` (234, 237) se arreglaron en su lugar.
+- **Decidido por Chapa el 2026-10-07:** **[R-2] DESCARTADA** (se reabre si un modelo pasa a decidir órdenes); **[R-3] no partir ahora, partir al tocar**: la próxima tarea que toque `analysis/harness_config.py` por otro motivo separa los guards de artefactos a su propio módulo. Las dos, también en `docs/revision_arquitectura_2026-10-05.md`.
 - **Decisión de Chapa, por cada una:** adoptarla (con tarea y kill-criteria) o descartarla por escrito. **Recomendación:** [R-2] descartar mientras XGBoost no gane peso en una decisión (lo que hay hoy es latencia de arranque, sin conducta); [R-3] no partir ahora, y si se toca `harness_config.py` por otra cosa, separar los guards de artefactos (`cohort_*`, `announce_*`, `mixed_scale_*`, `signal_store_*`) a su propio módulo.
 - **Kill-criteria.** Las dos decisiones escritas en esta tarea con fecha; si alguna se adopta, su tarea propia con kill-criteria antes de codear.
 - **Dependencias:** la decisión de Chapa.
@@ -3837,9 +3847,10 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Alcance.** READ-ONLY, como las auditorías, pero puntual y no un área de `/audit`: (1) cada propuesta de `docs/architecture_review_2026-07-07.md`, verificada en el código; (2) los archivos de producción de más de 1.500 líneas, con su crecimiento, churn y costo concreto; (3) el diseño de la 196 antes del recolector. Kill-criteria: `docs/revision_arquitectura_killcriteria_2026-10-05.md`. Informe: `docs/revision_arquitectura_2026-10-05.md`.
 
-### 312. CSV-SEIS-YA-IMPORTADAS — Las seis posiciones de «Mis Acciones» importadas antes de la 308 siguen con la fecha de la importación (2026-04-14 03:19), y sus dividendos cobrados se cuentan desde ahí  ·  origen: la 308, parte (2) · severidad **BAJA** · **bloqueada: decisión de Chapa**
+### 312. CSV-SEIS-YA-IMPORTADAS — Las seis posiciones de «Mis Acciones» importadas antes de la 308 siguen con la fecha de la importación (2026-04-14 03:19), y sus dividendos cobrados se cuentan desde ahí  ·  origen: la 308, parte (2) · severidad **BAJA** · **bloqueada: faltan las fechas reales (Chapa eligió corregirlas)**
 
 - **Qué pasa.** AAPL, EMBJ, INTC, META, MLTX y TEAM (`transactions.date` 2026-04-14 03:19, `positions.purchase_date` `NULL`). La 308 arregla las importaciones **nuevas**; éstas quedan como están.
+- **Decidido por Chapa el 2026-10-07: (a), corregirlas.** Queda **bloqueada en el dato**: hacen falta las fechas reales de compra de las seis (o el CSV original), que no están en el repo ni en la DB. Ver *Acciones manuales pendientes*.
 - **Decisión de Chapa.** (a) Corregirlas con la fecha real: hace falta el CSV original (o las fechas), y se escriben con la app cerrada; o (b) dejarlas y que Portfolio rotule sus dividendos *«desde la importación (14/04)»*.
 - **Kill-criteria.** (a): las seis con su fecha real, y los dividendos cobrados recalculados desde ahí; o (b): el rótulo visible en las seis y en ninguna otra. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** la decisión de Chapa.
