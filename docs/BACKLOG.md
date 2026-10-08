@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 267 — Tarea 337 (OPINION-TICKER-CONTAMINADO) CERRADA 2026-10-08 — Análisis fija el ticker al lanzar y no lo relee del campo al terminar** (`ui/analysis_tab.py` —`ticker_del_campo` **nueva**—, `tests/test_analysis_ticker_fijo_t337.py` **nuevo**). Suite Windows (Anaconda) **4472 passed, 1 skipped, 1 deselected** (+3), ruff limpio, sin estado vivo **4469 passed, 4 skipped**.
+  - **El arreglo:** `ticker_del_campo` es el único lugar que normaliza el texto del campo («MU — MICRON TECHNOLOGY» → «MU»); lo usan `_run_analysis`, `_on_completion_selected` y `_on_analysis_done`. El `done` del worker lleva atado el ticker que se pidió, así que escribir otro mientras corre ya no guarda la opinión de A como B (el riesgo no observado del `verificador`).
+  - **Las cuatro filas sucias:** la app estaba abierta, así que no se escribieron en la DB; van **declaradas en la 321**, una por (ticker, fecha): ids 1 y 6 afuera (duplican a MU y TSLA limpias del mismo día), ids 2 y 7 cuentan como GOOGL y PFE, marcadas (sin noticias).
+  - **Mutación: tres, las tres rojas** (`_on_analysis_done` relee el campo crudo, el `connect` sin el ticker, `_run_analysis` sin cortar).
+  - **No deja tareas nuevas.**
+
 - **WIP 266 — Tarea 336 (HOME-CIERRES-UN-SOLO-FRAME) CERRADA 2026-10-08 — Home une los frames de cierres de cada ticker y no valúa lo que no tiene precio** (`27eee10`, CI **VERDE** 2026-10-08 04:25Z; `database/cartera_real.py` —`unir_cierres` y `tenencia_sin_cierre` **nuevas**—, `ui/home_tab.py`, `tests/test_home_cierres_unidos_t336.py` **nuevo**). **Display-only.** Suite Windows (Anaconda) **4469 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4466 passed, 4 skipped**.
   - **El arreglo:** `cierres_del_cache` une **todos** los frames `1d` del ticker: el que termina más tarde gana en la superposición, y cada uno más viejo aporta los días anteriores **reescalados** en el primer día común. El reescalado hace falta: el cache baja con `auto_adjust` y los frames bajados en fechas distintas difieren hasta **1,6 %** (MO 10y vs 2y); pegados crudos dejan un escalón en la costura. Verificado contra el cache real: en cada costura el retorno diario es **idéntico** al del frame largo crudo.
   - **Lo que no tiene cierre:** un ticker comprado antes de su primer cierre no suma **ni valor ni costo** hasta ese cierre (antes el valor era 0 × q y el costo sí sumaba: la ganancia caía su costo entero esos días). `tenencia_sin_cierre` dice cuáles y desde cuándo, y Home lo rotula en el subtítulo.
@@ -2396,6 +2402,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-08** tras cerrar la **336**, que deja la **343** (historia de EMBJ y TEAM, necesita red). El orden queda **337 → 333 → 339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 343 → 328**. La **337** encabeza: es la otra ALTA.
 
+> **Repriorizado 2026-10-08b** tras cerrar la **337**, que **no deja tareas nuevas**. El orden queda **333 → 339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 343 → 328**.
+
 
 
 
@@ -3873,7 +3881,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Decisión de Chapa.** (a) mover los WIP cerrados a *Hecho reciente* (con el guard de la 66: es un movimiento grande, se hace con un script que verifique que no se pierde ninguna línea, como la 199) y volver al contrato; o (b) reescribir el contrato a la práctica en los cuatro lugares.
 - **Kill-criteria.** Los cuatro lugares dicen lo mismo que el archivo hace; `check_backlog_integrity` en verde.
 
-### 337. OPINION-TICKER-CONTAMINADO — `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker: llamadas duplicadas y la muestra de la 321 inflada  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [I-1] · severidad **ALTA**
+### 337. ~~OPINION-TICKER-CONTAMINADO — `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker: llamadas duplicadas y la muestra de la 321 inflada~~ · **CERRADA 2026-10-08 — el ticker se fija al lanzar el análisis, un solo lugar lo normaliza, y las cuatro filas quedan declaradas en la 321** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [I-1] · severidad **ALTA**
 
 - **Qué pasa.** `ui/analysis_tab.py::_run_analysis` (l. 622) corta el texto del campo en « — »; `_on_analysis_done` (l. 640) lo vuelve a leer **sin cortar**, y ese valor va a `opinion_card.set_contexto` → `OpinionWorker` → `opinion_claude.guardar`. En la DB: «MU — MICRON TECHNOLOGY», «TSLA — TESLA INC.», «GOOGL — ALPHABET INC. (GOOGLE)», «PFE — PFIZER INC.»; MU y TSLA tienen además su fila limpia el mismo día, pese al `UNIQUE (ticker, fecha)`.
 - **Impacto.** Una segunda llamada a Claude el mismo día por ticker (la de hoy no se encuentra con la otra clave), y la 321 cuenta *«tickers distintos o días distintos»* y cruza por ticker contra precios: esas filas se inflan o se pierden. Son 12 tickers, no 14.
@@ -3972,6 +3980,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Lo que decide:** con PASA, la opinión puede dejar de llevar el rótulo *«no validada»* (sigue sin ir a sizing ni gates hasta un backtest, regla 3). Con NO PASA, se escribe en la tarjeta y se decide con Chapa si sigue.
 - **Dependencias:** que se pidan opiniones (la 320) y el paso del tiempo.
 - **Estado al 2026-10-07 (tanda, [I-2]):** 14 opiniones, **todas MANTENER** (confianza 35–55): **0 de 8 COMPRAR y 0 de 8 VENDER**. Lo que frena la 321 no son las 30 opiniones sino esas dos condiciones, y a este ritmo no se cumplen. Además 4 de las 14 tienen el ticker contaminado (la **337**): son 12 tickers, no 14.
+- **Las cuatro filas de la 337 (declaradas 2026-10-08; la app estaba abierta y no se corrigieron en la DB).** Al medir, el ticker se normaliza cortando en « — » y cuenta **una opinión por (ticker, fecha)**: la **id 1** («MU — MICRON TECHNOLOGY», 03:41) y la **id 6** («TSLA — TESLA INC.») **quedan afuera**, porque MU (id 5) y TSLA (id 10) tienen su fila limpia el mismo día, pedida con noticias; la **id 2** (GOOGL) y la **id 7** (PFE) cuentan como GOOGL y PFE, **marcadas**: se pidieron sin noticias y con el nombre de la empresa en el `ticker` del prompt. Desde la 337 no entran filas nuevas así.
 
 ### 320. ~~OPINION-CLAUDE-EN-ANALISIS — Que la pestaña Análisis le pida a Claude una opinión con recomendación (comprar / mantener / vender) usando los datos de la app, sin pagar la API~~ · **CERRADA 2026-10-05 — vía Claude Code con la suscripción, aislado, validado, registrado; display-only** (`29c9cda`) · **movida a *En curso* con el detalle**  ·  origen: pedido de Chapa (2026-10-05: *«que la pestaña de análisis se conecte a Claude… y me dé una opinión»*, *«sin pagar extra»*, *«implementemos algo con Claude Code»*) · severidad **MEDIA**
 

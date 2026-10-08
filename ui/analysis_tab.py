@@ -88,6 +88,15 @@ from ui.widgets import HSeparator, MetricCard, SignalBadge
 # at the top of this file.
 
 
+def ticker_del_campo(texto: str) -> str:
+    """El ticker de lo que hay en el campo: ``"aapl"`` o ``"AAPL — Apple Inc."`` dan ``"AAPL"``.
+
+    El único lugar que lo normaliza (tarea 337): el autocompletar deja el nombre de la empresa
+    pegado, y antes un método lo cortaba y el otro no.
+    """
+    return (texto or "").split(" — ")[0].strip().upper()
+
+
 # ── Main tab ───────────────────────────────────────────────────────────────────
 
 
@@ -608,7 +617,7 @@ class AnalysisTab(QWidget):
 
     def _on_completion_selected(self, text: str):
         """Extract just the ticker symbol from 'AAPL — Apple Inc.' and run analysis."""
-        ticker = text.split(" — ")[0].strip()
+        ticker = ticker_del_campo(text)
         # Block textChanged so setting the clean ticker doesn't re-trigger filtering
         self.ticker_edit.blockSignals(True)
         self.ticker_edit.setText(ticker)
@@ -618,8 +627,7 @@ class AnalysisTab(QWidget):
     # ── Internal ───────────────────────────────────────────────────────────────
 
     def _run_analysis(self):
-        raw = self.ticker_edit.text().strip()
-        ticker = raw.split(" — ")[0].strip().upper()  # handles both "AAPL" and "AAPL — Apple Inc."
+        ticker = ticker_del_campo(self.ticker_edit.text())
         if not ticker:
             return
         period = PERIODS[self.period_combo.currentText()]
@@ -633,11 +641,15 @@ class AnalysisTab(QWidget):
             self._worker.quit()
 
         self._worker = AnalysisWorker(ticker, period)
-        self._worker.done.connect(self._on_analysis_done)
+        # El ticker va atado al worker que lo pidió (tarea 337): releerlo del campo al terminar
+        # guardaba «MU — MICRON TECHNOLOGY» como ticker, o la opinión de A con el nombre de B si
+        # se escribía otro mientras corría.
+        self._worker.done.connect(lambda *a, t=ticker: self._on_analysis_done(*a, ticker=t))
         self._worker.start()
 
-    def _on_analysis_done(self, df, result, price_data, company, analyst=None):
-        ticker = self.ticker_edit.text().strip().upper()
+    def _on_analysis_done(self, df, result, price_data, company, analyst=None, ticker=None):
+        if ticker is None:
+            ticker = ticker_del_campo(self.ticker_edit.text())
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analizar")
 
