@@ -73,12 +73,35 @@ def acciones_antes_del_ex_date(eventos: list[tuple[str, float]], ex_date: str) -
     return sum(q for d, q in eventos if d < ex_date)
 
 
+def acciones_al_ex_date_con_splits(
+    eventos: list[tuple[str, float]], ex_date: str, splits: list[tuple[str, float]]
+) -> float:
+    """Como ``acciones_antes_del_ex_date``, pero en la escala de los splits ya aplicados (tarea 333).
+
+    ``splits`` son ``(ex_date del split, ratio)`` que el ledger ya aplicó a la posición. Un fill
+    anterior a un split que ocurre **hasta** el ex-date del dividendo cuenta ``ratio`` veces: el
+    calendario viene **ajustado** por los splits posteriores (la 331), así que su $/acción es el
+    de las acciones de después. Sin esto, una posición comprada antes de un 10:1 cobraría 1/10.
+    Un fill del mismo día del split ya es post-split (la convención de ``splits.ajustes_pendientes``).
+    """
+    total = 0.0
+    for d, q in eventos:
+        if d >= ex_date:
+            continue
+        for ex_split, ratio in splits:
+            if d < ex_split <= ex_date:
+                q *= ratio
+        total += q
+    return total
+
+
 def creditos_pendientes(
     fills: list[tuple[str, str, float, str]],
     calendario: dict[str, list[tuple[str, float]]],
     ya_acreditados: set[tuple[str, str]],
     desde: str | None,
     hasta: str,
+    splits: dict[str, list[tuple[str, float]]] | None = None,
 ) -> list[tuple[str, str, float, float]]:
     """``(ticker, ex_date, acciones, $/acción)`` de lo que falta acreditar.
 
@@ -90,6 +113,11 @@ def creditos_pendientes(
     ``desde=None`` ⇒ no hay scan previo ⇒ **no se acredita nada**: es el arranque de una
     cuenta, y además es lo que hace que «sólo hacia adelante» valga también el primer día
     que esto corre.
+
+    ``splits`` (tarea 333) son ``{ticker: [(ex_date, ratio)]}`` de los ajustes **ya aplicados**
+    a la posición —splits de la 262 y spin-offs de la 303, con su ``share_ratio``—: los fills
+    son crudos y el calendario está ajustado, así que sin ellos un ex-date posterior a un split
+    cobraría 1/N.
     """
     if not fills or desde is None:
         return []
@@ -120,7 +148,7 @@ def creditos_pendientes(
                 continue
             if (ticker, ex_date) in ya_acreditados:
                 continue
-            acciones = acciones_antes_del_ex_date(eventos, ex_date)
+            acciones = acciones_al_ex_date_con_splits(eventos, ex_date, (splits or {}).get(ticker, []))
             if acciones > 0 and monto:
                 pendientes.append((ticker, ex_date, acciones, float(monto)))
     return pendientes
@@ -140,7 +168,12 @@ def acreditar_dividendos(session, acct, desde: str | None, hasta: str) -> list[d
     cambiar.
     """
     from database.models import DividendCalendarCache
-    from paper_trading.models import PaperDividendCredit, PaperOrder
+    from paper_trading.models import (
+        PaperDividendCredit,
+        PaperOrder,
+        PaperSpinoffAdjustment,
+        PaperSplitAdjustment,
+    )
 
     fills = [
         (o.ticker, o.side, float(o.fill_shares or 0.0), o.filled_at)
@@ -163,8 +196,14 @@ def acreditar_dividendos(session, acct, desde: str | None, hasta: str) -> list[d
         for c in session.query(PaperDividendCredit).filter(PaperDividendCredit.account_id == acct.id).all()
     }
 
+    # Tarea 333: los ajustes ya aplicados, para llevar los fills crudos a la escala del calendario.
+    splits: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for modelo, campo in ((PaperSplitAdjustment, "ratio"), (PaperSpinoffAdjustment, "share_ratio")):
+        for a in session.query(modelo).filter(modelo.account_id == acct.id).all():
+            splits[str(a.ticker).upper()].append((a.ex_date, float(getattr(a, campo))))
+
     creditos = []
-    for ticker, ex_date, acciones, monto in creditos_pendientes(fills, calendario, ya, desde, hasta):
+    for ticker, ex_date, acciones, monto in creditos_pendientes(fills, calendario, ya, desde, hasta, splits):
         efectivo = acciones * monto
         acct.cash = float(acct.cash) + efectivo
         session.add(

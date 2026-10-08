@@ -1051,6 +1051,20 @@ def _dividendos_devengados(
         # nada que descontar y el devengado completo es el correcto.
         ya_en_caja = set()
 
+    # Tarea 333: los splits y spin-offs ya aplicados, para llevar los fills crudos a la escala
+    # del calendario (ajustado). La misma aritmética que el motor: `acciones_al_ex_date_con_splits`.
+    from paper_trading.dividends import acciones_al_ex_date_con_splits
+
+    splits: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for tabla, campo in (("paper_split_adjustments", "ratio"), ("paper_spinoff_adjustments", "share_ratio")):
+        try:
+            for t, ex, r in con.execute(
+                f"SELECT ticker, ex_date, {campo} FROM {tabla} WHERE account_id=?", (account_id,)
+            ).fetchall():
+                splits[str(t).upper()].append((ex, float(r)))
+        except sqlite3.OperationalError:
+            pass  # DB anterior a la 262/303: no hay ajustes aplicados
+
     total = 0.0
     sin_calendario: list[str] = []
     for ticker, eventos in sorted(por_ticker.items()):
@@ -1082,8 +1096,8 @@ def _dividendos_devengados(
             if (ticker, ex_date) in ya_en_caja:
                 continue  # ya lo cobró el motor (tarea 222): está en la equity
             # Shares en cartera ANTES del ex-date. `< ex_date` y no `<=`: comprar el
-            # día del ex-date no cobra.
-            shares = sum(q for dia, q in eventos if dia < ex_date)
+            # día del ex-date no cobra. En la escala de los splits ya aplicados (tarea 333).
+            shares = acciones_al_ex_date_con_splits(eventos, ex_date, splits.get(ticker, []))
             if shares > 0:
                 total += shares * float(monto)
 
