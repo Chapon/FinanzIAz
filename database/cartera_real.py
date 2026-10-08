@@ -202,7 +202,9 @@ def completar_nombres(session, portfolio_id: int) -> list[tuple[str, str | None,
         if info.name and info.name != p.company_name and not _parece_ticker(info.name):
             cambios.append((p.ticker, p.company_name, info.name))
             p.company_name = info.name
-            if not p.sector and info.sector:
+            if (
+                not p.sector or p.sector == "N/A"
+            ) and info.sector:  # «N/A»: el marcador del validador de importación
                 p.sector = info.sector
     return sorted(cambios)
 

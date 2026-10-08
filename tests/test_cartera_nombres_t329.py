@@ -41,6 +41,30 @@ def test_completa_los_vacios_y_los_simbolos_y_NO_pisa_un_nombre_propio(test_db):
     assert por["ZZZ"] == (None, None)  # sin cache: no se inventa
 
 
+def test_un_sector_N_A_es_un_sector_vacio(test_db):
+    """El validador de importación guarda «N/A» cuando no sabe el sector (EMBJ)."""
+    with session_scope() as s:
+        pf = Portfolio(name="Mis Acciones")
+        s.add(pf)
+        s.flush()
+        s.add(
+            Position(
+                portfolio_id=pf.id,
+                ticker="EMBJ",
+                quantity=1.0,
+                avg_buy_price=1.0,
+                company_name="ERJ",
+                sector="N/A",
+            )
+        )
+        s.add(CompanyInfoCache(ticker="EMBJ", name="Embraer S.A.", sector="Industrials"))
+        pid = pf.id
+    with session_scope() as s:
+        completar_nombres(s, pid)
+    with session_scope() as s:
+        assert s.query(Position).one().sector == "Industrials"
+
+
 def test_que_es_un_simbolo():
     assert _parece_ticker("ERJ") and _parece_ticker("BRK.B")
     assert not _parece_ticker("Embraer S.A.") and not _parece_ticker("NVIDIA Corporation")

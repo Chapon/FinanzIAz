@@ -18,6 +18,9 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 265 — Tarea 329 (CARTERA-SIN-NOMBRE-DE-EMPRESA) CERRADA 2026-10-07 — los once nombres de «Mis Acciones» en la DB viva** (`database/cartera_real.py`, `tests/test_cartera_nombres_t329.py`). Con la app cerrada (Chapa): backup `finanzias_2026-10-07_21-32-13_pre-completar-nombres-t329.db`, `scripts/completar_nombres_cartera.py --aplicar` → EMBJ «ERJ» → Embraer S.A., KO, MARA, MO, MSFT; releído con `mode=ro`: las once con nombre.
+  - **De paso:** EMBJ tenía sector **«N/A»**, el marcador que deja el validador del diálogo de importación, y `completar_nombres` sólo completaba sectores vacíos. Ahora «N/A» cuenta como vacío (test nuevo); el de EMBJ se escribió a mano (Industrials), porque con el nombre ya corregido `completar_nombres` no la vuelve a tocar. Ninguna otra posición tenía «N/A».
+
 - **WIP 264 — Tarea 335 (TANDA DE AUDITORÍAS 2026-10-07) CERRADA — doce áreas sobre las 307–334 y el estado vivo; nueve hallazgos, dos HIGH** (`f281d7b`, CI **VERDE** 2026-10-07 23:48Z; `docs/auditoria_tanda_killcriteria_2026-10-07.md`, `docs/auditoria_tanda_2026-10-07.md`). Pedido de Chapa: *«luego de terminar correr todas las auditorías»*. READ-ONLY: no toca código.
   - **HIGH:** [F-1] Home subvalúa valor y ganancia el primer año (un frame de cierres por ticker y ceros donde no hay cierre) → **336**; [I-1] `claude_opinions` guarda «MU — MICRON TECHNOLOGY» como ticker → **337**. Los dos pasaron por el `verificador` (§3 del informe).
   - **MEDIA:** [A-1] *En curso* tiene 213 ítems contra su «máx 1» → **338**; [D-1] la lección de la 322 no está en `/ship` → **339**; [L-1] «unstable model» en todos los scans → **340** (medición); [I-2] las 14 opiniones son MANTENER y la 321 está 0/8 y 0/8 → enunciado de la **321**.
@@ -2085,8 +2088,6 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 - **Confirmar la fecha real de compra de MLTX (tarea 342).** El CSV de Yahoo dice 28/06/2025, que fue sábado. ¿Fue el viernes 27, el lunes 30, otro día?
 
-- **Cerrar la app un momento para escribir los nombres de empresa de «Mis Acciones» (tarea 329).** EMBJ figura «ERJ» y KO, MARA, MO y MSFT no tienen nombre. Con la app cerrada: `python scripts/completar_nombres_cartera.py --aplicar` (sin `--aplicar` muestra lo que haría). O avisame y lo corro yo.
-
 - **Windows tiene registrada una segunda pantalla que no existe (tarea 323).** `DISPLAY23`, 3440×1440 a la derecha de la principal; Chapa tiene un solo monitor. Cualquier ventana que se abra ahí es invisible: así quedó escondido el aviso de alerta que bloqueó la app el 2026-10-06. **Cómo:** *Configuración → Sistema → Pantalla*; si aparece una pantalla 2, elegila y en *Varias pantallas* poné *Mostrar sólo en 1* (o *Desconectar esta pantalla*). Suele ser una tele, un adaptador o una pantalla virtual que quedó configurada.
 
 - **La variable de usuario `ANTHROPIC_API_KEY` tiene un valor que no es una key (tarea 322) — opcional.** Tiene 10 caracteres (una key real tiene más de cien). Desde la 322 la app la ignora al pedir la opinión de Claude, pero cualquier otra herramienta que la lea va a fallar con un 401. Si no la usás para nada, borrala: *Panel de control → Sistema → Variables de entorno → variables de usuario → `ANTHROPIC_API_KEY` → Eliminar*, y reiniciá la app.
@@ -2384,7 +2385,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07f** tras cerrar la **326** y la **331**, que deja la **333**; la **329** queda con el código hecho y espera que la app se cierre. El orden queda **333 → 329 → 196 → 245 → 290 → 321 → 327 → 328**. **Actualizado el mismo día:** entra la **334** (pedido de Chapa, display-only) detrás de la 329. El orden queda **333 → 329 → 334 → 196 → 245 → 290 → 321 → 327 → 328**. La **333** encabeza porque es la única que se puede hacer ya y toca caja de la cuenta viva, aunque hoy sea latente.
 
-> **Repriorizado 2026-10-07g** tras la tanda de auditorías (**335**, `docs/auditoria_tanda_2026-10-07.md`), que deja siete tareas. El orden queda **336 → 337 → 333 → 339 → 329 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. La **336** y la **337** encabezan: son las dos ALTA, y la 336 es la pantalla que Chapa mira primero. La **339** sube porque es barata y evita repetir un rojo de CI. La **338** necesita una decisión de Chapa.
+> **Repriorizado 2026-10-07g** tras la tanda de auditorías (**335**, `docs/auditoria_tanda_2026-10-07.md`), que deja siete tareas. El orden queda **336 → 337 → 333 → 339 → 329 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. **Actualizado el mismo día:** la **329** se cerró (Chapa cerró la app). El orden queda **336 → 337 → 333 → 339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. La **336** y la **337** encabezan: son las dos ALTA, y la 336 es la pantalla que Chapa mira primero. La **339** sube porque es barata y evita repetir un rojo de CI. La **338** necesita una decisión de Chapa.
 
 
 
@@ -3905,7 +3906,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Parte 2 (la causa) — HECHA:** volvió a pasar en `5e8f373` y la anotación lo nombró. Ver WIP 261.
 - **Kill-criteria.** El test causante nombrado y arreglado, o —si en un mes de commits no vuelve a pasar— se cierra diciéndolo.
 
-### 329. CARTERA-SIN-NOMBRE-DE-EMPRESA — Las cuatro posiciones nuevas de «Mis Acciones» (KO, MARA, MO, MSFT) quedaron sin `company_name`, y EMBJ figura como «ERJ»  ·  origen: la 324 (verificación de la DB después del reemplazo) · severidad **BAJA** · **código hecho (WIP 263); falta escribir los nombres con la app cerrada**
+### 329. ~~CARTERA-SIN-NOMBRE-DE-EMPRESA — Las cuatro posiciones nuevas de «Mis Acciones» (KO, MARA, MO, MSFT) quedaron sin `company_name`, y EMBJ figura como «ERJ»~~  ·  origen: la 324 (verificación de la DB después del reemplazo) · severidad **BAJA** · ~~código hecho, faltaba escribir los nombres~~ **CERRADA 2026-10-07 — los once nombres en la DB viva** · **movida a *En curso* con el detalle**
 
 - **Qué pasa.** `reemplazar_cartera` conserva empresa y sector de los tickers que ya estaban; los nuevos entran con `NULL` y la columna *Empresa* de Portfolio muestra el ticker. EMBJ ya estaba como «ERJ» (su ticker viejo) desde la importación de abril.
 - **Kill-criteria.** Las 11 posiciones con su nombre (de `company_info` o del cache), sin red en el render de Portfolio. Los cuatro comandos en verde y el CI del commit en verde.
@@ -5961,6 +5962,8 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Acciones manuales resueltas (historial — tarea 199)
 
 > Las acciones manuales que ya se hicieron, se decidieron o se retiraron, **movidas** desde *Acciones manuales pendientes* con su texto completo. Es historial: lo que afirman en presente vale **a su fecha**. Lo que sigue abierto vive arriba.
+
+- ~~**Cerrar la app un momento para escribir los nombres de empresa de «Mis Acciones» (tarea 329).**~~ **HECHO 2026-10-07 — Chapa cerró la app; backup `finanzias_2026-10-07_21-32-13_pre-completar-nombres-t329.db`, cinco nombres escritos y el sector «N/A» de EMBJ corregido a Industrials.** EMBJ figura «ERJ» y KO, MARA, MO y MSFT no tienen nombre. Con la app cerrada: `python scripts/completar_nombres_cartera.py --aplicar` (sin `--aplicar` muestra lo que haría). O avisame y lo corro yo.
 
 - ~~**Pasarme las fechas reales de compra de las seis posiciones de «Mis Acciones» (tarea 312).**~~ **HECHO 2026-10-07 — Chapa pasó el CSV de Yahoo con toda la historia** (compras, ventas y el split de NVDA). No sólo trajo las fechas: «Mis Acciones» se reconstruyó entera desde ahí (tareas 324/325, WIP 260). AAPL, EMBJ, INTC, META, MLTX y TEAM figuran compradas el 14/04/2026 (el día de la importación), y los dividendos cobrados se cuentan desde ahí. Elegiste corregirlas: alcanza con la fecha de compra de cada una (o el CSV original de Yahoo, que trae `Trade Date`). Las escribo yo, con la app cerrada.
 
