@@ -246,6 +246,9 @@ def valor_diario(
 
     - un ticker sin cierres queda **afuera** y se devuelve en la segunda lista, en vez de
       valuarse en cero;
+    - un ticker con cierres que se compró **antes** del primero no suma hasta ese primer
+      cierre: esos días no tiene precio. ``tenencia_sin_cierre`` dice cuáles y desde cuándo
+      (tarea 336), para rotularlo;
     - la serie **termina** en la última rueda que tienen todos los tickers con historia **que
       siguen en cartera** (tarea 309; si se vendió todo, en el último cierre que haya): más
       allá, uno de ellos quedaría congelado en su último cierre sin que nada lo diga. Adentro,
@@ -293,9 +296,37 @@ def valor_diario(
             if dia in por_ticker[t]:
                 ultimo_cierre[t] = por_ticker[t][dia]
         serie.append(
-            (dia, sum(q * ultimo_cierre.get(t, 0.0) for t, q in acciones.items() if q > CERRADA_TOL))
+            (
+                dia,
+                sum(
+                    q * ultimo_cierre[t]
+                    for t, q in acciones.items()
+                    if q > CERRADA_TOL and t in ultimo_cierre
+                ),
+            )
         )
     return serie, sin_historia
+
+
+def tenencia_sin_cierre(
+    eventos: list[tuple[date, str, float]],
+    cierres: dict[str, list[tuple[date, float]]],
+) -> dict[str, tuple[date, date]]:
+    """``{ticker: (primera transacción, primer cierre)}`` de los que se compraron sin cierres. Puro.
+
+    Son los tickers que ``valor_diario`` y ``ganancias_diarias`` dejan afuera entre esas dos
+    fechas, porque no tienen precio (tarea 336). Los que no tienen ningún cierre van en la
+    segunda lista de ``valor_diario``, no acá.
+    """
+    out: dict[str, tuple[date, date]] = {}
+    for t in sorted({t for _, t, _ in eventos}):
+        if not cierres.get(t):
+            continue
+        primera = min(d for d, tt, _ in eventos if tt == t)
+        primer_cierre = min(d for d, _ in cierres[t])
+        if primera < primer_cierre:
+            out[t] = (primera, primer_cierre)
+    return out
 
 
 def ganancias_diarias(
@@ -311,7 +342,9 @@ def ganancias_diarias(
     - ``costo``: lo que siguen costando, por FIFO, las acciones en cartera ese día. Es la
       «plata puesta»: la app no registra depósitos de efectivo, sólo compras y ventas.
     - ``no_realizado = valor − costo``. ``valor`` y ``costo`` cuentan sólo los tickers **con**
-      cierres, igual que ``valor_diario``; los otros vuelven en la segunda lista.
+      cierres, igual que ``valor_diario``; los otros vuelven en la segunda lista. Y un ticker
+      comprado antes de su primer cierre tampoco suma costo hasta ese cierre (tarea 336):
+      antes sumaba el costo y no el valor, y la ganancia caía su costo entero esos días.
     - ``realizado``: el acumulado de las ventas hasta ese día, con las dos comisiones.
     - ``dividendos``: el acumulado cobrado hasta ese día (ex-date ≤ día; convención de la 222).
 
@@ -326,7 +359,7 @@ def ganancias_diarias(
     serie_valor, sin_historia = valor_diario(eventos, cierres)
     if not serie_valor:
         return [], sin_historia
-    con_historia = {t for t in movs if cierres.get(t)}
+    primer_cierre = {t: min(d for d, _ in cierres[t]) for t in movs if cierres.get(t)}
     detalle_div = {
         t: dividendos_detalle(
             [(m.fecha.isoformat(), m.cantidad if m.tipo == "BUY" else -m.cantidad) for m in ms],
@@ -348,7 +381,9 @@ def ganancias_diarias(
     out = []
     for dia, valor in serie_valor:
         libros = {t: libro_al(t, dia) for t in movs}
-        costo = sum(lo.cantidad * lo.precio for t in con_historia for lo in libros[t].lotes)
+        costo = sum(
+            lo.cantidad * lo.precio for t, p in primer_cierre.items() if p <= dia for lo in libros[t].lotes
+        )
         realizado = sum(lb.realizado for lb in libros.values())
         dividendos = sum(c for t in movs for ex, _, _, c in detalle_div[t] if ex[:10] <= dia.isoformat())
         no_realizado = valor - costo
@@ -393,25 +428,57 @@ def calendario_del_cache(session, tickers: list[str]) -> tuple[dict[str, list[tu
 def cierres_del_cache(tickers: list[str]) -> dict[str, list[tuple[date, float]]]:
     """Cierres diarios del cache local, **sin red** (Home no puede colgarse esperando a Yahoo).
 
-    Por ticker, de todos sus frames ``1d`` (cualquier período), el que **termina más tarde**:
-    el ``1y`` lo refresca la pestaña Portfolio y los largos pueden estar congelados (la 286).
-    No es ``latest_1d``, que elige el bajado más recientemente. Un ticker sin ningún frame
-    no aparece, y ``valor_diario`` lo reporta.
+    Por ticker, **todos** sus frames ``1d`` unidos con ``unir_cierres`` (tarea 336): el ``1y``
+    lo refresca la pestaña Portfolio y es el que termina más tarde, pero los largos traen la
+    historia de antes. Elegir uno solo —lo que hacía— dejaba un año de la cartera sin precio.
+    Un ticker sin ningún frame no aparece, y ``valor_diario`` lo reporta.
     """
     from data import parquet_cache
 
     out: dict[str, list[tuple[date, float]]] = {}
     for t in tickers:
         try:
-            frames = [
-                df for df in parquet_cache.all_1d(t) if df is not None and not df.empty and "Close" in df
+            series = [
+                df["Close"].dropna()
+                for df in parquet_cache.all_1d(t)
+                if df is not None and not df.empty and "Close" in df
             ]
         except Exception:
-            frames = []
-        if frames:
-            mejor = max(frames, key=lambda df: df.index.max())
-            out[t] = [(ts.date(), float(c)) for ts, c in mejor["Close"].dropna().items()]
+            series = []
+        unida = unir_cierres([s for s in series if not s.empty])
+        if unida:
+            out[t] = unida
     return out
+
+
+def unir_cierres(series: list) -> list[tuple[date, float]]:
+    """Une varias series de cierres del mismo ticker en una, ``[(día, cierre)]`` ordenada. Puro.
+
+    La que **termina más tarde** gana en todo día que tenga; cada una más vieja aporta sólo
+    los días **anteriores** a lo ya unido, reescalados por ``unido / vieja`` en el primer día
+    que tienen en común. El reescalado no es cosmético: el cache baja con ``auto_adjust``,
+    así que un frame bajado antes de un dividendo (o de un split) está en otra escala —medido
+    el 2026-10-08: hasta 1,6 % (MO)—, y pegarlo crudo pinta un escalón en la costura. Una
+    serie **sin** días en común no se pega: no hay con qué escalarla.
+    """
+    import pandas as pd
+
+    ordenadas = sorted((s.sort_index() for s in series if len(s)), key=lambda s: s.index.max(), reverse=True)
+    if not ordenadas:
+        return []
+    unida = ordenadas[0]
+    unida = unida[~unida.index.duplicated(keep="last")]
+    for vieja in ordenadas[1:]:
+        vieja = vieja[~vieja.index.duplicated(keep="last")]
+        antes = vieja[vieja.index < unida.index.min()]
+        comunes = vieja.index.intersection(unida.index)
+        if antes.empty or comunes.empty:
+            continue
+        d0 = comunes.min()
+        if not (vieja[d0] > 0 and unida[d0] > 0):
+            continue
+        unida = pd.concat([antes * (float(unida[d0]) / float(vieja[d0])), unida])
+    return [(ts.date(), float(c)) for ts, c in unida.items()]
 
 
 # ── Home (tarea 264) ─────────────────────────────────────────────────────────
@@ -496,11 +563,12 @@ def resumen_home(session, nombre: str = CARTERA_HOME, cierres=None) -> dict | No
         provider = cierres or cierres_del_cache
         dict_cierres = provider(sorted({e[1] for e in eventos}))
         serie_valor, sin_historia = valor_diario(eventos, dict_cierres)
+        sin_cierre = tenencia_sin_cierre(eventos, dict_cierres)
     except Exception:
         from config.logging_config import get_logger
 
         get_logger(__name__).exception("Home: no se pudo armar el valor diario; queda el invertido neto")
-        serie_valor, sin_historia, dict_cierres = [], [], None
+        serie_valor, sin_historia, dict_cierres, sin_cierre = [], [], None, {}
     # Tarea 332: la ganancia separada de la plata puesta, para el botón de Home.
     serie_ganancia, sin_calendario = [], []
     if dict_cierres is not None:
@@ -539,6 +607,7 @@ def resumen_home(session, nombre: str = CARTERA_HOME, cierres=None) -> dict | No
         "invertido_neto": invertido_neto,
         "valor_diario": serie_valor,
         "valor_diario_sin_historia": sin_historia,
+        "valor_diario_sin_cierre": sin_cierre,
         "ganancia_diaria": serie_ganancia,
         "ganancia_sin_calendario": sin_calendario,
         "alertas_disparadas": alertas,

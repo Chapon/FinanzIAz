@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 266 — Tarea 336 (HOME-CIERRES-UN-SOLO-FRAME) CERRADA 2026-10-08 — Home une los frames de cierres de cada ticker y no valúa lo que no tiene precio** (`database/cartera_real.py` —`unir_cierres` y `tenencia_sin_cierre` **nuevas**—, `ui/home_tab.py`, `tests/test_home_cierres_unidos_t336.py` **nuevo**). **Display-only.** Suite Windows (Anaconda) **4469 passed, 1 skipped, 1 deselected** (+7), ruff limpio, sin estado vivo **4466 passed, 4 skipped**.
+  - **El arreglo:** `cierres_del_cache` une **todos** los frames `1d` del ticker: el que termina más tarde gana en la superposición, y cada uno más viejo aporta los días anteriores **reescalados** en el primer día común. El reescalado hace falta: el cache baja con `auto_adjust` y los frames bajados en fechas distintas difieren hasta **1,6 %** (MO 10y vs 2y); pegados crudos dejan un escalón en la costura. Verificado contra el cache real: en cada costura el retorno diario es **idéntico** al del frame largo crudo.
+  - **Lo que no tiene cierre:** un ticker comprado antes de su primer cierre no suma **ni valor ni costo** hasta ese cierre (antes el valor era 0 × q y el costo sí sumaba: la ganancia caía su costo entero esos días). `tenencia_sin_cierre` dice cuáles y desde cuándo, y Home lo rotula en el subtítulo.
+  - **Contra la DB viva (copia, 2026-10-08):** la serie arranca el **21/02/24** (la primera compra) y no el 08/10/24: **660 ruedas** en vez de 501. El último día no cambia (ganancia **+$28.221**, igual que la 332). Quedan dos tramos sin cierre, rotulados: **EMBJ** 04/08/25→08/10/25 y **TEAM** 06/06/24→01/07/24 → **343**.
+  - **Mutación: tres, las tres rojas** (sin el reescalado, `cierres_del_cache` con un solo frame, el costo sin el filtro de primer cierre).
+  - **Deja la 343** (bajar historia de EMBJ y TEAM).
+
 - **WIP 265 — Tarea 329 (CARTERA-SIN-NOMBRE-DE-EMPRESA) CERRADA 2026-10-07 — los once nombres de «Mis Acciones» en la DB viva** (`database/cartera_real.py`, `tests/test_cartera_nombres_t329.py`). Con la app cerrada (Chapa): backup `finanzias_2026-10-07_21-32-13_pre-completar-nombres-t329.db`, `scripts/completar_nombres_cartera.py --aplicar` → EMBJ «ERJ» → Embraer S.A., KO, MARA, MO, MSFT; releído con `mode=ro`: las once con nombre.
   - **De paso:** EMBJ tenía sector **«N/A»**, el marcador que deja el validador del diálogo de importación, y `completar_nombres` sólo completaba sectores vacíos. Ahora «N/A» cuenta como vacío (test nuevo); el de EMBJ se escribió a mano (Industrials), porque con el nombre ya corregido `completar_nombres` no la vuelve a tocar. Ninguna otra posición tenía «N/A».
 
@@ -2387,6 +2394,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-07g** tras la tanda de auditorías (**335**, `docs/auditoria_tanda_2026-10-07.md`), que deja siete tareas. El orden queda **336 → 337 → 333 → 339 → 329 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. **Actualizado el mismo día:** la **329** se cerró (Chapa cerró la app). El orden queda **336 → 337 → 333 → 339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 328**. La **336** y la **337** encabezan: son las dos ALTA, y la 336 es la pantalla que Chapa mira primero. La **339** sube porque es barata y evita repetir un rojo de CI. La **338** necesita una decisión de Chapa.
 
+> **Repriorizado 2026-10-08** tras cerrar la **336**, que deja la **343** (historia de EMBJ y TEAM, necesita red). El orden queda **337 → 333 → 339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 343 → 328**. La **337** encabeza: es la otra ALTA.
+
 
 
 
@@ -3825,6 +3834,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 343. CIERRES-EMBJ-TEAM-DESDE-LA-COMPRA — EMBJ y TEAM no tienen cierres en el cache para sus primeras semanas en cartera, y Home las deja afuera esos días  ·  origen: la 336 (medición contra la DB y el cache, 2026-10-08) · severidad **BAJA**
+
+- **Qué pasa.** Con los frames unidos (336), todos los tickers de «Mis Acciones» tienen cierres desde su primera compra salvo dos: **EMBJ** (comprada el 2025-08-04; su único frame es el `1y`, desde el 2025-10-08) y **TEAM** (comprada el 2024-06-06; el `2y` arranca el 2024-07-01). Esos días no suman ni valor ni costo, y Home lo rotula (*«EMBJ suma desde el 08/10/25…»*); el día que entran, el valor de mercado sube su tenencia entera (EMBJ: ~+$1,5k, con el costo +$983).
+- **Lo que no se sabe.** Si Yahoo tiene historia de EMBJ antes del 2025-10: Embraer cambió de ticker (ERJ → EMBJ) y puede que la serie vieja esté sólo bajo ERJ. Para TEAM basta un frame más largo (`5y`).
+- **Kill-criteria.** Bajar (con red, fuera de Home) un frame largo de TEAM y de EMBJ —o de ERJ, si EMBJ no lo tiene, y decidir si se usa—; contra la DB, `tenencia_sin_cierre` vacío o con el motivo escrito por ticker. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna (necesita red).
+
 ### 342. MLTX-COMPRA-EN-SABADO — La compra de MLTX figura el 2025-06-28, un sábado  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [G-1] · severidad **BAJA** · **necesita a Chapa**
 
 - **Qué pasa.** Viene así del CSV de Yahoo (`Trade Date 20250628`) y entró con la 324. Un sábado no se opera: la fecha real es otra (¿el viernes 27 o el lunes 30?).
@@ -3864,7 +3880,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Más (del `verificador`):** las cuatro opiniones sucias se pidieron **sin noticias** (`noticias_recientes` busca con el ticker sucio; sus `datos_json` no traen `noticias`) y con el nombre de la empresa en el `ticker` del prompt: son otra población y la 321 las excluye o las marca. Riesgo no observado: `_on_analysis_done` lee el campo **al terminar**, así que escribir otro ticker mientras corre guarda la opinión de A como B. El texto sucio sale del autocompletar (`_COMPLETION_LIST`). Menor: `ticker` es `VARCHAR(20)` y la fila de GOOGL tiene 30 caracteres.
 - **Kill-criteria.** El ticker se fija al lanzar el análisis y no se relee del campo; un solo lugar normaliza el ticker de Análisis y lo usan los dos métodos; un test con el texto «MU — MICRON TECHNOLOGY» en el campo que guarde «MU»; las cuatro filas corregidas (con la app cerrada) o declaradas en la 321 —una por (ticker, fecha), sin duplicar—. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 336. HOME-CIERRES-UN-SOLO-FRAME — Home subvalúa el valor y la ganancia de «Mis Acciones» durante todo el primer año: usa un solo frame de cierres por ticker y vale en cero lo que no tiene cierre  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [F-1] · severidad **ALTA**
+### 336. ~~HOME-CIERRES-UN-SOLO-FRAME — Home subvalúa el valor y la ganancia de «Mis Acciones» durante todo el primer año: usa un solo frame de cierres por ticker y vale en cero lo que no tiene cierre~~ · **CERRADA 2026-10-08 — los frames de cada ticker unidos y reescalados en la costura; la serie arranca en la primera compra** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [F-1] · severidad **ALTA**
 
 - **Qué pasa.** `database/cartera_real.py::cierres_del_cache` elige, por ticker, **un** frame 1d: el que termina más tarde. Para AAPL, TEAM, EMBJ, MLTX y MARA es el de 1 año (desde el 07–08/10/2025), aunque TEAM tiene otro 2024-07→2026-07 y AAPL uno de 2016→2026-09. `valor_diario` vale en **0** a un ticker en cartera antes de su primer cierre (`ultimo_cierre.get(t, 0.0)`), contra lo que promete su docstring; `ganancias_diarias` (332) sí suma su costo.
 - **Medido (copia de la DB, 2026-10-07; confirmado por el `verificador`):** el valor salta +$1.464 el 2025-10-07 (entra AAPL) y +$3.343 el 2025-10-08 (TEAM, EMBJ, MLTX) con el costo abierto constante en $18.193. Del 2024-10-08 al 2025-10-07 Home muestra valor y ganancia **de ~$3,5k a ~$4,9k por debajo** según el tramo, y el escalón se lee como una suba.

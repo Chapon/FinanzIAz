@@ -360,6 +360,11 @@ class HomeTab(QWidget):
         avisos = []
         if r.get("valor_diario_sin_historia"):
             avisos.append(f"sin historia: {', '.join(r['valor_diario_sin_historia'])}")
+        for t, (compra, primer) in sorted((r.get("valor_diario_sin_cierre") or {}).items()):
+            # Tarea 336: comprado antes de su primer cierre; esos días no suma (no hay precio).
+            avisos.append(
+                f"{t} suma desde el {primer:%d/%m/%y} (comprada el {compra:%d/%m/%y}, sin cierres antes)"
+            )
         primera_tx = min(r.get("tx_por_dia") or [None]) if r.get("tx_por_dia") else None
         if serie and primera_tx is not None and serie[0][0] > primera_tx:
             # El cache de cierres arranca después de la primera compra: lo de antes no se grafica.
