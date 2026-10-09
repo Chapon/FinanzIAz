@@ -18,6 +18,10 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 274 — Tarea 328 (RUIN-INJECTION-ERROR-EN-VENV) CERRADA 2026-10-09 — no se reproduce en tres corridas completas con el `.venv`; el rojo que sí da el `.venv` es otro, y es la 346** (sin código). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **Tres corridas** de `tests/` completas con `.venv\Scripts\python.exe`, salida guardada: **4490 passed, 3 skipped, 1 failed** las tres, y `ruin_injection` **no aparece** en ninguna (ni ERROR ni FAILED). El kill-criteria lo prevé: si no se reproduce en 3 corridas, se cierra diciéndolo. Queda como transitorio sin causa.
+  - **El rojo de las tres corridas es otro**, siempre el mismo: `test_sin_estado_no_escribe_en_el_repo_t236.py::test_el_home_PELADO_de_antes_lo_acusa_la_contraprueba`. **No falta `platformdirs`**, como decía la memoria: el `.venv` tiene la **4.10.0** (el pin de `requirements.lock`) y Anaconda la **3.10.0**. Con el home pelado, la 3.10 da `'.'` (el defecto de la 236) y la 4.10 arma la ruta desde `USERPROFILE`, adentro del home temporal: el defecto no ocurre y el test, que lo reproduce a propósito, no tiene qué acusar → la **346**.
+
 - **WIP 273 — Tarea 343 (CIERRES-EMBJ-TEAM-DESDE-LA-COMPRA) CERRADA 2026-10-09 — TEAM y EMBJ tienen un frame `5y` en el cache y Home ya no deja a ningún ticker afuera** (`9df451a`, CI **VERDE** 2026-10-09 03:20Z; sin código: el cache de parquet está en `.gitignore`, así que el arreglo vive en la máquina de Chapa, que es donde corre la app). Los cuatro comandos corrieron **después** de escribir este registro (la 339): suite Windows (Anaconda) **4493 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4490 passed, 4 skipped**.
   - **Lo que no se sabía:** si Yahoo tenía historia de EMBJ antes del 2025-10. **Sí, bajo el mismo ticker:** `EMBJ` `max` arranca el 2000-07-21 (6.593 filas); `ERJ` ya no existe en Yahoo (404). No hubo que decidir nada sobre ERJ.
   - **Hecho:** `get_historical_data("TEAM"|"EMBJ", "5y", "1d")`, el camino de la app (con la QA de la 344 y el backend `parquet` del `settings.json`): los dos frames van del 2021-10-11 al 2026-10-08 y traen la barra **real** del 08/10 (TEAM 203,57, igual que `price_cache`). La app abierta no usa esas claves (usa `1y`/`2y`), así que no se pisaron.
@@ -2140,8 +2144,6 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Acá van sólo las acciones ABIERTAS (tarea 199).** Al cerrar una, se **mueve** a *Acciones manuales resueltas* —al final del archivo, antes de *Hecho reciente*— con su fecha y lo que se hizo; **no se tacha en el lugar**. Tacharlas acá dejó la sección con 17 cerradas de 20, lo que tenías que hacer enterrado entre lo hecho, y el guard de la 138 en rojo por tamaño.
 
-- **Limpiar del cache las barras rellenadas con la de ayer (tarea 344) — con la app CERRADA.** La app abierta desde el 2026-10-08 21:23 corre el código de antes de la 344 y sigue rellenando. **Cómo:** cerrar la app, `python scripts/limpiar_barra_rellenada.py` (lista; el 2026-10-08 eran 135), `python scripts/limpiar_barra_rellenada.py --aplicar`, y reabrir. **Verificación:** una segunda corrida sin `--aplicar` dice `0 barra(s)`. Reabrirla carga también la instrumentación de la **340**, que necesita un día de mercado con la app nueva.
-
 - **Confirmar la fecha real de compra de MLTX (tarea 342).** El CSV de Yahoo dice 28/06/2025, que fue sábado. ¿Fue el viernes 27, el lunes 30, otro día?
 
 - **Windows tiene registrada una segunda pantalla que no existe (tarea 323).** `DISPLAY23`, 3440×1440 a la derecha de la principal; Chapa tiene un solo monitor. Cualquier ventana que se abra ahí es invisible: así quedó escondido el aviso de alerta que bloqueó la app el 2026-10-06. **Cómo:** *Configuración → Sistema → Pantalla*; si aparece una pantalla 2, elegila y en *Varias pantallas* poné *Mostrar sólo en 1* (o *Desconectar esta pantalla*). Suele ser una tele, un adaptador o una pantalla virtual que quedó configurada.
@@ -2460,6 +2462,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 > **Repriorizado 2026-10-08h** tras cerrar la **341**, que **no deja tareas nuevas**. Las únicas que se pueden trabajar ya son la **343** (necesita red, y hay) y la **328** (el `.venv`, que está); el resto espera algo de afuera: la **338**, la **327**, la **342** y la **345**, decisiones de Chapa; la **340**, un día de mercado con la app reiniciada; 196 y 245, el probe de Lambda; la 290, dos semanas de clasificaciones; la 321, su muestra. El orden queda **343 → 328 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
 
 > **Repriorizado 2026-10-09** tras cerrar la **343**, que **no deja tareas nuevas**. El orden queda **328 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
+
+> **Repriorizado 2026-10-09b** tras cerrar la **328**, que **deja la 346** (el entorno del done no es el lock). La **346** encabeza: es la única que se puede trabajar ya, y su parte del test no necesita a nadie. El orden queda **346 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
 
 
 
@@ -3899,6 +3903,14 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 346. ENTORNO-DEL-DONE-NO-ES-EL-LOCK — Anaconda (donde corre el done) tiene `platformdirs` 3.10 y el lock pinea 4.10.0: un test de la 236 depende de la conducta de la 3.x, y el lock no declara el parser de HTML que usa `read_html`  ·  origen: la 328 (2026-10-09) · severidad **BAJA**
+
+- **Qué pasa.** `test_el_home_PELADO_de_antes_lo_acusa_la_contraprueba` reproduce el defecto de la 236 —con `HOME`/`USERPROFILE` en un directorio sin `AppData`, `platformdirs.user_cache_dir()` da `'.'`— y exige que la contraprueba lo acuse. Eso es conducta de `platformdirs` **3.x**: con la **4.10.0** que pinea `requirements.lock` la ruta sale de `USERPROFILE` (medido: `…\tmp…\AppData\Local`), no hay defecto y el test queda rojo. Pasa en Anaconda sólo porque Anaconda tiene la 3.10.0, que **no** es la del lock.
+- **Y el otro lado del mismo desvío:** el `.venv` saltea 2 tests de `test_ticker_universe_fetch.py` porque `pandas.read_html` no encuentra parser (`lxml` o `html5lib`); el lock no declara ninguno de los dos, y Anaconda trae `lxml`.
+- **Impacto.** El día que Anaconda actualice `platformdirs`, el done se pone rojo sin que cambie el código; y el lock no reproduce el entorno donde se mide el done.
+- **Qué hay que hacer.** Que el test sea fiel a lo que protege: si el `platformdirs` instalado **no** reproduce el defecto con el home pelado, que lo diga (skip con el motivo y la versión) en vez de fallar; y decidir con Chapa si el lock declara un parser de HTML (y cuál) o si esos tests lo exigen explícitamente.
+- **Kill-criteria.** La suite completa con el `.venv` sin ese rojo, y con Anaconda igual que hoy; el skip nombra la versión de `platformdirs`. Los cuatro comandos en verde y el CI del commit en verde.
+
 ### 345. FILL-LRCX-CON-OPEN-RELLENADO — La venta de LRCX del 2026-10-09 00:30 UTC se llenó al Open de la barra rellenada (el del 07/10): la caja de la cuenta 2 tiene ~$14,6 de más  ·  origen: la 344 (2026-10-08) · severidad **BAJA** · **decisión de Chapa** · **toca caja de la cuenta 2**
 
 - **Qué pasó.** `paper_orders` id **273**: SELL 14 LRCX, `atr_trail @ 320.59 ≤ 323.95 … | fill≈322.06 (gap -0.58% vs nivel)`, `fill_price` 321,90. El 322,06 es el Open de la barra del 08/10 que `clean_ohlcv` había rellenado con la del 07/10 (la 344); el Open real fue **321,02**. La decisión de vender no cambia con la barra real (ver la 344).
@@ -4011,7 +4023,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `reemplazar_cartera` conserva empresa y sector de los tickers que ya estaban; los nuevos entran con `NULL` y la columna *Empresa* de Portfolio muestra el ticker. EMBJ ya estaba como «ERJ» (su ticker viejo) desde la importación de abril.
 - **Kill-criteria.** Las 11 posiciones con su nombre (de `company_info` o del cache), sin red en el render de Portfolio. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 328. RUIN-INJECTION-ERROR-EN-VENV — En la suite completa con el `.venv`, `test_ruin_injection_t37.py` dio 2 `ERROR` (de setup); el archivo solo pasa (28 passed) y con Anaconda no aparecen  ·  origen: la corrida del done de la 324 (2026-10-07) · severidad **BAJA**
+### 328. ~~RUIN-INJECTION-ERROR-EN-VENV — En la suite completa con el `.venv`, `test_ruin_injection_t37.py` dio 2 `ERROR` (de setup); el archivo solo pasa (28 passed) y con Anaconda no aparecen~~ · **CERRADA 2026-10-09 — no se reproduce en 3 corridas; el rojo del `.venv` es otro (la 346)** · **movida a *En curso* con el detalle**  ·  origen: la corrida del done de la 324 (2026-10-07) · severidad **BAJA**
 
 - **Qué pasó.** `ERROR …::test_el_sorteo_no_depende_del_orden_ni_del_tamano_del_universo` y `…::test_el_evento_cae_dentro_del_rango_de_fechas`, en la corrida completa con `.venv\Scripts\python.exe`. No se guardó el traceback.
 - **Qué hay que hacer.** Reproducir la suite completa con el `.venv` guardando la salida, y ver si es orden (un fixture que otro test deja sucio) o algo transitorio. Si es orden, también puede romper el CI.
@@ -6063,6 +6075,8 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Acciones manuales resueltas (historial — tarea 199)
 
 > Las acciones manuales que ya se hicieron, se decidieron o se retiraron, **movidas** desde *Acciones manuales pendientes* con su texto completo. Es historial: lo que afirman en presente vale **a su fecha**. Lo que sigue abierto vive arriba.
+
+- ~~**Limpiar del cache las barras rellenadas con la de ayer (tarea 344) — con la app CERRADA.**~~ **HECHO 2026-10-09 — Chapa reinició la app (00:43, con el código de la 344) y la limpieza quedó hecha: `scripts/limpiar_barra_rellenada.py` sin `--aplicar` dice `0 barra(s)`.** La app abierta desde el 2026-10-08 21:23 corre el código de antes de la 344 y sigue rellenando. **Cómo:** cerrar la app, `python scripts/limpiar_barra_rellenada.py` (lista; el 2026-10-08 eran 135), `python scripts/limpiar_barra_rellenada.py --aplicar`, y reabrir. **Verificación:** una segunda corrida sin `--aplicar` dice `0 barra(s)`. Reabrirla carga también la instrumentación de la **340**, que necesita un día de mercado con la app nueva.
 
 - ~~**Cerrar la app un momento para escribir los nombres de empresa de «Mis Acciones» (tarea 329).**~~ **HECHO 2026-10-07 — Chapa cerró la app; backup `finanzias_2026-10-07_21-32-13_pre-completar-nombres-t329.db`, cinco nombres escritos y el sector «N/A» de EMBJ corregido a Industrials.** EMBJ figura «ERJ» y KO, MARA, MO y MSFT no tienen nombre. Con la app cerrada: `python scripts/completar_nombres_cartera.py --aplicar` (sin `--aplicar` muestra lo que haría). O avisame y lo corro yo.
 
