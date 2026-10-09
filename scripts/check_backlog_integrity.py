@@ -49,6 +49,12 @@ Qué chequea, y por qué cada cosa
    no está, la nota la perdió. **Lo que esta mitad no ve, dicho:** una tarea con
    número **mayor** que todos los de la nota y omitida por ella. Eso lo cubre la
    mitad ``--staged``, en el momento de escribir la nota.
+6. **En curso tiene a lo sumo un ítem (tarea 338).** El contrato del header, el
+   título de la sección, ``CLAUDE.md`` y ``/ship`` decían *«máx 1; al cerrar, a
+   Hecho reciente»*, y el 2026-10-07 la sección tenía **288** entradas: cada cierre
+   se apilaba ahí y nadie lo miraba, porque nada fallaba. Se cuentan los bullets de
+   primer nivel (``- `` al principio de la línea); los sub-bullets y el texto suelto
+   —como el *«Nada en marcha»* que la deja no vacía— no cuentan.
 
 Los ejes que necesitan el diff no se pueden chequear leyendo un archivo: corren con
 ``--staged``, contra el índice de git, y su cableado operativo es el paso 3a de
@@ -81,6 +87,10 @@ BACKLOG = REPO / "docs" / "BACKLOG.md"
 # No es un límite de estilo: es el orden de magnitud que separa "saqué un ítem
 # viejo" de "me llevé puesta media cola". El caso real fueron 767.
 MAX_LINES_LOST = 60
+
+# Tarea 338: el contrato del header («En curso … máx 1»), verificado.
+EN_CURSO = "En curso"
+MAX_EN_CURSO = 1
 
 _DECLARACION = re.compile(r"^\*\*Secciones obligatorias[^:]*:\*\*(.+)$", re.MULTILINE)
 _BACKTICKED = re.compile(r"`([^`]+)`")
@@ -209,6 +219,14 @@ def queue_problems(text: str, *, exact: bool = False) -> list[str]:
     ]
 
 
+def en_curso_items(text: str) -> int:
+    """Los bullets de primer nivel de *En curso* (tarea 338); 0 si no hay sección."""
+    for titulo, cuerpo in _section_bodies(text).items():
+        if titulo.startswith(EN_CURSO):
+            return sum(1 for linea in cuerpo.split("\n") if linea.startswith("- "))
+    return 0
+
+
 def check_text(text: str) -> list[str]:
     """Los problemas de integridad del backlog. Lista vacía ⇒ está sano."""
     problemas: list[str] = []
@@ -242,6 +260,12 @@ def check_text(text: str) -> list[str]:
         if n not in tareas:
             problemas.append(f"'la próxima es la {n}' no apunta a ningún lado: falta la sección '### {n}.'")
     problemas += queue_problems(text)
+    n_en_curso = en_curso_items(text)
+    if n_en_curso > MAX_EN_CURSO:
+        problemas.append(
+            f"'## {EN_CURSO}' tiene {n_en_curso} ítems (máx {MAX_EN_CURSO}): lo cerrado va a "
+            "'## Hecho reciente' en el commit del hash (tarea 338)"
+        )
     return problemas
 
 

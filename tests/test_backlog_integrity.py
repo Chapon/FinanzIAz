@@ -44,6 +44,7 @@ from scripts.check_backlog_integrity import (
     check_staged_shrink,
     check_text,
     declared_sections,
+    en_curso_items,
     latest_queue,
     queue_problems,
 )
@@ -104,6 +105,35 @@ def test_a_section_that_survives_EMPTY_is_the_same_loss():
     roto = (_HEADER + _CUERPO).replace("## Hecho reciente\n\n- [x] otra\n", "## Hecho reciente\n\n")
     probs = check_text(roto)
     assert any("quedó VACÍA" in p and "Hecho reciente" in p for p in probs)
+
+
+def test_en_curso_con_DOS_items_se_acusa():
+    """Tarea 338: el contrato dice máx 1, y durante meses tuvo 288 sin que nada fallara."""
+    roto = (_HEADER + _CUERPO).replace("- algo.", "- otra cosa cerrada.\n- algo.")
+    probs = check_text(roto)
+    assert any("'## En curso' tiene 2 ítems (máx 1)" in p for p in probs)
+
+
+def test_en_curso_SIN_bullets_no_esta_vacia_ni_se_acusa():
+    """El «Nada en marcha» deja la sección con texto (el guard de vacía no salta) y con 0 ítems."""
+    sano = (_HEADER + _CUERPO).replace("- algo.", "_Nada en marcha._")
+    assert en_curso_items(sano) == 0
+    assert check_text(sano) == []
+
+
+def test_los_SUB_bullets_del_registro_no_cuentan_como_items():
+    """Un registro es un bullet con sus sub-bullets: tiene que contar 1, no 3."""
+    sano = (_HEADER + _CUERPO).replace(
+        "- algo. La próxima es la **7**.", "- algo. La próxima es la **7**.\n  - a\n  - b"
+    )
+    assert en_curso_items(sano) == 1
+    assert check_text(sano) == []
+
+
+def test_el_guard_caza_el_en_curso_APILADO_del_commit_anterior_a_la_338():
+    """``6c2f852`` es el último commit con los cierres apilados en *En curso*."""
+    probs = check_text(_backlog_historico("6c2f852"))
+    assert any("'## En curso' tiene 285 ítems" in p for p in probs), probs
 
 
 def test_a_dangling_next_pointer_is_caught():

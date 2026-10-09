@@ -73,4 +73,4 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 5. Commit con subject en el formato correcto + cuerpo si el cambio es grande + trailer Co-Authored-By.
 6. `git push` a origin/main — **siempre al cerrar una tarea, no queda nada cerrado sin pushear**.
 7. `python scripts/check_ci.py --esperar` — **el CI del commit pusheado en verde, leído y no supuesto.** Rojo ⇒ la tarea no está cerrada; *no se sabe* ⇒ el cierre dice *«CI sin verificar»*. Tres veces el CI quedó rojo con las tareas cerrándose en verde (106, 175, 300): este paso es el que faltaba.
-8. Con el CI verde, el hash en el BACKLOG: commit aparte `docs(backlog): hash de cierre de la tarea NN (CI verde)`, que es otra edición y repite los pasos 2, 6 y 7.
+8. Con el CI verde, el hash en el BACKLOG y el registro movido de *En curso* a la cabeza de *Hecho reciente* (máx 1 en *En curso*, lo verifica el guard — tarea 338): commit aparte `docs(backlog): hash de cierre de la tarea NN (CI verde)`, que es otra edición y repite los pasos 2, 6 y 7.

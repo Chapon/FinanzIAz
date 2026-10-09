@@ -87,7 +87,9 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
      únicamente el CI. Tres veces quedó rojo mientras las tareas se cerraban en verde: la 106
      (13 tareas), la 175 (36) y la 300 (17, por un test con rutas de Windows literales).
 8. **Con el CI en verde, el hash.** Agregá el hash del commit de la tarea a su registro en el
-   backlog (en el registro del cierre y en el título de la tarea) y commiteá aparte:
+   backlog (en el registro del cierre y en el título de la tarea), **mové el registro de
+   *En curso* a la cabeza de *Hecho reciente*** —*En curso* queda con *«Nada en marcha»* o con
+   la tarea que arranca; el guard acusa más de un ítem (tarea 338)— y commiteá aparte:
    `docs(backlog): hash de cierre de la tarea NN (CI verde)`. Es una edición **posterior** al
    done, así que vale la regla del paso 0: los cuatro comandos otra vez, los guards de `--staged`,
    push, y `check_ci.py --esperar` sobre ese commit también.
