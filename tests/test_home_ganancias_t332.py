@@ -160,15 +160,15 @@ def home(test_db, monkeypatch):
 
 
 def test_el_boton_alterna_valor_y_ganancia_SIN_recalcular(home):
+    """Desde la 334 el botón es un selector de tres vistas; esto fija las dos de la 332."""
     assert "valor de mercado" in home.hero_title.text()
-    assert home.ganancia_btn.isEnabled()
-    home.ganancia_btn.setChecked(True)
+    assert home.vista_combo.isEnabled()
+    home.vista_combo.setCurrentIndex(home.vista_combo.findData("ganancia"))
     assert "ganancia, hasta el 04/03: +$200" in home.hero_title.text()
     assert "realizada $100" in home.hero_sub.text()
-    assert home.ganancia_btn.text() == "Ver valor de mercado"
-    home.ganancia_btn.setChecked(False)
+    home.vista_combo.setCurrentIndex(home.vista_combo.findData("valor"))
     assert "valor de mercado" in home.hero_title.text()
-    assert home.llamadas == [1], "el botón volvió a armar el resumen"
+    assert home.llamadas == [1], "el selector volvió a armar el resumen"
 
 
 def test_el_subtitulo_ya_no_dice_que_el_grafico_NO_es_valor_de_mercado(home):

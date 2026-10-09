@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -50,6 +51,13 @@ def _abbrev(n: float) -> str:
 
 
 log = get_logger(__name__)
+
+# Tarea 334: las vistas del gráfico grande de Home, (texto del selector, clave).
+VISTAS_HOME = (
+    ("Valor de mercado", "valor"),
+    ("Sólo ganancias", "ganancia"),
+    ("Monto invertido", "invertido"),
+)
 
 
 class WelcomeCard(QFrame):
@@ -187,7 +195,7 @@ class HomeTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._r: dict | None = None  # el último resumen_home: el botón re-pinta sin recalcular
+        self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
         self._build_ui()
         self.load_data()
 
@@ -223,21 +231,23 @@ class HomeTab(QWidget):
         self.hero_sub = QLabel("")
         self.hero_sub.setWordWrap(True)
         self.hero_sub.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
-        # Tarea 332: ocultar la plata puesta y graficar sólo la ganancia.
-        self.ganancia_btn = QPushButton("Ver sólo ganancias")
-        self.ganancia_btn.setCheckable(True)
-        self.ganancia_btn.setMinimumHeight(36)
-        self.ganancia_btn.setToolTip(
-            "Saca del gráfico el costo de las acciones en cartera (la plata puesta) y muestra\n"
-            "la ganancia: no realizada, realizada y dividendos cobrados."
+        # Tarea 334: un selector de tres vistas (era el botón «Ver sólo ganancias» de la 332).
+        self.vista_combo = QComboBox()
+        for texto, clave in VISTAS_HOME:
+            self.vista_combo.addItem(texto, clave)
+        self.vista_combo.setMinimumHeight(36)
+        self.vista_combo.setToolTip(
+            "Valor de mercado: acciones en cartera × cierre de cada día (incluye la plata puesta).\n"
+            "Sólo ganancias: sin la plata puesta — no realizada, realizada y dividendos cobrados.\n"
+            "Monto invertido: lo que costaron, por FIFO, las acciones que siguen en cartera."
         )
-        self.ganancia_btn.toggled.connect(self._pintar_hero)
+        self.vista_combo.currentIndexChanged.connect(self._pintar_hero)
         cabecera = QHBoxLayout()
         textos = QVBoxLayout()
         textos.addWidget(self.hero_title)
         textos.addWidget(self.hero_sub)
         cabecera.addLayout(textos, stretch=1)
-        cabecera.addWidget(self.ganancia_btn)
+        cabecera.addWidget(self.vista_combo)
         hero_layout.addLayout(cabecera)
 
         self.hero_chart = AreaChartHero()
@@ -332,7 +342,6 @@ class HomeTab(QWidget):
         if r["sin_precio"]:
             delta += f" · {len(r['sin_precio'])} sin precio"
         self.kpi_pl.set_value(f"${r['valor']:,.0f}", delta=delta, delta_positive=(r["pl"] >= 0))
-        self.kpi_pl.set_series([v for _, v in r["invertido_neto"][-40:]])
 
         self.kpi_trades.set_value(_abbrev(r["transacciones"]), delta="registradas", delta_positive=None)
         por_dia = Counter(r["tx_por_dia"])
@@ -348,10 +357,13 @@ class HomeTab(QWidget):
         self.welcome_card.update_status(r["posiciones"], r["pl_pct"], r["alertas_disparadas"])
 
     def _pintar_hero(self, *_args) -> None:
-        """El gráfico grande: valor de mercado, o —con el botón— sólo la ganancia (tarea 332)."""
-        self.ganancia_btn.setText(
-            "Ver valor de mercado" if self.ganancia_btn.isChecked() else "Ver sólo ganancias"
-        )
+        """El gráfico grande en la vista del selector (tarea 334): valor de mercado, sólo la
+        ganancia (la 332) o el monto invertido. Re-pinta con el último resumen, sin recalcular.
+
+        La sparkline de «VALOR Y P/L» sigue a la vista: graficaba el invertido neto, que no es
+        ninguna de las tres (tanda 2026-10-07 [F-2]).
+        """
+        vista = self.vista_combo.currentData()
         r = self._r
         if r is None:
             return
@@ -373,7 +385,7 @@ class HomeTab(QWidget):
             )
         cola = f"  ·  {' · '.join(avisos)}" if avisos else ""
 
-        if self.ganancia_btn.isChecked() and len(ganancia) >= 2:
+        if vista == "ganancia" and len(ganancia) >= 2:
             ult = ganancia[-1][1]
             self.hero_title.setText(
                 f"{r['nombre']} — ganancia, hasta el {ganancia[-1][0]:%d/%m}: "
@@ -397,17 +409,35 @@ class HomeTab(QWidget):
                 ],
                 ylabel="Ganancia ($)",
             )
+            spark = [x["total"] for _, x in ganancia]
+        elif vista == "invertido" and len(ganancia) >= 2:
+            # El costo abierto FIFO, la «plata puesta» de la 332 — no compras − ventas.
+            costo = [(d, x["costo"]) for d, x in ganancia]
+            self.hero_title.setText(
+                f"{r['nombre']} — monto invertido, hasta el {costo[-1][0]:%d/%m}: ${costo[-1][1]:,.0f}"
+            )
+            self.hero_sub.setText(
+                "Lo que costaron, por FIFO, las acciones que siguen en cartera (sin la comisión de "
+                "compra). Una venta lo baja en el costo de lo vendido, no en lo cobrado: no es "
+                f"compras − ventas.{cola}"
+            )
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in costo],
+                ylabel="Monto invertido ($)",
+            )
+            spark = [v for _, v in costo]
         elif len(serie) >= 2:
             # Tarea 305: el valor de mercado por rueda.
             self.hero_title.setText(f"{r['nombre']} — valor de mercado, hasta el {serie[-1][0]:%d/%m}")
             self.hero_sub.setText(
                 "Acciones en cartera × cierre de cada día: incluye la plata puesta. "
-                f"«Ver sólo ganancias» la saca.{cola}"
+                f"«Sólo ganancias» la saca.{cola}"
             )
             self.hero_chart.set_data(
                 [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in serie],
                 ylabel="Valor de mercado ($)",
             )
+            spark = [v for _, v in serie]
         else:
             # El invertido neto queda de respaldo: en una cartera comprada en un solo día es UN punto.
             self.hero_title.setText(f"{r['nombre']} — capital invertido neto (sin cierres en el cache)")
@@ -418,7 +448,9 @@ class HomeTab(QWidget):
                 [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
                 ylabel="Invertido neto ($)",
             )
-        self.ganancia_btn.setEnabled(len(ganancia) >= 2)
+            spark = [v for _, v in r["invertido_neto"]]
+        self.kpi_pl.set_series(spark[-40:])
+        self.vista_combo.setEnabled(len(ganancia) >= 2)
 
     def refresh(self, portfolio_tab=None) -> None:
         """Called by the main window on data refresh. Reloads the real portfolio."""
