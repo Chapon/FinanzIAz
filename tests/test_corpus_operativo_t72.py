@@ -58,6 +58,10 @@ _NO_SON_CONSTANTES: dict[str, str] = {
         "opinión de Claude la SACA del entorno del proceso (tarea 322) y *Acciones manuales* "
         "sugiere borrarla"
     ),
+    "FINANZIAS_CLAUDE_EXE": (
+        "variable de entorno que `opinion_claude.ubicar_claude` lee primero para encontrar el CLI "
+        "`claude`; la nombra `ARCHITECTURE.md` desde la tarea 341"
+    ),
     "FINANZIAS_BLOQUEAR_RED": (
         "nombre de variable de entorno (tarea 211), como FINNHUB_API_KEY y SLACK_BOT_TOKEN de "
         "arriba — pero con un matiz que aquéllas no tienen: ésta SÍ vive en el código, como el "
