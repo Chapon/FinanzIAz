@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 276 — Tarea 347 (LOCK-SIN-PARSER-HTML) CERRADA 2026-10-09 — opción (a) de Chapa: `lxml` entra a `requirements.txt` y al lock con la versión de Anaconda (5.2.1)** (`requirements.txt`, `requirements.lock`). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **No era sólo de los tests:** `pd.read_html` lo usa `data/ticker_universe.py` para bajar el S&P 500 de Wikipedia, y sin parser cae al fallback hardcodeado. El CI instala `requirements.txt`, que tampoco lo declaraba, así que allá esos 2 tests también se salteaban; desde este commit corren en los tres entornos.
+  - **Hecho:** `lxml>=5.2.1` en `requirements.txt` con su porqué; `pip install lxml==5.2.1` en el `.venv` (el cambio de entorno que la decisión implicaba) y el lock **regenerado** con `scripts/lock_requirements.py` desde el `.venv`, no editado a mano: el diff es la línea `lxml==5.2.1` y la fecha del header, nada más.
+  - **Kill-criteria:** `test_ticker_universe_fetch.py` con el `.venv`: **44 passed, 0 skipped** (antes, 42 + 2 skips).
+  - **No deja tareas nuevas.**
+
 - **WIP 275 — Tarea 346 (ENTORNO-DEL-DONE-NO-ES-EL-LOCK) CERRADA 2026-10-09 — el test del home pelado de la 236 mira primero si el `platformdirs` instalado reproduce el defecto, y si no, se saltea diciendo la versión** (`2ab3086`, CI **VERDE** 2026-10-09 04:20Z; `tests/test_sin_estado_no_escribe_en_el_repo_t236.py`). Los cuatro comandos corrieron **después** de escribir este registro (la 339): suite Windows (Anaconda) **4493 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4490 passed, 4 skipped**; y la suite completa con el `.venv`, **4490 passed, 4 skipped, sin rojos** (el kill-criteria). **Deja la 347** (el parser de HTML del lock, decisión de Chapa).
   - **El arreglo:** antes de pedirle a la contraprueba que acuse el home pelado, una sonda en un hijo con ese entorno pregunta la versión y `user_cache_dir()`. Si la ruta cae **adentro** del home temporal (la 4.x), no hay defecto que acusar: `skip` con la versión y la ruta. Si no (la 3.x: `'.'`), el test exige lo mismo que antes.
   - **Medido en los dos entornos:** con Anaconda (`platformdirs` 3.10.0) el archivo da **10 passed**, o sea que el test sigue corriendo y pasa; con el `.venv` (4.10.0, el pin del lock), **9 passed, 1 skipped** con `platformdirs 4.10.0 no reproduce el defecto de la 236`.
@@ -2474,6 +2480,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-09c** tras cerrar la **346**, que **deja la 347** (decisión de Chapa). Ninguna se puede trabajar ya sin algo de afuera: la **338**, la **327**, la **342**, la **345** y la **347** esperan decisiones de Chapa; la **340**, el día de mercado de hoy con la app reiniciada; 196 y 245, el probe de Lambda; la 290, dos semanas de clasificaciones; la 321, su muestra. El orden queda **338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345 → 347**.
 
+> **Repriorizado 2026-10-09d** tras cerrar la **347** con la opción (a) de Chapa, que **no deja tareas nuevas**. Chapa decidió también la **338** (a) y la **345** (b), que pasan a poder trabajarse ya; la **340** no tuvo su día de mercado (el 09/10 la app no scaneó en horario de rueda: dos scans, 00:46 y 19:00 hora local) y espera el lunes 12/10. El orden queda **345 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
+
 
 
 
@@ -3912,7 +3920,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 347. LOCK-SIN-PARSER-HTML — `requirements.lock` no declara un parser para `pandas.read_html` (`lxml` o `html5lib`): el `.venv` saltea 2 tests que en Anaconda corren  ·  origen: la 346 (2026-10-09) · severidad **BAJA** · **decisión de Chapa**
+### 347. ~~LOCK-SIN-PARSER-HTML — `requirements.lock` no declara un parser para `pandas.read_html` (`lxml` o `html5lib`): el `.venv` saltea 2 tests que en Anaconda corren~~ · **CERRADA 2026-10-09 — opción (a): `lxml` 5.2.1 en `requirements.txt` y en el lock** · **movida a *En curso* con el detalle**  ·  origen: la 346 (2026-10-09) · severidad **BAJA** · **decisión de Chapa**
 
 - **Qué pasa.** `test_ticker_universe_fetch.py` usa `pandas.read_html`, que necesita `lxml` o `html5lib` (con `beautifulsoup4`, que el lock sí tiene). El lock no declara ninguno; Anaconda trae `lxml`, el `.venv` no, y ahí los 2 tests se saltean.
 - **Decisión de Chapa.** (a) agregar `lxml` al lock (y a `requirements.txt`) con la versión de Anaconda; o (b) dejar el lock como está y que el skip lo diga. Instalarlo en el `.venv` es un cambio del entorno de Chapa.

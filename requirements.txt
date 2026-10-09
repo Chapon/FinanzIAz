@@ -15,6 +15,10 @@ requests>=2.33.0           # tarea 284: 2.32.2 tenia PYSEC-2026-1872/-2275 (fix 
 # urllib3: el codigo lo importa DIRECTO (data/yahoo_finance.py, Retry), asi que se declara
 # aunque llegue con requests (tarea 284, [K-1]). 2.8.0 corrige PYSEC-2026-4175/-4177.
 urllib3>=2.8.0
+# lxml: el parser de HTML de pd.read_html (data/ticker_universe.py baja el S&P 500 de
+# Wikipedia). Sin el, el fetch cae al fallback hardcoded en silencio. 5.2.1 es la de la
+# Anaconda donde corre la app (tarea 347).
+lxml>=5.2.1
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
