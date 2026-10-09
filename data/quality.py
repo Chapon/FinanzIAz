@@ -49,6 +49,7 @@ class DataQualityReport:
     calendar_gaps: list[tuple[pd.Timestamp, pd.Timestamp, int]] = field(default_factory=list)
     suspicious_jumps: int = 0  # |ret| > 0.5 in a single bar
     is_usable: bool = True  # False if no rows or all-NaN Close
+    trailing_dropped: int = 0  # barras del final sin Close que clean_ohlcv descartó (tarea 344)
     notes: list[str] = field(default_factory=list)
 
     def has_issues(self) -> bool:
@@ -75,6 +76,8 @@ class DataQualityReport:
             parts.append(f"gaps={len(self.calendar_gaps)}")
         if self.suspicious_jumps:
             parts.append(f"|ret|>50% bars={self.suspicious_jumps}")
+        if self.trailing_dropped:
+            parts.append(f"sin Close al final, descartadas={self.trailing_dropped}")
         if not self.is_usable:
             parts.append("UNUSABLE")
         return " · ".join(parts)
@@ -228,6 +231,11 @@ def clean_ohlcv(
     3. Replace zero/negative prices with NaN if ``drop_zero_prices``.
     4. Forward-fill **small** NaN gaps (≤ ``max_fill_gap`` consecutive bars).
        Larger gaps are preserved as NaN so consumers can decide.
+       **Sólo huecos con un Close válido después** (tarea 344): las barras del final sin
+       Close se descartan antes del ``ffill``. Yahoo devuelve a veces la barra de hoy con
+       OHLC vacío y sólo el volumen, y rellenarla copiaba los precios de ayer con la fecha
+       de hoy —un cierre inventado que se cacheaba y leía el scan—. Con ``fill_method="none"``
+       no se toca.
     5. Return ``(cleaned_df, report)``.
     """
     report = check_ohlcv(df)
@@ -249,6 +257,16 @@ def clean_ohlcv(
                     cleaned.loc[mask, col] = np.nan
 
     # 4. Forward-fill small gaps (limit prevents masking long outages)
+    if fill_method == "ffill" and "Close" in cleaned.columns:
+        # Tarea 344: el ffill no extrapola. Lo que viene después del último Close válido no
+        # es un hueco: es una barra que todavía no tiene precio.
+        validos = cleaned["Close"].notna().to_numpy().nonzero()[0]
+        sobran = len(cleaned) - (int(validos[-1]) + 1) if len(validos) else 0
+        if sobran:
+            desde = str(cleaned.index[len(cleaned) - sobran])[:10]
+            cleaned = cleaned.iloc[: len(cleaned) - sobran]
+            report.trailing_dropped = sobran
+            report.notes.append(f"descartadas {sobran} barra(s) del final sin Close (desde {desde})")
     if fill_method == "ffill" and max_fill_gap > 0:
         for col in PRICE_COLS:
             if col in cleaned.columns:
