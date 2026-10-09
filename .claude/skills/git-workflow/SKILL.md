@@ -62,14 +62,15 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - **Trunk-based**: se trabaja directo sobre `main`. No hay ramas de feature ni PRs en el historial.
 - Push directo: `git push` a `origin/main`.
 - Pushear sólo después de que la suite pase en Windows y el commit esté completo (no fragmentos a medias).
-- **Al cerrar una tarea, después de actualizar el backlog, se pushea a `main`** (orden de Chapa 2026-07-15). El cierre completo es: suite verde → commit → mover la tarea a *Hecho reciente* en el BACKLOG con el hash → `git push origin main` → **`python scripts/check_ci.py --esperar` en verde** (regla 7 de `CLAUDE.md`, tarea 300). No dejar tareas cerradas sin pushear, ni darlas por cerradas con el CI en rojo.
+- **Al cerrar una tarea, después de actualizar el backlog, se pushea a `main`** (orden de Chapa 2026-07-15). El cierre completo es: escribir el cierre en el BACKLOG (registro, repriorización, hallazgos) → **los cuatro comandos en verde** → commit → `git push origin main` → **`python scripts/check_ci.py --esperar` en verde** (regla 7 de `CLAUDE.md`, tarea 300) → el hash en el BACKLOG, en un commit aparte que repite el done y el CI. **El done va después de la última edición, también la del backlog** (tarea 339): la 322 dejó el CI rojo por correrlo antes de escribir el backlog. No dejar tareas cerradas sin pushear, ni darlas por cerradas con el CI en rojo.
 
 ## Checklist rápido
 
-1. Suite verde en Windows.
-2. `git status` / `git diff --stat` — sin artefactos basura.
-3. `git add` de la unidad lógica completa (código + tests + docs).
-4. Commit con subject en el formato correcto + cuerpo si el cambio es grande + trailer Co-Authored-By.
-5. Actualizar el BACKLOG (mover la tarea a *Hecho reciente* con el hash) si corresponde.
+1. Escribir el cierre en el BACKLOG si corresponde (registro con el detalle, repriorización, tareas de los hallazgos) — **antes** del done, no después (tarea 339).
+2. Los cuatro comandos en verde en Windows, **después de la última edición**. Si algo cambia después —el backlog incluido—, se corren de nuevo.
+3. `git status` / `git diff --stat` — sin artefactos basura.
+4. `git add` de la unidad lógica completa (código + tests + docs + backlog).
+5. Commit con subject en el formato correcto + cuerpo si el cambio es grande + trailer Co-Authored-By.
 6. `git push` a origin/main — **siempre al cerrar una tarea, no queda nada cerrado sin pushear**.
 7. `python scripts/check_ci.py --esperar` — **el CI del commit pusheado en verde, leído y no supuesto.** Rojo ⇒ la tarea no está cerrada; *no se sabe* ⇒ el cierre dice *«CI sin verificar»*. Tres veces el CI quedó rojo con las tareas cerrándose en verde (106, 175, 300): este paso es el que faltaba.
+8. Con el CI verde, el hash en el BACKLOG: commit aparte `docs(backlog): hash de cierre de la tarea NN (CI verde)`, que es otra edición y repite los pasos 2, 6 y 7.

@@ -5,6 +5,17 @@ allowed-tools: Bash(python -m pytest:*), Bash(python scripts/run_suite_sin_estad
 
 Cerrá el trabajo en curso siguiendo el flujo del proyecto:
 
+0. **Primero el backlog, después el done** (tarea 339). Si la tarea está en `docs/BACKLOG.md`,
+   escribí **ahora** todo lo que el cierre le agrega: el registro con el detalle, la nota de
+   repriorización y las tareas que dejan los hallazgos (regla 6). Entra en el commit de la tarea;
+   el hash se agrega después (paso 8), porque todavía no existe.
+   **Por qué va antes:** el backlog es parte del corpus que leen los guards de la suite. La 322
+   dejó el CI en ROJO (`9884a4e`) porque los cuatro comandos corrieron **antes** de escribir el
+   backlog y después sólo los tests de backlog: el guard de la 72 tomó un nombre del texto nuevo.
+   **Regla: el done va después de la ÚLTIMA edición, también la del backlog.** Si después del
+   paso 1 cambia cualquier archivo —el backlog incluido, por chico que sea el cambio—, se vuelven
+   a correr los cuatro comandos. Correr sólo `pytest -k backlog` no alcanza: así se cerró cinco
+   veces el 2026-10-07 y no dio rojo por suerte.
 1. Corré el criterio de **done**, que son cuatro comandos y no uno:
    - `python -m pytest tests/ -ra -m "not network" --tb=short`
    - `python -m ruff check .`
@@ -61,7 +72,7 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    mecánica (`tests/test_corpus_operativo_t72.py` caza un símbolo que no existe); lo que **no**
    cubre y hay que mirar a ojo son los **números y las afirmaciones en presente** — una skill
    se lee cada sesión, así que cuando su número deja de valer, **dirige mal**.
-5. Si la tarea estaba en `docs/BACKLOG.md`, movela a *Hecho reciente* con el hash del commit.
+5. (El backlog ya se escribió en el paso 0, antes del done: acá no se edita.)
 6. `git push` a `origin/main`: es parte del cierre (orden de Chapa del 2026-07-15, skill
    `git-workflow`). Hasta la tarea 300 este paso prohibía pushear sin un pedido explícito, que
    contradecía esa orden; se corrigió porque el paso 7 necesita el commit pusheado.
@@ -75,5 +86,10 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    - **Por qué:** los cuatro comandos corren en Windows y lo que sólo rompe en Linux lo ve
      únicamente el CI. Tres veces quedó rojo mientras las tareas se cerraban en verde: la 106
      (13 tareas), la 175 (36) y la 300 (17, por un test con rutas de Windows literales).
+8. **Con el CI en verde, el hash.** Agregá el hash del commit de la tarea a su registro en el
+   backlog (en el registro del cierre y en el título de la tarea) y commiteá aparte:
+   `docs(backlog): hash de cierre de la tarea NN (CI verde)`. Es una edición **posterior** al
+   done, así que vale la regla del paso 0: los cuatro comandos otra vez, los guards de `--staged`,
+   push, y `check_ci.py --esperar` sobre ese commit también.
 
 Recordá que el verde definitivo es en Windows (Anaconda); avisame si esto corre en otro entorno.

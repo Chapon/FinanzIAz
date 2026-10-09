@@ -18,6 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 269 — Tarea 339 (SHIP-DONE-DESPUES-DEL-BACKLOG) CERRADA 2026-10-08 — el cierre se escribe en el backlog antes del done, y el done se repite si algo cambia después** (`.claude/commands/ship.md`, `.claude/skills/git-workflow/SKILL.md`, `.claude/skills/finanzias-conventions/SKILL.md`, `CLAUDE.md`). Sólo texto de proceso; los cuatro comandos corrieron **después** de escribir este registro.
+  - **El orden nuevo, igual en los cuatro lugares:** escribir el cierre en el backlog (registro, repriorización, hallazgos) → los cuatro comandos → commit → push → CI → el hash en un commit aparte, que es otra edición y repite el done y el CI. `/ship` gana un paso 0 (el backlog, con el porqué: el rojo de `9884a4e`) y un paso 8 (el hash); su paso 5 ya no edita nada.
+  - **Un cuarto lugar que la tarea no nombraba:** `CLAUDE.md` §Backlog decía *«los cuatro comandos en verde + commit + push + CI… movela a Hecho reciente»*, o sea el orden viejo. Se alineó también.
+  - **Lo que no toca:** a qué sección va el registro (*En curso* apilado o *Hecho reciente*) es la **338**, que espera una decisión de Chapa; los cuatro lugares siguen diciendo *Hecho reciente*.
+  - **Sin guard mecánico:** la tarea pedía los tres lugares alineados, no un test, y un chequeo del orden de los pasos por texto es el que se satisface con lo contrario. Lo que sí lo ve es el CI de cada commit, que la regla 7 ya obliga a leer.
+  - **No deja tareas nuevas.**
+
 - **WIP 268 — Tarea 333 (DIVIDENDOS-PAPER-SIN-SPLIT) CERRADA 2026-10-08 — el cobro de dividendos lleva los fills anteriores a un split a las acciones de hoy** (`594a92a`, CI **VERDE** 2026-10-08 05:02Z; `paper_trading/dividends.py` —`acciones_al_ex_date_con_splits` **nueva**—, `analysis/metrics_panel.py`, `tests/test_dividendos_con_splits_t333.py` **nuevo**). Suite Windows (Anaconda) **4478 passed, 1 skipped, 1 deselected** (+6), ruff limpio, sin estado vivo **4475 passed, 4 skipped**. **Toca caja de la cuenta 2, pero hoy no mueve nada:** `paper_split_adjustments` y `paper_spinoff_adjustments` están vacías (copia de la DB, 2026-10-08).
   - **El arreglo:** `creditos_pendientes` recibe los ajustes **ya aplicados** (el ledger de la 262 con su `ratio`, y el de la 303 con su `share_ratio`); un fill anterior a un split que ocurre hasta el ex-date cuenta `ratio` veces, y uno del mismo día del split ya es post-split (la convención de `ajustes_pendientes`). Un ex-date **anterior** al split cobra lo mismo que antes (se cobró con el calendario sin ajustar). El cuadre de la 266 no cambia: suma el `cash` del ledger, que es lo que escribe el crédito.
   - **De paso, la misma cuenta en el panel:** `metrics_panel._dividendos_devengados` multiplicaba igual fills crudos por montos ajustados. Ahora usa la misma función: el motor y el panel siguen siendo una sola aritmética (la lección de la 224 y la 230), y un test lo fija con el split.
@@ -2412,6 +2419,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-08c** tras cerrar la **333**, que **no deja tareas nuevas**. El orden queda **339 → 334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 343 → 328**.
 
+> **Repriorizado 2026-10-08d** tras cerrar la **339**, que **no deja tareas nuevas**. El orden queda **334 → 340 → 338 → 341 → 196 → 245 → 290 → 321 → 327 → 342 → 343 → 328**.
+
 
 
 
@@ -3876,7 +3885,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué hay que hacer.** Poner el ticker en el mensaje y contar, en un día de scans, cuántos entrenamientos hay por ticker y por scan. Si es re-entrenamiento por scan, es cómputo que la 24 había sacado (y la causa probable es que la barra provisional de la sesión cambia la huella del frame en cada scan).
 - **Kill-criteria.** La causa nombrada con números de un día real; si es por diseño, la tasa esperada escrita donde la 25 dice 0.
 
-### 339. SHIP-DONE-DESPUES-DEL-BACKLOG — `/ship` corre el done en el paso 1 y edita el backlog en el 5: la lección de la 322 no está donde se lee al cerrar  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [D-1] · severidad **MEDIA**
+### 339. ~~SHIP-DONE-DESPUES-DEL-BACKLOG — `/ship` corre el done en el paso 1 y edita el backlog en el 5: la lección de la 322 no está donde se lee al cerrar~~ · **CERRADA 2026-10-08 — el cierre se escribe en el backlog antes del done, en `/ship`, las dos skills y `CLAUDE.md`** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [D-1] · severidad **MEDIA**
 
 - **Qué pasa.** La 322 dejó rojo `9884a4e` porque el done corrió antes de escribir el backlog, y el guard de la 72 tomó un nombre del texto nuevo. La lección (*«el done va después de la última edición, también la del backlog»*) quedó sólo en el registro de la 322. El 2026-10-07 la misma sesión cerró cinco veces así (324/325, el fix de la 325, 330, 332, 326/331) y no dio rojo por suerte.
 - **Qué hay que hacer.** Que `.claude/commands/ship.md` ponga la edición del backlog **antes** del done (o que repita el done si el backlog cambió después), y que `git-workflow` y `finanzias-conventions` digan lo mismo.

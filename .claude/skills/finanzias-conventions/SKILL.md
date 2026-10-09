@@ -11,6 +11,7 @@ App de paper-trading en Python (PyQt6 + SQLite + yfinance). El usuario, Chapa, t
 
 Una tarea NO está terminada hasta que:
 
+0. **El cierre está escrito en `docs/BACKLOG.md` ANTES del done** (registro, repriorización, tareas de los hallazgos), y el hash va después, en un commit aparte con su propio done y su CI. **El done va después de la última edición, también la del backlog** (tarea 339): el backlog está en el corpus que leen los guards de la suite, y la 322 dejó el CI rojo (`9884a4e`) por correr los cuatro comandos antes de escribirlo y después sólo los tests de backlog. Si algo cambia después del done, se corre de nuevo.
 1. **Los CUATRO comandos pasan en Windows.** El entorno real es Windows con Anaconda:
    ```
    python -m pytest tests/ -ra -m "not network" --tb=short
@@ -85,6 +86,6 @@ Esquema único vía **alembic** (no `_migrate()` manual). `init_db` corre `_alem
 
 ## Backlog y roadmap
 
-**Tareas operativas (qué sigue):** `docs/BACKLOG.md` — leerlo al empezar; mover lo cerrado a *Hecho reciente* con el hash del commit; *En curso* máximo 1.
+**Tareas operativas (qué sigue):** `docs/BACKLOG.md` — leerlo al empezar; mover lo cerrado a *Hecho reciente* con el hash del commit (el registro se escribe antes del done; el hash, con el CI en verde, en un commit aparte — ver *Regla de oro*); *En curso* máximo 1.
 
 **Estratégico (el por qué):** `docs/roadmap_v3_2026-06-09.md`. Auditorías: `docs/ops_logic_audit_2026-06-17.md`, `docs/trade_decision_audit_2026-06-09.md`.
