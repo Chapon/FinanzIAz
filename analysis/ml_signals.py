@@ -213,10 +213,53 @@ def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) ->
     return hashlib.sha256(closes.tobytes() + payload).hexdigest()[:16]
 
 
+def _xgb_cache_parts(df: pd.DataFrame, feature_cols: list[str], n_samples: int) -> dict[str, str] | None:
+    """Las piezas de ``_xgb_cache_key`` por separado, para decir **cuál** cambió (tarea 340).
+
+    La clave es un solo hash y un fallo de cache no dice por qué. La 25 midió *«0 en los
+    scans siguientes»* y en octubre se veían ~100 re-entrenamientos por hora de mercado:
+    con esto el resumen por scan nombra la pieza que se movió.
+    """
+    if "Close" not in df.columns or len(df) <= PREDICTION_HORIZON:
+        return None
+    trainable = df["Close"].iloc[:-PREDICTION_HORIZON]
+    if trainable.empty:
+        return None
+    try:
+        closes = np.ascontiguousarray(trainable.to_numpy(dtype="float64")).round(4)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "cierres": hashlib.sha256(closes.tobytes()).hexdigest()[:16],
+        "columnas": "|".join(sorted(feature_cols)),
+        "filas": str(n_samples),
+        "ultima_fila": str(trainable.index[-1]),
+    }
+
+
+# Las piezas de la última clave entrenada, por ticker (tarea 340). Sólo diagnóstico: no
+# decide nada, y se vacía con el cache.
+_XGB_ULTIMAS_PIEZAS: dict[str, dict[str, str]] = {}
+
+
+def _motivo_reentreno(ticker: str | None, piezas: dict[str, str] | None) -> str:
+    """Por qué se entrena este ticker: ``nuevo`` (primera vez en el proceso), las piezas de la
+    clave que cambiaron unidas con ``+``, o ``desalojado`` si ninguna cambió (lo sacó el LRU)."""
+    if not ticker or piezas is None:
+        return "sin_ticker"
+    previas = _XGB_ULTIMAS_PIEZAS.get(ticker)
+    _XGB_ULTIMAS_PIEZAS[ticker] = piezas
+    if previas is None:
+        return "nuevo"
+    cambiaron = [k for k in piezas if piezas[k] != previas.get(k)]
+    return "+".join(cambiaron) if cambiaron else "desalojado"
+
+
 def clear_ml_cache() -> None:
     """Public helper to flush the cached XGBoost + stacking models (tests)."""
     _XGB_CACHE.clear()
     _STACK_CACHE.clear()
+    _XGB_ULTIMAS_PIEZAS.clear()
 
 
 # ── Telemetría de entrenamiento (tarea 25a) ──────────────────────────────────
@@ -231,6 +274,8 @@ def clear_ml_cache() -> None:
 # a acoplar ml_signals con el ciclo de vida del scan.
 _training_lock = threading.Lock()
 _training_tally: dict[str, float] = {"n": 0, "val_acc_sum": 0.0, "unstable": 0}
+# Tarea 340: por qué se re-entrenó (ver ``_motivo_reentreno``), contado por scan.
+_training_motivos: dict[str, int] = {}
 
 
 def _note_training(val_acc: float, val_std: float) -> None:
@@ -240,6 +285,14 @@ def _note_training(val_acc: float, val_std: float) -> None:
         _training_tally["val_acc_sum"] += val_acc
         if val_std > WALKFORWARD_STD_WARN:
             _training_tally["unstable"] += 1
+
+
+def _note_motivo(ticker: str | None, piezas: dict[str, str] | None) -> None:
+    """Anota por qué se entrena (cada fallo de cache, también el camino de split simple, que
+    no pasa por ``_note_training``: la suma de motivos puede superar a ``entrenados``)."""
+    with _training_lock:
+        motivo = _motivo_reentreno(ticker, piezas)
+        _training_motivos[motivo] = _training_motivos.get(motivo, 0) + 1
 
 
 def drain_training_summary() -> str | None:
@@ -255,7 +308,10 @@ def drain_training_summary() -> str | None:
         val_acc_mean = _training_tally["val_acc_sum"] / n
         unstable = int(_training_tally["unstable"])
         _training_tally.update({"n": 0, "val_acc_sum": 0.0, "unstable": 0})
-    return f"XGB entrenados={n} val_acc medio={val_acc_mean:.0%} inestables={unstable}"
+        motivos = " ".join(f"{k}={v}" for k, v in sorted(_training_motivos.items(), key=lambda kv: -kv[1]))
+        _training_motivos.clear()
+    resumen = f"XGB entrenados={n} val_acc medio={val_acc_mean:.0%} inestables={unstable}"
+    return f"{resumen} motivos: {motivos}" if motivos else resumen
 
 
 # ── Optional hmmlearn ─────────────────────────────────────────────────────────
@@ -818,7 +874,9 @@ def _train_single_split(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[s
     return model, val_acc, train_acc, 0.0
 
 
-def _train_walkforward(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[str]):
+def _train_walkforward(
+    X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[str], ticker: str | None = None
+):
     """Walk-forward validation + CV-calibrated final model (T03 path).
 
     Two distinct uses of the same TimeSeriesSplit:
@@ -858,9 +916,12 @@ def _train_walkforward(X_all: np.ndarray, y_all: np.ndarray, valid_cols: list[st
         # ``%.1f`` y no ``%.0f``: la comparación usa el valor sin redondear, así
         # que con val_std=8.4% el mensaje imprimía la desigualdad falsa
         # "std 8% > 8%" y confundía el diagnóstico en el log.
+        # El ticker (tarea 340): sin él no se distinguía un re-entrenamiento por scan de una
+        # consulta manual de Análisis.
         log.warning(
-            "XGBoost: unstable model — val_acc std %.1f%% > %.1f%% across folds; "
+            "XGBoost %s: unstable model — val_acc std %.1f%% > %.1f%% across folds; "
             "accuracy depends heavily on the validation window.",
+            ticker or "?",
             val_std * 100,
             WALKFORWARD_STD_WARN * 100,
         )
@@ -909,7 +970,7 @@ def _log_top_features(model, valid_cols: list[str]) -> None:
         pass
 
 
-def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
+def train_xgboost_signal(df: pd.DataFrame, ticker: str | None = None) -> TechnicalSignal | None:
     """
     Train an XGBoost binary classifier on the ticker's historical data
     and return a TechnicalSignal with the predicted probability of a
@@ -926,6 +987,9 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
     • Model:    shallow XGBoost (max_depth=3) with L1/L2 regularisation,
                 isotonic-calibrated. Final model is refit across all folds.
     • Prediction: on the last available row (no label yet)
+
+    ``ticker`` es sólo para el log (tarea 340): el WARNING de modelo inestable y el motivo
+    de cada re-entrenamiento en el resumen por scan. No entra en la clave del cache.
 
     Returns
     -------
@@ -970,10 +1034,11 @@ def train_xgboost_signal(df: pd.DataFrame) -> TechnicalSignal | None:
         if cached is not None:
             model, val_acc, train_acc, val_std = cached
         else:
+            _note_motivo(ticker, _xgb_cache_parts(df, valid_cols, len(combined)))
             # Walk-forward validation (T03) when there's enough history for the
             # folds to be meaningful; otherwise the single 80/20 split (T02).
             if _CALIBRATION_OK and len(X_all) >= MIN_WALKFORWARD_ROWS and len(np.unique(y_all)) >= 2:
-                model, val_acc, train_acc, val_std = _train_walkforward(X_all, y_all, valid_cols)
+                model, val_acc, train_acc, val_std = _train_walkforward(X_all, y_all, valid_cols, ticker)
             else:
                 model, val_acc, train_acc, val_std = _train_single_split(X_all, y_all, valid_cols)
 

@@ -806,7 +806,7 @@ def analyze(
                     signals.append(hmm_sig)
 
             if xgb_on:
-                xgb_sig = train_xgboost_signal(df)
+                xgb_sig = train_xgboost_signal(df, ticker)
                 if xgb_sig:
                     signals.append(xgb_sig)
         except Exception as exc:
