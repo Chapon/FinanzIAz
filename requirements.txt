@@ -47,7 +47,10 @@ numpy>=1.26.4,<2.0
 # Reemplaza el JSON-en-SQLite (pd.read_json en cada lectura). Ambas son self-
 # contained: pyarrow depende solo de numpy (compatible con el cap <2.0; NO fuerza
 # el bump) y duckdb no tiene deps. Ver docs/arq1_parquet_cache.md.
-pyarrow>=17.0               # tarea 284: 14.0.2 violaba el >=16 y tenia PYSEC-2024-161 (fix 17.0.0)
+# pyarrow CAPEADO a <26 (tarea 348): la 26.0.0 (2026-10-09) exige numpy>=2.0 y el cap
+# de numpy de arriba la deja sin importar. La 25.0.0 es la de Anaconda, el lock y el .venv.
+# Se levanta junto con el bump de numpy 2.x.
+pyarrow>=17.0,<26           # tarea 284: 14.0.2 violaba el >=16 y tenia PYSEC-2024-161 (fix 17.0.0)
 duckdb>=1.0
 
 # Charts

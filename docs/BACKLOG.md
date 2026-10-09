@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 277 — Tarea 348 (PYARROW-26-NUMPY2) CERRADA 2026-10-09 — `pyarrow` capeado a `<26` en `requirements.txt`: la 26.0.0, publicada hoy, exige numpy 2 y el CI no podía importarla** (`requirements.txt`). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **Qué pasó:** el CI de `73aa490` (la 347) quedó **ROJO** en `pytest`: 16 errores de colección, todos `ImportError: pyarrow requires NumPy 2.0 or newer, found 1.26.4`. `pyarrow 26.0.0` salió el 2026-10-09 08:13Z, el CI instala `requirements.txt` (`pyarrow>=17.0`, sin techo) y `numpy` está capeado a `<2.0`. **No lo causó la 347**: cualquier commit posterior a esa hora daba lo mismo. El `mypy` best-effort también cayó, por la misma importación.
+  - **Hecho:** `pyarrow>=17.0,<26`, una sola línea con su porqué. La 25.0.0 es la que tienen Anaconda, el `.venv` y el lock, así que en Windows no cambia nada y el lock no se regenera. El techo se levanta junto con el bump de numpy 2.x.
+  - **Kill-criteria:** el CI del commit en verde, con los 16 archivos colectados.
+  - **No deja tareas nuevas.**
+
 - **WIP 276 — Tarea 347 (LOCK-SIN-PARSER-HTML) CERRADA 2026-10-09 — opción (a) de Chapa: `lxml` entra a `requirements.txt` y al lock con la versión de Anaconda (5.2.1)** (`requirements.txt`, `requirements.lock`). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
   - **No era sólo de los tests:** `pd.read_html` lo usa `data/ticker_universe.py` para bajar el S&P 500 de Wikipedia, y sin parser cae al fallback hardcodeado. El CI instala `requirements.txt`, que tampoco lo declaraba, así que allá esos 2 tests también se salteaban; desde este commit corren en los tres entornos.
   - **Hecho:** `lxml>=5.2.1` en `requirements.txt` con su porqué; `pip install lxml==5.2.1` en el `.venv` (el cambio de entorno que la decisión implicaba) y el lock **regenerado** con `scripts/lock_requirements.py` desde el `.venv`, no editado a mano: el diff es la línea `lxml==5.2.1` y la fecha del header, nada más.
@@ -2482,6 +2488,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-09d** tras cerrar la **347** con la opción (a) de Chapa, que **no deja tareas nuevas**. Chapa decidió también la **338** (a) y la **345** (b), que pasan a poder trabajarse ya; la **340** no tuvo su día de mercado (el 09/10 la app no scaneó en horario de rueda: dos scans, 00:46 y 19:00 hora local) y espera el lunes 12/10. El orden queda **345 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
 
+> **Repriorizado 2026-10-09e** tras el CI **ROJO** de la 347 (`73aa490`): entra y se cierra la **348** (pyarrow 26 exige numpy 2), que **no deja tareas nuevas**. El orden queda **345 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
+
 
 
 
@@ -3919,6 +3927,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 348. ~~PYARROW-26-NUMPY2 — `pyarrow 26.0.0` (2026-10-09) exige numpy ≥ 2.0 y `requirements.txt` no le pone techo: el CI no puede importar el cache de parquet~~ · **CERRADA 2026-10-09 — `pyarrow>=17.0,<26`** · **movida a *En curso* con el detalle**  ·  origen: el CI rojo de la 347 (`73aa490`) · severidad **ALTA** (CI rojo)
+
+- **Qué pasa.** El CI instala `requirements.txt`; con `pyarrow>=17.0` resolvió la 26.0.0, que contra el `numpy<2.0` del repo da `ImportError` al colectar 16 archivos de tests.
+- **Kill-criteria.** El CI del commit en verde; Anaconda, el `.venv` y el lock siguen en 25.0.0.
 
 ### 347. ~~LOCK-SIN-PARSER-HTML — `requirements.lock` no declara un parser para `pandas.read_html` (`lxml` o `html5lib`): el `.venv` saltea 2 tests que en Anaconda corren~~ · **CERRADA 2026-10-09 — opción (a): `lxml` 5.2.1 en `requirements.txt` y en el lock** · **movida a *En curso* con el detalle**  ·  origen: la 346 (2026-10-09) · severidad **BAJA** · **decisión de Chapa**
 
