@@ -18,6 +18,12 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 273 — Tarea 343 (CIERRES-EMBJ-TEAM-DESDE-LA-COMPRA) CERRADA 2026-10-09 — TEAM y EMBJ tienen un frame `5y` en el cache y Home ya no deja a ningún ticker afuera** (sin código: el cache de parquet está en `.gitignore`, así que el arreglo vive en la máquina de Chapa, que es donde corre la app). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **Lo que no se sabía:** si Yahoo tenía historia de EMBJ antes del 2025-10. **Sí, bajo el mismo ticker:** `EMBJ` `max` arranca el 2000-07-21 (6.593 filas); `ERJ` ya no existe en Yahoo (404). No hubo que decidir nada sobre ERJ.
+  - **Hecho:** `get_historical_data("TEAM"|"EMBJ", "5y", "1d")`, el camino de la app (con la QA de la 344 y el backend `parquet` del `settings.json`): los dos frames van del 2021-10-11 al 2026-10-08 y traen la barra **real** del 08/10 (TEAM 203,57, igual que `price_cache`). La app abierta no usa esas claves (usa `1y`/`2y`), así que no se pisaron.
+  - **Contra una copia fresca de la DB:** `valor_diario_sin_cierre` **vacío**, `valor_diario_sin_historia` vacío; la serie va del 2024-02-21 (la primera compra) al 2026-10-08, y el salto del 2025-10-08 desapareció (31.119 → 31.648, un movimiento normal). Lo que el último día todavía difiere del KPI es la 344: el resto de los tickers tiene la barra rellenada hasta que se corra su acción manual.
+  - **No deja tareas nuevas.**
+
 - **WIP 272 — Tarea 341 (DOCS-REFERENCIA-CARTERA-Y-OPINION) CERRADA 2026-10-08 — `DB_SCHEMA.md` dice que el calendario de dividendos está ajustado por splits, y `ARCHITECTURE.md` nombra la opinión de Claude (con su dependencia externa), la cartera real, los lotes y el desplegable** (`f5d1445`, CI **VERDE** 2026-10-09 02:51Z; `docs/DB_SCHEMA.md`, `docs/ARCHITECTURE.md`, `tests/test_corpus_operativo_t72.py`). Sólo texto. Los cuatro comandos corrieron **después** de escribir este registro (la 339).
   - **[A-2]:** `dividend_calendar_cache` guarda el monto **ajustado por los splits posteriores**, con la evidencia de la 331 (NVDA 2024-03-05 = 0,004; AAPL 2020-02-07 = 0,1925). El comentario de la migración `0013` no se tocó: es historia del esquema.
   - **[A-3]:** en `analysis/`, `opinion_claude.py` con el CLI `claude` como dependencia externa (`ubicar_claude`: `FINANZIAS_CLAUDE_EXE`, el PATH o la extensión de VS Code) y su tabla; en `database/`, `cartera_real.py`, `lotes.py` y `ui/portfolio_detalle.py`, y `claude_opinions` en la lista de tablas de `models.py`.
@@ -2453,6 +2459,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-08h** tras cerrar la **341**, que **no deja tareas nuevas**. Las únicas que se pueden trabajar ya son la **343** (necesita red, y hay) y la **328** (el `.venv`, que está); el resto espera algo de afuera: la **338**, la **327**, la **342** y la **345**, decisiones de Chapa; la **340**, un día de mercado con la app reiniciada; 196 y 245, el probe de Lambda; la 290, dos semanas de clasificaciones; la 321, su muestra. El orden queda **343 → 328 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
 
+> **Repriorizado 2026-10-09** tras cerrar la **343**, que **no deja tareas nuevas**. El orden queda **328 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
+
 
 
 
@@ -3907,7 +3915,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué hay que hacer (a decidir con la medición):** que la última barra sin precios **no** se rellene —se descarta o queda NaN—, porque copiar el precio de ayer con la fecha de hoy es inventar un dato; y limpiar del cache las filas ya rellenadas. El `ffill` de huecos **intermedios** es otro asunto y no se toca sin medir.
 - **Kill-criteria.** Un test con un frame cuya última fila trae OHLC NaN y volumen: el resultado no tiene esa fila con los precios de ayer; un hueco intermedio sigue como hoy. Contra el cache: ninguna última fila con OHLC idéntico al día anterior y volumen distinto. Si toca el scan, display antes que sizing no aplica (es un dato, no un score), pero el efecto sobre las decisiones de la cuenta 2 se mide y se dice. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 343. CIERRES-EMBJ-TEAM-DESDE-LA-COMPRA — EMBJ y TEAM no tienen cierres en el cache para sus primeras semanas en cartera, y Home las deja afuera esos días  ·  origen: la 336 (medición contra la DB y el cache, 2026-10-08) · severidad **BAJA**
+### 343. ~~CIERRES-EMBJ-TEAM-DESDE-LA-COMPRA — EMBJ y TEAM no tienen cierres en el cache para sus primeras semanas en cartera, y Home las deja afuera esos días~~ · **CERRADA 2026-10-09 — un frame `5y` de cada una (EMBJ tiene historia bajo su propio ticker); ningún ticker sin cierre** · **movida a *En curso* con el detalle**  ·  origen: la 336 (medición contra la DB y el cache, 2026-10-08) · severidad **BAJA**
 
 - **Qué pasa.** Con los frames unidos (336), todos los tickers de «Mis Acciones» tienen cierres desde su primera compra salvo dos: **EMBJ** (comprada el 2025-08-04; su único frame es el `1y`, desde el 2025-10-08) y **TEAM** (comprada el 2024-06-06; el `2y` arranca el 2024-07-01). Esos días no suman ni valor ni costo, y Home lo rotula (*«EMBJ suma desde el 08/10/25…»*); el día que entran, el valor de mercado sube su tenencia entera (EMBJ: ~+$1,5k, con el costo +$983).
 - **Lo que no se sabe.** Si Yahoo tiene historia de EMBJ antes del 2025-10: Embraer cambió de ticker (ERJ → EMBJ) y puede que la serie vieja esté sólo bajo ERJ. Para TEAM basta un frame más largo (`5y`).
