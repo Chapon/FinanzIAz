@@ -46,6 +46,13 @@ def test_el_home_PELADO_de_antes_lo_acusa_la_contraprueba(tmp_path):
     import os
 
     env = dict(os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    # Tarea 346: el defecto es de `platformdirs` 3.x. La 4.x (la del lock) arma la ruta desde
+    # `USERPROFILE` aunque `AppData` no exista, y entonces no hay nada que acusar.
+    sonda = "import platformdirs; print(platformdirs.__version__); print(platformdirs.user_cache_dir())"
+    r = subprocess.run([sys.executable, "-c", sonda], cwd=_REPO, env=env, capture_output=True, text=True)
+    version, cache = r.stdout.strip().splitlines()
+    if tmp_path.resolve() in Path(cache).resolve().parents:
+        pytest.skip(f"platformdirs {version} no reproduce el defecto de la 236 (cache en {cache})")
     fallas = m.fallas_del_aislamiento(env, tmp_path)
     assert len(fallas) == 1 and "platformdirs" in fallas[0], fallas
 

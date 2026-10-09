@@ -18,7 +18,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
-- **WIP 274 — Tarea 328 (RUIN-INJECTION-ERROR-EN-VENV) CERRADA 2026-10-09 — no se reproduce en tres corridas completas con el `.venv`; el rojo que sí da el `.venv` es otro, y es la 346** (sin código). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+- **WIP 275 — Tarea 346 (ENTORNO-DEL-DONE-NO-ES-EL-LOCK) CERRADA 2026-10-09 — el test del home pelado de la 236 mira primero si el `platformdirs` instalado reproduce el defecto, y si no, se saltea diciendo la versión** (`tests/test_sin_estado_no_escribe_en_el_repo_t236.py`). Los cuatro comandos corrieron **después** de escribir este registro (la 339). **Deja la 347** (el parser de HTML del lock, decisión de Chapa).
+  - **El arreglo:** antes de pedirle a la contraprueba que acuse el home pelado, una sonda en un hijo con ese entorno pregunta la versión y `user_cache_dir()`. Si la ruta cae **adentro** del home temporal (la 4.x), no hay defecto que acusar: `skip` con la versión y la ruta. Si no (la 3.x: `'.'`), el test exige lo mismo que antes.
+  - **Medido en los dos entornos:** con Anaconda (`platformdirs` 3.10.0) el archivo da **10 passed**, o sea que el test sigue corriendo y pasa; con el `.venv` (4.10.0, el pin del lock), **9 passed, 1 skipped** con `platformdirs 4.10.0 no reproduce el defecto de la 236`.
+  - **Mutación:** sin el `skip`, el `.venv` vuelve al rojo de la 328. La contraria —saltear siempre— **no da rojo**, pero se ve en el conteo del done: Anaconda pasaría de 1 a 2 skips.
+  - **Lo que no toca:** el parser de HTML que el lock no declara (2 skips del `.venv` en `test_ticker_universe_fetch.py`) necesita una decisión → la **347**.
+
+- **WIP 274 — Tarea 328 (RUIN-INJECTION-ERROR-EN-VENV) CERRADA 2026-10-09 — no se reproduce en tres corridas completas con el `.venv`; el rojo que sí da el `.venv` es otro, y es la 346** (`70d33d1`, CI **VERDE** 2026-10-09 03:58Z; sin código; suite Windows (Anaconda) **4493 passed, 1 skipped, 1 deselected**, sin estado vivo **4490 passed, 4 skipped**). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
   - **Tres corridas** de `tests/` completas con `.venv\Scripts\python.exe`, salida guardada: **4490 passed, 3 skipped, 1 failed** las tres, y `ruin_injection` **no aparece** en ninguna (ni ERROR ni FAILED). El kill-criteria lo prevé: si no se reproduce en 3 corridas, se cierra diciéndolo. Queda como transitorio sin causa.
   - **El rojo de las tres corridas es otro**, siempre el mismo: `test_sin_estado_no_escribe_en_el_repo_t236.py::test_el_home_PELADO_de_antes_lo_acusa_la_contraprueba`. **No falta `platformdirs`**, como decía la memoria: el `.venv` tiene la **4.10.0** (el pin de `requirements.lock`) y Anaconda la **3.10.0**. Con el home pelado, la 3.10 da `'.'` (el defecto de la 236) y la 4.10 arma la ruta desde `USERPROFILE`, adentro del home temporal: el defecto no ocurre y el test, que lo reproduce a propósito, no tiene qué acusar → la **346**.
 
@@ -2465,6 +2471,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-09b** tras cerrar la **328**, que **deja la 346** (el entorno del done no es el lock). La **346** encabeza: es la única que se puede trabajar ya, y su parte del test no necesita a nadie. El orden queda **346 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345**.
 
+> **Repriorizado 2026-10-09c** tras cerrar la **346**, que **deja la 347** (decisión de Chapa). Ninguna se puede trabajar ya sin algo de afuera: la **338**, la **327**, la **342**, la **345** y la **347** esperan decisiones de Chapa; la **340**, el día de mercado de hoy con la app reiniciada; 196 y 245, el probe de Lambda; la 290, dos semanas de clasificaciones; la 321, su muestra. El orden queda **338 → 340 → 196 → 245 → 290 → 321 → 327 → 342 → 345 → 347**.
+
 
 
 
@@ -3903,7 +3911,13 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 346. ENTORNO-DEL-DONE-NO-ES-EL-LOCK — Anaconda (donde corre el done) tiene `platformdirs` 3.10 y el lock pinea 4.10.0: un test de la 236 depende de la conducta de la 3.x, y el lock no declara el parser de HTML que usa `read_html`  ·  origen: la 328 (2026-10-09) · severidad **BAJA**
+### 347. LOCK-SIN-PARSER-HTML — `requirements.lock` no declara un parser para `pandas.read_html` (`lxml` o `html5lib`): el `.venv` saltea 2 tests que en Anaconda corren  ·  origen: la 346 (2026-10-09) · severidad **BAJA** · **decisión de Chapa**
+
+- **Qué pasa.** `test_ticker_universe_fetch.py` usa `pandas.read_html`, que necesita `lxml` o `html5lib` (con `beautifulsoup4`, que el lock sí tiene). El lock no declara ninguno; Anaconda trae `lxml`, el `.venv` no, y ahí los 2 tests se saltean.
+- **Decisión de Chapa.** (a) agregar `lxml` al lock (y a `requirements.txt`) con la versión de Anaconda; o (b) dejar el lock como está y que el skip lo diga. Instalarlo en el `.venv` es un cambio del entorno de Chapa.
+- **Kill-criteria.** Con (a): la suite completa con el `.venv` sin esos 2 skips; con (b): el motivo del skip nombra el lock. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 346. ~~ENTORNO-DEL-DONE-NO-ES-EL-LOCK — Anaconda (donde corre el done) tiene `platformdirs` 3.10 y el lock pinea 4.10.0: un test de la 236 depende de la conducta de la 3.x, y el lock no declara el parser de HTML que usa `read_html`~~ · **CERRADA 2026-10-09 — el test se saltea, nombrando la versión, cuando `platformdirs` no reproduce el defecto; el parser va a la 347** · **movida a *En curso* con el detalle**  ·  origen: la 328 (2026-10-09) · severidad **BAJA**
 
 - **Qué pasa.** `test_el_home_PELADO_de_antes_lo_acusa_la_contraprueba` reproduce el defecto de la 236 —con `HOME`/`USERPROFILE` en un directorio sin `AppData`, `platformdirs.user_cache_dir()` da `'.'`— y exige que la contraprueba lo acuse. Eso es conducta de `platformdirs` **3.x**: con la **4.10.0** que pinea `requirements.lock` la ruta sale de `USERPROFILE` (medido: `…\tmp…\AppData\Local`), no hay defecto y el test queda rojo. Pasa en Anaconda sólo porque Anaconda tiene la 3.10.0, que **no** es la del lock.
 - **Y el otro lado del mismo desvío:** el `.venv` saltea 2 tests de `test_ticker_universe_fetch.py` porque `pandas.read_html` no encuentra parser (`lxml` o `html5lib`); el lock no declara ninguno de los dos, y Anaconda trae `lxml`.
@@ -4023,7 +4037,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué pasa.** `reemplazar_cartera` conserva empresa y sector de los tickers que ya estaban; los nuevos entran con `NULL` y la columna *Empresa* de Portfolio muestra el ticker. EMBJ ya estaba como «ERJ» (su ticker viejo) desde la importación de abril.
 - **Kill-criteria.** Las 11 posiciones con su nombre (de `company_info` o del cache), sin red en el render de Portfolio. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 328. ~~RUIN-INJECTION-ERROR-EN-VENV — En la suite completa con el `.venv`, `test_ruin_injection_t37.py` dio 2 `ERROR` (de setup); el archivo solo pasa (28 passed) y con Anaconda no aparecen~~ · **CERRADA 2026-10-09 — no se reproduce en 3 corridas; el rojo del `.venv` es otro (la 346)** · **movida a *En curso* con el detalle**  ·  origen: la corrida del done de la 324 (2026-10-07) · severidad **BAJA**
+### 328. ~~RUIN-INJECTION-ERROR-EN-VENV — En la suite completa con el `.venv`, `test_ruin_injection_t37.py` dio 2 `ERROR` (de setup); el archivo solo pasa (28 passed) y con Anaconda no aparecen~~ · **CERRADA 2026-10-09 — no se reproduce en 3 corridas; el rojo del `.venv` es otro (la 346)** (`70d33d1`) · **movida a *En curso* con el detalle**  ·  origen: la corrida del done de la 324 (2026-10-07) · severidad **BAJA**
 
 - **Qué pasó.** `ERROR …::test_el_sorteo_no_depende_del_orden_ni_del_tamano_del_universo` y `…::test_el_evento_cae_dentro_del_rango_de_fechas`, en la corrida completa con `.venv\Scripts\python.exe`. No se guardó el traceback.
 - **Qué hay que hacer.** Reproducir la suite completa con el `.venv` guardando la salida, y ver si es orden (un fixture que otro test deja sucio) o algo transitorio. Si es orden, también puede romper el CI.
