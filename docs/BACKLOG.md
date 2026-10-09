@@ -18,6 +18,11 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 ## En curso (WIP, máx 1)
 
+- **WIP 278 — Tarea 345 (FILL-LRCX-CON-OPEN-RELLENADO) CERRADA 2026-10-09 — opción (b) de Chapa: el fill no se corrige, queda declarado** (sin código ni cambios en la DB). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **Lo que queda declarado:** `paper_orders` id **273** (SELL 14 LRCX) tiene `fill_price` **321,90**, calculado con el Open rellenado (322,06) en vez del real (**321,02**). La caja y la realizada de la cuenta 2 tienen **~$14,6 de más** (0,03% de $50.827 de equity), para siempre: cualquier cuadre que compare esa orden contra la barra real de Yahoo va a ver esa diferencia, y ésta es su explicación.
+  - **Por qué no se corrige:** el tamaño, y que la decisión de vender no cambiaba con la barra real (la 344). La causa ya está arreglada desde `95ca2e5` (las barras finales sin Close se descartan), así que no se repite.
+  - **No deja tareas nuevas.**
+
 - **WIP 277 — Tarea 348 (PYARROW-26-NUMPY2) CERRADA 2026-10-09 — `pyarrow` capeado a `<26` en `requirements.txt`: la 26.0.0, publicada hoy, exige numpy 2 y el CI no podía importarla** (`11af599`, CI **VERDE** 2026-10-09 22:38Z; `requirements.txt`). Los cuatro comandos corrieron **después** de escribir este registro (la 339): suite Windows (Anaconda) **4493 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4490 passed, 4 skipped**.
   - **Qué pasó:** el CI de `73aa490` (la 347) quedó **ROJO** en `pytest`: 16 errores de colección, todos `ImportError: pyarrow requires NumPy 2.0 or newer, found 1.26.4`. `pyarrow 26.0.0` salió el 2026-10-09 08:13Z, el CI instala `requirements.txt` (`pyarrow>=17.0`, sin techo) y `numpy` está capeado a `<2.0`. **No lo causó la 347**: cualquier commit posterior a esa hora daba lo mismo. El `mypy` best-effort también cayó, por la misma importación.
   - **Hecho:** `pyarrow>=17.0,<26`, una sola línea con su porqué. La 25.0.0 es la que tienen Anaconda, el `.venv` y el lock, así que en Windows no cambia nada y el lock no se regenera. El techo se levanta junto con el bump de numpy 2.x.
@@ -2490,6 +2495,8 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 
 > **Repriorizado 2026-10-09e** tras el CI **ROJO** de la 347 (`73aa490`): entra y se cierra la **348** (pyarrow 26 exige numpy 2), que **no deja tareas nuevas**. El orden queda **345 → 338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
 
+> **Repriorizado 2026-10-09f** tras cerrar la **345** con la opción (b) de Chapa, que **no deja tareas nuevas**. El orden queda **338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
+
 
 
 
@@ -3947,7 +3954,7 @@ _Última actualización: 2026-08-16 (**Tarea 33 (FILL-LOOKAHEAD) CERRADA** — g
 - **Qué hay que hacer.** Que el test sea fiel a lo que protege: si el `platformdirs` instalado **no** reproduce el defecto con el home pelado, que lo diga (skip con el motivo y la versión) en vez de fallar; y decidir con Chapa si el lock declara un parser de HTML (y cuál) o si esos tests lo exigen explícitamente.
 - **Kill-criteria.** La suite completa con el `.venv` sin ese rojo, y con Anaconda igual que hoy; el skip nombra la versión de `platformdirs`. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 345. FILL-LRCX-CON-OPEN-RELLENADO — La venta de LRCX del 2026-10-09 00:30 UTC se llenó al Open de la barra rellenada (el del 07/10): la caja de la cuenta 2 tiene ~$14,6 de más  ·  origen: la 344 (2026-10-08) · severidad **BAJA** · **decisión de Chapa** · **toca caja de la cuenta 2**
+### 345. ~~FILL-LRCX-CON-OPEN-RELLENADO — La venta de LRCX del 2026-10-09 00:30 UTC se llenó al Open de la barra rellenada (el del 07/10): la caja de la cuenta 2 tiene ~$14,6 de más~~ · **CERRADA 2026-10-09 — opción (b): no se corrige, queda declarado** · **movida a *En curso* con el detalle**  ·  origen: la 344 (2026-10-08) · severidad **BAJA** · **decisión de Chapa** · **toca caja de la cuenta 2**
 
 - **Qué pasó.** `paper_orders` id **273**: SELL 14 LRCX, `atr_trail @ 320.59 ≤ 323.95 … | fill≈322.06 (gap -0.58% vs nivel)`, `fill_price` 321,90. El 322,06 es el Open de la barra del 08/10 que `clean_ohlcv` había rellenado con la del 07/10 (la 344); el Open real fue **321,02**. La decisión de vender no cambia con la barra real (ver la 344).
 - **Impacto.** ~$1,04 × 14 ≈ **$14,6** de más en la caja y en la realizada de la cuenta 2, sobre $50.827 de equity (0,03%).
