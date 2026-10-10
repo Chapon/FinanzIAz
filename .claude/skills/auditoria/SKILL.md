@@ -390,6 +390,13 @@ instrumento:** el slippage ya va **dentro** del `fill_price`, así que restar ad
 `paper_orders` y `paper_equity_snapshots` un momento en que se haya violado, y por cada flujo de
 plata que el harness modela (dividendos, splits, costos), verificar que el motor también lo haga.
 
+**Un ledger VACÍO cuadra perfecto: se cuenta lo que DEBIÓ registrarse (tanda 2026-10-10, [G-1]).**
+Cuatro tandas cuadraron la caja de la cuenta 2 al centavo mientras `paper_dividend_credits` tenía
+**cero** filas y debía tener al menos tres (DHR, BMY, GE: el ex-date llega de Yahoo días tarde y la
+ventana del scan ya lo pasó). Por cada flujo que el motor declara cobrar o pagar —dividendos, splits,
+spin-offs—: correr **la propia función del motor** sobre los fills de la ventana, contar cuántos
+eventos debió registrar, y compararlo con los que registró.
+
 **Y la cartera REAL entra igual (tarea 271).** `portfolios`, `positions` y `transactions` (lo
 que se importa por CSV y lo que `ui/paper/real_portfolio.py` cruza desde una orden paper) son
 plata de Chapa, y desde la 264 son lo que muestra Home. Las mismas dos pasadas: que

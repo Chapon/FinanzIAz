@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 280 — Tarea 349 (TANDA-AUDITORIA-2026-10-10) CERRADA 2026-10-10 — sexta tanda completa, doce áreas sobre las 336–348 y el estado vivo: cinco hallazgos, un HIGH** (`docs/auditoria_tanda_2026-10-10.md`, `docs/auditoria_tanda_killcriteria_2026-10-10.md`, `.claude/skills/auditoria/SKILL.md`). READ-ONLY sobre el código y la DB; la skill recibe la lección del (c-metodo). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
+  - **[G-1] HIGH → 350:** el motor paper **no acreditó ningún dividendo** desde la 222 (0 filas en `paper_dividend_credits`, también en los 13 backups desde el 03/10). La cuenta 2 dejó sin cobrar al menos **$93,96** (DHR 30/09, BMY 02/10, GE 05/10). Yahoo publica el ex-date días tarde y la ventana `(último scan, hoy]` ya lo pasó; no es el TTL. El desvío `dividendos` dice 0,9% y en vivo es el 100%. El `verificador` lo **confirmó y corrigió el mecanismo** que yo había escrito.
+  - **[L-1] MEDIUM → 351:** `os.replace` del cache de parquet da `PermissionError` en el arranque de la app (4 veces, 08 y 09/10; nunca antes). Tarea de medición.
+  - **[A-1], [A-2] LOW → 352:** la skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML; `CLAUDE.md` no nombra el eje 6 del guard (338).
+  - **[H-1] LOW → 353:** un harvest con la red caída (al volver de una suspensión, 09/10) cuenta como el del día y no se reintenta.
+  - **Limpios:** B, C (fuera de G-1), D, E, F, I, J, K. Cuentas al centavo, Home contra cálculo a mano, CI verde, cero barras rellenadas.
+  - **Deja las tareas 350, 351, 352 y 353.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -354,6 +360,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-09f** tras cerrar la **345** con la opción (b) de Chapa, que **no deja tareas nuevas**. El orden queda **338 → 340 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-09g** tras cerrar la **338** con la opción (a) de Chapa, que **no deja tareas nuevas**. Ninguna se puede trabajar ya: la **340** espera el lunes 12/10 con la app abierta en la rueda; 196 y 245, el probe de Lambda; la 290, dos semanas de clasificaciones; la 321, su muestra; la **327** y la **342**, datos de Chapa. El orden queda **340 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-10** tras cerrar la **349** (la tanda), que **deja la 350, 351, 352 y 353**. La **350** encabeza: es plata que la cuenta viva deja de cobrar en cada ex-date, y la reparación del mecanismo no espera a nadie (sólo lo devengado desde la 222 es decisión de Chapa). La **351** y la **352** son chicas y se pueden trabajar ya; la **340** espera el lunes 12/10. El orden queda **350 → 351 → 352 → 340 → 353 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1792,6 +1800,41 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 353. HARVEST-DEGRADADO-CUENTA-COMO-EL-DEL-DIA — Un harvest que corre con la red caída cuenta como el del día, y el refresh diario no lo reintenta  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [H-1] · severidad **BAJA**
+
+- **Qué pasa.** `analysis/news_digest.py::refresh_due` es `not harvested_today() or unclassified > 0`. El 2026-10-09 la app volvió de una suspensión (9.127 s) a las 23:25 local y lanzó el refresh con la red todavía caída: `fuentes 0/4 limpias`, `FUENTES CAIDAS: yfinance_news 33/127, sec 32/127…`, y 95 de 127 tickers en `analyst_estimate_snapshots` del `snapshot_date` 2026-10-10 (UTC). Con esa corrida registrada, no se reintenta en el día; el horario corre sólo en RTH.
+- **Lo que NO se afirma:** cuánto se perdió. El `snapshot_date` es UTC y el harvest siguiente puede completarlo; las noticias se recuperan por la ventana del collector.
+- **Qué hay que hacer.** Medir qué quedó sin recuperar del 09/10, y que el refresh diario no cuente como hecho un harvest con `FUENTES CAIDAS` (o que lo reintente una vez con red).
+- **Kill-criteria.** Lo perdido medido; una corrida sintética con fuentes caídas deja `refresh_due` en verdadero y una sana no. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 352. CLAIMS-VENV-Y-EJE-6 — La skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML, y `CLAUDE.md` no nombra el eje 6 del guard del backlog  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [A-1] y [A-2] · severidad **BAJA**
+
+- **[A-1]** `.claude/skills/auditoria/SKILL.md` (área K) dice *«al `.venv` le faltan `platformdirs` y un parser de HTML, y da otro conteo de tests»*. La 328/346 midieron `platformdirs` **4.10.0** en el `.venv` (lo que diverge es la versión: 3.10 en Anaconda) y la 347 le instaló `lxml` 5.2.1.
+- **[A-2]** `CLAUDE.md` (§Backlog) enumera *«la mitad que se ve leyendo el archivo»* del guard de la 66 y no nombra el eje 6 que agregó la 338 (`en_curso_items`, máx 1 en *En curso*).
+- **Kill-criteria.** Las dos frases dicen lo que hay; `git grep` de la frase vieja sin resultados fuera de la historia. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 351. PARQUET-REPLACE-ACCESO-DENEGADO — `os.replace` del cache de parquet da `PermissionError` en el arranque de la app, y no se sabe quién tiene abierto el destino  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
+
+- **Qué pasa.** 4 `Parquet cache write failed` (MDLZ, MRK, MRVL el 2026-10-08 00:27:53; BKNG el 2026-10-09 18:59:10), todos `PermissionError: [WinError 5] Acceso denegado` en `os.replace(tmp, path)` (`data/parquet_cache.py:226`), a segundos del arranque de la app. La firma no aparece antes del 08/10 (el log arranca el 07/09).
+- **Lo que NO se afirma:** la causa. El temporal ya es único por proceso e hilo; en Windows, reemplazar un destino abierto por otro da acceso denegado. Candidatos: otro hilo de la app leyendo el mismo frame en el arranque (la 336 lee **todos** los frames de cada ticker para Home), el subproceso del dashboard, DuckDB, un antivirus.
+- **Impacto.** La escritura se pierde y queda el frame anterior hasta el próximo refetch (fail-open con log).
+- **Qué hay que hacer.** Reproducir en el arranque e identificar quién tiene abierto el destino; según la causa, reintentar el `replace` o serializar la lectura.
+- **Kill-criteria.** La causa nombrada con evidencia; si es un lector de la app, el arreglo con un test que reproduzca el `replace` contra un archivo abierto. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 350. DIVIDENDOS-NUNCA-ACREDITADOS — El motor paper no acreditó ningún dividendo desde la 222: el ex-date llega de Yahoo días tarde y la ventana del scan ya lo pasó  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [G-1] · severidad **ALTA** · **toca caja de la cuenta 2**
+
+- **Qué pasa.** `paper_dividend_credits` tiene **0 filas**, en la DB viva y en los 13 backups desde el 2026-10-03. La cuenta 2 tuvo al menos tres ex-dates con la posición tomada antes: **DHR 2026-09-30** (15 × 0,40), **BMY 2026-10-02** (115 × 0,63) y **GE 2026-10-05** (33 × 0,47) = **$93,96**, que la función del propio motor (`creditos_pendientes`) da como pendientes.
+- **La causa** (corregida por el `verificador`): `acreditar_dividendos` usa la ventana `(día de last_scan_at, hoy]` (`engine.py:890`, `dividends.py:147`). Yahoo publica el ex-date en `.dividends` **uno o más días tarde**: GE no lo traía en el fetch de las 22:16 UTC de su ex-date y apareció el 10-07; BMY tampoco en plena rueda del suyo. Cuando entra al cache ya quedó a la izquierda de `desde`. **No es el TTL**: el primer scan del 09-30 llegó con el TTL vencido y no acreditó DHR. Sólo cobraría con la app cerrada desde antes del ex-date hasta después de que Yahoo lo publique.
+- **Agravantes.** El warm-up sólo calienta posiciones **abiertas** (`engine.py:876`): un ticker vendido antes de que Yahoo publique no se refetchea, así que $93,96 es una **cota inferior**. Y `test_dividendos_al_motor_t222.py::test_run_scan_ACREDITA_el_dividendo_y_lo_reporta` siembra el ex-date **de hoy** con `last_scan_at` = ayer: el oráculo supone el calendario al día, que es lo que los datos desmienten (además, su primer assert es débil por un `or`).
+- **Lo que dice que no.** `analysis/harness_config.py::dividendos_desc` (y las líneas 346-347) y el docstring de `paper_trading/dividends.py` afirman que el motor cobra en caja desde el 2026-09-25 y que el desvío vale el 0,9%: en el tramo vivo es el **100%** de lo devengado. Lo que sí incluye los devengados es el **VS SPY** del panel (`_dividendos_devengados`); la caja, la equity, el P&L y el sizing del motor no.
+- **Qué hay que hacer.** Que el crédito se decida contra el **ledger** y no contra la ventana del último scan: todo ex-date con acciones al ex-date, sin fila en `paper_dividend_credits` y posterior a un piso fijo (la puesta en marcha de la 222), idempotente; que el warm-up cubra los tickers vendidos dentro del atraso de Yahoo; un test con el ex-date que **llega después** de que la ventana lo pasó; y el texto del desvío y del docstring con lo que pasa.
+- **Decisión de Chapa:** acreditar o no lo ya devengado desde la 222 (≥ $93,96). No es el «retroactivo» que Chapa descartó en la 222 —eso era lo anterior a la puesta en marcha—: es lo que la decisión de la 222 ya mandaba cobrar.
+- **Kill-criteria.** Con un calendario que publica el ex-date dos días tarde y scans diarios, el crédito entra una sola vez; el mismo caso con el código de hoy no acredita (contraprueba); el desvío dice lo que pasa. Los cuatro comandos en verde y el CI del commit en verde.
+
+### 349. ~~TANDA-AUDITORIA-2026-10-10 — Correr las doce áreas de `/audit` sobre las 336–348 y el estado vivo~~ · **CERRADA 2026-10-10 — cinco hallazgos, un HIGH (los dividendos del motor); deja la 350–353** · **en *En curso* con el detalle**  ·  origen: pedido de Chapa (*«correr todas las auditorias»*) · severidad **—**
+
+- **Kill-criteria** congelados antes de abrir un archivo: `docs/auditoria_tanda_killcriteria_2026-10-10.md`. Informe: `docs/auditoria_tanda_2026-10-10.md`.
 
 ### 348. ~~PYARROW-26-NUMPY2 — `pyarrow 26.0.0` (2026-10-09) exige numpy ≥ 2.0 y `requirements.txt` no le pone techo: el CI no puede importar el cache de parquet~~ · **CERRADA 2026-10-09 — `pyarrow>=17.0,<26`** (`11af599`) · **movida a *Hecho reciente* con el detalle**  ·  origen: el CI rojo de la 347 (`73aa490`) · severidad **ALTA** (CI rojo)
 
