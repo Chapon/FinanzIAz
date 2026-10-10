@@ -18,13 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-- **WIP 280 — Tarea 349 (TANDA-AUDITORIA-2026-10-10) CERRADA 2026-10-10 — sexta tanda completa, doce áreas sobre las 336–348 y el estado vivo: cinco hallazgos, un HIGH** (`docs/auditoria_tanda_2026-10-10.md`, `docs/auditoria_tanda_killcriteria_2026-10-10.md`, `.claude/skills/auditoria/SKILL.md`). READ-ONLY sobre el código y la DB; la skill recibe la lección del (c-metodo). Los cuatro comandos corrieron **después** de escribir este registro (la 339).
-  - **[G-1] HIGH → 350:** el motor paper **no acreditó ningún dividendo** desde la 222 (0 filas en `paper_dividend_credits`, también en los 13 backups desde el 03/10). La cuenta 2 dejó sin cobrar al menos **$93,96** (DHR 30/09, BMY 02/10, GE 05/10). Yahoo publica el ex-date días tarde y la ventana `(último scan, hoy]` ya lo pasó; no es el TTL. El desvío `dividendos` dice 0,9% y en vivo es el 100%. El `verificador` lo **confirmó y corrigió el mecanismo** que yo había escrito.
-  - **[L-1] MEDIUM → 351:** `os.replace` del cache de parquet da `PermissionError` en el arranque de la app (4 veces, 08 y 09/10; nunca antes). Tarea de medición.
-  - **[A-1], [A-2] LOW → 352:** la skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML; `CLAUDE.md` no nombra el eje 6 del guard (338).
-  - **[H-1] LOW → 353:** un harvest con la red caída (al volver de una suspensión, 09/10) cuenta como el del día y no se reintenta.
-  - **Limpios:** B, C (fuera de G-1), D, E, F, I, J, K. Cuentas al centavo, Home contra cálculo a mano, CI verde, cero barras rellenadas.
-  - **Deja las tareas 350, 351, 352 y 353.**
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1832,7 +1826,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 - **Decisión de Chapa:** acreditar o no lo ya devengado desde la 222 (≥ $93,96). No es el «retroactivo» que Chapa descartó en la 222 —eso era lo anterior a la puesta en marcha—: es lo que la decisión de la 222 ya mandaba cobrar.
 - **Kill-criteria.** Con un calendario que publica el ex-date dos días tarde y scans diarios, el crédito entra una sola vez; el mismo caso con el código de hoy no acredita (contraprueba); el desvío dice lo que pasa. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 349. ~~TANDA-AUDITORIA-2026-10-10 — Correr las doce áreas de `/audit` sobre las 336–348 y el estado vivo~~ · **CERRADA 2026-10-10 — cinco hallazgos, un HIGH (los dividendos del motor); deja la 350–353** · **en *En curso* con el detalle**  ·  origen: pedido de Chapa (*«correr todas las auditorias»*) · severidad **—**
+### 349. ~~TANDA-AUDITORIA-2026-10-10 — Correr las doce áreas de `/audit` sobre las 336–348 y el estado vivo~~ · **CERRADA 2026-10-10 — cinco hallazgos, un HIGH (los dividendos del motor); deja la 350–353** (`1f67440`) · **movida a *Hecho reciente* con el detalle**  ·  origen: pedido de Chapa (*«correr todas las auditorias»*) · severidad **—**
 
 - **Kill-criteria** congelados antes de abrir un archivo: `docs/auditoria_tanda_killcriteria_2026-10-10.md`. Informe: `docs/auditoria_tanda_2026-10-10.md`.
 
@@ -4080,6 +4074,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 280 — Tarea 349 (TANDA-AUDITORIA-2026-10-10) CERRADA 2026-10-10 — sexta tanda completa, doce áreas sobre las 336–348 y el estado vivo: cinco hallazgos, un HIGH** (`docs/auditoria_tanda_2026-10-10.md`, `docs/auditoria_tanda_killcriteria_2026-10-10.md`, `.claude/skills/auditoria/SKILL.md`; `1f67440`, CI **VERDE** 2026-10-10 04:09Z). READ-ONLY sobre el código y la DB; la skill recibe la lección del (c-metodo). Los cuatro comandos corrieron **después** de escribir este registro (la 339): suite Windows (Anaconda) **4497 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4494 passed, 4 skipped**.
+  - **[G-1] HIGH → 350:** el motor paper **no acreditó ningún dividendo** desde la 222 (0 filas en `paper_dividend_credits`, también en los 13 backups desde el 03/10). La cuenta 2 dejó sin cobrar al menos **$93,96** (DHR 30/09, BMY 02/10, GE 05/10). Yahoo publica el ex-date días tarde y la ventana `(último scan, hoy]` ya lo pasó; no es el TTL. El desvío `dividendos` dice 0,9% y en vivo es el 100%. El `verificador` lo **confirmó y corrigió el mecanismo** que yo había escrito.
+  - **[L-1] MEDIUM → 351:** `os.replace` del cache de parquet da `PermissionError` en el arranque de la app (4 veces, 08 y 09/10; nunca antes). Tarea de medición.
+  - **[A-1], [A-2] LOW → 352:** la skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML; `CLAUDE.md` no nombra el eje 6 del guard (338).
+  - **[H-1] LOW → 353:** un harvest con la red caída (al volver de una suspensión, 09/10) cuenta como el del día y no se reintenta.
+  - **Limpios:** B, C (fuera de G-1), D, E, F, I, J, K. Cuentas al centavo, Home contra cálculo a mano, CI verde, cero barras rellenadas.
+  - **Deja las tareas 350, 351, 352 y 353.**
 - **WIP 279 — Tarea 338 (BACKLOG-CONTRATO-EN-CURSO) CERRADA 2026-10-09 — opción (a) de Chapa: *En curso* vuelve al contrato, y el guard de la 66 verifica el máx 1** (`docs/BACKLOG.md`, `scripts/check_backlog_integrity.py`, `tests/test_backlog_integrity.py`, `.claude/commands/ship.md`, `.claude/skills/git-workflow/SKILL.md`; `03bf53b`, CI **VERDE** 2026-10-09 23:25Z). Los cuatro comandos corrieron **después** de escribir este registro (la 339): suite Windows (Anaconda) **4497 passed, 1 skipped, 1 deselected**, ruff limpio, sin estado vivo **4494 passed, 4 skipped**.
   - **El movimiento:** las **288** entradas de *En curso* (228 «WIP», del 0 al 278, y 60 de contexto y decisiones; 2.145 líneas) pasaron **enteras y en su orden** a la cabeza de *Hecho reciente*, con una línea que lo explica. Lo hizo un script que verificó que **ninguna línea con texto se perdiera** (multiconjunto de antes ⊆ después, y lo agregado = sólo la intro y el *«Nada en marcha»*), como la 199. Los **193** títulos que decían *«movida a *En curso* con el detalle»* dicen ahora *Hecho reciente*; las menciones dentro de notas fechadas no se tocaron, porque son historia. El diff de git se ve enorme (~4.950/4.950) porque no empareja el bloque movido; el neto es +4 líneas.
   - **Los cuatro lugares:** `CLAUDE.md` y `finanzias-conventions` ya lo decían; el contrato del header decía *«suite Windows verde + commit»* y ahora dice el flujo de la 339 + el CI; el paso 8 de `/ship` y de `git-workflow` mueven el registro en el commit del hash. La línea *Última actualización* (2026-08-16) se actualizó en el mismo bloque, para que el filtro de `tests/corpus_operativo.py` la siga dejando afuera.
