@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "built_at": "2026-10-05T00:44:28.836868+00:00",
+    "built_at": "2026-10-12T00:47:13.509752+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
@@ -905,10 +905,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.04234,
-      "median_surprise": 0.041522,
-      "last_surprise": -0.004525,
-      "directional_score": 0.5339
+      "mean_surprise": 0.038311,
+      "median_surprise": 0.036797,
+      "last_surprise": 0.017391,
+      "directional_score": 0.5306
     },
     "PFE": {
       "ticker": "PFE",
