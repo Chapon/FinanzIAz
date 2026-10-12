@@ -105,6 +105,30 @@ def resolve_account_id(account_id: int | None = None) -> int | None:
 # con los logs de hoy**, que no son por ticker. Se reporta, no se usa de gate.
 SOURCE_FAILURE_ALARM_RATE = 0.20
 
+# Fuentes que en una corrida sana devuelven ALGO para casi todo ticker, así que cero ítems
+# en TODOS es una fuente muerta aunque cada ticker conteste ``ok`` (tarea 354).
+#
+# **Lo medido.** Desde el 2026-10-01 ``finance.yahoo.com/xhr/ncp`` —el endpoint de
+# ``Ticker.news`` en yfinance 1.4.1 y también en el 1.7.0— contesta ``404
+# {"message":"Not Found"}``; yfinance parsea ese JSON, no encuentra el stream y devuelve
+# ``[]`` sin levantar. ``_yf_news`` lo declaraba ``ok`` y el resumen del 2026-10-11 dijo
+# ``fuentes 4/4 limpias`` a ``INFO``: diez días sin la fuente, sin un WARNING.
+#
+# **Los ítems son los del fetch, no las filas nuevas.** ``SourceOutcome.items`` se cuenta
+# antes del dedup, así que una fuente sana no da cero por ya tener todo guardado. Aun las
+# filas NUEVAS, que son una cota inferior, llegan a una mediana de ~50 tickers por día en
+# yfinance y en Finnhub (43 días de harvest, 2026-07-15 a 2026-09-30).
+#
+# **``sec`` NO está, y es a propósito:** en 11 de esos 43 días no entró ningún 8-K, y la
+# ventana de 7 días de EDGAR puede venir vacía para todo el universo sin que nada ande
+# mal. Meterla sería un falso positivo por semana.
+FUENTES_QUE_NO_VIENEN_VACIAS = ("yfinance_news", "yfinance_estimates", "finnhub")
+
+# Debajo de esto, cero en todos no dice nada: una corrida a mano con ``--tickers`` sobre
+# dos nombres sin noticias no es una fuente caída. Con la cota de arriba (≥ ~40% de los
+# tickers con filas nuevas en un día sano), diez tickers vacíos por azar es < 1%.
+MIN_TICKERS_PARA_FUENTE_MUDA = 10
+
 
 @dataclass
 class HarvestReport:
@@ -148,6 +172,8 @@ class HarvestReport:
     # No entra a `src_run` (la fuente no corrio, no tiene tasa de falla) pero SI sube el
     # nivel del log — ver `hay_fuente_no_disponible`.
     src_unavailable: dict[str, str] = field(default_factory=dict)
+    # Por fuente: en cuántos tickers trajo al menos un ítem, antes del dedup (tarea 354).
+    src_con_items: Counter = field(default_factory=Counter)
 
     @property
     def stopped_early(self) -> bool:
@@ -179,6 +205,22 @@ class HarvestReport:
         """
         return bool(self.src_unavailable)
 
+    def sources_mudas(self) -> list[str]:
+        """Fuentes que contestaron sin error y sin un solo ítem en ningún ticker (T354).
+
+        SEPARADO de ``sources_alarming``: la fuente no falló, así que su tasa de falla es
+        cero, y lo que la delata es la ausencia total de ítems. Una fuente que ya cruzó el
+        umbral de fallas no se repite acá — está dicha como caída.
+        """
+        caidas = set(self.sources_alarming())
+        return [
+            s
+            for s in FUENTES_QUE_NO_VIENEN_VACIAS
+            if s not in caidas
+            and self.src_run.get(s, 0) - self.src_fail.get(s, 0) >= MIN_TICKERS_PARA_FUENTE_MUDA
+            and self.src_con_items.get(s, 0) == 0
+        ]
+
     def summary(self) -> str:
         techo = f" | CORTADO por presupuesto: {len(self.skipped)} sin correr" if self.skipped else ""
         tasas = self.source_failure_rates()
@@ -197,7 +239,10 @@ class HarvestReport:
         # vez. Quien lee se queda con la primera. El GATE no cambia (sigue mirando solo
         # `source_failure_rates`); lo que cambia es que la etiqueta para humanos no
         # afirme que esta limpio algo que el mismo renglon declara degradado.
-        sucias = {s for s, r in tasas.items() if r > 0} | set(self.src_degraded)
+        # Y una fuente MUDA tampoco es limpia (tarea 354): el 2026-10-11 el resumen dijo
+        # `fuentes 4/4 limpias` con yfinance_news en cero para los 127 tickers.
+        mudas = self.sources_mudas()
+        sucias = {s for s, r in tasas.items() if r > 0} | set(self.src_degraded) | set(mudas)
         salud = f" | fuentes {len(tasas) - len(sucias)}/{len(tasas)} limpias" if tasas else ""
         # Contexto, no alarma (tarea 210): una fuente que contesto con parte de sus
         # sub-fetches caidos. Sin esta linea, `degraded` seria un estado que el codigo
@@ -215,11 +260,17 @@ class HarvestReport:
             if self.src_unavailable
             else ""
         )
+        muda = (
+            " | FUENTES MUDAS: "
+            + ", ".join(f"{s} 0/{self.src_run[s] - self.src_fail.get(s, 0)} con items" for s in mudas)
+            if mudas
+            else ""
+        )
         return (
             f"Harvest: {self.tickers}/{self.requested} tickers en {self.elapsed_s:.0f}s | "
             f"news +{self.news_new} (dup {self.news_dup}) | estimates +{self.est_new} "
             f"(dup {self.est_dup}) | failed {len(self.failed)} | "
-            f"sin datos {len(self.cero_resultados)}{salud}{degradadas}{no_disponibles}{techo}{alarma}"
+            f"sin datos {len(self.cero_resultados)}{salud}{degradadas}{no_disponibles}{techo}{alarma}{muda}"
         )
 
 
@@ -505,8 +556,11 @@ def _loguear(report: HarvestReport, prefijo: str = "") -> None:
     sin key ``finnhub`` se lleva el 56,6% del volumen de noticias en silencio. Son dos
     condiciones distintas con el mismo remedio — que el renglón no se lea como un día
     normal — y se mantienen separadas a propósito: ``degraded`` es el gate calibrado.
+
+    **Y por una fuente muda (tarea 354):** contestó ``ok`` en cada ticker y no trajo
+    nada en ninguno, que es como se vio yfinance desde el 2026-10-01.
     """
-    grave = report.degraded or report.hay_fuente_no_disponible
+    grave = report.degraded or report.hay_fuente_no_disponible or bool(report.sources_mudas())
     (log.warning if grave else log.info)("%s%s", prefijo, report.summary())
 
 
@@ -545,6 +599,8 @@ def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
         if o.status == "skipped":
             continue
         report.src_run[o.source] += 1
+        if o.items > 0:
+            report.src_con_items[o.source] += 1
         if o.status == "failed":
             report.src_fail[o.source] += 1
         elif o.status == "degraded":
