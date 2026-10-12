@@ -43,7 +43,7 @@ from integrations.slack import (
 )
 from paper_trading import scan_candidates
 from paper_trading.account import record_equity_snapshot
-from paper_trading.dividends import acreditar_dividendos
+from paper_trading.dividends import DIAS_ATRASO_CALENDARIO, PISO_DIVIDENDOS, acreditar_dividendos
 from paper_trading.dividends import dia as _dia_iso
 from paper_trading.models import (
     PaperAccount,
@@ -873,7 +873,18 @@ def run_scan(
         # defecto — si se inyectó uno (tests), no tocar la red.
         if tickers and not history_was_injected:
             _warm_up_history_cache(tickers)
-            _warm_up_dividend_calendar(sorted({p.ticker for p in positions}))
+            # Tarea 350: también los vendidos hace poco. Yahoo publica el ex-date días tarde, y
+            # un ticker vendido entre el ex-date y la publicación dejaba de refrescarse.
+            vendidos_hace_poco = {
+                o.ticker
+                for o in session.query(PaperOrder.ticker)
+                .filter(PaperOrder.account_id == account_id)
+                .filter(PaperOrder.side == "SELL")
+                .filter(PaperOrder.status == "filled")
+                .filter(PaperOrder.filled_at >= utcnow_naive() - timedelta(days=DIAS_ATRASO_CALENDARIO))
+                .all()
+            }
+            _warm_up_dividend_calendar(sorted({p.ticker for p in positions} | vendidos_hace_poco))
             _warm_up_split_events(sorted({p.ticker for p in positions}))
 
         # ── Dividendos al ex-date (tarea 222) ───────────────────────────────
@@ -882,15 +893,15 @@ def run_scan(
         # `available` sale de `account.cash`. Acreditar después sería acreditar a una
         # cuenta que ya decidió, que es medio camino y el peor de los dos.
         #
-        # La ventana es `(último scan, hoy]` — exclusiva a la izquierda —, y eso es lo
-        # que implementa el "sólo hacia adelante" que decidió Chapa: el primer scan tras
-        # shipear esto tiene el scan anterior en ayer, así que no acredita nada viejo. Si
-        # la app estuvo cerrada dos semanas, la ventana las cubre, que es correcto: ese
-        # dividendo se ganó igual.
+        # El límite izquierdo es un PISO FIJO, no el último scan (tarea 350). Con
+        # `(último scan, hoy]` el motor no acreditó NINGÚN dividendo desde la 222: Yahoo
+        # publica el ex-date días tarde y para entonces la ventana ya lo había pasado. Lo
+        # que evita el doble crédito es el ledger; el piso conserva el «sólo hacia
+        # adelante» de la 222 (nada anterior a su puesta en marcha se cobra).
         dividend_credits = acreditar_dividendos(
             session,
             acct,
-            _dia_iso(acct.last_scan_at),
+            PISO_DIVIDENDOS,
             _dia_iso(utcnow_naive()) or "",
         )
         # Los mensajes entran a `scan_warnings` donde se inicializa, unas líneas abajo:

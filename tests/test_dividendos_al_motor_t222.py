@@ -370,9 +370,14 @@ def test_el_credito_no_toca_a_OTRA_cuenta(test_db):
     assert _caja(b) == pytest.approx(20_000.0)
 
 
-def test_la_ventana_del_scan_sale_del_ULTIMO_scan_y_no_de_ayer(test_db):
-    """Regresión del cableado: si alguien cambiara la ventana a «ayer», los días con la
-    app cerrada dejarían de cobrarse y el defecto volvería en silencio."""
+def test_una_ventana_explicita_cobra_lo_que_cae_adentro(test_db):
+    """La función con una ventana explícita de diez días cobra el ex-date de adentro.
+
+    Se llamaba *«la ventana del scan sale del ÚLTIMO scan»* y decía ser una regresión del
+    cableado, pero llama a ``acreditar_dividendos`` directo: no probaba el cable. Y el
+    cable con el último scan era justamente el defecto (tarea 350: el motor pasa un piso
+    fijo). El cable lo prueba ``test_dividendos_ex_date_tardio_t350.py``.
+    """
     acct = _cuenta(10_000.0)
     _fill(acct, "MO", "BUY", 100.0, "2026-06-01")
     hoy = utcnow_naive()
@@ -451,7 +456,10 @@ def test_run_scan_ACREDITA_el_dividendo_y_lo_reporta(test_db, monkeypatch):
     caja_antes = _caja(acct.id)
     result = _scan(acct.id)
 
-    assert _caja(acct.id) >= caja_antes + 125.0 - 1e-6 or any("dividendo" in w for w in result.warnings), (
+    # Era `caja >= antes + 125 or any("dividendo" in w ...)`: el `or` aceptaba un aviso sin
+    # caja (tarea 350). El scan no compra nada acá (sin historia no hay señal), así que la
+    # caja sube exactamente el dividendo.
+    assert _caja(acct.id) == pytest.approx(caja_antes + 125.0), (
         "el scan no acreditó el dividendo: el cableado del engine está muerto"
     )
     assert any("dividendo del" in w for w in result.warnings), "el crédito no se reporta"
@@ -460,11 +468,11 @@ def test_run_scan_ACREDITA_el_dividendo_y_lo_reporta(test_db, monkeypatch):
 
 
 def test_run_scan_NO_backfillea_lo_viejo(test_db, monkeypatch):
-    """La ventana del scan arranca en el último scan, no en 1900.
+    """Lo anterior a la puesta en marcha de la 222 no se cobra (mutación M2).
 
-    Es la mutación M2: con la ventana abierta hacia atrás, el primer scan después de
-    shipear esto le habría pagado a la cuenta 2 los $322,77 que Chapa decidió **no**
-    backfillear — y nadie se habría enterado hasta ver la equity saltar.
+    Con la ventana abierta hacia atrás, el primer scan le pagaría a la cuenta 2 los $322,77
+    que Chapa decidió **no** backfillear. Desde la tarea 350 el límite es el piso fijo
+    ``PISO_DIVIDENDOS``, no el último scan; este ex-date de febrero queda antes del piso.
     """
     from paper_trading.account import create_account
     from paper_trading.models import PaperWatchlistItem

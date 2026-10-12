@@ -11,7 +11,8 @@ Chapa eligió, con los costos de las dos opciones medidos delante (2026-09-25),
 **acreditar el efectivo a la caja al ex-date** y **sólo hacia adelante**. Lo que eso
 mueve, medido sobre la cuenta 2 antes de decidir:
 
-* cierra el **99,1%** del desvío contra el harness (quedan ~$2,77 de los $322,77);
+* cierra el **99,1%** del desvío contra el harness (quedan ~$2,77 de los $322,77) —con el
+  crédito andando, que hasta la tarea 350 no andaba (ver abajo)—;
 * mueve el sizing de las compras en **0,78% la mediana** (p90 2,5%), porque con
   ``equal_weight`` el target es ``available / len(picks)`` y la caja entra ahí;
 * **no mueve los slots**: en toda la vida de la cuenta hubo **0** BUYs sin llenar, así
@@ -24,12 +25,23 @@ caja acreditada queda quieta hasta la próxima compra. Sobre la cuenta 2 eso val
 — el 0,9% del desvío—, así que el desvío `dividendos` del registro de harness **se
 achica y se re-describe, no se borra**.
 
-Sólo hacia adelante, y cómo se implementa eso
------------------------------------------------
-La ventana de cada scan es ``(último scan, hoy]``. En el primer scan después de shipear
-esto, el último scan es de ayer, así que **nada histórico se acredita** — que es la
-decisión de Chapa. Y si la app estuvo cerrada dos semanas, la ventana las cubre: ese
-dividendo se ganó igual. El ledger (``PaperDividendCredit``) hace el resto idempotente.
+Sólo hacia adelante, y cómo se implementa eso (rehecho en la tarea 350)
+------------------------------------------------------------------------
+**Lo que había no cobró nunca.** La ventana de cada scan era ``(último scan, hoy]``, y
+Yahoo publica el ex-date en ``.dividends`` **uno o más días tarde**: GE no lo traía en el
+fetch de las 22:16 UTC de su propio ex-date y apareció dos días después. Cuando el ex-date
+entraba al cache ya había quedado a la izquierda de la ventana. Resultado, medido el
+2026-10-10: ``paper_dividend_credits`` con **0 filas** y $93,96 devengados sin cobrar
+(DHR, BMY, GE). El docstring decía que esto cerraba el 99,1% del desvío; en el tramo vivo
+el desvío era el **100%**.
+
+Ahora el crédito se decide contra el **ledger**: todo ex-date posterior a
+``PISO_DIVIDENDOS`` —la víspera de la puesta en marcha de la 222—, con acciones al ex-date
+y sin fila en ``PaperDividendCredit``, se acredita una vez, llegue cuando llegue. El piso
+fijo es lo que conserva el «sólo hacia adelante» de la 222 (nada anterior a su puesta en
+marcha se cobra), y no depende de cuándo corrió el último scan. Lo devengado entre la 222
+y la 350 **sí** se acredita: es lo que la decisión de la 222 ya mandaba cobrar, y Chapa lo
+confirmó el 2026-10-11.
 
 Nada de esto pega a la red: se lee ``dividend_calendar_cache``, que el warm-up del scan
 puebla antes (mismo lugar donde ya se calienta el cache de barras).
@@ -47,6 +59,17 @@ from database.models import session_scope, utcnow_naive  # noqa: F401  (re-expor
 # `data/yahoo_finance`, que arrastra yfinance y la red— y un test fija que los tres
 # literales del repo coincidan. Misma forma con que la 71 resolvió los de reproducción.
 _SIN_DIVIDENDOS = "0000-00-00"
+
+# Tarea 350: el límite izquierdo, EXCLUSIVO, de lo que el motor acredita. Es la víspera de la
+# puesta en marcha de la 222 (`210b940`, 2026-09-25): ese día el primer scan tenía la ventana
+# `(2026-09-24, hoy]`, así que este piso es exactamente lo que la 222 decidió cobrar. Medido
+# contra la DB el 2026-10-11: con 09-23, 09-24 o 09-25 lo pendiente es el mismo ($93,96).
+PISO_DIVIDENDOS = "2026-09-24"
+
+# Cuántos días después de vender se sigue calentando el calendario de un ticker (tarea 350).
+# Yahoo publica el ex-date tarde (dos días en GE): un ticker vendido entre el ex-date y la
+# publicación ya no es posición abierta y, sin esto, su calendario no se refrescaba nunca.
+DIAS_ATRASO_CALENDARIO = 10
 
 
 def dia(ts) -> str | None:
@@ -108,11 +131,11 @@ def creditos_pendientes(
     **Función pura**: no toca la DB ni el reloj, así que la ventana y la convención de
     quién cobra se pueden testear sin montar un scan entero.
 
-    ``fills`` son ``(ticker, side, acciones, filled_at)``; ``desde`` es el día del scan
-    anterior y es **exclusivo** (ese día ya se procesó), ``hasta`` es hoy e **inclusivo**.
-    ``desde=None`` ⇒ no hay scan previo ⇒ **no se acredita nada**: es el arranque de una
-    cuenta, y además es lo que hace que «sólo hacia adelante» valga también el primer día
-    que esto corre.
+    ``fills`` son ``(ticker, side, acciones, filled_at)``; ``desde`` es el piso y es
+    **exclusivo**, ``hasta`` es hoy e **inclusivo**. El motor pasa ``PISO_DIVIDENDOS``, no el
+    día del último scan (tarea 350: el ex-date llega tarde y esa ventana ya lo había pasado);
+    lo que evita el doble crédito es ``ya_acreditados``, no la ventana. ``desde=None`` ⇒ no
+    se acredita nada.
 
     ``splits`` (tarea 333) son ``{ticker: [(ex_date, ratio)]}`` de los ajustes **ya aplicados**
     a la posición —splits de la 262 y spin-offs de la 303, con su ``share_ratio``—: los fills
@@ -155,7 +178,7 @@ def creditos_pendientes(
 
 
 def acreditar_dividendos(session, acct, desde: str | None, hasta: str) -> list[dict]:
-    """Acredita a ``acct.cash`` los dividendos de la ventana y escribe el ledger.
+    """Acredita a ``acct.cash`` los dividendos de ``(desde, hasta]`` que el ledger no tiene.
 
     Devuelve una lista de dicts por crédito, para que el scan los pueda reportar. No
     pega a la red: el calendario tiene que estar en ``dividend_calendar_cache``, que el

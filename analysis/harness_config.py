@@ -346,6 +346,11 @@ LIVE_PRICE_SECOND_OPINION_ENABLED = False
 # acreditada queda quieta hasta la compra siguiente. Sobre la cuenta 2 eso vale ~$2,77 de
 # los $322,77, o sea el 0,9%. **El numero de abajo sigue siendo el que hay que usar para
 # leer cualquier veredicto publicado antes de esa fecha**, que es por lo que no se borra.
+# **Pero la 222 no cobro nunca (tarea 350):** su ventana `(ultimo scan, hoy]` llegaba antes
+# que el ex-date, que Yahoo publica dias tarde, y el ledger quedo con 0 filas. Desde la 350
+# el credito se decide contra el ledger con un piso fijo, y lo devengado entre las dos
+# ($93,96, DHR/BMY/GE) se acredita en el primer scan; entre el 2026-09-25 y la 350 el desvio
+# fue el total, no el 0,9%.
 #
 # Medido el 2026-09-21 sobre las tenencias REALES de la cuenta 2 (bajando el calendario
 # de dividendos de cada ticker y contando solo los ex-dates dentro de cada periodo de
@@ -2378,7 +2383,11 @@ def dividendos_desc() -> str:
     del_pnl = DIVIDENDOS_NO_COBRADOS_USD / DIVIDENDOS_PNL_REALIZADO_USD * 100
     return (
         f"El harness REINVIERTE los dividendos y el motor vivo los cobra como CAJA "
-        f"(tarea 222, desde el 2026-09-25). Todo el cache se baja con `auto_adjust=True`, "
+        f"(tarea 222, desde el 2026-09-25 — pero hasta la tarea 350, del 2026-10-11, NO "
+        f"acreditó ninguno: decidía con la ventana `(último scan, hoy]` y Yahoo publica el "
+        f"ex-date días tarde, así que lo devengado en ese tramo —$93,96— entró recién con la "
+        f"350 y ese tramo hay que leerlo con el desvío total de abajo). Todo el cache se baja "
+        f"con `auto_adjust=True`, "
         f"o sea series total-return, así que cada brazo simulado cobra el dividendo **y lo "
         f"reinvierte en el precio**: la posición crece. El motor acredita el efectivo a la "
         f"caja al ex-date, donde participa del sizing de la compra siguiente pero **no "
