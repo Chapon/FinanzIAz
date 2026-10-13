@@ -1,0 +1,277 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "FinanzIAs - recolector de la nube (tarea 355): Lambda por lotes sin VPC, tabla DynamoDB provisionada dentro del always-free, horario en dias habiles, rol minimo, usuario lector de la app y presupuesto de US$1. Ver docs/harvest_nube_t196_2026-09-14.md par. 12.",
+  "Parameters": {
+    "SecUserAgent": {
+      "Type": "String",
+      "MinLength": 8,
+      "Description": "User-Agent con contacto que exige EDGAR, p. ej. 'FinanzIAs nombre@mail.com' (sin el, SEC contesta 403)."
+    },
+    "FinnhubParam": {
+      "Type": "String",
+      "Default": "/finanzias/finnhub_api_key",
+      "Description": "Nombre del parametro SecureString de SSM con la key de Finnhub (se crea a mano antes del stack)."
+    },
+    "AlertaEmail": {
+      "Type": "String",
+      "MinLength": 5,
+      "Description": "Mail al que avisa el presupuesto ante cualquier gasto."
+    },
+    "AppPublicaUniverso": {
+      "Type": "String",
+      "Default": "no",
+      "AllowedValues": ["no", "si"],
+      "Description": "si = el usuario de la app puede escribir UNICAMENTE el item pk=universo (tarea 356, decision de Chapa)."
+    }
+  },
+  "Conditions": {
+    "PublicaUniverso": {"Fn::Equals": [{"Ref": "AppPublicaUniverso"}, "si"]}
+  },
+  "Resources": {
+    "Tabla": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "finanzias_harvest",
+        "AttributeDefinitions": [
+          {"AttributeName": "pk", "AttributeType": "S"},
+          {"AttributeName": "sk", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "pk", "KeyType": "HASH"},
+          {"AttributeName": "sk", "KeyType": "RANGE"}
+        ],
+        "BillingMode": "PROVISIONED",
+        "ProvisionedThroughput": {"ReadCapacityUnits": 10, "WriteCapacityUnits": 15},
+        "TimeToLiveSpecification": {"AttributeName": "expira", "Enabled": true}
+      }
+    },
+    "Logs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {"LogGroupName": "/aws/lambda/finanzias-recolector", "RetentionInDays": 14}
+    },
+    "RolRecolector": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "finanzias-recolector",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "recolector-minimo",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:PutItem", "dynamodb:GetItem"],
+                  "Resource": {"Fn::GetAtt": ["Tabla", "Arn"]}
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["ssm:GetParameter"],
+                  "Resource": {"Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${FinnhubParam}"}
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::Sub": "${Logs.Arn}"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Recolector": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": ["Logs"],
+      "Properties": {
+        "FunctionName": "finanzias-recolector",
+        "Description": "Recolector de la nube (tarea 355). El codigo se sube a mano desde dist/recolector_nube.zip.",
+        "Runtime": "python3.12",
+        "Architectures": ["x86_64"],
+        "Handler": "recolector_nube.lambda_handler",
+        "Timeout": 900,
+        "MemorySize": 512,
+        "Role": {"Fn::GetAtt": ["RolRecolector", "Arn"]},
+        "Environment": {
+          "Variables": {
+            "TABLA": {"Ref": "Tabla"},
+            "FINNHUB_PARAM": {"Ref": "FinnhubParam"},
+            "SEC_EDGAR_USER_AGENT": {"Ref": "SecUserAgent"},
+            "FINANZIAS_LOG_FILE": ":sin-archivo:"
+          }
+        },
+        "Code": {
+          "ZipFile": "def lambda_handler(event, context):\n    raise RuntimeError('Falta subir dist/recolector_nube.zip (tarea 355, Acciones manuales)')\n"
+        }
+      }
+    },
+    "Reintentos": {
+      "Type": "AWS::Lambda::EventInvokeConfig",
+      "Properties": {
+        "FunctionName": {"Ref": "Recolector"},
+        "Qualifier": "$LATEST",
+        "MaximumRetryAttempts": 1,
+        "MaximumEventAgeInSeconds": 3600
+      }
+    },
+    "RolHorario": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "finanzias-recolector-horario",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {"Effect": "Allow", "Principal": {"Service": "scheduler.amazonaws.com"}, "Action": "sts:AssumeRole"}
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "invocar-recolector",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {"Effect": "Allow", "Action": ["lambda:InvokeFunction"], "Resource": {"Fn::GetAtt": ["Recolector", "Arn"]}}
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "HorarioLote1": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": "finanzias-recolector-lote1",
+        "ScheduleExpression": "cron(30 17 ? * MON-FRI *)",
+        "ScheduleExpressionTimezone": "America/New_York",
+        "FlexibleTimeWindow": {"Mode": "OFF"},
+        "Target": {
+          "Arn": {"Fn::GetAtt": ["Recolector", "Arn"]},
+          "RoleArn": {"Fn::GetAtt": ["RolHorario", "Arn"]},
+          "Input": "{\"lote\": 0, \"lotes\": 5}"
+        }
+      }
+    },
+    "HorarioLote2": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": "finanzias-recolector-lote2",
+        "ScheduleExpression": "cron(34 17 ? * MON-FRI *)",
+        "ScheduleExpressionTimezone": "America/New_York",
+        "FlexibleTimeWindow": {"Mode": "OFF"},
+        "Target": {
+          "Arn": {"Fn::GetAtt": ["Recolector", "Arn"]},
+          "RoleArn": {"Fn::GetAtt": ["RolHorario", "Arn"]},
+          "Input": "{\"lote\": 1, \"lotes\": 5}"
+        }
+      }
+    },
+    "HorarioLote3": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": "finanzias-recolector-lote3",
+        "ScheduleExpression": "cron(38 17 ? * MON-FRI *)",
+        "ScheduleExpressionTimezone": "America/New_York",
+        "FlexibleTimeWindow": {"Mode": "OFF"},
+        "Target": {
+          "Arn": {"Fn::GetAtt": ["Recolector", "Arn"]},
+          "RoleArn": {"Fn::GetAtt": ["RolHorario", "Arn"]},
+          "Input": "{\"lote\": 2, \"lotes\": 5}"
+        }
+      }
+    },
+    "HorarioLote4": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": "finanzias-recolector-lote4",
+        "ScheduleExpression": "cron(42 17 ? * MON-FRI *)",
+        "ScheduleExpressionTimezone": "America/New_York",
+        "FlexibleTimeWindow": {"Mode": "OFF"},
+        "Target": {
+          "Arn": {"Fn::GetAtt": ["Recolector", "Arn"]},
+          "RoleArn": {"Fn::GetAtt": ["RolHorario", "Arn"]},
+          "Input": "{\"lote\": 3, \"lotes\": 5}"
+        }
+      }
+    },
+    "HorarioLote5": {
+      "Type": "AWS::Scheduler::Schedule",
+      "Properties": {
+        "Name": "finanzias-recolector-lote5",
+        "ScheduleExpression": "cron(46 17 ? * MON-FRI *)",
+        "ScheduleExpressionTimezone": "America/New_York",
+        "FlexibleTimeWindow": {"Mode": "OFF"},
+        "Target": {
+          "Arn": {"Fn::GetAtt": ["Recolector", "Arn"]},
+          "RoleArn": {"Fn::GetAtt": ["RolHorario", "Arn"]},
+          "Input": "{\"lote\": 4, \"lotes\": 5}"
+        }
+      }
+    },
+    "LectorApp": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "UserName": "finanzias-app-lector",
+        "Policies": [
+          {
+            "PolicyName": "leer-harvest",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:Query", "dynamodb:GetItem"],
+                  "Resource": {"Fn::GetAtt": ["Tabla", "Arn"]}
+                },
+                {
+                  "Fn::If": [
+                    "PublicaUniverso",
+                    {
+                      "Effect": "Allow",
+                      "Action": ["dynamodb:PutItem"],
+                      "Resource": {"Fn::GetAtt": ["Tabla", "Arn"]},
+                      "Condition": {"ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["universo"]}}
+                    },
+                    {"Ref": "AWS::NoValue"}
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Presupuesto": {
+      "Type": "AWS::Budgets::Budget",
+      "Properties": {
+        "Budget": {
+          "BudgetName": "finanzias-1-dolar",
+          "BudgetType": "COST",
+          "TimeUnit": "MONTHLY",
+          "BudgetLimit": {"Amount": 1, "Unit": "USD"}
+        },
+        "NotificationsWithSubscribers": [
+          {
+            "Notification": {
+              "NotificationType": "ACTUAL",
+              "ComparisonOperator": "GREATER_THAN",
+              "Threshold": 1,
+              "ThresholdType": "PERCENTAGE"
+            },
+            "Subscribers": [{"SubscriptionType": "EMAIL", "Address": {"Ref": "AlertaEmail"}}]
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "Tabla": {"Value": {"Ref": "Tabla"}},
+    "Funcion": {"Value": {"Ref": "Recolector"}},
+    "UsuarioApp": {"Value": {"Ref": "LectorApp"}}
+  }
+}

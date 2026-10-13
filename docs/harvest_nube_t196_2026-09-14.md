@@ -765,6 +765,8 @@ Una tabla, `finanzias_harvest`:
 
 **Por qué así, con números:** *«bajar lo pendiente»* es, por cada día desde el cursor, **un `Query` por tipo** (`pk = consenso#2026-10-05`). Un día de consenso son 127 ítems de ~0,8 KB (~100 KB): con lectura eventual (8 KB por RCU), ~13 RCU. Un día de noticias, ~0,6 MB: ~75 RCU, y ~290 en el pico. Con las **25 RCU** gratuitas, una semana de app cerrada se baja en **~30 s** en el caso típico. La alternativa —clave por ticker— obliga a un `Scan` de la tabla entera en cada arranque, que crece con el tiempo: con ~257 MB por año, del orden de **~20 min por año de datos** acumulados.
 
+> **Corregido en la 355 (§12):** estos números cuentan las filas *nuevas* por día. La nube escribe lo que trae su ventana de 3 días, ~2,8 MB de noticias por día y no ~0,6 MB: con las 10 RCU del template, un día se baja en ~35 s y una semana en ~3 min. Sigue siendo un `Query` por día, y la conclusión sobre la clave no cambia.
+
 - **El consenso agrupado por ticker y día** cabe holgado en el límite de 400 KB por ítem, y divide por ~10 la cantidad de ítems.
 - **Las noticias van una por ítem**, con `content_hash` como clave de orden: el mismo hash que hace idempotente a `news_events` (§6.2) deduplica también en la nube.
 - **No hace falta índice secundario**: la app nunca busca por ticker en la nube, sólo por día.
@@ -797,6 +799,37 @@ Una tabla, `finanzias_harvest`:
 ### 11.8 Lo que NO cambia del diseño de arriba
 
 El techo de 15 min por lotes (§7.1), sin VPC (§7.2), el universo publicado desde la app (§7.3), la key de Finnhub en SSM (§7.5), **un solo recolector del consenso** (§7.6: con la nube andando, el harvest in-app **deja de bajar consenso**, o se duplica el pedido a Yahoo), y la marca de captura estampada en la nube (§6.1).
+
+---
+
+## 12. El lado que ESCRIBE, construido (tarea 355, 2026-10-12)
+
+**Las piezas, en el repo:**
+
+| archivo | qué es |
+|---|---|
+| `scripts/recolector_nube.py` | el handler (`recolector_nube.lambda_handler`): un lote por invocación |
+| `scripts/build_recolector_nube.py` | arma `dist/recolector_nube.zip` (41,7 MB el 2026-10-12, contra 50 MB de la consola) |
+| `infra/recolector_nube.cfn.json` | el template de CloudFormation: tabla, rol, Lambda, horarios, usuario lector, presupuesto |
+| `scripts/universo_para_nube.py` | arma el ítem `universo/vivo` para pegarlo en la consola |
+| `tests/test_recolector_nube_t355.py` | el handler contra una tabla simulada, el zip y los invariantes de costo del template |
+
+**Los mismos colectores que la app.** El zip lleva `data/news_sources.py` y `config/logging_config.py` tal cual. El único archivo que no se copia es `data/yahoo_finance.py`, que importa la DB al cargarse: en su lugar va un módulo con **la misma** `_ticker`, extraída por AST en cada build. Si `_ticker` empieza a usar algo además de `yf`, el build falla. Un test corre el zip extraído y verifica que no carga `database` ni SQLAlchemy.
+
+**Los ítems** son los del §11.3, más uno: `pk = corrida#{día}`, `sk = lote{k}de{n}#{inicio}`, con el universo usado (cuántos, de cuándo, `origen`), los tickers pedidos y corridos, los que **no alcanzaron** (`sin_correr`), los que **se colgaron** (`techo`), qué contestó cada fuente y cuánto tardó. Es lo que mide el kill-criteria (a) y (c), y el «declara sobre cuántos tickers corrió» del §7.3.
+
+**Decisiones que este diseño no tenía escritas:**
+
+- **El primero del día gana.** Cada `PutItem` va con `attribute_not_exists(pk)`, como `_insert_estimate_if_new_today` en la app: re-correr un lote el mismo día sólo completa lo que faltaba.
+- **La marca se estampa al terminar de recolectar el ticker, antes de escribir.** Consenso y noticias del mismo ticker comparten `capturado_at`; un reintento de botocore no la mueve.
+- **Ventana de noticias de 3 días.** La app trae ~11.000 ítems por corrida (`news +805 (dup 10159)` el 2026-10-11), casi todos repetidos de los 7 días de Finnhub. Como `pk` es el día de captura, sin ventana la nube re-escribiría cada día lo mismo en otra partición. Con 3 días, una caída de hasta dos días hábiles no pierde nada, y la app sigue trayendo sus 7 cuando se abre.
+- **15 WCU y 10 RCU.** Las 25 + 25 gratuitas son **por cuenta, no por tabla**: si la cuenta tiene otra tabla provisionada, se suman. **On-demand no es always-free** (se cobra por pedido), así que el enunciado de la 355, que lo dejaba como opción, queda corregido. **El §11.3 se queda corto en la lectura:** contó las filas *nuevas* por día (~0,6 MB), pero la nube escribe lo que trae en la ventana, del orden de **~4.700 noticias por día** (3/7 de los ~11.000 ítems de una corrida), unos 2,8 MB: ~350 RCU-s por día con lectura eventual. Con 10 RCU son ~35 s por día bajado, y con 15 WCU la escritura son ~5 min por día repartidos en cinco lotes (~1 min cada uno).
+- **Horario:** 17:30, 17:34, 17:38, 17:42 y 17:46 de Nueva York (sigue el horario de verano), lunes a viernes. Escalonados para no pegarle a Yahoo con cinco IPs a la vez. **El consenso de la nube es el del cierre, y el de la app el de su primer harvest del día:** con la app abierta a la mañana, la fila del día la escribe la app y la nube no la pisa.
+- **Un reintento** por invocación fallida (`EventInvokeConfig`): es idempotente, y el techo de 15 min acota el costo de un reintento a una invocación más.
+- **Fuentes:** consenso, SEC y Finnhub. Las noticias de yfinance no, porque `Ticker.news` contesta 404 desde el 2026-10-01 (tarea 354); entran con la 357.
+- **El usuario lector, con el `PutItem` del universo como parámetro** (`AppPublicaUniverso`, default `no`). Con `si`, puede escribir **sólo** el ítem `pk = universo` (condición `dynamodb:LeadingKeys`). Lo decide Chapa (§7.3 contra §11.1).
+
+**Lo que el repo no puede probar:** que Yahoo, SEC y Finnhub contesten desde AWS **todos los días**, que el lote más lento entre en la mitad del techo y la factura. Eso es el kill-criteria (a)–(c) de la 355, y se mide con cinco días hábiles corriendo.
 
 ---
 
