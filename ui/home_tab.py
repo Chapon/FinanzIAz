@@ -9,8 +9,9 @@ mostrar el portfolio, no las cuentas de sim de paper trading»*). Antes salía d
 paper trading —y encima de la 1, cerrada, elegida por id fijo—. El paper trading tiene su lugar
 en Paper y Métricas. Los números se arman en ``database.cartera_real.resumen_home``.
 
-Desde la tarea 359 el gráfico grande **también** puede mostrar una cuenta paper, elegida en un
-segundo selector; «Mis Acciones» sigue siendo el default, y las tarjetas de abajo son siempre suyas.
+Desde la tarea 359 el gráfico grande **también** puede mostrar las cuentas paper, y desde la 360
+se tildan: una o varias a la vez, en el mismo eje. «Mis Acciones» arranca tildada, y las tarjetas
+de abajo son siempre suyas.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from types import SimpleNamespace
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -68,6 +70,11 @@ VISTAS_HOME = (
 )
 # Tarea 359: de una cuenta paper la tercera vista no es un costo (los snapshots no lo guardan).
 TEXTO_INVERTIDO_PAPER = "Efectivo y posiciones"
+# Tarea 360: con varias cuentas tildadas, la tercera vista mezcla el costo de la cartera con las
+# posiciones a mercado de las paper; el rótulo lo dice.
+TEXTO_INVERTIDO_VARIAS = "Invertido / en posiciones"
+# Un color por cuenta, en el orden de los checkboxes.
+COLORES_CUENTAS = ("accent", "orange", "purple", "positive", "blue", "yellow", "red")
 
 
 class WelcomeCard(QFrame):
@@ -206,7 +213,9 @@ class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
-        self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al elegirla (tarea 359)
+        self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al tildarla (tarea 359)
+        self._cuentas_paper: dict[int, tuple[str, float]] = {}  # id → (nombre, capital inicial)
+        self.cuenta_checks: dict[int | None, QCheckBox] = {}  # None = la cartera real (tarea 360)
         self._build_ui()
         self.load_data()
 
@@ -253,22 +262,25 @@ class HomeTab(QWidget):
             "Monto invertido: lo que costaron, por FIFO, las acciones que siguen en cartera."
         )
         self.vista_combo.currentIndexChanged.connect(self._pintar_hero)
-        # Tarea 359: qué se grafica — la cartera real o una cuenta paper. Lo llena `load_data`.
-        self.cuenta_combo = QComboBox()
-        self.cuenta_combo.setMinimumHeight(36)
-        self.cuenta_combo.setToolTip(
-            "Qué muestra el gráfico grande: la cartera real o una cuenta de paper trading.\n"
-            "Las tarjetas de abajo son siempre de «Mis Acciones»."
-        )
-        self.cuenta_combo.currentIndexChanged.connect(self._pintar_hero)
         cabecera = QHBoxLayout()
         textos = QVBoxLayout()
         textos.addWidget(self.hero_title)
         textos.addWidget(self.hero_sub)
         cabecera.addLayout(textos, stretch=1)
-        cabecera.addWidget(self.cuenta_combo)
         cabecera.addWidget(self.vista_combo)
         hero_layout.addLayout(cabecera)
+        # Tarea 360: un checkbox por cuenta (era el desplegable de la 359). Los llena `load_data`.
+        self.cuentas_fila = QHBoxLayout()
+        self.cuentas_fila.setSpacing(16)
+        cuentas_lbl = QLabel("Cuentas:")
+        cuentas_lbl.setStyleSheet(f"color: {PALETTE['text3']}; font-size: 12px;")
+        cuentas_lbl.setToolTip(
+            "Qué cuentas muestra el gráfico grande, superpuestas en el mismo eje.\n"
+            "Con una sola tildada se ve su detalle. Las tarjetas de abajo son siempre de «Mis Acciones»."
+        )
+        self.cuentas_fila.addWidget(cuentas_lbl)
+        self.cuentas_fila.addStretch()
+        hero_layout.addLayout(self.cuentas_fila)
 
         self.hero_chart = AreaChartHero()
         self.hero_chart.setMinimumHeight(240)
@@ -378,42 +390,92 @@ class HomeTab(QWidget):
         self.welcome_card.update_status(r["posiciones"], r["pl_pct"], r["alertas_disparadas"])
 
     def _llenar_cuentas(self, cartera: str) -> None:
-        """El selector de cuenta (tarea 359): la cartera real primero, después todas las paper.
+        """Los checkboxes de cuentas (tarea 360): la cartera real primero, después todas las paper.
 
-        Conserva la elegida entre refrescos; la cerrada va rotulada, no escondida.
+        Conservan lo tildado entre refrescos (al principio, sólo la cartera); la cerrada va
+        rotulada, no escondida.
         """
         from paper_trading.account import list_accounts
 
-        elegida = self.cuenta_combo.currentData()
+        tildadas = set(self._cuentas_tildadas()) if self.cuenta_checks else {None}
+        for cb in self.cuenta_checks.values():
+            self.cuentas_fila.removeWidget(cb)
+            cb.deleteLater()
+        self.cuenta_checks = {}
         self._paper.clear()
-        self.cuenta_combo.blockSignals(True)
-        self.cuenta_combo.clear()
-        self.cuenta_combo.addItem(cartera, None)
+        self._cuentas_paper = {}
+        cuentas = [(None, cartera)]
         try:
             for a in sorted(list_accounts(), key=lambda a: a.id):
-                self.cuenta_combo.addItem(f"Paper · {a.name}{'' if a.is_active else ' (cerrada)'}", a.id)
+                self._cuentas_paper[a.id] = (a.name, float(a.initial_capital))
+                cuentas.append((a.id, f"Paper · {a.name}{'' if a.is_active else ' (cerrada)'}"))
         except Exception:
             log.exception("Home: no se pudieron listar las cuentas paper")
-        i = self.cuenta_combo.findData(elegida) if elegida is not None else 0
-        self.cuenta_combo.setCurrentIndex(max(i, 0))
-        self.cuenta_combo.blockSignals(False)
+        for i, (clave, texto) in enumerate(cuentas):
+            cb = QCheckBox(texto)
+            cb.setChecked(clave in tildadas)
+            color = PALETTE[COLORES_CUENTAS[i % len(COLORES_CUENTAS)]]
+            cb.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
+            cb.toggled.connect(self._pintar_hero)
+            self.cuentas_fila.insertWidget(self.cuentas_fila.count() - 1, cb)  # antes del stretch
+            self.cuenta_checks[clave] = cb
+
+    def _cuentas_tildadas(self) -> list[int | None]:
+        return [clave for clave, cb in self.cuenta_checks.items() if cb.isChecked()]
+
+    def _color_cuenta(self, clave: int | None) -> str:
+        i = list(self.cuenta_checks).index(clave)
+        return PALETTE[COLORES_CUENTAS[i % len(COLORES_CUENTAS)]]
 
     def _pintar_hero(self, *_args) -> None:
-        """El gráfico grande en la vista del selector (tarea 334): valor de mercado, sólo la
-        ganancia (la 332) o el monto invertido. Re-pinta con el último resumen, sin recalcular.
+        """El gráfico grande: las cuentas tildadas (tarea 360) en la vista del selector (tarea 334).
 
-        La sparkline de «VALOR Y P/L» sigue a la vista: graficaba el invertido neto, que no es
-        ninguna de las tres (tanda 2026-10-07 [F-2]).
+        Una sola tildada muestra su detalle; varias, una línea por cuenta en el mismo eje. Re-pinta
+        con el último resumen, sin recalcular. La sparkline de «VALOR Y P/L» es siempre de la
+        cartera y sigue a la vista (tanda 2026-10-07 [F-2]).
         """
         vista = self.vista_combo.currentData()
-        cuenta = self.cuenta_combo.currentData()
-        self.vista_combo.setItemText(
-            self.vista_combo.findData("invertido"),
-            TEXTO_INVERTIDO_PAPER if cuenta is not None else VISTAS_HOME[2][0],
-        )
-        if cuenta is not None:
-            self._pintar_paper(cuenta, vista)
+        tildadas = self._cuentas_tildadas()
+        if tildadas == [None]:
+            texto_inv = VISTAS_HOME[2][0]
+        elif len(tildadas) == 1:
+            texto_inv = TEXTO_INVERTIDO_PAPER
+        else:
+            texto_inv = TEXTO_INVERTIDO_VARIAS
+        self.vista_combo.setItemText(self.vista_combo.findData("invertido"), texto_inv)
+        self._pintar_spark(vista)
+        ganancia = (self._r or {}).get("ganancia_diaria") or []
+        self.vista_combo.setEnabled(tildadas != [None] or len(ganancia) >= 2)
+        if not tildadas:
+            self.hero_title.setText("Ninguna cuenta tildada")
+            self.hero_sub.setText("Tildá una o varias cuentas para graficarlas.")
+            self.hero_chart.set_data([])
+        elif tildadas == [None]:
+            self._pintar_cartera(vista)
+        elif len(tildadas) == 1:
+            self._pintar_paper(tildadas[0], vista)
+        else:
+            self._pintar_varias(tildadas, vista)
+
+    def _pintar_spark(self, vista: str) -> None:
+        """La sparkline de «VALOR Y P/L»: la cartera, en la serie de la vista (tarea 334)."""
+        r = self._r
+        if r is None:
             return
+        serie = r.get("valor_diario") or []
+        ganancia = r.get("ganancia_diaria") or []
+        if vista == "ganancia" and len(ganancia) >= 2:
+            spark = [x["total"] for _, x in ganancia]
+        elif vista == "invertido" and len(ganancia) >= 2:
+            spark = [x["costo"] for _, x in ganancia]
+        elif len(serie) >= 2:
+            spark = [v for _, v in serie]
+        else:
+            spark = [v for _, v in r["invertido_neto"]]
+        self.kpi_pl.set_series(spark[-40:])
+
+    def _pintar_cartera(self, vista: str) -> None:
+        """La cartera sola: valor de mercado, sólo la ganancia (la 332) o el monto invertido."""
         r = self._r
         if r is None:
             return
@@ -459,7 +521,6 @@ class HomeTab(QWidget):
                 ],
                 ylabel="Ganancia ($)",
             )
-            spark = [x["total"] for _, x in ganancia]
         elif vista == "invertido" and len(ganancia) >= 2:
             # El costo abierto FIFO, la «plata puesta» de la 332 — no compras − ventas.
             costo = [(d, x["costo"]) for d, x in ganancia]
@@ -475,7 +536,6 @@ class HomeTab(QWidget):
                 [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in costo],
                 ylabel="Monto invertido ($)",
             )
-            spark = [v for _, v in costo]
         elif len(serie) >= 2:
             # Tarea 305: el valor de mercado por rueda.
             self.hero_title.setText(f"{r['nombre']} — valor de mercado, hasta el {serie[-1][0]:%d/%m}")
@@ -487,7 +547,6 @@ class HomeTab(QWidget):
                 [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in serie],
                 ylabel="Valor de mercado ($)",
             )
-            spark = [v for _, v in serie]
         else:
             # El invertido neto queda de respaldo: en una cartera comprada en un solo día es UN punto.
             self.hero_title.setText(f"{r['nombre']} — capital invertido neto (sin cierres en el cache)")
@@ -498,37 +557,32 @@ class HomeTab(QWidget):
                 [SimpleNamespace(snapshot_at=f, total_equity=v) for f, v in r["invertido_neto"]],
                 ylabel="Invertido neto ($)",
             )
-            spark = [v for _, v in r["invertido_neto"]]
-        self.kpi_pl.set_series(spark[-40:])
-        self.vista_combo.setEnabled(len(ganancia) >= 2)
 
-    def _pintar_paper(self, account_id: int, vista: str) -> None:
-        """El gráfico grande con una cuenta paper (tarea 359): el último snapshot de cada día.
+    def _equity_paper(self, account_id: int) -> list:
+        """La equity diaria de una cuenta paper, leída una vez por carga (tarea 359)."""
+        from paper_trading.account import equity_diaria
 
-        No toca las tarjetas ni la sparkline: esas son de «Mis Acciones».
-        """
-        from paper_trading.account import equity_diaria, get_account
-
-        nombre = self.cuenta_combo.currentText()
-        self.vista_combo.setEnabled(True)
-        acct = get_account(account_id)
         if account_id not in self._paper:
             try:
                 self._paper[account_id] = equity_diaria(account_id)
             except Exception:
                 log.exception("Home: no se pudo leer la equity de la cuenta paper %s", account_id)
                 self._paper[account_id] = []
-        serie = self._paper[account_id]
-        if acct is None or len(serie) < 2:
+        return self._paper[account_id]
+
+    def _pintar_paper(self, account_id: int, vista: str) -> None:
+        """Una cuenta paper sola (tarea 359): el último snapshot de cada día.
+
+        No toca las tarjetas ni la sparkline: esas son de «Mis Acciones».
+        """
+        nombre = self.cuenta_checks[account_id].text()
+        serie = self._equity_paper(account_id)
+        if account_id not in self._cuentas_paper or len(serie) < 2:
             self.hero_title.setText(f"{nombre} — sin historia de equity para graficar")
-            self.hero_sub.setText(
-                "La cuenta no tiene snapshots de equity en dos días distintos todavía."
-                if acct is not None
-                else "La cuenta ya no existe."
-            )
+            self.hero_sub.setText("La cuenta no tiene snapshots de equity en dos días distintos todavía.")
             self.hero_chart.set_data([])
             return
-        capital = float(acct.initial_capital)
+        capital = self._cuentas_paper[account_id][1]
         hasta = f"{serie[-1][0]:%d/%m}"
         cola = f"Último snapshot de cada día (hora de Nueva York). Capital inicial ${capital:,.0f}."
         xs = [d for d, *_ in serie]
@@ -567,6 +621,60 @@ class HomeTab(QWidget):
                 [SimpleNamespace(snapshot_at=d, total_equity=eq) for d, *_, eq in serie],
                 ylabel="Valor de la cuenta ($)",
             )
+
+    def _serie_de(self, clave: int | None, vista: str) -> tuple[str, list, list[float]] | None:
+        """La línea de una cuenta cuando hay varias tildadas (tarea 360): (rótulo, fechas, valores)."""
+        if clave is None:
+            r = self._r
+            if r is None:
+                return None
+            ganancia = r.get("ganancia_diaria") or []
+            if vista == "ganancia":
+                pares = [(d, x["total"]) for d, x in ganancia]
+            elif vista == "invertido":
+                pares = [(d, x["costo"]) for d, x in ganancia]
+            else:
+                pares = list(r.get("valor_diario") or [])
+            rotulo = r["nombre"] + (" (costo)" if vista == "invertido" else "")
+        else:
+            if clave not in self._cuentas_paper:
+                return None
+            nombre, capital = self._cuentas_paper[clave]
+            serie = self._equity_paper(clave)
+            if vista == "ganancia":
+                pares = [(d, eq - capital) for d, *_, eq in serie]
+            elif vista == "invertido":
+                pares = [(d, p) for d, _, p, _ in serie]
+            else:
+                pares = [(d, eq) for d, *_, eq in serie]
+            rotulo = nombre + (" (posiciones a mercado)" if vista == "invertido" else "")
+        if not pares:
+            return None
+        return rotulo, [d for d, _ in pares], [v for _, v in pares]
+
+    def _pintar_varias(self, tildadas: list[int | None], vista: str) -> None:
+        """Varias cuentas tildadas (tarea 360): una línea por cuenta, en el mismo eje y con sus fechas."""
+        nombre_vista = {"ganancia": "ganancia", "invertido": "invertido / en posiciones"}.get(vista, "valor")
+        series, ultimos, sin = [], [], []
+        for clave in tildadas:
+            s = self._serie_de(clave, vista)
+            if s is None:
+                sin.append(self.cuenta_checks[clave].text())
+                continue
+            rotulo, xs, ys = s
+            series.append((rotulo, xs, ys, self._color_cuenta(clave)))
+            ultimo = _pesos_con_signo(ys[-1]) if vista == "ganancia" else f"${ys[-1]:,.0f}"
+            ultimos.append(f"{rotulo} {ultimo} ({xs[-1]:%d/%m})")
+        self.hero_title.setText(f"{len(tildadas)} cuentas — {nombre_vista}")
+        notas = {
+            "ganancia": "La cartera: ganancia total. Las paper: equity menos el capital inicial.",
+            "invertido": "La cartera: lo que costó lo que sigue en cartera. Las paper: las posiciones a "
+            "valor de mercado (los snapshots no guardan el costo).",
+        }.get(vista, "La cartera: valor de mercado. Las paper: efectivo + posiciones.")
+        extra = f" · sin datos: {', '.join(sin)}" if sin else ""
+        self.hero_sub.setText(f"{' · '.join(ultimos)}. {notas}{extra}")
+        ylabel = {"ganancia": "Ganancia ($)", "invertido": "Monto ($)"}.get(vista, "Valor ($)")
+        self.hero_chart.set_series(series, ylabel=ylabel, cero=vista == "ganancia")
 
     def refresh(self, portfolio_tab=None) -> None:
         """Called by the main window on data refresh. Reloads the real portfolio."""

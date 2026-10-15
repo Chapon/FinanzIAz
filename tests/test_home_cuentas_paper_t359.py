@@ -1,4 +1,5 @@
-"""Tarea 359 — el gráfico grande de Home puede mostrar también las cuentas de paper trading.
+"""Tareas 359 y 360 — el gráfico grande de Home muestra también las cuentas de paper trading,
+tildadas en checkboxes: una o varias a la vez, en el mismo eje (la 360; la 359 era un desplegable).
 
 El kill-criteria se fijó en el backlog antes de codear. El caso de snapshots está elegido para que
 las versiones equivocadas den otro número: el 02/03 hay tres snapshots en hora de Nueva York
@@ -79,10 +80,10 @@ def home(test_db, monkeypatch):
     h.deleteLater()
 
 
-def _elegir(combo, dato):
-    i = combo.findData(dato)
-    assert i >= 0, dato
-    combo.setCurrentIndex(i)
+def _tildar(home, *claves):
+    """Deja tildadas exactamente esas cuentas (None = la cartera) — tarea 360."""
+    for clave, cb in home.cuenta_checks.items():
+        cb.setChecked(clave in claves)
 
 
 def _linea(home, rotulo=None):
@@ -95,13 +96,25 @@ def _ys_spark(home):
     return [float(y) for y in home.kpi_pl.spark.ax.lines[0].get_ydata()]
 
 
-def test_el_selector_trae_la_cartera_primero_y_todas_las_paper_con_la_cerrada_rotulada(home):
-    from PyQt6.QtWidgets import QComboBox
+def _elegir_vista(home, clave):
+    i = home.vista_combo.findData(clave)
+    assert i >= 0, clave
+    home.vista_combo.setCurrentIndex(i)
 
-    assert isinstance(home.cuenta_combo, QComboBox)
-    textos = [home.cuenta_combo.itemText(i) for i in range(home.cuenta_combo.count())]
-    assert textos == ["Mis Acciones", "Paper · Sim Principal (cerrada)", "Paper · Sim Segundo"]
-    assert home.cuenta_combo.currentData() is None
+
+def test_un_checkbox_por_cuenta_la_cartera_primero_y_sola_tildada(home):
+    from PyQt6.QtWidgets import QCheckBox, QComboBox
+
+    assert not hasattr(home, "cuenta_combo"), "quedó el desplegable de la 359"
+    assert all(isinstance(cb, QCheckBox) for cb in home.cuenta_checks.values())
+    assert [cb.text() for cb in home.cuenta_checks.values()] == [
+        "Mis Acciones",
+        "Paper · Sim Principal (cerrada)",
+        "Paper · Sim Segundo",
+    ]
+    assert list(home.cuenta_checks) == [None, home.ids["cerrada"], home.ids["viva"]]
+    assert [cb.isChecked() for cb in home.cuenta_checks.values()] == [True, False, False]
+    assert home.findChildren(QComboBox) == [home.vista_combo], "hay otro desplegable además del de vistas"
     assert home.hero_title.text().startswith("Mis Acciones — valor de mercado")
 
 
@@ -112,14 +125,14 @@ def test_un_punto_por_dia_de_Nueva_York_y_es_el_ULTIMO_snapshot(home):
         (date(2026, 3, 2), 1_000.0, 49_300.0, 50_300.0),
         (date(2026, 3, 3), 900.0, 49_000.0, 49_900.0),
     ]
-    _elegir(home.cuenta_combo, home.ids["viva"])
+    _tildar(home, home.ids["viva"])
     assert _linea(home) == [50_300.0, 49_900.0]
     assert "Sim Segundo — valor de la cuenta, hasta el 03/03: $49,900" in home.hero_title.text()
 
 
 def test_la_ganancia_es_equity_menos_capital_inicial(home):
-    _elegir(home.cuenta_combo, home.ids["viva"])
-    _elegir(home.vista_combo, "ganancia")
+    _tildar(home, home.ids["viva"])
+    _elegir_vista(home, "ganancia")
     assert _linea(home, "Ganancia total") == pytest.approx([300.0, -100.0])
     assert home.hero_title.text().endswith("hasta el 03/03: -$100"), home.hero_title.text()  # no «$-100»
     assert "Capital inicial $50,000" in home.hero_sub.text()
@@ -127,33 +140,86 @@ def test_la_ganancia_es_equity_menos_capital_inicial(home):
 
 def test_la_tercera_vista_de_una_paper_es_efectivo_y_posiciones_y_vuelve_con_la_cartera(home):
     i = home.vista_combo.findData("invertido")
-    _elegir(home.cuenta_combo, home.ids["viva"])
-    _elegir(home.vista_combo, "invertido")
+    _tildar(home, home.ids["viva"])
+    _elegir_vista(home, "invertido")
     assert home.vista_combo.itemText(i) == "Efectivo y posiciones"
     assert _linea(home, "En posiciones") == [49_300.0, 49_000.0]
     assert _linea(home, "Efectivo") == [1_000.0, 900.0]
     assert "no a costo" in home.hero_sub.text()
-    _elegir(home.cuenta_combo, None)
+    _tildar(home, None)
     assert home.vista_combo.itemText(i) == "Monto invertido"
     assert "Mis Acciones — monto invertido" in home.hero_title.text()
 
 
 def test_las_tarjetas_y_la_sparkline_siguen_siendo_de_la_cartera_y_no_se_recalcula(home):
-    spark = _ys_spark(home)
+    """La sparkline es de la cartera en la vista elegida (tarea 334), tilde lo que se tilde."""
     valor = home.kpi_pl.value_lbl.text()
-    # Con la cartera elegida la sparkline sigue a la vista (tarea 334): las vistas se recorren
-    # con la cuenta paper elegida, que no tiene que moverla.
-    _elegir(home.cuenta_combo, home.ids["viva"])
-    for clave in ("ganancia", "invertido", "valor", "ganancia"):
-        _elegir(home.vista_combo, clave)
-        assert _ys_spark(home) == spark, f"la cuenta paper movió la sparkline de «Mis Acciones» ({clave})"
-    _elegir(home.cuenta_combo, None)
-    _elegir(home.cuenta_combo, home.ids["viva"])
+    de_la_cartera = {}
+    for clave in ("ganancia", "invertido", "valor"):
+        _elegir_vista(home, clave)
+        de_la_cartera[clave] = _ys_spark(home)
+    assert de_la_cartera["valor"] != de_la_cartera["invertido"]  # el caso distingue las vistas
+    for tildadas in ((home.ids["viva"],), (None, home.ids["viva"]), ()):
+        _tildar(home, *tildadas)
+        for clave in ("ganancia", "invertido", "valor"):
+            _elegir_vista(home, clave)
+            assert _ys_spark(home) == de_la_cartera[clave], f"la sparkline se movió con {tildadas} ({clave})"
     assert home.kpi_pl.value_lbl.text() == valor
-    assert home.llamadas == [1], "cambiar de cuenta volvió a armar el resumen de «Mis Acciones»"
+    assert home.llamadas == [1], "tildar cuentas volvió a armar el resumen de «Mis Acciones»"
 
 
 def test_una_cuenta_sin_snapshots_lo_dice(home):
-    _elegir(home.cuenta_combo, home.ids["cerrada"])
+    _tildar(home, home.ids["cerrada"])
     assert "sin historia de equity" in home.hero_title.text()
     assert "Sim Principal" in home.hero_title.text()
+
+
+# ── Tarea 360: varias cuentas a la vez, en el mismo eje ─────────────────────────
+
+
+def test_dos_tildadas_van_en_UN_eje_cada_una_con_sus_fechas(home):
+    """La cartera tiene tres cierres (02 al 04/03) y la paper dos días: no se recortan al común."""
+    import matplotlib.dates as mdates
+
+    _tildar(home, None, home.ids["viva"])
+    assert len(home.hero_chart.figure.axes) == 1
+    lineas = {ln.get_label(): ln for ln in home.hero_chart.ax.lines}
+    assert set(lineas) == {"Mis Acciones", "Sim Segundo"}
+    fechas = {k: [mdates.num2date(x).date() for x in ln.get_xdata()] for k, ln in lineas.items()}
+    assert fechas["Mis Acciones"] == [d for d, _ in CIERRES]
+    assert fechas["Sim Segundo"] == [date(2026, 3, 2), date(2026, 3, 3)]
+    assert [float(y) for y in lineas["Mis Acciones"].get_ydata()] == [1_000.0, 1_100.0, 1_200.0]
+    assert [float(y) for y in lineas["Sim Segundo"].get_ydata()] == [50_300.0, 49_900.0]
+    assert lineas["Mis Acciones"].get_color() != lineas["Sim Segundo"].get_color()
+    assert home.hero_title.text() == "2 cuentas — valor"
+
+
+def test_varias_en_ganancia_y_en_la_tercera_vista_rotulan_que_es_cada_linea(home):
+    _tildar(home, None, home.ids["viva"])
+    _elegir_vista(home, "ganancia")
+    assert _linea(home, "Mis Acciones") == pytest.approx([0.0, 100.0, 200.0])
+    assert _linea(home, "Sim Segundo") == pytest.approx([300.0, -100.0])
+    assert "-$100" in home.hero_sub.text()
+    _elegir_vista(home, "invertido")
+    assert home.vista_combo.itemText(home.vista_combo.findData("invertido")) == "Invertido / en posiciones"
+    assert _linea(home, "Mis Acciones (costo)") == [1_000.0, 1_000.0, 1_000.0]
+    assert _linea(home, "Sim Segundo (posiciones a mercado)") == [49_300.0, 49_000.0]
+
+
+def test_una_tildada_sin_datos_entre_varias_se_dice_y_las_otras_se_grafican(home):
+    _tildar(home, None, home.ids["cerrada"])
+    assert {ln.get_label() for ln in home.hero_chart.ax.lines} == {"Mis Acciones"}
+    assert "sin datos: Paper · Sim Principal (cerrada)" in home.hero_sub.text()
+
+
+def test_ninguna_tildada_lo_dice(home):
+    _tildar(home)
+    assert home.hero_title.text() == "Ninguna cuenta tildada"
+    assert not [ln for ln in home.hero_chart.ax.lines if ln.get_label() in ("Mis Acciones", "Sim Segundo")]
+
+
+def test_lo_tildado_sobrevive_al_refresco(home):
+    _tildar(home, None, home.ids["viva"])
+    home.refresh()
+    assert [cb.isChecked() for cb in home.cuenta_checks.values()] == [True, False, True]
+    assert home.hero_title.text() == "2 cuentas — valor"

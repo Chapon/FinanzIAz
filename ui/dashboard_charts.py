@@ -195,6 +195,34 @@ class AreaChartHero(QWidget):
         self.figure.autofmt_xdate(rotation=15)
         self.canvas.draw()
 
+    def set_series(
+        self, series: list[tuple[str, list, list[float], str]], ylabel: str, cero: bool = False
+    ) -> None:
+        """Varias cuentas en **un** eje, cada una con **sus** fechas (tarea 360).
+
+        ``series`` es ``[(rótulo, fechas, valores, color), ...]``. A diferencia de ``set_lineas``,
+        las fechas no se comparten: una cartera que arranca en 2024 y una cuenta paper que arranca
+        en 2026 van juntas sin recortarse al rango común. ``cero`` dibuja la línea de cero.
+        """
+        series = [s for s in series if s[1]]
+        if not series:
+            self._render_empty()
+            return
+        self.ax.clear()
+        self._style_axes()
+        if cero:
+            self.ax.axhline(0, color=PALETTE["text3"], linestyle="--", linewidth=0.7, alpha=0.8)
+        for rotulo, xs, ys, color in series:
+            self.ax.plot(mdates.date2num(xs), ys, color=color, linewidth=2.0, zorder=4, label=rotulo)
+        leyenda = self.ax.legend(loc="upper left", fontsize=9, frameon=False)
+        for t in leyenda.get_texts():
+            t.set_color(PALETTE["text2"])
+        self.ax.set_ylabel(ylabel, color=PALETTE["text2"], fontsize=10)
+        self.ax.xaxis_date()
+        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%y"))
+        self.figure.autofmt_xdate(rotation=15)
+        self.canvas.draw()
+
     def cleanup(self) -> None:
         with contextlib.suppress(Exception):
             self.figure.clear()

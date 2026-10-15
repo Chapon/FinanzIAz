@@ -18,7 +18,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 284 — Tarea 360 (HOME-CUENTAS-CHECKBOX) CERRADA 2026-10-15 — las cuentas del gráfico de Home se tildan: una o varias, superpuestas en el mismo eje y cada una con sus fechas** (`ui/home_tab.py`, `ui/dashboard_charts.py`, `tests/test_home_cuentas_paper_t359.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Los cinco puntos del kill-criteria, con su test** (los de la 359 se reescribieron a checkboxes, en el mismo archivo, y se sumaron cinco). `AreaChartHero.set_series` dibuja varias series **sin** compartir las fechas; `HomeTab` reparte: ninguna tildada lo dice, una sola muestra su detalle (los tests de la 332, 334, 264 y 305 pasan sin tocarlos), varias van a `_pintar_varias`, una línea por cuenta del color de su checkbox. Lo tildado sobrevive a un refresco.
+  - **Una decisión que no estaba en el enunciado:** la sparkline de *VALOR Y P/L* ahora es **siempre** la de la cartera en la vista elegida, aunque la cartera no esté tildada. En la 359 se quedaba quieta al elegir una paper, o sea mostraba la vista de antes. Es la regla de la 334 sin excepción.
+  - **Probado por mutación**, cinco rojas: recortar las fechas de cada serie, graficar sólo una de las tildadas, arrancar con todas tildadas, no repintar la sparkline con una paper y perder lo tildado al refrescar.
+  - **Visto con los datos reales** (render fuera de pantalla, leyendo `finanzias.db` con su hash igual antes y después): Mis Acciones desde 2024 y Sim Segundo desde junio de 2026 en un eje; en ganancia, +$27,580 y +$1,417. No deja tareas nuevas.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -371,6 +375,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-12c** tras construir lo del repo de la **355**, que **no se cierra todavía**: espera que Chapa la despliegue (*Acciones manuales*) y cinco días hábiles corriendo, así que sale de *En curso*. **No deja tareas nuevas:** lo que encontró corrige su propio enunciado (on-demand no es gratis) y el de la **356** (un día de noticias pesa ~2,8 MB). La **356** pasa a poder trabajarse ya, contra el formato fijado en código. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-15** tras abrir y cerrar la **359** (pedido de Chapa: las cuentas paper en el gráfico de Home), que **no deja tareas nuevas**. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-15b** tras abrir y cerrar la **360** (Chapa: checkboxes en vez del desplegable de la 359, varias cuentas en el mismo eje), que **no deja tareas nuevas**. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1809,6 +1815,12 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 360. ~~HOME-CUENTAS-CHECKBOX — Las cuentas del gráfico de Home se tildan, no se eligen: una o varias a la vez, en el mismo gráfico y con los mismos ejes~~ · **CERRADA 2026-10-15 — un checkbox por cuenta; varias van en un eje, cada una con sus fechas** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-15, sobre la 359: *«no quiero un drop down, quiero un checkbox donde se muestren o se oculten las cuentas por lo que podría ver solo una, o varias a la vez … en la misma gráfica con los mismos ejes»*) · severidad **BAJA** · **display-only**
+
+- **Qué hay.** La 359 puso un desplegable: se ve **una** cuenta por vez.
+- **Qué cambia.** Un checkbox por cuenta («Mis Acciones» y cada paper, la cerrada rotulada) reemplaza al desplegable; el selector de vistas sigue. **Una sola tildada** muestra su vista detallada, la de la 332/334/359 sin cambios (componentes de la ganancia, efectivo y posiciones). **Varias tildadas** van superpuestas en el mismo gráfico y los mismos ejes, **una línea por cuenta**, cada una con sus fechas: la cartera arranca en 2024 y Sim Segundo en junio de 2026, y no se recortan al rango común. Qué línea es cada cuenta según la vista: *valor* = valor de mercado / equity; *ganancia* = ganancia total / equity − capital inicial; *tercera vista* = costo abierto de la cartera / posiciones a mercado de la paper, cada uno rotulado en la leyenda y el subtítulo.
+- **Kill-criteria.** (1) Un checkbox por cuenta, y ningún desplegable de cuentas; arranca con sólo «Mis Acciones» tildada; (2) una sola tildada da exactamente lo de antes (los tests de la 332, la 334 y la 359 pasan); (3) dos tildadas dan dos líneas en **un** eje, cada una con sus propias fechas —el test usa rangos que no coinciden—; (4) ninguna tildada lo dice; (5) las tarjetas y la sparkline siguen siendo de «Mis Acciones», y tildar no rearma su resumen. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 359. ~~HOME-CUENTAS-PAPER — Que el gráfico grande de Home pueda mostrar, además de «Mis Acciones», las cuentas de paper trading, con un selector~~ · **CERRADA 2026-10-15 — un segundo selector; de una cuenta paper, el último snapshot de cada día de Nueva York** (`1b80722`) · **movida a *Hecho reciente* con el detalle**  ·  origen: Chapa (2026-10-15, *«en home, me gustaría poder graficar también las cuentas de paper trading, capaz que con un click box donde se pueda elegir home, o las paper accounts»*) · severidad **BAJA** · **display-only**
 
