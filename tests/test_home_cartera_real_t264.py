@@ -184,4 +184,11 @@ def test_home_no_traga_errores_en_silencio():
 
     src = (Path(__file__).resolve().parent.parent / "ui" / "home_tab.py").read_text(encoding="utf-8")
     assert "suppress(Exception):\n            self.load" not in src
-    assert "paper_trading.account" not in src, "Home no debe leer cuentas de paper trading"
+    # Tarea 359: el gráfico grande puede elegir una cuenta paper (pedido de Chapa), pero los
+    # números de Home —los que arma `load_data`— siguen sin salir de paper trading.
+    import inspect
+
+    from ui.home_tab import HomeTab
+
+    carga = inspect.getsource(HomeTab.load_data)
+    assert "paper_trading" not in carga and "self._paper" not in carga, "Home no debe leer cuentas paper"

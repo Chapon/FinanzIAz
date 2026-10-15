@@ -9,6 +9,8 @@ callers don't have to worry about SQLAlchemy session lifecycle.
 
 from __future__ import annotations
 
+from datetime import date, timezone
+
 from config.errors import ValidationError
 from database.models import session_scope, utcnow_naive
 from paper_trading.models import (
@@ -317,6 +319,31 @@ def get_equity_curve(account_id: int, limit: int = 5_000) -> list[PaperEquitySna
         )
         session.expunge_all()
         return rows
+
+
+def equity_diaria(account_id: int) -> list[tuple[date, float, float, float]]:
+    """La curva de equity de una cuenta a un punto por día, para Home (tarea 359).
+
+    ``[(día, efectivo, posiciones, equity), ...]`` ascendente: el **último** snapshot de cada
+    día, con el día en hora de Nueva York — los snapshots están en UTC y los que salen entre las
+    00 y las 05 UTC son la noche del día anterior allá. Sin zona horaria resoluble, el día UTC.
+    """
+    from data.yahoo_finance import market_timezone
+
+    tz = market_timezone()
+    por_dia: dict[date, tuple[float, float, float]] = {}
+    with session_scope() as session:
+        rows = (
+            session.query(PaperEquitySnapshot)
+            .filter(PaperEquitySnapshot.account_id == account_id)
+            .order_by(PaperEquitySnapshot.snapshot_at.asc())
+        )
+        for s in rows:
+            ts = s.snapshot_at
+            dia = ts.replace(tzinfo=timezone.utc).astimezone(tz).date() if tz else ts.date()
+            # Ascendente: el último del día pisa a los anteriores.
+            por_dia[dia] = (float(s.cash), float(s.positions_value), float(s.total_equity))
+    return [(d, *v) for d, v in sorted(por_dia.items())]
 
 
 # ── Order queries (history / pending) ─────────────────────────────────────────

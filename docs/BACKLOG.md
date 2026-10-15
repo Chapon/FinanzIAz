@@ -18,7 +18,8 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 283 — Tarea 359 (HOME-CUENTAS-PAPER) CERRADA 2026-10-15 — el gráfico grande de Home elige entre «Mis Acciones» y las cuentas paper; las tarjetas siguen siendo de la cartera** (`ui/home_tab.py`, `paper_trading/account.py`, `tests/test_home_cuentas_paper_t359.py`, `tests/test_home_cartera_real_t264.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Los seis puntos del kill-criteria, con su test** (`tests/test_home_cuentas_paper_t359.py`). `paper_trading.account.equity_diaria` arma el punto diario; `HomeTab` suma `cuenta_combo` al lado del de vistas y `_pintar_paper` grafica sin tocar tarjetas ni sparkline. **Probado por mutación**, cuatro rojas: agrupar por día UTC, quedarse con el primer snapshot del día, mover la sparkline desde la cuenta paper y no renombrar la tercera vista. **El guard de la 264** (`test_home_no_traga_errores_en_silencio`) prohibía que `home_tab.py` nombrara `paper_trading.account`: **se achicó, no se borró**. Ahora mira `load_data`, de donde salen los números de Home, que siguen sin leer paper. **Un menor, corregido adentro:** una ganancia negativa se escribía `$-100` en el título (también el de «Mis Acciones») y en el delta de *VALOR Y P/L*; ahora es `-$100`, con su assert. No deja tareas nuevas.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -369,6 +370,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-12b** tras cerrar la **354**, que **deja la 357 y la 358**. La **357** encabeza: es la misma pérdida diaria que tenía la 354 —el harvest ahora la avisa, pero la fuente sigue sin traer nada— y sólo espera que Chapa elija entre (a), (b) y (c). La **358** es un claim falso de bajo impacto y va detrás de la 353, con la que comparte tema. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-12c** tras construir lo del repo de la **355**, que **no se cierra todavía**: espera que Chapa la despliegue (*Acciones manuales*) y cinco días hábiles corriendo, así que sale de *En curso*. **No deja tareas nuevas:** lo que encontró corrige su propio enunciado (on-demand no es gratis) y el de la **356** (un día de noticias pesa ~2,8 MB). La **356** pasa a poder trabajarse ya, contra el formato fijado en código. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-15** tras abrir y cerrar la **359** (pedido de Chapa: las cuentas paper en el gráfico de Home), que **no deja tareas nuevas**. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1807,6 +1810,12 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 359. ~~HOME-CUENTAS-PAPER — Que el gráfico grande de Home pueda mostrar, además de «Mis Acciones», las cuentas de paper trading, con un selector~~ · **CERRADA 2026-10-15 — un segundo selector; de una cuenta paper, el último snapshot de cada día de Nueva York** · **movida a *En curso* con el detalle**  ·  origen: Chapa (2026-10-15, *«en home, me gustaría poder graficar también las cuentas de paper trading, capaz que con un click box donde se pueda elegir home, o las paper accounts»*) · severidad **BAJA** · **display-only**
+
+- **Qué hay.** Desde la 264 Home sale **sólo** de la cartera real (*«home debería mostrar el portfolio, no las cuentas de sim»*). Esto no lo revierte: «Mis Acciones» sigue siendo lo que se ve al abrir, y las cuentas paper se eligen.
+- **Qué se grafica de una cuenta paper.** Sale de `paper_equity_snapshots` (efectivo, posiciones a mercado, equity). Hay varios snapshots por día y en UTC (algunos a las 00–05 UTC, que en Nueva York son el día anterior), así que se toma **el último de cada día de mercado en hora de Nueva York**. Las tres vistas: *valor* = equity; *ganancia* = equity − capital inicial (paper no tiene depósitos); y la tercera **no es un costo**, porque los snapshots no lo guardan: se rotula *«Efectivo y posiciones»* y grafica las dos series, en vez de decir *monto invertido*.
+- **Kill-criteria.** (1) Un segundo selector, con «Mis Acciones» primero y como default, y todas las cuentas paper (la cerrada, rotulada); (2) dos snapshots el mismo día en Nueva York dan **un** punto, el del último, y uno de las 01:00 UTC cae en el día anterior —el test usa un caso donde el día UTC y el de NY difieren—; (3) la ganancia es equity − capital inicial; (4) con una cuenta paper elegida, la tercera vista se llama *Efectivo y posiciones* y vuelve a *Monto invertido* con «Mis Acciones»; (5) las tarjetas, la torta y la sparkline siguen siendo de «Mis Acciones», y cambiar de cuenta no vuelve a armar su resumen; (6) una cuenta sin snapshots lo dice. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 356. NUBE-SYNC-EN-LA-APP — La app baja de DynamoDB lo que juntó la Lambda y lo inserta en `finanzias.db`, en un worker, con cursor y sin duplicar  ·  origen: pedido de Chapa (2026-10-12), implementación del lado que lee de la 196 · severidad **MEDIA-ALTA** (sin esto, lo que junta la nube no llega a la app)
 

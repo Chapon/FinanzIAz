@@ -8,6 +8,9 @@ welcome/health card, a portfolio-allocation donut, and quick settings.
 mostrar el portfolio, no las cuentas de sim de paper trading»*). Antes salía de una cuenta de
 paper trading —y encima de la 1, cerrada, elegida por id fijo—. El paper trading tiene su lugar
 en Paper y Métricas. Los números se arman en ``database.cartera_real.resumen_home``.
+
+Desde la tarea 359 el gráfico grande **también** puede mostrar una cuenta paper, elegida en un
+segundo selector; «Mis Acciones» sigue siendo el default, y las tarjetas de abajo son siempre suyas.
 """
 
 from __future__ import annotations
@@ -50,6 +53,11 @@ def _abbrev(n: float) -> str:
     return f"{int(n)}"
 
 
+def _pesos_con_signo(v: float) -> str:
+    """``+$1,234`` / ``-$1,234``: el f-string de antes escribía ``$-1,234`` (tarea 359)."""
+    return f"{'+' if v >= 0 else '-'}${abs(v):,.0f}"
+
+
 log = get_logger(__name__)
 
 # Tarea 334: las vistas del gráfico grande de Home, (texto del selector, clave).
@@ -58,6 +66,8 @@ VISTAS_HOME = (
     ("Sólo ganancias", "ganancia"),
     ("Monto invertido", "invertido"),
 )
+# Tarea 359: de una cuenta paper la tercera vista no es un costo (los snapshots no lo guardan).
+TEXTO_INVERTIDO_PAPER = "Efectivo y posiciones"
 
 
 class WelcomeCard(QFrame):
@@ -196,6 +206,7 @@ class HomeTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
+        self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al elegirla (tarea 359)
         self._build_ui()
         self.load_data()
 
@@ -242,11 +253,20 @@ class HomeTab(QWidget):
             "Monto invertido: lo que costaron, por FIFO, las acciones que siguen en cartera."
         )
         self.vista_combo.currentIndexChanged.connect(self._pintar_hero)
+        # Tarea 359: qué se grafica — la cartera real o una cuenta paper. Lo llena `load_data`.
+        self.cuenta_combo = QComboBox()
+        self.cuenta_combo.setMinimumHeight(36)
+        self.cuenta_combo.setToolTip(
+            "Qué muestra el gráfico grande: la cartera real o una cuenta de paper trading.\n"
+            "Las tarjetas de abajo son siempre de «Mis Acciones»."
+        )
+        self.cuenta_combo.currentIndexChanged.connect(self._pintar_hero)
         cabecera = QHBoxLayout()
         textos = QVBoxLayout()
         textos.addWidget(self.hero_title)
         textos.addWidget(self.hero_sub)
         cabecera.addLayout(textos, stretch=1)
+        cabecera.addWidget(self.cuenta_combo)
         cabecera.addWidget(self.vista_combo)
         hero_layout.addLayout(cabecera)
 
@@ -317,6 +337,7 @@ class HomeTab(QWidget):
         from database.cartera_real import CARTERA_HOME, resumen_home
         from database.models import session_scope
 
+        self._llenar_cuentas(CARTERA_HOME)
         try:
             with session_scope() as session:
                 r = resumen_home(session)
@@ -338,7 +359,7 @@ class HomeTab(QWidget):
         self._pintar_hero()
 
         # Valor y P&L sólo sobre las posiciones CON precio; las que no tienen, se dicen.
-        delta = f"{'+' if r['pl'] >= 0 else ''}${r['pl']:,.0f}  ({r['pl_pct']:+.2f}%)"
+        delta = f"{_pesos_con_signo(r['pl'])}  ({r['pl_pct']:+.2f}%)"
         if r["sin_precio"]:
             delta += f" · {len(r['sin_precio'])} sin precio"
         self.kpi_pl.set_value(f"${r['valor']:,.0f}", delta=delta, delta_positive=(r["pl"] >= 0))
@@ -356,6 +377,27 @@ class HomeTab(QWidget):
 
         self.welcome_card.update_status(r["posiciones"], r["pl_pct"], r["alertas_disparadas"])
 
+    def _llenar_cuentas(self, cartera: str) -> None:
+        """El selector de cuenta (tarea 359): la cartera real primero, después todas las paper.
+
+        Conserva la elegida entre refrescos; la cerrada va rotulada, no escondida.
+        """
+        from paper_trading.account import list_accounts
+
+        elegida = self.cuenta_combo.currentData()
+        self._paper.clear()
+        self.cuenta_combo.blockSignals(True)
+        self.cuenta_combo.clear()
+        self.cuenta_combo.addItem(cartera, None)
+        try:
+            for a in sorted(list_accounts(), key=lambda a: a.id):
+                self.cuenta_combo.addItem(f"Paper · {a.name}{'' if a.is_active else ' (cerrada)'}", a.id)
+        except Exception:
+            log.exception("Home: no se pudieron listar las cuentas paper")
+        i = self.cuenta_combo.findData(elegida) if elegida is not None else 0
+        self.cuenta_combo.setCurrentIndex(max(i, 0))
+        self.cuenta_combo.blockSignals(False)
+
     def _pintar_hero(self, *_args) -> None:
         """El gráfico grande en la vista del selector (tarea 334): valor de mercado, sólo la
         ganancia (la 332) o el monto invertido. Re-pinta con el último resumen, sin recalcular.
@@ -364,6 +406,14 @@ class HomeTab(QWidget):
         ninguna de las tres (tanda 2026-10-07 [F-2]).
         """
         vista = self.vista_combo.currentData()
+        cuenta = self.cuenta_combo.currentData()
+        self.vista_combo.setItemText(
+            self.vista_combo.findData("invertido"),
+            TEXTO_INVERTIDO_PAPER if cuenta is not None else VISTAS_HOME[2][0],
+        )
+        if cuenta is not None:
+            self._pintar_paper(cuenta, vista)
+            return
         r = self._r
         if r is None:
             return
@@ -389,7 +439,7 @@ class HomeTab(QWidget):
             ult = ganancia[-1][1]
             self.hero_title.setText(
                 f"{r['nombre']} — ganancia, hasta el {ganancia[-1][0]:%d/%m}: "
-                f"{'+' if ult['total'] >= 0 else ''}${ult['total']:,.0f}"
+                f"{_pesos_con_signo(ult['total'])}"
             )
             sin_cal = r.get("ganancia_sin_calendario") or []
             extra = f" · sin calendario de dividendos: {', '.join(sin_cal)}" if sin_cal else ""
@@ -451,6 +501,72 @@ class HomeTab(QWidget):
             spark = [v for _, v in r["invertido_neto"]]
         self.kpi_pl.set_series(spark[-40:])
         self.vista_combo.setEnabled(len(ganancia) >= 2)
+
+    def _pintar_paper(self, account_id: int, vista: str) -> None:
+        """El gráfico grande con una cuenta paper (tarea 359): el último snapshot de cada día.
+
+        No toca las tarjetas ni la sparkline: esas son de «Mis Acciones».
+        """
+        from paper_trading.account import equity_diaria, get_account
+
+        nombre = self.cuenta_combo.currentText()
+        self.vista_combo.setEnabled(True)
+        acct = get_account(account_id)
+        if account_id not in self._paper:
+            try:
+                self._paper[account_id] = equity_diaria(account_id)
+            except Exception:
+                log.exception("Home: no se pudo leer la equity de la cuenta paper %s", account_id)
+                self._paper[account_id] = []
+        serie = self._paper[account_id]
+        if acct is None or len(serie) < 2:
+            self.hero_title.setText(f"{nombre} — sin historia de equity para graficar")
+            self.hero_sub.setText(
+                "La cuenta no tiene snapshots de equity en dos días distintos todavía."
+                if acct is not None
+                else "La cuenta ya no existe."
+            )
+            self.hero_chart.set_data([])
+            return
+        capital = float(acct.initial_capital)
+        hasta = f"{serie[-1][0]:%d/%m}"
+        cola = f"Último snapshot de cada día (hora de Nueva York). Capital inicial ${capital:,.0f}."
+        xs = [d for d, *_ in serie]
+        if vista == "ganancia":
+            ganancia = [eq - capital for *_, eq in serie]
+            self.hero_title.setText(
+                f"{nombre} — ganancia, hasta el {hasta}: {_pesos_con_signo(ganancia[-1])}"
+            )
+            self.hero_sub.setText(
+                "Equity menos el capital inicial: realizada, no realizada y dividendos juntos "
+                f"(los snapshots no los separan). {cola}"
+            )
+            self.hero_chart.set_lineas(
+                xs, [("Ganancia total", ganancia, PALETTE["accent"])], ylabel="Ganancia ($)"
+            )
+        elif vista == "invertido":
+            self.hero_title.setText(
+                f"{nombre} — efectivo y posiciones, hasta el {hasta}: "
+                f"${serie[-1][2]:,.0f} en posiciones · ${serie[-1][1]:,.0f} en efectivo"
+            )
+            self.hero_sub.setText(
+                f"Las posiciones a valor de mercado, no a costo: los snapshots no guardan lo que costaron. {cola}"
+            )
+            self.hero_chart.set_lineas(
+                xs,
+                [
+                    ("En posiciones", [p for _, _, p, _ in serie], PALETTE["accent"]),
+                    ("Efectivo", [c for _, c, _, _ in serie], PALETTE["orange"]),
+                ],
+                ylabel="Monto ($)",
+            )
+        else:
+            self.hero_title.setText(f"{nombre} — valor de la cuenta, hasta el {hasta}: ${serie[-1][3]:,.0f}")
+            self.hero_sub.setText(f"Efectivo + posiciones a valor de mercado. {cola}")
+            self.hero_chart.set_data(
+                [SimpleNamespace(snapshot_at=d, total_equity=eq) for d, *_, eq in serie],
+                ylabel="Valor de la cuenta ($)",
+            )
 
     def refresh(self, portfolio_tab=None) -> None:
         """Called by the main window on data refresh. Reloads the real portfolio."""
