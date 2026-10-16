@@ -18,10 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-- **WIP 286 — Tarea 352 (CLAIMS-VENV-Y-EJE-6) CERRADA 2026-10-16 — la skill `auditoria` dice lo que diverge entre el `.venv` y la Anaconda, y `CLAUDE.md` nombra el eje de *En curso* del guard** (`.claude/skills/auditoria/SKILL.md`, `CLAUDE.md`). Los cuatro comandos corrieron **después** de escribir este registro.
-  - **[A-1]** Medido hoy: `platformdirs` 4.10.0 en el `.venv` y 3.10.0 en la Anaconda, `lxml` 5.2.1 en el `.venv`. La frase ahora dice que lo que diverge es la **versión** de `platformdirs` (y por eso el skip de más), y que el parser está en los dos desde la 347.
-  - **[A-2]** La lista de *«la mitad que se ve leyendo el archivo»* suma *«a lo sumo un ítem en *En curso* (tarea 338)»*, que es `en_curso_items` en `check_text`.
-  - `git grep` de *«le faltan `platformdirs`»* fuera del backlog y de la auditoría que lo citó: sin resultados. No deja tareas nuevas.
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1934,7 +1931,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 - **Qué hay que hacer.** Medir qué quedó sin recuperar del 09/10, y que el refresh diario no cuente como hecho un harvest con `FUENTES CAIDAS` (o que lo reintente una vez con red).
 - **Kill-criteria.** Lo perdido medido; una corrida sintética con fuentes caídas deja `refresh_due` en verdadero y una sana no. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 352. ~~CLAIMS-VENV-Y-EJE-6 — La skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML, y `CLAUDE.md` no nombra el eje 6 del guard del backlog~~ · **CERRADA 2026-10-16 — las dos frases dicen lo que hay** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [A-1] y [A-2] · severidad **BAJA**
+### 352. ~~CLAIMS-VENV-Y-EJE-6 — La skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML, y `CLAUDE.md` no nombra el eje 6 del guard del backlog~~ · **CERRADA 2026-10-16 — las dos frases dicen lo que hay** (`d5fd6ac`) · **movida a *Hecho reciente* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [A-1] y [A-2] · severidad **BAJA**
 
 - **[A-1]** `.claude/skills/auditoria/SKILL.md` (área K) dice *«al `.venv` le faltan `platformdirs` y un parser de HTML, y da otro conteo de tests»*. La 328/346 midieron `platformdirs` **4.10.0** en el `.venv` (lo que diverge es la versión: 3.10 en Anaconda) y la 347 le instaló `lxml` 5.2.1.
 - **[A-2]** `CLAUDE.md` (§Backlog) enumera *«la mitad que se ve leyendo el archivo»* del guard de la 66 y no nombra el eje 6 que agregó la 338 (`en_curso_items`, máx 1 en *En curso*).
@@ -4212,6 +4209,10 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 286 — Tarea 352 (CLAIMS-VENV-Y-EJE-6) CERRADA 2026-10-16 — la skill `auditoria` dice lo que diverge entre el `.venv` y la Anaconda, y `CLAUDE.md` nombra el eje de *En curso* del guard** (`d5fd6ac`, CI **VERDE** 2026-10-16 16:06Z; `.claude/skills/auditoria/SKILL.md`, `CLAUDE.md`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **[A-1]** Medido hoy: `platformdirs` 4.10.0 en el `.venv` y 3.10.0 en la Anaconda, `lxml` 5.2.1 en el `.venv`. La frase ahora dice que lo que diverge es la **versión** de `platformdirs` (y por eso el skip de más), y que el parser está en los dos desde la 347.
+  - **[A-2]** La lista de *«la mitad que se ve leyendo el archivo»* suma *«a lo sumo un ítem en *En curso* (tarea 338)»*, que es `en_curso_items` en `check_text`.
+  - `git grep` de *«le faltan `platformdirs`»* fuera del backlog y de la auditoría que lo citó: sin resultados. No deja tareas nuevas.
 - **WIP 285 — Tarea 351 (PARQUET-REPLACE-ACCESO-DENEGADO) CERRADA 2026-10-16 — en Windows, `os.replace` falla con WinError 5 mientras otro handle tenga abierto el destino; el `write` del cache reintenta con esperas cortas** (`19e333c`, CI **VERDE** 2026-10-16 15:32Z; `data/parquet_cache.py`, `tests/test_parquet_replace_t351.py`). Los cuatro comandos corrieron **después** de escribir este registro.
   - **La causa, con evidencia.** Reproducido en esta máquina el 2026-10-16: con el destino abierto por `open()`, por `pq.ParquetFile` o por `pa.memory_map`, `os.replace` da `PermissionError [WinError 5] Acceso denegado`, la firma exacta de los cuatro casos; con DuckDB, una vez terminada la consulta, no. En la app leen el mismo archivo, desde otros hilos, `latest_1d`/`all_1d`/`labelled_1d` (el guard de escala de la 64, Home, el scan). Los tres temporales del 2026-10-08 son **del mismo hilo** (`.tmp.45504.46384`) y del mismo segundo, a 37 s del arranque: un batch escribiendo mientras otro hilo leía esos tickers. **Lo que NO se afirma: cuál lector fue.** El log no registra hilos, MDLZ, MRK y MRVL no eran posiciones (BKNG sí), y no hubo casos nuevos desde el 2026-10-09. El arreglo no depende de saberlo: una lectura dura milisegundos.
   - **El arreglo.** `_reemplazar` reintenta **sólo** `PermissionError`, con esperas de 0,05 a 0,8 s (~1,5 s en total); si el destino sigue tomado, el `write` falla como antes (fail-open, queda el frame anterior). Cuando hicieron falta reintentos deja una línea INFO, `reemplazado tras N reintentos`, para medirlo en vivo.
