@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 288 — Tarea 353 (HARVEST-DEGRADADO-CUENTA-COMO-EL-DEL-DIA) CERRADA 2026-10-16 — un harvest con FUENTES CAIDAS ya no cuenta como el del día: se reintenta una vez, a los 30 min o en el arranque siguiente** (`scripts/harvest_catalysts.py`, `analysis/news_digest.py`, `paper_trading/scheduler.py`, `tests/test_harvest_degradado_t353.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Lo perdido, medido** (copia de la DB del 2026-10-16): el harvest del 2026-10-09 23:30 local —10/10 en UTC; `fuentes 0/4 limpias`, `FUENTES CAIDAS: yfinance_news 33/127`, `degradadas: yfinance_estimates 32`— dejó el consenso del **10/10 con 95 de 127 tickers** (949 filas contra ~1.268), y **los 32 que faltan no se recuperaron nunca**: el siguiente harvest fue el 11/10 21:37 local, que ya es el 12/10 en UTC (127/127). Las noticias de esa noche (+980) las cubre la ventana de 7 días de Finnhub: el siguiente trajo `dup 10159`. Lo que no se recupera es la foto diaria del consenso.
+  - **El arreglo.** Cada `harvest()` escribe su salud del día en `harvest_estado.json`, junto al `settings.json` (`dia_utc`, `degradado`, `fuentes_caidas`, `corridas_degradadas`). `refresh_due` suma *«el harvest de hoy salió con FUENTES CAIDAS y van menos de dos corridas así»*, así que el arranque siguiente lo reintenta; y en la misma sesión el scheduler des-estampa el día y lo relanza **a los 30 min**, una sola vez. **Sólo `degraded`** (el gate calibrado): una fuente muda o sin key es estructural —yfinance_news está muda desde el 01/10— y reintentarla todos los días no recupera nada.
+  - **Tests:** una corrida sintética de `harvest()` con una fuente caída en todos los tickers deja `refresh_due` en verdadero y una sana en falso, con filas de hoy y sin backlog (antes, falso en los dos casos); un solo reintento; la muda no dispara; otro día no cuenta; el scheduler espera los 30 min. **Mutación**, cinco rojas: `refresh_due` sin mirar la salud, tope infinito, contar las mudas, sin la espera y sin escribir el estado. No deja tareas nuevas.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -396,6 +399,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-16e** al cerrar la **352** (dos claims viejos), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-16f** al cerrar la **340** (medición), que **deja la 364** (la clave del cache de XGBoost no tolera el ruido de Yahoo). Va detrás de la 356 y antes de la 353: es cómputo de cada hora de mercado y es lo que la 340 vino a encontrar. El orden queda **357 → 355 → 362 → 356 → 364 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-16g** al construir la **364** (abierta hasta el día en vivo) y cerrar la **353**, que **no dejan tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 364 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1934,7 +1939,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** La causa nombrada con evidencia; una corrida sintética con 0 noticias en todos los tickers sale como caída y una con un solo ticker vacío no; mutación del umbral, roja. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna. Bloquea la pata de noticias de la **196**, y emparenta con la **353** (qué cuenta como harvest hecho).
 
-### 353. HARVEST-DEGRADADO-CUENTA-COMO-EL-DEL-DIA — Un harvest que corre con la red caída cuenta como el del día, y el refresh diario no lo reintenta  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [H-1] · severidad **BAJA**
+### 353. ~~HARVEST-DEGRADADO-CUENTA-COMO-EL-DEL-DIA — Un harvest que corre con la red caída cuenta como el del día, y el refresh diario no lo reintenta~~ · **CERRADA 2026-10-16 — se reintenta una vez; el 10/10 perdió el consenso de 32 tickers** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [H-1] · severidad **BAJA**
 
 - **Qué pasa.** `analysis/news_digest.py::refresh_due` es `not harvested_today() or unclassified > 0`. El 2026-10-09 la app volvió de una suspensión (9.127 s) a las 23:25 local y lanzó el refresh con la red todavía caída: `fuentes 0/4 limpias`, `FUENTES CAIDAS: yfinance_news 33/127, sec 32/127…`, y 95 de 127 tickers en `analyst_estimate_snapshots` del `snapshot_date` 2026-10-10 (UTC). Con esa corrida registrada, no se reintenta en el día; el horario corre sólo en RTH.
 - **Lo que NO se afirma:** cuánto se perdió. El `snapshot_date` es UTC y el harvest siguiente puede completarlo; las noticias se recuperan por la ventana del collector.

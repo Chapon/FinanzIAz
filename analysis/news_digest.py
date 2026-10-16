@@ -424,9 +424,12 @@ def unclassified_count() -> int:
 
 
 def refresh_due(*, now: datetime | None = None) -> bool:
-    """¿Hace falta correr el pipeline? Sí si hoy no se cosechó o hay backlog."""
+    """¿Hace falta correr el pipeline? Sí si hoy no se cosechó, si hay backlog, o si el
+    harvest de hoy salió con FUENTES CAIDAS y todavía no se reintentó (tarea 353)."""
     try:
-        return (not harvested_today(now=now)) or unclassified_count() > 0
+        from scripts.harvest_catalysts import harvest_pide_reintento
+
+        return (not harvested_today(now=now)) or unclassified_count() > 0 or harvest_pide_reintento(now)
     except Exception:
         log.exception("news_digest: refresh_due check failed")
         return False

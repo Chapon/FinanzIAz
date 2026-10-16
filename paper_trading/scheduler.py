@@ -36,7 +36,9 @@ Independent triggers, all gated by user settings:
    UPDATE solo de filas NULL) y gated: corre a lo sumo una vez por día
    calendario y solo si ``refresh_due`` (sin harvest hoy, o backlog sin
    clasificar). Emite ``catalyst_refresh_completed`` para que la UI refresque
-   la pestaña Noticias.
+   la pestaña Noticias. **Tarea 353:** si el harvest sale con FUENTES CAIDAS, el día
+   no queda hecho: se reintenta **una vez**, a los 30 min (``refresh_due`` también lo
+   ve en el arranque siguiente, por ``harvest_estado.json``).
 
 6. **Hourly catalyst harvest** (``catalyst_hourly_harvest_enabled``, default
    on; ``catalyst_hourly_harvest_minutes``, default 60, piso 15) — tarea 10,
@@ -517,6 +519,8 @@ class PaperScheduler(QObject):
         # Daily catalyst refresh (in-app, single worker, once per calendar day).
         self._catalyst_worker: CatalystRefreshWorker | None = None
         self._last_catalyst_refresh: date | None = None
+        # Tarea 353: un harvest con FUENTES CAIDAS se reintenta una vez, no antes de esto.
+        self._catalyst_retry_after: datetime | None = None
 
         # Hourly harvest-only refresh durante RTH (tarea 10) — solo con la app
         # abierta, por decisión de Chapa 2026-07-07. (Decía que Windows corría el
@@ -933,6 +937,8 @@ class PaperScheduler(QObject):
         if self._nube_corriendo():
             # Sin estampar el día: el tick por minuto lo relanza cuando la nube termine.
             return
+        if self._catalyst_retry_after is not None and utcnow_naive() < self._catalyst_retry_after:
+            return
         try:
             from analysis.news_digest import refresh_due
 
@@ -947,6 +953,25 @@ class PaperScheduler(QObject):
         self._last_catalyst_refresh = today
         self._launch_catalyst_refresh()
 
+    def _programar_reintento_si_degradado(self) -> None:
+        """Si el harvest de hoy salió con FUENTES CAIDAS y queda el reintento, des-estampa el
+        día para que el tick lo relance en ``_CATALYST_RETRY_MIN`` minutos (tarea 353)."""
+        try:
+            from scripts.harvest_catalysts import harvest_pide_reintento
+
+            pide = harvest_pide_reintento(utcnow_naive())
+        except Exception:
+            log.exception("no se pudo leer la salud del harvest")
+            return
+        if not pide:
+            return
+        self._last_catalyst_refresh = None
+        self._catalyst_retry_after = utcnow_naive() + timedelta(minutes=self._CATALYST_RETRY_MIN)
+        log.warning(
+            "harvest del día con FUENTES CAIDAS: se reintenta una vez en %d min (tarea 353)",
+            self._CATALYST_RETRY_MIN,
+        )
+
     def _launch_catalyst_refresh(self) -> None:
         worker = CatalystRefreshWorker(parent=self)
         worker.refresh_completed.connect(self._on_catalyst_completed)
@@ -957,12 +982,18 @@ class PaperScheduler(QObject):
         self.catalyst_refresh_started.emit()
         worker.start()
 
+    # Cuánto espera el reintento de un harvest con FUENTES CAIDAS (tarea 353). El caso que lo
+    # motivó fue la vuelta de una suspensión con la red todavía caída: media hora es más que
+    # lo que tarda en volver, y es UN reintento, así que no martilla una red caída.
+    _CATALYST_RETRY_MIN = 30
+
     def _on_catalyst_completed(self, res) -> None:
         log.info(
             "daily catalyst refresh done: harvest_rc=%s classify_rc=%s",
             res.get("harvest_rc"),
             res.get("classify_rc"),
         )
+        self._programar_reintento_si_degradado()
         self.catalyst_refresh_completed.emit(res)
 
     def _on_catalyst_failed(self, err: str) -> None:

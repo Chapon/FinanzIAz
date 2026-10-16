@@ -35,6 +35,7 @@ overlapping sources (e.g. finnhub + yfinance) won't double-count a shared story.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from collections import Counter
@@ -99,10 +100,12 @@ def resolve_account_id(account_id: int | None = None) -> int | None:
 # referencia de la misma población que se chequea: el día malo se excluyó de la
 # calibración *antes* de medir, no después de ver el resultado.
 #
-# **`cero_resultados` NO es la alarma, y es a propósito.** El dedup hace que la mayoría
-# de los tickers devuelva cero filas nuevas en una corrida perfectamente sana (los
-# reportes reales dicen `news +1 (dup 33)`), y la tasa normal de eso **no se puede medir
-# con los logs de hoy**, que no son por ticker. Se reporta, no se usa de gate.
+# **`cero_resultados` NO es la alarma, y es a propósito** — pero no por el dedup, como decía
+# acá hasta la 358: se cuenta **antes** del dedup, con lo que devolvió el collector, así que
+# son los tickers para los que **ninguna fuente trajo nada**, no los que no dejaron filas
+# nuevas. Medido sobre los 91 resúmenes del log (2026-09-07 al 2026-10-16): `sin datos > 0`
+# salió **dos veces** (120 el 2026-09-21 y 32 el 2026-10-09), **las dos con FUENTES CAIDAS**,
+# y nunca sola. Como gate no agregaría nada que éste no vea; se reporta como contexto.
 SOURCE_FAILURE_ALARM_RATE = 0.20
 
 # Fuentes que en una corrida sana devuelven ALGO para casi todo ticker, así que cero ítems
@@ -583,6 +586,66 @@ def _loguear(report: HarvestReport, prefijo: str = "") -> None:
     (log.warning if grave else log.info)("%s%s", prefijo, report.summary())
 
 
+# ── La salud del harvest del día (tarea 353) ─────────────────────────────────
+#
+# El 2026-10-09 la app volvió de una suspensión con la red caída y corrió el harvest del día:
+# `fuentes 0/4 limpias`, FUENTES CAIDAS, y el consenso del 10/10 (UTC) quedó con 95 de 127
+# tickers. Como `refresh_due` sólo miraba si hubo alguna fila nueva hoy, esa corrida contó
+# como el harvest del día y no se reintentó: los 32 que faltan no se recuperaron nunca (el
+# consenso es una foto por día; las noticias las cubre la ventana de 7 días de Finnhub).
+# Por eso el harvest deja escrito cómo le fue, y un día con FUENTES CAIDAS se reintenta UNA
+# vez. Sólo `degraded` (el gate calibrado): una fuente muda o sin key es estructural, y
+# reintentarla todos los días no recupera nada.
+MAX_CORRIDAS_DEGRADADAS = 2  # la original + un reintento
+
+
+def ruta_estado_harvest() -> Path:
+    """Junto al ``settings.json``: los tests ya lo redirigen a un temporal."""
+    from config import settings_manager
+
+    return settings_manager._CONFIG_PATH.parent / "harvest_estado.json"
+
+
+def leer_estado_harvest() -> dict:
+    try:
+        return json.loads(ruta_estado_harvest().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def registrar_salud(report: HarvestReport, now: datetime) -> None:
+    """Escribe cómo le fue a la corrida de hoy (UTC). Best-effort: nunca rompe el harvest."""
+    dia = now.date().isoformat()
+    previo = leer_estado_harvest()
+    degradadas = int(previo.get("corridas_degradadas", 0)) if previo.get("dia_utc") == dia else 0
+    if report.degraded:
+        degradadas += 1
+    estado = {
+        "dia_utc": dia,
+        "degradado": bool(report.degraded),
+        "fuentes_caidas": report.sources_alarming(),
+        "corridas_degradadas": degradadas,
+        "at": now.isoformat(timespec="seconds"),
+    }
+    try:
+        ruta = ruta_estado_harvest()
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text(json.dumps(estado), encoding="utf-8")
+    except OSError:
+        log.exception("no se pudo escribir el estado del harvest")
+
+
+def harvest_pide_reintento(now: datetime | None = None) -> bool:
+    """¿La última corrida de hoy salió con FUENTES CAIDAS y todavía queda el reintento?"""
+    now = now or utcnow_naive()
+    e = leer_estado_harvest()
+    return (
+        e.get("dia_utc") == now.date().isoformat()
+        and bool(e.get("degradado"))
+        and int(e.get("corridas_degradadas", 0)) < MAX_CORRIDAS_DEGRADADAS
+    )
+
+
 def _resumir_fallas_de_red() -> None:
     """Una línea con las fallas de red que fueron sin traceback (tarea 289).
 
@@ -763,6 +826,7 @@ def harvest(
     report.elapsed_s = time.monotonic() - t0
     _loguear(report)
     _resumir_fallas_de_red()
+    registrar_salud(report, now)
     return report
 
 
