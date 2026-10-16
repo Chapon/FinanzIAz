@@ -374,6 +374,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 
 > **Repriorizado 2026-10-15b** tras abrir y cerrar la **360** (Chapa: checkboxes en vez del desplegable de la 359, varias cuentas en el mismo eje), que **no deja tareas nuevas**. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 196 → 245 → 290 → 321 → 327 → 342**.
 
+> **Repriorizado 2026-10-16** al desplegar la **355**, que **deja la 361** (el build imprime ERRORes de pip que no lo son). Va detrás de la 358: es BAJA, y el despliegue ya pasó ese paso. El orden queda **357 → 355 → 356 → 351 → 352 → 340 → 353 → 358 → 361 → 196 → 245 → 290 → 321 → 327 → 342**.
+
 
 
 
@@ -1811,6 +1813,12 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 361. BUILD-NUBE-AVISOS-DE-PIP — `build_recolector_nube.py` termina mostrando «ERROR: pip's dependency resolver … incompatible», y el zip está bien  ·  origen: el despliegue de la 355 (Chapa, 2026-10-16) · severidad **BAJA** (salida engañosa en un paso manual)
+
+- **Qué pasa.** El script instala las dependencias con `pip install --target <tmp> --platform manylinux…` (`scripts/build_recolector_nube.py:117`). pip compara igual lo que baja contra los paquetes del entorno que corre el script, y con Anaconda imprime cuatro conflictos (`streamlit` contra `protobuf 7.36.2` y `rich 15.0.0`, `pandas-ta` contra `numpy 1.26.4`, `mdit-py-plugins` contra `markdown-it-py 4.2.0`) con la palabra **ERROR**. Medido el 2026-10-16: el entorno de Anaconda quedó intacto (protobuf 3.20.3, rich 13.3.5, markdown-it-py 2.2.0) y el zip salió bien (3.048 archivos, 70 `.so` de Linux, ningún `.pyd`). A Chapa lo frenó en el paso 3 del despliegue.
+- **Qué hay que hacer.** Que el script no muestre un ERROR que no lo es: o silenciar esa comparación (correr pip con un entorno aislado, p. ej. `--isolated` y `PYTHONNOUSERSITE`, si alcanza; o capturar la salida y filtrar esas líneas), o decir al final, en la salida del script, que esos avisos comparan contra el entorno local y no contra el zip. Y que el script verifique el zip que dejó (sin `.pyd`, con los paquetes esperados) e imprima el resultado, que es lo que hubo que mirar a mano.
+- **Kill-criteria.** Corrido en Anaconda, el build no imprime «ERROR» salvo que algo falle de verdad, y termina con el chequeo del zip. Un test con un zip con un `.pyd` adentro lo rechaza. Los cuatro comandos en verde y el CI del commit en verde.
 
 ### 360. ~~HOME-CUENTAS-CHECKBOX — Las cuentas del gráfico de Home se tildan, no se eligen: una o varias a la vez, en el mismo gráfico y con los mismos ejes~~ · **CERRADA 2026-10-15 — un checkbox por cuenta; varias van en un eje, cada una con sus fechas** (`d22d338`) · **movida a *Hecho reciente* con el detalle**  ·  origen: Chapa (2026-10-15, sobre la 359: *«no quiero un drop down, quiero un checkbox donde se muestren o se oculten las cuentas por lo que podría ver solo una, o varias a la vez … en la misma gráfica con los mismos ejes»*) · severidad **BAJA** · **display-only**
 
