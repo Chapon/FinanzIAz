@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 285 — Tarea 351 (PARQUET-REPLACE-ACCESO-DENEGADO) CERRADA 2026-10-16 — en Windows, `os.replace` falla con WinError 5 mientras otro handle tenga abierto el destino; el `write` del cache reintenta con esperas cortas** (`data/parquet_cache.py`, `tests/test_parquet_replace_t351.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La causa, con evidencia.** Reproducido en esta máquina el 2026-10-16: con el destino abierto por `open()`, por `pq.ParquetFile` o por `pa.memory_map`, `os.replace` da `PermissionError [WinError 5] Acceso denegado`, la firma exacta de los cuatro casos; con DuckDB, una vez terminada la consulta, no. En la app leen el mismo archivo, desde otros hilos, `latest_1d`/`all_1d`/`labelled_1d` (el guard de escala de la 64, Home, el scan). Los tres temporales del 2026-10-08 son **del mismo hilo** (`.tmp.45504.46384`) y del mismo segundo, a 37 s del arranque: un batch escribiendo mientras otro hilo leía esos tickers. **Lo que NO se afirma: cuál lector fue.** El log no registra hilos, MDLZ, MRK y MRVL no eran posiciones (BKNG sí), y no hubo casos nuevos desde el 2026-10-09. El arreglo no depende de saberlo: una lectura dura milisegundos.
+  - **El arreglo.** `_reemplazar` reintenta **sólo** `PermissionError`, con esperas de 0,05 a 0,8 s (~1,5 s en total); si el destino sigue tomado, el `write` falla como antes (fail-open, queda el frame anterior). Cuando hicieron falta reintentos deja una línea INFO, `reemplazado tras N reintentos`, para medirlo en vivo.
+  - **Tests:** uno con un `pq.ParquetFile` abierto de verdad que se cierra a los 150 ms (sólo en Windows: en Linux el `replace` no se bloquea), y tres que inyectan el `PermissionError` —se recupera, no suelta nunca, otro error no se reintenta—. **Mutación:** volver al `os.replace` pelado pone tres en rojo. No deja tareas nuevas.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -390,6 +393,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-16b** por una pregunta de Chapa sobre los fines de semana, que **deja la 362** (la ventana de noticias no se superpone entre el viernes y el lunes). Va **detrás de la 355**: es la misma pieza recién desplegada y la pérdida es semanal; espera que Chapa elija entre ventana de 5 días o correr el fin de semana. El orden queda **357 → 355 → 362 → 356 → 351 → 352 → 340 → 353 → 358 → 361 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-16c** al construir la **356** (lo del repo; queda abierta hasta el perfil de Chapa y la medición en vivo), que **deja la 363** (el savepoint de pysqlite commitea su fila en el harvest). Va detrás de la 361: es BAJA y los datos son idempotentes. El orden queda **357 → 355 → 362 → 356 → 351 → 352 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-16d** al cerrar la **351** (el `write` del cache de parquet reintenta el `replace`), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 352 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1933,7 +1938,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **[A-2]** `CLAUDE.md` (§Backlog) enumera *«la mitad que se ve leyendo el archivo»* del guard de la 66 y no nombra el eje 6 que agregó la 338 (`en_curso_items`, máx 1 en *En curso*).
 - **Kill-criteria.** Las dos frases dicen lo que hay; `git grep` de la frase vieja sin resultados fuera de la historia. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 351. PARQUET-REPLACE-ACCESO-DENEGADO — `os.replace` del cache de parquet da `PermissionError` en el arranque de la app, y no se sabe quién tiene abierto el destino  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
+### 351. ~~PARQUET-REPLACE-ACCESO-DENEGADO — `os.replace` del cache de parquet da `PermissionError` en el arranque de la app, y no se sabe quién tiene abierto el destino~~ · **CERRADA 2026-10-16 — cualquier handle abierto sobre el destino lo bloquea en Windows; el `write` reintenta ~1,5 s** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
 
 - **Qué pasa.** 4 `Parquet cache write failed` (MDLZ, MRK, MRVL el 2026-10-08 00:27:53; BKNG el 2026-10-09 18:59:10), todos `PermissionError: [WinError 5] Acceso denegado` en `os.replace(tmp, path)` (`data/parquet_cache.py:226`), a segundos del arranque de la app. La firma no aparece antes del 08/10 (el log arranca el 07/09).
 - **Lo que NO se afirma:** la causa. El temporal ya es único por proceso e hilo; en Windows, reemplazar un destino abierto por otro da acceso denegado. Candidatos: otro hilo de la app leyendo el mismo frame en el arranque (la 336 lee **todos** los frames de cada ticker para Home), el subproceso del dashboard, DuckDB, un antivirus.

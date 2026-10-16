@@ -34,6 +34,7 @@ import contextlib
 import os
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -188,6 +189,34 @@ def _avisar_si_atrasado(ticker: str, period: str, df: pd.DataFrame) -> None:
         log.debug("parquet_cache: %s %s termina el %s (%d ruedas de atraso)", ticker, period, fin, atraso)
 
 
+# Tarea 351: en Windows, ``os.replace`` sobre un destino que otro handle tiene abierto da
+# ``PermissionError: [WinError 5] Acceso denegado`` — con ``open()``, con ``pq.ParquetFile``
+# y con ``pa.memory_map`` (medido el 2026-10-16; DuckDB, con la consulta terminada, no). Y
+# en la app hay lectores del mismo archivo en otros hilos: ``latest_1d``/``all_1d``/
+# ``labelled_1d`` del guard de escala, de Home y del scan. Una lectura dura milisegundos,
+# así que se reintenta con esperas crecientes (~1,5 s en total) antes de dar el write por
+# perdido. Los cuatro casos del log (2026-10-08 y 09) fueron a segundos del arranque.
+_ESPERAS_REPLACE = (0.05, 0.1, 0.2, 0.4, 0.8)
+
+
+def _reemplazar(tmp: Path, path: Path, *, esperas=_ESPERAS_REPLACE, dormir=None) -> int:
+    """``os.replace`` que espera a que se cierre un lector. Devuelve cuántos reintentos hizo.
+
+    Sólo reintenta ``PermissionError``; si sigue al final, la levanta y el ``write`` la
+    loguea como siempre (fail-open: queda el frame anterior).
+    """
+    dormir = dormir or time.sleep  # resuelto al llamar: los tests lo reemplazan
+    for intento, espera in enumerate((*esperas, None)):
+        try:
+            os.replace(tmp, path)
+            return intento
+        except PermissionError:
+            if espera is None:
+                raise
+            dormir(espera)
+    raise AssertionError("inalcanzable")  # pragma: no cover
+
+
 # ── API pública (drop-in del cache OHLCV) ────────────────────────────────────
 
 
@@ -223,7 +252,13 @@ def write(
         tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
         try:
             pq.write_table(table, tmp, compression=_COMPRESSION)
-            os.replace(tmp, path)
+            reintentos = _reemplazar(tmp, path)
+            if reintentos:
+                log.info(
+                    "Parquet cache: %s reemplazado tras %d reintentos (destino abierto)",
+                    path.name,
+                    reintentos,
+                )
         finally:
             if tmp.exists():
                 with contextlib.suppress(OSError):
