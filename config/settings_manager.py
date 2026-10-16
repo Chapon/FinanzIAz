@@ -835,6 +835,16 @@ SCHEMA: dict[str, SettingSpec] = {
             "sana. **0 = sin techo**, no 'cortar ya'."
         ),
     ),
+    "nube_sync_enabled": SettingSpec(
+        bool,
+        True,
+        doc=(
+            "Bajar de DynamoDB lo que juntó la Lambda de la 355 (tarea 356), al arrancar y "
+            "1×/día. Necesita el perfil [finanzias-lector] en ~/.aws/credentials: sin él no "
+            "corre y lo avisa una vez. Con el perfil, el harvest in-app deja de pedir el "
+            "consenso a Yahoo (un solo recolector del consenso, §7.6 del doc de la 196)."
+        ),
+    ),
     # ── Gate 2c del engine (T-CAT-4) — tarea 160 ─────────────────────────────
     # Los tres se leían con fallback inline en `engine.py` y no estaban declarados en
     # ningún lado: invisibles para la UI, para `SETTINGS_REFERENCE.md` y para el guard

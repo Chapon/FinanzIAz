@@ -432,6 +432,18 @@ def refresh_due(*, now: datetime | None = None) -> bool:
         return False
 
 
+def fuentes_del_harvest() -> str:
+    """Las fuentes del harvest in-app, para ``--sources``.
+
+    ``yfinance,sec,finnhub`` como siempre; con la sincronización de la nube andando
+    (tarea 356), ``yfinance_news`` en lugar de ``yfinance``: el consenso lo junta la Lambda
+    y la app no se lo pide a Yahoo (§7.6 del doc de la 196, *un solo recolector*).
+    """
+    from data.nube_sync import consenso_desde_nube
+
+    return "yfinance_news,sec,finnhub" if consenso_desde_nube() else "yfinance,sec,finnhub"
+
+
 def run_catalyst_harvest_only(*, harvest_main=None) -> dict:
     """
     Corre SOLO el harvest (T-CAT-1) in-process, sin classify — para el harvest
@@ -440,14 +452,15 @@ def run_catalyst_harvest_only(*, harvest_main=None) -> dict:
     diario in-app (el Task Scheduler de las 15:00 ya no existe, tarea 240).
 
     Mismas fuentes que el .bat (yfinance, sec, finnhub — el collector de
-    finnhub se saltea solo si falta FINNHUB_API_KEY). ``harvest_main``
+    finnhub se saltea solo si falta FINNHUB_API_KEY), menos el consenso cuando lo trae
+    la nube (``fuentes_del_harvest``, tarea 356). ``harvest_main``
     inyectable para tests offline. Devuelve {"harvest_rc": int}; nunca lanza.
     """
     if harvest_main is None:
         from scripts.harvest_catalysts import main as harvest_main
 
     try:
-        harvest_rc = int(harvest_main(["--sources", "yfinance,sec,finnhub"]))
+        harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
     except Exception:
         log.exception("hourly catalyst harvest: crashed")
         harvest_rc = -1
@@ -477,7 +490,7 @@ def run_catalyst_refresh(
         # Mismas fuentes que el .bat nocturno / el harvest horario (finnhub
         # incluido; se saltea solo sin API key). Alineado 2026-07-12 al mover
         # todo el scheduling in-app y remover la tarea de Windows.
-        harvest_rc = int(harvest_main(["--sources", "yfinance,sec,finnhub"]))
+        harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
     except Exception:
         log.exception("catalyst refresh: harvest crashed")
         harvest_rc = -1

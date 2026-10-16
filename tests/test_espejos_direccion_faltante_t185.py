@@ -203,6 +203,11 @@ SIN_ESPEJO: dict[str, str] = {
     ),
     "catalyst_hourly_harvest_minutes": "NO_ES_DECISION: cadencia del harvest horario de noticias, que sólo acumula datos",
     "catalyst_refresh_on_open": "NO_ES_DECISION: refresh de catalysts al abrir la app; acumula datos, no decide órdenes",
+    "nube_sync_enabled": (
+        "NO_ES_DECISION: baja de la nube el consenso y las noticias que juntó la Lambda (tarea 356) y "
+        "decide quién pide el consenso; acumula datos. `paper_trading/` no lee "
+        "`analyst_estimate_snapshots`, y el Gate 2c está OFF (tarea 162)"
+    ),
     "surprise_build_enabled": (
         "NO_ES_DECISION: rebuild semanal de `surprise_profiles` (T-CAT-5a); display y Gate 2c, que está OFF"
     ),

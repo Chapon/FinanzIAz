@@ -422,7 +422,15 @@ def _duplicado_cercano(session, item) -> bool:
     return any(_norm_title(t) == titulo for (t,) in candidatos)
 
 
-def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> bool:
+def _insert_news_if_new(
+    session,
+    item,
+    seen: set[str],
+    seen_urls: set[str],
+    *,
+    h: str | None = None,
+    fetched_at: datetime | None = None,
+) -> bool:
     """
     Insert a NewsItem unless it's a duplicate. Returns True if new.
 
@@ -439,11 +447,16 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
          de la tabla (``docs/auditoria_datos_2026-10-02.md`` [D-1]).
     Both are checked in-run (the sets) and against already-stored rows; la 3 sólo contra
     la DB, que ya incluye lo de esta corrida porque cada insert hace ``flush``.
+
+    ``h`` y ``fetched_at`` los pasa la importación de la nube (tarea 356): el hash que la
+    Lambda calculó al capturar —para una nota sin fecha, ``content_hash`` usa el día en que
+    se lo llama, y re-calcularlo al importar daría otro— y su ``capturado_at`` (§6.1: el
+    dato se estampa al recolectar, no al importar). Sin ellos, lo de siempre.
     """
     cu = canonical_url(item.url)
     if cu is not None and cu in seen_urls:
         return False
-    h = item.content_hash()
+    h = h or item.content_hash()
     if h in seen:
         return False
     seen.add(h)
@@ -466,6 +479,7 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
             source=item.source,
             url=item.url,
             published_at=item.published_at,
+            fetched_at=fetched_at or utcnow_naive(),
             content_hash=h,
         )
     )
@@ -473,7 +487,9 @@ def _insert_news_if_new(session, item, seen: set[str], seen_urls: set[str]) -> b
     return True
 
 
-def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
+def _insert_estimate_if_new_today(
+    session, snap, today: datetime, *, fetched_at: datetime | None = None
+) -> bool:
     """Insert one EstimateSnapshot per (ticker, metric, period_label, day). Returns True if new.
 
     **Dos capas, y la de abajo es la que manda (tarea 203).** La consulta previa es
@@ -487,6 +503,9 @@ def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
     medio, la colisión revierte sólo esta fila y se cuenta como duplicado, en vez de
     abortar la transacción del ticker y llevarse puestas también sus noticias (la
     fase 2 persiste news + estimates del mismo ticker en una sola sesión).
+
+    ``fetched_at`` lo pasa la importación de la nube (tarea 356) con su ``capturado_at``;
+    ``today`` es entonces el día de esa captura, no el de la importación (§6.1).
     """
     exists = (
         session.query(AnalystEstimateSnapshot.id)
@@ -508,7 +527,7 @@ def _insert_estimate_if_new_today(session, snap, today: datetime) -> bool:
                     consensus_value=snap.consensus_value,
                     num_analysts=snap.num_analysts,
                     snapshot_date=today,
-                    fetched_at=utcnow_naive(),
+                    fetched_at=fetched_at or utcnow_naive(),
                 )
             )
             session.flush()

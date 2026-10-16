@@ -26,6 +26,12 @@ SQLAlchemy>=2.0.0,<3.0
 # cada arranque (único camino de esquema desde la migración catch-up 0004).
 alembic>=1.13
 
+# Nube (tarea 356): la app baja de DynamoDB lo que junta la Lambda de la 355
+# (data/nube_sync.py). Techo en <2 por la 348 (el CI instala esto sin lock). Arrastra
+# botocore, jmespath y s3transfer; botocore pide urllib3<3, compatible con el >=2.8.0
+# de arriba (en el lock queda 2.8.0). Sin boto3 la sincronizacion no corre y lo avisa.
+boto3>=1.40,<2
+
 # Data wrangling
 #   * pandas 2.2.2 es la primera release con soporte numpy-2.0 y wheels para
 #     3.9-3.13; pin >=2.2.2 para que pip nunca compile desde fuente en Windows.

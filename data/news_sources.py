@@ -890,6 +890,10 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
     no había nada o porque la fuente se cayó. Se llaman las implementaciones
     ``_yf_news``/``_sec_8k``/… y no los accesores públicos, que son las mismas
     funciones sin el veredicto.
+
+    ``yfinance_news`` es ``yfinance`` **sin el consenso** (tarea 356): con la
+    sincronización de la nube andando, el consenso lo junta la Lambda y la app no lo pide
+    (§7.6 del doc de la 196, *un solo recolector del consenso*).
     """
     sources = sources or {"yfinance"}
     res = _CollectResult()
@@ -899,8 +903,9 @@ def collect_all(ticker: str, sources: set[str] | None = None) -> _CollectResult:
         res.outcomes.append(outcome)
         return items
 
-    if "yfinance" in sources:
+    if "yfinance" in sources or "yfinance_news" in sources:
         res.news.extend(_correr(_yf_news, ticker))
+    if "yfinance" in sources:
         res.estimates.extend(_correr(_yf_estimates, ticker))
     if "sec" in sources:
         res.news.extend(_correr(_sec_8k, ticker))

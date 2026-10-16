@@ -149,6 +149,8 @@ class MainWindow(QMainWindow):
         self.paper_scheduler.catalyst_refresh_started.connect(self._on_catalyst_refresh_started)
         self.paper_scheduler.catalyst_refresh_completed.connect(self._on_catalyst_refresh_completed)
         self.paper_scheduler.catalyst_refresh_failed.connect(self._on_catalyst_refresh_failed)
+        # Lo que juntó la nube (tarea 356): el resultado, o el «no disponible» una vez.
+        self.paper_scheduler.nube_sync_completed.connect(self._on_nube_sync_completed)
         self.paper_scheduler.start()
 
     def _build_ui(self):
@@ -371,6 +373,22 @@ class MainWindow(QMainWindow):
 
     def _on_catalyst_refresh_failed(self, err: str):
         self.status_bar.showMessage(f"Noticias: refresh del día falló: {err}", 10_000)
+
+    def _on_nube_sync_completed(self, res):
+        """Tarea 356: lo que bajó de la nube, o por qué no bajó (eso, una sola vez)."""
+        if not res.corrio and not res.aviso_nuevo:
+            return
+        if res.corrio and res.nuevas == 0 and not res.errores:
+            return
+        self.status_bar.showMessage(res.texto(), 15_000)
+        if res.corrio and res.nuevas:
+            try:
+                if self.stack.currentWidget() is self.news_tab:
+                    self.news_tab.refresh()
+                else:
+                    self.news_tab.invalidate()
+            except Exception as e:
+                log.warning("news tab refresh after nube sync failed: %s", e)
 
     # ── Qt lifecycle ──────────────────────────────────────────────────────────
 

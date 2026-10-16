@@ -442,6 +442,23 @@ def _disable_settings_persistence(tmp_path, monkeypatch):
     _live_settings.load()
 
 
+@pytest.fixture(autouse=True)
+def _aislar_credenciales_de_aws(tmp_path, monkeypatch):
+    """Ningún test ve el ``~/.aws`` de la máquina (tarea 356).
+
+    Con el perfil ``[finanzias-lector]`` creado, ``data.nube_sync.consenso_desde_nube()``
+    da verdadero y el harvest in-app deja de pedir el consenso: los tests que fijan las
+    fuentes del harvest pasarían a depender de si **esta** máquina tiene el perfil — el
+    defecto de la 175 (un test que leía ``~/.finanzias/settings.json``). Los dos archivos
+    apuntan a un directorio vacío y las variables sueltas se borran; un test que quiera
+    el perfil lo escribe en ``AWS_SHARED_CREDENTIALS_FILE``.
+    """
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "aws_vacio" / "credentials"))
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "aws_vacio" / "config"))
+    for var in ("AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+
+
 # ── Cortafuegos de red (tareas 209 y 211) ────────────────────────────────────
 #
 # La implementación vive en `tests/_cortafuegos/cortafuegos_red.py` y NO acá, porque el

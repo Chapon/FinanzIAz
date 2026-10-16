@@ -600,6 +600,23 @@ class ClaudeOpinion(Base):
     segundos: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class CloudImportCursor(Base):
+    """Hasta qué día se bajó cada tipo de lo que juntó la nube (tarea 356, §11.5 del doc de la 196).
+
+    Una fila por tipo (``consenso``, ``noticia``). ``ultimo_dia_importado`` es el día de
+    captura UTC (el de la ``pk`` de DynamoDB) **completo**: se escribe en la misma
+    transacción que las filas de ese día, así que un corte a mitad de un día no lo mueve.
+    La sincronización siguiente **re-lee** ese día, porque la Lambda puede seguir
+    escribiéndolo después de la última importación.
+    """
+
+    __tablename__ = "cloud_import_cursor"
+
+    tipo: Mapped[str] = mapped_column(String(20), primary_key=True)
+    ultimo_dia_importado: Mapped[str] = mapped_column(String(10), nullable=False)  # 'YYYY-MM-DD', UTC
+    importado_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+
+
 class FailedTicker(Base):
     """
     Registro de tickers que fallaron al consultar Yahoo Finance.

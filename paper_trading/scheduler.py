@@ -68,6 +68,12 @@ Independent triggers, all gated by user settings:
    ``2y`` rodante para cubrir la cuenta desde su arranque. **No** toca el ``10y``,
    que es la serie de régimen del harness y la refresca ``refresh_cohort``.
 
+10. **Cloud sync** (``nube_sync_enabled``, default on) — tarea 356. Al arrancar y
+    1×/día calendario baja de DynamoDB el consenso y las noticias que juntó la Lambda
+    de la 355 (``data/nube_sync.py``). Sin el perfil ``[finanzias-lector]`` no lanza
+    ningún worker y lo avisa una vez. El refresh diario (5) y el horario (6) **esperan**
+    a que termine, para no escribir ``news_events`` a la vez.
+
 Each scan runs on its own ``QThread`` so the UI stays responsive. Workers
 are tracked per-account: if a previous scan for account X hasn't finished
 yet, the scheduler skips a new one for X instead of piling them up.
@@ -385,6 +391,38 @@ class PriceTapeArchiveWorker(QThread):
             self.archive_failed.emit(f"{type(e).__name__}: {e}")
 
 
+def nube_sync_due(*, enabled: bool, today: date, last: date | None, worker_running: bool) -> bool:
+    """¿Toca bajar lo de la nube? (tarea 356) — pura, testeable offline.
+
+    Al arrancar y una vez por día calendario (UTC): la Lambda escribe a las 17:30–17:46 de
+    Nueva York, así que con la app abierta de corrido lo del día entra pasada la medianoche
+    UTC. El día se estampa antes de lanzar; un corte no pierde nada, porque el cursor queda
+    en el último día completo y el próximo arranque sigue desde ahí.
+    """
+    if not enabled or worker_running:
+        return False
+    return last != today
+
+
+class NubeSyncWorker(QThread):
+    """Baja de DynamoDB lo que juntó la Lambda y lo inserta, fuera del UI thread (tarea 356).
+
+    Sale a la red (``Query`` sin transacción abierta) y escribe una transacción corta por
+    día. Emits ``sync_completed(ResumenSync)``; ``sincronizar`` no lanza.
+    """
+
+    sync_completed = pyqtSignal(object)
+
+    def run(self):
+        from data.nube_sync import ResumenSync, sincronizar
+
+        try:
+            self.sync_completed.emit(sincronizar())
+        except Exception as e:  # sincronizar no lanza; esto es por si el import falla
+            log.exception("nube sync: crashed")
+            self.sync_completed.emit(ResumenSync(corrio=False, motivo=f"{type(e).__name__}: {e}"))
+
+
 class BenchmarkLargoWorker(QThread):
     """Mantiene vivo el frame ``max`` de SPY que empalma el VS SPY (tareas 246/251). Sale a la red.
 
@@ -445,6 +483,10 @@ class PaperScheduler(QObject):
     catalyst_refresh_completed = pyqtSignal(object)  # result dict
     catalyst_refresh_failed = pyqtSignal(str)
 
+    # Sincronización con la nube (tarea 356): un ResumenSync por corrida, y uno por el
+    # aviso de «no disponible» (una vez por proceso).
+    nube_sync_completed = pyqtSignal(object)
+
     # How often the daily-cron timer ticks to check the wall clock (ms).
     _DAILY_CHECK_MS = 60_000  # every minute
     # Delay between app start and the startup scan, to let the UI finish loading.
@@ -496,6 +538,10 @@ class PaperScheduler(QObject):
         self._bench_worker: BenchmarkLargoWorker | None = None
         self._last_bench_check: date | None = None
 
+        # Bajar lo que juntó la nube (tarea 356): al arrancar y 1×/día.
+        self._nube_worker: NubeSyncWorker | None = None
+        self._last_nube_sync: date | None = None
+
         # Tarea 263: rachas de scans fallidos por cuenta, para avisar una vez por racha.
         # Acá había un heartbeat (`_last_scan_at`) que alimentaba un `status()` con
         # `stale_accounts`, y ese `status()` no tenía NINGÚN llamador: un vigilante que no
@@ -531,6 +577,11 @@ class PaperScheduler(QObject):
         # T-CAT-5a weekly surprise rebuild — check shortly after launch so the
         # UI has painted; the daily tick re-checks once a day thereafter.
         QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_build_surprise)
+
+        # Lo de la nube (tarea 356) ANTES que el refresh de catalysts: el refresh espera a
+        # que termine (ver `_nube_corriendo`) para no escribir `news_events` a la vez, y
+        # así además dedupea contra lo que bajó la nube en vez de al revés.
+        QTimer.singleShot(self._STARTUP_DELAY_MS, self._maybe_sync_nube)
 
         # Daily catalyst refresh — primera apertura del día; el tick diario
         # re-chequea por si la app queda abierta pasada la medianoche.
@@ -572,6 +623,9 @@ class PaperScheduler(QObject):
         if self._bench_worker is not None:
             self._bench_worker.wait(2_000)
             self._bench_worker = None
+        if self._nube_worker is not None:
+            self._nube_worker.wait(2_000)
+            self._nube_worker = None
         self._started = False
 
     def reload_settings(self) -> None:
@@ -611,6 +665,9 @@ class PaperScheduler(QObject):
         # Weekly surprise rebuild rides the once-a-minute daily timer; build_due
         # short-circuits cheaply until the interval has elapsed.
         self._maybe_build_surprise()
+
+        # Nube (tarea 356): 1×/día, no-op el resto del día. Antes que el refresh, que la espera.
+        self._maybe_sync_nube()
 
         # Catalyst refresh: cubre el caso "app abierta pasada la medianoche".
         # El gate por día calendario hace que esto sea un no-op el resto del día.
@@ -873,6 +930,9 @@ class PaperScheduler(QObject):
             return
         if self._catalyst_worker is not None and self._catalyst_worker.isRunning():
             return
+        if self._nube_corriendo():
+            # Sin estampar el día: el tick por minuto lo relanza cuando la nube termine.
+            return
         try:
             from analysis.news_digest import refresh_due
 
@@ -915,6 +975,51 @@ class PaperScheduler(QObject):
         if w is not None:
             w.deleteLater()
 
+    # ── Lo que juntó la nube (tarea 356) ───────────────────────────────────────
+
+    def _nube_corriendo(self) -> bool:
+        return self._nube_worker is not None and self._nube_worker.isRunning()
+
+    def _maybe_sync_nube(self) -> None:
+        """Lanza la sincronización si está prendida, no corrió hoy y se puede.
+
+        Sin perfil o sin ``boto3`` no se lanza ningún worker —se sabe leyendo un archivo
+        chico— y el aviso sale una vez por proceso, en el log y en la pantalla.
+        """
+        from data import nube_sync
+
+        today = utcnow_naive().date()
+        if not nube_sync_due(
+            enabled=nube_sync.habilitada(),
+            today=today,
+            last=self._last_nube_sync,
+            worker_running=self._nube_corriendo(),
+        ):
+            return
+        self._last_nube_sync = today
+        motivo = nube_sync.motivo_no_disponible()
+        if motivo is not None:
+            if nube_sync.avisar_no_disponible(motivo):
+                self.nube_sync_completed.emit(
+                    nube_sync.ResumenSync(corrio=False, motivo=motivo, aviso_nuevo=True)
+                )
+            return
+        worker = NubeSyncWorker(parent=self)
+        worker.sync_completed.connect(self._on_nube_sync_completed)
+        worker.finished.connect(self._reap_nube_worker)
+        self._nube_worker = worker
+        log.info("nube sync starting")
+        worker.start()
+
+    def _on_nube_sync_completed(self, res) -> None:
+        self.nube_sync_completed.emit(res)
+
+    def _reap_nube_worker(self) -> None:
+        w = self._nube_worker
+        self._nube_worker = None
+        if w is not None:
+            w.deleteLater()
+
     # ── Hourly catalyst harvest durante RTH (tarea 10) ─────────────────────────
 
     def _maybe_hourly_harvest(self) -> None:
@@ -947,7 +1052,10 @@ class PaperScheduler(QObject):
             hourly_worker_running=(
                 self._hourly_harvest_worker is not None and self._hourly_harvest_worker.isRunning()
             ),
-            daily_worker_running=(self._catalyst_worker is not None and self._catalyst_worker.isRunning()),
+            daily_worker_running=(
+                (self._catalyst_worker is not None and self._catalyst_worker.isRunning())
+                or self._nube_corriendo()
+            ),
             market_open=_is_market_open_now(),
         ):
             return
