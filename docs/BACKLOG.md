@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 286 — Tarea 352 (CLAIMS-VENV-Y-EJE-6) CERRADA 2026-10-16 — la skill `auditoria` dice lo que diverge entre el `.venv` y la Anaconda, y `CLAUDE.md` nombra el eje de *En curso* del guard** (`.claude/skills/auditoria/SKILL.md`, `CLAUDE.md`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **[A-1]** Medido hoy: `platformdirs` 4.10.0 en el `.venv` y 3.10.0 en la Anaconda, `lxml` 5.2.1 en el `.venv`. La frase ahora dice que lo que diverge es la **versión** de `platformdirs` (y por eso el skip de más), y que el parser está en los dos desde la 347.
+  - **[A-2]** La lista de *«la mitad que se ve leyendo el archivo»* suma *«a lo sumo un ítem en *En curso* (tarea 338)»*, que es `en_curso_items` en `check_text`.
+  - `git grep` de *«le faltan `platformdirs`»* fuera del backlog y de la auditoría que lo citó: sin resultados. No deja tareas nuevas.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -392,6 +395,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-16c** al construir la **356** (lo del repo; queda abierta hasta el perfil de Chapa y la medición en vivo), que **deja la 363** (el savepoint de pysqlite commitea su fila en el harvest). Va detrás de la 361: es BAJA y los datos son idempotentes. El orden queda **357 → 355 → 362 → 356 → 351 → 352 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-16d** al cerrar la **351** (el `write` del cache de parquet reintenta el `replace`), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 352 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-16e** al cerrar la **352** (dos claims viejos), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1929,7 +1934,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Qué hay que hacer.** Medir qué quedó sin recuperar del 09/10, y que el refresh diario no cuente como hecho un harvest con `FUENTES CAIDAS` (o que lo reintente una vez con red).
 - **Kill-criteria.** Lo perdido medido; una corrida sintética con fuentes caídas deja `refresh_due` en verdadero y una sana no. Los cuatro comandos en verde y el CI del commit en verde.
 
-### 352. CLAIMS-VENV-Y-EJE-6 — La skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML, y `CLAUDE.md` no nombra el eje 6 del guard del backlog  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [A-1] y [A-2] · severidad **BAJA**
+### 352. ~~CLAIMS-VENV-Y-EJE-6 — La skill `auditoria` dice que al `.venv` le faltan `platformdirs` y el parser de HTML, y `CLAUDE.md` no nombra el eje 6 del guard del backlog~~ · **CERRADA 2026-10-16 — las dos frases dicen lo que hay** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-10.md` [A-1] y [A-2] · severidad **BAJA**
 
 - **[A-1]** `.claude/skills/auditoria/SKILL.md` (área K) dice *«al `.venv` le faltan `platformdirs` y un parser de HTML, y da otro conteo de tests»*. La 328/346 midieron `platformdirs` **4.10.0** en el `.venv` (lo que diverge es la versión: 3.10 en Anaconda) y la 347 le instaló `lxml` 5.2.1.
 - **[A-2]** `CLAUDE.md` (§Backlog) enumera *«la mitad que se ve leyendo el archivo»* del guard de la 66 y no nombra el eje 6 que agregó la 338 (`en_curso_items`, máx 1 en *En curso*).
