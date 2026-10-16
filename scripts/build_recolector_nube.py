@@ -17,6 +17,12 @@ build falla en vez de empaquetar una copia que se comporte distinto.
 No despliega nada ni toca credenciales: produce el archivo y dice su tamaño. La subida
 directa desde la consola admite hasta 50 MB; si el zip se pasa, el script falla.
 
+**Al final verifica el zip** (tarea 361): sin ``.pyd`` de Windows, con ``.so`` de Linux, con el
+handler y con cada paquete pineado en su versión. Y pip corre con ``--no-warn-conflicts``: sin
+eso comparaba lo que baja para Linux contra los paquetes del entorno que corre el script e
+imprimía «ERROR: pip's dependency resolver … incompatible» (streamlit, pandas-ta…), que no
+dice nada del zip y frenó a Chapa en el despliegue.
+
 Uso:
     python scripts/build_recolector_nube.py
     python scripts/build_recolector_nube.py --out dist/recolector_nube.zip
@@ -104,6 +110,37 @@ def armar_zip(deps: Path | None, out: Path, *, version: str) -> int:
     return out.stat().st_size
 
 
+def _norm(nombre: str) -> str:
+    return nombre.lower().replace("-", "_").replace(".", "_")
+
+
+def verificar_zip(path: Path, versiones: dict[str, str]) -> list[str]:
+    """Los problemas del zip armado; lista vacía ⇒ está bien (tarea 361).
+
+    Lo que hubo que mirar a mano en el despliegue de la 355: que las dependencias sean las
+    de Linux (ningún ``.pyd``, algún ``.so``), que estén los archivos del repo y que cada
+    paquete pineado haya entrado en su versión (por su ``.dist-info``).
+    """
+    with zipfile.ZipFile(path) as zf:
+        nombres = zf.namelist()
+    problemas = []
+    pyd = [n for n in nombres if n.lower().endswith(".pyd")]
+    if pyd:
+        problemas.append(
+            f"{len(pyd)} .pyd de Windows (p. ej. {pyd[0]}): las dependencias no son las de Linux"
+        )
+    if versiones and not any(n.endswith(".so") or ".so." in n for n in nombres):
+        problemas.append("ningún .so: faltan las extensiones compiladas de Linux")
+    for destino in (*ARCHIVOS_DEL_REPO, SHIM, VERSION):
+        if destino not in nombres:
+            problemas.append(f"falta {destino}")
+    infos = {_norm(n.split("/", 1)[0]) for n in nombres if n.split("/", 1)[0].endswith(".dist-info")}
+    for paquete, version in versiones.items():
+        if _norm(f"{paquete}-{version}.dist-info") not in infos:
+            problemas.append(f"falta {paquete}=={version}")
+    return problemas
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Empaqueta el recolector de la nube (T355) para AWS Lambda.")
     ap.add_argument("--out", default=str(_ROOT / "dist" / "recolector_nube.zip"))
@@ -115,6 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         deps = Path(tmp) / "pkg"
         cmd = [
             sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+            # Tarea 361: el chequeo de conflictos mira el entorno LOCAL, no el `--target`.
+            "--no-warn-conflicts",
             "--target", str(deps),
             # Las dos: pandas 2.3.3 sólo publica `manylinux_2_28`, y el runtime python3.12 de
             # Lambda (Amazon Linux 2023, glibc 2.34) la acepta.
@@ -128,6 +167,15 @@ def main(argv: list[str] | None = None) -> int:
         tam = armar_zip(deps, Path(args.out), version=_git_version())
 
     print(f"Zip: {args.out} — {tam / 1e6:.1f} MB")
+    problemas = verificar_zip(Path(args.out), versiones)
+    if problemas:
+        for p in problemas:
+            print(f"*** ZIP MAL ARMADO: {p} ***", file=sys.stderr)
+        return 1
+    print(
+        "Zip verificado: sin .pyd, con .so de Linux, el handler y "
+        + ", ".join(f"{k}=={v}" for k, v in versiones.items())
+    )
     if tam > LIMITE_CONSOLA:
         print("*** Pasa los 50 MB de la subida directa desde la consola de Lambda. ***", file=sys.stderr)
         return 1
