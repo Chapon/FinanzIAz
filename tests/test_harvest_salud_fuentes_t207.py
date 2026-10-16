@@ -18,10 +18,10 @@ Las dos poblaciones están separadas ~50× y `SOURCE_FAILURE_ALARM_RATE = 0.20` 
 medio. El día malo se excluyó de la calibración **antes** de medir, no después de ver el
 resultado — es la diferencia con [[guard-no-puede-usar-de-verdad-lo-que-chequea]].
 
-**Lo que NO es la alarma, a propósito:** ``cero_resultados``. El dedup hace que la
-mayoría de los tickers devuelva cero filas nuevas en una corrida sana (los reportes
-reales dicen ``news +1 (dup 33)``), y esa tasa normal **no se puede medir con los logs de
-hoy**, que no son por ticker. Se reporta como contexto; no es gate.
+**Lo que NO es la alarma, a propósito:** ``cero_resultados``. Se cuenta **antes del
+dedup** —los tickers para los que ninguna fuente trajo nada, no los que no dejaron filas
+nuevas— y en el log del 2026-09-07 al 2026-10-16 salió > 0 sólo junto con FUENTES CAIDAS
+(tarea 358). Se reporta como contexto; no es gate.
 """
 
 from __future__ import annotations
@@ -203,12 +203,25 @@ def test_la_corrida_sana_sigue_saliendo_a_INFO(test_db, caplog):
 
 
 def test_los_tickers_sin_NADA_se_cuentan_pero_no_alarman(test_db):
-    """Con dedup, cero filas nuevas es lo normal — por eso se reporta y no es gate."""
+    """Ninguna fuente trajo nada y ninguna falló: se cuenta como contexto, no alarma (358)."""
     rep = harvest(_universo(20), collector=_collector(items=False), budget_seconds=0)
 
     assert len(rep.cero_resultados) == 20
     assert not rep.degraded, "cero filas con todas las fuentes OK es una corrida sana"
     assert "sin datos 20" in rep.summary()
+
+
+def test_un_ticker_con_todo_YA_GUARDADO_no_cuenta_como_sin_datos(test_db):
+    """Tarea 358: `sin datos` se cuenta antes del dedup. Una segunda corrida con las mismas
+    noticias no deja ninguna fila nueva, y aun así ningún ticker queda «sin datos»."""
+    primera = harvest(_universo(3), collector=_collector(), budget_seconds=0)
+    assert primera.news_new == 3
+
+    segunda = harvest(_universo(3), collector=_collector(), budget_seconds=0)
+
+    assert segunda.news_new == 0 and segunda.news_dup == 3  # el caso no es degenerado
+    assert segunda.cero_resultados == []
+    assert "sin datos 0" in segunda.summary()
 
 
 def test_un_ticker_con_datos_no_cuenta_como_sin_datos(test_db):
