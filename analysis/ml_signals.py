@@ -176,7 +176,36 @@ _XGB_CACHE: OrderedDict[str, tuple] = OrderedDict()
 _XGB_CACHE_MAX = 192
 
 
-def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) -> str:
+#: Tolerancia relativa con la que dos series de cierres se consideran la misma (tarea 364).
+#: Cada bajada de Yahoo trae los cierres viejos con un ruido de ~2·10⁻⁷ relativo (máx.
+#: medido 4,4·10⁻⁷ sobre 126 tickers, 2026-10-16), y con el hash exacto eso re-entrenaba ~115
+#: modelos por hora de mercado. Un ajuste por dividendo o split mueve la historia ≥ 10⁻³: queda
+#: tres órdenes de magnitud por encima.
+XGB_RTOL_CIERRES = 1e-6
+# Los cierres con que se entrenó cada entrada del cache, para comparar con tolerancia. Va
+# aparte de la tupla del cache para no cambiar su forma; se poda al guardar.
+_XGB_CIERRES: dict[str, np.ndarray] = {}
+
+
+def _cierres_entrenables(df: pd.DataFrame) -> np.ndarray | None:
+    if "Close" not in df.columns or len(df) <= PREDICTION_HORIZON:
+        return None
+    try:
+        return np.ascontiguousarray(df["Close"].iloc[:-PREDICTION_HORIZON].to_numpy(dtype="float64"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _cierres_coinciden(guardados: np.ndarray | None, actuales: np.ndarray | None) -> bool:
+    """¿Son los mismos cierres, salvo el ruido de Yahoo? (tarea 364)"""
+    if guardados is None or actuales is None or guardados.shape != actuales.shape:
+        return False
+    return bool(np.allclose(guardados, actuales, rtol=XGB_RTOL_CIERRES, atol=0.0, equal_nan=True))
+
+
+def _xgb_cache_key(
+    df: pd.DataFrame, feature_cols: list[str], n_samples: int, ticker: str | None = None
+) -> str:
     """Stable fingerprint of the *trainable* frame + feature spec.
 
     Only the rows that survive the label ``dropna`` in
@@ -210,6 +239,12 @@ def _xgb_cache_key(df: pd.DataFrame, feature_cols: list[str], n_samples: int) ->
         # different training sets apart.
         return ""
     payload = f"{sorted(feature_cols)}|{n_samples}|{trainable.index[-1]}".encode()
+    if ticker:
+        # Tarea 364: con el ticker, los cierres NO entran en la clave —se comparan con
+        # tolerancia contra los guardados, en `train_xgboost_signal`—, porque el hash exacto
+        # cambiaba con el ruido de cada bajada. El ticker es lo que impide que dos series con
+        # las mismas fechas compartan modelo. Sin ticker (análisis ad-hoc), la clave de antes.
+        return hashlib.sha256(f"ticker={ticker.upper()}|".encode() + payload).hexdigest()[:16]
     return hashlib.sha256(closes.tobytes() + payload).hexdigest()[:16]
 
 
@@ -258,6 +293,7 @@ def _motivo_reentreno(ticker: str | None, piezas: dict[str, str] | None) -> str:
 def clear_ml_cache() -> None:
     """Public helper to flush the cached XGBoost + stacking models (tests)."""
     _XGB_CACHE.clear()
+    _XGB_CIERRES.clear()
     _STACK_CACHE.clear()
     _XGB_ULTIMAS_PIEZAS.clear()
 
@@ -298,7 +334,9 @@ def _note_motivo(ticker: str | None, piezas: dict[str, str] | None) -> None:
 def drain_training_summary() -> str | None:
     """Devuelve el resumen de entrenamientos acumulados y resetea el contador.
 
-    ``None`` cuando no se entrenó nada. **No es el caso normal del segundo scan del día**
+    ``None`` cuando no se entrenó nada. **Desde la 364** es el caso normal entre arranques: el
+    cache compara los cierres con tolerancia y el ruido de Yahoo ya no re-entrena. Lo que
+    sigue: **No era el caso normal del segundo scan del día**
     (decía eso desde la 24 y la 340 lo midió falso): la tasa esperada es un entrenamiento
     completo (~126) **al arrancar** —el cache es en memoria— y **otro cada vez que vence el
     TTL de 1 h del histórico** en horario de mercado, con ``motivos: cierres=~115``. Cada
@@ -1035,8 +1073,11 @@ def train_xgboost_signal(df: pd.DataFrame, ticker: str | None = None) -> Technic
         # (see ``_xgb_cache_key``), so repeated scans and UI refreshes during
         # the same session hit the cache instead of retraining on data that is
         # identical everywhere the model looks.
-        cache_key = _xgb_cache_key(df, valid_cols, len(combined))
+        cache_key = _xgb_cache_key(df, valid_cols, len(combined), ticker)
         cached = _lru_get(_XGB_CACHE, cache_key)
+        cierres = _cierres_entrenables(df) if ticker else None
+        if cached is not None and ticker and not _cierres_coinciden(_XGB_CIERRES.get(cache_key), cierres):
+            cached = None  # misma clave, otra historia (split, dividendo, corrección): re-entrenar
         if cached is not None:
             model, val_acc, train_acc, val_std = cached
         else:
@@ -1049,6 +1090,11 @@ def train_xgboost_signal(df: pd.DataFrame, ticker: str | None = None) -> Technic
                 model, val_acc, train_acc, val_std = _train_single_split(X_all, y_all, valid_cols)
 
             _lru_put(_XGB_CACHE, cache_key, (model, val_acc, train_acc, val_std), _XGB_CACHE_MAX)
+            if cierres is not None:
+                _XGB_CIERRES[cache_key] = cierres
+                for k in list(_XGB_CIERRES):  # list(): copia atómica, otros hilos entrenan
+                    if k not in _XGB_CACHE:
+                        _XGB_CIERRES.pop(k, None)
 
         # Predict probability of price going UP in the next 5 days. Works
         # identically against both raw XGBClassifier and CalibratedClassifierCV
