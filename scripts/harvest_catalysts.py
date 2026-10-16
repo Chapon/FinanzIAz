@@ -49,7 +49,6 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy.exc import IntegrityError
 
 from config.logging_config import get_logger
 from data.news_sources import _CollectResult, cerrar_corrida_de_fallas, collect_all
@@ -502,10 +501,16 @@ def _insert_estimate_if_new_today(
     Lo que garantiza el invariante es el índice único por expresión
     ``ux_est_ticker_metric_period_dia``, sobre ``date(snapshot_date)``.
 
-    Por eso el INSERT va en un **savepoint**: si otro escritor metió la fila en el
-    medio, la colisión revierte sólo esta fila y se cuenta como duplicado, en vez de
-    abortar la transacción del ticker y llevarse puestas también sus noticias (la
+    Por eso el INSERT es ``ON CONFLICT DO NOTHING``: si la fila del día ya está (con otra
+    hora, o la metió otro escritor en el medio), el índice la frena y se cuenta como
+    duplicado, sin abortar la transacción del ticker ni llevarse puestas sus noticias (la
     fase 2 persiste news + estimates del mismo ticker en una sola sesión).
+
+    **Era un savepoint, y no servía (tarea 363).** pysqlite no emite ``BEGIN`` antes de un
+    ``SAVEPOINT``: en un ticker sin noticias nuevas el ``begin_nested()`` era el primer
+    write, abría la transacción él y su ``RELEASE`` la commiteaba, fila por fila. Un error
+    a mitad del ticker dejaba guardadas sus primeras filas mientras el reporte lo contaba
+    como ``failed``. El INSERT, en cambio, hace que pysqlite abra la transacción de verdad.
 
     ``fetched_at`` lo pasa la importación de la nube (tarea 356) con su ``capturado_at``;
     ``today`` es entonces el día de esa captura, no el de la importación (§6.1).
@@ -520,21 +525,22 @@ def _insert_estimate_if_new_today(
     )
     if exists is not None:
         return False
-    try:
-        with session.begin_nested():
-            session.add(
-                AnalystEstimateSnapshot(
-                    ticker=snap.ticker,
-                    metric=snap.metric,
-                    period_label=snap.period_label,
-                    consensus_value=snap.consensus_value,
-                    num_analysts=snap.num_analysts,
-                    snapshot_date=today,
-                    fetched_at=fetched_at or utcnow_naive(),
-                )
-            )
-            session.flush()
-    except IntegrityError:
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    res = session.execute(
+        sqlite_insert(AnalystEstimateSnapshot)
+        .values(
+            ticker=snap.ticker,
+            metric=snap.metric,
+            period_label=snap.period_label,
+            consensus_value=snap.consensus_value,
+            num_analysts=snap.num_analysts,
+            snapshot_date=today,
+            fetched_at=fetched_at or utcnow_naive(),
+        )
+        .on_conflict_do_nothing()
+    )
+    if res.rowcount == 0:
         # El índice la frenó: la fila del día ya existe con otro sello de hora.
         # Es exactamente el caso que el chequeo de arriba no puede ver.
         log.debug(

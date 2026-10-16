@@ -18,7 +18,7 @@ diseño es el §11 de ``docs/harvest_nube_t196_2026-09-14.md``; lo que importa:
   se hace sin ninguna transacción abierta, y la escritura va en una transacción corta
   **por día**.
 * **El cursor** (``cloud_import_cursor``, §11.5) avanza en **la misma transacción** que las
-  filas de su día —y se escribe primero, por pysqlite: ver ``sincronizar``—: un corte a
+  filas de su día —y se escribe primero: ver ``sincronizar``—: un corte a
   mitad de un día no lo mueve y no deja ese día a medias. La
   sincronización siguiente **re-lee el último día importado**, porque la Lambda puede
   seguir escribiéndolo; re-leer es seguro porque escribir es idempotente.
@@ -302,12 +302,11 @@ def sincronizar(*, tabla=None, hoy: date | None = None) -> ResumenSync:
                 items = bajar_dia(tabla, tipo, dia)  # sin transacción abierta (§11.6)
                 with session_scope() as s:
                     # El cursor va PRIMERO y con flush, en la misma transacción que sus
-                    # filas. El orden no es capricho: pysqlite no emite BEGIN antes de un
-                    # SAVEPOINT, así que si el primer write de la sesión es el
-                    # `begin_nested()` de `_insert_estimate_if_new_today`, el SAVEPOINT
-                    # abre la transacción y su RELEASE la commitea, fila por fila, y un
-                    # corte deja el día a medias (medido; tarea 363). Con el UPDATE del
-                    # cursor adelante, el BEGIN ya está y los savepoints anidan.
+                    # filas. Lo pidió un defecto que ya no está: el `begin_nested()` de
+                    # `_insert_estimate_if_new_today` commiteaba fila por fila cuando era
+                    # el primer write (pysqlite no emite BEGIN antes de un SAVEPOINT), y un
+                    # corte dejaba el día a medias. La 363 lo cambió por ON CONFLICT DO
+                    # NOTHING; el orden queda porque no cuesta nada y no depende de eso.
                     _mover_cursor(s, tipo, dia)
                     s.flush()
                     n, d = escribir_dia(s, tipo, items)

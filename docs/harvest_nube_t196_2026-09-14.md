@@ -841,7 +841,7 @@ El techo de 15 min por lotes (§7.1), sin VPC (§7.2), el universo publicado des
 
 **Decisiones que el §11 no tenía escritas:**
 
-- **El cursor se escribe primero en la transacción del día**, no al final. pysqlite no emite `BEGIN` antes de un `SAVEPOINT`: si el primer write de la sesión es el `begin_nested()` de `_insert_estimate_if_new_today`, su `RELEASE` **commitea** la fila, y un corte deja el día a medias (lo encontró el test del corte; la **363** es ese mismo defecto en el harvest). Con el `UPDATE` del cursor adelante el `BEGIN` ya está, y día y cursor son atómicos.
+- **El cursor se escribe primero en la transacción del día**, no al final. pysqlite no emite `BEGIN` antes de un `SAVEPOINT`: si el primer write de la sesión es el `begin_nested()` de `_insert_estimate_if_new_today`, su `RELEASE` **commitea** la fila, y un corte deja el día a medias (lo encontró el test del corte; la **363** es ese mismo defecto en el harvest). Con el `UPDATE` del cursor adelante el `BEGIN` ya está, y día y cursor son atómicos. *(La 363 sacó el savepoint —ahora es `ON CONFLICT DO NOTHING`—; el orden quedó.)*
 - **Sin cursor se baja lo que el TTL conserva** (90 días): ~91 `Query` vacíos por tipo la primera vez, a 0,5 RCU cada uno.
 - **El «un solo recolector del consenso» (§7.6) depende del perfil, no sólo del setting:** con `nube_sync_enabled` y el perfil presente, el harvest in-app pide `yfinance_news,sec,finnhub` (las noticias de Yahoo sin el consenso). Sin el perfil nadie bajaría el consenso de la nube, así que se sigue pidiendo.
 - **Región y reintentos en el código:** `us-east-1` y reintentos adaptativos de botocore (las 10 RCU se agotan bajando un día de noticias); el perfil sólo necesita la key.
