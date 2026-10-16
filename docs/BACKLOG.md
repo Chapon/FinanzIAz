@@ -18,7 +18,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 287 — Tarea 340 (XGB-UNSTABLE-POR-SCAN) CERRADA 2026-10-16 — la causa es el ruido de punto flotante de Yahoo en los cierres viejos: cada refetch por TTL (1 h) cambia la clave del cache de casi todos los tickers** (`analysis/ml_signals.py`, sólo el docstring). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Los `motivos:` de un día real** (log del 09 al 16/10, parte 1 instrumentada): los scans con entrenamientos son **sólo dos clases**: `nuevo=126` en el primer scan de cada arranque (el cache es en memoria; el 15/10 hubo tres arranques), y `cierres=115` **~1 h después** del arranque en horario de mercado (15/10 13:14 → 14:13; 16/10 11:35 → 12:35), una vez además `cierres+filas=126` (14/10, con la barra nueva). Ningún `columnas`, `ultima_fila` ni `desalojado`. Los demás scans, 0.
+  - **Por qué cambian los cierres** (medido el 2026-10-16 ~12:40 local, con el mercado abierto): para MSFT, JPM, KO, MDLZ, NVDA, XOM y BKNG, el frame `2y` cacheado a las 15:33Z contra uno bajado en ese momento con los mismos parámetros (`auto_adjust=True`): diferencias de **~2·10⁻⁷ relativo** (máx 3,3·10⁻⁷; ruido de precisión simple en el ajuste de Yahoo) en las filas viejas, y con el redondeo a 4 decimales de la clave **entre 8 y 82 de 497 filas** quedan distintas. Basta una para cambiar el hash. **La hipótesis del enunciado (la barra provisional) queda descartada**: la clave ya excluye las últimas 5 filas.
+  - **La tasa esperada, escrita** donde decía *«el caso normal a partir del segundo scan del día»* (`drain_training_summary`): un entrenamiento completo al arrancar y otro por cada vencimiento del TTL en horario de mercado; entre vencimientos, 0.
+  - **Deja la 364** (que la clave tolere ese ruido). No toca el motor, así que no se cambió nada más que el texto.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -394,6 +398,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-16d** al cerrar la **351** (el `write` del cache de parquet reintenta el `replace`), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 352 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-16e** al cerrar la **352** (dos claims viejos), que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 340 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-16f** al cerrar la **340** (medición), que **deja la 364** (la clave del cache de XGBoost no tolera el ruido de Yahoo). Va detrás de la 356 y antes de la 353: es cómputo de cada hora de mercado y es lo que la 340 vino a encontrar. El orden queda **357 → 355 → 362 → 356 → 364 → 353 → 358 → 361 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 
 
@@ -1833,6 +1839,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 364. XGB-CLAVE-SENSIBLE-AL-RUIDO — La clave del cache de XGBoost hashea los cierres redondeados a 4 decimales, y el ruido de ~2·10⁻⁷ de cada bajada de Yahoo la cambia: ~115 re-entrenamientos por hora de mercado  ·  origen: tarea 340 (2026-10-16) · severidad **MEDIA** (cómputo: ~126 fits walk-forward por hora, ~373 ms cada uno según la 24; y los WARNING «unstable» que eso repite)
+
+- **Qué pasa.** `_xgb_cache_key` (`analysis/ml_signals.py`) hace `sha256(closes.round(4).tobytes() + …)`. Medido en la 340: entre el frame cacheado y una bajada una hora después, las filas viejas difieren ~2·10⁻⁷ relativo, y entre 8 y 82 de 497 filas cruzan el borde del redondeo. **Un redondeo más grueso no lo arregla**: con cualquier grilla fija, alguna de las ~500 filas cae cerca de un borde.
+- **Qué hay que hacer.** Que la reutilización compare **con tolerancia**: guardar junto al modelo los cierres con los que se entrenó y reusarlo si las piezas exactas (columnas, filas, última fila) coinciden y los cierres están dentro de una tolerancia relativa (p. ej. `np.allclose(rtol=1e-6)`), sin dejar de ver un split o un dividendo (que mueven ≥ 10⁻³).
+- **Kill-criteria, antes de codear.** Toca la señal que lee el motor (`ml_probability`): (1) sobre los frames reales de un día, el modelo reusado y el re-entrenado con los cierres con ruido dan la **misma** predicción en ≥ 99% de los tickers, y la diferencia de `ml_probability` máxima escrita; si no, no se shipea. (2) Test: un ruido de 3·10⁻⁷ reusa, un ajuste por dividendo de 10⁻³ re-entrena. (3) En vivo, un día de mercado con `motivos:` sin `cierres=` entre arranques. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
 ### 363. SAVEPOINT-SQLITE-COMMITEA — El `begin_nested()` de `_insert_estimate_if_new_today` commitea su fila cuando es el primer write de la sesión: pysqlite no emite `BEGIN` antes de un `SAVEPOINT`  ·  origen: tarea 356 (2026-10-16, el test del corte a mitad de un día) · severidad **BAJA** (atomicidad por ticker del harvest; los datos siguen siendo idempotentes)
 
 - **Qué pasa.** El driver `sqlite3` emite `BEGIN` implícito sólo antes de un `INSERT`/`UPDATE`/`DELETE`. Si el primer write de una sesión es `session.begin_nested()`, el `SAVEPOINT` abre la transacción **él**, y el `RELEASE` la cierra: la fila queda commiteada y el `rollback` de la sesión ya no la deshace. Reproducido aislado el 2026-10-16 con un engine en memoria: savepoint sin write previo → 1 fila después del rollback; con un `INSERT` antes → 0. El engine de la app (`database/models.py`) no tiene la receta de SQLAlchemy para pysqlite (`isolation_level=None` + `BEGIN` en el evento `begin`).
@@ -2013,7 +2026,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **[A-3]** `docs/ARCHITECTURE.md` lista los módulos de `analysis/` uno por uno y no nombra `analysis/opinion_claude.py` (320) **ni su dependencia externa**: el CLI `claude`, que en la máquina de Chapa sale de la extensión de VS Code (`ubicar_claude`). En `database/` no nombra `cartera_real.py` (lo que arma Home, 264), `lotes.py` (324) ni el desplegable `ui/portfolio_detalle.py` (325).
 - **Kill-criteria.** Las dos cosas escritas con la granularidad que cada doc promete; el comentario de la migración `0013` no se toca (es historia del esquema). Los cuatro comandos en verde y el CI del commit en verde.
 
-### 340. XGB-UNSTABLE-POR-SCAN — «XGBoost: unstable model» sale en todos los scans (~10 por scan), no sólo en el primero del día como midió la 25 · **parte 1 hecha 2026-10-08 (la instrumentación); espera un día de mercado**  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
+### 340. ~~XGB-UNSTABLE-POR-SCAN — «XGBoost: unstable model» sale en todos los scans (~10 por scan), no sólo en el primero del día como midió la 25~~ · **CERRADA 2026-10-16 — el ruido de ~2·10⁻⁷ de Yahoo cambia la clave en cada refetch por TTL; deja la 364** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_tanda_2026-10-07.md` [L-1] · severidad **MEDIA** · **tarea de MEDICIÓN**
 
 - **Lo que se vio.** 246 WARNING del 05 al 07/10 (117, 63, 66 por día; 66 el 28/09 y 67 el 02/10), en todas las horas. La 25 (`f4f59c6`) midió *«6 en el primer scan del día y 0 en los siguientes»*. Las tandas del 04 y 05/10 lo contaron (×21, ×22) y lo dieron por *«conocida, por diseño»* sin comparar la tasa.
 - **Lo que NO se afirma:** que el cache de la 24 se haya roto. **No se sabe**: el mensaje no dice el ticker, así que no se distingue un re-entrenamiento por scan de las consultas manuales de Análisis.

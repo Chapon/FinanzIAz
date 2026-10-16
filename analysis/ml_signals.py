@@ -298,8 +298,14 @@ def _note_motivo(ticker: str | None, piezas: dict[str, str] | None) -> None:
 def drain_training_summary() -> str | None:
     """Devuelve el resumen de entrenamientos acumulados y resetea el contador.
 
-    ``None`` cuando no se entrenó nada — el caso normal a partir del segundo
-    scan del día, ahora que el cache sobrevive (tarea 24).
+    ``None`` cuando no se entrenó nada. **No es el caso normal del segundo scan del día**
+    (decía eso desde la 24 y la 340 lo midió falso): la tasa esperada es un entrenamiento
+    completo (~126) **al arrancar** —el cache es en memoria— y **otro cada vez que vence el
+    TTL de 1 h del histórico** en horario de mercado, con ``motivos: cierres=~115``. Cada
+    bajada de Yahoo trae los cierres viejos con un ruido relativo de ~2·10⁻⁷ (medido el
+    2026-10-16 en siete tickers, cache de 1 h contra bajada nueva), y al redondear a 4
+    decimales entre 8 y 82 de 497 filas cruzan el borde: el hash cambia. Entre esos
+    vencimientos, 0. Arreglarlo es la tarea 364.
     """
     with _training_lock:
         n = int(_training_tally["n"])
