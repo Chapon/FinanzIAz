@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 292 — Tarea 290 (TONO-EXTREMOS-RAROS) CERRADA 2026-10-16 — los extremos quedan bajo el 3%, pero no porque la escala diga la verdad: el modelo aplica la rúbrica de forma asimétrica. Se ajusta en la 365** (sólo medición; ningún archivo de código). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La distribución real** (copia de la DB del 2026-10-16; las **12.994** filas `ollama-7n`, del 2026-10-03 al 2026-10-16): −3 **3**, −2 621, −1 1.932, 0 7.193, +1 2.012, +2 1.095, +3 **138**. Sobre las 5.801 no neutrales: **−3 = 0,05%**, **+3 = 2,4%**; los dos bajo el 3% del kill-criteria de la 259. Y +3 es **46 veces** más frecuente que −3.
+  - **Leídos a mano** (20 −2 `guidance_cut`, 12 `clinical_fda`, 15 `earnings_results` por relevancia, y 12 +3 al azar): **los negativos quedan cortos**: al menos 5 titulares de PepsiCo recortando **su propio** guidance (*«PepsiCo Just Cut its Earnings Forecast»*, *«slashes guidance»*, *«cuts outlook as its home-market problem deepens»*) quedaron en −2, cuando la rúbrica pone *«results that miss and cut guidance»* como ejemplo de −3; también BAC *«Shares Fall 5% on Earnings Miss and Compliance Penalty»*. Los otros −2 de esa categoría (analistas recortando estimaciones) están bien. **Los positivos se inflan:** de los 12 +3, sólo 1–2 lo son por la rúbrica (el ensayo ganado de BMY; quizás *«ASML: Huge Earnings Beat»*); el resto son *beats* sin suba de guidance —la rúbrica los pone en +2—, una transcripción de la llamada de BlackRock (0) y una nota de opinión.
+  - **La decisión:** no se acepta como está. Lo que falla no es que ±3 sea demasiado exigente sino que el modelo no respeta la rúbrica, y en direcciones opuestas según el signo. Corregir el prompt es la **365**, con un set etiquetado a mano y su kill-criteria antes de tocarlo. Sin reclasificar lo viejo (decisión de Chapa en la 259). El tono es display: no entra a ninguna decisión.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -404,6 +407,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-16i** al cerrar la **361**, que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 364 → 363 → 196 → 245 → 290 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-16j** al cerrar la **363**, que **no deja tareas nuevas**. El orden queda **357 → 355 → 362 → 356 → 364 → 196 → 245 → 290 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-16k** al cerrar la **290** (medición), que **deja la 365** (el modelo aplica la rúbrica de tono de forma asimétrica). Va donde estaba la 290: es display. El orden queda **357 → 355 → 362 → 356 → 364 → 196 → 245 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1843,6 +1848,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 365. TONO-RUBRICA-ASIMETRICA — qwen pone en −2 recortes de guidance propios que la rúbrica define como −3, y en +3 *beats* sin suba que la rúbrica define como +2  ·  origen: tarea 290 (2026-10-16) · severidad **BAJA** (display: el tono no entra a ninguna decisión)
+
+- **Qué pasa.** Medido en la 290 sobre 12.994 clasificaciones `-7n` reales: −3 = 0,05% y +3 = 2,4% de las no neutrales (46×). Leídos a mano: PepsiCo recortando su guidance (≥ 5 titulares) y BAC cayendo 5% por *miss* + multa quedaron en −2; de 12 +3 al azar, sólo 1–2 cumplen la rúbrica (el resto son *beats* sin suba, una transcripción y una opinión).
+- **Qué hay que hacer.** Un set de ~40 titulares reales **etiquetados a mano** contra la rúbrica (incluidos los de la 290), y ajustar el prompt de `data/catalyst_classifier.py` —ejemplos negativos tan concretos como los positivos, y *«a beat WITHOUT a raise is +2»* explícito— sin reclasificar lo viejo.
+- **Kill-criteria, antes de tocar el prompt.** Smoke con `qwen2.5:14b` sobre el set, sin escribir la DB: el prompt nuevo acierta el nivel exacto en más titulares que el viejo y queda a ±1 en ≥ 90%; ningún nivel con menos del 1% de las no neutrales en una muestra de 300 filas recientes; si no mejora, no se cambia. Los cuatro comandos y el CI en verde.
+- **Dependencias:** Ollama con `qwen2.5:14b` en la máquina de Chapa.
+
 ### 364. XGB-CLAVE-SENSIBLE-AL-RUIDO — La clave del cache de XGBoost hashea los cierres redondeados a 4 decimales, y el ruido de ~2·10⁻⁷ de cada bajada de Yahoo la cambia: ~115 re-entrenamientos por hora de mercado  ·  origen: tarea 340 (2026-10-16) · severidad **MEDIA** (cómputo: ~126 fits walk-forward por hora, ~373 ms cada uno según la 24; y los WARNING «unstable» que eso repite)
 
 - **Qué pasa.** `_xgb_cache_key` (`analysis/ml_signals.py`) hace `sha256(closes.round(4).tobytes() + …)`. Medido en la 340: entre el frame cacheado y una bajada una hora después, las filas viejas difieren ~2·10⁻⁷ relativo, y entre 8 y 82 de 497 filas cruzan el borde del redondeo. **Un redondeo más grueso no lo arregla**: con cualquier grilla fija, alguna de las ~500 filas cae cerca de un borde.
@@ -2329,7 +2341,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 
 - **Alcance.** Las doce áreas de la skill más `seguridad`, con el diseño de re-corrida: lo que cambió desde `6360ea7`, los arreglos medidos en vivo después del reinicio de las 04:46, y cada *NO mirado* de ayer re-verificado. Kill-criteria congelado en `docs/auditoria_tanda_killcriteria_2026-10-03.md`; informe en `docs/auditoria_tanda_2026-10-03.md`.
 
-### 290. TONO-EXTREMOS-RAROS — Con la rúbrica de 7 niveles, ±3 quedan bajo el 3% de las no neutrales en el smoke de la 259: medir sobre dos semanas de clasificaciones reales  ·  origen: el cierre de la 259 (smoke del 2026-10-03) · severidad **BAJA**
+### 290. ~~TONO-EXTREMOS-RAROS — Con la rúbrica de 7 niveles, ±3 quedan bajo el 3% de las no neutrales en el smoke de la 259: medir sobre dos semanas de clasificaciones reales~~ · **CERRADA 2026-10-16 — −3 0,05% y +3 2,4%, pero el modelo aplica la rúbrica asimétricamente; deja la 365** · **movida a *En curso* con el detalle**  ·  origen: el cierre de la 259 (smoke del 2026-10-03) · severidad **BAJA**
 
 - **Qué pasó.** El kill-criteria pre-registrado de la 259 (b) era *«ningún nivel con menos del 3% de las no neutrales»*. En el smoke —120 titulares reales re-clasificados con `qwen2.5:14b` y el prompt nuevo, sin escribir la DB— los ±1 pasaron de 0 a 17 y 18, pero **−3 dio 0% y +3 1,9%** (de 52 no neutrales). Con el prompt viejo, la misma muestra tenía 11 en +3.
 - **Por qué no se decide con eso:** 52 no neutrales no separan *«las noticias que cambian el valor son raras»* (la escala dice la verdad) de *«la rúbrica hace a ±3 demasiado exigentes»*. Y la muestra salió de las últimas 2.000 filas, una ventana corta.
