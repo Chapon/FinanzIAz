@@ -1,13 +1,15 @@
 {
   "_meta": {
-    "built_at": "2026-10-12T00:47:13.509752+00:00",
+    "built_at": "2026-10-19T14:38:08.034760+00:00",
     "source": "yfinance.get_earnings_dates",
     "version": "v0-free-T-CAT-5a",
     "caveat": "current-estimate per quarter, not point-in-time (T-CAT-5b replaces this)",
     "min_quarters": 4,
     "n_tickers": 127,
-    "n_profiles": 127,
-    "insufficient_history": {}
+    "n_profiles": 126,
+    "insufficient_history": {
+      "WBD": 0
+    }
   },
   "profiles": {
     "ABBV": {
@@ -74,11 +76,11 @@
       "ticker": "AMD",
       "n_quarters": 24,
       "beat_rate": 0.7917,
-      "miss_rate": 0.0417,
-      "mean_surprise": 0.065488,
+      "miss_rate": 0.0833,
+      "mean_surprise": 0.063459,
       "median_surprise": 0.030453,
       "last_surprise": 0.031056,
-      "directional_score": 0.5024
+      "directional_score": 0.4758
     },
     "AMGN": {
       "ticker": "AMGN",
@@ -115,10 +117,10 @@
       "n_quarters": 24,
       "beat_rate": 0.9167,
       "miss_rate": 0.0417,
-      "mean_surprise": 0.088305,
+      "mean_surprise": 0.087432,
       "median_surprise": 0.074737,
-      "last_surprise": 0.090647,
-      "directional_score": 0.5956
+      "last_surprise": 0.098513,
+      "directional_score": 0.5949
     },
     "AVGO": {
       "ticker": "AVGO",
@@ -153,12 +155,12 @@
     "BAC": {
       "ticker": "BAC",
       "n_quarters": 24,
-      "beat_rate": 0.875,
-      "miss_rate": 0.125,
-      "mean_surprise": 0.07242,
+      "beat_rate": 0.8333,
+      "miss_rate": 0.1667,
+      "mean_surprise": 0.064079,
       "median_surprise": 0.079652,
-      "last_surprise": 0.080357,
-      "directional_score": 0.5079
+      "last_surprise": -0.18018,
+      "directional_score": 0.4513
     },
     "BKNG": {
       "ticker": "BKNG",
@@ -183,12 +185,12 @@
     "BLK": {
       "ticker": "BLK",
       "n_quarters": 24,
-      "beat_rate": 0.7917,
-      "miss_rate": 0.1667,
-      "mean_surprise": 0.065095,
-      "median_surprise": 0.08796,
-      "last_surprise": 0.096139,
-      "directional_score": 0.4271
+      "beat_rate": 0.8333,
+      "miss_rate": 0.125,
+      "mean_surprise": 0.072125,
+      "median_surprise": 0.090726,
+      "last_surprise": 0.113986,
+      "directional_score": 0.4827
     },
     "BMY": {
       "ticker": "BMY",
@@ -215,10 +217,10 @@
       "n_quarters": 24,
       "beat_rate": 0.8333,
       "miss_rate": 0.1667,
-      "mean_surprise": 0.203029,
-      "median_surprise": 0.173954,
-      "last_surprise": 0.158672,
-      "directional_score": 0.5624
+      "mean_surprise": 0.185535,
+      "median_surprise": 0.164828,
+      "last_surprise": 0.080153,
+      "directional_score": 0.5484
     },
     "CAT": {
       "ticker": "CAT",
@@ -495,10 +497,10 @@
       "n_quarters": 24,
       "beat_rate": 0.8333,
       "miss_rate": 0.1667,
-      "mean_surprise": 0.190888,
+      "mean_surprise": 0.182532,
       "median_surprise": 0.18484,
-      "last_surprise": 0.442916,
-      "directional_score": 0.5527
+      "last_surprise": 0.299465,
+      "directional_score": 0.546
     },
     "HAL": {
       "ticker": "HAL",
@@ -565,20 +567,20 @@
       "n_quarters": 24,
       "beat_rate": 0.9583,
       "miss_rate": 0.0,
-      "mean_surprise": 0.045027,
-      "median_surprise": 0.036246,
-      "last_surprise": 0.017544,
-      "directional_score": 0.611
+      "mean_surprise": 0.041555,
+      "median_surprise": 0.03068,
+      "last_surprise": 0.027778,
+      "directional_score": 0.6082
     },
     "JPM": {
       "ticker": "JPM",
       "n_quarters": 24,
-      "beat_rate": 0.8333,
-      "miss_rate": 0.1667,
-      "mean_surprise": 0.124904,
-      "median_surprise": 0.097124,
-      "last_surprise": 0.058621,
-      "directional_score": 0.4999
+      "beat_rate": 0.7917,
+      "miss_rate": 0.2083,
+      "mean_surprise": 0.10776,
+      "median_surprise": 0.094987,
+      "last_surprise": -0.031987,
+      "directional_score": 0.4362
     },
     "KLAC": {
       "ticker": "KLAC",
@@ -755,10 +757,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.125,
-      "mean_surprise": 0.149651,
-      "median_surprise": 0.156116,
-      "last_surprise": 0.180887,
-      "directional_score": 0.5697
+      "mean_surprise": 0.137993,
+      "median_surprise": 0.128487,
+      "last_surprise": 0.037671,
+      "directional_score": 0.5604
     },
     "MSFT": {
       "ticker": "MSFT",
@@ -935,10 +937,10 @@
       "n_quarters": 24,
       "beat_rate": 0.8333,
       "miss_rate": 0.125,
-      "mean_surprise": 0.27122,
-      "median_surprise": 0.306777,
-      "last_surprise": 0.48,
-      "directional_score": 0.642
+      "mean_surprise": 0.261761,
+      "median_surprise": 0.267677,
+      "last_surprise": 0.063291,
+      "directional_score": 0.6344
     },
     "PM": {
       "ticker": "PM",
@@ -1025,10 +1027,10 @@
       "n_quarters": 24,
       "beat_rate": 0.7917,
       "miss_rate": 0.1667,
-      "mean_surprise": 0.029273,
-      "median_surprise": 0.034848,
-      "last_surprise": 0.045161,
-      "directional_score": 0.3984
+      "mean_surprise": 0.02648,
+      "median_surprise": 0.031518,
+      "last_surprise": 0.018072,
+      "directional_score": 0.3962
     },
     "SLB": {
       "ticker": "SLB",
@@ -1135,10 +1137,10 @@
       "n_quarters": 24,
       "beat_rate": 1.0,
       "miss_rate": 0.0,
-      "mean_surprise": 0.055991,
-      "median_surprise": 0.049571,
-      "last_surprise": 0.107969,
-      "directional_score": 0.6448
+      "mean_surprise": 0.052664,
+      "median_surprise": 0.046751,
+      "last_surprise": 0.017699,
+      "directional_score": 0.6421
     },
     "TXN": {
       "ticker": "TXN",
@@ -1155,10 +1157,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.0833,
-      "mean_surprise": 0.052355,
+      "mean_surprise": 0.052073,
       "median_surprise": 0.032976,
-      "last_surprise": 0.296748,
-      "directional_score": 0.5169
+      "last_surprise": 0.13285,
+      "directional_score": 0.5167
     },
     "UNP": {
       "ticker": "UNP",
@@ -1210,16 +1212,6 @@
       "last_surprise": 0.023622,
       "directional_score": 0.4675
     },
-    "WBD": {
-      "ticker": "WBD",
-      "n_quarters": 22,
-      "beat_rate": 0.3636,
-      "miss_rate": 0.6364,
-      "mean_surprise": -0.17683,
-      "median_surprise": -0.364183,
-      "last_surprise": 0.5,
-      "directional_score": -0.3051
-    },
     "WELL": {
       "ticker": "WELL",
       "n_quarters": 24,
@@ -1235,10 +1227,10 @@
       "n_quarters": 24,
       "beat_rate": 0.875,
       "miss_rate": 0.125,
-      "mean_surprise": 0.153901,
-      "median_surprise": 0.126204,
-      "last_surprise": 0.162791,
-      "directional_score": 0.5731
+      "mean_surprise": 0.133291,
+      "median_surprise": 0.111688,
+      "last_surprise": 0.005376,
+      "directional_score": 0.5566
     },
     "WMB": {
       "ticker": "WMB",
