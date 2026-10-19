@@ -28,7 +28,8 @@ cada ticker tiene un techo de wall-clock, y antes de cada ticker se mira cuánto
 la invocación: lo que no alcanzó queda declarado en ``sin_correr``, no perdido en silencio.
 
 **Fuentes:** ``estimates``, ``sec`` y ``finnhub``. Las noticias de yfinance **no**, porque
-``Ticker.news`` contesta 404 desde el 2026-10-01 (tarea 354); entran con la 357.
+``Ticker.news`` contesta 404 desde el 2026-10-01 (tarea 354). La 357 las repuso en la app
+con ``yf.Search``; sumarlas acá, con las WCU medidas, va con la 362.
 
 Local, sin AWS: ``correr_lote`` recibe la tabla y el reloj inyectados, y los tests la
 corren contra una tabla simulada. ``boto3`` sólo se importa en ``lambda_handler``: viene
@@ -49,7 +50,7 @@ TABLA_DEFAULT = "finanzias_harvest"
 #: Cuántas invocaciones se reparten el universo. El template tiene un horario por lote y un
 #: test verifica que coincidan.
 LOTES = 5
-#: Las fuentes del recolector. ``yfinance_news`` queda afuera hasta la 357 (ver arriba).
+#: Las fuentes del recolector. ``yfinance_news`` queda afuera hasta la 362 (ver arriba).
 FUENTES_DEFAULT = ("estimates", "sec", "finnhub")
 #: Techo por ticker. Una corrida sana tarda ~2,7 s por ticker (tarea 204, con las cuatro
 #: fuentes); 60 s es más de 20 veces eso y deja que un ticker colgado no se coma el lote.

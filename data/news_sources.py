@@ -11,7 +11,7 @@ offline with recorded fixtures.
 
 Sources wired today (T-CAT-1: full MVP)
 ---------------------------------------
-- yfinance ``Ticker.news``            → NewsItem  (free, default dep)
+- yfinance ``yf.Search`` (tarea 357; ``Ticker.news`` da 404) → NewsItem  (free, default dep)
 - yfinance estimates / recommendations /
   analyst_price_targets               → EstimateSnapshot (snapshotted daily)
 - SEC 8-K via EDGAR ``submissions``   → NewsItem  (free, the most reliable
@@ -271,6 +271,10 @@ def parse_yf_news_item(ticker: str, raw: dict) -> NewsItem | None:
     """
     Map one ``yfinance.Ticker.news`` entry to a NewsItem.
 
+    El harvest ya no lo usa: ``Ticker.news`` contesta 404 desde el 2026-10-01 y la fuente
+    pasó a ``yf.Search`` (``parse_yf_search_item``, tarea 357). Queda para leer las filas
+    viejas y por si el endpoint vuelve.
+
     yfinance has shipped two shapes:
       - legacy flat: {title, link, publisher, providerPublishTime (epoch)}
       - newer nested: {id, content: {title, summary, pubDate,
@@ -315,15 +319,70 @@ def parse_yf_news_item(ticker: str, raw: dict) -> NewsItem | None:
     )
 
 
+#: ``source`` de las noticias que salen de ``yf.Search`` (tarea 357). No es ``yfinance``
+#: (``Ticker.news``, muerto desde el 2026-10-01): la serie vieja y la nueva no se mezclan.
+YF_SEARCH_SOURCE = "yfinance:search"
+#: Cuántas noticias se le piden a ``yf.Search`` por ticker. Con 10, el 2026-10-19 trajo
+#: noticias propias para 124 de los 127 tickers vivos (1.178 aceptadas, 71 descartadas).
+YF_SEARCH_NEWS_COUNT = 10
+
+
+def parse_yf_search_item(ticker: str, raw: dict) -> NewsItem | None:
+    """Una entrada de ``yf.Search(...).news`` → NewsItem, **sólo si es del ticker** (tarea 357).
+
+    ``yf.Search`` es una búsqueda por texto: para ``AVB`` (AvalonBay) trae ArriVent
+    (``AVBP``) y Avidbank (``AVBH``). Se acepta la noticia sólo si Yahoo la etiqueta con el
+    ticker en ``relatedTickers`` —por elemento, no por substring—; sin etiquetas, se
+    descarta. La respuesta es plana: ``title``, ``link``, ``providerPublishTime`` (epoch),
+    sin resumen.
+    """
+    if not isinstance(raw, dict):
+        return None
+    title = raw.get("title")
+    if not title:
+        return None
+    relacionados = {str(t).upper().strip() for t in (raw.get("relatedTickers") or [])}
+    if ticker.upper().strip() not in relacionados:
+        return None
+    return NewsItem(
+        ticker=ticker.upper(),
+        title=title,
+        source=YF_SEARCH_SOURCE,
+        content=None,
+        url=raw.get("link"),
+        published_at=_epoch_to_dt(raw.get("providerPublishTime")),
+    )
+
+
+def _yf_search_news(ticker: str) -> list:
+    """Las noticias crudas de ``yf.Search`` para ``ticker`` (sin cotizaciones ni listas).
+
+    ``yf`` se toma de ``data.yahoo_finance`` para que el mock de los tests lo cubra.
+    """
+    from data.yahoo_finance import yf
+
+    busqueda = yf.Search(
+        ticker,
+        max_results=0,
+        news_count=YF_SEARCH_NEWS_COUNT,
+        lists_count=0,
+        recommended=0,
+        include_cb=False,
+    )
+    return getattr(busqueda, "news", None) or []
+
+
 def _yf_news(ticker: str) -> tuple[list[NewsItem], SourceOutcome]:
-    """La implementación real: la lista **y** si la fuente respondió (tarea 207)."""
+    """La implementación real: la lista **y** si la fuente respondió (tarea 207).
+
+    Desde la tarea 357 sale de ``yf.Search``: ``Ticker.news`` pega a un endpoint que
+    contesta 404 desde el 2026-10-01 (tarea 354). El nombre de la fuente en la salud del
+    harvest sigue siendo ``yfinance_news``; el ``source`` de las filas, ``YF_SEARCH_SOURCE``.
+    """
     out: list[NewsItem] = []
     try:
-        from data.yahoo_finance import _ticker  # reuse the configured session/rate-limit
-
-        raw_list = getattr(_ticker(ticker), "news", None) or []
-        for raw in raw_list:
-            item = parse_yf_news_item(ticker, raw)
+        for raw in _yf_search_news(ticker):
+            item = parse_yf_search_item(ticker, raw)
             if item is not None:
                 out.append(item)
     except Exception as e:
@@ -333,7 +392,7 @@ def _yf_news(ticker: str) -> tuple[list[NewsItem], SourceOutcome]:
 
 
 def collect_yfinance_news(ticker: str) -> list[NewsItem]:
-    """Fetch ``Ticker.news`` and map to NewsItems. Never raises.
+    """Las noticias de Yahoo del ticker (``yf.Search``, tarea 357) como NewsItems. Never raises.
 
     Accesor de una línea sobre ``_yf_news``, que es la única implementación — así el
     resultado y su veredicto no pueden divergir.

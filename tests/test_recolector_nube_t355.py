@@ -126,7 +126,7 @@ def _fuentes_falsas(monkeypatch, *, noticias=None, estimates=True, colgar=(), re
         return items, SourceOutcome("finnhub", "ok", len(items))
 
     def _yfn(t):  # pragma: no cover — si se llama, el test de fuentes lo caza
-        raise AssertionError("yfinance_news no es fuente del recolector hasta la 357")
+        raise AssertionError("yfinance_news no es fuente del recolector hasta la 362")
 
     monkeypatch.setattr(ns, "_yf_estimates", _est)
     monkeypatch.setattr(ns, "_sec_8k", _sec)
@@ -330,7 +330,7 @@ def test_una_escritura_que_falla_no_hunde_al_resto(monkeypatch):
 
 
 def test_las_fuentes_son_las_que_andan_desde_AWS():
-    """``yfinance_news`` contesta 404 desde el 2026-10-01 (tarea 354): entra con la 357."""
+    """``yfinance_news`` contesta 404 desde el 2026-10-01 (tarea 354); la 357 la repuso en la app y al recolector entra con la 362."""
     assert rn.FUENTES_DEFAULT == ("estimates", "sec", "finnhub")
     for f in rn.FUENTES_DEFAULT:
         assert callable(getattr(ns, rn._COLECTORES[f]))

@@ -67,7 +67,7 @@ El scan no ajusta spin-offs (la 298: el factor de Yahoo no alcanza); se ajustan 
 ## Catalyst Engine — append-only point-in-time (`database/models.py`)
 
 ### `news_events` — noticias crudas
-Append-only: una fila por (noticia, fuente) **observada**. `id`, `ticker`, `title`, `content`, `source` ("yfinance"/"sec_8k"/"finnhub:*"; la rama `rss` se borró en la tarea 212 y **cero** filas la usaban), `url`, `published_at` (declara la fuente), **`fetched_at`** (cuándo LO VIMOS), `content_hash` (sha1 UNIQUE → idempotencia).
+Append-only: una fila por (noticia, fuente) **observada**. `id`, `ticker`, `title`, `content`, `source` ("yfinance" hasta el 2026-10-01, "yfinance:search" desde la tarea 357, "sec_8k", "finnhub:*"; la rama `rss` se borró en la tarea 212 y **cero** filas la usaban), `url`, `published_at` (declara la fuente), **`fetched_at`** (cuándo LO VIMOS), `content_hash` (sha1 UNIQUE → idempotencia).
 Campos de clasificación (NULL hasta T-CAT-2, UPDATE in-place): `event_type`, `sentiment`, `classifier_confidence`, `classified_at`, `classified_by` ("heuristic"/"ollama"/"llm"/"fallback"; desde la tarea 259, 2026-10-03, "ollama-7n"/"llm-7n" = el LLM calificó el tono en 7 niveles y `sentiment_score` es `nivel/3` — las filas anteriores tienen la polaridad agrupada en 4 valores y quedan así).
 
 ### `analyst_estimate_snapshots` — consenso diario

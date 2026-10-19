@@ -352,26 +352,23 @@ def test_sec_que_revienta_es_FAILED():
 
 
 def test_yfinance_news_que_revienta_es_FAILED(monkeypatch):
-    import data.yahoo_finance as yh
+    import data.news_sources as ns
     from data.news_sources import _yf_news
 
     def _boom(sym):
         raise TimeoutError("curl 28")
 
-    monkeypatch.setattr(yh, "_ticker", _boom)
+    monkeypatch.setattr(ns, "_yf_search_news", _boom)
     items, o = _yf_news("NVDA")
     assert items == [] and o.failed and o.source == "yfinance_news"
 
 
 def test_yfinance_news_vacio_pero_sano_es_OK(monkeypatch):
     """La distinción entera de la tarea: `[]` que respondió no es `[]` que se cayó."""
-    import data.yahoo_finance as yh
+    import data.news_sources as ns
     from data.news_sources import _yf_news
 
-    class _T:
-        news = []
-
-    monkeypatch.setattr(yh, "_ticker", lambda s: _T())
+    monkeypatch.setattr(ns, "_yf_search_news", lambda s: [])
     items, o = _yf_news("NVDA")
     assert items == [] and o.status == "ok"
 
@@ -442,11 +439,10 @@ def test_una_propiedad_caida_deja_la_fuente_DEGRADED_y_la_NOMBRA(monkeypatch):
 def test_los_accesores_publicos_devuelven_LO_MISMO_que_la_implementacion(monkeypatch):
     """Los ``collect_*`` son una línea sobre la implementación, así que no pueden
     divergir. Este test es lo que lo fija si alguien los reescribe."""
-    import data.yahoo_finance as yh
+    import data.news_sources as ns
     from data.news_sources import _yf_news, collect_yfinance_news
 
-    class _T:
-        news = []
-
-    monkeypatch.setattr(yh, "_ticker", lambda s: _T())
-    assert collect_yfinance_news("NVDA") == _yf_news("NVDA")[0]
+    # Desde la 357 la fuente es ``yf.Search``; la costura es ``_yf_search_news``.
+    raw = [{"title": "t", "relatedTickers": ["NVDA"], "providerPublishTime": 1792414804}]
+    monkeypatch.setattr(ns, "_yf_search_news", lambda s: raw)
+    assert collect_yfinance_news("NVDA") == _yf_news("NVDA")[0] != []
