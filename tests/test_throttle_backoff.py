@@ -69,12 +69,44 @@ def test_cooldown_escalates_exponentially_and_caps(monkeypatch):
 
 
 def test_fetch_success_resets_breaker(monkeypatch):
-    _patch_clock(monkeypatch)
+    clock = _patch_clock(monkeypatch)
     yfm._note_throttle()
     assert yfm.throttle_state()["open"]
+    clock.advance(91)  # tarea 370: el éxito cierra recién con el cooldown vencido
     yfm._note_fetch_success()
     st = yfm.throttle_state()
     assert not st["open"] and st["level"] == 0
+
+
+def test_un_exito_DENTRO_del_cooldown_no_cierra_el_breaker(monkeypatch):
+    """Tarea 370: con un throttle parcial, un fetch que ya estaba en vuelo vuelve bien.
+
+    El 13/10 eso cerró el breaker a los 0-1 s de abrirlo, 44 veces en dos horas, y cada
+    cierre volvió el nivel a 0. Dentro del cooldown un éxito suelto no prueba nada: lo
+    decide el probe de ``_should_attempt_fetch`` al vencer.
+    """
+    clock = _patch_clock(monkeypatch)
+    yfm._note_throttle()
+    clock.advance(1)
+    yfm._note_fetch_success()
+    st = yfm.throttle_state()
+    assert st["open"] and st["level"] == 1
+
+
+def test_el_13_de_octubre_un_throttle_parcial_de_dos_horas_es_UN_incidente(monkeypatch, caplog):
+    """Cada minuto el lote falla entero y un fetch suelto vuelve bien. Antes: 120 aperturas."""
+    clock = _patch_clock(monkeypatch)
+    with caplog.at_level(logging.WARNING, logger="data.yahoo_finance"):
+        for _ in range(120):
+            yfm._note_throttle()  # el lote entero falló
+            clock.advance(1)
+            yfm._note_fetch_success()  # un fetch en vuelo volvió bien
+            clock.advance(59)
+    aperturas = [r for r in _yahoo_warnings(caplog) if "breaker abierto" in r.getMessage()]
+    cierres = [r for r in _yahoo_warnings(caplog) if "breaker de throttle cerrado" in r.getMessage()]
+    assert len(aperturas) == 1, len(aperturas)
+    assert len(cierres) <= 1, len(cierres)
+    assert yfm.throttle_state()["level"] >= 3  # el incidente escala, no vuelve a 0
 
 
 # ── Gate del probe canario ────────────────────────────────────────────────────
@@ -191,6 +223,7 @@ def test_warning_only_on_transitions(monkeypatch, caplog):
         yfm._note_throttle()  # de-bounce → sin WARNING
         clock.advance(91)
         yfm._note_throttle()  # escalada → WARNING
+        clock.advance(271)  # tarea 370: con el cooldown vencido
         yfm._note_fetch_success()  # recuperación → WARNING
     warns = _yahoo_warnings(caplog)
     assert len(warns) == 3  # apertura + escalada + cierre

@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 298 — Tarea 370 (BREAKER-OSCILA-CON-THROTTLE-PARCIAL) CERRADA 2026-10-19 — dentro del cooldown un éxito suelto ya no cierra el breaker; lo cierra el probe (o cualquier éxito) con el cooldown vencido** (`data/yahoo_finance.py::_note_fetch_success`, `tests/test_throttle_backoff.py`, `tests/test_data_outage_alert.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Probado primero contra el código de antes:** un éxito a 1 s de abrir lo cerraba, y la simulación del 13/10 —dos horas de lote que falla entero con un fetch suelto que vuelve bien cada minuto— daba **120 aperturas**. Los dos tests nuevos dieron **rojo**. Con el arreglo: **una** apertura, ningún cierre en falso, y el nivel escala en vez de volver a 0. Esa prueba es también la mutación: sacar las dos líneas nuevas es volver al código de antes.
+  - **Tres tests viejos fijaban la conducta defectuosa:** daban el éxito sin dejar vencer el cooldown (`test_fetch_success_resets_breaker`, `test_warning_only_on_transitions`, `test_outage_notified_once_at_level2_and_on_recovery`). Ahora avanzan el reloj más allá del cooldown antes del éxito. `test_no_recovery_notify_if_never_reached_level2` habría seguido verde por la razón equivocada (el éxito ignorado en vez de un cierre a nivel 1 sin aviso): también avanza el reloj y verifica el nivel 0.
+  - **El costo:** si Yahoo vuelve de verdad a mitad de un cooldown, el breaker sigue abierto hasta que vence (90 s en nivel 1, hasta 30 min con el tope). Es lo que el breaker declara hacer —el probe decide—, y es lo contrario de pegarle a Yahoo durante un throttle.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -422,6 +425,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-19c** al cerrar la **369**, que **no deja tareas nuevas**: lo que no cubre lo absorbe la 366, y eso está escrito en su enunciado. El orden queda **366 → 370 → 355 → 362 → 356 → 364 → 196 → 245 → 371 → 372 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-19d** al cerrar la **366**, que **no deja tareas nuevas**. El orden queda **370 → 355 → 362 → 356 → 364 → 196 → 245 → 371 → 372 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-19e** al cerrar la **370**, que **no deja tareas nuevas**. Las 355, 362 y 356 esperan acciones de Chapa en AWS y la 364 su día en vivo, así que lo próximo que se puede hacer acá son la 371 y la 372, que son chicas. El orden queda **371 → 372 → 355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1875,7 +1880,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test offscreen que dibuja `plot_price_with_indicators` con los warnings como error y no levanta; con el `hspace` de vuelta, rojo. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 370. BREAKER-OSCILA-CON-THROTTLE-PARCIAL — Un fetch exitoso cierra el breaker de throttle y le resetea el nivel en medio de un incidente: el 13/10 abrió y cerró 44 veces en dos horas  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-2] · severidad **MEDIA**
+### 370. ~~BREAKER-OSCILA-CON-THROTTLE-PARCIAL — Un fetch exitoso cierra el breaker de throttle y le resetea el nivel en medio de un incidente: el 13/10 abrió y cerró 44 veces en dos horas~~ · **CERRADA 2026-10-19 — dentro del cooldown un éxito suelto no cierra; la simulación del 13/10 pasa de 120 aperturas a 1** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-2] · severidad **MEDIA**
 
 - **Qué pasa.** `_note_fetch_success` (`data/yahoo_finance.py:258`) cierra el breaker y pone el nivel en 0 con **cualquier** fetch real que funcione, incluso uno que ya estaba en vuelo cuando el lote falló entero. Con un throttle parcial, el 13/10 de 19:17 a 21:10: **44 aperturas y 44 cierres**, casi siempre a 0–1 s (`19:28:28` abierto, `19:28:29` cerrado), 28 de los cierres con *«Yahoo se recuperó tras 0 min»*, 13 escaladas que cada cierre volvió a 0, y dos scans con **127/127 tickers sin precio** (posiciones sin evaluar). Antes del 13/10, a lo sumo dos cierres de 0 min por día.
 - **Por qué importa.** El breaker existe para dejar de pegarle a Yahoo durante un throttle; oscilando no frena, el aviso de outage (nivel ≥ 2) se prende y se apaga, y el log afirma una recuperación que no pasó.

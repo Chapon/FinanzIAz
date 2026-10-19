@@ -260,10 +260,19 @@ def _note_fetch_success() -> None:
     """Un fetch real funcionó → Yahoo volvió: cierra el breaker y resetea el nivel.
 
     Fast-path silencioso cuando ya estaba cerrado (se llama en cada fetch OK).
+
+    **Dentro del cooldown no cierra** (tarea 370). Con un throttle parcial siempre hay un
+    fetch que ya estaba en vuelo, o un camino sin gate, que vuelve bien: el 2026-10-13 eso
+    cerró el breaker a los 0-1 s de abrirlo, 44 veces en dos horas, cada cierre volvió el
+    nivel a 0 y el log dijo 28 veces *«se recuperó tras 0 min»*. Si Yahoo volvió de verdad,
+    lo confirma el probe de ``_should_attempt_fetch`` (o cualquier éxito) al vencer el
+    cooldown.
     """
     global _throttle_until, _throttle_level, _throttle_since, _outage_notified
     with _throttle_lock:
         if _throttle_level == 0:
+            return
+        if time.monotonic() < _throttle_until:
             return
         elapsed = time.monotonic() - _throttle_since
         was_notified = _outage_notified

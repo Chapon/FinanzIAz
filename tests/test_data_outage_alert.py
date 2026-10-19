@@ -62,18 +62,20 @@ def test_outage_notified_once_at_level2_and_on_recovery(monkeypatch):
     yfm._note_throttle()  # nivel 3 → NO re-avisa (uno por incidente)
     assert len(calls) == 1
 
+    clock.advance(811)  # tarea 370: el éxito cierra recién con el cooldown vencido
     yfm._note_fetch_success()  # recuperación → aviso "recovered"
     assert len(calls) == 2 and calls[1][0] == "recovered"
 
 
 def test_no_recovery_notify_if_never_reached_level2(monkeypatch):
-    _patch_clock(monkeypatch)
+    clock = _patch_clock(monkeypatch)
     calls: list[str] = []
     monkeypatch.setattr(yfm, "_maybe_notify_outage", lambda kind, **kw: calls.append(kind))
 
     yfm._note_throttle()  # nivel 1
+    clock.advance(91)  # tarea 370: con el cooldown vencido, para que el éxito cierre de verdad
     yfm._note_fetch_success()  # recuperó en nivel 1 → nunca se avisó apertura
-    assert calls == []
+    assert calls == [] and yfm.throttle_state()["level"] == 0
 
 
 # ── Flag gating + inyección de notifier + fail-open ───────────────────────────
