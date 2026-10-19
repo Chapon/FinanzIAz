@@ -241,6 +241,13 @@ def setup_logging(level: int = DEFAULT_LEVEL, *, log_file: Path | None = None) -
     for h in handlers:
         root.addHandler(h)
 
+    # Tarea 372: los ``warnings`` de Python (``UserWarning`` de matplotlib, ``FutureWarning``
+    # de pandas, avisos de sklearn) iban sólo a la consola y no quedaban en ningún archivo:
+    # el de ``tight_layout`` de la 371 lo vio Chapa en la consola y el censo del log no podía
+    # verlo. Con esto entran por el logger ``py.warnings``, a WARNING. El filtro ``default``
+    # del módulo ``warnings`` sigue mostrando cada uno una vez por lugar del código.
+    logging.captureWarnings(True)
+
     # Quiet noisy libraries by default.
     # Un filtro COMPARTIDO: así el conteo es por mensaje y no por librería, y dos
     # libs que emitan la misma línea no se cuentan por separado.

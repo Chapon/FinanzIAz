@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 300 — Tarea 372 (WARNINGS-DE-PYTHON-FUERA-DEL-LOG) CERRADA 2026-10-19 — `setup_logging` prende `logging.captureWarnings`: los `warnings` de Python entran al log por `py.warnings`; y la skill `auditoria` pregunta por lo que no pasa por el logger** (`config/logging_config.py`, `tests/test_log_isolation_t78.py`, `.claude/skills/auditoria/SKILL.md` §L). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Test:** con la configuración de log de la app, un `UserWarning` emitido dos veces desde el mismo lugar queda **una** vez en el archivo, bajo `py.warnings`. **Mutación** (sin `captureWarnings`): rojo.
+  - **Dos cosas que el test enseñó antes de pasar:** (1) el formato de `warnings` repite la línea fuente, así que contar el texto del aviso daba 2 por aviso; se cuenta la firma `UserWarning: …`. (2) `captureWarnings` es estado global: si un test lo deja prendido, el siguiente `setup_logging` no lo reinstala (logging cree que ya está) mientras pytest ya restauró `warnings.showwarning`, y el test pasaba solo y fallaba con el archivo entero. Un fixture autouse en ese archivo lo apaga alrededor de cada test. En la app no pasa: `setup_logging` corre una vez.
+  - **Lo que no se midió:** cuántos warnings va a sumar al log una sesión real (la suite muestra 17, casi todos de librerías al importar). El filtro `default` de `warnings` los muestra una vez por lugar, así que no deberían repetirse por redraw o por scan; el próximo censo de logs lo ve.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -426,6 +429,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-19e** al cerrar la **370**, que **no deja tareas nuevas**. Las 355, 362 y 356 esperan acciones de Chapa en AWS y la 364 su día en vivo, así que lo próximo que se puede hacer acá son la 371 y la 372, que son chicas. El orden queda **371 → 372 → 355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-19f** al cerrar la **371**, que **no deja tareas nuevas**. El orden queda **372 → 355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-19g** al cerrar la **372**, que **no deja tareas nuevas**. Con eso quedan cerradas las cuatro de la auditoría de logs. Las 355, 362 y 356 esperan a Chapa en AWS, y la 364 su día en vivo. El orden queda **355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1865,7 +1870,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 372. WARNINGS-DE-PYTHON-FUERA-DEL-LOG — Los `warnings` de Python van a la consola y no a `finanzias.log`: el censo de logs no los ve  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-4] · severidad **BAJA**
+### 372. ~~WARNINGS-DE-PYTHON-FUERA-DEL-LOG — Los `warnings` de Python van a la consola y no a `finanzias.log`: el censo de logs no los ve~~ · **CERRADA 2026-10-19 — `captureWarnings` en `setup_logging`, y la pregunta en el método L de la skill** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-4] · severidad **BAJA**
 
 - **Qué pasa.** Ni `main.py` ni `config/logging_config.py` llaman a `logging.captureWarnings(True)`, así que un `warnings.warn` (el `UserWarning` de `tight_layout` de la 371, un `FutureWarning` de pandas, un aviso de sklearn) sale por stderr y no queda en ningún archivo. Chapa vio el de la 371 en la consola; no está en el log.
 - **Qué hay que hacer.** (1) `logging.captureWarnings(True)` donde se configura el log, sin que un warning que se repite en cada redraw llene el archivo (el módulo `warnings` ya deduplica por lugar con el filtro `default`; verificar que siga así al capturarlos). (2) En la skill `auditoria`, método de **L**, agregar la pregunta por lo que nunca pasa por el logger (stderr, `warnings`): fue **(c-metodo)** en esta corrida.

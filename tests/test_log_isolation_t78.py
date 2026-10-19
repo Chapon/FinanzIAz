@@ -19,7 +19,19 @@ import logging
 import os
 from pathlib import Path
 
+import pytest
+
 import config.logging_config as lc
+
+
+@pytest.fixture(autouse=True)
+def _sin_captura_de_warnings_que_se_filtre():
+    """``setup_logging`` prende ``logging.captureWarnings`` (tarea 372) y es estado global:
+    si un test lo deja prendido, el siguiente que llama a ``setup_logging`` no lo vuelve a
+    instalar (logging cree que ya está) mientras pytest ya restauró ``warnings.showwarning``."""
+    logging.captureWarnings(False)
+    yield
+    logging.captureWarnings(False)
 
 
 def _file_handlers(logger: logging.Logger) -> list[logging.FileHandler]:
@@ -73,6 +85,33 @@ def test_setup_logging_respeta_la_ruta_de_la_variable(tmp_path, monkeypatch):
         for h in _file_handlers(raiz):
             h.flush()
         assert "hola" in destino.read_text(encoding="utf-8")
+    finally:
+        for h in _file_handlers(raiz):
+            h.close()
+        raiz.handlers[:] = previos
+        lc._INITIALIZED = True
+
+
+def test_los_warnings_de_python_quedan_en_el_archivo_una_vez_por_lugar(tmp_path, monkeypatch):
+    """Tarea 372: un ``UserWarning`` (el de ``tight_layout`` de la 371) iba sólo a la consola."""
+    import warnings
+
+    destino = tmp_path / "corrida.log"
+    monkeypatch.setattr(lc, "_INITIALIZED", False)
+    raiz = logging.getLogger()
+    previos = list(raiz.handlers)
+    try:
+        lc.setup_logging(log_file=destino)
+        with warnings.catch_warnings():
+            warnings.simplefilter("default")  # el filtro de la app: una vez por lugar
+            for _ in range(2):
+                warnings.warn("aviso de la 372", UserWarning, stacklevel=1)
+        for h in _file_handlers(raiz):
+            h.flush()
+        texto = destino.read_text(encoding="utf-8")
+        # La firma, no el texto suelto: el formato de ``warnings`` repite la línea fuente.
+        assert texto.count("UserWarning: aviso de la 372") == 1, texto
+        assert "py.warnings" in texto
     finally:
         for h in _file_handlers(raiz):
             h.close()

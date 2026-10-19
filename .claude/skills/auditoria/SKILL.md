@@ -530,7 +530,11 @@ y verificado contra el código), o *desconocida*. **(3)** Toda *desconocida* se 
 causa o se publica como tarea de medición. **(4)** Las firmas que **dejaron** de aparecer después
 del cierre de su tarea confirman el arreglo; las que siguen apareciendo después del cierre son un
 hallazgo (el arreglo no arregló). **(5)** Lo que no aparece y debería: un `except` que loguea a
-`debug` en un camino de fondo es invisible en producción (el log corre en INFO).
+`debug` en un camino de fondo es invisible en producción (el log corre en INFO). **Y lo que nunca
+pasa por el logger** (tanda 2026-10-19, [L-4], **c-metodo**): los `warnings` de Python iban sólo a la
+consola, y el `UserWarning` de `tight_layout` que tapaba un layout sin aplicar (la 371) lo vio Chapa,
+no el censo. Desde la 372 entran por el logger `py.warnings`; la pregunta sigue: ¿hay algo que la app
+escriba en stderr o en otro archivo y no en `finanzias.log`?
 
 **Desde la 288 cada línea dice su origen:** las de la app (`main.py`) no llevan marca y las de
 cualquier otro proceso terminan en `  [proceso: <script>]` (los jobs que lanza la app, los runners,
