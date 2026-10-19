@@ -27,9 +27,9 @@ tickers, y Lambda corta a los 15. Por eso cada invocación hace un lote (``ticke
 cada ticker tiene un techo de wall-clock, y antes de cada ticker se mira cuánto le queda a
 la invocación: lo que no alcanzó queda declarado en ``sin_correr``, no perdido en silencio.
 
-**Fuentes:** ``estimates``, ``sec`` y ``finnhub``. Las noticias de yfinance **no**, porque
-``Ticker.news`` contesta 404 desde el 2026-10-01 (tarea 354). La 357 las repuso en la app
-con ``yf.Search``; sumarlas acá, con las WCU medidas, va con la 362.
+**Fuentes:** ``estimates``, ``yfinance_news``, ``sec`` y ``finnhub``. ``yfinance_news`` es
+``yf.Search`` filtrado por ``relatedTickers`` (tarea 357; ``Ticker.news`` contesta 404 desde
+el 2026-10-01, tarea 354), y entró al recolector con la 362.
 
 Local, sin AWS: ``correr_lote`` recibe la tabla y el reloj inyectados, y los tests la
 corren contra una tabla simulada. ``boto3`` sólo se importa en ``lambda_handler``: viene
@@ -50,8 +50,9 @@ TABLA_DEFAULT = "finanzias_harvest"
 #: Cuántas invocaciones se reparten el universo. El template tiene un horario por lote y un
 #: test verifica que coincidan.
 LOTES = 5
-#: Las fuentes del recolector. ``yfinance_news`` queda afuera hasta la 362 (ver arriba).
-FUENTES_DEFAULT = ("estimates", "sec", "finnhub")
+#: Las fuentes del recolector. ``yfinance_news`` es ``yf.Search`` desde la 357 y entra con
+#: la 362; si contesta desde AWS lo dice el ``fuentes`` de cada ítem ``corrida#``.
+FUENTES_DEFAULT = ("estimates", "yfinance_news", "sec", "finnhub")
 #: Techo por ticker. Una corrida sana tarda ~2,7 s por ticker (tarea 204, con las cuatro
 #: fuentes); 60 s es más de 20 veces eso y deja que un ticker colgado no se coma el lote.
 TECHO_POR_TICKER_S = 60.0
@@ -60,10 +61,14 @@ MARGEN_FINAL_S = 90.0
 RETENCION_DIAS = 90
 #: Noticias publicadas hace más que esto no se escriben: el recolector corre todos los días
 #: hábiles y ya las escribió. Finnhub trae 7 días y la app ~11.000 ítems por corrida, casi
-#: todos repetidos; sin la ventana la nube los re-escribe cada día en otra partición. Con
-#: tres días, un corte de hasta dos días hábiles no pierde nada; la app, al abrirse, sigue
+#: todos repetidos; sin la ventana la nube los re-escribe cada día en otra partición. La
+#: nube no corre sábado ni domingo: con 3 días, del viernes al lunes eran 72 h justas, y se
+#: perdía lo que Finnhub indexa el viernes después del lote (tarea 362). Con 5, el lunes se
+#: superpone dos días con el viernes, como cualquier día hábil con el anterior, y si falla
+#: el lunes el martes todavía ve el viernes. Medido el lunes 2026-10-19 sobre un lote de 26
+#: tickers: 361 noticias en ventana con 3 días y 933 con 5. La app, al abrirse, sigue
 #: trayendo sus 7 días.
-VENTANA_NOTICIAS_DIAS = 3
+VENTANA_NOTICIAS_DIAS = 5
 UNIVERSO_CLAVE = {"pk": "universo", "sk": "vivo"}
 
 #: Fuente del recolector → función de ``data.news_sources`` que la implementa. Se resuelve

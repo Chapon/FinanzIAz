@@ -125,8 +125,10 @@ def _fuentes_falsas(monkeypatch, *, noticias=None, estimates=True, colgar=(), re
         items = noticias.get(t, [])
         return items, SourceOutcome("finnhub", "ok", len(items))
 
-    def _yfn(t):  # pragma: no cover — si se llama, el test de fuentes lo caza
-        raise AssertionError("yfinance_news no es fuente del recolector hasta la 362")
+    def _yfn(t):
+        if red_caida:
+            return [], SourceOutcome("yfinance_news", "failed", 0, "OSError: red")
+        return [], SourceOutcome("yfinance_news", "ok", 0)
 
     monkeypatch.setattr(ns, "_yf_estimates", _est)
     monkeypatch.setattr(ns, "_sec_8k", _sec)
@@ -250,11 +252,44 @@ def test_las_noticias_van_por_content_hash_y_dentro_de_la_ventana(monkeypatch):
 
 
 def test_la_ventana_es_la_declarada():
-    """Bajarla pierde noticias si la nube se saltea un día; subirla re-escribe la semana."""
-    assert rn.VENTANA_NOTICIAS_DIAS == 3
-    borde = _noticia("A", "x", T0.replace(tzinfo=None) - timedelta(days=3))
-    afuera = _noticia("A", "y", T0.replace(tzinfo=None) - timedelta(days=3, seconds=1))
+    """Bajarla pierde noticias del viernes (tarea 362); subirla re-escribe más días."""
+    assert rn.VENTANA_NOTICIAS_DIAS == 5
+    borde = _noticia("A", "x", T0.replace(tzinfo=None) - timedelta(days=5))
+    afuera = _noticia("A", "y", T0.replace(tzinfo=None) - timedelta(days=5, seconds=1))
     assert rn.noticia_en_ventana(borde, T0) and not rn.noticia_en_ventana(afuera, T0)
+
+
+# Viernes 2026-10-16 y lunes 2026-10-19, a la hora del primer lote (17:30 de Nueva York).
+_VIERNES = datetime(2026, 10, 16, 21, 30, tzinfo=timezone.utc)
+_LUNES = datetime(2026, 10, 19, 21, 30, tzinfo=timezone.utc)
+_MARTES = datetime(2026, 10, 20, 21, 30, tzinfo=timezone.utc)
+
+
+def _viernes_tarde():
+    """Publicada el viernes a las 20:00 UTC, pero indexada por Finnhub después del lote."""
+    return _noticia("AAPL", "indexada tarde", datetime(2026, 10, 16, 20, 0))
+
+
+def _corrida(monkeypatch, tabla, cuando, noticias, **kw):
+    _fuentes_falsas(monkeypatch, noticias={"AAPL": noticias})
+    return rn.correr_lote(0, 1, tabla=tabla, reloj=Reloj(cuando), **kw)
+
+
+@pytest.mark.parametrize("dias, entra", [(3, False), (rn.VENTANA_NOTICIAS_DIAS, True)])
+def test_una_noticia_del_viernes_que_el_viernes_no_estaba_entra_el_lunes(monkeypatch, dias, entra):
+    """Tarea 362: con 3 días, del viernes al lunes son 72 h justas y no hay superposición."""
+    tabla = TablaFalsa(["AAPL"])
+    _corrida(monkeypatch, tabla, _VIERNES, [], ventana_dias=dias)
+    _corrida(monkeypatch, tabla, _LUNES, [_viernes_tarde()], ventana_dias=dias)
+    assert bool(tabla.de("noticia#2026-10-19")) is entra
+
+
+@pytest.mark.parametrize("dias, entra", [(3, False), (rn.VENTANA_NOTICIAS_DIAS, True)])
+def test_si_falla_el_lunes_el_martes_todavia_ve_el_viernes(monkeypatch, dias, entra):
+    tabla = TablaFalsa(["AAPL"])
+    _corrida(monkeypatch, tabla, _VIERNES, [], ventana_dias=dias)
+    _corrida(monkeypatch, tabla, _MARTES, [_viernes_tarde()], ventana_dias=dias)
+    assert bool(tabla.de("noticia#2026-10-20")) is entra
 
 
 # ── El techo y la red caída (kill-criteria c) ────────────────────────────────
@@ -330,8 +365,8 @@ def test_una_escritura_que_falla_no_hunde_al_resto(monkeypatch):
 
 
 def test_las_fuentes_son_las_que_andan_desde_AWS():
-    """``yfinance_news`` contesta 404 desde el 2026-10-01 (tarea 354); la 357 la repuso en la app y al recolector entra con la 362."""
-    assert rn.FUENTES_DEFAULT == ("estimates", "sec", "finnhub")
+    """``yfinance_news`` es ``yf.Search`` desde la 357 y entra al recolector con la 362."""
+    assert rn.FUENTES_DEFAULT == ("estimates", "yfinance_news", "sec", "finnhub")
     for f in rn.FUENTES_DEFAULT:
         assert callable(getattr(ns, rn._COLECTORES[f]))
 
@@ -401,6 +436,8 @@ def test_el_zip_importa_SIN_la_db(tmp_path):
         "import sys, recolector_nube, data.news_sources as ns, data.yahoo_finance as yh;"
         "assert 'database' not in sys.modules and 'sqlalchemy' not in sys.modules, sorted(sys.modules);"
         "assert yh.__file__.startswith(sys.argv[1]), yh.__file__;"
+        # yfinance_news (362) toma ``yf`` del shim: ``from data.yahoo_finance import yf``.
+        "from data.yahoo_finance import yf; assert callable(yf.Search);"
         "assert recolector_nube._version() == 'test'; print('ok')"
     )
     # El PYTHONPATH se hereda: trae el cortafuegos de red del hijo (tarea 211). El zip se
