@@ -98,8 +98,10 @@ class ChartWidget(QWidget):
         self._date_nums = None
         self._axes = []
 
-        # Layout: price chart (3 parts) + RSI (1 part) + MACD (1 part)
-        gs = self.figure.add_gridspec(3, 1, height_ratios=[3, 1, 1], hspace=0.08)
+        # Layout: price chart (3 parts) + RSI (1 part) + MACD (1 part). Sin ``hspace``:
+        # la figura usa ``tight_layout``, que no puede respetar un espaciado fijado a mano y
+        # lo avisaba en la consola en cada dibujo (tarea 371).
+        gs = self.figure.add_gridspec(3, 1, height_ratios=[3, 1, 1])
         ax_price = self.figure.add_subplot(gs[0])
         ax_rsi = self.figure.add_subplot(gs[1], sharex=ax_price)
         ax_macd = self.figure.add_subplot(gs[2], sharex=ax_price)

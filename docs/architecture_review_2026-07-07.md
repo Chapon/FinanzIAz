@@ -44,7 +44,7 @@ La arquitectura es **sana y por encima del estándar** para un proyecto personal
 
 ## 5. UI: matplotlib embebido → pyqtgraph donde duela  ·  impacto BAJO-MEDIO · opcional
 
-7 archivos de UI embeben matplotlib (canvas Agg dentro de Qt): funciona, pero es la fuente del warning `tight_layout` (chart_widget.py:190) y de redraws lentos con datos largos. **pyqtgraph** es Qt nativo (GPU, pan/zoom fluido, crosshair) y es el estándar de apps de trading en PyQt. Migración por widget (empezar por el chart de Analysis, el más interactivo); matplotlib puede quedarse para los estáticos (metrics). No urgente — es UX, no decisiones.
+7 archivos de UI embeben matplotlib (canvas Agg dentro de Qt): funciona, pero es la fuente del warning `tight_layout` (chart_widget.py:190) y de redraws lentos con datos largos. **Corrección 2026-10-19 (tarea 371):** el warning no venía de embeber matplotlib sino de `hspace=0.08` en el gridspec de una figura con `tight_layout=True`, que además dejaba el layout sin aplicar; se arregló sacando el `hspace`. No es motivo para migrar. **pyqtgraph** es Qt nativo (GPU, pan/zoom fluido, crosshair) y es el estándar de apps de trading en PyQt. Migración por widget (empezar por el chart de Analysis, el más interactivo); matplotlib puede quedarse para los estáticos (metrics). No urgente — es UX, no decisiones.
 
 ## 6. Calidad de código y testing  ·  impacto BAJO · deuda menor
 

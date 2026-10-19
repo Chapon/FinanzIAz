@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+- **WIP 299 — Tarea 371 (TIGHT-LAYOUT-HSPACE) CERRADA 2026-10-19 — sin el `hspace` el aviso desaparece, y resultó que `tight_layout` tampoco se estaba aplicando** (`ui/chart_widget.py`, `tests/test_tight_layout_t371.py`; corrección en el §5 de `docs/architecture_review_2026-07-07.md`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Lo que cambia a la vista:** dibujado offscreen antes y después con los mismos datos. Antes, el gráfico de precio + RSI + MACD dejaba márgenes vacíos grandes a los cuatro lados, porque matplotlib avisaba y **no aplicaba** el layout. Ahora ocupa todo el ancho, y los tres paneles quedan separados por el espaciado que calcula `tight_layout`. O sea que el aviso tapaba un defecto visible, no sólo ruido.
+  - **Tests:** el gráfico real se dibuja con el aviso como error, y un segundo test verifica que el instrumento **ve** el aviso cuando está (`hspace` + `tight_layout` → `UserWarning`), para que el primero no sea verde por ceguera. **Mutación:** con el `hspace` de vuelta, rojo.
+  - La idea de pyqtgraph en *Backlog / ideas* ya no lo cita como motivo (se tachó en la 368).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -424,6 +427,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-19d** al cerrar la **366**, que **no deja tareas nuevas**. El orden queda **370 → 355 → 362 → 356 → 364 → 196 → 245 → 371 → 372 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-19e** al cerrar la **370**, que **no deja tareas nuevas**. Las 355, 362 y 356 esperan acciones de Chapa en AWS y la 364 su día en vivo, así que lo próximo que se puede hacer acá son la 371 y la 372, que son chicas. El orden queda **371 → 372 → 355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-19f** al cerrar la **371**, que **no deja tareas nuevas**. El orden queda **372 → 355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1870,7 +1875,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test que emite un `UserWarning` con la configuración de log de la app y lo encuentra en el archivo, una sola vez aunque se emita dos veces desde el mismo lugar; mutación: sin `captureWarnings`, rojo. La frase nueva en la skill. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 371. TIGHT-LAYOUT-HSPACE — El `UserWarning` de `tight_layout` lo dispara el `hspace` del gráfico de precio de Análisis, no «matplotlib embebido»  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-3] (Chapa lo vio en la consola, 2026-10-19) · severidad **BAJA** · **display-only**
+### 371. ~~TIGHT-LAYOUT-HSPACE — El `UserWarning` de `tight_layout` lo dispara el `hspace` del gráfico de precio de Análisis, no «matplotlib embebido»~~ · **CERRADA 2026-10-19 — sin el `hspace`; el layout ahora se aplica** · **movida a *En curso* con el detalle**  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-3] (Chapa lo vio en la consola, 2026-10-19) · severidad **BAJA** · **display-only**
 
 - **Qué pasa.** `ui/chart_widget.py:68` crea la figura con `tight_layout=True` y `ui/chart_widget.py:102` arma el gridspec con `hspace=0.08`; con matplotlib 3.11.0 esa combinación avisa *«This figure includes Axes that are not compatible with tight_layout»*. Medido offscreen sobre los once widgets de `ui/`: sólo `ChartWidget.plot_price_with_indicators` lo dispara; el mínimo sin `hspace` no avisa. **Y el claim que lo explicaba dirige mal:** `docs/architecture_review_2026-07-07.md` §5 lo atribuye a *«matplotlib embebido»*, y la idea de *Backlog / ideas* (*«pyqtgraph para el chart de Analysis … mata el warning `tight_layout`»*) propone una migración para algo de una línea.
 - **Qué hay que hacer.** Sacar el `hspace` o pasar la figura a `layout="constrained"` y mirar que el gráfico (precio, RSI, MACD) se vea igual o mejor; corregir la frase de la idea y anotar la causa en el §5 de la revisión.
