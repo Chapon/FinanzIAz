@@ -12,7 +12,8 @@ API pública
 -----------
 - ``record_failure(ticker, error, operation)``  → graba o actualiza (permanente)
 - ``record_transient(ticker, error, operation)``→ fallo transitorio (se reintenta)
-- ``record_success(ticker)``                    → limpia el registro
+- ``record_success(ticker, operation)``         → limpia el registro (``serie_congelada``
+  sólo con ``historical``, tarea 369)
 - ``get_all()``                                 → lista para la UI
 - ``get_failing_set()``                         → set de tickers a omitir
 - ``mark_for_retry(ticker)``                    → cambia status a "retry"
@@ -158,10 +159,21 @@ def record_transient(ticker: str, error: str, operation: str = "fetch", *, overr
         log.exception("No se pudo registrar fallo transitorio para %s", ticker)
 
 
-def record_success(ticker: str) -> None:
+#: Operación de un ticker cuya serie diaria dejó de avanzar (tarea 369): Yahoo lo dejó de
+#: cotizar, pero ``fast_info`` sigue devolviendo el último precio. Ese "precio" no prueba que
+#: el ticker volvió, así que sólo un histórico que avanza borra la fila.
+OP_SERIE_CONGELADA = "serie_congelada"
+
+
+def record_success(ticker: str, operation: str | None = None) -> None:
     """
     Limpia el registro si la consulta volvió a funcionar. No falla si no
     existía registro previo.
+
+    Una fila ``serie_congelada`` (tarea 369) sólo la borra un éxito de ``historical``: el
+    precio de ``fast_info`` de un ticker deslistado es el último que tuvo, y contarlo como
+    éxito lo devolvía al universo con un precio que no se mueve. ``operation=None`` borra
+    cualquier fila, como antes.
     """
     if not ticker:
         return
@@ -174,8 +186,14 @@ def record_success(ticker: str) -> None:
             # tickers en paralelo eso eran ~52 write-locks innecesarios que
             # alimentaban "database is locked" + agotamiento del pool. El SELECT
             # es concurrente bajo WAL y no toma el lock de escritura.
-            exists = session.query(FailedTicker.id).filter(FailedTicker.ticker == symbol).first()
-            if exists is None:
+            fila = (
+                session.query(FailedTicker.id, FailedTicker.last_operation)
+                .filter(FailedTicker.ticker == symbol)
+                .first()
+            )
+            if fila is None:
+                return
+            if fila.last_operation == OP_SERIE_CONGELADA and operation not in (None, "historical"):
                 return
             session.query(FailedTicker).filter(FailedTicker.ticker == symbol).delete()
     except Exception:

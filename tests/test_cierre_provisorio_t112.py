@@ -35,6 +35,13 @@ def _frame(fechas: list[str]) -> pd.DataFrame:
     )
 
 
+@pytest.fixture(autouse=True)
+def _sin_serie_congelada(monkeypatch):
+    """Los frames de este archivo tienen fechas fijas (agosto de 2026); la serie congelada
+    (tarea 369) tiene sus propios tests."""
+    monkeypatch.setattr(yf, "_serie_congelada", lambda *_a, **_k: False)
+
+
 @pytest.fixture
 def hoy_et():
     tz = yf.market_timezone()

@@ -62,7 +62,7 @@ El scan no ajusta spin-offs (la 298: el factor de Yahoo no alcanza); se ajustan 
 | `earnings_cache` | Fechas de earnings. |
 | `analyst_data_cache` | Recos + price targets cacheados. |
 | `company_info_cache` | Nombre, sector e industria por ticker (UNIQUE `ticker`), para el panel de concentración del book (V2b, desde el 2026-07-08). Una fila con sector NULL/"N/A" es un resultado negativo cacheado, para no re-scrapear. |
-| `failed_tickers` | Tickers que fallan en Yahoo (`status`: failing/retry) para saltarlos. |
+| `failed_tickers` | Tickers que fallan en Yahoo (`status`: failing/retry/ignored/transient) para saltarlos. `last_operation = serie_congelada` (tarea 369): la serie diaria dejó de avanzar (deslistado); sólo la borra un histórico que vuelve a avanzar, no un precio. |
 
 ## Catalyst Engine — append-only point-in-time (`database/models.py`)
 

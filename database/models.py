@@ -645,7 +645,7 @@ class FailedTicker(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_operation: Mapped[str | None] = mapped_column(
         String(50), nullable=True
-    )  # "price", "historical", "info", "validate"
+    )  # "price", "historical", "analyst", "validate", "serie_congelada" (tarea 369)
     fail_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     first_failed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     last_failed_at: Mapped[datetime] = mapped_column(

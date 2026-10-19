@@ -32,6 +32,8 @@ def provisional(monkeypatch):
     monkeypatch.setattr(yf, "last_bar_is_provisional", lambda *_a, **_k: True)
     monkeypatch.setattr(yf, "_write_historical_cache", lambda *_a, **_k: None)
     monkeypatch.setattr(yf, "record_success", lambda *_a, **_k: None)
+    # El frame tiene fechas fijas; la serie congelada (369) tiene sus propios tests.
+    monkeypatch.setattr(yf, "_serie_congelada", lambda *_a, **_k: False)
 
 
 def _avisos(caplog, nivel=logging.WARNING) -> list[str]:

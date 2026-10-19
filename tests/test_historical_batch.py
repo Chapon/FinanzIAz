@@ -31,6 +31,9 @@ def _isolate(monkeypatch):
     Pasó: rompió AAPL/MSFT 1y en la pestaña Análisis (2026-06-25).
     """
     monkeypatch.setattr(yf_mod, "_acquire_rate_token", lambda *_a, **_k: None)
+    # Los frames sintéticos arrancan el 2026-01-01; la serie congelada (369) tiene sus
+    # propios tests.
+    monkeypatch.setattr(yf_mod, "_serie_congelada", lambda *_a, **_k: False)
     monkeypatch.setattr(yf_mod.time, "sleep", lambda *_a, **_k: None)
     monkeypatch.setattr(yf_mod, "_write_historical_cache", lambda *_a, **_k: None)
     recorded = {"fail": [], "success": [], "transient": []}

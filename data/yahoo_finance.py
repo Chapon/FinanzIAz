@@ -70,6 +70,7 @@ from config.constants import (
 )
 from config.logging_config import get_logger
 from data.failed_tickers import (
+    OP_SERIE_CONGELADA,
     get_failing_set,
     record_failure,
     record_success,
@@ -1556,8 +1557,9 @@ def _fetch_ticker_info(ticker: str, *, timeout: float = HARD_TIMEOUT_SECONDS) ->
         # vez de envenenar el failing set con un símbolo real (bug B3).
         _record_miss(ticker, err, operation="price")
     else:
-        # El ticker volvió a funcionar — limpiar registro previo si existía.
-        record_success(ticker)
+        # El ticker volvió a funcionar — limpiar registro previo si existía. Con
+        # ``operation="price"``: el último precio de un ticker deslistado no lo revive (369).
+        record_success(ticker, operation="price")
         _note_fetch_success()  # NET1: un fetch OK cierra el breaker (recovery)
     return result
 
@@ -1879,6 +1881,9 @@ def _finalize_historical(
     if report.has_issues():
         log.info("Historical data for %s: %s", ticker_upper, report.summary())
 
+    if _serie_congelada(ticker_upper, df, period, interval):
+        return None
+
     if last_bar_is_provisional(df) and ticker_upper not in _PROVISIONAL_AVISADO:
         # Una vez por ticker y por proceso: esto corre por cada uno del universo. Se ANOTA
         # y el resumen lo emite el llamador público al terminar (tarea 243).
@@ -1889,8 +1894,45 @@ def _finalize_historical(
 
     _write_historical_cache(ticker_upper, period, interval, df)
     # Descarga exitosa — limpiar registro de fallos previos si existía.
-    record_success(ticker_upper)
+    record_success(ticker_upper, operation="historical")
     return df
+
+
+# Tarea 369 — un ticker que Yahoo dejó de cotizar (WBD, vendido el 2026-10-05) no da error:
+# el histórico trae sólo las barras viejas y ``fast_info`` sigue devolviendo el último precio.
+# Antes eso se cacheaba (la barra suelta del 05/10 pisó el ``2y`` de dos años) y el precio
+# congelado contaba como éxito. Medido el 2026-10-19 sobre los 127 del universo vivo: 126 con
+# la serie al día (0 ruedas de atraso) y WBD con 10. La vara es la de los frames atrasados de
+# ``parquet_cache`` (más de 5 ruedas hábiles): un feriado suma una.
+_CONGELADA_AVISADO: set[str] = set()
+
+
+def _serie_congelada(
+    ticker_upper: str, df: pd.DataFrame, period: str, interval: str, ahora: datetime | None = None
+) -> bool:
+    """¿La serie diaria recién bajada terminó hace más de ``FRAME_MAX_ATRASO_RUEDAS`` ruedas?
+
+    Si sí, no se cachea (no pisa un frame bueno), el ticker va a ``failed_tickers`` como
+    ``serie_congelada`` —que sólo borra un histórico que vuelve a avanzar— y se avisa una vez
+    por ticker y por proceso.
+    """
+    if interval != "1d":
+        return False
+    from data.parquet_cache import FRAME_MAX_ATRASO_RUEDAS, ruedas_de_atraso
+
+    atraso = ruedas_de_atraso(df, ahora or datetime.now(timezone.utc))
+    if atraso <= FRAME_MAX_ATRASO_RUEDAS:
+        return False
+    fin = pd.Timestamp(df.index.max()).date()
+    motivo = (
+        f"La serie diaria ({period}) termina el {fin}, hace {atraso} ruedas: Yahoo dejó de "
+        "cotizarlo (deslistado, fusión o cambio de símbolo)"
+    )
+    record_failure(ticker_upper, motivo, operation=OP_SERIE_CONGELADA)
+    if ticker_upper not in _CONGELADA_AVISADO:
+        _CONGELADA_AVISADO.add(ticker_upper)
+        log.warning("%s: %s. No se cachea y queda en Tickers fallidos (tarea 369).", ticker_upper, motivo)
+    return True
 
 
 def get_historical_data(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame | None:
@@ -2581,7 +2623,7 @@ def validate_ticker(ticker: str) -> bool:
 
     ok = bool(_run_with_timeout(_do_check, timeout=HARD_TIMEOUT_SECONDS, default=False))
     if ok:
-        record_success(ticker)
+        record_success(ticker, operation="validate")
     else:
         record_failure(ticker, "Símbolo no encontrado en Yahoo Finance", operation="validate")
     return ok

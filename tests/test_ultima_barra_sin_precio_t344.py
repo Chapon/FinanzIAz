@@ -87,6 +87,8 @@ def test_el_camino_real_de_yahoo_no_cachea_la_barra_rellenada(monkeypatch):
     monkeypatch.setattr(yf, "last_bar_is_provisional", lambda *_a, **_k: False)
     monkeypatch.setattr(yf, "record_success", lambda *_a, **_k: None)
     monkeypatch.setattr(yf, "_write_historical_cache", lambda t, p, i, df: escritos.setdefault(t, df))
+    # El frame tiene fechas fijas; la serie congelada (369) tiene sus propios tests.
+    monkeypatch.setattr(yf, "_serie_congelada", lambda *_a, **_k: False)
     crudo = _sin_precios_al_final(_df())
     out = yf._finalize_historical("LRCX", crudo, "2y", "1d")
     assert out.index[-1] == crudo.index[-2]
