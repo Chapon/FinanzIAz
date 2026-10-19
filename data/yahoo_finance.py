@@ -2079,8 +2079,9 @@ def get_historical_data_batch(
     seen: set[str] = set()
 
     # 0. Saltear tickers conocidos como permanentemente malos (cierra B2: no
-    #    re-consultar un símbolo muerto en cada warm-up del scan).
-    skip_set = get_failing_set()
+    #    re-consultar un símbolo muerto en cada warm-up del scan). ``para="historico"``: es el
+    #    único camino que reintenta una serie congelada (tareas 366 y 369).
+    skip_set = get_failing_set(para="historico")
 
     # 1. Cache read por ticker (los hits no entran al lote).
     for raw in tickers:

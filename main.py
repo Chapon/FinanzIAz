@@ -59,6 +59,14 @@ def main():
     except Exception:
         log.exception("Daily backup rotation failed")
 
+    # Tarea 366: lo que no falla hace un mes sale de Tickers fallidos (fail-open).
+    try:
+        from data.failed_tickers import podar
+
+        podar()
+    except Exception:
+        log.exception("Poda de tickers fallidos falló; el arranque sigue")
+
     # Import Qt after path is set up
     from PyQt6.QtWidgets import QApplication
 

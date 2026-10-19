@@ -15,7 +15,9 @@ API pública
 - ``record_success(ticker, operation)``         → limpia el registro (``serie_congelada``
   sólo con ``historical``, tarea 369)
 - ``get_all()``                                 → lista para la UI
-- ``get_failing_set()``                         → set de tickers a omitir
+- ``get_failing_set(para=)``                    → set de tickers a omitir (un ``failing`` de
+  más de ``REINTENTO_DIAS`` se reintenta, tarea 366)
+- ``podar()``                                   → borra lo que no falla hace ``PODA_DIAS``
 - ``mark_for_retry(ticker)``                    → cambia status a "retry"
 - ``mark_ignored(ticker)``                      → status "ignored"
 - ``delete(ticker)``                            → borra del registro
@@ -35,10 +37,10 @@ loguean y devuelven valores neutros para no romper el flujo principal.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config.logging_config import get_logger
-from database.models import FailedTicker, session_scope
+from database.models import FailedTicker, session_scope, utcnow_naive
 
 log = get_logger(__name__)
 
@@ -211,22 +213,83 @@ def get_all() -> list[FailedTickerRow]:
         return []
 
 
-def get_failing_set() -> set[str]:
+#: Tarea 366 — un ``failing`` sale de los fetches, así que nunca se vuelve a pedir y nunca
+#: se entera de que revivió: EMBJ (de la cartera real) quedó afuera del 10/10 al 19/10 por un
+#: solo "Sin precio" a las 02:25. Pasados estos días desde su última falla, deja de saltearse
+#: y el fetch siguiente lo prueba: si anda, ``record_success`` borra la fila; si falla,
+#: ``record_failure`` le renueva la fecha y la espera vuelve a contar. Con las 12 filas del
+#: 2026-10-19, una prueba por semana de cada una no se nota ni en el log ni en la cuota.
+REINTENTO_DIAS = 7
+#: Las filas sin ninguna falla en este tiempo se borran al arrancar (``podar``): son typos de
+#: la pestaña Análisis o símbolos que nadie volvió a pedir. Si alguien lo pide, se registra de
+#: nuevo. ``ignored`` no se toca: lo decidió Chapa.
+PODA_DIAS = 30
+
+
+def _ahora() -> datetime:
+    return utcnow_naive()  # la misma marca que escribe ``last_failed_at``
+
+
+def get_failing_set(*, para: str = "precio", ahora: datetime | None = None) -> set[str]:
     """
-    Devuelve el set de tickers que deben omitirse (status=failing o ignored).
-    Los marcados como "retry" se incluyen en el flujo normal para volver a probar.
+    Devuelve el set de tickers que deben omitirse.
+
+    - ``ignored``: siempre (decisión de Chapa).
+    - ``failing``: mientras su última falla tenga menos de ``REINTENTO_DIAS`` (tarea 366);
+      después se reintenta.
+    - ``serie_congelada`` (tarea 369): para ``para="precio"`` se saltea **siempre**, porque el
+      precio de un ticker deslistado es el último que tuvo y no prueba nada; sólo el
+      histórico (``para="historico"``) lo reintenta, y es el único que puede liberarlo.
+
+    Los marcados como "retry" y los ``transient`` se incluyen en el flujo normal.
     """
+    limite = (ahora or _ahora()) - timedelta(days=REINTENTO_DIAS)
     try:
         with session_scope() as session:
             rows = (
-                session.query(FailedTicker.ticker)
+                session.query(
+                    FailedTicker.ticker,
+                    FailedTicker.status,
+                    FailedTicker.last_operation,
+                    FailedTicker.last_failed_at,
+                )
                 .filter(FailedTicker.status.in_([STATUS_FAILING, STATUS_IGNORED]))
                 .all()
             )
-            return {r[0] for r in rows}
     except Exception:
         log.exception("No se pudo leer el set de tickers a omitir")
         return set()
+    omitir = set()
+    for ticker, status, operacion, ultima in rows:
+        if (
+            status == STATUS_IGNORED  # decisión de Chapa
+            or (operacion == OP_SERIE_CONGELADA and para != "historico")  # 369: el precio no la libera
+            or ultima is None
+            or ultima >= limite  # 366: todavía en la espera
+        ):
+            omitir.add(ticker)
+    return omitir
+
+
+def podar(dias: int = PODA_DIAS, ahora: datetime | None = None) -> int:
+    """Borra las filas no ``ignored`` sin fallas en ``dias``. Devuelve cuántas (tarea 366)."""
+    limite = (ahora or _ahora()) - timedelta(days=dias)
+    try:
+        with session_scope() as session:
+            viejas = session.query(FailedTicker).filter(
+                FailedTicker.status != STATUS_IGNORED, FailedTicker.last_failed_at < limite
+            )
+            tickers = sorted(r.ticker for r in viejas.all())
+            if tickers:
+                viejas.delete(synchronize_session=False)
+    except Exception:
+        log.exception("No se pudo podar la tabla de tickers fallidos")
+        return 0
+    if tickers:
+        log.info(
+            "Tickers fallidos: %d sin fallas en %d días, borrados: %s", len(tickers), dias, ", ".join(tickers)
+        )
+    return len(tickers)
 
 
 def mark_for_retry(ticker: str) -> None:
