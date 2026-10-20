@@ -429,6 +429,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 
 > **Repriorizado 2026-10-19g** al cerrar la **372**, que **no deja tareas nuevas**. Con eso quedan cerradas las cuatro de la auditoría de logs. Las 355, 362 y 356 esperan a Chapa en AWS, y la 364 su día en vivo. El orden queda **355 → 362 → 356 → 364 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
+> **Repriorizado 2026-10-20** al abrir la **373** (pedido de Chapa: correr las 12 áreas de la auditoría), que **no se corre hoy por falta de tiempo**: queda congelado su kill-criteria. Entra detrás de las cuatro que esperan a Chapa o al día en vivo, porque es lo primero que se puede hacer acá. El orden queda **355 → 362 → 356 → 364 → 373 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
 
 
 
@@ -1866,6 +1868,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
+
+### 373. TANDA-DE-AUDITORIA-12-AREAS — Correr la auditoría de las 12 áreas con el kill-criteria ya congelado  ·  origen: pedido de Chapa (2026-10-20) · severidad **—** (es una corrida, no un defecto)
+
+- **Qué es.** Chapa pidió correr todas las auditorías (skill `auditoria`, las 12 áreas A–L). El 2026-10-20 se congeló el kill-criteria de las doce juntas, **antes de abrir ningún archivo**, en `docs/auditoria_tanda_2026-10-20.md`, y Chapa lo aprobó; la corrida se difirió por falta de tiempo.
+- **Alcance.** El de ese doc, **sin recalibrarlo**: congelarlo antes es justamente lo que impide ajustar el criterio con lo que aparezca. La ventana *«hasta hoy»* se lee como *hasta el día en que se corra*, y el informe lo dice con la fecha. Si al correrla hace falta cambiar un criterio, el cambio se escribe en el doc con su motivo y su fecha, al lado del original, no en su lugar.
+- **Kill-criteria.** Los de cada área en el doc. La corrida cierra con: los HIGH/CRITICAL pasados por el `verificador` (o dicho que no pudo correr), el informe con lo sobreviviente, lo rechazado y el alcance **no** mirado (como lista), cada hallazgo accionable como tarea, y la tabla `hallazgo → tarea` verificada de a una contra este archivo. Un barrido limpio es un resultado válido.
+- **Dependencias:** ninguna. Es read-only: no toca código, config, esquema ni la DB viva.
 
 ### 372. ~~WARNINGS-DE-PYTHON-FUERA-DEL-LOG — Los `warnings` de Python van a la consola y no a `finanzias.log`: el censo de logs no los ve~~ · **CERRADA 2026-10-19 — `captureWarnings` en `setup_logging`, y la pregunta en el método L de la skill** (`2f95e9f`) · **movida a *Hecho reciente* con el detalle**  ·  origen: `docs/auditoria_logs_2026-10-19.md` [L-4] · severidad **BAJA**
 
