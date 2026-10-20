@@ -214,6 +214,7 @@ class HomeTab(QWidget):
         super().__init__(parent)
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
         self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al tildarla (tarea 359)
+        self._ref: dict[int, object] = {}  # su universo sin elegir (tarea 377), calculado al tildarla
         self._cuentas_paper: dict[int, tuple[str, float]] = {}  # id → (nombre, capital inicial)
         self.cuenta_checks: dict[int | None, QCheckBox] = {}  # None = la cartera real (tarea 360)
         self._build_ui()
@@ -403,6 +404,7 @@ class HomeTab(QWidget):
             cb.deleteLater()
         self.cuenta_checks = {}
         self._paper.clear()
+        self._ref.clear()
         self._cuentas_paper = {}
         cuentas = [(None, cartera)]
         try:
@@ -570,6 +572,61 @@ class HomeTab(QWidget):
                 self._paper[account_id] = []
         return self._paper[account_id]
 
+    def _referencia(self, account_id: int):
+        """El universo de la cuenta sin elegir (tarea 377), calculado una vez por carga."""
+        from paper_trading.referencia import CurvaReferencia, referencia_de_cuenta
+
+        if account_id not in self._ref:
+            try:
+                self._ref[account_id] = referencia_de_cuenta(account_id)
+            except Exception:
+                log.exception("Home: no se pudo calcular la referencia de la cuenta paper %s", account_id)
+                self._ref[account_id] = CurvaReferencia()
+        return self._ref[account_id]
+
+    def _serie_referencia(self, account_id: int, vista: str) -> tuple[str, list, list[float]] | None:
+        """La línea de la referencia en la vista: valor, o valor menos el capital. En «invertido» no va."""
+        if vista == "invertido" or account_id not in self._cuentas_paper:
+            return None
+        ref = self._referencia(account_id)
+        if len(ref.serie) < 2:
+            return None
+        nombre, capital = self._cuentas_paper[account_id]
+        resta = capital if vista == "ganancia" else 0.0
+        return (
+            f"Universo de {nombre}, sin elegir",
+            [d for d, _ in ref.serie],
+            [v - resta for _, v in ref.serie],
+        )
+
+    def _nota_referencia(self, account_id: int) -> str:
+        """Qué es la línea punteada y qué quedó afuera, para no pintar un hueco como dato."""
+        ref = self._referencia(account_id)
+        partes = [
+            f"Punteada: los {ref.n} de la watchlist de hoy en partes iguales desde el alta, rebalanceo "
+            f"mensual y los costos del motor (${ref.costos:,.0f}); no es point-in-time"
+        ]
+        if ref.sin_historia:
+            partes.append(f"afuera, sin precio al alta: {', '.join(ref.sin_historia)}")
+        if ref.quietos:
+            partes.append(
+                "quietos desde que dejaron de cotizar: "
+                + ", ".join(f"{t} ({d:%d/%m})" for t, d in ref.quietos)
+            )
+        return " · ".join(partes) + "."
+
+    def _con_referencia(self, account_id: int, vista: str, linea: tuple, ylabel: str) -> bool:
+        """Dibuja la cuenta junto a su referencia (tarea 377). ``False`` si no hay referencia."""
+        ref = self._serie_referencia(account_id, vista)
+        if ref is None:
+            return False
+        rotulo, xs, ys, color = linea
+        self.hero_chart.set_series(
+            [(rotulo, xs, ys, color), (*ref, color, "--")], ylabel=ylabel, cero=vista == "ganancia"
+        )
+        self.hero_sub.setText(f"{self.hero_sub.text()} {self._nota_referencia(account_id)}")
+        return True
+
     def _pintar_paper(self, account_id: int, vista: str) -> None:
         """Una cuenta paper sola (tarea 359): el último snapshot de cada día.
 
@@ -595,9 +652,12 @@ class HomeTab(QWidget):
                 "Equity menos el capital inicial: realizada, no realizada y dividendos juntos "
                 f"(los snapshots no los separan). {cola}"
             )
-            self.hero_chart.set_lineas(
-                xs, [("Ganancia total", ganancia, PALETTE["accent"])], ylabel="Ganancia ($)"
-            )
+            if not self._con_referencia(
+                account_id, vista, (nombre, xs, ganancia, PALETTE["accent"]), "Ganancia ($)"
+            ):
+                self.hero_chart.set_lineas(
+                    xs, [("Ganancia total", ganancia, PALETTE["accent"])], ylabel="Ganancia ($)"
+                )
         elif vista == "invertido":
             self.hero_title.setText(
                 f"{nombre} — efectivo y posiciones, hasta el {hasta}: "
@@ -617,10 +677,16 @@ class HomeTab(QWidget):
         else:
             self.hero_title.setText(f"{nombre} — valor de la cuenta, hasta el {hasta}: ${serie[-1][3]:,.0f}")
             self.hero_sub.setText(f"Efectivo + posiciones a valor de mercado. {cola}")
-            self.hero_chart.set_data(
-                [SimpleNamespace(snapshot_at=d, total_equity=eq) for d, *_, eq in serie],
-                ylabel="Valor de la cuenta ($)",
-            )
+            if not self._con_referencia(
+                account_id,
+                vista,
+                (nombre, xs, [eq for *_, eq in serie], PALETTE["accent"]),
+                "Valor de la cuenta ($)",
+            ):
+                self.hero_chart.set_data(
+                    [SimpleNamespace(snapshot_at=d, total_equity=eq) for d, *_, eq in serie],
+                    ylabel="Valor de la cuenta ($)",
+                )
 
     def _serie_de(self, clave: int | None, vista: str) -> tuple[str, list, list[float]] | None:
         """La línea de una cuenta cuando hay varias tildadas (tarea 360): (rótulo, fechas, valores)."""
@@ -655,7 +721,7 @@ class HomeTab(QWidget):
     def _pintar_varias(self, tildadas: list[int | None], vista: str) -> None:
         """Varias cuentas tildadas (tarea 360): una línea por cuenta, en el mismo eje y con sus fechas."""
         nombre_vista = {"ganancia": "ganancia", "invertido": "invertido / en posiciones"}.get(vista, "valor")
-        series, ultimos, sin = [], [], []
+        series, ultimos, sin, notas_ref = [], [], [], []
         for clave in tildadas:
             s = self._serie_de(clave, vista)
             if s is None:
@@ -665,6 +731,14 @@ class HomeTab(QWidget):
             series.append((rotulo, xs, ys, self._color_cuenta(clave)))
             ultimo = _pesos_con_signo(ys[-1]) if vista == "ganancia" else f"${ys[-1]:,.0f}"
             ultimos.append(f"{rotulo} {ultimo} ({xs[-1]:%d/%m})")
+            ref = self._serie_referencia(clave, vista) if clave is not None else None
+            if ref is not None:
+                # Tarea 377: punteada, del color de su cuenta.
+                r_rot, r_xs, r_ys = ref
+                series.append((r_rot, r_xs, r_ys, self._color_cuenta(clave), "--"))
+                r_ult = _pesos_con_signo(r_ys[-1]) if vista == "ganancia" else f"${r_ys[-1]:,.0f}"
+                ultimos.append(f"{r_rot} {r_ult} ({r_xs[-1]:%d/%m})")
+                notas_ref.append(self._nota_referencia(clave))
         self.hero_title.setText(f"{len(tildadas)} cuentas — {nombre_vista}")
         notas = {
             "ganancia": "La cartera: ganancia total. Las paper: equity menos el capital inicial.",
@@ -672,7 +746,8 @@ class HomeTab(QWidget):
             "valor de mercado (los snapshots no guardan el costo).",
         }.get(vista, "La cartera: valor de mercado. Las paper: efectivo + posiciones.")
         extra = f" · sin datos: {', '.join(sin)}" if sin else ""
-        self.hero_sub.setText(f"{' · '.join(ultimos)}. {notas}{extra}")
+        ref = f" {' '.join(notas_ref)}" if notas_ref else ""
+        self.hero_sub.setText(f"{' · '.join(ultimos)}. {notas}{extra}{ref}")
         ylabel = {"ganancia": "Ganancia ($)", "invertido": "Monto ($)"}.get(vista, "Valor ($)")
         self.hero_chart.set_series(series, ylabel=ylabel, cero=vista == "ganancia")
 
