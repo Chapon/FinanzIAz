@@ -15,8 +15,10 @@ description: Guía para implementar el "valor estimado" (fair value) en la pesta
   - `get_company_info()` ya devuelve `trailingPE`, `trailingEps`, `beta`, `dividend_yield`.
   - `get_analyst_data()` ya devuelve `price_targets` (targetMean/low/high) y `recommendations`.
 - `ui/analysis/recommendations_card.py` (`RecommendationsCard`) ya muestra recos + price targets en la pestaña Analysis. Patrón a imitar: **card silenciosa cuando faltan datos**.
-- `ui/analysis/worker.py` (`AnalysisWorker`) ya trae df + price_data + company_info + analyst_data y emite `done(df, result, price_data, company_info, analyst_data)`.
-- NO existe `analysis/valuation.py` todavía.
+- `ui/analysis/worker.py` (`AnalysisWorker`) trae df + price_data + company_info + analyst_data **+ la valuación** (desde la tarea 383) y emite `done(df, result, price_data, company_info, analyst_data, valuacion)`.
+- **Desde la tarea 383 (2026-10-21) la Fase 1 está hecha, por otro camino que el plan de abajo:** `analysis/valuation.py` (puro) calcula el número de Graham y su margen de seguridad, el retorno anual esperado a 10 años y el precio máximo para 15% anual (*Buffettology*: EPS crecido a su ritmo histórico, topeado en 15%, por el PE histórico mediano), y el PEG con la categoría de Lynch. Los datos son los fundamentals **point-in-time** de EDGAR de la tarea 382 (`data/fundamentos_pit.py`), no los snapshots de yfinance. `ui/analysis/valuation_card.py` (`ValuationCard`) los muestra y se calla si no hay valuación (extranjeras como TSM incluidas). Un test verifica que nada del motor la importe.
+- **Dos trampas que la 383 resolvió y no hay que reintroducir** (las mediciones, en su registro del backlog): (1) el cache de precios baja con `auto_adjust=True`, que descuenta los dividendos y hunde los precios viejos, así que el PE histórico va con `get_cierres_sin_ajuste_por_dividendos`; (2) EDGAR guarda cada EPS en la base de acciones del día en que se presentó, así que se lleva a la de hoy con `Fundamentos.serie(..., splits=get_split_events(t))`. Sin eso, el PE histórico de una empresa que hizo splits sale dividido por el factor del split.
+- El plan de abajo queda como **historia del diseño original**: el `PE_ancla` elegido fue la mediana histórica del propio ticker.
 
 ## Plan (6 tareas, en orden)
 

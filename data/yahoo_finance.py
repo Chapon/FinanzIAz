@@ -761,6 +761,43 @@ def get_split_events(ticker: str, allow_network: bool = True) -> list[tuple[str,
     return list(eventos)
 
 
+_cierres_sin_div_cache: dict[str, tuple[float, list[tuple[str, float]]]] = {}
+
+
+def get_cierres_sin_ajuste_por_dividendos(ticker: str, allow_network: bool = True) -> list[tuple[str, float]]:
+    """``[(día 'YYYY-MM-DD', cierre), ...]`` de toda la historia, ajustados por splits y **no** por dividendos.
+
+    Para el PE histórico de la valuación (tarea 383). El cache del repo baja con
+    ``auto_adjust=True``, que también descuenta los dividendos: medido el 2026-10-21, el cierre de
+    KO del 30/12/2016 es 41,46 sin ese ajuste y 30,67 con él, así que un PE histórico con esos
+    precios sale 26% bajo. Con ``auto_adjust=False``, el ``Close`` de Yahoo viene ajustado por
+    splits (NVDA del 29/12/2023: 49,52 y no ~495) y no por dividendos. Memoizado como
+    ``get_split_events``; fail-safe: cualquier error devuelve ``[]``.
+    """
+    key = ticker.upper()
+    now = time.time()
+    with _split_cache_lock:
+        hit = _cierres_sin_div_cache.get(key)
+        if hit is not None and now - hit[0] < _SPLIT_CACHE_TTL_SECONDS:
+            return list(hit[1])
+    if not allow_network:
+        return []
+
+    cierres: list[tuple[str, float]] = []
+    try:
+        df = _run_with_timeout(lambda: _ticker(key).history(period="max", auto_adjust=False), default=None)
+        if df is not None and not df.empty and "Close" in df.columns:
+            serie = pd.to_numeric(df["Close"], errors="coerce").dropna()
+            cierres = [(ts.strftime("%Y-%m-%d"), float(c)) for ts, c in serie.items() if c > 0]
+    except Exception:
+        log.exception("get_cierres_sin_ajuste_por_dividendos failed for %s", key)
+        return []
+
+    with _split_cache_lock:
+        _cierres_sin_div_cache[key] = (now, cierres)
+    return list(cierres)
+
+
 def split_explains(
     price: float | None,
     reference: float | None,

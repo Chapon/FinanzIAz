@@ -42,6 +42,7 @@ menos costo de ventas); Visa reporta el EPS por clase de acción, que ``companyf
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -115,6 +116,8 @@ CONCEPTOS: dict[str, tuple[str, ...]] = {
 
 # Los de stock son instantáneos (un balance a una fecha); el resto cubre un período.
 INSTANTANEOS = frozenset({"patrimonio", "activos", "deuda_lp"})
+# Los que cambian con un split: los por acción se dividen y la cantidad de acciones se multiplica.
+POR_ACCION = frozenset({"eps_diluido", "dividendo_x_accion", "acciones_diluidas"})
 UNIDADES: dict[str, str] = {
     "eps_diluido": "USD/shares",
     "dividendo_x_accion": "USD/shares",
@@ -205,12 +208,20 @@ class Fundamentos:
     ciks: tuple[int, ...] = ()
     generado: str = ""
 
-    def serie(self, concepto: str, fecha: str) -> list[tuple[str, float]]:
+    def serie(
+        self, concepto: str, fecha: str, splits: list[tuple[str, float]] | None = None
+    ) -> list[tuple[str, float]]:
         """``(fin_de_período, valor)`` del concepto, como se lo conocía **antes** de ``fecha``.
 
         Por período: manda el tag más preferido de ``CONCEPTOS`` que tenga un dato presentado
         antes de ``fecha``, y dentro de ese tag el último presentado. Ordenado del más viejo al
         más nuevo.
+
+        ``splits`` (``[(fecha, ratio)]``, como ``get_split_events``) lleva los conceptos por acción
+        a la base de acciones **de hoy** (tarea 383): cada número está en la base del día en que
+        se presentó, así que se divide por los splits posteriores a su ``filed`` (y las acciones
+        se multiplican). Sin esto, un EPS de antes del 10 a 1 de NVDA queda 10 veces más grande
+        que uno de después, contra precios que Yahoo ya ajustó.
         """
         if concepto == "ganancia_bruta":
             return self._ganancia_bruta(fecha)
@@ -222,7 +233,13 @@ class Fundamentos:
             cur = mejor.get(r.end)
             if cur is None or (prioridad[r.tag], cur.filed) < (prioridad[cur.tag], r.filed):
                 mejor[r.end] = r
-        return sorted((end, r.val) for end, r in mejor.items())
+        if not splits or concepto not in POR_ACCION:
+            return sorted((end, r.val) for end, r in mejor.items())
+        out = []
+        for end, r in mejor.items():
+            factor = math.prod(ratio for dia, ratio in splits if dia > r.filed)
+            out.append((end, r.val * factor if concepto == "acciones_diluidas" else r.val / factor))
+        return sorted(out)
 
     def _ganancia_bruta(self, fecha: str) -> list[tuple[str, float]]:
         directa = dict(self._serie_simple("ganancia_bruta", fecha))

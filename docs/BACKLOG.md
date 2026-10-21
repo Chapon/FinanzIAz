@@ -18,7 +18,15 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 307 — Tarea 383 (VALUACION-EN-ANALYSIS) CERRADA 2026-10-21 — una tarjeta en Analysis con Graham, *Buffettology* y Lynch sobre los fundamentals de EDGAR; antes de mostrar un número se corrigieron dos sesgos de los datos** (`analysis/valuation.py`, `ui/analysis/valuation_card.py`, `ui/analysis/worker.py`, `ui/analysis_tab.py`, `data/fundamentos_pit.py`, `data/yahoo_finance.py`, `tests/test_valuacion_t383.py`, la skill `fair-value-feature`, `docs/ARCHITECTURE.md`). *Display-only*. Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Qué muestra:** el número de Graham y su margen de seguridad; el retorno anual esperado a 10 años y el precio máximo para 15% anual (EPS crecido a su ritmo histórico, topeado en 15%, por el PE histórico mediano de la empresa, sin dividendos); y el PEG con una categoría de Lynch (lento, firme, rápido, cíclica o recuperación). Se calla sin valuación; con EPS negativo aparece y dice por qué no hay número.
+  - **Los dos sesgos, medidos antes de mostrar nada:** (1) el cache baja con `auto_adjust=True`, que **descuenta los dividendos**: el cierre de KO del 30/12/2016 es 30,67 ahí y 41,46 de verdad (−26%), así que el PE histórico saldría 26% bajo. Se agregó `get_cierres_sin_ajuste_por_dividendos` (Yahoo con `auto_adjust=False`, verificado ajustado por splits y no por dividendos). (2) EDGAR guarda cada EPS **en la base de acciones del día en que se presentó**: `Fundamentos.serie` recibe ahora los splits (`get_split_events`) y divide por los posteriores a cada `filed`. Sin eso, el PE histórico de NVDA daba ~4 en vez de ~43.
+  - **Revisión con tres tickers** (texto real de la tarjeta): KO, normal: Graham −310%, +4,2% anual esperado, precio máximo para 15% de $34,62 contra $92,68. INTC, EPS negativo: aparece con las tres líneas en «sin valor» y el motivo. TSM, extranjera: oculta. La tarjeta avisa que Graham castiga a las empresas con poco valor libro.
+  - **Tests** (18): Graham y margen; el crecimiento con la ventana pedida y sin base positiva; el PE con el último cierre antes del fin de año (con el día exacto quedarían 2 años); las cinco categorías de Lynch; el split lleva el EPS a la base de hoy y no se aplica si es anterior al `filed`; un caso de punta a punta armado para dar exactamente 15% anual y $160 de precio máximo, con su control sin splits; extranjeras y sin precio; el worker no rompe si la valuación falla y arma la suya con cierres y splits; la tarjeta se oculta después de haberse mostrado; y nada de `paper_trading/` ni de `analysis/` importa la valuación. **Mutaciones**, siete, todas rojas. **Un caso degenerado del propio test:** la tarjeta arranca oculta, así que verificar que `None` la oculta sin mostrarla antes no probaba nada; se invirtió.
+  - **El primer done dio rojo, y con razón:** el guard de la 137 cazó en la skill `fair-value-feature` las cifras que se le habían escrito en presente (los 6 argumentos de la señal, los cierres de KO, el PE de NVDA). Se sacaron de la skill, que se lee cada sesión, y quedaron sólo en este registro, que es historia.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -450,6 +458,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-21e** al cerrar la **382**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **386 → 383 → 384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-21f** al cerrar la **386**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **383 → 384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-21g** al cerrar la **383**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1911,7 +1921,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Tests con casos elegidos para que la versión correcta y la ingenua den distinto (un año atípico en ROE, EPS negativo, patrimonio negativo, un dato que se conoció después de la fecha). Cero cableado a sizing o gates, con un test que lo verifique. Los cuatro comandos y el CI en verde.
 - **Dependencias:** 382.
 
-### 383. VALUACION-EN-ANALYSIS — El *track* de fair value nunca se construyó: valor estimado propio, margen de seguridad, PEG y categoría de Lynch al lado del precio y del consenso  ·  origen: pedido de Chapa (2026-10-21), `docs/libros_inversion_analisis_2026-10-21.md` §3, palancas B y D (Graham, *Buffettology*, Lynch, Pignataro); retoma el *Track paralelo — Fair value en Analysis* y la skill `fair-value-feature` · severidad **—** (display-only, regla 3)
+### 383. ~~VALUACION-EN-ANALYSIS — El *track* de fair value nunca se construyó: valor estimado propio, margen de seguridad, PEG y categoría de Lynch al lado del precio y del consenso~~ · **CERRADA 2026-10-21 — tarjeta en Analysis con Graham, *Buffettology* y Lynch; con cierres sin ajuste por dividendos y EPS en la base de acciones de hoy**  ·  origen: pedido de Chapa (2026-10-21), `docs/libros_inversion_analisis_2026-10-21.md` §3, palancas B y D (Graham, *Buffettology*, Lynch, Pignataro); retoma el *Track paralelo — Fair value en Analysis* y la skill `fair-value-feature` · severidad **—** (display-only, regla 3)
 
 - **Qué.** `analysis/valuation.py`, con funciones puras y sin red: (1) el número de Graham; (2) el retorno anual esperado de *Buffettology*: EPS proyectado a 10 años con su crecimiento histórico (con un tope), por el PE histórico mediano, contra el precio de hoy; (3) el margen de seguridad contra el valor estimado y el precio máximo de entrada; (4) el PEG y la categoría de Lynch (crecimiento lento, firme, rápido o cíclica) por crecimiento y variabilidad del EPS. En Analysis, al lado del precio y del target de consenso que ya se muestra, con una tarjeta que se calla si faltan datos. Opcional, si sale barato: la **temperatura** de Marks, el porcentaje del universo que cotiza sobre su valor estimado.
 - **Fuente:** los fundamentals de la 382, no los snapshots de yfinance (la decisión de datos del track).
@@ -4323,7 +4333,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 
 ## Track paralelo — Fair value en Analysis (DISPLAY, no a sizing/gates)
 
-Mostrar **precio actual / fair value propio / target consenso** lado a lado para juzgar upside. 6 sub-tareas en la skill `fair-value-feature`. Entra como display-only; NO se cablea a sizing ni gates (misma razón que la la historia del buy_score (#4, ref A3): no meter señales sin validar en decisiones).
+Mostrar **precio actual / fair value propio / target consenso** lado a lado para juzgar upside. 6 sub-tareas en la skill `fair-value-feature`. **Hecho por la 383 (2026-10-21)**, con los fundamentals point-in-time de EDGAR de la 382: Graham, *Buffettology* y Lynch en una tarjeta de Analysis; el detalle, en la tarea y en la skill. Entra como display-only; NO se cablea a sizing ni gates (misma razón que la la historia del buy_score (#4, ref A3): no meter señales sin validar en decisiones).
 
 **Decisión de datos (calidad sobre comodidad):** para el fair value propio usar **EDGAR XBRL** (estados financieros — hechos contables duros, point-in-time) como fuente primaria de EPS/márgenes, NO los snapshots móviles de yfinance que pueden estar stale. El target de consenso de yfinance se muestra solo como referencia, marcado como dato de menor confiabilidad (es un snapshot, no histórico point-in-time). Evitar DCF completo en v1 (inputs forward-looking de baja calidad gratis; mismo muro que T-CAT-5b).
 

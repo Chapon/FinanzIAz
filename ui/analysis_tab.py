@@ -43,6 +43,7 @@ from analysis.technical import (
     technical_signals_at,
     to_yahoo_level,
 )
+from config.logging_config import get_logger
 from config.settings_manager import settings
 from ui.analysis.catalog import (
     COMPLETION_LIST as _COMPLETION_LIST,
@@ -66,9 +67,12 @@ from ui.analysis.labels import (
 from ui.analysis.opinion_card import OpinionCard
 from ui.analysis.recommendations_card import RecommendationsCard
 from ui.analysis.signal_card import SignalCard
+from ui.analysis.valuation_card import ValuationCard
 from ui.analysis.worker import AnalysisWorker
 from ui.chart_widget import ChartWidget
 from ui.widgets import HSeparator, MetricCard, SignalBadge
+
+log = get_logger(__name__)
 
 # ── Tooltip content ────────────────────────────────────────────────────────────
 # ``TOOLTIPS`` and the ``_tt(key)`` helper were moved to
@@ -311,6 +315,10 @@ class AnalysisTab(QWidget):
         # Analyst recommendations + price targets (collapsible, hidden until data arrives)
         self.recommendations_card = RecommendationsCard()
         right_layout.addWidget(self.recommendations_card)
+
+        # Valuación con fundamentals de EDGAR (tarea 383): oculta hasta que llegan datos. Display-only.
+        self.valuation_card = ValuationCard()
+        right_layout.addWidget(self.valuation_card)
 
         # Opinión de Claude (tarea 320): a pedido, con los datos de este análisis. Display-only.
         self.opinion_card = OpinionCard()
@@ -647,7 +655,7 @@ class AnalysisTab(QWidget):
         self._worker.done.connect(lambda *a, t=ticker: self._on_analysis_done(*a, ticker=t))
         self._worker.start()
 
-    def _on_analysis_done(self, df, result, price_data, company, analyst=None, ticker=None):
+    def _on_analysis_done(self, df, result, price_data, company, analyst=None, valuacion=None, ticker=None):
         if ticker is None:
             ticker = ticker_del_campo(self.ticker_edit.text())
         self.analyze_btn.setEnabled(True)
@@ -660,6 +668,12 @@ class AnalysisTab(QWidget):
         except Exception:
             # No bloquear el resto del análisis si el card falla por algún motivo.
             self.recommendations_card.setVisible(False)
+        # Tarea 383 — la valuación, con el mismo trato: si falla, se oculta.
+        try:
+            self.valuation_card.set_data(valuacion)
+        except Exception:
+            log.exception("Analysis: la tarjeta de valuación falló")
+            self.valuation_card.setVisible(False)
 
         if df is None or df.empty:
             self.status_label.setText("❌ No se encontraron datos para este ticker.")
