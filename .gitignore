@@ -89,6 +89,8 @@ data/cross_sectional_validation/
 # Señal analyze() point-in-time precomputada (Tarea 7): ~3 h de CPU pero
 # regenerable con scripts/precompute_pit_signals.py — no versionar.
 data/pit_signals/
+# fundamentals point-in-time de EDGAR (tarea 382): regenerable con scripts/build_fundamentals_pit.py.
+data/fundamentals_pit/
 # SEC Form 345 quarterly datasets (zips crudos + insider_txs.json normalizado):
 # regenerable con scripts/ingest_form345.py (Tarea 12) — no versionar.
 data/form345/
