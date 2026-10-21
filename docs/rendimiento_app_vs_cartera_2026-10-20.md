@@ -95,3 +95,8 @@ El §3 dice que en la cuenta viva **lo vendido por señal le pierde a SPY** (−
 lo comprado en su lugar, −0,90% (§2). O sea que vender **sumó**. El harness de la T7 y la 219 dice
 lo contrario: obedecer a la señal resta. Puede ser la ventana (cuatro meses, ventas superpuestas) o
 un desvío entre el harness y el motor. Se mide en la **379**.
+
+**Medido (2026-10-21, `docs/venta_senal_vivo_vs_harness_t379_2026-10-21.md`): es la ventana.** En el
+mismo recorte, cada giro a SELL del universo también le perdió a SPY (−0,79% a 20 ruedas), y en diez
+años da +0,15%. 28 de las 33 ventas del vivo coinciden con la señal del harness, y son las peores.
+El −3,6% es el extremo de una ventana mala, con 3 bloques de 20 ruedas, y no un desvío.
