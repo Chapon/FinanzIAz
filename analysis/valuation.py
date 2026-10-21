@@ -125,6 +125,8 @@ class Valuacion:
     motivo_categoria: str = ""
     fin_ultimo_anio: str | None = None
     avisos: list[str] = field(default_factory=list)
+    # El puntaje de calidad de la tarea 384 dentro del universo: {"puntaje", "percentiles", "n"}.
+    calidad: dict | None = None
 
 
 def valuar(

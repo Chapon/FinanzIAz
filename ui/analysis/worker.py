@@ -51,9 +51,42 @@ def valuacion_de(ticker: str, precio: float | None):
         if precio is None and cierres:
             precio = cierres[-1][1]
         manana = (date.today() + timedelta(days=1)).isoformat()
-        return valuar(fund, precio, cierres, manana, get_split_events(ticker))
+        v = valuar(fund, precio, cierres, manana, get_split_events(ticker))
+        if v is not None:
+            v.calidad = calidad_en_el_universo(ticker, fund, manana)
+        return v
     except Exception:
         log.exception("Valuación de %s: falló (la tarjeta no se muestra)", ticker)
+        return None
+
+
+# Las patas de calidad del universo guardado, una vez por día y por proceso: son 126 archivos.
+_POBLACION: dict[str, dict] = {}
+
+
+def calidad_en_el_universo(ticker: str, fund, fecha: str) -> dict | None:
+    """El puntaje de calidad de la tarea 384 del ticker, con percentiles contra el almacén de la 382.
+
+    La población es todo lo que hay en ``data/fundamentals_pit/`` (el universo de la cuenta 2 y lo
+    que se haya analizado). ``None`` si no llega a dos patas. Nunca levanta.
+    """
+    try:
+        from analysis.calidad import patas_de, puntajes
+        from data import fundamentos_pit as fp
+
+        if fecha not in _POBLACION:
+            _POBLACION.clear()
+            _POBLACION[fecha] = {
+                p.stem: patas_de(fp.cargar(p.stem), fecha) for p in sorted(fp.STORE_DIR.glob("*.json"))
+            }
+        poblacion = dict(_POBLACION[fecha])
+        poblacion[ticker.upper()] = patas_de(fund, fecha)
+        r = puntajes(poblacion)[ticker.upper()]
+        if r["puntaje"] is None:
+            return None
+        return {"puntaje": r["puntaje"], "percentiles": r["percentiles"], "n": len(poblacion)}
+    except Exception:
+        log.exception("Calidad de %s: falló", ticker)
         return None
 
 

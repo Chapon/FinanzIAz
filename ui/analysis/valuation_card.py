@@ -50,6 +50,18 @@ def lineas_de(v) -> list[str]:
     peg = f"PEG {v.peg:.2f}" if v.peg is not None else "PEG —"
     cat = f"{v.categoria} ({v.motivo_categoria})" if v.categoria else f"sin categoría ({v.motivo_categoria})"
     out.append(f"Lynch: {peg} (menos de 1 es barato para su crecimiento) · {cat}.")
+    if v.calidad:
+        nombres = {
+            "roe": "ROE estable",
+            "rentab_bruta": "ganancia bruta / activos",
+            "deuda": "deuda baja",
+            "regularidad": "ganancia que crece parejo",
+        }
+        patas = ", ".join(f"{nombres[p]} p{pct:.0f}" for p, pct in v.calidad["percentiles"].items())
+        out.append(
+            f"Calidad del negocio: {v.calidad['puntaje']:.0f}/100 entre {v.calidad['n']} empresas ({patas}). "
+            f"Describe el negocio; medido contra el retorno que vino después (tarea 384), no lo anticipó."
+        )
     return out
 
 
