@@ -9,21 +9,37 @@ y ``is_market_open()``, que corre cada minuto en la GUI, es cálculo local.
 
 Cómo funciona:
 
-- un ``QTimer`` en el hilo de la GUI late cada ``latido_ms`` y re-arma
-  ``faulthandler.dump_traceback_later(umbral_s)``. Si el hilo se traba más de ``umbral_s``, el
-  hilo vigía **de C** de ``faulthandler`` —que no necesita el GIL— vuelca el stack de **todos**
-  los hilos a ``archivo``. Así se ve la línea que trababa, aunque fuera una extensión C;
+- un ``QTimer`` en el hilo de la GUI late cada ``latido_ms`` y anota la hora del latido;
+- un hilo vigía **de Python** mira esa hora. Si la GUI no latió en ``umbral_s``, vuelca el stack
+  de **todos** los hilos a ``archivo``, el de la GUI primero, una sola vez por traba;
 - cuando vuelve a latir, mide cuánto estuvo trabado y lo deja en el log (WARNING) y en el
   archivo, con la hora, para cruzarlo con el log. Un atraso de más de ``suspension_s`` se rotula
   como probable suspensión del equipo, no como congelamiento.
+
+**Por qué no ``faulthandler`` (tarea 380).** Hasta la 380 el volcado era
+``faulthandler.dump_traceback_later``: su hilo de C recorre los frames de los otros hilos **sin
+el GIL** y sin frenarlos, y CPython lo documenta como inseguro con hilos corriendo. El
+2026-10-21 la GUI se trabó al arrancar con ~20 hilos trabajando (scan, harvest, dashboard,
+precios), el vigía leyó un frame a medio crear y **mató la app** (``0xc0000005`` en
+``python312.dll``, volcado cortado a mitad de línea). Medido aparte: 16 hilos con pandas y
+``faulthandler`` volcando en loop, segfault 3 de 3; ``sys._current_frames()`` con el mismo
+estrés, 3 de 3 vivos. El hilo de Python toma el GIL para leer los frames, y con el GIL ningún
+otro hilo los está tocando.
+
+**Lo que cuesta:** si la GUI se traba **dentro de una extensión de C que retiene el GIL**, el
+vigía no puede correr hasta que la suelte. El stack sale tarde —muestra dónde quedó la GUI
+después—, y la línea de hora y duración sigue saliendo igual. Una traba que suelta el GIL
+(red, disco, ``sleep``, la mayoría de numpy/pandas) sale en el momento.
 
 Fail-open: si algo del vigía falla, la app sigue igual.
 """
 
 from __future__ import annotations
 
-import faulthandler
+import sys
+import threading
 import time
+import traceback
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +78,26 @@ def describir_atraso(
     )
 
 
+def volcar_hilos(id_gui: int, *, excluir: int | None = None) -> str:
+    """El stack de todos los hilos, el de la GUI primero, en el formato de ``faulthandler``.
+
+    Se llama con el GIL tomado (desde Python), así que ningún frame cambia mientras se lee.
+    """
+    nombres = {t.ident: t.name for t in threading.enumerate()}
+    frames = sys._current_frames()
+    orden = sorted(frames, key=lambda tid: tid != id_gui)
+    partes = []
+    for tid in orden:
+        if tid == excluir:
+            continue
+        rotulo = "GUI" if tid == id_gui else nombres.get(tid, "?")
+        lineas = [f"Thread 0x{tid:08x} [{rotulo}] (most recent call first):"]
+        for fs in reversed(traceback.extract_stack(frames[tid])):
+            lineas.append(f'  File "{fs.filename}", line {fs.lineno} in {fs.name}')
+        partes.append("\n".join(lineas))
+    return "\n\n".join(partes) + "\n"
+
+
 class VigiaDeLaInterfaz(QObject):
     def __init__(
         self,
@@ -78,6 +114,11 @@ class VigiaDeLaInterfaz(QObject):
         self._reloj = reloj
         self._fh = None
         self._ultimo = reloj()
+        self._volcado = False  # ya se volcó el stack de la traba en curso
+        self._lock = threading.Lock()
+        self._parar = threading.Event()
+        self._hilo: threading.Thread | None = None
+        self._id_gui = threading.get_ident()
         self._timer = QTimer(self)
         self._timer.setInterval(latido_ms)
         self._timer.timeout.connect(self.latir)
@@ -85,10 +126,12 @@ class VigiaDeLaInterfaz(QObject):
     def iniciar(self) -> bool:
         try:
             self._archivo.parent.mkdir(parents=True, exist_ok=True)
-            # Abierto todo el tiempo: faulthandler escribe en el descriptor desde C.
             self._fh = open(self._archivo, "a", encoding="utf-8")  # noqa: SIM115
+            self._id_gui = threading.get_ident()
             self._ultimo = self._reloj()
-            self._armar()
+            self._parar.clear()
+            self._hilo = threading.Thread(target=self._vigilar, name="vigia-interfaz", daemon=True)
+            self._hilo.start()
             self._timer.start()
             return True
         except Exception:
@@ -97,29 +140,41 @@ class VigiaDeLaInterfaz(QObject):
 
     def detener(self) -> None:
         self._timer.stop()
-        try:
-            faulthandler.cancel_dump_traceback_later()
-        finally:
+        self._parar.set()
+        if self._hilo is not None:
+            self._hilo.join(timeout=2)
+            self._hilo = None
+        with self._lock:
             if self._fh is not None:
                 self._fh.close()
                 self._fh = None
 
-    def _armar(self) -> None:
-        faulthandler.cancel_dump_traceback_later()
-        faulthandler.dump_traceback_later(self._umbral_s, repeat=False, file=self._fh)
+    def _vigilar(self) -> None:
+        paso = min(self._umbral_s / 10, 0.5)
+        while not self._parar.wait(paso):
+            try:
+                with self._lock:
+                    trabada = self._reloj() - self._ultimo >= self._umbral_s
+                    if trabada and not self._volcado and self._fh is not None:
+                        self._volcado = True
+                        self._fh.write(f"Timeout ({self._umbral_s:g} s sin latir)!\n")
+                        self._fh.write(volcar_hilos(self._id_gui, excluir=threading.get_ident()))
+                        self._fh.flush()
+            except Exception:
+                log.exception("Vigía de la interfaz: falló un volcado (la app sigue igual)")
 
     def latir(self) -> None:
         try:
-            ahora = self._reloj()
-            atraso = ahora - self._ultimo
-            self._ultimo = ahora
-            texto = describir_atraso(atraso, umbral_s=self._umbral_s)
-            if texto is not None:
-                log.warning("Vigía: %s", texto)
-                if atraso >= self._umbral_s and self._fh is not None:
-                    self._fh.write(f"^^^ {datetime.now():%Y-%m-%d %H:%M:%S} — {texto}\n\n")
-                    self._fh.flush()
-            if self._fh is not None:
-                self._armar()
+            with self._lock:
+                ahora = self._reloj()
+                atraso = ahora - self._ultimo
+                self._ultimo = ahora
+                self._volcado = False
+                texto = describir_atraso(atraso, umbral_s=self._umbral_s)
+                if texto is not None:
+                    log.warning("Vigía: %s", texto)
+                    if atraso >= self._umbral_s and self._fh is not None:
+                        self._fh.write(f"^^^ {datetime.now():%Y-%m-%d %H:%M:%S} — {texto}\n\n")
+                        self._fh.flush()
         except Exception:
             log.exception("Vigía de la interfaz: falló un latido (la app sigue igual)")
