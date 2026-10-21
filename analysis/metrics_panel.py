@@ -340,6 +340,67 @@ def _exit_kind(reason: str | None) -> str:
 
 
 # ── FIFO round-trip pairing ───────────────────────────────────────────────────
+def costo_de_rotar(orders: list[dict], capital: float) -> dict:
+    """Lo que le costó operar a una cuenta, para verlo en Home al lado de su curva (tarea 386). Pura.
+
+    - ``costos``: comisión + slippage de **todos** los fills, como ``_friction_panel``.
+    - ``rotacion``: volumen operado (compras + ventas, a precio de fill) sobre el capital inicial.
+      Una cuenta que compra y vende su capital una vez da 2,0.
+    - ``tenencia_media``: días de tenencia de las operaciones **cerradas**, de ``pair_round_trips``.
+      ``None`` si todavía no cerró ninguna.
+
+    Medido sobre la cuenta 2 al 2026-10-20: $542,76, 17,07× y 12,25 días, los tres números de
+    ``docs/rendimiento_app_vs_cartera_2026-10-20.md`` §4.
+    """
+    costos = sum((o["commission"] or 0.0) + (o["slippage"] or 0.0) for o in orders)
+    volumen = sum((o["fill_price"] or 0.0) * (o["fill_shares"] or 0.0) for o in orders)
+    dias = [r["hold_days"] for r in pair_round_trips(orders) if r.get("hold_days") is not None]
+    return {
+        "costos": costos,
+        "volumen": volumen,
+        "rotacion": volumen / capital if capital > 0 else None,
+        "tenencia_media": sum(dias) / len(dias) if dias else None,
+        "n_fills": len(orders),
+        "n_cerradas": len(dias),
+    }
+
+
+def costo_de_rotar_de_cuenta(account_id: int, capital: float) -> dict:
+    """``costo_de_rotar`` con los fills de la cuenta, leídos por la sesión de SQLAlchemy.
+
+    Por la sesión y no por ``DB_PATH``, como el resto de Home (``equity_diaria``): así lee la
+    misma DB que la app —y en los tests, la de memoria— y no el archivo por fuera. Arma los
+    mismos dicts que ``_filled_orders``, con ``filled_at`` como texto en el formato que guarda
+    SQLite, que es lo que lee ``pair_round_trips``.
+    """
+    from database.models import session_scope
+    from paper_trading.models import PaperOrder
+
+    with session_scope() as s:
+        filas = (
+            s.query(PaperOrder)
+            .filter(PaperOrder.account_id == account_id, PaperOrder.status == "filled")
+            .order_by(PaperOrder.filled_at, PaperOrder.id)
+            .all()
+        )
+        orders = [
+            {
+                "id": o.id,
+                "ticker": o.ticker,
+                "side": o.side,
+                "fill_price": o.fill_price,
+                "fill_shares": o.fill_shares,
+                "commission": o.commission_paid,
+                "slippage": o.slippage_cost,
+                "score": o.signal_score,
+                "reason": o.reason,
+                "filled_at": str(o.filled_at) if o.filled_at is not None else None,
+            }
+            for o in filas
+        ]
+    return costo_de_rotar(orders, capital)
+
+
 def pair_round_trips(orders: list[dict]) -> list[dict]:
     """Empareja BUY→SELL por FIFO. Devuelve round-trips cerrados, en orden de venta.
 

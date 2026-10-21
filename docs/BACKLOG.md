@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 306 — Tarea 386 (COSTO-DE-ROTAR-EN-HOME) CERRADA 2026-10-21 — Home dice, debajo de la curva de cada cuenta paper, cuánto le costó operar, cuántas veces rotó el capital y cuánto tuvo cada posición** (`analysis/metrics_panel.py`, `ui/home_tab.py`, `tests/test_costo_de_rotar_t386.py`). *Display-only*: no escribe la DB ni toca el motor. Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Lo que ya había, y se reusó:** la fricción ya se calculaba y se mostraba en Métricas (`_friction_panel`), y `pair_round_trips` da los días de cada operación cerrada. Lo nuevo es `costo_de_rotar` (pura), con la **rotación**, que no estaba en ningún lado, y `costo_de_rotar_de_cuenta`, que lee los fills **por la sesión de SQLAlchemy** y no por `DB_PATH`. La primera versión abría `DB_PATH`, que en los tests es la DB real y no la de memoria; se cambió antes del primer test.
+  - **Medido sobre la cuenta 2** (vía la sesión, sólo lectura): **$542,76** de costos, **$853.648** de volumen, o sea **17,07×** el capital, y **12,25 días** de tenencia media en 87 operaciones cerradas. Reproduce exacto los tres números del doc del 20/10, que es el kill-criteria.
+  - **Un detalle del instrumento, para el que lo use:** `filled_at` está declarada DATETIME, así que en SQL crudo el literal `'2099'` se compara como el número 2099 y el filtro `filled_at < '2099'` no deja pasar nada. Con `'2099-01-01'` anda. El código de la tarea filtra por ORM y no le pasa.
+  - **Tests** (6): la rotación cuenta compras y ventas (2,2, no 1,0); los costos incluyen los fills de posiciones abiertas; la tenencia es la media y no la mediana (10, 20 y 60 días: 30 contra 20; con dos operaciones darían lo mismo, y por eso son tres); sin cerradas no hay tenencia y sin capital no hay rotación; la lectura por la sesión deja afuera una orden rechazada; y Home muestra la nota en las tres vistas. **Mutaciones**, cinco, todas rojas: rotación sólo con compras, costos sólo de ventas, mediana en vez de media, sin el filtro de `filled` y Home sin la nota.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -448,6 +455,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-21d** a pedido de Chapa (*«ir con las tareas creadas»*): las cinco de los libros pasan adelante de la **374**, que queda detrás de la 385. Es un bug MEDIA, con una cura frágil pero que hoy cura sola (el scan siguiente limpia el `failing`), así que esperar no deja una posición sin stops más de un scan. El orden queda **382 → 386 → 383 → 384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-21e** al cerrar la **382**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **386 → 383 → 384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-21f** al cerrar la **386**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **383 → 384 → 385 → 374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1887,7 +1896,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 386. COSTO-DE-ROTAR-EN-HOME — Home muestra cuánto rinde la cuenta contra su universo, pero no cuánto le costó llegar ahí: costos y rotación acumulados, al lado de la curva  ·  origen: pedido de Chapa (2026-10-21), `docs/libros_inversion_analisis_2026-10-21.md` §3, palanca A (Bernstein, Stanley y Danko; Barber y Odean) · severidad **—** (display-only, regla 3)
+### 386. ~~COSTO-DE-ROTAR-EN-HOME — Home muestra cuánto rinde la cuenta contra su universo, pero no cuánto le costó llegar ahí: costos y rotación acumulados, al lado de la curva~~ · **CERRADA 2026-10-21 — debajo de la curva: $542,76, 17,1× y 12,3 días para la cuenta 2, los números del doc del 20/10**  ·  origen: pedido de Chapa (2026-10-21), `docs/libros_inversion_analisis_2026-10-21.md` §3, palanca A (Bernstein, Stanley y Danko; Barber y Odean) · severidad **—** (display-only, regla 3)
 
 - **Por qué.** Del 20/06 al 20/10 la cuenta 2 rotó el capital 17 veces y pagó $542,76 de costos, un tercio de lo ganado (`docs/rendimiento_app_vs_cartera_2026-10-20.md` §4), y eso sólo se supo con un análisis a mano. Es la variable que más repiten los libros y la única que se controla seguro.
 - **Qué.** En Home, para cada cuenta paper tildada: costos acumulados (comisión + slippage, de `paper_orders`), rotación (compras / capital medio) y tenencia media desde el alta, al lado del rendimiento y de la referencia sin elegir de la 377. Sin escribir la DB y sin tocar el motor.

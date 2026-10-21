@@ -215,6 +215,7 @@ class HomeTab(QWidget):
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
         self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al tildarla (tarea 359)
         self._ref: dict[int, object] = {}  # su universo sin elegir (tarea 377), calculado al tildarla
+        self._costo: dict[int, dict | None] = {}  # lo que le costó operar (tarea 386), leído al tildarla
         self._cuentas_paper: dict[int, tuple[str, float]] = {}  # id → (nombre, capital inicial)
         self.cuenta_checks: dict[int | None, QCheckBox] = {}  # None = la cartera real (tarea 360)
         self._build_ui()
@@ -405,6 +406,7 @@ class HomeTab(QWidget):
         self.cuenta_checks = {}
         self._paper.clear()
         self._ref.clear()
+        self._costo.clear()
         self._cuentas_paper = {}
         cuentas = [(None, cartera)]
         try:
@@ -615,6 +617,30 @@ class HomeTab(QWidget):
             )
         return " · ".join(partes) + "."
 
+    def _nota_costo(self, account_id: int) -> str:
+        """Lo que le costó operar a la cuenta (tarea 386): costos, rotación y tenencia media."""
+        if account_id not in self._costo:
+            from analysis.metrics_panel import costo_de_rotar_de_cuenta
+
+            try:
+                capital = self._cuentas_paper[account_id][1]
+                self._costo[account_id] = costo_de_rotar_de_cuenta(account_id, capital)
+            except Exception:
+                log.exception("Home: no se pudo leer el costo de operar de la cuenta paper %s", account_id)
+                self._costo[account_id] = None
+        c = self._costo[account_id]
+        if not c or not c["n_fills"]:
+            return ""
+        tenencia = (
+            f", con {c['tenencia_media']:.1f} días de tenencia media en {c['n_cerradas']} operaciones cerradas"
+            if c["tenencia_media"] is not None
+            else ""
+        )
+        return (
+            f"Operar le costó ${c['costos']:,.2f} en comisiones y slippage ({c['n_fills']} fills): "
+            f"rotó {c['rotacion']:.1f} veces el capital{tenencia}."
+        )
+
     def _con_referencia(self, account_id: int, vista: str, linea: tuple, ylabel: str) -> bool:
         """Dibuja la cuenta junto a su referencia (tarea 377). ``False`` si no hay referencia."""
         ref = self._serie_referencia(account_id, vista)
@@ -687,6 +713,9 @@ class HomeTab(QWidget):
                     [SimpleNamespace(snapshot_at=d, total_equity=eq) for d, *_, eq in serie],
                     ylabel="Valor de la cuenta ($)",
                 )
+        nota = self._nota_costo(account_id)
+        if nota:
+            self.hero_sub.setText(f"{self.hero_sub.text()} {nota}")
 
     def _serie_de(self, clave: int | None, vista: str) -> tuple[str, list, list[float]] | None:
         """La línea de una cuenta cuando hay varias tildadas (tarea 360): (rótulo, fechas, valores)."""
