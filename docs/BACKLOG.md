@@ -18,13 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 316 — Tarea 365 (TONO-RUBRICA-ASIMETRICA) CERRADA 2026-10-22 — NO-SHIP: el prompt no se cambia** (`docs/tono_rubrica_t365_2026-10-22.md`; sin código). Los cuatro comandos corrieron **después** de escribir este registro.
-  - **El set:** 44 titulares `-7n` reales (copia de la DB de hoy, solo lectura), con regla de muestreo y semillas declaradas: los 7 de la 290 (PepsiCo y BAC), 7 candidatos a −3 por palabra clave y una muestra por nivel. **Los etiquetó Claude, no Chapa**, contra la rúbrica escrita, y **antes** de escribir el candidato (sha256 `c28c38175e8b3fe8`).
-  - **El resultado, con `qwen2.5:14b` a temperatura 0 y sin escribir la DB:** el vigente acierta el nivel exacto en **27/44** y queda a ±1 en 40 (91%); el candidato, **26/44** y 42 (95%). El criterio pedía *más* aciertos exactos: **no pasa**. El (2), la distribución en 300 filas, no se corrió porque el (1) ya decide. El candidato arregla los dos recortes de PepsiCo, pero manda a −3 el de *beat* más recorte y sigue poniendo +3 al comprador de Braze y a dos *beats* sin *raise*.
-  - **No se itera contra el mismo set:** un segundo prompt ajustado hasta ganar sobre estos 44, etiquetados por quien escribe el prompt, mediría al etiquetador y no la rúbrica. La asimetría de la 290 sigue (−3 = 0,03% de las no neutrales); retomarla necesita etiquetas que no sean de quien escribe el prompt, y queda dicho en el doc.
-  - **No deja tareas nuevas.**
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2084,7 +2078,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Tests con reloj inyectado: un `failing` de hace N+1 días no está en `get_failing_set()` y uno de hace N−1 sí; un fetch exitoso después de eso borra la fila; uno fallido la deja en `failing` con `last_failed_at` nuevo; la poda borra un `failing` de hace M+1 días y no toca un `ignored` de hace un año. Mutaciones: sin la espera, sin el filtro de `ignored` en la poda, cada una roja. Y medido sobre la tabla real cuántas filas reintenta y poda el primer arranque. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 365. ~~TONO-RUBRICA-ASIMETRICA — qwen pone en −2 recortes de guidance propios que la rúbrica define como −3, y en +3 *beats* sin suba que la rúbrica define como +2~~ · **CERRADA 2026-10-22 — NO-SHIP por el primer criterio: el candidato acierta 26 de 44 contra 27 del vigente** (`docs/tono_rubrica_t365_2026-10-22.md`)  ·  origen: tarea 290 (2026-10-16) · severidad **BAJA** (display: el tono no entra a ninguna decisión)
+### 365. ~~TONO-RUBRICA-ASIMETRICA — qwen pone en −2 recortes de guidance propios que la rúbrica define como −3, y en +3 *beats* sin suba que la rúbrica define como +2~~ · **CERRADA 2026-10-22 — NO-SHIP por el primer criterio: el candidato acierta 26 de 44 contra 27 del vigente** (`adf045e`, `docs/tono_rubrica_t365_2026-10-22.md`) · **movida a *Hecho reciente* con el detalle**  ·  origen: tarea 290 (2026-10-16) · severidad **BAJA** (display: el tono no entra a ninguna decisión)
 
 - **Qué pasa.** Medido en la 290 sobre 12.994 clasificaciones `-7n` reales: −3 = 0,05% y +3 = 2,4% de las no neutrales (46×). Leídos a mano: PepsiCo recortando su guidance (≥ 5 titulares) y BAC cayendo 5% por *miss* + multa quedaron en −2; de 12 +3 al azar, sólo 1–2 cumplen la rúbrica (el resto son *beats* sin suba, una transcripción y una opinión).
 - **Qué hay que hacer.** Un set de ~40 titulares reales **etiquetados a mano** contra la rúbrica (incluidos los de la 290), y ajustar el prompt de `data/catalyst_classifier.py` —ejemplos negativos tan concretos como los positivos, y *«a beat WITHOUT a raise is +2»* explícito— sin reclasificar lo viejo.
@@ -4482,6 +4476,11 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 316 — Tarea 365 (TONO-RUBRICA-ASIMETRICA) CERRADA 2026-10-22 — NO-SHIP: el prompt no se cambia** (`adf045e`, CI **VERDE** 2026-10-22 20:09Z; `docs/tono_rubrica_t365_2026-10-22.md`; sin código). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **El set:** 44 titulares `-7n` reales (copia de la DB de hoy, solo lectura), con regla de muestreo y semillas declaradas: los 7 de la 290 (PepsiCo y BAC), 7 candidatos a −3 por palabra clave y una muestra por nivel. **Los etiquetó Claude, no Chapa**, contra la rúbrica escrita, y **antes** de escribir el candidato (sha256 `c28c38175e8b3fe8`).
+  - **El resultado, con `qwen2.5:14b` a temperatura 0 y sin escribir la DB:** el vigente acierta el nivel exacto en **27/44** y queda a ±1 en 40 (91%); el candidato, **26/44** y 42 (95%). El criterio pedía *más* aciertos exactos: **no pasa**. El (2), la distribución en 300 filas, no se corrió porque el (1) ya decide. El candidato arregla los dos recortes de PepsiCo, pero manda a −3 el de *beat* más recorte y sigue poniendo +3 al comprador de Braze y a dos *beats* sin *raise*.
+  - **No se itera contra el mismo set:** un segundo prompt ajustado hasta ganar sobre estos 44, etiquetados por quien escribe el prompt, mediría al etiquetador y no la rúbrica. La asimetría de la 290 sigue (−3 = 0,03% de las no neutrales); retomarla necesita etiquetas que no sean de quien escribe el prompt, y queda dicho en el doc.
+  - **No deja tareas nuevas.**
 - **WIP 315 — Tarea 367 (GOOGL-SIN-NOTICIAS-DE-SEARCH) CERRADA 2026-10-22 — GOOGL acepta las noticias etiquetadas `GOOG`, y LOW, NOW y DE se buscan por nombre** (`37bb2f3`, CI **VERDE** 2026-10-22 19:38Z; `data/news_sources.py`, `tests/test_yf_search_alias_t367.py`). Los cuatro comandos corrieron **después** de escribir este registro.
   - **Medido antes de codear** (`yf.Search` real sobre los 127 tickers vivos, 2026-10-22): 1.180 noticias aceptadas; en cero **GOOGL** (9 crudas, las 9 con `GOOG` y ninguna con `GOOGL`), **DE** (10 crudas de mercado: `CL=F`, `^DJI`) y **TJX** (0 crudas, pasajero: la 388); con una, LOW, NOW y COST. **Clases de acción en el universo: sólo GOOGL** (GOOG no está; `BRK-B` viene etiquetado `BRK-B`, 8 de 10).
   - **Por nombre, sin aflojar el filtro**, etiquetadas con el ticker sobre 10: LOW 1 → **10** (*«Lowe's»*), NOW 1 → **10** (*«ServiceNow»*), DE 0 → **10** (*«Deere»*), TJX 10 → 10. GOOGL con *«Alphabet»* sigue en **0**: el problema es la etiqueta, no la búsqueda.
