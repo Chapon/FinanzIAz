@@ -140,3 +140,11 @@ pasa por **backtest con kill-criteria congelado antes** (regla 2).
 
 La **temperatura del mercado** de Marks (palanca E) no va como tarea propia: sale gratis de la 383
 (el porcentaje del universo sobre su valor estimado) y se agrega ahí si la 383 la deja barata.
+
+## Resultado (2026-10-22)
+
+Las cinco tareas se cerraron. Quedan en la app, como información, los fundamentals point-in-time
+(382), la valuación de Graham, *Buffettology* y Lynch y el puntaje de calidad en Analysis (383 y
+384), y el costo de rotar en Home (386). **No se cableó nada a decisiones:** el puntaje de calidad no
+anticipó el retorno (384) y ninguna cartera de calidad o valor le ganó al universo en partes iguales
+(385, NO-SHIP, `docs/cartera_calidad_valor_t385_2026-10-22.md`).
