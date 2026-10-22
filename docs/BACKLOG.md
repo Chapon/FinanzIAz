@@ -18,12 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 317 — Tarea 388 (YF-SEARCH-VACIO-COMO-OK) CERRADA 2026-10-22 sin código — las respuestas vacías de `yf.Search` son el 0,4%** (sólo backlog). Los cuatro comandos corrieron **después** de escribir este registro.
-  - **La medición del kill-criteria, escrita antes de decidir:** el universo vivo (127) tres vueltas seguidas, 381 búsquedas con 0,3 s entre una y otra: **0 vacías y 0 errores**. Sumadas a las de la 367 (127 + 12 + 6 + 3, con TJX y GOOGL vacías), **2 en unas 530: 0,4%**. El umbral era 1%: **se cierra sin código**.
-  - **Lo que no se afirma:** que la tasa sea ésa a toda hora: es una tarde. Si el harvest empezara a mostrar tickers con noticias en cero que al rato las tienen, se reabre con esa evidencia.
-  - **No deja tareas nuevas.**
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1916,7 +1911,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 388. ~~YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias~~ · **CERRADA 2026-10-22 sin código — 2 vacías en ~530 búsquedas (0,4%), debajo del 1% del kill-criteria**  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
+### 388. ~~YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias~~ · **CERRADA 2026-10-22 sin código — 2 vacías en ~530 búsquedas (0,4%), debajo del 1% del kill-criteria** (`b31b6f7`) · **movida a *Hecho reciente* con el detalle**  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
 
 - **Qué pasa.** Medido el 2026-10-22 en dos de unas 150 búsquedas: **TJX** a las 15:44 (0 crudas; minutos después, 10 etiquetadas) y **GOOGL** a las ~15:55 (0 crudas; al rato, 9). `_yf_news` devuelve `SourceOutcome("yfinance_news", "ok", 0)`, que la salud del harvest no distingue de un ticker que no tuvo noticias. No se sabe si es throttle de Yahoo, un timeout del lado de ellos o otra cosa.
 - **Qué hay que hacer.** (1) Medir la frecuencia: una corrida sobre el universo vivo, repetida, contando crudas = 0. (2) Si no es despreciable: un reintento corto cuando la respuesta viene **vacía** (no cuando viene con noticias ajenas, que es el caso de AVB), o declararla `degraded` para que la salud del harvest la cuente.
@@ -4483,6 +4478,10 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 317 — Tarea 388 (YF-SEARCH-VACIO-COMO-OK) CERRADA 2026-10-22 sin código — las respuestas vacías de `yf.Search` son el 0,4%** (`b31b6f7`, CI **VERDE** 2026-10-22 20:39Z; sólo backlog). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La medición del kill-criteria, escrita antes de decidir:** el universo vivo (127) tres vueltas seguidas, 381 búsquedas con 0,3 s entre una y otra: **0 vacías y 0 errores**. Sumadas a las de la 367 (127 + 12 + 6 + 3, con TJX y GOOGL vacías), **2 en unas 530: 0,4%**. El umbral era 1%: **se cierra sin código**.
+  - **Lo que no se afirma:** que la tasa sea ésa a toda hora: es una tarde. Si el harvest empezara a mostrar tickers con noticias en cero que al rato las tienen, se reabre con esa evidencia.
+  - **No deja tareas nuevas.**
 - **WIP 316 — Tarea 365 (TONO-RUBRICA-ASIMETRICA) CERRADA 2026-10-22 — NO-SHIP: el prompt no se cambia** (`adf045e`, CI **VERDE** 2026-10-22 20:09Z; `docs/tono_rubrica_t365_2026-10-22.md`; sin código). Los cuatro comandos corrieron **después** de escribir este registro.
   - **El set:** 44 titulares `-7n` reales (copia de la DB de hoy, solo lectura), con regla de muestreo y semillas declaradas: los 7 de la 290 (PepsiCo y BAC), 7 candidatos a −3 por palabra clave y una muestra por nivel. **Los etiquetó Claude, no Chapa**, contra la rúbrica escrita, y **antes** de escribir el candidato (sha256 `c28c38175e8b3fe8`).
   - **El resultado, con `qwen2.5:14b` a temperatura 0 y sin escribir la DB:** el vigente acierta el nivel exacto en **27/44** y queda a ±1 en 40 (91%); el candidato, **26/44** y 42 (95%). El criterio pedía *más* aciertos exactos: **no pasa**. El (2), la distribución en 300 filas, no se corrió porque el (1) ya decide. El candidato arregla los dos recortes de PepsiCo, pero manda a −3 el de *beat* más recorte y sigue poniendo +3 al comprador de Braze y a dos *beats* sin *raise*.
