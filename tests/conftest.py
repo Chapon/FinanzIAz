@@ -421,6 +421,26 @@ def _reset_throttle_breaker():
 
 
 @pytest.fixture(autouse=True)
+def _red_sana_para_el_canario(monkeypatch):
+    """El canario de red de la tarea 374 ve la red **sana** en los tests, salvo que el test lo pise.
+
+    ``_record_miss`` prueba la red antes de culpar a un símbolo, y el cortafuegos de abajo
+    corta toda conexión: sin esto, todo test que espera un ``failing`` vería la red caída y
+    obtendría un ``transient``. Los tests de la 374 lo reemplazan para probar la red cortada.
+    También limpia la ráfaga de ``failed_tickers``, que es estado de módulo.
+    """
+    from data import failed_tickers as _ft
+    from data import yahoo_finance as _yfm
+
+    monkeypatch.setattr(_yfm, "_red_caida", lambda: False)
+    _yfm.reset_canario()
+    _ft._ultimas_fallas.clear()
+    monkeypatch.setattr(_ft, "_rafaga_avisada_hasta", 0.0)
+    yield
+    _yfm.reset_canario()
+
+
+@pytest.fixture(autouse=True)
 def _disable_settings_persistence(tmp_path, monkeypatch):
     """
     Redirect ``settings.json`` to a per-test tmp directory so test runs don't

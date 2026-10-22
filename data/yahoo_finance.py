@@ -14,6 +14,7 @@ the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 
 import math
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -386,11 +387,66 @@ def _record_miss(ticker: str, error: str, operation: str) -> None:
     Yahoo, no del símbolo → ``record_transient`` (no envenena el failing set).
     Con el breaker cerrado el símbolo falló en una red sana → ``record_failure``
     (delisting/ticker inválido genuino, se saltea en adelante).
+
+    **Y con la red caída tampoco cuenta (tarea 374).** El 2026-10-20, al volver de la
+    suspensión, no hubo DNS por ~3 s: ``fast_info`` devolvió ``None`` (yfinance se traga el
+    error de red) y 14 tickers sanos, una posición abierta entre ellos, quedaron en
+    ``failing`` con el breaker cerrado. Ahora, antes de culpar al símbolo, se prueba la red
+    (``_red_caida``): si no hay ni conexión a Yahoo, la falla es de la red.
     """
     if _is_throttled():
         record_transient(ticker, error, operation)
+    elif _red_caida():
+        record_transient(ticker, f"{error} (sin red al registrarlo: no cuenta contra el símbolo)", operation)
     else:
         record_failure(ticker, error, operation)
+
+
+# El canario de la tarea 374: ¿se puede abrir una conexión a Yahoo? Se cachea unos segundos
+# porque una ráfaga de fallas llama acá una vez por ticker.
+_CANARIO = ("query1.finance.yahoo.com", 443)
+_CANARIO_TTL_S = 20.0
+_CANARIO_TIMEOUT_S = 2.0
+_canario_lock = threading.Lock()
+_canario: tuple[float, bool] | None = None
+
+
+def _red_caida() -> bool:
+    """¿Está caída la red hacia Yahoo? Es el punto que los tests reemplazan (``conftest``)."""
+    return _probar_red()
+
+
+def _probar_red() -> bool:
+    """``True`` si no se puede abrir una conexión TCP a Yahoo (sin DNS, sin ruta, rechazada).
+
+    La resolución y la conexión van juntas en ``create_connection``: si el DNS no responde,
+    falla igual. **Cualquier** error cuenta como red caída, no sólo ``OSError``: si el canario
+    mismo falla, la falla del fetch se anota como transitoria y se reintenta, que es el lado
+    seguro (el otro lado es sacar del scan un símbolo sano por 7 días). El resultado vale
+    ``_CANARIO_TTL_S`` segundos.
+    """
+    global _canario
+    ahora = time.monotonic()
+    with _canario_lock:
+        if _canario is not None and ahora - _canario[0] < _CANARIO_TTL_S:
+            return _canario[1]
+    try:
+        socket.create_connection(_CANARIO, timeout=_CANARIO_TIMEOUT_S).close()
+        caida = False
+    except Exception:
+        caida = True
+    with _canario_lock:
+        _canario = (ahora, caida)
+    if caida:
+        log.warning("Sin red hacia Yahoo: las fallas de fetch no cuentan contra los símbolos (tarea 374)")
+    return caida
+
+
+def reset_canario() -> None:
+    """Olvida el último resultado del canario (tests)."""
+    global _canario
+    with _canario_lock:
+        _canario = None
 
 
 def _run_with_timeout(

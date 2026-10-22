@@ -76,11 +76,56 @@ def _to_row(record: FailedTicker) -> FailedTickerRow:
     )
 
 
+#: Aviso de ráfaga (tarea 374): tantas filas nuevas en ``failing`` en esta ventana no son
+#: tantos símbolos muertos a la vez, son casi seguro la red o Yahoo.
+RAFAGA_N = 5
+RAFAGA_S = 600.0
+_ultimas_fallas: list[float] = []
+_rafaga_avisada_hasta = 0.0
+
+
+def _es_posicion_abierta(session, symbol: str) -> bool:
+    """¿Alguna cuenta paper tiene ``symbol`` en cartera? Fail-safe: ante un error, ``True``."""
+    try:
+        from paper_trading.models import PaperPosition
+
+        return (
+            session.query(PaperPosition.id)
+            .filter(PaperPosition.ticker == symbol, PaperPosition.shares > 0)
+            .first()
+            is not None
+        )
+    except Exception:
+        log.exception("No se pudo saber si %s es una posición abierta: se la trata como tal", symbol)
+        return True
+
+
+def _anotar_para_la_rafaga(symbol: str) -> None:
+    global _rafaga_avisada_hasta
+    import time as _time
+
+    ahora = _time.monotonic()
+    _ultimas_fallas[:] = [t for t in _ultimas_fallas if ahora - t < RAFAGA_S] + [ahora]
+    if len(_ultimas_fallas) >= RAFAGA_N and ahora >= _rafaga_avisada_hasta:
+        _rafaga_avisada_hasta = ahora + RAFAGA_S
+        log.warning(
+            "%d tickers entraron a failing en %.0f min (el último, %s): eso no suele ser una ola de "
+            "deslistados sino la red o Yahoo. Revisá la pestaña de fallidos (tarea 374).",
+            len(_ultimas_fallas),
+            RAFAGA_S / 60,
+            symbol,
+        )
+
+
 def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
     """
     Registra un fallo para ``ticker``. Si ya existía, incrementa el contador
     y actualiza el último error/operación. Si estaba marcado como ``retry``,
     vuelve a ``failing`` para que se omita de nuevo.
+
+    **Una posición abierta no entra a ``failing`` por una falla (tarea 374):** es lo último
+    que se puede dejar sin precio, porque sin precio no hay stop. Va como ``transient``, que se
+    ve en la UI y se reintenta el scan siguiente.
     """
     if not ticker:
         return
@@ -91,6 +136,14 @@ def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
         op = (operation or "fetch")[:50]
 
         with session_scope() as session:
+            abierta = _es_posicion_abierta(session, symbol)
+        if abierta:
+            # override: si ya estaba en failing, sale; una posición abierta no se saltea.
+            record_transient(symbol, f"{err_msg} (posición abierta: no se saltea)"[:500], op, override=True)
+            return
+
+        entra = False
+        with session_scope() as session:
             existing = session.query(FailedTicker).filter(FailedTicker.ticker == symbol).first()
             if existing:
                 existing.last_error = err_msg
@@ -99,6 +152,7 @@ def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
                 # Si estaba en retry y volvió a fallar, vuelve a failing
                 if existing.status == STATUS_RETRY:
                     existing.status = STATUS_FAILING
+                    entra = True
             else:
                 session.add(
                     FailedTicker(
@@ -109,6 +163,9 @@ def record_failure(ticker: str, error: str, operation: str = "fetch") -> None:
                         status=STATUS_FAILING,
                     )
                 )
+                entra = True
+        if entra:  # la ráfaga cuenta los que ENTRAN, no la falla 22 de uno que ya estaba
+            _anotar_para_la_rafaga(symbol)
     except Exception:
         log.exception("No se pudo registrar fallo para %s", ticker)
 
