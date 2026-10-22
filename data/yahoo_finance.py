@@ -449,6 +449,28 @@ def reset_canario() -> None:
         _canario = None
 
 
+class CierreDeLaApp(RuntimeError):
+    """El ``RuntimeError`` de encolar en un pool apagado, ya reconocido (tarea 375).
+
+    Lo levanta ``_run_with_timeout`` en vez del de ``concurrent.futures``, con el mismo
+    texto (así ``_es_cierre_del_interprete`` lo sigue viendo). **Sigue siendo una
+    excepción, no un ``default``:** un ``None`` callado lo leería ``_fetch_ticker_info``
+    como «sin precio» y ``_record_miss`` mandaría a ``failing`` un ticker sano por cerrar
+    la app; y un scan a medias seguiría con precios faltantes. Quien lo atrapa lo deja
+    pasar sin ERROR ni traceback: ya se avisó una vez, como INFO."""
+
+
+_cierre_avisado = False
+
+
+def _avisar_cierre(fn_name: object) -> None:
+    """Un INFO por proceso, no uno por ticker (el 2026-10-20 fueron 12 ERROR y 81 WARNING)."""
+    global _cierre_avisado
+    if not _cierre_avisado:
+        _cierre_avisado = True
+        log.info("Cierre de la app: los fetch que siguen en vuelo se cortan (el primero, %s)", fn_name)
+
+
 def _run_with_timeout(
     fn: Callable[..., T],
     *args,
@@ -478,7 +500,13 @@ def _run_with_timeout(
     fn_name = getattr(fn, "__name__", fn)
     while True:
         _acquire_rate_token()
-        future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
+        try:
+            future = _TIMEOUT_POOL.submit(fn, *args, **kwargs)
+        except RuntimeError as exc:
+            if not _es_cierre_del_interprete(exc):
+                raise
+            _avisar_cierre(fn_name)
+            raise CierreDeLaApp(str(exc)) from None
         try:
             return future.result(timeout=timeout)
         except FuturesTimeoutError:
@@ -2612,6 +2640,8 @@ def get_bulk_dividend_calendar(tickers: list[str]) -> dict[str, list[tuple[str, 
             t = futuros[fut]
             try:
                 out[t] = fut.result()
+            except CierreDeLaApp:
+                out[t] = []  # ya avisado una vez por _run_with_timeout (tarea 375)
             except Exception:
                 log.exception("Bulk dividend calendar fetch failed for %s", t)
                 out[t] = []

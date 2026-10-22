@@ -16,8 +16,10 @@ ticker without rebuilding the whole table.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import os
+import threading
 
 from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
@@ -49,6 +51,28 @@ _SHUTTING_DOWN = os.environ.get("FINANZIAS_DISABLE_TICKER_FETCH", "").strip().lo
 )  # "0" apaga el apagado; con bool() lo habría prendido
 
 
+def _apagar_al_salir() -> None:
+    global _SHUTTING_DOWN
+    if not _SHUTTING_DOWN:
+        # Nadie llamó a shutdown(): el proceso no pasó por el final de main(). El 20/10 eso
+        # no quedó escrito en ningún lado; ahora sí.
+        log.warning("El intérprete se apaga sin haber pasado por el cierre de la app (tarea 375)")
+    _SHUTTING_DOWN = True
+
+
+# Tarea 375: la bandera se prende también al empezar el apagado del intérprete, sin depender
+# de que ``main()`` llegue a ``shutdown()``. El 2026-10-20 un proceso entró en *interpreter
+# shutdown* a los 5 s de arrancar sin prenderla (los ``emit`` lo prueban) y terminó en el
+# diálogo «Error inesperado»; por dónde salió no quedó en el log. El gancho es el de
+# ``threading._shutdown``, el mismo que usa ``concurrent.futures``: corre **antes** de esperar a
+# los hilos que quedan (ese día, 20 s), no después como ``atexit``, que queda de respaldo.
+# Medido con un fetch en vuelo y sin llamar a ``shutdown()``: exit 127 sin el gancho, 0 con él.
+try:
+    threading._register_atexit(_apagar_al_salir)  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover — API privada; existe desde 3.9
+    atexit.register(_apagar_al_salir)
+
+
 class _FetchRunnable(QRunnable):
     """Fetches company info for a single ticker via yfinance."""
 
@@ -72,6 +96,8 @@ class _FetchRunnable(QRunnable):
 
             info = get_company_info(self.ticker) or {}
         except Exception as e:
+            if _SHUTTING_DOWN or type(e).__name__ == "CierreDeLaApp":
+                return  # tarea 375: cerrando; ni WARNING por ticker ni emit
             log.warning("fetch failed for %s: %s", self.ticker, e)
             info = {}
         if _SHUTTING_DOWN:

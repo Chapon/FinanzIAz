@@ -56,6 +56,7 @@ from PyQt6.QtWidgets import QApplication
 app = QApplication([])
 import data.yahoo_finance as yf
 yf.get_company_info = lambda t: (time.sleep(0.6), {{"name": t}})[1]
+{antes}
 import ui.ticker_tooltip as tt
 for t in ("AAPL", "MSFT", "NVDA"):
     tt.ticker_cache.get(t)
@@ -65,8 +66,8 @@ app.exec()
 """
 
 
-def _correr(cierre: str) -> int:
-    src = textwrap.dedent(_ESCENARIO).format(root=str(ROOT), cierre=cierre)
+def _correr(cierre: str, antes: str = "") -> int:
+    src = textwrap.dedent(_ESCENARIO).format(root=str(ROOT), cierre=cierre, antes=antes)
     return subprocess.run([sys.executable, "-c", src], capture_output=True, timeout=120).returncode
 
 
@@ -83,8 +84,12 @@ def test_cerrar_con_un_fetch_en_vuelo_sale_limpio():
 
 def test_el_escenario_sin_el_arreglo_sigue_siendo_el_defecto():
     """Y sin cortar los fetch, el proceso **muere**: si esto pasara a 0, el guard
-    de arriba dejaría de probar nada y nadie se enteraría."""
-    assert _correr("pass") != 0
+    de arriba dejaría de probar nada y nadie se enteraría.
+
+    Sin el gancho de la tarea 375, que prende la bandera al apagarse el intérprete aunque
+    nadie llame a ``shutdown()``: con él, este escenario ya sale en 0 (lo fija
+    ``test_cierre_sin_bandera_t375.py``)."""
+    assert _correr("pass", antes="import threading; threading._register_atexit = lambda fn: None") != 0
 
 
 # ── Contrato de shutdown(), sin subprocesos ──────────────────────────────────

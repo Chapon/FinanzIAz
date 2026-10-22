@@ -65,6 +65,16 @@ def workers_corriendo() -> list:
     return [w for w in list(_VIVOS) if w.isRunning()]
 
 
+def _es_cierre_de_la_app(exc: BaseException) -> bool:
+    """¿Es el corte de ``_run_with_timeout`` al cerrar la app? (tarea 375). Import tardío:
+    el módulo ya está cargado si el worker llegó a pedirle algo a Yahoo."""
+    try:
+        from data.yahoo_finance import CierreDeLaApp
+    except Exception:
+        return False
+    return isinstance(exc, CierreDeLaApp)
+
+
 class BaseWorker(QThread):
     """
     Common base class for QThread-based workers.
@@ -113,7 +123,11 @@ class BaseWorker(QThread):
             log.debug("%s: starting", cls_name)
             result = self.do_work()
         except Exception as exc:
-            log.exception("%s: error in do_work()", cls_name)
+            if _es_cierre_de_la_app(exc):
+                # Tarea 375: la app se está cerrando; _run_with_timeout ya lo avisó una vez.
+                log.debug("%s: cortado por el cierre de la app", cls_name)
+            else:
+                log.exception("%s: error in do_work()", cls_name)
             try:
                 self.error.emit(exc)
             except Exception:
