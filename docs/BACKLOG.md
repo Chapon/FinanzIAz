@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 311 — Tarea 364 (XGB-CLAVE-SENSIBLE-AL-RUIDO) CERRADA 2026-10-22 — el criterio (3) en vivo pasa** (sólo backlog; el código es `97ee43b`, del 2026-10-16). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Medido en `~/.finanzias/finanzias.log`** (hora local), con la app arrancada después de `97ee43b`. **2026-10-19**, de 11:35 a 16:26, casi toda la rueda: **21 scans y una sola línea `XGB entrenados`**, la del arranque (`motivos: nuevo=126`). **2026-10-21**, de 13:19 a 17:05: **16 scans y una sola**, también `nuevo=126`. Ninguna con `cierres=`. Antes del arreglo, el 2026-10-16, había una por hora: `cierres=115`, `114`, `67`, `48`, `114`.
+  - **Que no es un falso verde por falta de bajadas:** el TTL del histórico sí venció. La línea `Historical data for WBD` sale en cada bajada nueva: el 10-19 a las 12:51, 13:51, 15:06 y 16:07, y el 10-21 en cada scan. Los cierres se re-bajaron y el modelo se reusó.
+  - **Lo que el resumen no ve:** el camino de split simple (series cortas, el `val set too small` de las 11:41 y 12:47 del 10-19) anota el motivo pero no `_note_training`, y `drain_training_summary` devuelve `None` con `n == 0`. Son análisis ad-hoc de un ticker cada uno, no el universo del scan: no cambia la lectura.
+  - **No deja tareas nuevas.** La **387** entra en el mismo commit, pero sale de una pregunta de Chapa, no de esta tarea. El `MARAMLTX` *possibly delisted* del 10-19 a las 11:41 es una búsqueda a mano (MARA y MLTX pegados), no un defecto.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -458,6 +464,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22** al cerrar la **385** (NO-SHIP), que **no deja tareas nuevas** y cierra la serie 382–386 de los libros. Se consume el ítem de arriba y vuelve a la cabeza la **374**. El orden queda **374 → 355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-22b** al cerrar la **374**, que **no deja tareas nuevas**. Se consume el ítem de arriba. El orden queda **355 → 362 → 356 → 364 → 375 → 381 → 376 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-22c** al cerrar la **364**, que **no deja tareas nuevas**. Las tres de arriba (355, 362, 356) esperan pasos de Chapa en AWS (*Acciones manuales*) y no se pueden avanzar desde acá, así que se cerró la primera que sí. Entra la **387** (una pregunta de Chapa sobre la pantalla de Noticias), baja y chica, detrás de la 376. El orden queda **355 → 362 → 356 → 375 → 381 → 376 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1897,6 +1905,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 387. BRIEFING-SIN-REINTENTO — Si Ollama todavía no levantó cuando se abre Noticias, el briefing queda en el resumen automático hasta que alguien aprieta *Actualizar*, y la pantalla no dice ni por qué ni que se puede reintentar  ·  origen: pregunta de Chapa (2026-10-22) · severidad **BAJA** (display; no toca decisiones)
+
+- **Qué pasa.** 2026-10-22: la app arrancó a las 11:22:08 y a las 11:24:12 `make_ollama_briefer` (`analysis/news_digest.py`) recibió `ConnectionRefusedError` contra `localhost:11434`; a las 11:25 Ollama ya contestaba con `qwen2.5:14b`. Estaba arrancando junto con la PC. El `NewsWorker` (`ui/news_tab.py:157`) pide el briefing una sola vez por carga y cae a `fallback_briefing`, que termina en *«(Briefing IA no disponible — resumen automático.)»*: no dice que Ollama no contestó ni que *Actualizar* lo reintenta. Además el log lo escribe como `ERROR` con el traceback entero de urllib3 (~50 líneas) para algo que es esperable al arrancar.
+- **Qué hay que hacer.** (1) Que el texto diga la causa y la salida (*«Ollama no respondía a las HH:MM — Actualizar para reintentar»*), distinguiendo conexión rechazada de timeout o respuesta vacía. (2) Una conexión rechazada va como `WARNING` de una línea, sin traceback; lo inesperado (respuesta mal formada) sigue con traceback. (3) A decidir: un reintento solo cuando vuelve Ollama (p. ej. al próximo `maybe_refresh` si el último fue fallback), sin pegarle en loop.
+- **Kill-criteria.** Tests sin red con `http_post` inyectado: conexión rechazada → texto con la causa y `WARNING` sin traceback; respuesta rara → `ERROR` con traceback. Mutación de cada uno, roja. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
 ### 386. ~~COSTO-DE-ROTAR-EN-HOME — Home muestra cuánto rinde la cuenta contra su universo, pero no cuánto le costó llegar ahí: costos y rotación acumulados, al lado de la curva~~ · **CERRADA 2026-10-21 — debajo de la curva: $542,76, 17,1× y 12,3 días para la cuenta 2, los números del doc del 20/10** (`dc15518`) · **movida a *Hecho reciente* con el detalle**  ·  origen: pedido de Chapa (2026-10-21), `docs/libros_inversion_analisis_2026-10-21.md` §3, palanca A (Bernstein, Stanley y Danko; Barber y Odean) · severidad **—** (display-only, regla 3)
 
 - **Por qué.** Del 20/06 al 20/10 la cuenta 2 rotó el capital 17 veces y pagó $542,76 de costos, un tercio de lo ganado (`docs/rendimiento_app_vs_cartera_2026-10-20.md` §4), y eso sólo se supo con un análisis a mano. Es la variable que más repiten los libros y la única que se controla seguro.
@@ -2059,7 +2074,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria, antes de tocar el prompt.** Smoke con `qwen2.5:14b` sobre el set, sin escribir la DB: el prompt nuevo acierta el nivel exacto en más titulares que el viejo y queda a ±1 en ≥ 90%; ningún nivel con menos del 1% de las no neutrales en una muestra de 300 filas recientes; si no mejora, no se cambia. Los cuatro comandos y el CI en verde.
 - **Dependencias:** Ollama con `qwen2.5:14b` en la máquina de Chapa.
 
-### 364. XGB-CLAVE-SENSIBLE-AL-RUIDO — La clave del cache de XGBoost hashea los cierres redondeados a 4 decimales, y el ruido de ~2·10⁻⁷ de cada bajada de Yahoo la cambia: ~115 re-entrenamientos por hora de mercado  ·  origen: tarea 340 (2026-10-16) · severidad **MEDIA** (cómputo: ~126 fits walk-forward por hora, ~373 ms cada uno según la 24; y los WARNING «unstable» que eso repite)
+### 364. ~~XGB-CLAVE-SENSIBLE-AL-RUIDO — La clave del cache de XGBoost hashea los cierres redondeados a 4 decimales, y el ruido de ~2·10⁻⁷ de cada bajada de Yahoo la cambia: ~115 re-entrenamientos por hora de mercado~~ · **CERRADA 2026-10-22 — el (3) en vivo pasa: dos días de mercado sin un re-entrenamiento entre arranques, con los históricos re-bajados cada hora**  ·  origen: tarea 340 (2026-10-16) · severidad **MEDIA** (cómputo: ~126 fits walk-forward por hora, ~373 ms cada uno según la 24; y los WARNING «unstable» que eso repite)
 
 - **Qué pasa.** `_xgb_cache_key` (`analysis/ml_signals.py`) hace `sha256(closes.round(4).tobytes() + …)`. Medido en la 340: entre el frame cacheado y una bajada una hora después, las filas viejas difieren ~2·10⁻⁷ relativo, y entre 8 y 82 de 497 filas cruzan el borde del redondeo. **Un redondeo más grueso no lo arregla**: con cualquier grilla fija, alguna de las ~500 filas cae cerca de un borde.
 - **Qué hay que hacer.** Que la reutilización compare **con tolerancia**: guardar junto al modelo los cierres con los que se entrenó y reusarlo si las piezas exactas (columnas, filas, última fila) coinciden y los cierres están dentro de una tolerancia relativa (p. ej. `np.allclose(rtol=1e-6)`), sin dejar de ver un split o un dividendo (que mueven ≥ 10⁻³).
