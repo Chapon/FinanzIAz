@@ -326,6 +326,18 @@ YF_SEARCH_SOURCE = "yfinance:search"
 #: noticias propias para 124 de los 127 tickers vivos (1.178 aceptadas, 71 descartadas).
 YF_SEARCH_NEWS_COUNT = 10
 
+#: Tarea 367: las clases de acción que Yahoo etiqueta con **otro** ticker. Las noticias de
+#: Alphabet vienen como ``GOOG``, nunca ``GOOGL`` (medido el 2026-10-22: 9 de 9, buscando
+#: por ticker y por «Alphabet»). La fila se guarda igual bajo el ticker del universo. Medido
+#: sobre los 127 tickers vivos, es el único: ``BRK-B`` viene como ``BRK-B``.
+YF_SEARCH_ALIAS: dict[str, frozenset[str]] = {"GOOGL": frozenset({"GOOG"})}
+
+#: Tarea 367: los tickers que la búsqueda toma como **palabra** («near 14-1/2-year low»,
+#: «Now Open»), y se buscan por el nombre de la empresa. El filtro no se afloja: la noticia
+#: entra sólo si Yahoo la etiqueta con el ticker. Medido el 2026-10-22, etiquetadas de 10:
+#: LOW 1 → 10 con «Lowe's», NOW 1 → 10 con «ServiceNow», DE 0 → 10 con «Deere».
+YF_SEARCH_CONSULTA: dict[str, str] = {"LOW": "Lowe's", "NOW": "ServiceNow", "DE": "Deere"}
+
 
 def parse_yf_search_item(ticker: str, raw: dict) -> NewsItem | None:
     """Una entrada de ``yf.Search(...).news`` → NewsItem, **sólo si es del ticker** (tarea 357).
@@ -334,7 +346,7 @@ def parse_yf_search_item(ticker: str, raw: dict) -> NewsItem | None:
     (``AVBP``) y Avidbank (``AVBH``). Se acepta la noticia sólo si Yahoo la etiqueta con el
     ticker en ``relatedTickers`` —por elemento, no por substring—; sin etiquetas, se
     descarta. La respuesta es plana: ``title``, ``link``, ``providerPublishTime`` (epoch),
-    sin resumen.
+    sin resumen. Un alias de :data:`YF_SEARCH_ALIAS` cuenta como el ticker (tarea 367).
     """
     if not isinstance(raw, dict):
         return None
@@ -342,7 +354,8 @@ def parse_yf_search_item(ticker: str, raw: dict) -> NewsItem | None:
     if not title:
         return None
     relacionados = {str(t).upper().strip() for t in (raw.get("relatedTickers") or [])}
-    if ticker.upper().strip() not in relacionados:
+    propio = ticker.upper().strip()
+    if propio not in relacionados and not (relacionados & YF_SEARCH_ALIAS.get(propio, frozenset())):
         return None
     return NewsItem(
         ticker=ticker.upper(),
@@ -357,12 +370,13 @@ def parse_yf_search_item(ticker: str, raw: dict) -> NewsItem | None:
 def _yf_search_news(ticker: str) -> list:
     """Las noticias crudas de ``yf.Search`` para ``ticker`` (sin cotizaciones ni listas).
 
-    ``yf`` se toma de ``data.yahoo_finance`` para que el mock de los tests lo cubra.
+    ``yf`` se toma de ``data.yahoo_finance`` para que el mock de los tests lo cubra. La
+    consulta es el ticker, o el nombre de :data:`YF_SEARCH_CONSULTA` (tarea 367).
     """
     from data.yahoo_finance import yf
 
     busqueda = yf.Search(
-        ticker,
+        YF_SEARCH_CONSULTA.get(ticker.upper().strip(), ticker),
         max_results=0,
         news_count=YF_SEARCH_NEWS_COUNT,
         lists_count=0,

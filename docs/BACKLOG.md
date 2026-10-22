@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 315 — Tarea 367 (GOOGL-SIN-NOTICIAS-DE-SEARCH) CERRADA 2026-10-22 — GOOGL acepta las noticias etiquetadas `GOOG`, y LOW, NOW y DE se buscan por nombre** (`data/news_sources.py`, `tests/test_yf_search_alias_t367.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Medido antes de codear** (`yf.Search` real sobre los 127 tickers vivos, 2026-10-22): 1.180 noticias aceptadas; en cero **GOOGL** (9 crudas, las 9 con `GOOG` y ninguna con `GOOGL`), **DE** (10 crudas de mercado: `CL=F`, `^DJI`) y **TJX** (0 crudas, pasajero: la 388); con una, LOW, NOW y COST. **Clases de acción en el universo: sólo GOOGL** (GOOG no está; `BRK-B` viene etiquetado `BRK-B`, 8 de 10).
+  - **Por nombre, sin aflojar el filtro**, etiquetadas con el ticker sobre 10: LOW 1 → **10** (*«Lowe's»*), NOW 1 → **10** (*«ServiceNow»*), DE 0 → **10** (*«Deere»*), TJX 10 → 10. GOOGL con *«Alphabet»* sigue en **0**: el problema es la etiqueta, no la búsqueda.
+  - **El arreglo, dos mapas declarados:** `YF_SEARCH_ALIAS = {"GOOGL": {"GOOG"}}` (la noticia entra si viene con el ticker **o** con un alias suyo, y se guarda bajo `GOOGL`) y `YF_SEARCH_CONSULTA = {"LOW": "Lowe's", "NOW": "ServiceNow", "DE": "Deere"}` (la consulta; el filtro por etiqueta es el mismo). **En vivo, con el código nuevo:** GOOGL 9, LOW 10, NOW 9, DE 10; AVB sigue en 0 (ArriVent y Avidbank, afuera). El recolector de la nube lo toma recién cuando se vuelva a subir el zip: queda agregado a esa acción manual.
+  - **Tests** (7): la respuesta **grabada** de GOOGL entra entera como `GOOGL` y una sin `GOOG` no; el alias no hace que una noticia de GOOG entre a MSFT; LOW, NOW y DE consultan por nombre y siguen filtrando por etiqueta; el resto consulta por ticker. **Mutación:** sin el alias en el filtro, sin la consulta por nombre, el alias vacío y sin NOW en el mapa: **cuatro, todas rojas**.
+  - **Deja la 388:** `yf.Search` devolvió **vacío** dos veces en la medición (TJX, y GOOGL en la verificación en vivo) y la fuente lo cuenta como «ok» con 0, igual que un ticker sin noticias.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -33,7 +40,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
   6. **El mail del presupuesto:** AWS Budgets manda un mail de confirmación al `AlertaEmail`; hay que aceptarlo para que el aviso funcione.
   - Desde ahí corre sola de lunes a viernes, a las 17:30 de Nueva York. Las keys del usuario `finanzias-app-lector` son el ítem siguiente (la 356).
 
-- **Volver a subir el zip del recolector (tareas 362 y 357).** El código nuevo sube la ventana de noticias a 5 días y suma las noticias de Yahoo (`yfinance_news`, vía `yf.Search`). La Lambda sigue corriendo el zip viejo hasta que se suba.
+- **Volver a subir el zip del recolector (tareas 362, 357 y 367).** El código nuevo sube la ventana de noticias a 5 días y suma las noticias de Yahoo (`yfinance_news`, vía `yf.Search`), con el alias de GOOGL y la búsqueda por nombre de LOW, NOW y DE (la 367). La Lambda sigue corriendo el zip viejo hasta que se suba.
   1. En Windows, `python scripts/build_recolector_nube.py`: tiene que terminar con *«Zip verificado…»* (41,7 MB el 2026-10-19).
   2. *Lambda → finanzias-recolector → Code → Upload from → .zip file* → `dist/recolector_nube.zip`.
   3. **Una prueba:** *Lambda → Test* con `{"lote": 0, "lotes": 5}`, y pasame el resumen. Dice dos cosas que desde acá no se pueden medir: si `yfinance_news` contesta desde AWS (`yfinance_news con_items N/ok 26`) y cuántas noticias escribe un lote con la ventana nueva (`noticias +N (ya M…)`). Con la estimación de la 362, unas 2.100 escrituras por lote un día hábil.
@@ -466,6 +473,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22e** al cerrar la **376**, que **no deja tareas nuevas**. Arriba siguen las que esperan a Chapa (355, 362, 356) y la 381, que espera a que el congelamiento vuelva a pasar. El orden queda **355 → 362 → 356 → 381 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-22f** al cerrar la **387**, que **no deja tareas nuevas**. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-22g** al cerrar la **367**, que deja la **388** (`yf.Search` vacío contado como «ok»), baja: va al final, antes de las dos que necesitan a Chapa. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 365 → 321 → 388 → 327 → 342**.
 
 
 
@@ -1905,6 +1914,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 388. YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
+
+- **Qué pasa.** Medido el 2026-10-22 en dos de unas 150 búsquedas: **TJX** a las 15:44 (0 crudas; minutos después, 10 etiquetadas) y **GOOGL** a las ~15:55 (0 crudas; al rato, 9). `_yf_news` devuelve `SourceOutcome("yfinance_news", "ok", 0)`, que la salud del harvest no distingue de un ticker que no tuvo noticias. No se sabe si es throttle de Yahoo, un timeout del lado de ellos o otra cosa.
+- **Qué hay que hacer.** (1) Medir la frecuencia: una corrida sobre el universo vivo, repetida, contando crudas = 0. (2) Si no es despreciable: un reintento corto cuando la respuesta viene **vacía** (no cuando viene con noticias ajenas, que es el caso de AVB), o declararla `degraded` para que la salud del harvest la cuente.
+- **Kill-criteria.** Con la medición escrita antes de codear: si las vacías son < 1% de las búsquedas, se cierra sin código. Si no, un test con una respuesta vacía y otra con noticias ajenas que se distingan. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
 ### 387. ~~BRIEFING-SIN-REINTENTO — Si Ollama todavía no levantó cuando se abre Noticias, el briefing queda en el resumen automático hasta que alguien aprieta *Actualizar*, y la pantalla no dice ni por qué ni que se puede reintentar~~ · **CERRADA 2026-10-22 — el resumen dice la causa, la hora y que *Actualizar* reintenta; la pestaña reintenta al volver; un WARNING de una línea** (`21f8172`) · **movida a *Hecho reciente* con el detalle**  ·  origen: pregunta de Chapa (2026-10-22) · severidad **BAJA** (display; no toca decisiones)
 
 - **Qué pasa.** 2026-10-22: la app arrancó a las 11:22:08 y a las 11:24:12 `make_ollama_briefer` (`analysis/news_digest.py`) recibió `ConnectionRefusedError` contra `localhost:11434`; a las 11:25 Ollama ya contestaba con `qwen2.5:14b`. Estaba arrancando junto con la PC. El `NewsWorker` (`ui/news_tab.py:157`) pide el briefing una sola vez por carga y cae a `fallback_briefing`, que termina en *«(Briefing IA no disponible — resumen automático.)»*: no dice que Ollama no contestó ni que *Actualizar* lo reintenta. Además el log lo escribe como `ERROR` con el traceback entero de urllib3 (~50 líneas) para algo que es esperable al arrancar.
@@ -2053,7 +2069,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Qué es.** Área L (logs) de la skill `auditoria`, con lo de H que el censo toque, sobre `~/.finanzias/finanzias.log` desde el 2026-10-10 01:00, más lo que no pasa por el logger (el warning de la consola). Informe: `docs/auditoria_logs_2026-10-19.md`.
 - **Kill-criteria.** Congelado en el §1 del informe antes de abrir el log: ninguna firma sin clasificar, ninguna conocida que reaparezca con una tasa mayor que la de su cierre, y el warning de `tight_layout` con causa nombrada.
 
-### 367. GOOGL-SIN-NOTICIAS-DE-SEARCH — Yahoo etiqueta las noticias de Alphabet con `GOOG`, y el filtro de la 357 deja a `GOOGL` sin ninguna  ·  origen: tarea 357 (2026-10-19) · severidad **BAJA** (Finnhub sigue trayendo las de GOOGL)
+### 367. ~~GOOGL-SIN-NOTICIAS-DE-SEARCH — Yahoo etiqueta las noticias de Alphabet con `GOOG`, y el filtro de la 357 deja a `GOOGL` sin ninguna~~ · **CERRADA 2026-10-22 — un alias declarado (`GOOGL` acepta `GOOG`) y búsqueda por nombre para LOW, NOW y DE, sin aflojar el filtro**  ·  origen: tarea 357 (2026-10-19) · severidad **BAJA** (Finnhub sigue trayendo las de GOOGL)
 
 - **Qué pasa.** Medido el 2026-10-19: `yf.Search("GOOGL")` trae 10 noticias y las 10 vienen con `relatedTickers` `["GOOG", …]`, nunca `GOOGL`. El filtro de la 357 acepta sólo el ticker exacto (es lo que impide que a AVB le entren las de ArriVent), así que GOOGL queda en 0. En la 354, GOOGL estaba entre los cinco tickers que más noticias sólo de yfinance perdían. Los otros dos en cero, **LOW** y **NOW**, son otro caso: la búsqueda los toma como palabras (*«near 14-1/2-year low»*, *«Now Open»*) y no trae nada de Lowe's ni de ServiceNow; ahí un alias no sirve.
 - **Qué hay que hacer.** Decidir si se acepta un mapa explícito de clases de acción (`GOOGL → GOOG`, y medir si hay otros en el universo: `BRK-B` sí viene etiquetado como `BRK-B`), con la fila guardada bajo el ticker del universo. Para LOW/NOW, medir si buscar por nombre de la empresa trae noticias etiquetadas, sin aflojar el filtro.
