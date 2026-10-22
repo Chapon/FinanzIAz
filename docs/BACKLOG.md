@@ -18,7 +18,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 317 — Tarea 388 (YF-SEARCH-VACIO-COMO-OK) CERRADA 2026-10-22 sin código — las respuestas vacías de `yf.Search` son el 0,4%** (sólo backlog). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La medición del kill-criteria, escrita antes de decidir:** el universo vivo (127) tres vueltas seguidas, 381 búsquedas con 0,3 s entre una y otra: **0 vacías y 0 errores**. Sumadas a las de la 367 (127 + 12 + 6 + 3, con TJX y GOOGL vacías), **2 en unas 530: 0,4%**. El umbral era 1%: **se cierra sin código**.
+  - **Lo que no se afirma:** que la tasa sea ésa a toda hora: es una tarde. Si el harvest empezara a mostrar tickers con noticias en cero que al rato las tienen, se reabre con esa evidencia.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -470,6 +475,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22g** al cerrar la **367**, que deja la **388** (`yf.Search` vacío contado como «ok»), baja: va al final, antes de las dos que necesitan a Chapa. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 365 → 321 → 388 → 327 → 342**.
 
 > **Repriorizado 2026-10-22h** al cerrar la **365** (NO-SHIP), que **no deja tareas nuevas**. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 321 → 388 → 327 → 342**.
+
+> **Repriorizado 2026-10-22i** al cerrar la **388** sin código, que **no deja tareas nuevas**. Lo que queda espera a Chapa (355, 362, 356, 327, 342), a otra tarea (196 y 245, detrás de la 355/356), a que vuelva a pasar (381) o al paso del tiempo (321). El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1909,7 +1916,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 388. YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
+### 388. ~~YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias~~ · **CERRADA 2026-10-22 sin código — 2 vacías en ~530 búsquedas (0,4%), debajo del 1% del kill-criteria**  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
 
 - **Qué pasa.** Medido el 2026-10-22 en dos de unas 150 búsquedas: **TJX** a las 15:44 (0 crudas; minutos después, 10 etiquetadas) y **GOOGL** a las ~15:55 (0 crudas; al rato, 9). `_yf_news` devuelve `SourceOutcome("yfinance_news", "ok", 0)`, que la salud del harvest no distingue de un ticker que no tuvo noticias. No se sabe si es throttle de Yahoo, un timeout del lado de ellos o otra cosa.
 - **Qué hay que hacer.** (1) Medir la frecuencia: una corrida sobre el universo vivo, repetida, contando crudas = 0. (2) Si no es despreciable: un reintento corto cuando la respuesta viene **vacía** (no cuando viene con noticias ajenas, que es el caso de AVB), o declararla `degraded` para que la salud del harvest la cuente.
