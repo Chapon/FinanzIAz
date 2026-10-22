@@ -18,7 +18,9 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 309 — Tarea 385 (CARTERA-CALIDAD-Y-VALOR-DE-LARGO-PLAZO) EN MARCHA 2026-10-21 — paso 0: pre-registro congelado** en `docs/cartera_calidad_valor_prereg_t385_2026-10-21.md`, commiteado **antes** del runner y antes de ver ningún número de la cartera. Dos ajustes al borrador de la tarea, declarados ahí: la ventana es 2016-09 → 2026-09 (la de los precios del cohorte, no la de EDGAR) y el costo es el **medido** en la cuenta 2 (0,064% de lo operado, de la 386). La medición de la 384 (la calidad sola no anticipó el retorno) se conoce y se dice; el criterio no se mueve por ella.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1904,7 +1906,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 
 - **Por qué es otra estrategia y no un ajuste.** Los libros operan a años y la cuenta 2 a días. Un filtro de calidad o de valor pegado a un swing de 12 días mezcla horizontes. Lo que se prueba es una cartera **aparte**, de rotación baja, que si pasa va como **cuenta paper nueva**. **No toca la cuenta 2**, ni ninguna perilla de la 39, la 219, la 170 o la T7.
 - **Brazos (se congelan en el pre-registro, paso 0).** (U) el universo en partes iguales con rebalanceo anual, que es el benchmark de la 377 llevado a 15 años; (Q) los N de mejor puntaje de calidad (la 384); (V) los N con más margen de seguridad (la 383); (QV) calidad entre los que tienen descuento; y (R) N al azar con la misma rotación. Rebalanceo **anual**, con los fundamentals que se conocían en esa fecha (`filed` ≤ fecha, la 382). Costos del motor.
-- **Paso 0, antes de correr:** pre-registro en `docs/` con N, la fecha de rebalanceo, la ventana (~2011–2026), las sub-ventanas y el kill-criteria de abajo, commiteado **antes** del primer número. El **survivorship bias** del universo de hoy se declara: infla a todos los brazos, y por eso la comparación es siempre contra U, que tiene el mismo sesgo.
+- **Paso 0, antes de correr:** pre-registro en `docs/` con N, la fecha de rebalanceo, la ventana (~2011–2026), las sub-ventanas y el kill-criteria de abajo, commiteado **antes** del primer número. **Hecho 2026-10-21:** `docs/cartera_calidad_valor_prereg_t385_2026-10-21.md` — N = 20, rebalanceo el primer día hábil de abril, ventana 2016-09 → 2026-09 (la de los precios del cohorte), costo medido de 0,064%, y el quinto criterio contra el percentil 90 de 200 carteras al azar. Las carteras van con su nombre completo (Universo, Calidad, Valor, Calidad + valor, Azar), a pedido de Chapa. **El kill-criteria que vale es el de ese documento**, no el borrador de abajo. El **survivorship bias** del universo de hoy se declara: infla a todos los brazos, y por eso la comparación es siempre contra U, que tiene el mismo sesgo.
 - **Kill-criteria (borrador; se congela en el paso 0).** Un brazo pasa sólo si, contra U: (C1) CAGR neto de costos ≥ U + 1 pp/año; (C2) block-bootstrap pareado sobre Δ(retorno diario) con IC95% que no cruce el cero; (C3) maxDD no peor que el de U en más de 3 pp; (C4) le gana a U en al menos 2 de 3 sub-ventanas; (C5) le gana a R. Si no pasa ninguno: NO-SHIP documentado, y la 383/384 siguen como display. Si pasa alguno, el paso siguiente es una cuenta paper nueva en `auto` con su propio benchmark, en una tarea propia.
 - **Dependencias:** 382 y 384 (y 383 para el brazo V).
 
