@@ -19,7 +19,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from analysis.harness_config import cobertura_de_scan
+from analysis.harness_config import cobertura_de_scan, snapshots_de_scan
 from database.readonly import readonly_uri
 
 # Feriados NYSE 2026 (no hay calendario en el proyecto; ver el docstring de harness_config).
@@ -52,11 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         a.account
         or con.execute("SELECT id FROM paper_accounts WHERE is_active=1 ORDER BY id LIMIT 1").fetchone()[0]
     )
-    snaps = [
-        r[0]
-        for r in con.execute("SELECT snapshot_at FROM paper_equity_snapshots WHERE account_id=?", (cuenta,))
-    ]
-    c = cobertura_de_scan(snaps, a.desde, a.hasta, FERIADOS_NYSE_2026)
+    snaps, a_costo = snapshots_de_scan(con, cuenta)
+    c = cobertura_de_scan(snaps, a.desde, a.hasta, FERIADOS_NYSE_2026, sin_evaluar=a_costo)
     print(f"cuenta {cuenta} · {a.desde} → {a.hasta}: {c}")
     return 0
 

@@ -193,6 +193,13 @@ def _parse(ts: str | None) -> datetime | None:
         return None
 
 
+def _sin_posiciones_a_costo(con: sqlite3.Connection) -> str:
+    """El filtro SQL de los snapshots con posiciones a costo (tarea 376), o ``""`` si la tabla
+    es de antes de la migración 0020 (los tests y las copias viejas la arman sin la columna)."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(paper_equity_snapshots)")}
+    return " AND COALESCE(positions_at_cost, 0) = 0" if "positions_at_cost" in cols else ""
+
+
 def _day(ts: str | None) -> str | None:
     return ts[:10] if ts else None
 
@@ -1242,9 +1249,11 @@ def _benchmark_panel(con: sqlite3.Connection, account_id: int) -> dict:
         "motivo": "sin_snapshots",
     }
     try:
+        # Tarea 376: un snapshot con posiciones a costo no es valor de mercado (el 13/10,
+        # exacto el costo): ni de ancla ni de punta.
         rows = con.execute(
             "SELECT snapshot_at, total_equity FROM paper_equity_snapshots "
-            "WHERE account_id=? ORDER BY snapshot_at ASC",
+            f"WHERE account_id=?{_sin_posiciones_a_costo(con)} ORDER BY snapshot_at ASC",
             (account_id,),
         ).fetchall()
     except sqlite3.OperationalError:

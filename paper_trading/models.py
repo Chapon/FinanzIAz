@@ -239,6 +239,10 @@ class PaperEquitySnapshot(Base):
     # NULL when the overlay is disabled or there isn't enough history to
     # estimate σ. Powers monitoring of how close the book runs to its vol target.
     portfolio_sigma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Tarea 376: cuántas posiciones entraron a ``avg_cost`` porque no tenían precio. Con > 0,
+    # ``positions_value`` no es valor de mercado y los lectores de la curva lo saltean o lo
+    # rotulan. NULL en las filas anteriores a la migración 0020: no se pueden reconstruir.
+    positions_at_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     account = relationship("PaperAccount", back_populates="snapshots")
 

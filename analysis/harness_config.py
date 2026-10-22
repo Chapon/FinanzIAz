@@ -473,7 +473,14 @@ FUERA_DE_SESION_DESC = (
 LIVE_SCAN_INTERVAL_MINUTES = 15
 
 
-def cobertura_de_scan(snapshots_utc: list, desde, hasta, feriados: set | frozenset = frozenset()) -> dict:
+def cobertura_de_scan(
+    snapshots_utc: list,
+    desde,
+    hasta,
+    feriados: set | frozenset = frozenset(),
+    *,
+    sin_evaluar: Iterable = (),
+) -> dict:
     """Cuántos días hábiles de ``[desde, hasta]`` tuvieron scan, desde el REGISTRO (tarea 265).
 
     ``snapshots_utc`` son los ``snapshot_at`` de ``paper_equity_snapshots`` (UTC naive): un
@@ -485,6 +492,11 @@ def cobertura_de_scan(snapshots_utc: list, desde, hasta, feriados: set | frozens
     (``paper_scan_interval_minutes``) y no por lo que **corrió**: con la app cerrada no hay
     scan, y entre julio y octubre de 2026 eso fue ~1 de cada 3 días hábiles. Pura: los
     feriados se pasan (este módulo no tiene calendario, a propósito).
+
+    ``sin_evaluar`` (tarea 376): los ``snapshot_at`` de scans que dejaron posiciones **sin
+    precio**, que corrieron pero no evaluaron sus barreras. Cuentan para ``sin_scan`` y no
+    para ``sin_scan_en_sesion``: un día cuyo único scan en sesión fue así no evaluó nada.
+    Los lee :func:`snapshots_de_scan`.
     """
     from datetime import date, datetime, time, timedelta, timezone
     from zoneinfo import ZoneInfo
@@ -492,14 +504,19 @@ def cobertura_de_scan(snapshots_utc: list, desde, hasta, feriados: set | frozens
     ny = ZoneInfo("America/New_York")
     con_scan: set = set()
     en_sesion: set = set()
+
+    def _local(ts):
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts[:26])
+        return ts.replace(tzinfo=timezone.utc).astimezone(ny)
+
+    no_evaluaron = {_local(ts) for ts in sin_evaluar if ts is not None}
     for ts in snapshots_utc:
         if ts is None:
             continue
-        if isinstance(ts, str):
-            ts = datetime.fromisoformat(ts[:26])
-        local = ts.replace(tzinfo=timezone.utc).astimezone(ny)
+        local = _local(ts)
         con_scan.add(local.date())
-        if time(9, 30) <= local.time() <= time(16, 0):
+        if time(9, 30) <= local.time() <= time(16, 0) and local not in no_evaluaron:
             en_sesion.add(local.date())
     habiles = 0
     sin = 0
@@ -513,6 +530,20 @@ def cobertura_de_scan(snapshots_utc: list, desde, hasta, feriados: set | frozens
             sin_sesion += d not in en_sesion
         d += timedelta(days=1)
     return {"habiles": habiles, "sin_scan": sin, "sin_scan_en_sesion": sin_sesion}
+
+
+def snapshots_de_scan(con, cuenta: int) -> tuple[list, list]:
+    """Los ``snapshot_at`` de la cuenta y, aparte, los de scans con posiciones a costo (tarea 376).
+
+    ``con`` es una conexión ``sqlite3``. Con una tabla de antes de la migración 0020 (sin
+    ``positions_at_cost``), la segunda lista sale vacía: esas filas no se pueden reconstruir.
+    """
+    cols = {r[1] for r in con.execute("PRAGMA table_info(paper_equity_snapshots)")}
+    marca = "COALESCE(positions_at_cost, 0) > 0" if "positions_at_cost" in cols else "0"
+    filas = con.execute(
+        f"SELECT snapshot_at, {marca} FROM paper_equity_snapshots WHERE account_id=?", (cuenta,)
+    ).fetchall()
+    return [ts for ts, _ in filas], [ts for ts, a_costo in filas if a_costo]
 
 
 def desc_eval_vivo(cobertura: dict, desde: str, hasta: str, medido_el: str) -> str:

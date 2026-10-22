@@ -214,6 +214,7 @@ class HomeTab(QWidget):
         super().__init__(parent)
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
         self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al tildarla (tarea 359)
+        self._paper_a_costo: dict[int, list] = {}  # días cuyo punto tiene posiciones a costo (tarea 376)
         self._ref: dict[int, object] = {}  # su universo sin elegir (tarea 377), calculado al tildarla
         self._costo: dict[int, dict | None] = {}  # lo que le costó operar (tarea 386), leído al tildarla
         self._cuentas_paper: dict[int, tuple[str, float]] = {}  # id → (nombre, capital inicial)
@@ -405,6 +406,7 @@ class HomeTab(QWidget):
             cb.deleteLater()
         self.cuenta_checks = {}
         self._paper.clear()
+        self._paper_a_costo.clear()
         self._ref.clear()
         self._costo.clear()
         self._cuentas_paper = {}
@@ -564,14 +566,14 @@ class HomeTab(QWidget):
 
     def _equity_paper(self, account_id: int) -> list:
         """La equity diaria de una cuenta paper, leída una vez por carga (tarea 359)."""
-        from paper_trading.account import equity_diaria
+        from paper_trading.account import equity_diaria_marcada
 
         if account_id not in self._paper:
             try:
-                self._paper[account_id] = equity_diaria(account_id)
+                self._paper[account_id], self._paper_a_costo[account_id] = equity_diaria_marcada(account_id)
             except Exception:
                 log.exception("Home: no se pudo leer la equity de la cuenta paper %s", account_id)
-                self._paper[account_id] = []
+                self._paper[account_id], self._paper_a_costo[account_id] = [], []
         return self._paper[account_id]
 
     def _referencia(self, account_id: int):
@@ -668,6 +670,11 @@ class HomeTab(QWidget):
         capital = self._cuentas_paper[account_id][1]
         hasta = f"{serie[-1][0]:%d/%m}"
         cola = f"Último snapshot de cada día (hora de Nueva York). Capital inicial ${capital:,.0f}."
+        a_costo = self._paper_a_costo.get(account_id, [])
+        if a_costo:
+            # Tarea 376: ese día ningún scan tuvo precio para todas las posiciones.
+            dias = ", ".join(f"{d:%d/%m}" for d in a_costo)
+            cola += f" Con posiciones a costo, por falta de precio: {dias}."
         xs = [d for d, *_ in serie]
         if vista == "ganancia":
             ganancia = [eq - capital for *_, eq in serie]

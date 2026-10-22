@@ -21,7 +21,9 @@ SQLite (`finanzias.db`), SQLAlchemy. Esquema en `database/models.py` (general) y
 → Tabla central para auditorías y backtests de exits.
 
 ### `paper_equity_snapshots` — curva de equity
-`id`, `account_id` (FK), `snapshot_at`, `cash`, `positions_value`, `total_equity`, `portfolio_sigma`.
+`id`, `account_id` (FK), `snapshot_at`, `cash`, `positions_value`, `total_equity`, `portfolio_sigma`, `positions_at_cost`.
+
+`positions_at_cost` (migración **0020**, tarea 376): cuántas posiciones entraron a `avg_cost` porque no tenían precio. Con > 0, `positions_value` **no es valor de mercado**: la curva de Paper, Métricas (`vs SPY`) y `scripts/baseline_metrics.py` saltean esos snapshots, Home usa el último limpio del día y rotula el que no lo tiene, y la cobertura de scan de `barrier_eval` no cuenta como evaluado un scan así. `NULL` = fila anterior a la 0020, que no se puede reconstruir (no es lo mismo que 0). Medido contra el log (07/09 a 22/10): 10 scans de la cuenta 2 así, y un solo día, el 13/10, con el punto de Home a costo.
 
 ### `paper_dividend_credits` — el ledger de dividendos acreditados (tarea 222)
 `id`, `account_id` (FK), `ticker`, `ex_date` (`YYYY-MM-DD`), `shares`, `amount_per_share`, `cash`, `credited_at`. UNIQUE `ux_paper_divcred_account_ticker_exdate`, migración **0014**.

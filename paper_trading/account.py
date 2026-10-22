@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from datetime import date, timezone
 
+from sqlalchemy import or_
+
 from config.errors import ValidationError
 from database.models import session_scope, utcnow_naive
 from paper_trading.models import (
@@ -241,12 +243,21 @@ def get_position_entry_prices(account_id: int) -> dict[str, float]:
 def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
     """
     Mark-to-market equity given a {ticker: price} dict.
-    Returns {'cash', 'positions_value', 'total_equity', 'per_position'}.
+    Returns {'cash', 'positions_value', 'total_equity', 'per_position', 'positions_at_cost'}.
+
+    Una posición sin precio entra a ``avg_cost``, y ``positions_at_cost`` cuenta cuántas
+    (tarea 376): con > 0, ``positions_value`` no es valor de mercado.
     """
     with session_scope() as session:
         acct = session.query(PaperAccount).filter(PaperAccount.id == account_id).first()
         if acct is None:
-            return {"cash": 0.0, "positions_value": 0.0, "total_equity": 0.0, "per_position": []}
+            return {
+                "cash": 0.0,
+                "positions_value": 0.0,
+                "total_equity": 0.0,
+                "per_position": [],
+                "positions_at_cost": 0,
+            }
         positions = (
             session.query(PaperPosition)
             .filter(PaperPosition.account_id == account_id)
@@ -255,9 +266,12 @@ def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
         )
         per_pos = []
         pos_val = 0.0
+        a_costo = 0
         for p in positions:
             px = prices.get(p.ticker)
-            mv = (p.shares * px) if (px is not None and px > 0) else p.shares * p.avg_cost
+            con_precio = px is not None and px > 0
+            a_costo += not con_precio
+            mv = (p.shares * px) if con_precio else p.shares * p.avg_cost
             pnl = mv - p.shares * p.avg_cost
             pnl_pct = (pnl / (p.shares * p.avg_cost)) if p.avg_cost > 0 else 0.0
             per_pos.append(
@@ -277,6 +291,7 @@ def compute_equity(account_id: int, prices: dict[str, float]) -> dict:
             "positions_value": float(pos_val),
             "total_equity": float(acct.cash + pos_val),
             "per_position": per_pos,
+            "positions_at_cost": a_costo,
         }
 
 
@@ -300,6 +315,7 @@ def record_equity_snapshot(
             positions_value=eq["positions_value"],
             total_equity=eq["total_equity"],
             portfolio_sigma=portfolio_sigma,
+            positions_at_cost=eq["positions_at_cost"],
         )
         session.add(snap)
         session.flush()
@@ -308,11 +324,21 @@ def record_equity_snapshot(
         return snap
 
 
+def _a_valor_de_mercado():
+    """Filtro de los snapshots sin posiciones a costo (tarea 376). ``NULL`` pasa: son las filas
+    de antes de la migración 0020, que no se pueden reconstruir."""
+    col = PaperEquitySnapshot.positions_at_cost
+    return or_(col.is_(None), col == 0)
+
+
 def get_equity_curve(account_id: int, limit: int = 5_000) -> list[PaperEquitySnapshot]:
+    """La curva de Paper, **sin** los snapshots con posiciones a costo (tarea 376): un punto así
+    es un retorno inventado y su rebote, y en una curva por scan el vecino lo reemplaza."""
     with session_scope() as session:
         rows = (
             session.query(PaperEquitySnapshot)
             .filter(PaperEquitySnapshot.account_id == account_id)
+            .filter(_a_valor_de_mercado())
             .order_by(PaperEquitySnapshot.snapshot_at.asc())
             .limit(limit)
             .all()
@@ -327,11 +353,23 @@ def equity_diaria(account_id: int) -> list[tuple[date, float, float, float]]:
     ``[(día, efectivo, posiciones, equity), ...]`` ascendente: el **último** snapshot de cada
     día, con el día en hora de Nueva York — los snapshots están en UTC y los que salen entre las
     00 y las 05 UTC son la noche del día anterior allá. Sin zona horaria resoluble, el día UTC.
+    Sin los snapshots con posiciones a costo mientras el día tenga otro: ver
+    :func:`equity_diaria_marcada`, que además dice qué días no lo tenían.
+    """
+    return equity_diaria_marcada(account_id)[0]
+
+
+def equity_diaria_marcada(account_id: int) -> tuple[list[tuple[date, float, float, float]], list[date]]:
+    """:func:`equity_diaria` y los días cuyo punto tiene posiciones **a costo** (tarea 376).
+
+    De cada día va el último snapshot sin posiciones a costo; si el día no tiene ninguno, el
+    último que haya, y ese día entra en la lista de la derecha para que quien lo pinte lo diga.
     """
     from data.yahoo_finance import market_timezone
 
     tz = market_timezone()
-    por_dia: dict[date, tuple[float, float, float]] = {}
+    limpio: dict[date, tuple[float, float, float]] = {}
+    a_costo: dict[date, tuple[float, float, float]] = {}
     with session_scope() as session:
         rows = (
             session.query(PaperEquitySnapshot)
@@ -342,8 +380,11 @@ def equity_diaria(account_id: int) -> list[tuple[date, float, float, float]]:
             ts = s.snapshot_at
             dia = ts.replace(tzinfo=timezone.utc).astimezone(tz).date() if tz else ts.date()
             # Ascendente: el último del día pisa a los anteriores.
-            por_dia[dia] = (float(s.cash), float(s.positions_value), float(s.total_equity))
-    return [(d, *v) for d, v in sorted(por_dia.items())]
+            destino = a_costo if (s.positions_at_cost or 0) > 0 else limpio
+            destino[dia] = (float(s.cash), float(s.positions_value), float(s.total_equity))
+    por_dia = {**a_costo, **limpio}
+    marcados = sorted(set(a_costo) - set(limpio))
+    return [(d, *v) for d, v in sorted(por_dia.items())], marcados
 
 
 # ── Order queries (history / pending) ─────────────────────────────────────────

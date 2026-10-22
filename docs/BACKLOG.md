@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 313 — Tarea 376 (SNAPSHOT-A-COSTO-SIN-MARCA) CERRADA 2026-10-22 — el snapshot cuenta sus posiciones a costo y los lectores de la curva lo saltean o lo rotulan** (`paper_trading/models.py`, migración **0020**, `paper_trading/account.py`, `ui/home_tab.py`, `analysis/metrics_panel.py`, `scripts/baseline_metrics.py`, `analysis/harness_config.py`, `scripts/medir_cobertura_de_scan_t265.py`, `docs/DB_SCHEMA.md`, `tests/test_snapshot_a_costo_t376.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La marca:** `paper_equity_snapshots.positions_at_cost` (nullable), que llena `compute_equity` —el que decide a costo, también con precio 0— y no el scan con `held_without_price`: ése es el de **antes** de operar y el snapshot es el de después. `NULL` en las filas viejas: no se reconstruyen, y no es lo mismo que 0.
+  - **Los lectores, cinco y no tres:** Paper (`get_equity_curve`) los saltea; Home (`equity_diaria_marcada`) se queda con el último snapshot **limpio** del día y, si el día no tiene ninguno, usa el que hay y lo dice en el subtítulo (*«Con posiciones a costo, por falta de precio: 13/10.»*); Métricas (`_benchmark_panel`, el `vs SPY`) y `baseline_metrics` los sacan del SQL, **sólo si la columna existe**, porque diez tests y las copias viejas arman la tabla sin ella; y `cobertura_de_scan` recibe aparte los scans a costo (`sin_evaluar`, leídos con `snapshots_de_scan`): cuentan como scan, no como evaluación en sesión. `dd_breaker` lee snapshots pero nadie lo llama: no se tocó.
+  - **El kill-criteria contra el log** (copia de la DB migrada a la 0020; el log empieza el 07/09, así que antes no se puede medir; hora local convertida a UTC antes de cruzar): **10** scans de la cuenta 2 con *«posiciones SIN evaluar»*, los 10 con su snapshot dentro de los 10 min siguientes, sobre 346 snapshots. **Un solo día**, el **13/10**, quedó con el punto de Home a costo, y ese día **todos** sus snapshots lo estaban (`positions_value = 42.354,16`, el costo): con el arreglo, Home lo dibuja y lo rotula. Desde el 01/07 hay 756 snapshots; los 410 anteriores al log quedan sin medir.
+  - **Tests** (9): el snapshot cuenta 0, 1 y el precio 0; Home y la equity diaria se quedan con el limpio aunque el a costo sea el último, y marcan el día que sólo tiene ése; Paper lo saltea y deja pasar `NULL` y 0; el `vs SPY` con el punto a costo de punta da **igual** que sin él; `baseline_metrics` y `snapshots_de_scan` con la tabla nueva y con la vieja; la cobertura no cuenta como evaluado el día cuyo único scan en sesión fue a costo. **Mutación:** nueve, una por pieza, **todas rojas**.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -462,6 +469,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22c** al cerrar la **364**, que **no deja tareas nuevas**. Las tres de arriba (355, 362, 356) esperan pasos de Chapa en AWS (*Acciones manuales*) y no se pueden avanzar desde acá, así que se cerró la primera que sí. Entra la **387** (una pregunta de Chapa sobre la pantalla de Noticias), baja y chica, detrás de la 376. El orden queda **355 → 362 → 356 → 375 → 381 → 376 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-22d** al cerrar la **375**, que **no deja tareas nuevas**. Las tres de arriba siguen esperando a Chapa en AWS. El orden queda **355 → 362 → 356 → 381 → 376 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-22e** al cerrar la **376**, que **no deja tareas nuevas**. Arriba siguen las que esperan a Chapa (355, 362, 356) y la 381, que espera a que el congelamiento vuelva a pasar. El orden queda **355 → 362 → 356 → 381 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1985,7 +1994,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Una función pura, testeada con cierres sintéticos: dos tickers y un rebalanceo, a mano, con un caso donde **mantener y rebalancear den distinto** (si no, el test no distingue nada); el costo descontado; un ticker sin historia queda afuera y aparece nombrado. Mutaciones (sin rebalanceo, sin costo), rojas. Sobre la DB real: sin rebalanceo y sin costos reproduce el +5,2% del doc de origen, ±0,1 pp. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 376. SNAPSHOT-A-COSTO-SIN-MARCA — Un snapshot de equity con posiciones sin precio las guarda a costo, y Home, Paper y Métricas lo pintan como valor de mercado  ·  origen: `docs/auditoria_tanda_2026-10-20.md` [F-1] · severidad **BAJA-MEDIA** (display: nadie que decida lee los snapshots)
+### 376. ~~SNAPSHOT-A-COSTO-SIN-MARCA — Un snapshot de equity con posiciones sin precio las guarda a costo, y Home, Paper y Métricas lo pintan como valor de mercado~~ · **CERRADA 2026-10-22 — el snapshot cuenta sus posiciones a costo (migración 0020) y los cinco lectores lo saltean o lo rotulan**  ·  origen: `docs/auditoria_tanda_2026-10-20.md` [F-1] · severidad **BAJA-MEDIA** (display: nadie que decida lee los snapshots)
 
 - **Qué pasa.** `record_equity_snapshot` (`paper_trading/account.py:288`) guarda lo que devuelve `compute_equity`, que marca a `avg_cost` cada posición sin precio, y la fila no registra cuántas fueron así. El 13/10 (127/127 sin precio por el throttle), el snapshot de la cuenta 2 quedó con `positions_value = 42.354,16`, que es **exacto** el costo; con los cierres de ese día eran 42.432,37. Es el último del día, así que es el punto de Home (359), que rotula la curva *«a valor de mercado»*. Lo mismo leen Paper (`get_equity_curve`), Métricas (`analysis/metrics_panel.py:1185`) y `scripts/baseline_metrics.py`: el día queda con un retorno inventado y su rebote, y el drawdown puede tomar un falso mínimo. Hoy pasó otra vez con AMGN (scan de las 16:08). **Y el mismo agujero en el instrumento de `barrier_eval`:** `cobertura_de_scan` (`analysis/harness_config.py:476`) cuenta ese snapshot como un scan que evaluó las barreras.
 - **Lo que no se afirma:** que haya cambiado una decisión. `paper_trading/dd_breaker.py` lee snapshots, pero nadie lo llama.

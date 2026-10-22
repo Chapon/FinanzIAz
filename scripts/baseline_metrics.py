@@ -269,9 +269,12 @@ def load_fills(con: sqlite3.Connection, account_id: int) -> list[Fill]:
 
 def load_snapshots(con: sqlite3.Connection, account_id: int) -> list[AccountSnapshot]:
     cur = con.cursor()
+    # Tarea 376: sin los snapshots con posiciones a costo (no son valor de mercado).
+    cols = {r[1] for r in con.execute("PRAGMA table_info(paper_equity_snapshots)")}
+    filtro = " AND COALESCE(positions_at_cost, 0) = 0" if "positions_at_cost" in cols else ""
     cur.execute(
         "SELECT snapshot_at, total_equity, cash, positions_value "
-        "FROM paper_equity_snapshots WHERE account_id=? ORDER BY snapshot_at",
+        f"FROM paper_equity_snapshots WHERE account_id=?{filtro} ORDER BY snapshot_at",
         (account_id,),
     )
     return [
