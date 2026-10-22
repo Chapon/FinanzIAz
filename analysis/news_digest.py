@@ -328,19 +328,26 @@ def make_ollama_briefer(
     uses — free, unattended, no key). Returns None on ANY failure so the caller
     can show :func:`fallback_briefing` instead. ``http_post`` injectable for
     offline tests, mirroring ``make_ollama_backend``.
+
+    **Por qué falló queda en ``briefer.motivo``** (tarea 387): ``None`` si contestó, si no
+    uno de :data:`MOTIVOS_SIN_BRIEFING`, para que el resumen automático lo diga. El
+    2026-10-22 Ollama todavía no había levantado al abrir Noticias, y la pantalla sólo decía
+    *«Briefing IA no disponible»*. Conexión rechazada y timeout son esperables (Ollama
+    arrancando o cargando el modelo): un WARNING de una línea. Lo demás, con traceback.
     """
     import os
+
+    import requests
 
     base = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
 
     def _briefer(items: Sequence[DigestItem]) -> str | None:
+        _briefer.motivo = None
         if not items:
             return None
         try:
             poster = http_post
             if poster is None:
-                import requests
-
                 poster = requests.post
             resp = poster(
                 f"{base}/api/chat",
@@ -358,18 +365,46 @@ def make_ollama_briefer(
             resp.raise_for_status()
             data = resp.json()
             text = ((data.get("message") or {}).get("content", "") or "").strip()
+            if not text:
+                _briefer.motivo = "vacio"
             return text or None
+        except (requests.exceptions.ConnectionError, ConnectionError) as exc:
+            _briefer.motivo = "no_responde"
+            log.warning(
+                "news_digest: Ollama no responde en %s (%s) — resumen automático", base, type(exc).__name__
+            )
+            return None
+        except requests.exceptions.Timeout:
+            _briefer.motivo = "timeout"
+            log.warning("news_digest: Ollama no contestó en %s s — resumen automático", timeout)
+            return None
         except Exception:
+            _briefer.motivo = "error"
             log.exception("news_digest: Ollama briefer failed — UI will use fallback")
             return None
 
+    _briefer.motivo = None
     return _briefer
 
 
-def fallback_briefing(items: Sequence[DigestItem]) -> str:
+# Tarea 387: por qué no hay briefing, en palabras de la pantalla.
+MOTIVOS_SIN_BRIEFING = {
+    "no_responde": "Ollama no respondía",
+    "timeout": "Ollama no contestó a tiempo",
+    "vacio": "Ollama devolvió una respuesta vacía",
+    "error": "falló el pedido a Ollama (detalle en el log)",
+}
+
+
+def fallback_briefing(
+    items: Sequence[DigestItem], *, motivo: str | None = None, cuando: datetime | None = None
+) -> str:
     """
     Deterministic, offline one-paragraph summary for when the LLM isn't up.
     Counts + top movers — boring but always correct.
+
+    Con ``motivo`` (uno de :data:`MOTIVOS_SIN_BRIEFING`), el cierre dice por qué no hay
+    briefing, a qué hora (``cuando``, hora local) y que *Actualizar* reintenta (tarea 387).
     """
     if not items:
         return "Sin noticias en la ventana seleccionada."
@@ -383,8 +418,16 @@ def fallback_briefing(items: Sequence[DigestItem]) -> str:
         f"Categorías principales: {top_cats}. "
         f"Tono más fuerte: {top.ticker} — {top.title} "
         f"({top.event_label}, {top.sentiment_label.lower()}, tono {top.tone:+d}). "
-        f"(Briefing IA no disponible — resumen automático.)"
+        f"{_cierre_sin_briefing(motivo, cuando)}"
     )
+
+
+def _cierre_sin_briefing(motivo: str | None, cuando: datetime | None) -> str:
+    if motivo is None:
+        return "(Briefing IA no disponible — resumen automático.)"
+    causa = MOTIVOS_SIN_BRIEFING.get(motivo, MOTIVOS_SIN_BRIEFING["error"])
+    hora = f" a las {cuando:%H:%M}" if cuando is not None else ""
+    return f"(Sin briefing IA: {causa}{hora}. «Actualizar» lo reintenta. Resumen automático.)"
 
 
 def default_window(days: int = 1, *, now: datetime | None = None) -> tuple[datetime, datetime]:

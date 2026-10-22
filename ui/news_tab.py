@@ -129,11 +129,12 @@ class NewsDigestWorker(BaseWorker):
 
     Dos señales para no bloquear la UI con el LLM:
       ``rows_ready(list[DigestItem])``  — apenas está el ranking (rápido, local).
-      ``briefing_ready(str)``           — cuando el briefing está listo (LLM o fallback).
+      ``briefing_ready(str, bool)``     — cuando el briefing está listo (LLM o fallback), y si
+                                          Ollama falló (tarea 387: la pestaña lo reintenta).
     """
 
     rows_ready = pyqtSignal(object)  # list[DigestItem]
-    briefing_ready = pyqtSignal(str)
+    briefing_ready = pyqtSignal(str, bool)
 
     def __init__(self, days: int, use_llm: bool, parent=None):
         super().__init__(parent)
@@ -153,11 +154,15 @@ class NewsDigestWorker(BaseWorker):
             return items
 
         briefing: str | None = None
+        motivo: str | None = None
         if self.use_llm and items:
-            briefing = make_ollama_briefer()(items)  # None si Ollama no responde
+            briefer = make_ollama_briefer()
+            briefing = briefer(items)  # None si Ollama no responde
+            motivo = briefer.motivo
         if briefing is None:
-            briefing = fallback_briefing(items)
-        self.briefing_ready.emit(briefing)
+            briefing = fallback_briefing(items, motivo=motivo, cuando=datetime.now())
+        # Tarea 387: la pestaña reintenta al volver si falló Ollama (no si el LLM está apagado).
+        self.briefing_ready.emit(briefing, motivo is not None)
         return items
 
 
@@ -169,6 +174,7 @@ class NewsTab(QWidget):
         self._worker: NewsDigestWorker | None = None
         self._items: list[DigestItem] = []
         self._last_loaded: datetime | None = None
+        self._briefing_fallido = False  # tarea 387: el último briefing no salió por Ollama
         self._build_ui()
 
     # ── UI build ──────────────────────────────────────────────────────────
@@ -282,7 +288,9 @@ class NewsTab(QWidget):
             self.refresh()
             return
         age_min = (datetime.utcnow() - self._last_loaded).total_seconds() / 60.0
-        if age_min >= AUTO_REFRESH_MINUTES:
+        # Tarea 387: si el último briefing falló por Ollama, se reintenta al volver a la
+        # pestaña. Sólo al navegar, así que no hay loop contra un Ollama caído.
+        if age_min >= AUTO_REFRESH_MINUTES or self._briefing_fallido:
             self.refresh()
 
     def refresh(self):
@@ -319,7 +327,8 @@ class NewsTab(QWidget):
                 "Sin noticias en la ventana. ¿Corrió el harvest diario? Probá ampliar la ventana de días."
             )
 
-    def _on_briefing_ready(self, text: str):
+    def _on_briefing_ready(self, text: str, fallido: bool = False):
+        self._briefing_fallido = fallido
         self.briefing_lbl.setText(text)
         self.briefing_card.setVisible(bool(self._items))
 

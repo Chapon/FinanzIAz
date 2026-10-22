@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 314 — Tarea 387 (BRIEFING-SIN-REINTENTO) CERRADA 2026-10-22 — sin Ollama, el resumen automático dice por qué, a qué hora y que *Actualizar* lo reintenta** (`analysis/news_digest.py`, `ui/news_tab.py`, `tests/test_briefing_sin_ollama_t387.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **(1) La causa en la pantalla:** el briefer sigue devolviendo `None` si falla (su contrato), y deja el motivo en `briefer.motivo`: `no_responde` (conexión rechazada, también la de `requests`), `timeout`, `vacio` o `error`. `fallback_briefing(items, motivo=, cuando=)` cierra con *«(Sin briefing IA: Ollama no respondía a las 11:24. «Actualizar» lo reintenta. Resumen automático.)»*. Con el LLM apagado no hubo falla y queda el texto de antes.
+  - **(2) El log:** conexión rechazada y timeout, un WARNING de una línea sin traceback; una respuesta mal formada sigue con `log.exception`. Probado contra un puerto cerrado de verdad (`127.0.0.1:1`): una línea, `motivo = no_responde`.
+  - **(3) El reintento, decidido así:** si el último briefing falló por Ollama, `maybe_refresh` recarga al volver a la pestaña aunque no hayan pasado los 30 min. Sólo al navegar: no hay loop contra un Ollama caído. La señal `briefing_ready` pasa a `(str, bool)`; nadie más la usaba.
+  - **Tests** (13): los cuatro motivos con su nivel de log y su traceback o no; el motivo se resetea entre llamadas; el texto con causa, hora y salida, y sin motivo el de antes; la pestaña reintenta si falló y no si no; el worker avisa con Ollama caído y no con Ollama bien ni con el LLM apagado. **Mutación:** nueve, **todas rojas**.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -464,6 +471,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22d** al cerrar la **375**, que **no deja tareas nuevas**. Las tres de arriba siguen esperando a Chapa en AWS. El orden queda **355 → 362 → 356 → 381 → 376 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-22e** al cerrar la **376**, que **no deja tareas nuevas**. Arriba siguen las que esperan a Chapa (355, 362, 356) y la 381, que espera a que el congelamiento vuelva a pasar. El orden queda **355 → 362 → 356 → 381 → 387 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-22f** al cerrar la **387**, que **no deja tareas nuevas**. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 367 → 365 → 321 → 327 → 342**.
 
 
 
@@ -1903,7 +1912,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 387. BRIEFING-SIN-REINTENTO — Si Ollama todavía no levantó cuando se abre Noticias, el briefing queda en el resumen automático hasta que alguien aprieta *Actualizar*, y la pantalla no dice ni por qué ni que se puede reintentar  ·  origen: pregunta de Chapa (2026-10-22) · severidad **BAJA** (display; no toca decisiones)
+### 387. ~~BRIEFING-SIN-REINTENTO — Si Ollama todavía no levantó cuando se abre Noticias, el briefing queda en el resumen automático hasta que alguien aprieta *Actualizar*, y la pantalla no dice ni por qué ni que se puede reintentar~~ · **CERRADA 2026-10-22 — el resumen dice la causa, la hora y que *Actualizar* reintenta; la pestaña reintenta al volver; un WARNING de una línea**  ·  origen: pregunta de Chapa (2026-10-22) · severidad **BAJA** (display; no toca decisiones)
 
 - **Qué pasa.** 2026-10-22: la app arrancó a las 11:22:08 y a las 11:24:12 `make_ollama_briefer` (`analysis/news_digest.py`) recibió `ConnectionRefusedError` contra `localhost:11434`; a las 11:25 Ollama ya contestaba con `qwen2.5:14b`. Estaba arrancando junto con la PC. El `NewsWorker` (`ui/news_tab.py:157`) pide el briefing una sola vez por carga y cae a `fallback_briefing`, que termina en *«(Briefing IA no disponible — resumen automático.)»*: no dice que Ollama no contestó ni que *Actualizar* lo reintenta. Además el log lo escribe como `ERROR` con el traceback entero de urllib3 (~50 líneas) para algo que es esperable al arrancar.
 - **Qué hay que hacer.** (1) Que el texto diga la causa y la salida (*«Ollama no respondía a las HH:MM — Actualizar para reintentar»*), distinguiendo conexión rechazada de timeout o respuesta vacía. (2) Una conexión rechazada va como `WARNING` de una línea, sin traceback; lo inesperado (respuesta mal formada) sigue con traceback. (3) A decidir: un reintento solo cuando vuelve Ollama (p. ej. al próximo `maybe_refresh` si el último fue fallback), sin pegarle en loop.
