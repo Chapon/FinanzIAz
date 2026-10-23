@@ -18,7 +18,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 318 — Tarea 389 (TANDA-DE-AUDITORIA-12-AREAS-2026-10-23) CERRADA 2026-10-23 — seis hallazgos → de la 390 a la 395** (`docs/auditoria_tanda_2026-10-23.md`, sólo docs). Los cuatro comandos corrieron **después** de escribir este registro.
+  - Corrida de 11:00 a 11:45 con la app abierta, sobre una copia de la DB y con las funciones del repo apuntadas a ella (`FINANZIAS_DB_PATH`), sin tocar la viva ni el log de producción. **Hallazgos:** [I-1] el puntaje de calidad y la tarjeta de valuación usan el último año de cada concepto aunque sea de hace una década (24 de 125 en ganancia bruta, JPM con deuda de 2013 sobre ganancia de 2025), y la 384 y la 385 se midieron así → **390** (MEDIA); [K-1] once dependencias sin techo, `yfinance` entre ellas, la forma de la 348 → **391** (MEDIA, **c-metodo**: la tanda del 20/10 dio la condición por limpia leyendo el diff); [J-1] la referencia de la 377 traba la GUI 1,5–2,5 s en cada visita a Home → **392**, candidato para la 381; [F-1] WBD rotulado *«sin precio al alta»* por un frame de una fila, con [A-1] (ARCHITECTURE sin `referencia.py`) → **393**; [E-1] el almacén de la 382 sin disparador → **394**; [C-1] los feriados de 2026 escritos a mano → **395**. **Limpias:** cuentas 1 y 2 al centavo, cero dividendos pendientes, «Tech» cuadrada por primera vez, snapshots contra los cierres de su día dentro de ±0,02% (la deuda de la skill del 20/10), CI verde, el censo de log con sus 21 firmas clasificadas y `py.warnings` funcionando. **Dos instrumentos míos dieron un número falso y se corrigieron antes de publicar** (el promedio de «Mis Acciones», que es FIFO de los lotes que quedan). Tabla `hallazgo → tarea` verificada contra este archivo.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -472,6 +475,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-22h** al cerrar la **365** (NO-SHIP), que **no deja tareas nuevas**. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 321 → 388 → 327 → 342**.
 
 > **Repriorizado 2026-10-22i** al cerrar la **388** sin código, que **no deja tareas nuevas**. Lo que queda espera a Chapa (355, 362, 356, 327, 342), a otra tarea (196 y 245, detrás de la 355/356), a que vuelva a pasar (381) o al paso del tiempo (321). El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-23** al cerrar la **389** (la tanda de las 12 áreas, `docs/auditoria_tanda_2026-10-23.md`), que deja de la **390** a la **395**. Van **adelante** de las que esperan a Chapa o al paso del tiempo, porque se pueden hacer desde acá. La **390** primero: sostiene dos veredictos (la 384 y la 385) y su re-medición dice si se mueven. Después la **391**, la forma exacta del CI rojo de la 348. Las cuatro BAJA, por cuánto muerden hoy: la **392** traba la GUI en cada visita a Home, la **393** rotula un motivo falso, la **394** empieza a morder hacia el 20/11 y la **395** en enero. El orden queda **390 → 391 → 392 → 393 → 394 → 395 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1911,6 +1916,59 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 395. FERIADOS-2026-FIJOS — El script que mide la frecuencia del desvío `barrier_eval` tiene escritos a mano los feriados de 2026, y desde el 1/1/2027 contaría los de 2027 como días sin scan  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [C-1] · severidad **BAJA** (latente hasta enero)
+
+- **Qué pasa.** `scripts/medir_cobertura_de_scan_t265.py:26` (`FERIADOS_NYSE_2026`), con `--hasta` igual a hoy por default. Es lo que alimenta `SCAN_COBERTURA` del desvío `barrier_eval` (`analysis/harness_config.py:561`). Desde 2027, cada feriado de la bolsa cae como día hábil sin scan, y nada lo dice.
+- **Alcance.** Que el script falle o avise si el rango pide un año sin feriados cargados, o un calendario de la bolsa.
+- **Kill-criteria.** Un test con `--hasta 2027-01-20` (MLK) que da error o aviso, no un número. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 394. FUNDAMENTALS-PIT-SIN-DISPARADOR — Nada regenera el almacén de fundamentals de la 382, y el percentil de calidad se calcula contra el almacén entero  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [E-1] · severidad **BAJA** (display-only)
+
+- **Qué pasa.** Los 125 archivos de `data/fundamentals_pit/` son del 2026-10-21. Se rehacen sólo de a uno, al abrir ese ticker en Análisis con más de 30 días (`ui/analysis/worker.py:29`); `scripts/build_fundamentals_pit.py` es manual y nadie lo llama. Pero `calidad_en_el_universo` (`:67`) calcula el percentil contra **todo** el almacén: desde ~el 20/11, el ticker abierto tiene su 10-K nuevo y sus pares no, y la temporada de 10-K va de noviembre a marzo.
+- **Alcance.** Un disparador (un job del scheduler, o un paso de `refresh_cohort`), o que el percentil diga contra qué fecha de almacén compara.
+- **Kill-criteria.** Con un almacén sintético de vintages distintas, el percentil compara años iguales o lo dice. Los cuatro comandos y el CI en verde.
+- **Dependencias:** conviene después de la **390**, que cambia qué año entra en cada pata.
+
+### 393. REFERENCIA-WBD-MOTIVO-FALSO — Home dice que WBD quedó afuera de la referencia por *«sin precio al alta»*, y el motivo real es un frame `2y` de una fila que tapa la historia  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [F-1] y [A-1] · severidad **BAJA** (display)
+
+- **Qué pasa.** `referencia_de_cuenta(2)` da `n = 126` y `sin_historia = ['WBD']`, y `_nota_referencia` (`ui/home_tab.py:606`) lo rotula *«afuera, sin precio al alta»*. WBD cotizaba el 18/06. El frame más fresco es `WBD__2y__1d` con **una fila** (2026-10-05); los otros terminan el 09/09. `unir_cierres` (`database/cartera_real.py:454`) no pega una serie que no comparte días con la ya unida, así que queda un cierre, posterior al alta. **Es general:** un frame degenerado más fresco borra la historia de un ticker para Home, también para la cartera real. Hoy hay cuatro frames de menos de 20 filas (WBD, EA, EQR, ME); sólo WBD está en un universo vivo.
+- **Y [A-1]:** `docs/ARCHITECTURE.md` lista los módulos de `paper_trading/` uno por uno y no nombra `referencia.py` (377).
+- **Alcance.** (1) Que una serie corta sin solapamiento no tape a las largas en `unir_cierres`, o que el rótulo diga el motivo real. (2) La línea de `referencia.py` en ARCHITECTURE. Sacar WBD de la watchlist (la 369) resuelve este caso, no el mecanismo.
+- **Kill-criteria.** Un test con una serie larga hasta el día *d* y otra de una fila en *d* + 20: la unión conserva la historia (o la referencia lo rotula con el motivo real). Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 392. REFERENCIA-EN-EL-HILO-DE-LA-GUI — La referencia de la 377 se calcula en el hilo de la interfaz: 1,5 a 2,5 s trabada cada vez que se entra a Home con una cuenta paper tildada  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [J-1] · severidad **BAJA-MEDIA** (la GUI trabada; no toca decisiones)
+
+- **Qué pasa.** `referencia_de_cuenta(2)` tarda **2,49 s en frío y 1,53 s en caliente** (lee los frames `1d` de 127 tickers), y la llama `HomeTab._referencia` (`ui/home_tab.py:579`) desde el pintado. `_llenar_cuentas` vacía `self._ref` en cada `load_data`, y `main_window` llama `home_tab.refresh` **en cada navegación a Home** (`ui/main_window.py:257`). Lo tildado se conserva, así que con una cuenta paper tildada cada visita la recalcula en el hilo de la GUI.
+- **Y un candidato para la 381, sin verificar:** la única traba desde el arreglo de la 380 fue de **2,6 s**, a los 41 s del arranque del 21/10. Es del orden de este cálculo en frío, pero no se sabe si ese día había una cuenta paper tildada.
+- **Alcance.** Calcularla en un worker o cachearla por día y no por carga.
+- **Kill-criteria.** Con la referencia sin calcular, entrar a Home no bloquea el hilo de la GUI más de 0,2 s (test que mide el tiempo de `refresh` con una referencia lenta simulada). Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 391. DEPENDENCIAS-SIN-TECHO — Once dependencias de `requirements.txt` sin techo, `yfinance` entre ellas: el CI instala sin lock, y un release nuevo lo puede poner rojo sin que cambie el código  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [K-1] · severidad **MEDIA** (la forma de la 348, que fue un CI rojo)
+
+- **Qué pasa.** Sin `<`: `yfinance>=0.2.40`, `requests>=2.33.0`, `urllib3>=2.8.0`, `lxml>=5.2.1`, `alembic>=1.13`, `duckdb>=1.0`, `mplfinance>=0.12.10b0`, `reportlab>=4.0.0`, `openpyxl>=3.1.0`, `hmmlearn>=0.3.0` y `arch>=6.0`. La **348** le puso techo a `pyarrow`, que fue el que rompió, y a nada más. `yfinance` es la fuente de casi todo el dato y tuvo cambios de API entre versiones mayores; Anaconda, el `.venv` y el lock tienen la **1.4.1**.
+- **Alcance.** (1) Techo de versión mayor en cada una, o la decisión escrita de por qué no. (2) Que el CI instale con el lock, o con una restricción derivada de él. (3) **La deuda de la skill:** en el método de K de `.claude/skills/auditoria/SKILL.md`, que la condición *«(←) ningún paquete sin techo»* se verifica recorriendo el archivo entero y no el diff de la ventana (la tanda del 20/10 la dio por limpia así).
+- **Kill-criteria.** Un test lee `requirements.txt` y falla con una dependencia de tiempo de ejecución sin `<` que no esté en una lista de excepciones con motivo. Mutación: sacar el techo de `yfinance` lo pone en rojo. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 390. CALIDAD-PATAS-DE-OTRO-ANIO — El puntaje de calidad y la tarjeta de valuación toman el último año de cada concepto aunque sea de hace una década, y lo muestran como actual; la 384 y la 385 se midieron así  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [I-1] · severidad **MEDIA** (display-only; sostiene dos veredictos)
+
+- **Qué pasa.** `analysis/calidad.py:55-61` (`patas_de`) usa `bruta[-1]` y `deuda[-1]` sin comparar su fin de período con el de la ganancia, y `analysis/valuation.py:153` toma `eps_serie[-1]` como el EPS de hoy. Medido sobre el almacén de la 382: la **ganancia bruta** tiene dos o más años de atraso en **24 de 125** (AT&T 2014, Williams 2012, T-Mobile y Verizon 2017…; la pata de AT&T es ventas menos costo de 2014 sobre activos de 2014); la **deuda** en **6** (JPM 2013, GS 2018, O 2016, F 2020, DE 2021, ORCL 2022), y la pata la divide por la ganancia del **último** año (la de JPM, deuda de 2013 sobre ganancia de 2025); el **EPS** de EXC y HAL termina en 2021. En la muestra de la 384 (1/3 y 1/9 de 2016 a 2026): **15,2%** de las patas de rentabilidad bruta y **3,6%** de las de deuda.
+- **Y la cobertura de la 382 se contó por cantidad:** *«la ganancia bruta en 88»* y `cobertura()` de `build_fundamentals_pit.py` cuentan cuántos años hay, no si el último es el vigente. Los 24 entran en las 88.
+- **Por qué importa.** La tarjeta muestra un percentil *«entre 126 empresas»* que mezcla años sin decirlo. Y **el NO-PASA de la 384 y el NO-SHIP de la 385 se midieron con este instrumento**. No se afirma que cambien: **no se sabe**.
+- **Alcance.** (1) Una pata entra sólo si su fin de período es el de la ganancia más reciente (o el anterior), y si no queda vacía; el EPS de la tarjeta avisa si su último año queda atrás del de la ganancia. (2) La cobertura de la 382 se cuenta por año vigente. (3) Re-correr `measure_calidad_t384.py` y `run_cartera_calidad_valor_t385.py` con el instrumento corregido, y escribir en cada doc si el veredicto se mueve (los kill-criteria de las dos ya están congelados: no se recalibran).
+- **Kill-criteria.** Test: un ticker con ganancia hasta 2025 y ganancia bruta hasta 2014 no tiene pata `rentab_bruta`; con deuda hasta 2013, no tiene pata `deuda`. Mutación: volver a `[-1]` lo pone en rojo. La re-medición publicada con su número, aunque no cambie nada. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 389. ~~TANDA-DE-AUDITORIA-12-AREAS-2026-10-23 — Correr la auditoría de las 12 áreas sobre la ventana de las tareas 374–388~~ · **CERRADA 2026-10-23 — las 12 áreas; seis hallazgos (dos MEDIA, cuatro BAJA) → de la 390 a la 395; ninguno HIGH, así que el `verificador` no corrió**  ·  origen: pedido de Chapa (2026-10-23, *«correr las 12 auditorías»*) · severidad **—** (es una corrida, no un defecto)
+
+- **Qué es.** La skill `auditoria`, áreas A–L, sobre lo que entró desde la tanda del 2026-10-20 (`306a9b5`): los fundamentals point-in-time de EDGAR (382), la tarjeta de valuación (383/384), la referencia y el costo de operar en Home (377/386), el snapshot a costo (376), los arreglos de la 374/375/380 y el estado vivo desde el 20/10.
+- **Alcance.** El kill-criteria congelado en `docs/auditoria_tanda_2026-10-23.md` **antes de abrir ningún archivo de código**: el del 2026-10-20 sin aflojar, más lo nuevo de la ventana y el *alcance no mirado* de esa tanda (mutaciones propias en `guards`, la cartera «Tech» en `cuentas`, una muestra contra EDGAR en `datos`).
+- **Kill-criteria.** Los HIGH/CRITICAL pasados por el `verificador` (o dicho que no pudo correr), el informe con lo sobreviviente, lo rechazado y el alcance **no** mirado como lista, cada hallazgo accionable como tarea, y la tabla `hallazgo → tarea` verificada de a una contra este archivo. Un barrido limpio es un resultado válido.
+- **Dependencias:** ninguna. Read-only: no toca código, config, esquema ni la DB viva.
+
 ### 388. ~~YF-SEARCH-VACIO-COMO-OK — `yf.Search` devuelve a veces una respuesta vacía, y la fuente queda «ok» con 0 noticias, igual que un ticker sin noticias~~ · **CERRADA 2026-10-22 sin código — 2 vacías en ~530 búsquedas (0,4%), debajo del 1% del kill-criteria** (`b31b6f7`) · **movida a *Hecho reciente* con el detalle**  ·  origen: tarea 367 (2026-10-22) · severidad **BAJA** (se recupera en la corrida siguiente; no se ve)
 
 - **Qué pasa.** Medido el 2026-10-22 en dos de unas 150 búsquedas: **TJX** a las 15:44 (0 crudas; minutos después, 10 etiquetadas) y **GOOGL** a las ~15:55 (0 crudas; al rato, 9). `_yf_news` devuelve `SourceOutcome("yfinance_news", "ok", 0)`, que la salud del harvest no distingue de un ticker que no tuvo noticias. No se sabe si es throttle de Yahoo, un timeout del lado de ellos o otra cosa.
@@ -1969,6 +2027,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** El stack de la GUI de un congelamiento real, leído y nombrado, y una de dos: (a) la línea que traba, con su tarea; (b) el GIL, con el atraso medido antes y después de escalonar el arranque. Sin stack no se cierra.
 - **Dependencias:** que vuelva a pasar (la 380 ya está).
 - **Estado al 2026-10-23: no volvió a pasar.** Desde el arreglo, la app arrancó tres veces (2026-10-21 13:19, 2026-10-22 11:22 y 2026-10-23 10:24) y `congelamientos.log` no cambia desde el 2026-10-21 12:03. Hubo **una** traba, de **2,6 s**, a los 41 s del arranque del 21 (`finanzias.log`, 13:20:31): debajo del umbral de 5 s, así que no se volcó stack. **Para quien lea el log:** las **76** líneas `[proceso: stress_vigia]` del logger `vigia_nuevo` (2026-10-21 12:13) son el estrés a mano de la 380, no la app; ningún script del repo usa ese nombre.
+- **Un candidato para esa traba (tanda del 2026-10-23, [J-1] → 392), sin verificar:** la referencia de la 377 se calcula en el hilo de la GUI, en 2,5 s en frío, cada vez que se entra a Home con una cuenta paper tildada.
 
 ### 380. ~~VIGIA-QUE-MATA-LA-APP — La app se cerró sola: el volcado de `faulthandler` del vigía de la 304 lee los frames de los otros hilos sin el GIL, y con muchos hilos corriendo crashea el proceso~~ · **CERRADA 2026-10-21 — el vigía vuelca desde un hilo de Python con el GIL tomado; el stack de la GUI va primero** (`1988118`) · **movida a *Hecho reciente* con el detalle**  ·  origen: Chapa (2026-10-21, *«la aplicación se cerró sola, hay un log de error»*) · severidad **ALTA** (la app se cae; la cuenta 2 no escanea mientras está cerrada)
 
