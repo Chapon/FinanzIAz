@@ -11,6 +11,8 @@ fundamentals point-in-time de EDGAR (tarea 382), y lo que la literatura midió a
   bancos, eléctricas, REITs y transporte: la pata queda vacía y no cuenta (la 382 lo midió).
 - **deuda:** años de ganancia neta que hacen falta para pagar la deuda de largo plazo. Menos es
   mejor. Sin ganancia positiva no hay pata.
+
+``rentab_bruta`` y ``deuda`` quedan vacías si su último año no es el de la ganancia o el anterior (tarea 390).
 - **regularidad:** la fracción de años en que la **ganancia neta** creció. Se usa la ganancia y no
   el EPS porque no cambia con los splits.
 
@@ -26,6 +28,8 @@ from __future__ import annotations
 
 from itertools import pairwise
 from statistics import mean, pstdev
+
+from data.fundamentos_pit import es_vigente
 
 PATAS = ("roe", "rentab_bruta", "deuda", "regularidad")
 MAYOR_ES_MEJOR = {"roe": True, "rentab_bruta": True, "deuda": False, "regularidad": True}
@@ -50,14 +54,16 @@ def patas_de(fund, fecha: str) -> dict[str, float | None]:
     if len(roes) >= MIN_ANIOS:
         out["roe"] = mean(roes) - pstdev(roes)
 
+    # Tarea 390: una pata entra sólo si su último año es el de la ganancia o el anterior; la
+    # ganancia bruta de AT&T termina en 2014 y se mostraba como la de hoy.
+    serie_g = sorted(ganancia.items())
     activos = dict(fund.serie("activos", fecha))
     bruta = fund.serie("ganancia_bruta", fecha)
-    if bruta and activos.get(bruta[-1][0], 0) > 0:
+    if bruta and es_vigente(bruta[-1][0], serie_g) and activos.get(bruta[-1][0], 0) > 0:
         out["rentab_bruta"] = bruta[-1][1] / activos[bruta[-1][0]]
 
-    serie_g = sorted(ganancia.items())
     deuda = fund.serie("deuda_lp", fecha)
-    if deuda and serie_g and serie_g[-1][1] > 0:
+    if deuda and es_vigente(deuda[-1][0], serie_g) and serie_g[-1][1] > 0:
         out["deuda"] = deuda[-1][1] / serie_g[-1][1]
 
     if len(serie_g) >= MIN_ANIOS + 1:

@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from statistics import median
 
+from data.fundamentos_pit import es_vigente
+
 ANIOS_PROYECCION = 10
 TOPE_CRECIMIENTO = 0.15  # Buffettology no proyecta crecimientos de dos dígitos altos por 10 años
 OBJETIVO_ANUAL = 0.15  # el retorno que Buffett pedía para comprar
@@ -151,6 +153,10 @@ def valuar(
         return None
     v = Valuacion(precio=precio)
     v.fin_ultimo_anio, v.eps = eps_serie[-1]
+    ganancia = fund.serie("ganancia_neta", fecha)
+    if ganancia and not es_vigente(v.fin_ultimo_anio, ganancia):
+        # Tarea 390: el EPS de EXC y HAL termina en 2021 y la tarjeta lo mostraba como el de hoy.
+        v.avisos.append(f"el EPS termina en {v.fin_ultimo_anio[:4]} y la ganancia en {ganancia[-1][0][:4]}")
     patrimonio = fund.serie("patrimonio", fecha)
     acciones = fund.serie("acciones_diluidas", fecha, splits)
     if patrimonio and acciones and acciones[-1][1] > 0:

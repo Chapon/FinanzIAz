@@ -308,8 +308,34 @@ def unir(ticker: str, payloads: list[tuple[int, dict]], generado: str = "") -> F
     )
 
 
+VIGENCIA_DIAS = 400
+
+
+def es_vigente(fin: str, ganancia: list[tuple[str, float]]) -> bool:
+    """¿``fin`` es el cierre de la ganancia más reciente, o el anterior? (tarea 390).
+
+    El último dato de un concepto puede ser de hace una década —la ganancia bruta de AT&T termina
+    en 2014, la deuda de JPM en 2013— y tomarlo como el de hoy lo mezcla con la ganancia del último
+    año. Se compara contra el cierre de la ganancia neta con una tolerancia de un año y un mes, que
+    cubre los ejercicios de 52/53 semanas y no depende de que la ganancia tenga todos los años.
+    Sin ganancia no hay contra qué comparar: no es vigente.
+    """
+    if not ganancia:
+        return False
+    ultimo = date.fromisoformat(ganancia[-1][0])
+    return (ultimo - date.fromisoformat(fin)).days <= VIGENCIA_DIAS
+
+
 def anios_cubiertos(fund: Fundamentos, concepto: str, fecha: str) -> int:
-    return len(fund.serie(concepto, fecha))
+    """Cuántos años tiene el concepto, **si su último es vigente** (tarea 390); si no, cero.
+
+    Contar sólo la cantidad daba por cubierta la ganancia bruta de 24 tickers cuyo último año era
+    de 2017 o antes.
+    """
+    serie = fund.serie(concepto, fecha)
+    if concepto == "ganancia_neta" or not serie:
+        return len(serie)
+    return len(serie) if es_vigente(serie[-1][0], fund.serie("ganancia_neta", fecha)) else 0
 
 
 # ── Red y disco ─────────────────────────────────────────────────────────────────────

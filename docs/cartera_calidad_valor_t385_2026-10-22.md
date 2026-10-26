@@ -59,3 +59,11 @@ Con esto cierra la serie 382–386 (`docs/libros_inversion_analisis_2026-10-21.m
   controla es el costo. La cartera Universo rindió +17,6% anual rebalanceando una vez por año; la
   cuenta 2 rotó su capital 17 veces en cuatro meses. Esa comparación es la que muestra Home (377 y
   386).
+
+## Re-medición de la tarea 390 (2026-10-26)
+
+El puntaje de calidad usaba la ganancia bruta y la deuda aunque fueran de hace una década (24 y 6
+tickers). Con el instrumento corregido, Calidad da +16,42% (caída 35,6%) y Calidad + valor +15,73%;
+Valor y Universo no cambian. **Las tres siguen NO PASA, con los mismos criterios: el NO-SHIP no se
+mueve.** El detalle, con el control de que el código viejo reproduce esta corrida, está en
+`docs/patas_vigentes_t390_2026-10-26.md`.
