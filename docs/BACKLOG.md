@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 403 (CHECK-CI-SSL-CON-CERTIFI) CERRADA 2026-10-26 — `check_ci.py` valida el TLS con `certifi`, y contesta en los dos intérpretes donde antes fallaba siempre** (`scripts/check_ci.py`, `tests/test_check_ci_t300.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La causa:** GitHub sirve a veces la cadena `*.github.com ← Sectigo DV E36 ← Sectigo Root E46 ← USERTrust ECC` (vista con `openssl s_client`), y el almacén de Windows que carga `ssl.create_default_context()` no tiene `USERTrust ECC`; con `cafile=certifi.where()` valida (las cuatro raíces de Sectigo/USERTrust están en el `certifi` 2026.06.17). **Corrige a la 400**, que lo había dado por pasajero.
+  - **El arreglo:** `_contexto_ssl()` arma el contexto con `certifi` si está (viene con `requests`) y con el del sistema si no; `_fetch_json` se lo pasa a `urlopen`. `check_ci.py --ultimo` contestó VERDE en el `.venv` y en la Anaconda, en el mismo minuto en que el contexto por defecto fallaba.
+  - **Test** (1): `_fetch_json` le pasa a `urlopen` el contexto armado con `cafile=certifi.where()`. **Mutaciones**, dos —el contexto por defecto, y no pasarle contexto a `urlopen`—, las dos rojas.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -486,6 +492,10 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-26e** al cerrar la **400**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-26f** al preparar la **399**, que destapa la **401** (el lock es el `.venv` y la app corre en la Anaconda) y la **402** (el `ruff` y el `pytest` del done no son los del pin). Las dos van **delante** de la 399, que depende de la 401: no se puede decidir qué actualizar sin saber cuál es el entorno. La 401 espera una decisión de Chapa —la app al `.venv`, o el lock desde la Anaconda—. El orden queda **401 → 402 → 399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-26g** con el CI de `1c5ee06`: `check_ci.py` falló 14 veces seguidas por SSL, y la causa es el almacén de certificados de Windows → **403**. Va **primera**: sin leer el CI no se cierra nada (regla 7), y no depende de Chapa, como sí la 401. El orden queda **403 → 401 → 402 → 399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-26h** al cerrar la **403**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **401 → 402 → 399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1923,6 +1933,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Por qué importa.** No es un verde inventado (es el de un run viejo), y en el cierre `--esperar` filtra por el sha completo y queda del lado seguro. Pero `--ultimo` es lo que manda la regla 7 al abrir una tarea y lo que la skill `auditoria` manda leer **primero** en `guards`: ahí no hay cierre anterior que lo respalde, y una auditoría puede escribir *«CI verde»* sobre un run de hace un mes —la forma exacta de la 300—. La tanda del 2026-10-05 casi lo hace.
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna.
+
+### 403. ~~CHECK-CI-SSL-CON-CERTIFI — `check_ci.py` valida el TLS de la API de GitHub con el almacén de certificados de Windows, que no tiene el emisor de la cadena ECC que GitHub sirve a veces: `CERTIFICATE_VERIFY_FAILED` intermitente, y el 2026-10-27 persistente~~ · **CERRADA 2026-10-26 — valida con `certifi`**  ·  origen: cierre de la 401/402 (2026-10-26) · severidad **MEDIA** (traba cada cierre: la regla 7 no se puede cumplir sin leer el CI)
+
+- **Qué pasa.** GitHub manda `*.github.com ← Sectigo DV E36 ← Sectigo Root E46 ← USERTrust ECC`. `ssl.create_default_context()` en Windows carga el almacén del sistema, que no tiene `USERTrust ECC Certification Authority`: Windows baja las raíces a demanda sólo para quien usa su propia pila TLS (por eso `curl` nunca falló). Con un servidor que manda la cadena RSA, anda; con la ECC, no: por eso parecía pasajero. **La 400 lo dio por pasajero y no lo era**: su reintento ayuda con la red, pero el 2026-10-27 fallaron 14 seguidos. Con `ssl.create_default_context(cafile=certifi.where())` —`certifi` ya viene con `requests`— valida.
+- **Qué hay que hacer.** `_fetch_json` usa el almacén de `certifi` si está instalado, y el del sistema si no.
+- **Kill-criteria.** Un test verifica que `_fetch_json` le pasa a `urlopen` un contexto armado con `cafile=certifi.where()`; mutación: volver al contexto por defecto lo pone en rojo. `check_ci.py --ultimo` contesta en la máquina. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
 ### 402. RUFF-Y-PYTEST-DEL-DONE-NO-SON-LOS-DEL-PIN — El done corre en la Anaconda con `ruff` 0.15.12 y `pytest` 7.4.4, mientras `requirements-dev.txt` pinea `ruff==0.15.20` (exacto a propósito, tarea 65: el formateador cambia entre versiones) y el CI corre 0.15.20 y `pytest` 9.1.1  ·  origen: preparación de la 399 (2026-10-26) · severidad **MEDIA** (es la forma de la 65: el `ruff format --check` del done y el del CI no son el mismo instrumento)

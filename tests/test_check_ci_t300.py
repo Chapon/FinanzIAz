@@ -235,6 +235,28 @@ def test_el_error_de_red_de_urllib_sale_como_SinRed(monkeypatch):
         cc._fetch_json("https://api.github.com/x")
 
 
+def test_el_TLS_se_valida_con_el_almacen_de_certifi(monkeypatch):
+    """Tarea 403: el almacén de Windows no tiene el emisor de la cadena ECC de GitHub."""
+    import urllib.error
+
+    certifi = pytest.importorskip("certifi")
+    pedidos, contextos = [], []
+
+    def crear(*a, **kw):
+        pedidos.append(kw.get("cafile"))
+        contextos.append(object())
+        return contextos[-1]
+
+    def urlopen(req, timeout=None, context=None):
+        raise urllib.error.URLError(f"contexto={context is contextos[-1]}")
+
+    monkeypatch.setattr(cc.ssl, "create_default_context", crear)
+    monkeypatch.setattr(cc.urllib.request, "urlopen", urlopen)
+    with pytest.raises(cc.SinRed, match="contexto=True"):
+        cc._fetch_json("https://api.github.com/x")
+    assert pedidos == [certifi.where()]
+
+
 def test_un_reintento_del_run_manda_sobre_el_primero():
     """Re-correr un job crea otro intento del mismo commit: vale el último, no el primero."""
     runs = [_run("failure", run_id=1, attempt=1), _run("success", run_id=1, attempt=2)]

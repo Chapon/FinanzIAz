@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import ssl
 import subprocess
 import sys
 import time
@@ -64,12 +65,25 @@ class SinRed(SinRespuesta):
     """No llegó ninguna respuesta (SSL, timeout, sin conexión): puede ser pasajero (tarea 400)."""
 
 
+def _contexto_ssl() -> ssl.SSLContext:
+    """El almacén de ``certifi`` si está, y el del sistema si no (tarea 403).
+
+    GitHub sirve a veces una cadena que termina en *USERTrust ECC*, y el almacén de Windows no la
+    tiene: Windows baja esas raíces a demanda sólo para su propia pila TLS (``curl`` nunca falló).
+    """
+    try:
+        import certifi
+    except ImportError:
+        return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def _fetch_json(url: str) -> object:
     req = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json", "User-Agent": "finanzias-check-ci"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(req, timeout=20, context=_contexto_ssl()) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise SinRespuesta(f"HTTP {e.code} en {url}") from e
