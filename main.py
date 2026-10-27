@@ -3,7 +3,7 @@ FinanzIAs — Investment Portfolio Tracker
 Entry point.
 
 Usage:
-    python main.py
+    abrir_app.bat          (o: .venv/Scripts/python.exe main.py — tarea 401)
 
 Requirements:
     pip install -r requirements.txt
@@ -23,6 +23,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from config.entorno import es_el_venv
 from config.logging_config import get_logger, setup_logging
 from database.models import init_db
 
@@ -33,6 +34,12 @@ def main():
     setup_logging()
     log = get_logger(__name__)
     log.info("Iniciando FinanzIAs")
+    if not es_el_venv(sys.prefix):
+        log.warning(
+            "FinanzIAs corre con %s y no con el .venv del repo, que es el entorno del lock y del "
+            "CI: las versiones pueden no ser las probadas. Abrila con abrir_app.bat (tarea 401).",
+            sys.executable,
+        )
 
     # Tarea 278 — antes de abrir ninguna conexión: (1) el restore que el botón de Settings
     # dejó programado (copiar encima de una base en WAL con la app abierta no restauraba), y

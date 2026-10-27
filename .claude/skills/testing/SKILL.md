@@ -59,7 +59,7 @@ Config en `pyproject.toml`: `testpaths=["tests"]`, `python_files=["test_*.py"]`,
 
 ## Antes de declarar "done"
 
-Son **cuatro** comandos, todos en **Windows** (entorno real, Anaconda), y los cuatro tienen que pasar:
+Son **cuatro** comandos, todos en **Windows** con el **`.venv` del repo** (`.venv\Scripts\python.exe`; tarea 401 — antes era la Anaconda), y los cuatro tienen que pasar:
 
 ```
 python -m pytest tests/ -ra -m "not network" --tb=short

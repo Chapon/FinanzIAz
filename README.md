@@ -20,9 +20,12 @@ Aplicación de escritorio para seguimiento de cartera de inversión, paper tradi
 ## Instalación
 
 ```bash
-pip install -r requirements.txt
-python main.py
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.lock
+abrir_app.bat
 ```
+
+El `.venv` es el entorno del lock y del CI (tarea 401).
 
 ## Estructura
 

@@ -94,4 +94,4 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    done, así que vale la regla del paso 0: los cuatro comandos otra vez, los guards de `--staged`,
    push, y `check_ci.py --esperar` sobre ese commit también.
 
-Recordá que el verde definitivo es en Windows (Anaconda); avisame si esto corre en otro entorno.
+Recordá que el verde definitivo es en Windows con el `.venv` del repo (tarea 401); avisame si esto corre en otro entorno.

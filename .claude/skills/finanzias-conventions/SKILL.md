@@ -12,7 +12,7 @@ App de paper-trading en Python (PyQt6 + SQLite + yfinance). El usuario, Chapa, t
 Una tarea NO está terminada hasta que:
 
 0. **El cierre está escrito en `docs/BACKLOG.md` ANTES del done** (registro, repriorización, tareas de los hallazgos), y el hash va después, en un commit aparte con su propio done y su CI. **El done va después de la última edición, también la del backlog** (tarea 339): el backlog está en el corpus que leen los guards de la suite, y la 322 dejó el CI rojo (`9884a4e`) por correr los cuatro comandos antes de escribirlo y después sólo los tests de backlog. Si algo cambia después del done, se corre de nuevo.
-1. **Los CUATRO comandos pasan en Windows.** El entorno real es Windows con Anaconda:
+1. **Los CUATRO comandos pasan en Windows.** El entorno real es Windows con el `.venv` del repo (`.venv\Scripts\python.exe`; tarea 401 — antes, la Anaconda):
    ```
    python -m pytest tests/ -ra -m "not network" --tb=short
    python -m ruff check .

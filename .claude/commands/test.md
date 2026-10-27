@@ -22,4 +22,4 @@ un directorio vacío, o sea en la condición del CI: es el que caza un test que 
 falle allá. Su conteo normal difiere en 1 skip del primero, y eso es correcto: el test que
 compara contra el settings vivo se saltea cuando no hay con qué comparar.
 Si ruff falla, decilo aparte de la suite: se arregla con `ruff check --fix .` + `ruff format .`,
-revisando el diff. Si hay fallos, mostrá los tests que fallaron y un diagnóstico breve de la causa probable. Recordá: el entorno real es Windows + Anaconda — un verde acá no equivale a "done" hasta correrlo en Windows (ver `CLAUDE.md`).
+revisando el diff. Si hay fallos, mostrá los tests que fallaron y un diagnóstico breve de la causa probable. Recordá: el entorno real es Windows + el `.venv` del repo (tarea 401) — un verde acá no equivale a "done" hasta correrlo en Windows (ver `CLAUDE.md`).

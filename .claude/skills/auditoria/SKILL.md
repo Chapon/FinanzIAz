@@ -492,8 +492,8 @@ hallazgo si nada depende de eso.
 ### K. Dependencias: lo que corre no es lo que se declara
 
 **Qué.** `requirements.txt`, `requirements-dev.txt` y `requirements.lock` contra lo que de verdad
-importa el código y lo que está instalado en los entornos que lo corren (la Anaconda de Chapa, el
-`.venv`, el CI).
+importa el código y lo que está instalado en los entornos que lo corren (el `.venv`, donde corre la app desde la
+401, y el CI; la Anaconda, si alguien vuelve a abrirla ahí: `main.py` lo avisa en el log).
 
 **Por qué rinde acá.** `feedparser` no era dependencia de nada, así que `--sources rss` recolectaba
 cero y se reportaba como `skipped`, que por diseño no alarma (212). La Anaconda y el `.venv` son
@@ -718,8 +718,9 @@ cuatro formas que va a repetir la próxima:
   aparecen»* contra cualquiera de los tres da decenas de faltantes falsos. Lo que se compara es
   contra la **granularidad que el doc promete**.
 - **Una divergencia que una tarea cerrada DECIDIÓ no es un hallazgo; es una decisión.** El lock
-  difiere de la Anaconda en 64 paquetes porque la 284 escribió *«el lock describe el `.venv`, y
-  está bien»*; TSM no cobró el dividendo del 09-16 porque la 222 no acredita retroactivo, por
+  difería de la Anaconda en 64 paquetes porque la 284 escribió *«el lock describe el `.venv`, y
+  está bien»* —y la 401 la reabrió con un dato nuevo (desde la 391 el CI corre el lock, y la app
+  corría en la Anaconda): la app pasó al `.venv`—; TSM no cobró el dividendo del 09-16 porque la 222 no acredita retroactivo, por
   elección de Chapa; y no leer el CI fue una decisión de la 176. Antes de publicar, `grep` del
   tema en el backlog. Si la decisión existe y el dato nuevo la contradice, lo accionable es
   **reabrirla con ese dato**, no proponer la opción descartada como si fuera nueva: eso es lo que
