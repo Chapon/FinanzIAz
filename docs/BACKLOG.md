@@ -18,7 +18,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 400 (CHECK-CI-SE-RINDE-AL-PRIMER-ERROR) CERRADA 2026-10-26 — con `--esperar`, un error de red se reintenta dentro de la espera; una respuesta HTTP sigue cortando al primero** (`scripts/check_ci.py`, `tests/test_check_ci_t300.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **El arreglo:** `_fetch_json` distingue `SinRed` (URLError/OSError: SSL, timeout, sin conexión) de `SinRespuesta` (HTTP, JSON roto), y `consultar()` reintenta sólo la primera, con el mismo intervalo y hasta el mismo límite; si se agota, dice cuántas veces seguidas falló y sigue siendo *no se sabe*. La cuota (403) y el 404 no se reintentan porque no cambian en 15 minutos. Sin `--esperar`, igual que antes.
+  - **Tests** (4): falla una vez y contesta verde ⇒ VERDE (antes, NO_SE_SABE); la red caída hasta el límite ⇒ NO_SE_SABE con el conteo, nunca verde; un 403 con `--esperar` se consulta **una** vez; el `URLError` de `urllib` sale como `SinRed`. **Mutaciones**, tres —sin reintento, reintentar también las HTTP y reintentar sin límite—, todas rojas. **Las dos últimas colgaban la suite en la primera pasada** en vez de ponerla roja (reloj real con 10.000 s, y un bucle sin cota): los dos tests llevan ahora reloj falso y un tope de llamadas, y una mutación así falla en menos de un segundo.
+  - **No deja tareas nuevas.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -480,6 +485,10 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-26b** al cerrar la **390**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **391 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-26c** al cerrar la **391**, que deja la **399** (las 94 vulnerabilidades conocidas del lock, MEDIA). Va **primera**: es la única MEDIA de la cola, y desde la 391 el job `audit` del CI la muestra en rojo en cada push. Las BAJA siguen en su orden. El orden queda **399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-26d** tras el hash de la **391**, que deja la **400** (`check_ci.py --esperar` se rinde al primer error de red). Va **primera**, delante de la 399: es chica, toca sólo un script y muerde en cada cierre. La **399** necesita instalar versiones nuevas en la Anaconda donde corre la app, y eso conviene acordarlo con Chapa. El orden queda **400 → 399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-26e** al cerrar la **400**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1917,6 +1926,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Por qué importa.** No es un verde inventado (es el de un run viejo), y en el cierre `--esperar` filtra por el sha completo y queda del lado seguro. Pero `--ultimo` es lo que manda la regla 7 al abrir una tarea y lo que la skill `auditoria` manda leer **primero** en `guards`: ahí no hay cierre anterior que lo respalde, y una auditoría puede escribir *«CI verde»* sobre un run de hace un mes —la forma exacta de la 300—. La tanda del 2026-10-05 casi lo hace.
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna.
+
+### 400. ~~CHECK-CI-SE-RINDE-AL-PRIMER-ERROR — `check_ci.py --esperar` devuelve «no se sabe» ante el primer error de red, aunque le quede espera; el 2026-10-26 pasó cuatro veces con un error de SSL pasajero~~ · **CERRADA 2026-10-26 — los errores de red se reintentan dentro de la espera**  ·  origen: cierre de las 390 y 391 (2026-10-26) · severidad **BAJA** (no da un falso verde: da un «no se sabe» de más)
+
+- **Qué pasa.** En `consultar()` (`scripts/check_ci.py`), el `except SinRespuesta` hace `return NO_SE_SABE` adentro del bucle de espera, aunque el run siga en curso y falte para el `timeout_s`. El 2026-10-26, con el CI de `7f5ce3e` y de `3a895c5`, la API devolvió `SSL: CERTIFICATE_VERIFY_FAILED — unable to get issuer certificate` cuatro veces, en el `.venv` y en la Anaconda. Al rato, 12 de 12 consultas pasaron con el mismo intérprete, con el almacén por defecto y con el de `certifi`, y `curl` no falló nunca. Es pasajero, y la regla 7 obliga a reintentar a mano para no cerrar con *«CI sin verificar»*.
+- **Qué hay que hacer.** Con `--esperar`, que un error de red se cuente y se reintente con el mismo intervalo hasta el límite, y que se rinda con «no se sabe» sólo si el último intento también falló (o tras N fallos seguidos), diciendo cuántos hubo. Sin `--esperar`, igual que hoy.
+- **Kill-criteria.** Un test con un `fetch` falso que falla una vez y después contesta verde: `--esperar` da VERDE; con el código de hoy, NO_SE_SABE. Y otro que falla siempre: sigue dando NO_SE_SABE, nunca verde. Mutación: volver al `return` inmediato lo pone en rojo. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
 ### 399. LOCK-CON-VULNERABILIDADES — Las versiones del lock, que son las que corren en la máquina y desde la 391 también en el CI, tienen 94 vulnerabilidades conocidas en 8 paquetes, y el audit del CI no las veía porque instalaba lo último  ·  origen: tarea 391 (2026-10-26) · severidad **MEDIA**

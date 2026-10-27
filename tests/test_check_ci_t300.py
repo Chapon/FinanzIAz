@@ -184,6 +184,57 @@ def test_esperar_con_la_espera_agotada_NO_es_verde():
     assert rc == cc.NO_SE_SABE and "no terminó dentro de la espera" in texto
 
 
+def test_esperar_reintenta_un_error_de_red_pasajero():
+    """Tarea 400: el SSL del 2026-10-26 falló una vez y a la siguiente contestó."""
+    respuestas = iter([cc.SinRed("SSL: CERTIFICATE_VERIFY_FAILED"), [_run("success")]])
+
+    def fetch(url):
+        r = next(respuestas)
+        if isinstance(r, Exception):
+            raise r
+        return {"workflow_runs": r}
+
+    rc, texto = _consultar(fetch, esperar=True, timeout_s=10_000)
+    assert rc == cc.VERDE and "reintento" in texto
+
+
+def test_esperar_con_la_red_caida_hasta_el_limite_NO_es_verde():
+    t = iter(range(0, 10_000, 100))
+    llamadas = []
+
+    def fetch(url):
+        llamadas.append(url)
+        assert len(llamadas) < 50, "reintenta sin respetar el límite de la espera"
+        raise cc.SinRed("SSL: CERTIFICATE_VERIFY_FAILED")
+
+    rc, texto = _consultar(fetch, esperar=True, timeout_s=250, reloj=lambda: next(t))
+    assert rc == cc.NO_SE_SABE and "NO es un verde" in texto and "veces seguidas" in texto
+
+
+def test_esperar_NO_reintenta_una_respuesta_HTTP():
+    """La cuota o un 404 no cambian en la espera: se corta al primero, como antes."""
+    llamadas = []
+
+    def fetch(url):
+        llamadas.append(url)
+        raise cc.SinRespuesta("HTTP 403 (cuota)")
+
+    t = iter(range(0, 10_000, 100))  # reloj falso: si reintentara, termina igual y cuenta de más
+    assert _consultar(fetch, esperar=True, timeout_s=250, reloj=lambda: next(t))[0] == cc.NO_SE_SABE
+    assert len(llamadas) == 1
+
+
+def test_el_error_de_red_de_urllib_sale_como_SinRed(monkeypatch):
+    import urllib.error
+
+    def caida(*a, **kw):
+        raise urllib.error.URLError("SSL: CERTIFICATE_VERIFY_FAILED")
+
+    monkeypatch.setattr(cc.urllib.request, "urlopen", caida)
+    with pytest.raises(cc.SinRed):
+        cc._fetch_json("https://api.github.com/x")
+
+
 def test_un_reintento_del_run_manda_sobre_el_primero():
     """Re-correr un job crea otro intento del mismo commit: vale el último, no el primero."""
     runs = [_run("failure", run_id=1, attempt=1), _run("success", run_id=1, attempt=2)]

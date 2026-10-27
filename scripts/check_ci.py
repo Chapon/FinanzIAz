@@ -60,6 +60,10 @@ class SinRespuesta(RuntimeError):
     """La API no contestó algo usable (sin red, 403 por cuota, 404)."""
 
 
+class SinRed(SinRespuesta):
+    """No llegó ninguna respuesta (SSL, timeout, sin conexión): puede ser pasajero (tarea 400)."""
+
+
 def _fetch_json(url: str) -> object:
     req = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json", "User-Agent": "finanzias-check-ci"}
@@ -69,7 +73,9 @@ def _fetch_json(url: str) -> object:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise SinRespuesta(f"HTTP {e.code} en {url}") from e
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (urllib.error.URLError, OSError) as e:
+        raise SinRed(f"{type(e).__name__}: {e}") from e
+    except ValueError as e:
         raise SinRespuesta(f"{type(e).__name__}: {e}") from e
 
 
@@ -167,13 +173,23 @@ def consultar(
     if sha:
         url += f"&head_sha={sha}"
     limite = reloj() + timeout_s
+    fallos = 0
     while True:
         try:
             datos = fetch(url)
             runs = de_la_rama(datos.get("workflow_runs", []) if isinstance(datos, dict) else [])
         except SinRespuesta as e:
-            out(f"CI: no se sabe — la API no contestó ({e}). NO es un verde.")
+            fallos += 1
+            # Tarea 400: un error de red pasajero (el SSL del 2026-10-26) no corta la espera. Una
+            # respuesta HTTP sí: la cuota o un 404 no cambian en 15 minutos.
+            if esperar and isinstance(e, SinRed) and reloj() < limite:
+                out(f"CI: la API no contestó ({e}) — reintento en {intervalo_s:.0f} s")
+                dormir(intervalo_s)
+                continue
+            veces = f", {fallos} veces seguidas" if fallos > 1 else ""
+            out(f"CI: no se sabe — la API no contestó ({e}{veces}). NO es un verde.")
             return NO_SE_SABE
+        fallos = 0
         run = run_de_commit(runs, sha) if sha else ultimo_terminado(runs)
         v = veredicto(run)
         if v != NO_SE_SABE or not esperar or reloj() >= limite:
