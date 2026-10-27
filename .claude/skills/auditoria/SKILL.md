@@ -505,7 +505,14 @@ subirlo rompe, y eso es una decisión que caduca.
 **Cómo se audita.** **(1)** Cada `import` de terceros del código contra lo declarado (con imports
 locales y opcionales incluidos: el caso de la 212 era un import opcional). **(2)** Lo declarado
 contra lo instalado en cada entorno, versión por versión. **(3)** Los pines: ¿el motivo de cada
-uno sigue siendo cierto?, ¿hay avisos de seguridad sobre la versión pineada?
+uno sigue siendo cierto?, ¿hay avisos de seguridad sobre la versión pineada? —con `pip-audit -r
+requirements.lock`, que audita **lo que corre**; el job del CI auditaba lo último que permitían los
+rangos y no veía nada de lo de la máquina (tarea 391)—. **(4)** Los techos y el lock, **recorriendo
+los archivos enteros y no el diff de la ventana**: la tanda del 20/10 dio por limpia *«ningún paquete
+sin techo»* mirando sólo lo que había cambiado, y había once (tarea 391). Hoy lo fija
+`tests/test_dependencias_con_techo_t391.py` (techo en todo `requirements.txt`, el lock dentro de
+los rangos y cada `pip install` de los workflows con `-c requirements.lock`); la auditoría mira lo
+que ese test no cubre, como `requirements-dev.txt`, que sigue sin techo salvo `ruff`.
 
 **Queda afuera:** actualizar. Esta área dice qué diverge; subir versiones es la tarea propia de
 *Ideas* («Actualizar dependencias»), con su riesgo medido.

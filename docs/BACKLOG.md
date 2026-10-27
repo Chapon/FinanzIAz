@@ -18,7 +18,15 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 391 (DEPENDENCIAS-SIN-TECHO) CERRADA 2026-10-26 — las once con techo, el CI instalando con el lock, y al auditar el lock aparecieron 94 vulnerabilidades conocidas → la 399** (`requirements.txt`, `.github/workflows/ci.yml`, `.github/workflows/probe_yahoo_datacenter_t196.yml`, `tests/test_dependencias_con_techo_t391.py`, `.claude/skills/auditoria/SKILL.md`, docstring de `tests/test_entorno_cumple_requirements_t284.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **Techos:** la mayor siguiente a la del lock (en las 0.x, la menor): `yfinance<2`, `requests<3`, `urllib3<3`, `lxml<6`, `alembic<2`, `duckdb<2`, `mplfinance<0.13`, `reportlab<6`, `openpyxl<4`, `hmmlearn<0.4`, `arch<9`. Ninguna quedó como excepción.
+  - **El CI** instala con `-c requirements.lock` en los cuatro jobs (y el `requirements.lock` entra en la clave del cache de pip), y el probe de Yahoo de la 196 baja la `yfinance` del lock. **Antes de cambiarlo** se simuló la instalación del CI —Python 3.11, Linux, sólo wheels— con el lock como restricción: resuelve entera, con las 105 versiones del lock (el lock sale de 3.12 en Windows). El job `audit` también instala con el lock, para auditar lo que corre y no lo último.
+  - **Hallazgo → 399 (MEDIA):** `pip-audit -r requirements.lock` da **94 vulnerabilidades conocidas en 8 paquetes** (pillow 62, virtualenv 19, filelock 3, certifi, lxml, pip, soupsieve y scikit-learn 2 cada uno). El job `audit` no las veía porque instalaba lo último; desde ahora va a salir en rojo, con `continue-on-error`, sin tumbar el run. La de lxml se corrige en 6.1.0, arriba del techo que acaba de recibir: queda dicho en la 399.
+  - **Skill:** el método de K audita el lock con `pip-audit -r requirements.lock` y recorre los archivos enteros, no el diff; lo que el test no cubre (`requirements-dev.txt`, sin techo salvo `ruff`, aunque el CI ya la instala con el lock) queda para la auditoría.
+  - **Tests** (3): techo en toda dependencia de `requirements.txt` salvo excepción con motivo; el lock dentro de cada rango (si un techo quedara debajo, el CI no resuelve); cada `pip install` de los workflows con el lock, salvo pip, setuptools y pip-audit. **Mutaciones**, tres —sacar el techo de `yfinance`, bajar el de `arch` a `<8` y quitar el lock del probe—, cada una pone rojo su test; restauradas desde copia.
+  - **Deja la 399.**
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -478,6 +486,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-10-26** al cerrar la **396** (la tanda de las 12 áreas, `docs/auditoria_tanda_2026-10-26.md`), que deja la **397** y la **398**, las dos BAJA. Van **detrás** de las seis de la 389, que muerden más: la **397** (un vacío transitorio de Yahoo borra el perfil de surprise de un ticker por una semana, sin aviso) no tiene consumidor vivo, y la **398** (un aviso de `tight_layout` sin causa conocida) es de pantalla y se repite una vez por sesión. Las dos adelante de las que esperan a Chapa o al paso del tiempo, porque se pueden hacer desde acá. El orden queda **390 → 391 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-10-26b** al cerrar la **390**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **391 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-10-26c** al cerrar la **391**, que deja la **399** (las 94 vulnerabilidades conocidas del lock, MEDIA). Va **primera**: es la única MEDIA de la cola, y desde la 391 el job `audit` del CI la muestra en rojo en cada push. Las BAJA siguen en su orden. El orden queda **399 → 392 → 393 → 394 → 395 → 397 → 398 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1917,6 +1927,14 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 399. LOCK-CON-VULNERABILIDADES — Las versiones del lock, que son las que corren en la máquina y desde la 391 también en el CI, tienen 94 vulnerabilidades conocidas en 8 paquetes, y el audit del CI no las veía porque instalaba lo último  ·  origen: tarea 391 (2026-10-26) · severidad **MEDIA**
+
+- **Qué pasa.** `pip-audit -r requirements.lock --no-deps` (2026-10-26): **pillow** 12.2.0, 62 (corrige 13.0.0, mayor nueva; la arrastra matplotlib); **virtualenv** 21.5.1, 19 (21.14.9); **filelock** 3.29.4, 3 (4.2.1, mayor nueva); **certifi** 2026.6.17 (2026.10.19), **lxml** 5.2.1 (**6.1.0**: queda arriba del `<6` que le puso la 391), **pip** 26.1.2 (26.2), **soupsieve** 2.8.4 (2.9.0), 2 cada una; y **scikit-learn** 1.4.2, 2 (1.5.0), la única con el riesgo aceptado por escrito en `requirements.txt` (tarea 284, sólo para PYSEC-2024-110: hay que ver si la segunda es la misma). virtualenv, filelock y pip son herramientas de desarrollo; pillow, lxml, certifi y soupsieve corren en la app.
+- **Por qué no se veía.** El job `audit` instalaba `requirements.txt` sin lock, o sea las versiones más nuevas que permitían los rangos, que no son las de la máquina. Desde la 391 instala con `-c requirements.lock`, y como tiene `continue-on-error`, va a salir en rojo sin tumbar el run hasta que esto se resuelva.
+- **Qué hay que hacer.** Por paquete: subir en la Anaconda, el `.venv` y el lock a la versión que corrige (con la suite y los cuatro comandos en las dos), o escribir la aceptación del riesgo con el motivo verificado, como la de scikit-learn. pillow 13 y lxml 6 son mayores nuevas: van con su propio cuidado (lxml mueve el techo de la 391).
+- **Kill-criteria.** `pip-audit -r requirements.lock` sin vulnerabilidades que no estén aceptadas por escrito (con `--ignore-vuln` en el job y el motivo al lado), el job `audit` en verde, los cuatro comandos en los dos intérpretes y el CI en verde.
+- **Dependencias:** ninguna.
+
 ### 398. TIGHT-LAYOUT-MARGENES — Un `UserWarning` de `tight_layout` que no es el de la 371 aparece una vez por sesión, y no se sabe qué figura queda sin layout  ·  origen: `docs/auditoria_tanda_2026-10-26.md` [L-1] · severidad **BAJA** · **display-only**
 
 - **Qué pasa.** `py.warnings` registró *«Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations»* cuatro veces en dos sesiones: el 2026-10-23 a las 18:10:22 y 18:10:34, y el 2026-10-26 a las 16:57:06 y 16:57:18. Siempre de a dos: una desde `main.py:104` (`app.exec()`, o sea un dibujado del event loop, de una figura que el aviso no nombra) y otra desde `ui/dashboard_charts.py:286` (`_Sparkline.set_series`, la mini-curva de las `KpiCard`). Es **otra firma** que la de la 371 (*«not compatible with tight_layout»*, por el `hspace`), y no figura en ninguna tarea ni doc.
@@ -1971,7 +1989,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Con la referencia sin calcular, entrar a Home no bloquea el hilo de la GUI más de 0,2 s (test que mide el tiempo de `refresh` con una referencia lenta simulada). Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 391. DEPENDENCIAS-SIN-TECHO — Once dependencias de `requirements.txt` sin techo, `yfinance` entre ellas: el CI instala sin lock, y un release nuevo lo puede poner rojo sin que cambie el código  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [K-1] · severidad **MEDIA** (la forma de la 348, que fue un CI rojo)
+### 391. ~~DEPENDENCIAS-SIN-TECHO — Once dependencias de `requirements.txt` sin techo, `yfinance` entre ellas: el CI instala sin lock, y un release nuevo lo puede poner rojo sin que cambie el código~~ · **CERRADA 2026-10-26 — las once con techo y el CI con el lock; deja la 399**  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [K-1] · severidad **MEDIA** (la forma de la 348, que fue un CI rojo)
 
 - **Qué pasa.** Sin `<`: `yfinance>=0.2.40`, `requests>=2.33.0`, `urllib3>=2.8.0`, `lxml>=5.2.1`, `alembic>=1.13`, `duckdb>=1.0`, `mplfinance>=0.12.10b0`, `reportlab>=4.0.0`, `openpyxl>=3.1.0`, `hmmlearn>=0.3.0` y `arch>=6.0`. La **348** le puso techo a `pyarrow`, que fue el que rompió, y a nada más. `yfinance` es la fuente de casi todo el dato y tuvo cambios de API entre versiones mayores; Anaconda, el `.venv` y el lock tienen la **1.4.1**.
 - **Alcance.** (1) Techo de versión mayor en cada una, o la decisión escrita de por qué no. (2) Que el CI instale con el lock, o con una restricción derivada de él. (3) **La deuda de la skill:** en el método de K de `.claude/skills/auditoria/SKILL.md`, que la condición *«(←) ningún paquete sin techo»* se verifica recorriendo el archivo entero y no el diff de la ventana (la tanda del 20/10 la dio por limpia así).

@@ -35,7 +35,8 @@ jobs:
         # hace falta requirements.txt (que arrastra PyQt6 y las libs de Qt).
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance
+          # La yfinance del lock (tarea 391): el probe mide la versión que corre la app.
+          pip install yfinance -c requirements.lock
       - name: Probe
         env:
           # Si el secret no existe, esto NO queda sin setear: queda seteado en cadena

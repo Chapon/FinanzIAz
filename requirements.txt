@@ -1,5 +1,11 @@
 # Runtime dependencies for FinanzIAs.
 # Use pinned versions in requirements.lock for reproducible installs.
+#
+# TECHO DE VERSION MAYOR EN TODAS (tarea 391): el techo de cada una es la mayor
+# siguiente a la del lock (en las 0.x, la menor siguiente). Un release mayor nuevo
+# se adopta a proposito —subir el techo, regenerar el lock, correr la suite—, no
+# porque salio. Lo verifica tests/test_dependencias_con_techo_t391.py. Ademas el CI
+# instala con `-c requirements.lock`, asi que corre las versiones de la maquina.
 # Run scripts/audit_dependencies.py periodically to check for CVEs.
 
 # UI
@@ -10,24 +16,24 @@
 PyQt6>=6.7.1,<6.8
 
 # Market data
-yfinance>=0.2.40           # frequent releases — Yahoo Finance API drifts
-requests>=2.33.0           # tarea 284: 2.32.2 tenia PYSEC-2026-1872/-2275 (fix 2.32.4 / 2.33.0)
+yfinance>=0.2.40,<2          # frequent releases — Yahoo Finance API drifts
+requests>=2.33.0,<3           # tarea 284: 2.32.2 tenia PYSEC-2026-1872/-2275 (fix 2.32.4 / 2.33.0)
 # urllib3: el codigo lo importa DIRECTO (data/yahoo_finance.py, Retry), asi que se declara
 # aunque llegue con requests (tarea 284, [K-1]). 2.8.0 corrige PYSEC-2026-4175/-4177.
-urllib3>=2.8.0
+urllib3>=2.8.0,<3
 # lxml: el parser de HTML de pd.read_html (data/ticker_universe.py baja el S&P 500 de
 # Wikipedia). Sin el, el fetch cae al fallback hardcoded en silencio. 5.2.1 es la de la
 # Anaconda donde corre la app (tarea 347).
-lxml>=5.2.1
+lxml>=5.2.1,<6
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
 # T7.3: alembic pasó de dev-only a runtime — init_db corre `upgrade head` en
 # cada arranque (único camino de esquema desde la migración catch-up 0004).
-alembic>=1.13
+alembic>=1.13,<2
 
 # Nube (tarea 356): la app baja de DynamoDB lo que junta la Lambda de la 355
-# (data/nube_sync.py). Techo en <2 por la 348 (el CI instala esto sin lock). Arrastra
+# (data/nube_sync.py). Techo en <2 por la 348 (el CI instalaba esto sin lock hasta la 391). Arrastra
 # botocore, jmespath y s3transfer; botocore pide urllib3<3, compatible con el >=2.8.0
 # de arriba (en el lock queda 2.8.0). Sin boto3 la sincronizacion no corre y lo avisa.
 boto3>=1.40,<2
@@ -57,19 +63,19 @@ numpy>=1.26.4,<2.0
 # de numpy de arriba la deja sin importar. La 25.0.0 es la de Anaconda, el lock y el .venv.
 # Se levanta junto con el bump de numpy 2.x.
 pyarrow>=17.0,<26           # tarea 284: 14.0.2 violaba el >=16 y tenia PYSEC-2024-161 (fix 17.0.0)
-duckdb>=1.0
+duckdb>=1.0,<2
 
 # Charts
 matplotlib>=3.8.0,<4.0
-mplfinance>=0.12.10b0
+mplfinance>=0.12.10b0,<0.13
 
 # Reports
-reportlab>=4.0.0
-openpyxl>=3.1.0
+reportlab>=4.0.0,<6
+openpyxl>=3.1.0,<4
 
 # Quant / ML
-hmmlearn>=0.3.0
-arch>=6.0
+hmmlearn>=0.3.0,<0.4
+arch>=6.0,<9
 # scikit-learn: dependencia transitiva (hmmlearn/arch) que fijamos explicito.
 # CAPEADA a <1.8 porque 1.8 removio CalibratedClassifierCV(cv="prefit"), que usa
 # analysis/ml_signals.py (_build_calibrator). El entorno real corre 1.4.2.

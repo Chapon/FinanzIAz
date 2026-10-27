@@ -32,11 +32,12 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            requirements.lock
 
       - name: Install dev dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt -c requirements.lock
 
       - name: Ruff lint
         run: ruff check .
@@ -69,11 +70,15 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            requirements.lock
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          # `-c requirements.lock` (tarea 391): el CI corre las versiones de la máquina, no lo
+          # último que permiten los rangos. Sin esto, un release nuevo lo ponía rojo sin que
+          # cambiara el código (pyarrow 26, tarea 348). Subir una versión es regenerar el lock.
+          pip install -r requirements.txt -r requirements-dev.txt -c requirements.lock
 
       - name: mypy
         run: mypy .
@@ -107,7 +112,8 @@ jobs:
           # CVE del código sino del andamio. Tarea 65.
           python -m pip install --upgrade pip setuptools
           pip install pip-audit
-          pip install -r requirements.txt
+          # Con el lock (tarea 391): se audita lo que corre en la máquina, no lo último.
+          pip install -r requirements.txt -c requirements.lock
           pip-audit --strict 2>&1 | tee audit-output.txt
           code=$?
           if [ "$code" -ne 0 ]; then
@@ -132,6 +138,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            requirements.lock
       - name: Qt shared libs (headless)
         # PyQt6 se enlaza contra libEGL/libGL, y el runner de Ubuntu no las trae.
         # Sin esto, ``pytest-qt`` explota importando ``PyQt6.QtGui`` DENTRO de
@@ -152,7 +159,10 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          # `-c requirements.lock` (tarea 391): el CI corre las versiones de la máquina, no lo
+          # último que permiten los rangos. Sin esto, un release nuevo lo ponía rojo sin que
+          # cambiara el código (pyarrow 26, tarea 348). Subir una versión es regenerar el lock.
+          pip install -r requirements.txt -r requirements-dev.txt -c requirements.lock
       - name: pytest
         # Skip tests marked ``network`` — they hit real yfinance and don't
         # belong in CI.
