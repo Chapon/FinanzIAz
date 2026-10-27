@@ -18,13 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **Tarea 403 (CHECK-CI-SSL-CON-CERTIFI) CERRADA 2026-10-26 — `check_ci.py` valida el TLS con `certifi`, y contesta en los dos intérpretes donde antes fallaba siempre** (`scripts/check_ci.py`, `tests/test_check_ci_t300.py`). Los cuatro comandos corrieron **después** de escribir este registro.
-  - **La causa:** GitHub sirve a veces la cadena `*.github.com ← Sectigo DV E36 ← Sectigo Root E46 ← USERTrust ECC` (vista con `openssl s_client`), y el almacén de Windows que carga `ssl.create_default_context()` no tiene `USERTrust ECC`; con `cafile=certifi.where()` valida (las cuatro raíces de Sectigo/USERTrust están en el `certifi` 2026.06.17). **Corrige a la 400**, que lo había dado por pasajero.
-  - **El arreglo:** `_contexto_ssl()` arma el contexto con `certifi` si está (viene con `requests`) y con el del sistema si no; `_fetch_json` se lo pasa a `urlopen`. `check_ci.py --ultimo` contestó VERDE en el `.venv` y en la Anaconda, en el mismo minuto en que el contexto por defecto fallaba.
-  - **Test** (1): `_fetch_json` le pasa a `urlopen` el contexto armado con `cafile=certifi.where()`. **Mutaciones**, dos —el contexto por defecto, y no pasarle contexto a `urlopen`—, las dos rojas.
-  - **No deja tareas nuevas.**
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1935,7 +1929,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 403. ~~CHECK-CI-SSL-CON-CERTIFI — `check_ci.py` valida el TLS de la API de GitHub con el almacén de certificados de Windows, que no tiene el emisor de la cadena ECC que GitHub sirve a veces: `CERTIFICATE_VERIFY_FAILED` intermitente, y el 2026-10-27 persistente~~ · **CERRADA 2026-10-26 — valida con `certifi`**  ·  origen: cierre de la 401/402 (2026-10-26) · severidad **MEDIA** (traba cada cierre: la regla 7 no se puede cumplir sin leer el CI)
+### 403. ~~CHECK-CI-SSL-CON-CERTIFI — `check_ci.py` valida el TLS de la API de GitHub con el almacén de certificados de Windows, que no tiene el emisor de la cadena ECC que GitHub sirve a veces: `CERTIFICATE_VERIFY_FAILED` intermitente, y el 2026-10-27 persistente~~ · **CERRADA 2026-10-26 — valida con `certifi`** (`f0f6a6f`) · **movida a *Hecho reciente***  ·  origen: cierre de la 401/402 (2026-10-26) · severidad **MEDIA** (traba cada cierre: la regla 7 no se puede cumplir sin leer el CI)
 
 - **Qué pasa.** GitHub manda `*.github.com ← Sectigo DV E36 ← Sectigo Root E46 ← USERTrust ECC`. `ssl.create_default_context()` en Windows carga el almacén del sistema, que no tiene `USERTrust ECC Certification Authority`: Windows baja las raíces a demanda sólo para quien usa su propia pila TLS (por eso `curl` nunca falló). Con un servidor que manda la cadena RSA, anda; con la ECC, no: por eso parecía pasajero. **La 400 lo dio por pasajero y no lo era**: su reintento ayuda con la red, pero el 2026-10-27 fallaron 14 seguidos. Con `ssl.create_default_context(cafile=certifi.where())` —`certifi` ya viene con `requests`— valida.
 - **Qué hay que hacer.** `_fetch_json` usa el almacén de `certifi` si está instalado, y el del sistema si no.
@@ -4619,6 +4613,11 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 323 — Tarea 403 (CHECK-CI-SSL-CON-CERTIFI) CERRADA 2026-10-26 — `check_ci.py` valida el TLS con `certifi`, y contesta en los dos intérpretes donde antes fallaba siempre** (`f0f6a6f`, CI **VERDE** 2026-10-27 02:06Z, leído por el propio `check_ci.py` sin un error de SSL; `scripts/check_ci.py`, `tests/test_check_ci_t300.py`). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **La causa:** GitHub sirve a veces la cadena `*.github.com ← Sectigo DV E36 ← Sectigo Root E46 ← USERTrust ECC` (vista con `openssl s_client`), y el almacén de Windows que carga `ssl.create_default_context()` no tiene `USERTrust ECC`; con `cafile=certifi.where()` valida (las cuatro raíces de Sectigo/USERTrust están en el `certifi` 2026.06.17). **Corrige a la 400**, que lo había dado por pasajero.
+  - **El arreglo:** `_contexto_ssl()` arma el contexto con `certifi` si está (viene con `requests`) y con el del sistema si no; `_fetch_json` se lo pasa a `urlopen`. `check_ci.py --ultimo` contestó VERDE en el `.venv` y en la Anaconda, en el mismo minuto en que el contexto por defecto fallaba.
+  - **Test** (1): `_fetch_json` le pasa a `urlopen` el contexto armado con `cafile=certifi.where()`. **Mutaciones**, dos —el contexto por defecto, y no pasarle contexto a `urlopen`—, las dos rojas.
+  - **No deja tareas nuevas.**
 - **WIP 322 — Tarea 400 (CHECK-CI-SE-RINDE-AL-PRIMER-ERROR) CERRADA 2026-10-26 — con `--esperar`, un error de red se reintenta dentro de la espera; una respuesta HTTP sigue cortando al primero** (`f9521c0`, CI **VERDE** 2026-10-27 01:00Z; `scripts/check_ci.py`, `tests/test_check_ci_t300.py`). Los cuatro comandos corrieron **después** de escribir este registro.
   - **El arreglo:** `_fetch_json` distingue `SinRed` (URLError/OSError: SSL, timeout, sin conexión) de `SinRespuesta` (HTTP, JSON roto), y `consultar()` reintenta sólo la primera, con el mismo intervalo y hasta el mismo límite; si se agota, dice cuántas veces seguidas falló y sigue siendo *no se sabe*. La cuota (403) y el 404 no se reintentan porque no cambian en 15 minutos. Sin `--esperar`, igual que antes.
   - **Tests** (4): falla una vez y contesta verde ⇒ VERDE (antes, NO_SE_SABE); la red caída hasta el límite ⇒ NO_SE_SABE con el conteo, nunca verde; un 403 con `--esperar` se consulta **una** vez; el `URLError` de `urllib` sale como `SinRed`. **Mutaciones**, tres —sin reintento, reintentar también las HTTP y reintentar sin límite—, todas rojas. **Las dos últimas colgaban la suite en la primera pasada** en vez de ponerla roja (reloj real con 10.000 s, y un bucle sin cota): los dos tests llevan ahora reloj falso y un tope de llamadas, y una mutación así falla en menos de un segundo.
