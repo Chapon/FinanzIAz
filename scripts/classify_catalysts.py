@@ -28,6 +28,7 @@ import argparse
 import random
 import sys
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,10 @@ from database.models import NewsEvent, session_scope, utcnow_naive
 
 log = get_logger(__name__)
 
+# Tarea 409: cada cuántas filas se persiste. A ~2,9 s por fila con qwen son ~30 s, que es lo
+# máximo que pierde un cierre inesperado; la escritura de 10 UPDATE es despreciable al lado.
+CHECKPOINT_FILAS = 10
+
 
 @dataclass
 class ClassifyReport:
@@ -52,6 +57,8 @@ class ClassifyReport:
     by_sentiment: Counter = field(default_factory=Counter)
     by_classifier: Counter = field(default_factory=Counter)  # T7.4: provenance
     llm_fallbacks: int = 0  # T7.5: filas que esperaban LLM y cayeron al heuristic
+    pendientes: int = 0  # tarea 409: candidatas al arrancar
+    detenido: bool = False  # tarea 409: se cortó por pedido, con lo hecho ya guardado
 
     def summary(self) -> str:
         top = ", ".join(f"{k}={v}" for k, v in self.by_event.most_common(5))
@@ -60,6 +67,8 @@ class ClassifyReport:
             f"| failed {self.failed} | backend {dict(self.by_classifier)} "
             f"| sentiment {dict(self.by_sentiment)} | top events: {top or '—'}"
         )
+        if self.detenido:
+            line += f" | DETENIDO a pedido: quedan {self.pendientes - self.scanned} sin clasificar"
         if self.llm_fallbacks:
             # Token grep-able desde el log del scheduler (T7.5).
             line += f"\nLLM_FALLBACKS={self.llm_fallbacks} — ¿Ollama caído? Revisar 'backend failed' arriba."
@@ -78,6 +87,9 @@ def classify_events(
     now: datetime | None = None,
     llm_tag: str | None = None,
     llm_exempt_sources: frozenset[str] = frozenset({"sec_8k"}),
+    checkpoint: int = CHECKPOINT_FILAS,
+    progreso: Callable[[int, int, int], None] | None = None,
+    detener: Callable[[], bool] | None = None,
 ) -> ClassifyReport:
     """
     Classify ``news_events`` rows and persist labels in place (unless dry_run).
@@ -97,6 +109,12 @@ def classify_events(
     ``report.llm_fallbacks``. ``llm_exempt_sources`` excluye las fuentes que
     los backends hybrid rutean al heuristic POR DISEÑO (sec_8k) — pasar
     ``frozenset()`` para backends puros (ollama/llm sin hybrid).
+
+    Tarea 409 — ``checkpoint``: cada cuántas filas clasificadas se persiste. Hasta la 409 se
+    escribía todo al final, y con la cola de 14.154 noticias del 2026-11-05 (~11 h) cada cierre
+    de la app tiraba lo hecho. La selección es ``event_type IS NULL``, así que lo guardado ya
+    es el punto de reanudación. ``progreso(hechos, total, fallbacks)`` se llama al arrancar y
+    en cada checkpoint; ``detener()`` se consulta antes de cada fila y corta guardando lo hecho.
     """
     now = now or utcnow_naive()
     report = ClassifyReport()
@@ -137,8 +155,23 @@ def classify_events(
     # `Classification` y no `object`: lo que se acumula aca es el resultado del
     # clasificador, y con `object` los siete accesos a sus campos de mas abajo
     # quedaban sin tipo.
+    # Fase 3 — persistir cada `checkpoint` filas (tarea 409), no al final: cada lote es su
+    # propia transacción corta, así que ninguna escritura retiene el lock mientras corre el LLM.
+    report.pendientes = len(candidates)
     pending: list[tuple[int, Classification]] = []
+
+    def _avisar() -> None:
+        if progreso is not None:
+            try:
+                progreso(report.scanned, report.pendientes, report.llm_fallbacks)
+            except Exception:
+                log.exception("classify: el callback de progreso falló")
+
+    _avisar()
     for ev_id, title, content, src, ticker in candidates:
+        if detener is not None and detener():
+            report.detenido = True
+            break
         report.scanned += 1
         try:
             c = classifier(title, content, src, ticker)
@@ -159,31 +192,35 @@ def classify_events(
         report.classified += 1
         if show:
             print(f"  {ticker:<6} {c.event_type:<20} {c.sentiment:<8} {c.confidence:.2f}  {title[:72]}")
-        if dry_run:
-            continue
-        pending.append((ev_id, c))
+        if not dry_run:
+            pending.append((ev_id, c))
+        if report.scanned % max(1, checkpoint) == 0:
+            _persistir(pending, now)
+            pending.clear()
+            _avisar()
 
-    # Fase 3 — persistir en lotes CORTOS. Cada lote es su propia transacción, así
-    # ninguna escritura retiene el lock más que un puñado de UPDATEs. Idempotente:
-    # re-correr no cambia nada (mismo (event_type, sentiment, ...)).
-    if pending:
-        write_chunk = 100
-        for i in range(0, len(pending), write_chunk):
-            with session_scope() as session:
-                for ev_id, c in pending[i : i + write_chunk]:
-                    ev = session.get(NewsEvent, ev_id)
-                    if ev is None:
-                        continue
-                    ev.event_type = c.event_type
-                    ev.sentiment = c.sentiment
-                    ev.classifier_confidence = c.confidence
-                    ev.classified_at = now
-                    ev.classified_by = c.classifier  # T7.4: provenance persistida
-                    ev.sentiment_score = c.sentiment_score  # OPS1(a): polaridad numérica
-                    ev.relevance = c.relevance  # OPS1(a): relevancia point-in-time
-
+    _persistir(pending, now)
+    _avisar()
     log.info("%s%s", "[dry-run] " if dry_run else "", report.summary())
     return report
+
+
+def _persistir(pending: list[tuple[int, Classification]], now: datetime) -> None:
+    """Escribe un checkpoint en UNA transacción corta. Idempotente: re-escribir no cambia nada."""
+    if not pending:
+        return
+    with session_scope() as session:
+        for ev_id, c in pending:
+            ev = session.get(NewsEvent, ev_id)
+            if ev is None:
+                continue
+            ev.event_type = c.event_type
+            ev.sentiment = c.sentiment
+            ev.classifier_confidence = c.confidence
+            ev.classified_at = now
+            ev.classified_by = c.classifier  # T7.4: provenance persistida
+            ev.sentiment_score = c.sentiment_score  # OPS1(a): polaridad numérica
+            ev.relevance = c.relevance  # OPS1(a): relevancia point-in-time
 
 
 def sample_for_review(n: int = 100, *, source: str | None = None, seed: int | None = None) -> list[tuple]:
@@ -266,7 +303,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    progreso: Callable[[int, int, int], None] | None = None,
+    detener: Callable[[], bool] | None = None,
+) -> int:
+    """``progreso`` y ``detener`` los pasa el worker de la app (tarea 409); desde la línea de
+    comandos no hacen falta: cortar con Ctrl+C pierde a lo sumo el checkpoint en curso."""
     args = _parse_args(argv)
     if args.sample:
         rows = sample_for_review(args.sample, source=args.source, seed=args.seed)
@@ -293,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:
         show=args.show,
         llm_tag=llm_tag,
         llm_exempt_sources=exempt,
+        progreso=progreso,
+        detener=detener,
     )
     print(report.summary())
     return 0

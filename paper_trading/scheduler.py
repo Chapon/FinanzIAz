@@ -100,6 +100,7 @@ Methods
 
 from __future__ import annotations
 
+import threading
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
 
@@ -244,16 +245,37 @@ class CatalystRefreshWorker(QThread):
     headline nueva), puede tardar varios minutos — por eso QThread. Escrituras
     DB idempotentes (las mismas de los scripts del .bat nocturno).
     Emits ``refresh_completed(result_dict)`` or ``refresh_failed(error)``.
+
+    Tarea 409: emite ``classify_progress(hechos, total, fallbacks)`` en cada checkpoint, y
+    ``pedir_detener()`` (thread-safe) corta el classify guardando lo hecho; el resultado
+    trae ``detenido=True`` si terminó así.
     """
 
-    refresh_completed = pyqtSignal(object)  # {"harvest_rc": int, "classify_rc": int}
+    refresh_completed = pyqtSignal(object)  # {"harvest_rc", "classify_rc", "detenido"}
     refresh_failed = pyqtSignal(str)
+    classify_progress = pyqtSignal(int, int, int)  # hechos, total, caídas a la heurística
+
+    def __init__(self, parent=None, *, harvest: bool = True):
+        super().__init__(parent)
+        self._detener = threading.Event()
+        self._harvest = harvest  # False = «Reanudar»: sólo clasifica lo pendiente
+
+    def pedir_detener(self) -> None:
+        self._detener.set()
+
+    def detener_pedido(self) -> bool:
+        return self._detener.is_set()
 
     def run(self):
         try:
             from analysis.news_digest import run_catalyst_refresh
 
-            res = run_catalyst_refresh()
+            res = run_catalyst_refresh(
+                progreso=self.classify_progress.emit,
+                detener=self._detener.is_set,
+                harvest=self._harvest,
+            )
+            res["detenido"] = self.detener_pedido()
             self.refresh_completed.emit(res)
         except Exception as e:
             self.refresh_failed.emit(f"{type(e).__name__}: {e}")
@@ -484,6 +506,7 @@ class PaperScheduler(QObject):
     catalyst_refresh_started = pyqtSignal()
     catalyst_refresh_completed = pyqtSignal(object)  # result dict
     catalyst_refresh_failed = pyqtSignal(str)
+    catalyst_classify_progress = pyqtSignal(int, int, int)  # tarea 409: hechos, total, fallbacks
 
     # Sincronización con la nube (tarea 356): un ResumenSync por corrida, y uno por el
     # aviso de «no disponible» (una vez por proceso).
@@ -613,7 +636,10 @@ class PaperScheduler(QObject):
             self._surprise_worker.wait(2_000)
             self._surprise_worker = None
         if self._catalyst_worker is not None:
-            self._catalyst_worker.wait(2_000)
+            # Tarea 409: cortar en orden para que guarde el checkpoint en curso. Lo normal es
+            # una fila de qwen (~3 s); el techo cubre una fila lenta sin colgar el cierre.
+            self._catalyst_worker.pedir_detener()
+            self._catalyst_worker.wait(self._CATALYST_STOP_WAIT_MS)
             self._catalyst_worker = None
         if self._hourly_harvest_worker is not None:
             self._hourly_harvest_worker.wait(2_000)
@@ -972,26 +998,55 @@ class PaperScheduler(QObject):
             self._CATALYST_RETRY_MIN,
         )
 
-    def _launch_catalyst_refresh(self) -> None:
-        worker = CatalystRefreshWorker(parent=self)
+    def _launch_catalyst_refresh(self, *, harvest: bool = True) -> None:
+        worker = CatalystRefreshWorker(parent=self, harvest=harvest)
         worker.refresh_completed.connect(self._on_catalyst_completed)
         worker.refresh_failed.connect(self._on_catalyst_failed)
+        worker.classify_progress.connect(self.catalyst_classify_progress)
         worker.finished.connect(self._reap_catalyst_worker)
         self._catalyst_worker = worker
-        log.info("daily catalyst refresh starting (harvest + classify)")
+        log.info("daily catalyst refresh starting (%s)", "harvest + classify" if harvest else "classify")
         self.catalyst_refresh_started.emit()
         worker.start()
+
+    # ── Detener / reanudar la clasificación (tarea 409) ─────────────────────────
+
+    def clasificacion_corriendo(self) -> bool:
+        return self._catalyst_worker is not None and self._catalyst_worker.isRunning()
+
+    def detener_clasificacion(self) -> bool:
+        """Pide cortar el classify en curso; guarda lo hecho. ``False`` si no había nada corriendo.
+
+        No re-arranca solo en el día: el refresh ya quedó estampado para hoy, así que el tick
+        por minuto no lo relanza. El próximo arranque de la app (o «Reanudar») sigue desde ahí.
+        """
+        if not self.clasificacion_corriendo():
+            return False
+        log.info("clasificación de noticias: detener pedido desde la barra de estado")
+        self._catalyst_worker.pedir_detener()
+        return True
+
+    def reanudar_clasificacion(self) -> bool:
+        """Sigue clasificando lo pendiente, sin volver a cosechar. ``False`` si ya hay una corriendo."""
+        if self.clasificacion_corriendo():
+            return False
+        self._last_catalyst_refresh = utcnow_naive().date()
+        self._launch_catalyst_refresh(harvest=False)
+        return True
 
     # Cuánto espera el reintento de un harvest con FUENTES CAIDAS (tarea 353). El caso que lo
     # motivó fue la vuelta de una suspensión con la red todavía caída: media hora es más que
     # lo que tarda en volver, y es UN reintento, así que no martilla una red caída.
     _CATALYST_RETRY_MIN = 30
+    # Cuánto espera el cierre de la app a que el classify guarde su checkpoint (tarea 409).
+    _CATALYST_STOP_WAIT_MS = 15_000
 
     def _on_catalyst_completed(self, res) -> None:
         log.info(
-            "daily catalyst refresh done: harvest_rc=%s classify_rc=%s",
+            "daily catalyst refresh done: harvest_rc=%s classify_rc=%s%s",
             res.get("harvest_rc"),
             res.get("classify_rc"),
+            " (clasificación DETENIDA a pedido; lo hecho quedó guardado)" if res.get("detenido") else "",
         )
         self._programar_reintento_si_degradado()
         self.catalyst_refresh_completed.emit(res)

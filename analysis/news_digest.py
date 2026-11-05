@@ -518,11 +518,19 @@ def run_catalyst_refresh(
     model: str = DEFAULT_CLASSIFY_MODEL,
     harvest_main=None,
     classify_main=None,
+    progreso=None,
+    detener=None,
+    harvest: bool = True,
 ) -> dict:
     """
     Corre harvest (T-CAT-1) + classify (T-CAT-2) in-process, con los mismos
     argumentos del .bat nocturno. Pensado para un QThread del PaperScheduler.
     ``harvest_main`` / ``classify_main`` inyectables para tests offline.
+
+    ``progreso`` y ``detener`` (tarea 409) van al classify: el avance para la barra de
+    estado y el pedido de cortar, que guarda lo hecho. Sin ellos se llama como antes.
+    ``harvest=False`` es el «Reanudar» de la barra de estado: sólo clasifica lo pendiente
+    (``harvest_rc`` sale ``None``).
 
     Devuelve {"harvest_rc": int, "classify_rc": int}; el harvest que falla NO
     aborta el classify (puede haber backlog previo clasificable igual).
@@ -532,16 +540,19 @@ def run_catalyst_refresh(
     if classify_main is None:
         from scripts.classify_catalysts import main as classify_main
 
+    harvest_rc = None
     try:
         # Mismas fuentes que el .bat nocturno / el harvest horario (finnhub
         # incluido; se saltea solo sin API key). Alineado 2026-07-12 al mover
         # todo el scheduling in-app y remover la tarea de Windows.
-        harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
+        if harvest:
+            harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
     except Exception:
         log.exception("catalyst refresh: harvest crashed")
         harvest_rc = -1
     try:
-        classify_rc = int(classify_main(["--backend", "hybrid-ollama", "--model", model]))
+        extra = {k: v for k, v in (("progreso", progreso), ("detener", detener)) if v is not None}
+        classify_rc = int(classify_main(["--backend", "hybrid-ollama", "--model", model], **extra))
     except Exception:
         log.exception("catalyst refresh: classify crashed")
         classify_rc = -1

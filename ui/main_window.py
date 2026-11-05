@@ -24,6 +24,7 @@ log = get_logger(__name__)
 from paper_trading.scheduler import PaperScheduler
 from ui.alerts_tab import AlertsTab
 from ui.analysis_tab import AnalysisTab
+from ui.clasificacion_indicador import ClasificacionIndicador
 from ui.failed_tickers_tab import FailedTickersTab
 from ui.home_tab import HomeTab
 from ui.leads_tab import LeadsTab
@@ -149,6 +150,10 @@ class MainWindow(QMainWindow):
         self.paper_scheduler.catalyst_refresh_started.connect(self._on_catalyst_refresh_started)
         self.paper_scheduler.catalyst_refresh_completed.connect(self._on_catalyst_refresh_completed)
         self.paper_scheduler.catalyst_refresh_failed.connect(self._on_catalyst_refresh_failed)
+        # Tarea 409: el avance de la clasificación, permanente en la barra, con Detener/Reanudar.
+        self.paper_scheduler.catalyst_classify_progress.connect(self.clasificacion_indicador.avance)
+        self.clasificacion_indicador.detener_pedido.connect(self.paper_scheduler.detener_clasificacion)
+        self.clasificacion_indicador.reanudar_pedido.connect(self.paper_scheduler.reanudar_clasificacion)
         # Lo que juntó la nube (tarea 356): el resultado, o el «no disponible» una vez.
         self.paper_scheduler.nube_sync_completed.connect(self._on_nube_sync_completed)
         self.paper_scheduler.start()
@@ -208,6 +213,8 @@ class MainWindow(QMainWindow):
         # Status bar
         self.status_bar = QStatusBar()
         self.status_bar.showMessage("FinanzIAs listo.")
+        self.clasificacion_indicador = ClasificacionIndicador()
+        self.status_bar.addPermanentWidget(self.clasificacion_indicador)
         self.setStatusBar(self.status_bar)
 
     _PAGE_IDX = {
@@ -351,15 +358,18 @@ class MainWindow(QMainWindow):
 
     def _on_catalyst_refresh_started(self):
         self.status_bar.showMessage("Noticias: actualizando harvest + clasificación del día…", 8_000)
+        self.clasificacion_indicador.iniciar()
 
     def _on_catalyst_refresh_completed(self, res):
+        self.clasificacion_indicador.terminado(res)
         h, c = res.get("harvest_rc"), res.get("classify_rc")
-        ok = h == 0 and c == 0
-        msg = (
-            "Noticias del día actualizadas."
-            if ok
-            else (f"Noticias: refresh terminó con avisos (harvest={h}, classify={c}) — ver log.")
-        )
+        ok = h in (0, None) and c == 0  # None: «Reanudar» no cosecha (tarea 409)
+        if res.get("detenido"):
+            msg = "Noticias: clasificación detenida; lo clasificado quedó guardado."
+        elif ok:
+            msg = "Noticias del día actualizadas."
+        else:
+            msg = f"Noticias: refresh terminó con avisos (harvest={h}, classify={c}) — ver log."
         self.status_bar.showMessage(msg, 10_000)
         # Refrescar la pestaña si está a la vista; si no, invalidar para que
         # cargue datos frescos la próxima vez que se entre.
@@ -372,6 +382,7 @@ class MainWindow(QMainWindow):
             log.warning("news tab refresh after catalyst refresh failed: %s", e)
 
     def _on_catalyst_refresh_failed(self, err: str):
+        self.clasificacion_indicador.ocultar()
         self.status_bar.showMessage(f"Noticias: refresh del día falló: {err}", 10_000)
 
     def _on_nube_sync_completed(self, res):

@@ -38,6 +38,8 @@ Finnhub requiere `FINNHUB_API_KEY` en el entorno (source tag `finnhub:<Outlet>`)
 
 `scripts/classify_catalysts.py` — taxonomía de 17 categorías; heurístico (item-codes SEC + keywords) con backend LLM enchufable (qwen). Idempotente; `--reclassify` fuerza redo.
 
+**Guarda por checkpoints (tarea 409):** persiste cada `CHECKPOINT_FILAS` (10) noticias, así que cortar —cerrar la app, un cuelgue, Ctrl+C— pierde a lo sumo el lote en curso, y la corrida siguiente sigue desde ahí (la selección es `event_type IS NULL`). En la app, la barra de estado muestra *«Clasificando noticias: N de M (≈ restante)»* con **Detener** / **Reanudar**; Reanudar sólo clasifica, no vuelve a cosechar. Una corrida detenida loguea `DETENIDO a pedido: quedan N`.
+
 ```
 python scripts/classify_catalysts.py --limit 200
 python scripts/classify_catalysts.py --source sec_8k
