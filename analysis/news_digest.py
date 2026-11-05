@@ -83,6 +83,10 @@ class DigestItem:
     # Tarea 259: ¿el tono viene de la escala de 7 niveles? Las filas clasificadas antes
     # tenían la polaridad agrupada en −2, 0, +2 y +3, y la pestaña lo aclara.
     escala_7: bool = False
+    # Tarea 406: qwen todavía no la clasificó y el tono es la heurística al vuelo de
+    # :func:`classify_missing`. Con la cola de días, era la mayoría de la pestaña sin decirlo.
+    provisional: bool = False
+    classified_by: str | None = None
 
     @property
     def event_label(self) -> str:
@@ -166,6 +170,7 @@ class _Row:
     classifier_confidence: float | None
     sentiment_score: float | None = None
     classified_by: str | None = None
+    provisional: bool = False  # tarea 406: clasificada al vuelo por classify_missing
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
@@ -204,6 +209,7 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
                     classifier_confidence=c.confidence,
                     sentiment_score=c.sentiment_score,
                     classified_by=c.classifier,
+                    provisional=True,
                 )
             )
         except Exception:
@@ -263,6 +269,8 @@ def rank_news(rows: Iterable, *, top_n: int | None = DEFAULT_TOP_N) -> list[Dige
             sentiment_score=getattr(r, "sentiment_score", None),
             tone=tone_level(getattr(r, "sentiment_score", None), r.sentiment),
             escala_7=es_escala_7(getattr(r, "classified_by", None)),
+            provisional=bool(getattr(r, "provisional", False)),
+            classified_by=getattr(r, "classified_by", None),
         )
         for r in rows
     ]

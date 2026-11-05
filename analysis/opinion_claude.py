@@ -213,12 +213,15 @@ def armar_datos(
 
 def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
     """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
-    from analysis.news_digest import fetch_news_window
+    from analysis.news_digest import classify_missing, fetch_news_window
     from database.models import utcnow_naive
 
     filas = fetch_news_window(utcnow_naive() - timedelta(days=dias), tickers=[ticker.upper()])
+    # Tarea 406: las que qwen todavía no clasificó salían con tipo y tono en None. Van con la
+    # heurística al vuelo, como en la pestaña Noticias, y el campo `clasificador` lo dice.
+    filas = classify_missing(filas[:MAX_NOTICIAS])
     out = []
-    for f in filas[:MAX_NOTICIAS]:
+    for f in filas:
         cuando = f.published_at or f.fetched_at
         out.append(
             {
@@ -229,6 +232,9 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
                 if f.sentiment_score is not None
                 else None,
                 "fuente": f.source,
+                "clasificador": "heuristica provisional (qwen todavia no la clasifico)"
+                if f.provisional
+                else f.classified_by,
             }
         )
     return out

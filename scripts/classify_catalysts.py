@@ -37,6 +37,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from sqlalchemy import func
+
 from config.logging_config import get_logger
 from data.catalyst_classifier import SUFIJO_ESCALA_7, Classification, classify
 from database.models import NewsEvent, session_scope, utcnow_naive
@@ -46,6 +48,28 @@ log = get_logger(__name__)
 # Tarea 409: cada cuántas filas se persiste. A ~2,9 s por fila con qwen son ~30 s, que es lo
 # máximo que pierde un cierre inesperado; la escritura de 10 UPDATE es despreciable al lado.
 CHECKPOINT_FILAS = 10
+
+# Tarea 406: la cola se da por atrasada si su noticia pendiente más vieja se cosechó hace más
+# de esto. La app corre el classify en cada apertura del día, así que una pendiente de dos días
+# es una corrida que arrancó y no terminó; del 23/10 al 05/11 fueron tres sin ningún aviso.
+COLA_ATRASADA_HORAS = 48
+# Lo que se usa para estimar la duración en el aviso: qwen2.5:14b medido el 2026-11-05.
+SEGUNDOS_POR_NOTICIA = 2.9
+
+
+def aviso_cola_atrasada(pendientes: int, mas_vieja: datetime | None, now: datetime) -> str | None:
+    """El texto del WARNING si la cola no se está vaciando, o ``None`` (tarea 406)."""
+    if not pendientes or mas_vieja is None:
+        return None
+    horas = (now - mas_vieja).total_seconds() / 3600
+    if horas <= COLA_ATRASADA_HORAS:
+        return None
+    return (
+        f"classify: la cola no se vacía — {pendientes} noticias sin clasificar, la más vieja "
+        f"cosechada el {mas_vieja:%Y-%m-%d %H:%M} UTC (hace {horas / 24:.1f} días). Vaciarla son "
+        f"~{pendientes * SEGUNDOS_POR_NOTICIA / 3600:.1f} h con qwen: dejar la app clasificando "
+        "(lo hecho se guarda cada 10)."
+    )
 
 
 @dataclass
@@ -144,10 +168,23 @@ def classify_events(
             q = q.filter(NewsEvent.event_type.is_(None))
         if source:
             q = q.filter(NewsEvent.source == source)
-        q = q.order_by(NewsEvent.id.asc())
+        # Lo más nuevo primero (tarea 406): con una cola de días, lo que se lee —la pestaña
+        # Noticias, la opinión de Claude— son los últimos días, y lo viejo puede esperar.
+        q = q.order_by(
+            NewsEvent.published_at.desc().nulls_last(),
+            NewsEvent.fetched_at.desc(),
+            NewsEvent.id.desc(),
+        )
         if limit:
             q = q.limit(limit)
         candidates = q.all()  # Row(id, title, content, source, ticker)
+        if max_confidence is None and not reclassify:
+            mas_vieja = (
+                session.query(func.min(NewsEvent.fetched_at)).filter(NewsEvent.event_type.is_(None)).scalar()
+            )
+            aviso = aviso_cola_atrasada(len(candidates), mas_vieja, now)
+            if aviso:
+                log.warning(aviso)
 
     # Fase 2 — clasificar FUERA de toda sesión (acá viven las llamadas al LLM).
     # Acumulamos los updates a aplicar; los contadores del report se mantienen

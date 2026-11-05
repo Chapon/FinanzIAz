@@ -82,8 +82,27 @@ TONE_COLORS = {
 TONO_ESCALA_VIEJA = (
     "Clasificación anterior a la escala de 7 niveles (tarea 259): qwen agrupaba la\n"
     "polaridad en −2, 0, +2 y +3, así que ±1 y −3 casi no aparecen y un +2 y un +3\n"
-    "son casi lo mismo. O es una clasificación heurística, que sólo da −1, 0 o +1."
+    "son casi lo mismo."
 )
+# Tarea 406 — el aviso de arriba decía también «o es una clasificación heurística», y con la
+# cola de días la mayoría de la pestaña era heurística al vuelo sin que la celda lo distinguiera.
+TONO_PROVISIONAL = (
+    "Todavía no la clasificó qwen (está en la cola): el tono es heurístico y provisional,\n"
+    "y sólo da −1, 0 o +1. Cambia cuando la clasificación llegue a esta noticia."
+)
+TONO_HEURISTICO = (
+    "Clasificación heurística (qwen no contestó, o la fuente es un 8-K de la SEC):\nsólo da −1, 0 o +1."
+)
+
+
+def tono_tooltip(it) -> str:
+    """El aviso de la celda de tono: vacío si es qwen en la escala de 7 (tareas 259 y 406)."""
+    if it.provisional:
+        return TONO_PROVISIONAL
+    if (it.classified_by or "").startswith("heuristic"):
+        return TONO_HEURISTICO
+    return "" if it.escala_7 else TONO_ESCALA_VIEJA
+
 
 COLUMNS: list[tuple[str, str]] = [
     ("Fecha", "Fecha que declara la fuente (— si la fuente no la trae)."),
@@ -368,8 +387,8 @@ class NewsTab(QWidget):
                     item.setForeground(QColor(color))
                 if c_idx in (2, 5):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if c_idx == 2 and not it.escala_7:
-                    item.setToolTip(TONO_ESCALA_VIEJA)
+                if c_idx == 2 and (tip := tono_tooltip(it)):
+                    item.setToolTip(tip)
                 if c_idx == 7:
                     item.setToolTip(it.title + (f"\n{it.url}" if it.url else ""))
                     # guardamos la URL en la celda del titular para el doble click

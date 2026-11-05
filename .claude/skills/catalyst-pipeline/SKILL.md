@@ -40,6 +40,8 @@ Finnhub requiere `FINNHUB_API_KEY` en el entorno (source tag `finnhub:<Outlet>`)
 
 **Guarda por checkpoints (tarea 409):** persiste cada `CHECKPOINT_FILAS` (10) noticias, así que cortar —cerrar la app, un cuelgue, Ctrl+C— pierde a lo sumo el lote en curso, y la corrida siguiente sigue desde ahí (la selección es `event_type IS NULL`). En la app, la barra de estado muestra *«Clasificando noticias: N de M (≈ restante)»* con **Detener** / **Reanudar**; Reanudar sólo clasifica, no vuelve a cosechar. Una corrida detenida loguea `DETENIDO a pedido: quedan N`.
 
+**Lo más nuevo primero, y avisa si la cola no se vacía (tarea 406).** La cola se recorre por `published_at` descendente: con días de atraso, lo que se lee (la pestaña Noticias, la opinión de Claude) son los últimos días. Si la pendiente más vieja se cosechó hace más de `COLA_ATRASADA_HORAS` (48 h), el classify loguea un `WARNING` *«la cola no se vacía — N noticias sin clasificar…»* con la estimación de horas: es la firma de corridas que arrancaron y no terminaron. Lo que qwen todavía no clasificó se muestra con la heurística al vuelo **y lo dice**: tooltip propio en la celda de tono y `clasificador: heuristica provisional` en los datos de la opinión de Claude.
+
 ```
 python scripts/classify_catalysts.py --limit 200
 python scripts/classify_catalysts.py --source sec_8k
@@ -65,7 +67,7 @@ python scripts/classify_catalysts.py --reclassify
 **Desde el 2026-07-12 no hay ninguna tarea del Task Scheduler de Windows** (verificado con `Get-ScheduledTask` el 2026-09-30, tarea 240). Acá decía que `daily_catalyst_harvest.bat` corría vía Task Scheduler y mandaba a *«confirmar periódicamente que corre»*: no había nada que confirmar. Todo corre en `paper_trading/scheduler.py`, **sólo con la app abierta**:
 
 - **Refresh diario** — la primera apertura del día corre harvest + classify.
-- **Harvest horario** — durante RTH, harvest-only cada `catalyst_hourly_harvest_minutes` (default 60).
+- **Harvest horario** — durante RTH, harvest-only cada `catalyst_hourly_harvest_minutes` (default 60). Espera sólo a la fase de **harvest** del refresh diario, no al classify (tarea 406): antes, un classify de horas lo apagaba toda la rueda.
 - **Rebuild de surprise** — cada `surprise_build_interval_days`, con backoff tras un fallo (tarea 197).
 
 Para diagnosticar, mirar en `~/.finanzias/finanzias.log` las líneas `Harvest: X/Y tickers …` (ver arriba) y `hourly catalyst harvest done`. **App cerrada = no se captura nada**, y eso es lo que frena el reloj de T-CAT-5b: la solución de fondo es la recolección en la Pi (tarea 196, y la 245 para sincronizar lo que falte). `scripts/daily_catalyst_harvest.bat` sigue en el repo y se puede correr a mano; **si se vuelve a programar, tiene que tener CRLF** o `cmd.exe` lo mata en silencio (ver `finanzias-conventions`).

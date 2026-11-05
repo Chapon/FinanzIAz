@@ -249,6 +249,9 @@ class CatalystRefreshWorker(QThread):
     Tarea 409: emite ``classify_progress(hechos, total, fallbacks)`` en cada checkpoint, y
     ``pedir_detener()`` (thread-safe) corta el classify guardando lo hecho; el resultado
     trae ``detenido=True`` si terminó así.
+
+    Tarea 406: ``cosechando()`` dice si está en la fase del harvest. El harvest horario espera
+    sólo a esa fase: el classify (horas, con la cola larga) ya no lo apaga.
     """
 
     refresh_completed = pyqtSignal(object)  # {"harvest_rc", "classify_rc", "detenido"}
@@ -259,6 +262,10 @@ class CatalystRefreshWorker(QThread):
         super().__init__(parent)
         self._detener = threading.Event()
         self._harvest = harvest  # False = «Reanudar»: sólo clasifica lo pendiente
+        # Se marca con el primer aviso del classify, que llega al arrancar su fase (tarea 406).
+        self._clasificando = threading.Event()
+        if not harvest:
+            self._clasificando.set()
 
     def pedir_detener(self) -> None:
         self._detener.set()
@@ -266,12 +273,20 @@ class CatalystRefreshWorker(QThread):
     def detener_pedido(self) -> bool:
         return self._detener.is_set()
 
+    def cosechando(self) -> bool:
+        """¿Está corriendo y todavía en el harvest (no en el classify)? (tarea 406)."""
+        return self.isRunning() and not self._clasificando.is_set()
+
+    def _progreso(self, hechos: int, total: int, fallbacks: int) -> None:
+        self._clasificando.set()
+        self.classify_progress.emit(hechos, total, fallbacks)
+
     def run(self):
         try:
             from analysis.news_digest import run_catalyst_refresh
 
             res = run_catalyst_refresh(
-                progreso=self.classify_progress.emit,
+                progreso=self._progreso,
                 detener=self._detener.is_set,
                 harvest=self._harvest,
             )
@@ -294,8 +309,14 @@ def hourly_harvest_due(
     """Decisión pura del harvest horario (tarea 10) — testeable offline.
 
     Gates: flag → intervalo transcurrido → sin worker horario vivo → sin
-    refresh diario vivo (mismo pipeline; dos harvesters concurrentes solo
-    suman contención de SQLite) → mercado abierto.
+    refresh diario **cosechando** (dos harvesters concurrentes solo suman contención de
+    SQLite) → mercado abierto.
+
+    ``daily_worker_running`` es el harvest del refresh diario, **no** el refresh entero
+    (tarea 406): el llamador pasaba el worker vivo, y con la cola de 14.154 noticias del
+    2026-11-05 el classify lo tenía vivo ~11 h, así que no entraba ninguna noticia en toda la
+    rueda. El classify no compite con el harvest: lee sus candidatas al arrancar y escribe en
+    transacciones cortas (la 409).
     """
     if not enabled:
         return False
@@ -1139,7 +1160,7 @@ class PaperScheduler(QObject):
                 self._hourly_harvest_worker is not None and self._hourly_harvest_worker.isRunning()
             ),
             daily_worker_running=(
-                (self._catalyst_worker is not None and self._catalyst_worker.isRunning())
+                (self._catalyst_worker is not None and self._catalyst_worker.cosechando())
                 or self._nube_corriendo()
             ),
             market_open=_is_market_open_now(),
