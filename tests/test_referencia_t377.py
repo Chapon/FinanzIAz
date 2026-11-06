@@ -153,6 +153,12 @@ def home(test_db, monkeypatch):
     monkeypatch.setattr(cr, "cierres_del_cache", lambda ts: {t: _cierres()[t] for t in ts if t in _cierres()})
     from ui.home_tab import HomeTab
 
+    # Tarea 392: en la app la referencia se calcula en un worker; estos tests son del DIBUJO, y la
+    # DB en memoria de la suite no se ve desde otro hilo. El camino del worker tiene su test.
+    def _sincronico(self, account_id):
+        self._referencia_lista(account_id, referencia_de_cuenta(account_id))
+
+    monkeypatch.setattr(HomeTab, "_lanzar_referencia", _sincronico)
     h = HomeTab()
     h.vid = vid
     yield h

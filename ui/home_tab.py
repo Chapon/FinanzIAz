@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import Counter
+from datetime import date
 from types import SimpleNamespace
 
 from PyQt6.QtCore import pyqtSignal
@@ -44,6 +45,7 @@ from ui.widgets import (
     SettingsRow,
     StatusRow,
 )
+from ui.workers import BaseWorker
 
 
 def _abbrev(n: float) -> str:
@@ -73,6 +75,8 @@ TEXTO_INVERTIDO_PAPER = "Efectivo y posiciones"
 # Tarea 360: con varias cuentas tildadas, la tercera vista mezcla el costo de la cartera con las
 # posiciones a mercado de las paper; el rótulo lo dice.
 TEXTO_INVERTIDO_VARIAS = "Invertido / en posiciones"
+# Tarea 392: la referencia se calcula en un worker; mientras tanto, se dice.
+TEXTO_REFERENCIA_CALCULANDO = "Calculando la referencia (el universo sin elegir)…"
 # Un color por cuenta, en el orden de los checkboxes.
 COLORES_CUENTAS = ("accent", "orange", "purple", "positive", "blue", "yellow", "red")
 
@@ -207,6 +211,33 @@ class PlatformSettingsCard(QFrame):
         layout.addWidget(all_btn)
 
 
+class ReferenciaWorker(BaseWorker):
+    """Calcula la referencia de una cuenta paper fuera del hilo de la GUI (tarea 392).
+
+    ``referencia_de_cuenta`` tarda 1,5-2,5 s (lee los frames ``1d`` de toda la watchlist), y
+    se calculaba al pintar: Home quedaba trabada cada vez que se entraba con una paper tildada.
+    """
+
+    lista = pyqtSignal(int, object)  # account_id, CurvaReferencia
+
+    def __init__(self, account_id: int):
+        super().__init__()
+        self.account_id = account_id
+
+    def do_work(self):
+        from paper_trading.referencia import referencia_de_cuenta
+
+        return referencia_de_cuenta(self.account_id)
+
+    def on_success(self, result) -> None:
+        self.lista.emit(self.account_id, result)
+
+
+#: Los workers de referencia que están corriendo, con referencia fuerte: un ``QThread`` que el
+#: GC junta mientras corre tira abajo la app. Cada uno se saca solo al terminar.
+_REFERENCIAS_EN_CURSO: set[ReferenciaWorker] = set()
+
+
 class HomeTab(QWidget):
     navigate = pyqtSignal(str)
 
@@ -215,7 +246,11 @@ class HomeTab(QWidget):
         self._r: dict | None = None  # el último resumen_home: el selector re-pinta sin recalcular
         self._paper: dict[int, list] = {}  # equity diaria por cuenta paper, leída al tildarla (tarea 359)
         self._paper_a_costo: dict[int, list] = {}  # días cuyo punto tiene posiciones a costo (tarea 376)
-        self._ref: dict[int, object] = {}  # su universo sin elegir (tarea 377), calculado al tildarla
+        # Su universo sin elegir (tarea 377). Desde la 392 se calcula en un worker y vale por DÍA,
+        # no por carga: `_llenar_cuentas` corre en cada visita a Home.
+        self._ref: dict[int, object] = {}
+        self._ref_dia = None
+        self._ref_calculando: set[int] = set()
         self._costo: dict[int, dict | None] = {}  # lo que le costó operar (tarea 386), leído al tildarla
         self._cuentas_paper: dict[int, tuple[str, float]] = {}  # id → (nombre, capital inicial)
         self.cuenta_checks: dict[int | None, QCheckBox] = {}  # None = la cartera real (tarea 360)
@@ -407,7 +442,10 @@ class HomeTab(QWidget):
         self.cuenta_checks = {}
         self._paper.clear()
         self._paper_a_costo.clear()
-        self._ref.clear()
+        hoy = date.today()
+        if self._ref_dia != hoy:  # tarea 392: por día, no por visita
+            self._ref.clear()
+            self._ref_dia = hoy
         self._costo.clear()
         self._cuentas_paper = {}
         cuentas = [(None, cartera)]
@@ -577,23 +615,46 @@ class HomeTab(QWidget):
         return self._paper[account_id]
 
     def _referencia(self, account_id: int):
-        """El universo de la cuenta sin elegir (tarea 377), calculado una vez por carga."""
-        from paper_trading.referencia import CurvaReferencia, referencia_de_cuenta
+        """El universo de la cuenta sin elegir (tarea 377), o ``None`` mientras se calcula.
 
-        if account_id not in self._ref:
-            try:
-                self._ref[account_id] = referencia_de_cuenta(account_id)
-            except Exception:
-                log.exception("Home: no se pudo calcular la referencia de la cuenta paper %s", account_id)
-                self._ref[account_id] = CurvaReferencia()
-        return self._ref[account_id]
+        Tarea 392: no se calcula acá —tarda 1,5-2,5 s y esto corre al pintar, en el hilo de la
+        GUI—. La primera vez arranca el cálculo y devuelve ``None``; cuando termina, Home se
+        repinta sola. Vale por día (ver ``_llenar_cuentas``).
+        """
+        if account_id in self._ref:
+            return self._ref[account_id]
+        if account_id not in self._ref_calculando:
+            self._ref_calculando.add(account_id)
+            self._lanzar_referencia(account_id)
+        return self._ref.get(account_id)
+
+    def _lanzar_referencia(self, account_id: int) -> None:
+        """Arranca el cálculo en un worker. Los tests de dibujo lo reemplazan por uno sincrónico:
+        la DB en memoria de la suite no se ve desde otro hilo."""
+        w = ReferenciaWorker(account_id)
+        w.lista.connect(self._referencia_lista)
+        w.error.connect(lambda _exc, a=account_id: self._referencia_fallida(a))
+        w.finished.connect(lambda w=w: _REFERENCIAS_EN_CURSO.discard(w))
+        _REFERENCIAS_EN_CURSO.add(w)
+        w.start()
+
+    def _referencia_lista(self, account_id: int, ref) -> None:
+        self._ref_calculando.discard(account_id)
+        self._ref[account_id] = ref
+        self._pintar_hero()
+
+    def _referencia_fallida(self, account_id: int) -> None:
+        from paper_trading.referencia import CurvaReferencia
+
+        log.warning("Home: no se pudo calcular la referencia de la cuenta paper %s", account_id)
+        self._referencia_lista(account_id, CurvaReferencia())
 
     def _serie_referencia(self, account_id: int, vista: str) -> tuple[str, list, list[float]] | None:
         """La línea de la referencia en la vista: valor, o valor menos el capital. En «invertido» no va."""
         if vista == "invertido" or account_id not in self._cuentas_paper:
             return None
         ref = self._referencia(account_id)
-        if len(ref.serie) < 2:
+        if ref is None or len(ref.serie) < 2:
             return None
         nombre, capital = self._cuentas_paper[account_id]
         resta = capital if vista == "ganancia" else 0.0
@@ -606,6 +667,8 @@ class HomeTab(QWidget):
     def _nota_referencia(self, account_id: int) -> str:
         """Qué es la línea punteada y qué quedó afuera, para no pintar un hueco como dato."""
         ref = self._referencia(account_id)
+        if ref is None:
+            return TEXTO_REFERENCIA_CALCULANDO
         partes = [
             f"Punteada: los {ref.n} de la watchlist de hoy en partes iguales desde el alta, rebalanceo "
             f"mensual y los costos del motor (${ref.costos:,.0f}); no es point-in-time"
@@ -647,6 +710,13 @@ class HomeTab(QWidget):
         """Dibuja la cuenta junto a su referencia (tarea 377). ``False`` si no hay referencia."""
         ref = self._serie_referencia(account_id, vista)
         if ref is None:
+            if (
+                vista != "invertido"
+                and account_id in self._cuentas_paper
+                and self._ref.get(account_id) is None
+            ):
+                # Tarea 392: se está calculando; se dice, para no leer la ausencia como dato.
+                self.hero_sub.setText(f"{self.hero_sub.text()} {TEXTO_REFERENCIA_CALCULANDO}")
             return False
         rotulo, xs, ys, color = linea
         self.hero_chart.set_series(
@@ -768,6 +838,13 @@ class HomeTab(QWidget):
             ultimo = _pesos_con_signo(ys[-1]) if vista == "ganancia" else f"${ys[-1]:,.0f}"
             ultimos.append(f"{rotulo} {ultimo} ({xs[-1]:%d/%m})")
             ref = self._serie_referencia(clave, vista) if clave is not None else None
+            if (
+                ref is None
+                and clave in self._cuentas_paper
+                and vista != "invertido"
+                and self._ref.get(clave) is None
+            ):
+                notas_ref.append(TEXTO_REFERENCIA_CALCULANDO)  # tarea 392
             if ref is not None:
                 # Tarea 377: punteada, del color de su cuenta.
                 r_rot, r_xs, r_ys = ref
