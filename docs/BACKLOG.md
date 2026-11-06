@@ -18,7 +18,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 402 (RUFF-Y-PYTEST-DEL-DONE-NO-SON-LOS-DEL-PIN) CERRADA 2026-11-06 — un test exige `requirements-dev.txt` (con el pin exacto de ruff) en el intérprete del done** (origen: preparación de la 399).
+  - **(2) El test:** `tests/test_entorno_cumple_requirements_dev_t402.py`, hermano del de la 284: cada dependencia de `requirements-dev.txt` instalada y dentro de su especificador, y `ruff` pineado con `==`. Corre en el done y en el job `pytest` del CI, que instala `requirements-dev.txt`. **Con el `.venv`, verde; con la Anaconda, rojo** (corrido con `anaconda3\python.exe`: *«ruff 0.15.12 fuera de ==0.15.20»*, y le faltan 8 paquetes de desarrollo), que es el kill-criteria. Un tercer test fija ese caso con las versiones medidas el 2026-10-26, para que no dependa de que la Anaconda exista. **Mutación:** cambiar el pin a 0.15.19 lo pone rojo.
+  - **(1) Instalar en la Anaconda el ruff del pin: no se hizo, a propósito.** Desde la 401 el done no corre ahí, y tocar la Anaconda es tocar el entorno donde Chapa todavía abre la app. `pytest` queda como `>=7.4` sin pin: la divergencia que importaba era la del formateador.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -511,6 +516,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-06c** al cerrar la **411**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **407 → 402 → 392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-06d** al cerrar la **407**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **402 → 392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-06e** al cerrar la **402**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -2017,7 +2024,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test verifica que `_fetch_json` le pasa a `urlopen` un contexto armado con `cafile=certifi.where()`; mutación: volver al contexto por defecto lo pone en rojo. `check_ci.py --ultimo` contesta en la máquina. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 402. RUFF-Y-PYTEST-DEL-DONE-NO-SON-LOS-DEL-PIN — El done corre en la Anaconda con `ruff` 0.15.12 y `pytest` 7.4.4, mientras `requirements-dev.txt` pinea `ruff==0.15.20` (exacto a propósito, tarea 65: el formateador cambia entre versiones) y el CI corre 0.15.20 y `pytest` 9.1.1  ·  origen: preparación de la 399 (2026-10-26) · severidad **MEDIA** (es la forma de la 65: el `ruff format --check` del done y el del CI no son el mismo instrumento) → **BAJA desde la 401**: el done corre en el `.venv`, que tiene `ruff` 0.15.20 y `pytest` 9.1.1; queda el test que lo fije
+### 402. ~~RUFF-Y-PYTEST-DEL-DONE-NO-SON-LOS-DEL-PIN — El done corre en la Anaconda con `ruff` 0.15.12 y `pytest` 7.4.4, mientras `requirements-dev.txt` pinea `ruff==0.15.20` (exacto a propósito, tarea 65: el formateador cambia entre versiones) y el CI corre 0.15.20 y `pytest` 9.1.1~~ · **CERRADA 2026-11-06 — un test exige `requirements-dev.txt` en el intérprete del done; rojo con la Anaconda, verde con el `.venv`** · **detalle en *En curso*, hasta el commit del hash**  ·  origen: preparación de la 399 (2026-10-26) · severidad **MEDIA** (es la forma de la 65: el `ruff format --check` del done y el del CI no son el mismo instrumento) → **BAJA desde la 401**: el done corre en el `.venv`, que tiene `ruff` 0.15.20 y `pytest` 9.1.1; queda el test que lo fije
 
 - **Qué pasa.** `importlib.metadata` en `C:/Users/chapa/anaconda3/python.exe` (2026-10-26): `ruff 0.15.12`, `pytest 7.4.4`, `pluggy 1.0.0`. En el lock y en el `.venv`: `ruff 0.15.20`, `pytest 9.1.1`. El test de la 284 (`test_entorno_cumple_requirements_t284.py`) sólo mira `requirements.txt`, así que no lo ve. Hasta ahora el formato dio igual en los dos; nada garantiza que siga.
 - **Qué hay que hacer.** (1) Instalar en la Anaconda el `ruff` del pin (y decidir `pytest`). (2) Que el test de la 284 —o uno hermano— exija también los pines **exactos** de `requirements-dev.txt` en el intérprete del done, para que no vuelva a pasar callado.
