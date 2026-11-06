@@ -60,15 +60,34 @@ def _make_df(rows: int = 250, seed: int = 7) -> pd.DataFrame:
 
 def _toggle_settings(overrides):
     """Patch settings.get() so the listed overrides take effect; other keys
-    fall through to the real settings store."""
+    fall through to the real settings store.
+
+    **Tarea 411:** el ``get`` real se guarda ANTES de parchear. Antes se llamaba
+    ``_real.get(...)`` adentro de ``_patched_get``, y con el patch activo eso es el
+    mock: toda clave fuera de ``overrides`` recursaba hasta el límite (~1000 niveles),
+    algún ``except`` de ``analyze`` se tragaba el ``RecursionError``, y si el GC
+    disparaba ahí, un callback de SQLAlchemy reventaba como *unraisable*: el rojo
+    intermitente de la 411. Y las otras claves no llegaban nunca al store."""
     from config.settings_manager import settings as _real
+
+    _original_get = _real.get
 
     def _patched_get(key, fallback=None):
         if key in overrides:
             return overrides[key]
-        return _real.get(key, fallback)
+        return _original_get(key, fallback)
 
     return patch.object(_real, "get", side_effect=_patched_get)
+
+
+def test_las_claves_sin_override_llegan_al_store_sin_recursar():
+    """Tarea 411. Con el helper viejo esto levantaba ``RecursionError``."""
+    from config.settings_manager import settings
+
+    esperado = settings.get("clave_inexistente_t411", "default")
+    with _toggle_settings({"hmm_enabled": False}):
+        assert settings.get("hmm_enabled") is False
+        assert settings.get("clave_inexistente_t411", "default") == esperado == "default"
 
 
 # ---------------------------------------------------------------------------

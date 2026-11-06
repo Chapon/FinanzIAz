@@ -124,7 +124,10 @@ import pytest
 
 # El fixture `db_archivo` (DB de archivo, lock real de SQLite) — tareas 237/238. Va como
 # plugin y no importado en cada test: importado, ruff lo lee como redefinición (F811).
-pytest_plugins = ["tests.lock_real"]
+pytest_plugins = ["tests.lock_real", "tests._diagnostico_unraisable"]
+# El segundo (tarea 411): una excepción *unraisable* —la de un ``__del__`` o un finalizador
+# durante el GC— dice qué objeto y en qué test la levantó **antes** de que pytest formatee,
+# y pytest formatea con margen de pila. Ver su docstring.
 
 # Make ``import database.models`` etc. work when pytest is invoked from the
 # repo root via ``pytest`` (no editable install needed).

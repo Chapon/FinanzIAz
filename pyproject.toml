@@ -132,6 +132,10 @@ minversion = "7.0"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers"
+# Tarea 411: una excepción unraisable (un __del__ o finalizador que levanta durante el GC) es
+# un defecto, no un aviso más del resumen. Con esto da rojo con su traceback completo, y
+# tests/_diagnostico_unraisable.py dice qué objeto y en qué test.
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "network: tests that hit the real Yahoo Finance API (skip in CI)",
