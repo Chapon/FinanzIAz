@@ -22,7 +22,6 @@ import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 import tomllib
 
 from tests import _diagnostico_unraisable as diag
@@ -55,10 +54,8 @@ def _hook_como_el_de_pytest(resultado: list):
     return previo
 
 
-def _al_borde_de_la_pila(fn, holgura: int = 2):
-    """Llama ``fn`` con la pila a ``holgura`` niveles del límite de recursión. Medido en
-    Windows/3.12: ``format_exception`` revienta con 6 niveles o menos; 2 deja margen para
-    que reviente también en otra versión."""
+def _al_borde_de_la_pila(fn, holgura: int):
+    """Llama ``fn`` con la pila a ``holgura`` niveles del límite de recursión."""
 
     def bajar():
         f, n = sys._getframe(), 0
@@ -76,22 +73,36 @@ def test_el_envoltorio_esta_instalado_en_la_sesion():
     assert getattr(sys.unraisablehook, "envoltorio_t411", False)
 
 
+def _holgura_que_revienta(u) -> int | None:
+    """La holgura MÁS GRANDE a la que el hook pelado todavía revienta, en ESTA versión.
+
+    No es una constante: en Windows/3.12 es 6, y en 3.11 las llamadas a funciones de C
+    también cuentan contra el límite, así que con una holgura fija chica el envoltorio no
+    alcanzaba ni a subir el límite (el CI de ``acb0abd`` lo dio rojo). Probar el envoltorio
+    en la más grande que revienta le deja el mayor espacio y sigue distinguiendo."""
+    for h in range(60, 1, -1):
+        try:
+            _al_borde_de_la_pila(lambda: _hook_como_el_de_pytest([])(u), h)
+        except RecursionError:
+            return h
+    return None
+
+
 def test_sin_el_envoltorio_el_formateo_revienta_al_borde_de_la_pila():
     """El caso que distingue: sin esto, el test de abajo pasaría aunque el margen no hiciera nada."""
-    u = _unraisable()
-    with pytest.raises(RecursionError):
-        _al_borde_de_la_pila(lambda: _hook_como_el_de_pytest([])(u))
+    assert _holgura_que_revienta(_unraisable()) is not None
 
 
 def test_con_el_envoltorio_formatea_entero_y_anota_antes(capsys):
     u = _unraisable()
+    holgura = _holgura_que_revienta(u)
+    assert holgura is not None
     res: list[str] = []
     limite = sys.getrecursionlimit()
     try:
-        _al_borde_de_la_pila(lambda: diag.envolver(_hook_como_el_de_pytest(res))(u))
-        # Al borde no se puede devolver en el momento: queda pendiente…
-        assert sys.getrecursionlimit() == limite + diag.MARGEN_DE_PILA
-        # …y lo devuelve la próxima fase del test, con la pila baja.
+        _al_borde_de_la_pila(lambda: diag.envolver(_hook_como_el_de_pytest(res))(u), holgura)
+        # Al borde puede no poder devolverlo en el momento (queda pendiente); en todo caso
+        # lo devuelve la próxima fase del test, con la pila baja.
         diag.restaurar_limite_pendiente()
         assert sys.getrecursionlimit() == limite
     finally:
@@ -108,6 +119,30 @@ def test_con_la_pila_baja_el_limite_se_devuelve_en_el_momento():
     limite = sys.getrecursionlimit()
     diag.envolver(_hook_como_el_de_pytest([]))(_unraisable())
     assert sys.getrecursionlimit() == limite and not diag._limite_pendiente
+
+
+def test_si_no_puede_devolver_el_limite_en_el_momento_queda_pendiente(monkeypatch):
+    """Lo que hace Python cuando la pila es más honda que el límite a devolver:
+    ``setrecursionlimit`` levanta ``RecursionError``. Se simula con un ``sys`` falso para
+    que el camino no dependa de la profundidad exacta de la versión."""
+    llamadas: list[int] = []
+
+    def setrecursionlimit(n):
+        llamadas.append(n)
+        if len(llamadas) == 2:  # la segunda es la restauración
+            raise RecursionError("cannot set the recursion limit: the limit is too low")
+
+    falso = SimpleNamespace(
+        getrecursionlimit=lambda: 1000,
+        setrecursionlimit=setrecursionlimit,
+        stderr=sys.stderr,
+        _getframe=sys._getframe,
+    )
+    monkeypatch.setattr(diag, "sys", falso)
+    monkeypatch.setattr(diag, "_limite_pendiente", [])
+    diag.envolver(_hook_como_el_de_pytest([]))(_unraisable())
+    assert llamadas == [1000 + diag.MARGEN_DE_PILA, 1000]
+    assert diag._limite_pendiente == [1000]
 
 
 def test_cada_fase_del_test_devuelve_el_limite_pendiente():
