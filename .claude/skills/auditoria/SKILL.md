@@ -513,7 +513,7 @@ importa el código y lo que está instalado en los entornos que lo corren (el `.
 cero y se reportaba como `skipped`, que por diseño no alarma (212). La Anaconda y el `.venv` son
 entornos separados y divergen: el `.venv` tiene `platformdirs` 4.10 (el pin del lock) y la Anaconda
 3.10, lo que cambia la conducta con el home pelado y da otro conteo de tests (un skip más en el
-`.venv`; tareas 328/346). El parser de HTML (`lxml` 5.2.1) está en los dos desde la 347. El stack está pineado a propósito (numpy<2, scikit-learn<1.8, PyQt6<6.8) porque
+`.venv`; tareas 328/346). El parser de HTML (`lxml`) está en los dos desde la 347 (6.1 en el `.venv` desde la 399). El stack está pineado a propósito (numpy<2, scikit-learn<1.8, PyQt6<6.8) porque
 subirlo rompe, y eso es una decisión que caduca.
 
 **Cómo se audita.** **(1)** Cada `import` de terceros del código contra lo declarado (con imports

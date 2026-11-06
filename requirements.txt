@@ -22,9 +22,10 @@ requests>=2.33.0,<3           # tarea 284: 2.32.2 tenia PYSEC-2026-1872/-2275 (f
 # aunque llegue con requests (tarea 284, [K-1]). 2.8.0 corrige PYSEC-2026-4175/-4177.
 urllib3>=2.8.0,<3
 # lxml: el parser de HTML de pd.read_html (data/ticker_universe.py baja el S&P 500 de
-# Wikipedia). Sin el, el fetch cae al fallback hardcoded en silencio. 5.2.1 es la de la
-# Anaconda donde corre la app (tarea 347).
-lxml>=5.2.1,<6
+# Wikipedia). Sin el, el fetch cae al fallback hardcoded en silencio. Minimo 6.1.0 (tarea
+# 399): 5.2.1 tenia PYSEC-2026-87. La mayor 6 se adopto a proposito, con la suite y el
+# parse de la tabla del S&P 500 verificados.
+lxml>=6.1.0,<7
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
