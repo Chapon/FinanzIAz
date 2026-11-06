@@ -444,7 +444,21 @@ elegido es de un esquema anterior, o si la app tiene la DB abierta? ¿La rotaci�
 (la 187) corre? ¿Una migración de `alembic` que falla a medio camino deja la DB en un estado que
 `init_db` reconoce?
 
-**Queda afuera:** la infraestructura nueva de la 196 (Lambda/DynamoDB), hasta que exista.
+**La nube entra acá (tarea 405).** El recolector de AWS (`infra/recolector_nube.cfn.json`,
+`scripts/recolector_nube.py`) existe y corre desde el 2026-10-16; esta sección decía que quedaba
+afuera «hasta que exista», y la tanda del 26/10 lo copió sin re-verificar el motivo. Es un job de
+fondo como cualquier otro, con la diferencia de que su log no está en la máquina. Las preguntas:
+**(1)** ¿la app lo **lee**? `cloud_import_cursor` con filas y, en el log, `Nube: consenso … +N`;
+un `Nube — FUENTE NO DISPONIBLE` en cada arranque es que no (la 356). **(2)** ¿corrió cada día
+hábil de la ventana con sus 5 lotes? La vara son los ítems `corrida#{día}` de DynamoDB (TTL 90
+días): `corridos`/`pedidos`, `sin_correr`, `techo`, `error` y lo que contestó cada fuente; desde
+la app, con el perfil `finanzias-lector`. Si no hay forma de leerlos, eso **es** el hallazgo, con
+la fecha en que empieza a vencer lo que juntó. **(3)** ¿El aviso está vivo? Las tres alarmas de
+la 405 (`finanzias-recolector-*`) en *CloudWatch → Alarms*, el tópico `finanzias-recolector-falla`
+con la suscripción **confirmada** (no `PendingConfirmation`), y si alguna vez disparó, si el mail
+llegó. **(4)** ¿Lo que corre es lo que está en el repo? La `version` del ítem `corrida#` contra
+el último commit que tocó `scripts/recolector_nube.py`: el zip se sube a mano y puede quedar
+viejo semanas. **(5)** La factura: US$0,00, o el mail del presupuesto.
 
 ### I. Datos: el contenido del dato de entrada no dice lo que se cree
 

@@ -810,9 +810,12 @@ El techo de 15 min por lotes (§7.1), sin VPC (§7.2), el universo publicado des
 |---|---|
 | `scripts/recolector_nube.py` | el handler (`recolector_nube.lambda_handler`): un lote por invocación |
 | `scripts/build_recolector_nube.py` | arma `dist/recolector_nube.zip` (41,7 MB el 2026-10-12, contra 50 MB de la consola) |
-| `infra/recolector_nube.cfn.json` | el template de CloudFormation: tabla, rol, Lambda, horarios, usuario lector, presupuesto |
+| `infra/recolector_nube.cfn.json` | el template de CloudFormation: tabla, rol, Lambda, horarios, usuario lector, presupuesto y —desde la 405— el aviso por mail de una corrida fallida (ver abajo) |
 | `scripts/universo_para_nube.py` | arma el ítem `universo/vivo` para pegarlo en la consola |
 | `tests/test_recolector_nube_t355.py` | el handler contra una tabla simulada, el zip y los invariantes de costo del template |
+| `tests/test_nube_aviso_falla_t405.py` | qué corrida cuenta como fallida, y que el filtro y las alarmas del template miren lo que el handler escribe |
+
+**El aviso de falla (tarea 405, 2026-11-06).** El diseño le daba el aviso a la 245, que depende de que la app lea; durante tres semanas no leyó y el único aviso de AWS era el presupuesto. `correr_lote` **no levanta nunca**, así que el `Errors` de Lambda no ve una corrida sin universo ni una que no corrió ningún ticker. Por eso el handler imprime una línea `RECOLECTOR_FALLA lote k/n: motivo` cuando la corrida tuvo `error`, cuando no corrió **ningún** ticker de los pedidos o cuando hubo errores de escritura (un ticker en el `techo` o una fuente caída **no** cuentan: los mide la 355 sobre el `corrida#`). Un filtro de métrica cuenta esa línea, y tres alarmas publican en el tópico SNS `finanzias-recolector-falla`, suscripto al `AlertaEmail`: **corrida fallida** (la línea), **errores** (el `Errors` de la Lambda: un import roto, el timeout) y **sin invocaciones** (cuatro días seguidos sin ninguna; cuatro porque el fin de semana deja tres períodos diarios sin dato). Costo: 3 de las 10 alarmas gratuitas, 1 de las 10 métricas custom y mails de SNS dentro de los 1.000 gratuitos por mes. **La suscripción por SNS hay que confirmarla** desde el mail; la del presupuesto no (va directo, `SubscriptionType: EMAIL`; la confirmación que pide la documentación de Budgets es la de un tópico SNS).
 
 **Los mismos colectores que la app.** El zip lleva `data/news_sources.py` y `config/logging_config.py` tal cual. El único archivo que no se copia es `data/yahoo_finance.py`, que importa la DB al cargarse: en su lugar va un módulo con **la misma** `_ticker`, extraída por AST en cada build. Si `_ticker` empieza a usar algo además de `yf`, el build falla. Un test corre el zip extraído y verifica que no carga `database` ni SQLAlchemy.
 

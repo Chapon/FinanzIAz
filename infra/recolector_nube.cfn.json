@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "FinanzIAs - recolector de la nube (tarea 355): Lambda por lotes sin VPC, tabla DynamoDB provisionada dentro del always-free, horario en dias habiles, rol minimo, usuario lector de la app y presupuesto de US$1. Ver docs/harvest_nube_t196_2026-09-14.md par. 12.",
+  "Description": "FinanzIAs - recolector de la nube (tarea 355): Lambda por lotes sin VPC, tabla DynamoDB provisionada dentro del always-free, horario en dias habiles, rol minimo, usuario lector de la app, presupuesto de US$1 y aviso por mail de una corrida fallida (tarea 405). Ver docs/harvest_nube_t196_2026-09-14.md par. 12.",
   "Parameters": {
     "SecUserAgent": {
       "Type": "String",
@@ -15,7 +15,7 @@
     "AlertaEmail": {
       "Type": "String",
       "MinLength": 5,
-      "Description": "Mail al que avisa el presupuesto ante cualquier gasto."
+      "Description": "Mail al que avisan el presupuesto ante cualquier gasto y las alarmas de una corrida fallida (esta ultima suscripcion, la de SNS, hay que confirmarla desde el mail)."
     },
     "AppPublicaUniverso": {
       "Type": "String",
@@ -266,6 +266,75 @@
             "Subscribers": [{"SubscriptionType": "EMAIL", "Address": {"Ref": "AlertaEmail"}}]
           }
         ]
+      }
+    },
+    "AvisoFalla": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "finanzias-recolector-falla",
+        "DisplayName": "FinanzIAs nube",
+        "Subscription": [{"Protocol": "email", "Endpoint": {"Ref": "AlertaEmail"}}]
+      }
+    },
+    "FiltroFalla": {
+      "Type": "AWS::Logs::MetricFilter",
+      "Properties": {
+        "LogGroupName": {"Ref": "Logs"},
+        "FilterPattern": "\"RECOLECTOR_FALLA\"",
+        "MetricTransformations": [
+          {"MetricNamespace": "FinanzIAs", "MetricName": "RecolectorFallas", "MetricValue": "1"}
+        ]
+      }
+    },
+    "AlarmaCorridaFallida": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "finanzias-recolector-corrida-fallida",
+        "AlarmDescription": "Un lote termino sin universo, sin ningun ticker corrido o con errores de escritura (linea RECOLECTOR_FALLA del log). Detalle en el item corrida# del dia. Tarea 405.",
+        "Namespace": "FinanzIAs",
+        "MetricName": "RecolectorFallas",
+        "Statistic": "Sum",
+        "Period": 3600,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [{"Ref": "AvisoFalla"}]
+      }
+    },
+    "AlarmaErrores": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "finanzias-recolector-errores",
+        "AlarmDescription": "La Lambda levanto o se corto por tiempo (Errors de AWS/Lambda): lo que correr_lote no alcanza a registrar. Tarea 405.",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "Recolector"}}],
+        "Statistic": "Sum",
+        "Period": 3600,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [{"Ref": "AvisoFalla"}]
+      }
+    },
+    "AlarmaSinInvocaciones": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "finanzias-recolector-sin-invocaciones",
+        "AlarmDescription": "Cuatro dias seguidos sin ninguna invocacion: el horario dejo de disparar. Cuatro y no tres porque el fin de semana son 72 h sin correr. Tarea 405.",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Invocations",
+        "Dimensions": [{"Name": "FunctionName", "Value": {"Ref": "Recolector"}}],
+        "Statistic": "Sum",
+        "Period": 86400,
+        "EvaluationPeriods": 4,
+        "DatapointsToAlarm": 4,
+        "Threshold": 1,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "breaching",
+        "AlarmActions": [{"Ref": "AvisoFalla"}]
       }
     }
   },

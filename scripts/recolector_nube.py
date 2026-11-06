@@ -70,6 +70,11 @@ RETENCION_DIAS = 90
 #: trayendo sus 7 días.
 VENTANA_NOTICIAS_DIAS = 5
 UNIVERSO_CLAVE = {"pk": "universo", "sk": "vivo"}
+#: Marca de la línea de log de una corrida fallida (tarea 405). ``correr_lote`` no levanta
+#: nunca, así que el ``Errors`` de Lambda no ve una corrida sin universo ni una que no corrió
+#: ningún ticker: el aviso sale de un filtro de métrica del template sobre esta marca. Un
+#: test verifica que el ``FilterPattern`` sea exactamente ésta.
+MARCA_FALLA = "RECOLECTOR_FALLA"
 
 #: Fuente del recolector → función de ``data.news_sources`` que la implementa. Se resuelve
 #: por nombre al momento de llamar, para que sean las mismas funciones que usa la app.
@@ -340,6 +345,30 @@ def correr_lote(
     return c
 
 
+def motivo_de_falla(c: Corrida) -> str | None:
+    """Por qué la corrida cuenta como **fallida** para el aviso (tarea 405), o ``None``.
+
+    Falla: un error de la corrida (sin universo, lote fuera de rango, excepción), un lote con
+    pedidos donde no se corrió **ningún** ticker, o un error al escribir. Un ticker que toca
+    el techo o una fuente caída no lo son: quedan en el ítem ``corrida#`` y los mide la 355.
+    """
+    if c.error:
+        return c.error
+    if c.pedidos and not c.corridos:
+        return f"ningún ticker corrido de {len(c.pedidos)} (techo {len(c.techo)}, sin correr {len(c.sin_correr)})"
+    if c.errores_escritura:
+        return f"errores de escritura {len(c.errores_escritura)}: {', '.join(c.errores_escritura[:5])}"
+    return None
+
+
+def linea_de_falla(c: Corrida) -> str | None:
+    """La línea que cuenta el filtro de métrica del template, o ``None`` si la corrida anduvo."""
+    motivo = motivo_de_falla(c)
+    if motivo is None:
+        return None
+    return f"{MARCA_FALLA} lote {c.lote + 1}/{c.lotes}: {motivo}"
+
+
 def _recolectar(c: Corrida, tabla, fuentes, reloj, restante_s, techo_s, ventana_dias) -> None:
     for i, ticker in enumerate(c.pedidos):
         if restante_s() < MARGEN_FINAL_S + techo_s:
@@ -419,4 +448,7 @@ def lambda_handler(event, context):  # pragma: no cover — corre en AWS
         version=_version(),
     )
     print(c.resumen())
+    falla = linea_de_falla(c)
+    if falla:
+        print(falla)
     return {"resumen": c.resumen(), "error": c.error, "corridos": len(c.corridos), "pedidos": len(c.pedidos)}
