@@ -22,6 +22,7 @@ what makes unit tests possible without real yfinance calls.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -823,6 +824,26 @@ class ScanResult:
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 
+def _un_aviso_de_barra_provisional_por_scan(fn):
+    """Tarea 407: todo lo que el scan baja va en un solo lote de aviso de barra provisional.
+
+    La fase ``analyze`` pide los frames de a un ticker y cada camino público de fetch
+    resumía por su cuenta: 126 líneas WARNING en el scan del 05/11. Va como decorador para
+    no reindentar ``run_scan``. Importa ``data.yahoo_finance`` al llamar, como el resto
+    del motor.
+    """
+
+    @functools.wraps(fn)
+    def envuelto(*args, **kwargs):
+        from data.yahoo_finance import avisos_provisionales_en_lote
+
+        with avisos_provisionales_en_lote():
+            return fn(*args, **kwargs)
+
+    return envuelto
+
+
+@_un_aviso_de_barra_provisional_por_scan
 def run_scan(
     account_id: int,
     *,

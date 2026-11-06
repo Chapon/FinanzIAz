@@ -13,6 +13,7 @@ guarded by ``_run_with_timeout`` so they cannot freeze the UI thread even if
 the underlying socket fails to respect the timeout (e.g. SSL/DNS hangs).
 """
 
+import contextlib
 import math
 import socket
 import threading
@@ -1932,9 +1933,36 @@ _provisional_lock = threading.Lock()
 _PROVISIONAL_MUESTRA = 8
 
 
-def _avisar_provisionales() -> None:
-    """Una línea WARNING con los tickers anotados desde el último resumen, y los vacía."""
+# Tarea 407 — la 243 cerró «de 132 líneas por arranque a una», pero el scan pide los frames
+# DE A UN TICKER en la fase analyze, y cada camino público es un «lote»: 126 líneas en el
+# scan del 05/11, casi todas de 1 ticker. Adentro de `avisos_provisionales_en_lote()` (lo
+# abre `run_scan`) los caminos públicos no resumen: acumulan, y el lote más externo emite
+# UNA línea al cerrarse. Es un contador y no un memo por ticker: el `finally` lo deja en 0.
+_provisional_lote_abierto = 0
+
+
+@contextlib.contextmanager
+def avisos_provisionales_en_lote():
+    """Junta el aviso de barra provisional de todo lo que se baje adentro en UNA línea."""
+    global _provisional_lote_abierto
     with _provisional_lock:
+        _provisional_lote_abierto += 1
+    try:
+        yield
+    finally:
+        with _provisional_lock:
+            _provisional_lote_abierto -= 1
+        _avisar_provisionales()
+
+
+def _avisar_provisionales() -> None:
+    """Una línea WARNING con los tickers anotados desde el último resumen, y los vacía.
+
+    Adentro de un ``avisos_provisionales_en_lote()`` no emite: lo hace el lote al cerrarse.
+    """
+    with _provisional_lock:
+        if _provisional_lote_abierto > 0:
+            return
         pendientes = list(_PROVISIONAL_PENDIENTES)
         _PROVISIONAL_PENDIENTES.clear()
     if not pendientes:

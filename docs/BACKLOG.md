@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 407 (AVISO-DE-BARRA-PROVISIONAL-UNO-POR-TICKER-EN-EL-SCAN) CERRADA 2026-11-06 — el scan deja UNA línea de barra provisional, no una por ticker** (`docs/auditoria_tanda_2026-11-05.md` [L-1]).
+  - **Qué pasaba.** La 243 resumía al final de cada **camino público** de fetch, y la fase `analyze` del scan pide los frames de a un ticker: cada `get_historical_data` era un «lote» de 1. 126 WARNING en el scan del 05/11.
+  - **El arreglo.** `data/yahoo_finance.avisos_provisionales_en_lote()`: adentro, `_avisar_provisionales` no emite y los tickers se acumulan; el lote más externo emite **una** línea al cerrarse (anidable, con el contador bajo el mismo lock, y con `finally`: un scan que se cae no deja el lote abierto). `run_scan` lo abre con un decorador (`_un_aviso_de_barra_provisional_por_scan`) para no reindentar su cuerpo, que varios guards leen por AST. Fuera de un scan, cada camino público sigue resumiendo como en la 243.
+  - **Tests:** `tests/test_aviso_provisional_por_scan_t407.py` (5): sin lote, 100 fetch de a uno dan **100** líneas (el defecto, probado primero); adentro, **una** al cerrar con *«100 ticker(s) … y 92 más»*; anidados, un error adentro y que `run_scan` abra el lote. **Mutación:** sacar el chequeo del lote, el decorador o el `finally` pone rojo (3 de 3).
+  - **Verificación en vivo pendiente (Chapa):** al reabrir la app, el primer scan en horario de mercado tiene que dejar a lo sumo **una** línea *«N ticker(s) cachean la barra de la sesion de HOY…»* en `~/.finanzias/finanzias.log`.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -509,6 +516,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-06b** al cerrar la **399**, que deja la **411** (MEDIA: un rojo intermitente de la suite, quizás traído por la subida). Va **primera**: un rojo intermitente sin explicar enseña a leer los rojos como ruido, y si lo trajo la 399 conviene saberlo con la subida fresca. Lo otro que queda —que la app corra en el `.venv`— es la acción manual de la 401. El orden queda **411 → 407 → 402 → 392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-06c** al cerrar la **411**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **407 → 402 → 392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-06d** al cerrar la **407**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **402 → 392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1981,7 +1990,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** `git grep -n -i "anaconda"` fuera de `docs/` sólo devuelve menciones históricas fechadas (y la permisología de `.claude/settings*.json`); el `.bat` usa el `.venv` (con CRLF verificado, regla 4) o se borra con el motivo; la skill dice AWS. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 407. AVISO-DE-BARRA-PROVISIONAL-UNO-POR-TICKER-EN-EL-SCAN — La 243 cerró *«de 132 líneas por arranque a una»*, y en el scan siguen saliendo ~126: cada fetch público por ticker es un «lote»  ·  origen: `docs/auditoria_tanda_2026-11-05.md` [L-1] · severidad **MEDIA** (es la forma de la 63 que la 243 vino a cerrar: el 74% de los WARNING+ de la ventana)
+### 407. ~~AVISO-DE-BARRA-PROVISIONAL-UNO-POR-TICKER-EN-EL-SCAN — La 243 cerró *«de 132 líneas por arranque a una»*, y en el scan siguen saliendo ~126: cada fetch público por ticker es un «lote»~~ · **CERRADA 2026-11-06 — `run_scan` abre un lote de aviso y deja una línea** · **detalle en *En curso*, hasta el commit del hash**  ·  origen: `docs/auditoria_tanda_2026-11-05.md` [L-1] · severidad **MEDIA** (es la forma de la 63 que la 243 vino a cerrar: el 74% de los WARNING+ de la ventana)
 
 - **Qué pasa.** `_avisar_provisionales` (`data/yahoo_finance.py:1935-1954`) emite una línea por llamada a cada camino público de fetch (`:2109`, `:2266`); el warm-up del arranque es un lote, pero la fase `analyze` del scan pide frames ticker por ticker. Medido en el log: **126** el 05/11 entre 12:08:14 y 12:10:00 (adentro del scan de las 12:10, intercalados con el XGBoost de cada ticker), **127** el 23/10 y **69** el 26/10, casi todas de 1 ticker. Son 126 de los 171 WARNING+ de la ventana.
 - **Por qué no se vio.** Las tandas del 23/10 y del 26/10 las clasificaron *«conocida (112, 243): una línea por lote, por diseño»* sin contrastar la tasa contra lo que dijo el cierre de la 243.
