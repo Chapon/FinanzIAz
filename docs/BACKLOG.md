@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **Tarea 393 (REFERENCIA-WBD-MOTIVO-FALSO) CERRADA 2026-11-06 — un frame degenerado más fresco ya no tapa la historia de un ticker; WBD vuelve a la referencia, rotulado con el motivo real** (`docs/auditoria_tanda_2026-10-23.md` [F-1] y [A-1]).
+  - **(1) El mecanismo** (`database/cartera_real.unir_cierres`). La 336 no pega una serie vieja **sin días en común** con lo ya unido (no hay con qué reescalarla), y la base es la que termina más tarde: un `2y` de **una fila** posterior a todo tapaba la historia entera. Ahora, si la vieja sin días en común es **más larga** que lo ya unido, la información está en ella y se pega **cruda** (un escalón posible en la costura, ≤1,6 % medido en la 336, contra perder la serie). Si es más corta, se descarta como antes: el test de la 336 que fija ese caso sigue en verde sin tocarlo.
+  - **Medido contra la DB real (lectura):** `referencia_de_cuenta(2)` pasa de `n = 126` y `sin_historia = ['WBD']` a **`n = 127`, `sin_historia = []` y WBD en `quietos` desde el 05/10**, que es el motivo real (dejó de cotizar). La serie de WBD vuelve a tener 2.513 cierres desde 2016. El mismo arreglo alcanza a la cartera real y a los otros frames cortos de la auditoría (EA, EQR, ME). Sacar WBD de la watchlist sigue siendo la acción manual de la 369.
+  - **(2)** `docs/ARCHITECTURE.md` nombra `paper_trading/referencia.py`.
+  - **Tests:** `tests/test_union_frame_degenerado_t393.py` (4): la larga hasta *d* y una de una fila en *d* + 20 conservan la historia (el kill-criteria; antes quedaba **un** cierre), el orden no cambia el resultado, una tercera más vieja se reescala contra lo pegado, y `cierres_del_cache` le devuelve la historia a WBD. **Mutación:** sacar el pegado pone rojo 3 de 4.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -515,6 +522,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-06e** al cerrar la **402**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **392 → 393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-06f** al cerrar la **392**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-06g** al cerrar la **393**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -2091,7 +2100,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Con un almacén sintético de vintages distintas, el percentil compara años iguales o lo dice. Los cuatro comandos y el CI en verde.
 - **Dependencias:** conviene después de la **390**, que cambia qué año entra en cada pata.
 
-### 393. REFERENCIA-WBD-MOTIVO-FALSO — Home dice que WBD quedó afuera de la referencia por *«sin precio al alta»*, y el motivo real es un frame `2y` de una fila que tapa la historia  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [F-1] y [A-1] · severidad **BAJA** (display)
+### 393. ~~REFERENCIA-WBD-MOTIVO-FALSO — Home dice que WBD quedó afuera de la referencia por *«sin precio al alta»*, y el motivo real es un frame `2y` de una fila que tapa la historia~~ · **CERRADA 2026-11-06 — un frame degenerado ya no tapa la historia; WBD vuelve como «quieto»** · **detalle en *En curso*, hasta el commit del hash**  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [F-1] y [A-1] · severidad **BAJA** (display)
 
 - **Qué pasa.** `referencia_de_cuenta(2)` da `n = 126` y `sin_historia = ['WBD']`, y `_nota_referencia` (`ui/home_tab.py:606`) lo rotula *«afuera, sin precio al alta»*. WBD cotizaba el 18/06. El frame más fresco es `WBD__2y__1d` con **una fila** (2026-10-05); los otros terminan el 09/09. `unir_cierres` (`database/cartera_real.py:454`) no pega una serie que no comparte días con la ya unida, así que queda un cierre, posterior al alta. **Es general:** un frame degenerado más fresco borra la historia de un ticker para Home, también para la cartera real. Hoy hay cuatro frames de menos de 20 filas (WBD, EA, EQR, ME); sólo WBD está en un universo vivo.
 - **Y [A-1]:** `docs/ARCHITECTURE.md` lista los módulos de `paper_trading/` uno por uno y no nombra `referencia.py` (377).

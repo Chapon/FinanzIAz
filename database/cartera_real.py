@@ -460,6 +460,13 @@ def unir_cierres(series: list) -> list[tuple[date, float]]:
     así que un frame bajado antes de un dividendo (o de un split) está en otra escala —medido
     el 2026-10-08: hasta 1,6 % (MO)—, y pegarlo crudo pinta un escalón en la costura. Una
     serie **sin** días en común no se pega: no hay con qué escalarla.
+
+    **Salvo que sea más larga que lo ya unido** (tarea 393): entonces la historia está en la
+    vieja y lo que termina más tarde es un frame degenerado. Pasó con WBD: un ``2y`` de **una
+    fila** (2026-10-05), posterior al resto que terminaba el 09/09, tapaba toda la historia, y
+    Home decía *«sin precio al alta»* de un ticker que cotizaba. Ahí se pega **cruda**: un
+    escalón posible en la costura (el ajuste por dividendos, ≤1,6 % medido) es mucho menos malo
+    que perder la serie entera.
     """
     import pandas as pd
 
@@ -472,7 +479,11 @@ def unir_cierres(series: list) -> list[tuple[date, float]]:
         vieja = vieja[~vieja.index.duplicated(keep="last")]
         antes = vieja[vieja.index < unida.index.min()]
         comunes = vieja.index.intersection(unida.index)
-        if antes.empty or comunes.empty:
+        if antes.empty:
+            continue
+        if comunes.empty:
+            if len(antes) > len(unida):  # tarea 393: lo unido es el degenerado, no la vieja
+                unida = pd.concat([antes, unida])
             continue
         d0 = comunes.min()
         if not (vieja[d0] > 0 and unida[d0] > 0):
