@@ -18,7 +18,17 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 335 — Tarea 394 (FUNDAMENTALS-PIT-SIN-DISPARADOR) CERRADA 2026-11-09 — el percentil de calidad mide a todos con lo que todos sabían, y la tarjeta dice hasta cuándo** (`docs/auditoria_tanda_2026-10-23.md` [E-1]).
+  - **(1) La comparación** (`analysis/calidad.corte_comun`, `ui/analysis/worker.calidad_en_el_universo`). Cada archivo del almacén sabe lo presentado antes de su `generado`; el ticker que se abre en Análisis se rehace y sus pares no. Ahora todos —el abierto incluido— se miden con lo presentado antes del `generado` **más viejo** del almacén (sin pasar de mañana), y el resultado trae ese corte en `al`. Se eligió esto y no un job del scheduler porque vale con cualquier mezcla de fechas: el disparador sólo achica la ventana, y un job que baje 125 `companyfacts` de la SEC desde la app es una tarea aparte si hace falta.
+  - **(2) La tarjeta** (`ui/analysis/valuation_card._corte`) dice *«…, todas con lo presentado antes del AAAA-MM-DD»*, y si el corte tiene más de 30 días (`ALMACEN_VIEJO_DIAS`) agrega *«el almacén es de hace N días; lo pone al día python scripts/build_fundamentals_pit.py»*. Ése es el disparador: manual, pero dicho donde se ve.
+  - **(3) El build** (`scripts/build_fundamentals_pit.a_rehacer`) rehace por default el universo **y** lo que ya está en el almacén: un ticker analizado una vez, fuera del universo, frenaría el corte para siempre.
+  - **De paso:** el worker le pasa a `fp.cargar` el directorio que recorre; `cargar` fija `store=STORE_DIR` al definirse, así que el almacén sintético del test se leía contra el real.
+  - **Medido contra el almacén real (lectura):** KO da 57/100 entre 125, con `al = 2026-10-21` (los 125 archivos son de ese día); a 19 días, sin la sugerencia.
+  - **Tests:** `tests/test_corte_comun_t394.py` (6): el corte es el `generado` más viejo y no pasa de la fecha; **el kill-criteria** —un almacén con pares del 21/10 y un abierto del 01/12 cuyo 10-K del 20/11 trae un derrumbe: al corte el derrumbe no cuenta, y a la fecha sí (el test verifica que los dos difieren)—; el almacén parejo; la tarjeta con y sin sugerencia; y el build con un ticker fuera del universo. **Mutación:** medir a `fecha` en vez de al corte pone rojo el del kill-criteria.
+  - `docs/ARCHITECTURE.md` lo dice en la línea de `fundamentos_pit.py`.
+  - **Deja la 412:** la primera corrida del done dio rojo en el cuarto comando, en `test_vigia_interfaz_t304.py` (dos volcados del vigía en vez de uno; no lo toca esta tarea, y solo pasa 6 de 6). Los cuatro comandos se volvieron a correr **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -517,6 +527,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-06f** al cerrar la **392**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **393 → 394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-06g** al cerrar la **393**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-09** al cerrar la **394**, que deja la **412** (MEDIA: un rojo intermitente del vigía en su done, que entra primera por la misma razón que la 411). El orden queda **412 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1956,6 +1968,13 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 412. VIGIA-T304-INTERMITENTE-BAJO-CARGA — `test_el_stack_de_la_gui_va_primero_y_una_vez_por_traba` dio rojo en la suite sin estado vivo con **dos** volcados en vez de uno, y pasa 6 de 6 corrido solo  ·  origen: done de la **394** (2026-11-09) · severidad **MEDIA** (un rojo intermitente en el done o en el CI se termina leyendo como ruido; ver la 411)
+
+- **Qué pasa.** En el done de la 394, `scripts/run_suite_sin_estado_vivo.py` dio `1 failed, 4877 passed`: el `congelamientos.log` del hijo tenía el volcado de la traba de 1,5 s, el *«^^^ … trabada 1.5 s»* de cuando volvió a latir, y **otro** `Timeout (0.5 s sin latir)!`. El vigía (`ui/vigia_interfaz.py:158`) vuelca una vez por traba y se rearma al latir (`:172`), así que eso es una **segunda** demora de más de 0,5 s del latido, sin traba, con los 4 `hilo_que_trabaja` del hijo y la máquina cargada por la suite. Corrido solo, el archivo pasa 6 de 6. Es la misma fragilidad que el comentario del hijo ya cuenta del CONTROL (*«el latido se atrasaba más que el umbral y el CONTROL volcaba sin traba»*), que se arregló con la pausa de 1 ms y no con margen.
+- **Alcance.** Que el test cuente los volcados **de la traba** (los que hay antes del primer `^^^`) y no los del proceso entero, o un umbral que deje margen bajo carga sin perder lo que el test fija; y revisar el CONTROL con el mismo criterio. No tocar el vigía de la app salvo que el análisis muestre que el rearme es el defecto.
+- **Kill-criteria.** El test sigue rojo con la mutación que justifica su existencia (un vigía que vuelca en cada tick de la traba); y con la CPU cargada a propósito (p. ej. hilos extra en el proceso de pytest) pasa 20 de 20. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
 ### 411. ~~UNRAISABLE-INTERMITENTE-EN-LA-SUITE — Una corrida de la suite sin estado vivo dio rojo en `test_toggle_wiring.py::test_hmm_enabled_off_skips_hmm` por una excepción *unraisable* que pytest no pudo ni formatear (`RecursionError`), y la siguiente corrida pasó~~ · **CERRADA 2026-11-06 — el helper `_toggle_settings` recursaba hasta el límite; arreglado, y toda unraisable da rojo con el dato** · (`acb0abd`, `3b99eab`) · **movida a *Hecho reciente* con el detalle**  ·  origen: cierre de la **399** (2026-11-06) · severidad **MEDIA** (un rojo intermitente en el done o en el CI se termina leyendo como ruido, y así se dejan de leer los rojos)
 
 - **Qué pasa.** En `python scripts/run_suite_sin_estado_vivo.py` del 2026-11-06, después de instalar las versiones de la 399: `pytestqt/plugin.py:187 … RuntimeError: Failed to process unraisable exception`, causado por `RecursionError` adentro de `traceback.format_exception` en `_pytest/unraisableexception.py:122`, con `Exception ignored in sys.unraisablehook` en el stderr. Aislado, `tests/test_toggle_wiring.py` pasa 9/9 (también con `-W error::pytest.PytestUnraisableExceptionWarning`), y la suite sin estado vivo repetida dio 4845 passed. El test sólo corre `technical.analyze` con mocks: el objeto que levanta al ser recolectado (un `__del__`, un callback de `weakref` o de Qt) viene, casi seguro, de un test **anterior**, y el GC lo junta durante éste.
@@ -2086,7 +2105,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con `--hasta 2027-01-20` (MLK) que da error o aviso, no un número. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 394. FUNDAMENTALS-PIT-SIN-DISPARADOR — Nada regenera el almacén de fundamentals de la 382, y el percentil de calidad se calcula contra el almacén entero  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [E-1] · severidad **BAJA** (display-only)
+### 394. ~~FUNDAMENTALS-PIT-SIN-DISPARADOR — Nada regenera el almacén de fundamentals de la 382, y el percentil de calidad se calcula contra el almacén entero~~ · **CERRADA 2026-11-09 — todos se miden al `generado` más viejo, y la tarjeta lo dice** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [E-1] · severidad **BAJA** (display-only)
 
 - **Qué pasa.** Los 125 archivos de `data/fundamentals_pit/` son del 2026-10-21. Se rehacen sólo de a uno, al abrir ese ticker en Análisis con más de 30 días (`ui/analysis/worker.py:29`); `scripts/build_fundamentals_pit.py` es manual y nadie lo llama. Pero `calidad_en_el_universo` (`:67`) calcula el percentil contra **todo** el almacén: desde ~el 20/11, el ticker abierto tiene su 10-K nuevo y sus pares no, y la temporada de 10-K va de noviembre a marzo.
 - **Alcance.** Un disparador (un job del scheduler, o un paso de `refresh_cohort`), o que el percentil diga contra qué fecha de almacén compara.

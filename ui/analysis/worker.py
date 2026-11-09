@@ -60,7 +60,7 @@ def valuacion_de(ticker: str, precio: float | None):
         return None
 
 
-# Las patas de calidad del universo guardado, una vez por día y por proceso: son 126 archivos.
+# Los fundamentals del almacén, una vez por día y por proceso: son 126 archivos.
 _POBLACION: dict[str, dict] = {}
 
 
@@ -68,23 +68,27 @@ def calidad_en_el_universo(ticker: str, fund, fecha: str) -> dict | None:
     """El puntaje de calidad de la tarea 384 del ticker, con percentiles contra el almacén de la 382.
 
     La población es todo lo que hay en ``data/fundamentals_pit/`` (el universo de la cuenta 2 y lo
-    que se haya analizado). ``None`` si no llega a dos patas. Nunca levanta.
+    que se haya analizado). Todos —el ticker incluido— se miden con lo presentado antes del
+    ``generado`` más viejo del almacén (tarea 394): el ticker abierto se acaba de rehacer y sus
+    pares no, y en temporada de 10-K eso comparaba su año nuevo contra el año viejo de los demás.
+    ``al`` es ese corte, para que la tarjeta lo diga. ``None`` si no llega a dos patas. Nunca levanta.
     """
     try:
-        from analysis.calidad import patas_de, puntajes
+        from analysis.calidad import corte_comun, patas_de, puntajes
         from data import fundamentos_pit as fp
 
         if fecha not in _POBLACION:
             _POBLACION.clear()
             _POBLACION[fecha] = {
-                p.stem: patas_de(fp.cargar(p.stem), fecha) for p in sorted(fp.STORE_DIR.glob("*.json"))
+                p.stem: fp.cargar(p.stem, p.parent) for p in sorted(fp.STORE_DIR.glob("*.json"))
             }
-        poblacion = dict(_POBLACION[fecha])
-        poblacion[ticker.upper()] = patas_de(fund, fecha)
-        r = puntajes(poblacion)[ticker.upper()]
+        fundamentos = dict(_POBLACION[fecha])
+        fundamentos[ticker.upper()] = fund
+        corte = corte_comun(fundamentos, fecha)
+        r = puntajes({t: patas_de(f, corte) for t, f in fundamentos.items()})[ticker.upper()]
         if r["puntaje"] is None:
             return None
-        return {"puntaje": r["puntaje"], "percentiles": r["percentiles"], "n": len(poblacion)}
+        return {"puntaje": r["puntaje"], "percentiles": r["percentiles"], "n": len(fundamentos), "al": corte}
     except Exception:
         log.exception("Calidad de %s: falló", ticker)
         return None

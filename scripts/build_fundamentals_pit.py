@@ -1,7 +1,7 @@
 """
 Arma el almacén de fundamentals point-in-time desde EDGAR — **tarea 382**.
 
-Para cada ticker del universo baja ``companyfacts`` de su CIK actual y de sus predecesores
+Para cada ticker del universo —y, desde la tarea 394, cada uno que ya esté en el almacén— baja ``companyfacts`` de su CIK actual y de sus predecesores
 (``data.fundamentos_pit.CIK_PREDECESORES``), lo guarda en ``data/fundamentals_pit/`` y al final
 imprime la **cobertura**: por concepto, cuántos tickers tienen al menos ``--min-anios`` años
 anuales conocidos a hoy. Un concepto que cubre menos del 80% se marca, y las tareas que lo usan
@@ -48,6 +48,21 @@ def cobertura(fundamentos: dict, fecha: str, min_anios: int = MIN_ANIOS) -> dict
     return out
 
 
+def a_rehacer(universo: list[str], store: Path | None = None) -> list[str]:
+    """El universo **y** lo que ya está en el almacén (tarea 394).
+
+    El percentil de calidad compara a todos con lo presentado antes del archivo más viejo del
+    almacén; uno que quedó afuera del universo (un ticker analizado una vez) lo frenaría para
+    siempre si esto no lo rehace.
+    """
+    from data import fundamentos_pit as fp
+
+    store = fp.STORE_DIR if store is None else store
+    vistos = dict.fromkeys(t.upper() for t in universo)
+    vistos.update(dict.fromkeys(p.stem.upper() for p in sorted(store.glob("*.json"))))
+    return list(vistos)
+
+
 def main(argv: list[str] | None = None) -> int:
     from analysis.harness_config import LIVE_UNIVERSE_FILE
     from data import fundamentos_pit as fp
@@ -61,7 +76,9 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     tickers = (
-        [t.upper() for t in args.tickers] if args.tickers else parse_universe_file(_ROOT / args.universe)
+        [t.upper() for t in args.tickers]
+        if args.tickers
+        else a_rehacer(parse_universe_file(_ROOT / args.universe))
     )
     fundamentos = {}
     if args.solo_cobertura:

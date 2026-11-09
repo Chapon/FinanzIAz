@@ -11,6 +11,8 @@ No entra en ninguna decisión: es para leer.
 
 from __future__ import annotations
 
+from datetime import date
+
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
 
 from ui.styles import PALETTE
@@ -22,6 +24,27 @@ def _pesos(x: float | None) -> str:
 
 def _pct(x: float | None) -> str:
     return "—" if x is None else f"{x:+.1%}"
+
+
+# Pasado esto, la tarjeta dice cómo poner al día el almacén (tarea 394).
+ALMACEN_VIEJO_DIAS = 30
+
+
+def _corte(calidad: dict, hoy: date | None = None) -> str:
+    """Contra qué se comparó (tarea 394): todos, con lo presentado antes de esa fecha."""
+    al = calidad.get("al")
+    if not al:
+        return ""
+    texto = f", todas con lo presentado antes del {al}"
+    try:
+        dias = ((hoy or date.today()) - date.fromisoformat(al)).days
+    except ValueError:
+        return texto
+    if dias > ALMACEN_VIEJO_DIAS:
+        texto += (
+            f" (el almacén es de hace {dias} días; lo pone al día python scripts/build_fundamentals_pit.py)"
+        )
+    return texto
 
 
 def lineas_de(v) -> list[str]:
@@ -59,7 +82,7 @@ def lineas_de(v) -> list[str]:
         }
         patas = ", ".join(f"{nombres[p]} p{pct:.0f}" for p, pct in v.calidad["percentiles"].items())
         out.append(
-            f"Calidad del negocio: {v.calidad['puntaje']:.0f}/100 entre {v.calidad['n']} empresas ({patas}). "
+            f"Calidad del negocio: {v.calidad['puntaje']:.0f}/100 entre {v.calidad['n']} empresas ({patas}){_corte(v.calidad)}. "
             f"Describe el negocio; medido contra el retorno que vino después (tarea 384), no lo anticipó."
         )
     return out

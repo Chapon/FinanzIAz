@@ -72,6 +72,18 @@ def patas_de(fund, fecha: str) -> dict[str, float | None]:
     return out
 
 
+def corte_comun(fundamentos: dict, fecha: str) -> str:
+    """La fecha hasta la que **todos** los ``fundamentos`` saben lo mismo — **tarea 394**.
+
+    Cada archivo del almacén sabe lo presentado antes de su ``generado``: el que se bajó hoy ya
+    tiene el 10-K de noviembre, y el que se bajó en octubre no, aunque exista. Compararlos a
+    ``fecha`` pone el año nuevo de uno contra el año viejo de sus pares. El corte común es el
+    ``generado`` más viejo (sin pasar de ``fecha``); los que no lo traen no cuentan.
+    """
+    generados = [f.generado for f in fundamentos.values() if f is not None and f.generado]
+    return min([*generados, fecha])
+
+
 def _percentiles(valores: dict[str, float], mayor_es_mejor: bool) -> dict[str, float]:
     """Percentil (0 a 100) de cada valor dentro de la población; los empates, al promedio."""
     if not valores:
