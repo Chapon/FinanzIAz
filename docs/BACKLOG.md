@@ -18,17 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 335 — Tarea 394 (FUNDAMENTALS-PIT-SIN-DISPARADOR) CERRADA 2026-11-09 — el percentil de calidad mide a todos con lo que todos sabían, y la tarjeta dice hasta cuándo** (`docs/auditoria_tanda_2026-10-23.md` [E-1]).
-  - **(1) La comparación** (`analysis/calidad.corte_comun`, `ui/analysis/worker.calidad_en_el_universo`). Cada archivo del almacén sabe lo presentado antes de su `generado`; el ticker que se abre en Análisis se rehace y sus pares no. Ahora todos —el abierto incluido— se miden con lo presentado antes del `generado` **más viejo** del almacén (sin pasar de mañana), y el resultado trae ese corte en `al`. Se eligió esto y no un job del scheduler porque vale con cualquier mezcla de fechas: el disparador sólo achica la ventana, y un job que baje 125 `companyfacts` de la SEC desde la app es una tarea aparte si hace falta.
-  - **(2) La tarjeta** (`ui/analysis/valuation_card._corte`) dice *«…, todas con lo presentado antes del AAAA-MM-DD»*, y si el corte tiene más de 30 días (`ALMACEN_VIEJO_DIAS`) agrega *«el almacén es de hace N días; lo pone al día python scripts/build_fundamentals_pit.py»*. Ése es el disparador: manual, pero dicho donde se ve.
-  - **(3) El build** (`scripts/build_fundamentals_pit.a_rehacer`) rehace por default el universo **y** lo que ya está en el almacén: un ticker analizado una vez, fuera del universo, frenaría el corte para siempre.
-  - **De paso:** el worker le pasa a `fp.cargar` el directorio que recorre; `cargar` fija `store=STORE_DIR` al definirse, así que el almacén sintético del test se leía contra el real.
-  - **Medido contra el almacén real (lectura):** KO da 57/100 entre 125, con `al = 2026-10-21` (los 125 archivos son de ese día); a 19 días, sin la sugerencia.
-  - **Tests:** `tests/test_corte_comun_t394.py` (6): el corte es el `generado` más viejo y no pasa de la fecha; **el kill-criteria** —un almacén con pares del 21/10 y un abierto del 01/12 cuyo 10-K del 20/11 trae un derrumbe: al corte el derrumbe no cuenta, y a la fecha sí (el test verifica que los dos difieren)—; el almacén parejo; la tarjeta con y sin sugerencia; y el build con un ticker fuera del universo. **Mutación:** medir a `fecha` en vez de al corte pone rojo el del kill-criteria.
-  - `docs/ARCHITECTURE.md` lo dice en la línea de `fundamentos_pit.py`.
-  - **Deja la 412:** la primera corrida del done dio rojo en el cuarto comando, en `test_vigia_interfaz_t304.py` (dos volcados del vigía en vez de uno; no lo toca esta tarea, y solo pasa 6 de 6). Los cuatro comandos se volvieron a correr **después** de escribir este registro.
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2105,7 +2095,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con `--hasta 2027-01-20` (MLK) que da error o aviso, no un número. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 394. ~~FUNDAMENTALS-PIT-SIN-DISPARADOR — Nada regenera el almacén de fundamentals de la 382, y el percentil de calidad se calcula contra el almacén entero~~ · **CERRADA 2026-11-09 — todos se miden al `generado` más viejo, y la tarjeta lo dice** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [E-1] · severidad **BAJA** (display-only)
+### 394. ~~FUNDAMENTALS-PIT-SIN-DISPARADOR — Nada regenera el almacén de fundamentals de la 382, y el percentil de calidad se calcula contra el almacén entero~~ · **CERRADA 2026-11-09 — todos se miden al `generado` más viejo, y la tarjeta lo dice** · (`e7b0285`) · **movida a *Hecho reciente* con el detalle** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [E-1] · severidad **BAJA** (display-only)
 
 - **Qué pasa.** Los 125 archivos de `data/fundamentals_pit/` son del 2026-10-21. Se rehacen sólo de a uno, al abrir ese ticker en Análisis con más de 30 días (`ui/analysis/worker.py:29`); `scripts/build_fundamentals_pit.py` es manual y nadie lo llama. Pero `calidad_en_el_universo` (`:67`) calcula el percentil contra **todo** el almacén: desde ~el 20/11, el ticker abierto tiene su 10-K nuevo y sus pares no, y la temporada de 10-K va de noviembre a marzo.
 - **Alcance.** Un disparador (un job del scheduler, o un paso de `refresh_cohort`), o que el percentil diga contra qué fecha de almacén compara.
@@ -4719,6 +4709,16 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 335 — Tarea 394 (FUNDAMENTALS-PIT-SIN-DISPARADOR) CERRADA 2026-11-09 — el percentil de calidad mide a todos con lo que todos sabían, y la tarjeta dice hasta cuándo** (`e7b0285`, CI **VERDE** 2026-11-09 14:29Z; `docs/auditoria_tanda_2026-10-23.md` [E-1]).
+  - **(1) La comparación** (`analysis/calidad.corte_comun`, `ui/analysis/worker.calidad_en_el_universo`). Cada archivo del almacén sabe lo presentado antes de su `generado`; el ticker que se abre en Análisis se rehace y sus pares no. Ahora todos —el abierto incluido— se miden con lo presentado antes del `generado` **más viejo** del almacén (sin pasar de mañana), y el resultado trae ese corte en `al`. Se eligió esto y no un job del scheduler porque vale con cualquier mezcla de fechas: el disparador sólo achica la ventana, y un job que baje 125 `companyfacts` de la SEC desde la app es una tarea aparte si hace falta.
+  - **(2) La tarjeta** (`ui/analysis/valuation_card._corte`) dice *«…, todas con lo presentado antes del AAAA-MM-DD»*, y si el corte tiene más de 30 días (`ALMACEN_VIEJO_DIAS`) agrega *«el almacén es de hace N días; lo pone al día python scripts/build_fundamentals_pit.py»*. Ése es el disparador: manual, pero dicho donde se ve.
+  - **(3) El build** (`scripts/build_fundamentals_pit.a_rehacer`) rehace por default el universo **y** lo que ya está en el almacén: un ticker analizado una vez, fuera del universo, frenaría el corte para siempre.
+  - **De paso:** el worker le pasa a `fp.cargar` el directorio que recorre; `cargar` fija `store=STORE_DIR` al definirse, así que el almacén sintético del test se leía contra el real.
+  - **Medido contra el almacén real (lectura):** KO da 57/100 entre 125, con `al = 2026-10-21` (los 125 archivos son de ese día); a 19 días, sin la sugerencia.
+  - **Tests:** `tests/test_corte_comun_t394.py` (6): el corte es el `generado` más viejo y no pasa de la fecha; **el kill-criteria** —un almacén con pares del 21/10 y un abierto del 01/12 cuyo 10-K del 20/11 trae un derrumbe: al corte el derrumbe no cuenta, y a la fecha sí (el test verifica que los dos difieren)—; el almacén parejo; la tarjeta con y sin sugerencia; y el build con un ticker fuera del universo. **Mutación:** medir a `fecha` en vez de al corte pone rojo el del kill-criteria.
+  - `docs/ARCHITECTURE.md` lo dice en la línea de `fundamentos_pit.py`.
+  - **Deja la 412:** la primera corrida del done dio rojo en el cuarto comando, en `test_vigia_interfaz_t304.py` (dos volcados del vigía en vez de uno; no lo toca esta tarea, y solo pasa 6 de 6). Los cuatro comandos se volvieron a correr **después** de escribir este registro.
 
 - **WIP 334 — Tarea 393 (REFERENCIA-WBD-MOTIVO-FALSO) CERRADA 2026-11-06 — un frame degenerado más fresco ya no tapa la historia de un ticker; WBD vuelve a la referencia, rotulado con el motivo real** (`bca7922`, CI **VERDE** 2026-11-07 00:14Z; `docs/auditoria_tanda_2026-10-23.md` [F-1] y [A-1]).
   - **(1) El mecanismo** (`database/cartera_real.unir_cierres`). La 336 no pega una serie vieja **sin días en común** con lo ya unido (no hay con qué reescalarla), y la base es la que termina más tarde: un `2y` de **una fila** posterior a todo tapaba la historia entera. Ahora, si la vieja sin días en común es **más larga** que lo ya unido, la información está en ella y se pega **cruda** (un escalón posible en la costura, ≤1,6 % medido en la 336, contra perder la serie). Si es más corta, se descarta como antes: el test de la 336 que fija ese caso sigue en verde sin tocarlo.
