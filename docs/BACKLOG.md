@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 336 — Tarea 412 (VIGIA-T304-INTERMITENTE-BAJO-CARGA) CERRADA 2026-11-09 — el test cuenta los volcados de la traba, el CONTROL pide que cada volcado tenga su traba medida, y el hijo se apaga dentro del loop** (origen: done de la 394).
+  - **No se reprodujo.** Con 24 y con 48 procesos quemando CPU en 20 núcleos, el test viejo pasó 25 de 25. Lo que hubo el 09/11 es una demora real del latido de más de 0,5 s fuera de la traba, y que la carga de CPU sola no la provoca. El vigía **no se toca**: hace lo que dice (un volcado por traba y se rearma al latir).
+  - **El arreglo** (`tests/test_vigia_interfaz_t304.py`). (1) `test_el_stack_de_la_gui_va_primero_y_una_vez_por_traba` cuenta los `Timeout (` **antes del primer `^^^`**, que son los de la traba. (2) El CONTROL ya no pide «ningún volcado»: pide que **todo volcado tenga después su `^^^`** (la GUI volvió y midió una traba de verdad) y que no aparezca `funcion_que_traba_la_gui`; un vigía que vuelca siempre vuelca sin traba. (3) El hijo apaga el vigía y los hilos **dentro** del loop (`terminar`), antes de `app.quit`: afuera quedaba una ventana sin latido entre la salida del loop y `detener`.
+  - **Tests:** `test_un_volcado_de_mas_despues_de_la_traba_no_es_de_la_traba` fija la forma del archivo del 09/11 sin depender de la carga: con el criterio viejo da dos volcados (rojo), con el nuevo uno, y el CONTROL marca el segundo como sin traba. **Mutaciones** (restauradas desde copia): un vigía que vuelca en cada tick de la traba pone rojo al principal; uno que vuelca siempre pone rojos al CONTROL y a los otros dos. **Con la CPU cargada (48 procesos): 20 de 20.**
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -519,6 +525,10 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-06g** al cerrar la **393**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **394 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-09** al cerrar la **394**, que deja la **412** (MEDIA: un rojo intermitente del vigía en su done, que entra primera por la misma razón que la 411). El orden queda **412 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-09b** al anotar la **413**, el spike de costo y beneficio de las noticias que pidió Chapa: entra segunda, detrás de la **412**, que está en marcha. El orden queda **412 → 413 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-09c** al cerrar la **412**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **413 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 
 
@@ -1958,7 +1968,19 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 412. VIGIA-T304-INTERMITENTE-BAJO-CARGA — `test_el_stack_de_la_gui_va_primero_y_una_vez_por_traba` dio rojo en la suite sin estado vivo con **dos** volcados en vez de uno, y pasa 6 de 6 corrido solo  ·  origen: done de la **394** (2026-11-09) · severidad **MEDIA** (un rojo intermitente en el done o en el CI se termina leyendo como ruido; ver la 411)
+### 413. SPIKE-NOTICIAS-COSTO-BENEFICIO — Cuánto cuesta bajar, guardar y clasificar las noticias, quién usa el resultado, y si algo de eso se paga  ·  origen: pedido de Chapa (2026-11-09, *«necesitamos entender si todo el procesamiento tiene algún beneficio»*) · severidad **—** (es un spike: mide y recomienda, no cambia nada)
+
+- **El panorama del 2026-11-09** (copia de la DB y `~/.finanzias/finanzias.log`, que arranca el 2026-09-07; todo lectura):
+  - **Guardadas:** 112.714 filas en `news_events` desde el 2026-06-06, de 131 tickers, ~29 MB de texto (la DB pesa 118 MB). Por fuente: `finnhub:Yahoo` 52.970, `yfinance` 26.844 (hasta el 01/10), `finnhub:Benzinga` 12.829, `yfinance:search` 8.033 (desde el 19/10), `finnhub:SeekingAlpha` 5.208, `sec_8k` 2.898, `finnhub:CNBC` 2.520, `finnhub:ChartMill` 1.279, `finnhub:Fintel` 133.
+  - **Bajadas:** en el log hay 99 harvests en 31 días: **1.180.501 noticias recibidas, 56.996 nuevas (4,8 %)**; el 95 % de lo que se baja ya estaba. 9,0 h de harvest en total, mediana 324 s por corrida (127 tickers).
+  - **Clasificación (qwen2.5:14b local):** 39 corridas medidas, 57.041 noticias en **47 h**, ~3 s por noticia. Hoy hay 4.279 sin clasificar, la más vieja del 30/10. Por tipo, la mayor categoría es `other` (34.873, 31 %), y le sigue `macro_sector` (16.554).
+  - **Uso:** lo único que lee la clasificación en la app es la pestaña Noticias (`analysis/news_digest.py`): es display. El Gate 2c (`paper_catalyst_exit_veto_enabled`) está OFF por kill-criteria (T-CAT-6) y nadie le inyecta `catalyst_signal_provider` en producción. Las dos mediciones de tono contra el retorno a 5 días dieron **NO PASA** (255 y 258). El surprise score sale de `analyst_estimate_snapshots`, no de las noticias.
+  - **Raro, a mirar:** la latencia publicada→vista de `sec_8k` tiene mediana ~5.200 h (¿backfill de 8-K viejos, o un `published_at` mal leído?); los días sin harvest coinciden con la app cerrada (en los últimos 14 días hubo harvest en 5).
+- **Alcance.** (1) El costo completo, por etapa (red, CPU/GPU de qwen, disco, tiempo de app abierta) y por fuente, con lo nuevo que aporta cada una (cuántas noticias sólo trae esa fuente). (2) Cada consumidor de `news_events` y de sus campos clasificados —app, scripts, harness, la nube de la 355—, qué decisión o pantalla alimenta y si alguien la mira. (3) El beneficio medido o medible: lo que ya se midió (255, 258, T-CAT-6) y lo que falta (por ejemplo, el valor de la pestaña como lectura, o si los 8-K sirven a la 11/PEAD). (4) Una recomendación con opciones: seguir igual, recortar fuentes o frecuencia (el 95 % duplicado), clasificar sólo lo que se muestra o lo que tiene ticker en cartera, o apagar la clasificación.
+- **Kill-criteria.** El informe (`docs/`) responde las cuatro preguntas con números que salen de la DB y del log, cada uno con su consulta; toda recomendación que toque algo que alimenta una decisión de trading va como tarea propia, con su propio kill-criteria. Todo hallazgo, como tarea (regla 6).
+- **Dependencias:** ninguna. Lo de la nube (355/356) se cuenta como está.
+
+### 412. ~~VIGIA-T304-INTERMITENTE-BAJO-CARGA — `test_el_stack_de_la_gui_va_primero_y_una_vez_por_traba` dio rojo en la suite sin estado vivo con **dos** volcados en vez de uno, y pasa 6 de 6 corrido solo~~ · **CERRADA 2026-11-09 — se cuentan los volcados de la traba; el vigía no se toca** ·  origen: done de la **394** (2026-11-09) · severidad **MEDIA** (un rojo intermitente en el done o en el CI se termina leyendo como ruido; ver la 411)
 
 - **Qué pasa.** En el done de la 394, `scripts/run_suite_sin_estado_vivo.py` dio `1 failed, 4877 passed`: el `congelamientos.log` del hijo tenía el volcado de la traba de 1,5 s, el *«^^^ … trabada 1.5 s»* de cuando volvió a latir, y **otro** `Timeout (0.5 s sin latir)!`. El vigía (`ui/vigia_interfaz.py:158`) vuelca una vez por traba y se rearma al latir (`:172`), así que eso es una **segunda** demora de más de 0,5 s del latido, sin traba, con los 4 `hilo_que_trabaja` del hijo y la máquina cargada por la suite. Corrido solo, el archivo pasa 6 de 6. Es la misma fragilidad que el comentario del hijo ya cuenta del CONTROL (*«el latido se atrasaba más que el umbral y el CONTROL volcaba sin traba»*), que se arregló con la pausa de 1 ms y no con margen.
 - **Alcance.** Que el test cuente los volcados **de la traba** (los que hay antes del primer `^^^`) y no los del proceso entero, o un umbral que deje margen bajo carga sin perder lo que el test fija; y revisar el CONTROL con el mismo criterio. No tocar el vigía de la app salvo que el análisis muestre que el rearme es el defecto.

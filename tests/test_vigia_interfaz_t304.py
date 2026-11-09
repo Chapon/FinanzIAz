@@ -51,11 +51,16 @@ _HIJO = textwrap.dedent(
     def funcion_que_traba_la_gui():
         time.sleep({traba})
 
+    # Tarea 412: se apaga todo DENTRO del loop. Afuera, entre el último latido y ``detener``, el
+    # vigía mira una GUI que ya no late; con la máquina cargada eso pasó de 0,5 s.
+    def terminar():
+        vigia.detener()
+        parar.set()
+        app.quit()
+
     QTimer.singleShot(300, funcion_que_traba_la_gui)
-    QTimer.singleShot(2500, app.quit)
+    QTimer.singleShot(2500, terminar)
     app.exec()
-    vigia.detener()
-    parar.set()
     """
 )
 
@@ -65,6 +70,18 @@ def _correr(tmp_path: Path, traba: float) -> str:
     codigo = _HIJO.format(repo=str(_REPO), archivo=str(archivo), traba=traba)
     subprocess.run([sys.executable, "-c", codigo], check=True, cwd=str(_REPO), timeout=60)
     return archivo.read_text(encoding="utf-8") if archivo.exists() else ""
+
+
+def _volcados(texto: str) -> list[tuple[str, bool]]:
+    """Cada volcado del archivo, y si lo cerró un ``^^^`` (la GUI volvió y midió la traba).
+
+    Tarea 412: con la máquina cargada, el latido de los hilos del hijo se atrasa de verdad más que
+    el umbral y el vigía vuelca, bien. Contar los volcados del archivo entero daba rojo por eso.
+    """
+    out: list[tuple[str, bool]] = []
+    for bloque in texto.split("Timeout (")[1:]:
+        out.append((bloque, "^^^" in bloque))
+    return out
 
 
 def test_una_traba_deja_el_stack_de_la_funcion_que_trababa(tmp_path):
@@ -79,12 +96,20 @@ def test_el_stack_de_la_gui_va_primero_y_una_vez_por_traba(tmp_path):
     primer_hilo = texto.split("Thread 0x", 2)[1]
     assert primer_hilo.split("\n", 1)[0].count("[GUI]") == 1, texto
     assert "funcion_que_traba_la_gui" in primer_hilo, texto
-    assert texto.count("Timeout (") == 1, texto  # 1,5 s con umbral 0,5 s: un volcado, no tres
+    # 1,5 s con umbral 0,5 s: un volcado, no tres. Se cuentan los de la traba —los que hay antes
+    # del primer «^^^»—, no los de todo el proceso (tarea 412).
+    assert texto.split("^^^", 1)[0].count("Timeout (") == 1, texto
 
 
 def test_CONTROL_sin_traba_no_vuelca_nada(tmp_path):
-    """Sin esto, un vigía que vuelca siempre pasaría el test de arriba."""
-    assert "Thread" not in _correr(tmp_path, traba=0.0)
+    """Sin esto, un vigía que vuelca siempre pasaría el test de arriba.
+
+    Tarea 412: no pide «ningún volcado», que con la máquina cargada era rojo por una demora real;
+    pide que todo volcado tenga su traba medida después. El que vuelca siempre vuelca sin traba.
+    """
+    texto = _correr(tmp_path, traba=0.0)
+    assert all(cerrado for _, cerrado in _volcados(texto)), texto
+    assert "funcion_que_traba_la_gui" not in texto, texto
 
 
 @pytest.mark.parametrize(
@@ -104,3 +129,22 @@ def test_describir_atraso(atraso, esperado):
 def test_todo_atraso_que_volco_un_stack_lleva_su_linea_de_hora():
     """Con un umbral de volcado menor que el aviso fijo, el stack quedaba sin la hora."""
     assert describir_atraso(1.0, umbral_s=0.5) is not None
+
+
+_ARCHIVO_DEL_9_DE_NOVIEMBRE = """Timeout (0.5 s sin latir)!
+Thread 0x00009c7c [GUI] (most recent call first):
+  File "<string>", line 30 in funcion_que_traba_la_gui
+^^^ 2026-11-09 11:11:10 — la interfaz estuvo trabada 1.5 s (stack en congelamientos.log si pasó de 0.5 s)
+
+Timeout (0.5 s sin latir)!
+Thread 0x00009c7c [GUI] (most recent call first):
+"""
+
+
+def test_un_volcado_de_mas_despues_de_la_traba_no_es_de_la_traba():
+    """Tarea 412: la forma del archivo que dio rojo en el done de la 394, sin depender de la carga."""
+    texto = _ARCHIVO_DEL_9_DE_NOVIEMBRE
+    assert texto.count("Timeout (") == 2  # el criterio de antes: rojo
+    assert texto.split("^^^", 1)[0].count("Timeout (") == 1  # el de ahora: la traba volcó una vez
+    # Y el CONTROL sí lo marcaría: el segundo volcado no tiene su traba medida.
+    assert [cerrado for _, cerrado in _volcados(texto)] == [True, False]
