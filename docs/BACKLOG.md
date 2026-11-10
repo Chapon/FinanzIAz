@@ -18,7 +18,16 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 337 — Tarea 413 (SPIKE-NOTICIAS-COSTO-BENEFICIO) CERRADA 2026-11-10 — las noticias no alimentan ninguna decisión de trading; el costo grande es qwen (49,6 h de GPU contra 9,5 h de descarga), y lo único que lo usa es el orden de la pestaña Noticias** (origen: pedido de Chapa del 2026-11-09). Informe: `docs/noticias_costo_beneficio_t413_2026-11-10.md`.
+  - **El instrumento:** `scripts/measure_news_cost_benefit_t413.py` (DB en sólo lectura con `readonly_uri` + log; cada número del informe dice de qué clave sale), con su test `tests/test_news_cost_benefit_t413.py`. **Mutaciones** (restauradas desde copia, con el patrón contado una vez): sin normalizar títulos, contando el dry-run o ignorando las ventas, el test da rojo.
+  - **Costo:** 134 harvests, 1.576.904 recibidas y 65.554 nuevas (4,2 %), 9,5 h medidas; el **horario** se lleva el 56 % de ese tiempo y trae el 22 % de lo nuevo, que es frescura y no cobertura (Finnhub contesta 7 días). Clasificación: 40 corridas, 60.303 noticias en **49,6 h** (2,96 s cada una), el 51 % clasificado con más de 1 día de vieja y el 31 % sale `other`. Disco: 40,1 MB de texto (34 % de la DB), barato. Las fuentes **casi no se pisan** (107.647 titulares distintos en 113.338 filas): no hay fuente que sacar gratis.
+  - **Uso:** pestaña Noticias, su briefing y la tarjeta de opinión de Claude (14 opiniones, todas del 06/10) — todo display. Gate 2c OFF y sin proveedor; 255, 258 y T-CAT-6 no pasan; el PEAD usa el consenso, no las noticias, y **los 8-K no los usa nadie**. Lo que sí alimenta decisiones es el **consenso**, que baja el mismo harvest: por eso el harvest no se apaga. El 7,0 % de las noticias es de un ticker en cartera ese día.
+  - **La heurística no reemplaza a qwen:** mismo tipo en el 40,3 %, y deja con tono el 15,0 % contra el 44,0 % de qwen; la pestaña ordena por tono, así que sin qwen el orden queda casi plano.
+  - **El «raro» de los 8-K no es defecto:** backfill de los últimos 20 la primera vez que el colector ve un ticker (junio y la ampliación del 02/09); desde octubre, el 100 % entra dentro de los 7 días.
+  - **Recomendación:** harvest diario igual; el horario deja de bajar el consenso (**414**); la clasificación se decide con datos de uso (**415**), y un modelo más chico se mide sólo si hace falta (**416**). Ninguna toca trading.
+  - **Deja tres tareas:** **414**, **415** y **416** (ésta, fuera de la cola hasta que la 415 junte uso). Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -523,6 +532,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-09b** al anotar la **413**, el spike de costo y beneficio de las noticias que pidió Chapa: entra segunda, detrás de la **412**, que está en marcha. El orden queda **412 → 413 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
 
 > **Repriorizado 2026-11-09c** al cerrar la **412**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **413 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**.
+
+> **Repriorizado 2026-11-10** al cerrar la **413**, que deja tres. La **414** entra primera porque es desperdicio puro y chico (el harvest horario pide el consenso de 127 tickers para tirarlo), y la **415** segunda porque es la que decide qué hacer con el 84 % del costo del pipeline, y cuanto antes empiece a contar, antes hay respuesta. El orden queda **414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola: está condicionada a cuatro semanas de uso registrado por la 415.
 
 
 
@@ -1962,7 +1973,28 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 413. SPIKE-NOTICIAS-COSTO-BENEFICIO — Cuánto cuesta bajar, guardar y clasificar las noticias, quién usa el resultado, y si algo de eso se paga  ·  origen: pedido de Chapa (2026-11-09, *«necesitamos entender si todo el procesamiento tiene algún beneficio»*) · severidad **—** (es un spike: mide y recomienda, no cambia nada)
+### 416. CLASIFICADOR-MODELO-CHICO — ¿Un qwen más chico clasifica las noticias igual que el 14b, en menos tiempo?  ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · **display-only** · **condicionada a la 415**
+
+- **Qué pasa.** La clasificación con `qwen2.5:14b` es el 84 % del costo medido del pipeline de noticias (49,6 h de GPU en dos meses, 2,96 s por noticia; `docs/noticias_costo_beneficio_t413_2026-11-10.md`) y sólo alimenta la pantalla. La heurística no la reemplaza (mismo tipo en el 40,3 %, tono no neutro en el 15,0 % contra el 44,0 %).
+- **Alcance.** Sólo si la 415 muestra que la pestaña se usa lo bastante como para seguir clasificando: clasificar con `qwen2.5:7b` (y `3b`) una muestra fija de noticias ya clasificadas por el 14b y medir acuerdo y segundos por noticia. No cambia el modelo de la app.
+- **Kill-criteria (a congelar antes de correr).** Pre-registro con la muestra (sorteada con semilla), las métricas —mismo tipo, mismo signo de tono, tono a ≤ 1 nivel, y acuerdo en las 50 primeras del orden de la pestaña por día— y los umbrales contra el 14b. Si no los cumple, se documenta y el modelo no cambia.
+- **Dependencias:** la **415**, con cuatro semanas de uso registrado.
+
+### 415. USO-PESTAÑA-NOTICIAS — Registrar cuándo se abre la pestaña Noticias y cuándo se pide una opinión a Claude: hoy no hay forma de saber si el 84 % del costo del pipeline se mira  ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · display
+
+- **Qué pasa.** Lo único que usa la clasificación de qwen (49,6 h de GPU en dos meses) es el orden de la pestaña Noticias, su briefing y la tarjeta de opinión. Nada registra si se abren: en el log no hay ni una línea de la pestaña salvo un error del briefing, y la tabla `claude_opinions` tiene 14 filas, todas del 2026-10-06. La 413 no pudo responder *«si alguien la mira»*, que es lo que decide entre seguir igual, no clasificar lo viejo, un modelo más chico o apagar la clasificación.
+- **Alcance.** Una línea INFO en el log (o un contador local) cuando la pestaña se actualiza con la ventana y la cantidad de filas, y cuando se pide una opinión; sin red, sin datos personales. Al cabo de cuatro semanas, leer el registro y elegir entre las opciones (a)–(d) del §4 del informe de la 413, con Chapa.
+- **Kill-criteria.** Un test por evento (actualizar la pestaña, pedir una opinión) que verifica que queda el registro, probado por mutación. Los cuatro comandos en verde y el CI del commit en verde. La decisión de las cuatro semanas va como cierre aparte, con los números del registro.
+- **Dependencias:** ninguna.
+
+### 414. HARVEST-HORARIO-REBAJA-CONSENSO — El harvest horario le pide a Yahoo el consenso de los 127 tickers en cada corrida y no guarda nada: 104.895 filas recibidas, 29 nuevas en 83 corridas  ·  origen: spike **413** (2026-11-10) · severidad **MEDIA** (desperdicio de red y de tiempo de app abierta, y más pedidos a Yahoo de los necesarios)
+
+- **Qué pasa.** `run_catalyst_harvest_only` (`analysis/news_digest.py`) corre el harvest con `--sources yfinance,sec,finnhub`, y la fuente `yfinance` es noticias **más** consenso (`_yf_estimates`, cuatro propiedades por ticker). `_insert_estimate_if_new_today` (`scripts/harvest_catalysts.py`) se queda con la primera foto del día, que toma el diario; así que cada corrida horaria pide el consenso para tirarlo. En el log del 07/09 al 09/11: horario **104.895 recibidas, 29 nuevas**; diario 47.890 nuevas (`docs/noticias_costo_beneficio_t413_2026-11-10.md`, §1).
+- **Alcance.** Que el harvest horario no pida el consenso de un ticker que ya tiene foto del día (o que no lo pida nunca, si el diario corre primero siempre — a verificar), sin cambiar qué foto se guarda. Medir el tiempo de la corrida horaria antes y después.
+- **Kill-criteria.** Un test que, con la foto del día ya guardada, verifica que el horario no llama a `_yf_estimates` (mutación: volver a llamarlo lo pone rojo), y otro que, sin foto del día, verifica que el horario sí la toma. La foto que se guarda es la misma que hoy. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna.
+
+### 413. ~~SPIKE-NOTICIAS-COSTO-BENEFICIO — Cuánto cuesta bajar, guardar y clasificar las noticias, quién usa el resultado, y si algo de eso se paga~~ · **CERRADA 2026-11-10 — las noticias no alimentan ninguna decisión; el costo es qwen y lo usa sólo la pestaña** ·  origen: pedido de Chapa (2026-11-09, *«necesitamos entender si todo el procesamiento tiene algún beneficio»*) · severidad **—** (es un spike: mide y recomienda, no cambia nada)
 
 - **El panorama del 2026-11-09** (copia de la DB y `~/.finanzias/finanzias.log`, que arranca el 2026-09-07; todo lectura):
   - **Guardadas:** 112.714 filas en `news_events` desde el 2026-06-06, de 131 tickers, ~29 MB de texto (la DB pesa 118 MB). Por fuente: `finnhub:Yahoo` 52.970, `yfinance` 26.844 (hasta el 01/10), `finnhub:Benzinga` 12.829, `yfinance:search` 8.033 (desde el 19/10), `finnhub:SeekingAlpha` 5.208, `sec_8k` 2.898, `finnhub:CNBC` 2.520, `finnhub:ChartMill` 1.279, `finnhub:Fintel` 133.
