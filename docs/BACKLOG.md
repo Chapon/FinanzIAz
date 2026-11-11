@@ -18,12 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 339 — Tarea 422 (TEST-SKILL-CONTEO-DE-SKIPS) CERRADA 2026-11-11 — `/test` anuncia los 3 skips de más del modo sin estado vivo, por su motivo, y un test fija el número contra la suite** (origen: el done de la 417).
-  - **`.claude/commands/test.md`:** decía *«difiere en 1 skip»*; ahora dice **3** (y 3 passed menos), nombra el motivo *«sin settings.json vivo en este entorno»* y pide verificar por el motivo: un skip de más con otro motivo es para mirar.
-  - **`tests/test_test_md_conteo_de_skips_t422.py`:** el número de `test.md` tiene que ser igual a la cantidad de `pytest.skip("<motivo>")` de `tests/` (hoy 130, 181 y 185), buscados sobre el texto entero para que un `skip(` partido en dos líneas no se escape —la primera versión era por línea y su propio test de control lo aceptaba sin decirlo—. **Mutación** (restaurada desde copia): volver a «1» da rojo. Si se agrega un cuarto test con ese skip, el guard pide actualizar `test.md`.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -1997,7 +1992,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un CI verde con el cambio, y la anotación del paso verificada forzando un fallo en una rama (o un paquete inexistente en un run de prueba) que muestre el error de `apt` en las anotaciones. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 422. ~~TEST-SKILL-CONTEO-DE-SKIPS — `/test` dice que el modo sin estado vivo difiere en **1** skip del primero, y hoy difiere en **3**~~ · **CERRADA 2026-11-11 — dice 3, nombra el motivo, y un test lo fija contra la suite** ·  origen: el done de la **417** (2026-11-11) · severidad **BAJA** (un claim de skill que manda a desconfiar de un verde correcto, o a aceptar un skip de más)
+### 422. ~~TEST-SKILL-CONTEO-DE-SKIPS — `/test` dice que el modo sin estado vivo difiere en **1** skip del primero, y hoy difiere en **3**~~ · **CERRADA 2026-11-11 — dice 3, nombra el motivo, y un test lo fija contra la suite** (`e1bc900`) · **movida a *Hecho reciente* con el detalle** ·  origen: el done de la **417** (2026-11-11) · severidad **BAJA** (un claim de skill que manda a desconfiar de un verde correcto, o a aceptar un skip de más)
 
 - **Qué pasa.** `.claude/commands/test.md:22`: *«Su conteo normal difiere en 1 skip del primero… el test que compara contra el settings vivo se saltea cuando no hay con qué comparar»*. En el done de la 417: **4894 passed, 2 skipped** contra **4891 passed, 5 skipped**; los tres de más dicen *«sin settings.json vivo en este entorno»*: `test_espejos_vivos_t130.py:186`, `test_killonly_no_existe_t181.py:100` y `test_espejos_direccion_faltante_t185.py:341`. El texto quedó del tiempo en que era uno solo.
 - **Alcance.** Corregir el número y nombrar los tres, o mejor, que el texto no dé un número que se desactualiza y diga cómo verificar (los skips de más tienen que ser todos *«sin settings.json vivo»*). Si algún guard de claims cubre los comandos, que cubra éste.
@@ -4825,6 +4820,11 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 339 — Tarea 422 (TEST-SKILL-CONTEO-DE-SKIPS) CERRADA 2026-11-11 — `/test` anuncia los 3 skips de más del modo sin estado vivo, por su motivo, y un test fija el número contra la suite** (origen: el done de la 417).
+  - **`.claude/commands/test.md`:** decía *«difiere en 1 skip»*; ahora dice **3** (y 3 passed menos), nombra el motivo *«sin settings.json vivo en este entorno»* y pide verificar por el motivo: un skip de más con otro motivo es para mirar.
+  - **`tests/test_test_md_conteo_de_skips_t422.py`:** el número de `test.md` tiene que ser igual a la cantidad de `pytest.skip("<motivo>")` de `tests/` (hoy 130, 181 y 185), buscados sobre el texto entero para que un `skip(` partido en dos líneas no se escape —la primera versión era por línea y su propio test de control lo aceptaba sin decirlo—. **Mutación** (restaurada desde copia): volver a «1» da rojo. Si se agrega un cuarto test con ese skip, el guard pide actualizar `test.md`.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `e1bc900` VERDE.
 - **WIP 338 — Tarea 417 (OPINION-CLAUDE-DIA-E-INTRADIA) CERRADA 2026-11-11 — Claude recibe el retorno del día, si el precio es intradiario y a qué hora, y la hora ET de cada noticia; los datos llevan `version_datos` para la 321** (origen: la opinión de MU del 2026-11-11 y el pedido de Chapa de llenar sus faltantes, que también anotó la **418–421**).
   - **Lo que se verificó antes de tocar nada:** la duda de Claude (*«−1 % a 5 días con una nota de +7 % hoy, ¿datos desincronizados?»*) no era un defecto de datos. Pedida a las 15:02 UTC, precio intradiario 786,91 contra el cierre del 10/11 de 725,11 (+8,5 %); la ventana de 5 días arranca el 04/11 (795,23) y el 05/11 MU cayó −17,5 %. La nota se publicó a las 14:08 UTC, antes de la apertura.
   - **`analysis/opinion_claude.py`:** `retornos_pct["1d"]`; `estado_precio(fecha_ultima, obtenido)` —intradiario si la última barra es del día de `obtenido` en ET, día hábil y antes de las 16:00— con `precio_consultado` en ET; `hora_et` para las noticias (la clave pasa de `fecha`, que era la fecha UTC cortada a `[:10]`, a `publicada`); `VERSION_DATOS = 2` (las filas viejas de `claude_opinions` son la 1); una línea del `SYSTEM_PROMPT` que explica el `1d`, lo intradiario y la ET. `ui/analysis_tab.py` le pasa `obtenido`, la hora en que el precio **llegó a la pestaña** (no la del pedido: si la pestaña quedó abierta, se dice la hora del precio).
