@@ -18,6 +18,7 @@ Hover behaviour
 """
 
 import contextlib
+from datetime import datetime, timezone
 
 import pandas as pd
 from PyQt6.QtCore import QStringListModel, Qt
@@ -703,10 +704,14 @@ class AnalysisTab(QWidget):
         self.chart.plot_price_with_indicators(ticker, df, show_bb=settings.get("bb"))
 
         # Opinión de Claude (tarea 320): los datos se arman al pedirla, en el worker (lee noticias).
-        def _datos_para_claude(t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr):
+        # `obtenido` es cuándo llegó el precio acá, no cuándo se pide la opinión: si la pestaña
+        # quedó abierta una hora, el precio es de hace una hora, y eso es lo que se dice (tarea 417).
+        obtenido = datetime.now(timezone.utc)
+
+        def _datos_para_claude(t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr, ob=obtenido):
             from analysis.opinion_claude import armar_datos, noticias_recientes
 
-            return armar_datos(t, d, r, c, a, noticias_recientes(t), s_r)
+            return armar_datos(t, d, r, c, a, noticias_recientes(t), s_r, obtenido=ob)
 
         self.opinion_card.set_contexto(ticker, _datos_para_claude)
 

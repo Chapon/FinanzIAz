@@ -48,13 +48,22 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 MODELO = "claude-opus-5-5"
 TIMEOUT_S = 240.0
 MAX_NOTICIAS = 15
 DIAS_NOTICIAS = 14
+
+# Qué recibe Claude, versionado (tarea 417): la 321 mide si las opiniones aciertan, y cambiar los
+# datos cambia el instrumento. Cada tarea que agrega o cambia un bloque la sube; las filas viejas de
+# ``claude_opinions`` no tienen el campo y son la versión 1.
+#   2 — retorno del día, si el precio es intradiario, y la hora ET de las noticias (417).
+VERSION_DATOS = 2
+
+# Cierre de la sesión regular de NYSE/NASDAQ, en hora del Este (ET).
+_CIERRE_ET = (16, 0)
 
 RECOMENDACIONES = ("COMPRAR", "MANTENER", "VENDER")
 
@@ -84,6 +93,9 @@ algo importante para opinar, ponelo en datos_faltantes.
 demostrado. Cuando se midió (su puntaje de compra contra el retorno a 5 días, y el impacto de las \
 noticias) no se detectó relación; el modelo XGBoost, el consenso y el tono de las noticias no \
 están validados. Pesalos con ese escepticismo.
+- Los retornos se miden contra cierres: "1d" es contra el cierre anterior. Si el bloque precio \
+dice que el mercado estaba abierto, el precio es intradiario (a la hora que indica) y el día \
+todavía no cerró. Las horas de las noticias están en hora del Este de EE.UU. (ET).
 - Horizonte: de semanas a pocos meses.
 - COMPRAR = abrir o aumentar posición; MANTENER = no hacer nada; VENDER = reducir o cerrar si \
 la tiene, y no comprar si no la tiene.
@@ -159,8 +171,12 @@ def armar_datos(
     analyst: dict | None = None,
     noticias: list | None = None,
     soporte_resistencia: dict | None = None,
+    obtenido: datetime | None = None,
 ) -> dict:
     """El resumen que se manda a Claude. **Puro**: todo llega por parámetro.
+
+    ``obtenido`` es cuándo llegó el ``df`` a la pestaña (con zona horaria): con eso se sabe si la
+    última barra es intradiaria (tarea 417). Sin él, ``estado_precio`` no se manda.
 
     No incluye la posición del usuario en la acción.
     """
@@ -171,16 +187,20 @@ def armar_datos(
         return _num((ultimo / float(close.iloc[-1 - n]) - 1) * 100) if len(close) > n else None
 
     ventana = close.iloc[-252:]
+    fecha_ultima = df.index[-1].date() if hasattr(df.index[-1], "date") else None
     datos: dict = {
+        "version_datos": VERSION_DATOS,
         "ticker": ticker.upper(),
         "empresa": (company or {}).get("name"),
         "sector": (company or {}).get("sector"),
-        "fecha_datos": str(df.index[-1].date()) if hasattr(df.index[-1], "date") else str(df.index[-1]),
+        "fecha_datos": str(fecha_ultima) if fecha_ultima else str(df.index[-1]),
         "precio": _num(ultimo),
-        "retornos_pct": {"5d": ret(5), "20d": ret(20), "60d": ret(60), "250d": ret(250)},
+        "retornos_pct": {"1d": ret(1), "5d": ret(5), "20d": ret(20), "60d": ret(60), "250d": ret(250)},
         "rango_52s": {"max": _num(ventana.max()), "min": _num(ventana.min())},
         "volatilidad_anual_20d_pct": _num(close.pct_change().iloc[-20:].std() * (252**0.5) * 100),
     }
+    if obtenido is not None and fecha_ultima is not None:
+        datos["estado_precio"] = estado_precio(fecha_ultima, obtenido)
     if soporte_resistencia:
         datos["soporte"] = _num(soporte_resistencia.get("support"))
         datos["resistencia"] = _num(soporte_resistencia.get("resistance"))
@@ -211,6 +231,51 @@ def armar_datos(
     return datos
 
 
+def _zona_et():
+    from data.yahoo_finance import market_timezone
+
+    return market_timezone()
+
+
+def hora_et(cuando: datetime | None, zona=None) -> str | None:
+    """``cuando`` (UTC naive, como persiste la app, o con zona) en hora del Este: ``AAAA-MM-DD HH:MM ET``.
+
+    Antes la noticia iba con ``str(cuando)[:10]``: la fecha **UTC**, sin hora. Una nota de las 21 h
+    ET salía con la fecha del día siguiente, y una de la preapertura no se distinguía de una del
+    cierre (tarea 417). Sin zona resoluble, cae a UTC y lo dice.
+    """
+    if cuando is None:
+        return None
+    if cuando.tzinfo is None:
+        cuando = cuando.replace(tzinfo=timezone.utc)
+    zona = zona if zona is not None else _zona_et()
+    if zona is None:
+        return cuando.strftime("%Y-%m-%d %H:%M UTC")
+    return cuando.astimezone(zona).strftime("%Y-%m-%d %H:%M ET")
+
+
+def estado_precio(fecha_ultima: date, obtenido: datetime, zona=None) -> dict:
+    """Si el último precio es un cierre o es intradiario, y a qué hora (tarea 417).
+
+    La opinión de MU del 2026-11-11 se pidió a media hora de la apertura: el precio era
+    intradiario (+8,5 % en el día) y Claude no podía saberlo; vio −1 % a 5 días y una nota de
+    *«+7 % hoy»* y sospechó que los datos estaban desincronizados. La barra es **intradiaria** si es
+    del día de ``obtenido`` en ET, en un día hábil, antes del cierre de las 16:00. Los feriados no
+    se conocen: un feriado no tiene barra del día, así que cae en *cierre*, que es lo correcto.
+    """
+    zona = zona if zona is not None else _zona_et()
+    if obtenido.tzinfo is None:
+        obtenido = obtenido.replace(tzinfo=timezone.utc)
+    local = obtenido.astimezone(zona) if zona is not None else obtenido
+    sufijo = "ET" if zona is not None else "UTC"
+    abierto = fecha_ultima == local.date() and local.weekday() < 5 and (local.hour, local.minute) < _CIERRE_ET
+    return {
+        "mercado_abierto": abierto,
+        "precio_es": "intradiario, el día no cerró" if abierto else f"cierre del {fecha_ultima}",
+        "precio_consultado": local.strftime(f"%Y-%m-%d %H:%M {sufijo}"),
+    }
+
+
 def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
     """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
     from analysis.news_digest import classify_missing, fetch_news_window
@@ -221,11 +286,12 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
     # heurística al vuelo, como en la pestaña Noticias, y el campo `clasificador` lo dice.
     filas = classify_missing(filas[:MAX_NOTICIAS])
     out = []
+    zona = _zona_et()
     for f in filas:
         cuando = f.published_at or f.fetched_at
         out.append(
             {
-                "fecha": str(cuando)[:10] if cuando else None,
+                "publicada": hora_et(cuando, zona),
                 "titulo": f.title,
                 "tipo": f.event_type,
                 "tono_-3_a_3": _num((f.sentiment_score or 0) * 3, 0)
