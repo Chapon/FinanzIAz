@@ -708,10 +708,14 @@ class AnalysisTab(QWidget):
         # quedó abierta una hora, el precio es de hace una hora, y eso es lo que se dice (tarea 417).
         obtenido = datetime.now(timezone.utc)
 
-        def _datos_para_claude(t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr, ob=obtenido):
-            from analysis.opinion_claude import armar_datos, noticias_recientes
+        def _datos_para_claude(
+            t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr, ob=obtenido, v=valuacion
+        ):
+            from analysis.opinion_claude import anuales_de, armar_datos, noticias_recientes
 
-            return armar_datos(t, d, r, c, a, noticias_recientes(t), s_r, obtenido=ob)
+            return armar_datos(
+                t, d, r, c, a, noticias_recientes(t), s_r, obtenido=ob, valuacion=v, anuales=anuales_de(t)
+            )
 
         self.opinion_card.set_contexto(ticker, _datos_para_claude)
 

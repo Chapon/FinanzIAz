@@ -60,7 +60,9 @@ DIAS_NOTICIAS = 14
 # datos cambia el instrumento. Cada tarea que agrega o cambia un bloque la sube; las filas viejas de
 # ``claude_opinions`` no tienen el campo y son la versión 1.
 #   2 — retorno del día, si el precio es intradiario, y la hora ET de las noticias (417).
-VERSION_DATOS = 2
+#   3 — valuación de la tarjeta, fundamentales anuales de EDGAR y el P/E de yfinance (418).
+VERSION_DATOS = 3
+ANIOS_FUNDAMENTALES = 4
 
 # Cierre de la sesión regular de NYSE/NASDAQ, en hora del Este (ET).
 _CIERRE_ET = (16, 0)
@@ -84,7 +86,8 @@ ESQUEMA: dict = {
 SYSTEM_PROMPT = """Sos un analista de inversiones que le da su opinión a una persona sobre UNA acción \
 de EE.UU. Recibís un JSON con lo que calculó su app (FinanzIAs): precio y retornos, una señal \
 técnica agregada con sus indicadores, el régimen de mercado, soporte y resistencia, el consenso \
-de analistas y noticias recientes con un tono clasificado por un modelo local.
+de analistas, noticias recientes con un tono clasificado por un modelo local y, cuando hay, la \
+valuación y los fundamentales anuales de la empresa.
 
 Reglas:
 - Usá SOLO esos datos. No inventes cifras, noticias, resultados ni eventos que no estén. Si falta \
@@ -96,6 +99,10 @@ están validados. Pesalos con ese escepticismo.
 - Los retornos se miden contra cierres: "1d" es contra el cierre anterior. Si el bloque precio \
 dice que el mercado estaba abierto, el precio es intradiario (a la hora que indica) y el día \
 todavía no cerró. Las horas de las noticias están en hora del Este de EE.UU. (ET).
+- valuacion y fundamentales_anuales salen de los 10-K presentados a la SEC (EDGAR): son anuales, \
+por año fiscal. La app NO tiene el guidance de la empresa ni las cifras trimestrales: no los \
+anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bloque yfinance es \
+un dato de Yahoo, de otra fuente y sin verificar contra EDGAR.
 - Horizonte: de semanas a pocos meses.
 - COMPRAR = abrir o aumentar posición; MANTENER = no hacer nada; VENDER = reducir o cerrar si \
 la tiene, y no comprar si no la tiene.
@@ -172,6 +179,8 @@ def armar_datos(
     noticias: list | None = None,
     soporte_resistencia: dict | None = None,
     obtenido: datetime | None = None,
+    valuacion=None,
+    anuales: list[dict] | None = None,
 ) -> dict:
     """El resumen que se manda a Claude. **Puro**: todo llega por parámetro.
 
@@ -226,9 +235,126 @@ def armar_datos(
             "recomendaciones": (analyst.get("recommendations") or [])[:3],
             "precios_objetivo": analyst.get("price_targets"),
         }
+    v = bloque_valuacion(valuacion)
+    if v:
+        datos["valuacion"] = v
+    if anuales:
+        datos["fundamentales_anuales"] = anuales
+    yf_ = {
+        "pe_trailing": _num((company or {}).get("pe_ratio")),
+        "eps_trailing": _num((company or {}).get("eps")),
+        "beta": _num((company or {}).get("beta")),
+    }
+    if any(x is not None for x in yf_.values()):
+        datos["yfinance"] = yf_
     if noticias:
         datos["noticias"] = noticias[:MAX_NOTICIAS]
     return datos
+
+
+def _pct(x, nd: int = 1):
+    return None if x is None else _num(float(x) * 100, nd)
+
+
+def bloque_valuacion(v) -> dict | None:
+    """Lo que muestra la tarjeta de valuación (``analysis.valuation.Valuacion``), como datos (418).
+
+    Mismo objeto que lee ``ui/analysis/valuation_card.lineas_de``: lo que ve Chapa en la tarjeta y lo
+    que recibe Claude no pueden diferir. ``None`` si la tarjeta se calla.
+    """
+    if v is None:
+        return None
+    out: dict = {
+        "fuente": "EDGAR (10-K), lo presentado hasta hoy",
+        "ultimo_anio_fiscal": v.fin_ultimo_anio,
+        "eps_diluido": _num(v.eps),
+        "pe_con_ese_eps": _num(v.precio / v.eps, 1) if v.eps and v.eps > 0 else None,
+        "valor_libro_x_accion": _num(v.valor_libro_x_accion),
+        "graham": {"valor": _num(v.numero_graham), "margen_de_seguridad_pct": _pct(v.margen_graham)},
+        "buffettology": {
+            "crecimiento_eps_anual_pct": _pct(v.crecimiento),
+            "anios_crecimiento": v.anios_crecimiento,
+            "pe_historico_mediano": _num(v.pe_historico, 1),
+            "anios_pe": v.anios_pe,
+            "precio_en_10_anios": _num(v.precio_en_10),
+            "retorno_anual_esperado_pct": _pct(v.retorno_anual),
+            "precio_max_para_15_anual": _num(v.precio_max_objetivo),
+        },
+        "lynch": {"peg": _num(v.peg), "categoria": v.categoria, "motivo": v.motivo_categoria},
+    }
+    if v.calidad:
+        out["calidad"] = {
+            "puntaje_0_a_100": _num(v.calidad.get("puntaje"), 0),
+            "percentiles": {k: _num(p, 0) for k, p in (v.calidad.get("percentiles") or {}).items()},
+            "empresas_comparadas": v.calidad.get("n"),
+        }
+    if v.avisos:
+        out["avisos"] = list(v.avisos)
+    return out
+
+
+def anuales_de(ticker: str) -> list[dict]:
+    """``fundamentales_anuales`` del almacén local, sin red. Nunca levanta: sin datos, ``[]``.
+
+    Los splits salen de lo memoizado (``allow_network=False``): la valuación de la pestaña ya los
+    pidió con red al analizar el ticker.
+    """
+    try:
+        from data import fundamentos_pit as fp
+        from data.yahoo_finance import get_split_events
+
+        manana = (date.today() + timedelta(days=1)).isoformat()
+        return fundamentales_anuales(fp.cargar(ticker), manana, get_split_events(ticker, allow_network=False))
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception("Fundamentales anuales de %s para la opinión: fallaron", ticker)
+        return []
+
+
+def fundamentales_anuales(fund, fecha: str, splits=None, n: int = ANIOS_FUNDAMENTALES) -> list[dict]:
+    """Los últimos ``n`` años fiscales de EDGAR, en millones de USD y márgenes en % (418).
+
+    Del almacén point-in-time de la 382, con lo presentado antes de ``fecha``. El EPS va en la base
+    de acciones de hoy (``splits``), como en la valuación. Sin fundamentals, ``[]``.
+    """
+    if fund is None or getattr(fund, "extranjera", False):
+        return []
+    ventas = dict(fund.serie("revenue", fecha))
+    ganancia = dict(fund.serie("ganancia_neta", fecha))
+    bruta = dict(fund.serie("ganancia_bruta", fecha))
+    flujo = dict(fund.serie("flujo_operativo", fecha))
+    eps = dict(fund.serie("eps_diluido", fecha, splits))
+    fines = sorted(set(ventas) | set(ganancia))[-n:]
+
+    def millones(x):
+        return None if x is None else _num(x / 1e6, 0)
+
+    def margen(num, den):
+        return _num(num / den * 100, 1) if num is not None and den else None
+
+    out = []
+    for fin in fines:
+        r, g, b = ventas.get(fin), ganancia.get(fin), bruta.get(fin)
+        # La PRIMERA presentación: los 10-K siguientes repiten el año como comparativo, y con la
+        # última el año fiscal 2023 de MU decía «presentado 2025-10-03».
+        presentado = min(
+            (x.filed for x in fund.registros if x.end == fin and x.concepto in ("revenue", "ganancia_neta")),
+            default=None,
+        )
+        out.append(
+            {
+                "fin_anio_fiscal": fin,
+                "presentado_por_primera_vez": presentado,
+                "ventas_musd": millones(r),
+                "ganancia_neta_musd": millones(g),
+                "margen_bruto_pct": margen(b, r),
+                "margen_neto_pct": margen(g, r),
+                "eps_diluido": _num(eps.get(fin)),
+                "flujo_operativo_musd": millones(flujo.get(fin)),
+            }
+        )
+    return out
 
 
 def _zona_et():

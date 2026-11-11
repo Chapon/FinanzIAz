@@ -18,7 +18,14 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 341 — Tarea 418 (OPINION-CLAUDE-FUNDAMENTALES) CERRADA 2026-11-11 — Claude recibe la valuación de la tarjeta, cuatro años fiscales de EDGAR y el P/E de Yahoo rotulado; el prompt dice que la app no tiene guidance ni trimestres** (origen: las dos opiniones de MU del día; `version_datos` pasa a **3**).
+  - **`analysis/opinion_claude.py`:** `bloque_valuacion(v)` arma, del mismo `Valuacion` que lee `valuation_card.lineas_de`, Graham (valor y margen), *Buffettology* (crecimiento, PE histórico, precio a 10 años, retorno esperado, precio máximo para 15 %), Lynch (PEG y categoría), calidad (puntaje y percentiles) y avisos, más `pe_con_ese_eps`. `fundamentales_anuales(fund, fecha, splits)` da los últimos 4 años fiscales del almacén de la 382 (ventas, ganancia neta y flujo operativo en millones; márgenes bruto y neto en %; EPS en la base de acciones de hoy) con la fecha de su **primera** presentación. `anuales_de(ticker)` lo carga sin red (splits memoizados). Un bloque `yfinance` con `pe_trailing`, `eps_trailing` y `beta`, rotulado como de otra fuente. `ui/analysis_tab.py` le pasa la valuación y los anuales.
+  - **Un error mío, cazado contra datos reales:** la primera versión tomaba la presentación **más nueva** de cada año, y el año fiscal 2023 de MU salía *«presentado 2025-10-03»* (los 10-K siguientes lo repiten como comparativo). Pasa a la primera; con MU: 2023-10-06, 2024-10-04, 2025-10-03 y 2026-10-09.
+  - **Contra datos reales (MU, sin llamar a Claude):** EPS 74,33 del año fiscal cerrado el 2026-09-03, P/E 10,8 a 800, Graham 449,97 (margen −77,8 %), Lynch *recuperación* con PEG 0,15, calidad 69/100 entre 125; ventas 15.540 → 25.111 → 37.378 → 133.188 millones y margen bruto −9,1 % → 22,4 % → 39,8 % → 80,7 %. *Buffettology* sale sin proyección (el EPS fue negativo dentro de la ventana), igual que en la tarjeta.
+  - **Tests** `tests/test_opinion_fundamentales_t418.py` (10): cada número del bloque aparece, con el formato de la tarjeta, en `lineas_de` del mismo objeto; sin tarjeta no hay bloque; márgenes a mano; la fecha es la primera presentación con un comparativo posterior en los datos; lo presentado después del corte no aparece; el EPS con un split posterior se divide; el prompt nombra guidance, trimestrales, EDGAR y `datos_faltantes`. **Mutaciones** (restauradas desde copia, patrón contado una vez): Graham con otro campo, la fecha del comparativo, el margen bruto con la ganancia neta, el EPS sin splits y el P/E de Yahoo con el EPS: las cinco dan rojo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -543,6 +550,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-11h** al cerrar la **424**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11i** al anotar la **425**, la **426** y la **427**, los faltantes nuevos de la segunda opinión de MU del día (que ya llegó con la 417: sabía que el precio era intradiario). La 425 y la 426 entran detrás de la 419 porque son chicas y del mismo bloque; la 427 detrás de la 420, porque es la única que agrega espera al pedido y hay que medirla. El orden queda **418 → 419 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11j** al cerrar la **418**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **419 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -2047,7 +2056,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Tests: con fecha futura, aparece con sus días; con fecha ya pasada en el cache, **no** se manda como próxima (el caso de MU: la fila del cache dice 2026-09-23); sin dato, `null`. Mutación sobre el filtro de fecha pasada. Sube `version_datos` (la 417). Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** la 417.
 
-### 418. OPINION-CLAUDE-FUNDAMENTALES — Claude pide ingresos, márgenes y P/E, y la misma pestaña ya los calcula (la tarjeta de valuación de la 383) sin mandárselos  ·  origen: opinión de MU del 2026-11-11 (`datos_faltantes`; ya estaba en la del 2026-10-06) · severidad **MEDIA** (lo pide en cada opinión, y es el dato más barato de llenar) · display-only
+### 418. ~~OPINION-CLAUDE-FUNDAMENTALES — Claude pide ingresos, márgenes y P/E, y la misma pestaña ya los calcula (la tarjeta de valuación de la 383) sin mandárselos~~ · **CERRADA 2026-11-11 — valuación de la tarjeta, cuatro años de EDGAR y el P/E de Yahoo rotulado; el prompt dice que no hay guidance ni trimestres** ·  origen: opinión de MU del 2026-11-11 (`datos_faltantes`; ya estaba en la del 2026-10-06) · severidad **MEDIA** (lo pide en cada opinión, y es el dato más barato de llenar) · display-only
 
 - **Qué hay.** `ui/analysis_tab._on_analysis_done` recibe `valuacion` (`analysis/valuation.valuar`: Graham, retorno de *Buffettology*, margen de seguridad, PEG y categoría de Lynch, sobre los fundamentals point-in-time de EDGAR de la 382) y `company` trae `pe_ratio`, `eps` y `beta` de yfinance. `armar_datos` sólo toma `name` y `sector`.
 - **Alcance.** (1) Pasarle a `armar_datos` la valuación (los mismos números que muestra la tarjeta, y nada si la tarjeta se calla) y una serie anual corta de EDGAR: revenue, ganancia neta, margen bruto y neto y EPS diluido de los últimos 3–4 años, con la fecha de presentación del último. (2) P/E y beta de yfinance rotulados con su fuente (la decisión de datos del track prefiere EDGAR). (3) En el `SYSTEM_PROMPT`: la app **no** tiene el *guidance* ni las cifras del último trimestre (EDGAR es anual), para que no lo anote como faltante.
