@@ -18,14 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 342 — Tarea 419 (OPINION-CLAUDE-PROXIMO-BALANCE) CERRADA 2026-11-11 — Claude recibe el próximo balance con sus días, nunca una fecha pasada como próxima, y las sorpresas de EPS de los últimos cuatro trimestres con su aviso** (origen: las dos opiniones de MU del día; `version_datos` pasa a **4**).
-  - **La trampa:** `get_next_earnings_date` devuelve **a propósito** la última fecha pasada cuando no hay una futura (el Gate 6 la usa para la ventana post-balance). `bloque_balance` la separa: futura u hoy → `proximo` y `dias_hasta`; pasada → `proximo: null`, `ultimo_conocido` y `dias_desde`.
-  - **Sorpresas:** las filas de `collect_yfinance_earnings_history` (las mismas del surprise score), las 4 más nuevas, con `sorpresa_pct = (reportado − estimado) / |estimado|` (con el valor absoluto, para que un estimado negativo no dé vuelta el signo; estimado cero → `null`), y un `aviso` de que el estimado es la vista actual de Yahoo y no el consenso de aquel día (la advertencia del propio colector). `balance_de` le pone tope de tiempo al colector, que no tenía uno propio, y nunca levanta.
-  - **Contra datos reales (MU):** próximo **2026-12-23, en 42 días**; sorpresas +5,0 %, +21,4 %, +33,2 % y +20,7 % (sep, jun y mar de 2026 y dic de 2025); 2,8 s, que se suman al pedido.
-  - **Tests** `tests/test_opinion_balance_t419.py` (9), con el caso de MU (fecha del cache 2026-09-23 al 2026-11-11 → `ultimo_conocido`, 49 días). **Mutaciones** (restauradas desde copia): la fecha pasada como próxima, la sorpresa sin valor absoluto y sin tope de trimestres: las tres dan rojo.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -554,6 +547,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-11j** al cerrar la **418**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **419 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11k** al cerrar la **419**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11l** porque el done del hash de la 419 dio rojo por dos tests de tiempos de la GUI con la máquina cargada: entra la **428** primera, por el mismo criterio que la 424 (chica, y protege el done). El orden queda **428 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -1993,6 +1988,14 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 428. TECHO-GUI-ABSOLUTO-FLAKY — `test_referencia_en_hilo_t392` exige que la GUI se trabe menos de 0,2 s, absolutos: con la máquina ocupada dio 0,30 y 0,35 s y puso rojo el done sin defecto  ·  origen: el done del hash de la **419** (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
+
+- **Qué pasó.** En el modo sin estado vivo, `test_tildar_la_paper_no_traba_la_gui_y_la_referencia_llega_despues` (0,35 s) y `test_volver_a_home_el_mismo_dia_no_la_recalcula` (0,30 s) contra `_TECHO_GUI_S = 0.2`, con una referencia lenta a propósito de `_DEMORA_S = 1.0`. Esa corrida de la suite tardó **16:50** contra ~6 min de las demás del día: la máquina estaba cargada (la primera suite de la misma corrida, 8:09, también lenta). El mismo código había pasado cinco dones seguidos ese día.
+- **Por qué importa.** Lo que el test quiere probar —que la referencia no corre en el hilo de la GUI— se distingue con mucho margen: si corriera en el hilo, la traba sería ≥ 1 s. Un techo de 0,2 s absolutos mide además la velocidad de la máquina.
+- **Alcance.** Que el criterio sea relativo a la demora (por ejemplo, traba < la mitad de `_DEMORA_S`, o medir contra una llamada en el hilo como control) o que la demora crezca para que el techo tenga margen, sin perder la distinción hilo / no hilo.
+- **Kill-criteria.** Mutación: correr la referencia en el hilo de la GUI tiene que seguir dando rojo; y el test tiene que pasar con la máquina cargada (simular con un `time.sleep` extra de 0,3 s dentro del tramo medido que no sea la referencia). Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna.
+
 ### 427. OPINION-CLAUDE-CLASIFICAR-A-DEMANDA — Las noticias del día llegan a Claude con la heurística provisional (12 de 15 en la opinión de MU), porque qwen sólo clasifica en la corrida diaria  ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«clasificación del tono hecha por el modelo, no por la heurística provisional»*) · severidad **BAJA** · display-only
 
 - **Qué pasa.** El harvest horario no clasifica (sin GPU, a propósito: `paper_trading/scheduler.py`); qwen corre en el pipeline diario. Así que lo publicado en el día va a la opinión con `classify_missing` (la heurística de la 406), que la 413 midió floja: mismo tipo que qwen en el 40,3 % y tono no neutro en el 15,0 % contra el 44,0 %. Caso concreto: *«Micron Stocks Jump 11.2% as Memory Rebound Meets $1 Billion Anthropic Placement»* salió `other`, tono **0**. En la DB, 329 noticias del último día sin clasificar.
@@ -2051,7 +2054,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un universo falso donde el par de la misma industria entra y uno de otra no (mutación: comparar por `sector` en vez de `industry` lo pone rojo; elegir el caso para que sector e industria **difieran**). El bloque se calla sin pares. Sube `version_datos` (la 417). Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** la 417.
 
-### 419. ~~OPINION-CLAUDE-PROXIMO-BALANCE — Claude pide la fecha del próximo balance, y la app ya la baja para el gate de earnings~~ · **CERRADA 2026-11-11 — próximo balance con sus días (nunca una fecha pasada como próxima) y las últimas cuatro sorpresas de EPS** ·  origen: opinión de MU del 2026-11-11 (`datos_faltantes`; también la del 2026-10-06: *«la noticia sobre "esta fecha" no la especifica»*) · severidad **BAJA** · display-only
+### 419. ~~OPINION-CLAUDE-PROXIMO-BALANCE — Claude pide la fecha del próximo balance, y la app ya la baja para el gate de earnings~~ · **CERRADA 2026-11-11 — próximo balance con sus días (nunca una fecha pasada como próxima) y las últimas cuatro sorpresas de EPS** (`564f2f7`) · **movida a *Hecho reciente* con el detalle** ·  origen: opinión de MU del 2026-11-11 (`datos_faltantes`; también la del 2026-10-06: *«la noticia sobre "esta fecha" no la especifica»*) · severidad **BAJA** · display-only
 
 - **Qué hay.** `data/yahoo_finance.get_next_earnings_date` (cache `earnings_cache` con TTL de 24 h, *fail-open*) la usa el Gate 6 del motor; y `data/news_sources` baja con `get_earnings_dates` las sorpresas de EPS de los últimos trimestres (`analysis/surprise_score`, `surprise_profiles.json`). Nada de eso llega a `armar_datos`.
 - **Alcance.** Un bloque `balance` con la fecha del próximo reporte y los días que faltan (o `null` con *«desconocida»*, nunca una fecha pasada), y las sorpresas de EPS de los últimos 4 trimestres (estimado, reportado, %). Se arma en el worker de la tarjeta, como las noticias, para no frenar la pestaña.
@@ -4857,6 +4860,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 342 — Tarea 419 (OPINION-CLAUDE-PROXIMO-BALANCE) CERRADA 2026-11-11 — Claude recibe el próximo balance con sus días, nunca una fecha pasada como próxima, y las sorpresas de EPS de los últimos cuatro trimestres con su aviso** (origen: las dos opiniones de MU del día; `version_datos` pasa a **4**).
+  - **La trampa:** `get_next_earnings_date` devuelve **a propósito** la última fecha pasada cuando no hay una futura (el Gate 6 la usa para la ventana post-balance). `bloque_balance` la separa: futura u hoy → `proximo` y `dias_hasta`; pasada → `proximo: null`, `ultimo_conocido` y `dias_desde`.
+  - **Sorpresas:** las filas de `collect_yfinance_earnings_history` (las mismas del surprise score), las 4 más nuevas, con `sorpresa_pct = (reportado − estimado) / |estimado|` (con el valor absoluto, para que un estimado negativo no dé vuelta el signo; estimado cero → `null`), y un `aviso` de que el estimado es la vista actual de Yahoo y no el consenso de aquel día (la advertencia del propio colector). `balance_de` le pone tope de tiempo al colector, que no tenía uno propio, y nunca levanta.
+  - **Contra datos reales (MU):** próximo **2026-12-23, en 42 días**; sorpresas +5,0 %, +21,4 %, +33,2 % y +20,7 % (sep, jun y mar de 2026 y dic de 2025); 2,8 s, que se suman al pedido.
+  - **Tests** `tests/test_opinion_balance_t419.py` (9), con el caso de MU (fecha del cache 2026-09-23 al 2026-11-11 → `ultimo_conocido`, 49 días). **Mutaciones** (restauradas desde copia): la fecha pasada como próxima, la sorpresa sin valor absoluto y sin tope de trimestres: las tres dan rojo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `564f2f7` VERDE.
 - **WIP 341 — Tarea 418 (OPINION-CLAUDE-FUNDAMENTALES) CERRADA 2026-11-11 — Claude recibe la valuación de la tarjeta, cuatro años fiscales de EDGAR y el P/E de Yahoo rotulado; el prompt dice que la app no tiene guidance ni trimestres** (origen: las dos opiniones de MU del día; `version_datos` pasa a **3**).
   - **`analysis/opinion_claude.py`:** `bloque_valuacion(v)` arma, del mismo `Valuacion` que lee `valuation_card.lineas_de`, Graham (valor y margen), *Buffettology* (crecimiento, PE histórico, precio a 10 años, retorno esperado, precio máximo para 15 %), Lynch (PEG y categoría), calidad (puntaje y percentiles) y avisos, más `pe_con_ese_eps`. `fundamentales_anuales(fund, fecha, splits)` da los últimos 4 años fiscales del almacén de la 382 (ventas, ganancia neta y flujo operativo en millones; márgenes bruto y neto en %; EPS en la base de acciones de hoy) con la fecha de su **primera** presentación. `anuales_de(ticker)` lo carga sin red (splits memoizados). Un bloque `yfinance` con `pe_trailing`, `eps_trailing` y `beta`, rotulado como de otra fuente. `ui/analysis_tab.py` le pasa la valuación y los anuales.
   - **Un error mío, cazado contra datos reales:** la primera versión tomaba la presentación **más nueva** de cada año, y el año fiscal 2023 de MU salía *«presentado 2025-10-03»* (los 10-K siguientes lo repiten como comparativo). Pasa a la primera; con MU: 2023-10-06, 2024-10-04, 2025-10-03 y 2026-10-09.
