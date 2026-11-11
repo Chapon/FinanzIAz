@@ -19,7 +19,11 @@ Si pasan todos, confirmá el conteo (`NNN passed, M skipped`) **y** que ruff sal
 **y** que el modo sin estado vivo pasó. Ese último corre la misma suite con `HOME` apuntando a
 un directorio vacío, o sea en la condición del CI: es el que caza un test que lea
 `~/.finanzias/settings.json` —que en la máquina de Chapa **existe**— y por lo tanto pase acá y
-falle allá. Su conteo normal difiere en 1 skip del primero, y eso es correcto: el test que
-compara contra el settings vivo se saltea cuando no hay con qué comparar.
+falle allá. Su conteo normal tiene **3** skips más que el primero (y 3 passed menos), y eso
+es correcto: son los tests que comparan contra el settings vivo y se saltean con el motivo
+*«sin settings.json vivo en este entorno»* cuando no hay con qué comparar. Verificalo por el
+motivo, no sólo por el número: un skip de más con **otro** motivo es para mirar. (Decía «1
+skip»; eran tres desde hace rato, y lo cazó el done de la tarea 417 — tarea 422. Ese número lo
+fija `tests/test_test_md_conteo_de_skips_t422.py` contra los `pytest.skip` de la suite.)
 Si ruff falla, decilo aparte de la suite: se arregla con `ruff check --fix .` + `ruff format .`,
 revisando el diff. Si hay fallos, mostrá los tests que fallaron y un diagnóstico breve de la causa probable. Recordá: el entorno real es Windows + el `.venv` del repo (tarea 401) — un verde acá no equivale a "done" hasta correrlo en Windows (ver `CLAUDE.md`).

@@ -18,7 +18,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 339 — Tarea 422 (TEST-SKILL-CONTEO-DE-SKIPS) CERRADA 2026-11-11 — `/test` anuncia los 3 skips de más del modo sin estado vivo, por su motivo, y un test fija el número contra la suite** (origen: el done de la 417).
+  - **`.claude/commands/test.md`:** decía *«difiere en 1 skip»*; ahora dice **3** (y 3 passed menos), nombra el motivo *«sin settings.json vivo en este entorno»* y pide verificar por el motivo: un skip de más con otro motivo es para mirar.
+  - **`tests/test_test_md_conteo_de_skips_t422.py`:** el número de `test.md` tiene que ser igual a la cantidad de `pytest.skip("<motivo>")` de `tests/` (hoy 130, 181 y 185), buscados sobre el texto entero para que un `skip(` partido en dos líneas no se escape —la primera versión era por línea y su propio test de control lo aceptaba sin decirlo—. **Mutación** (restaurada desde copia): volver a «1» da rojo. Si se agrega un cuarto test con ese skip, el guard pide actualizar `test.md`.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -537,6 +542,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-11e** porque el done que anotaba la 422 y la 423 dio rojo por un corte de DNS de segundos en un test del cortafuegos: entra la **424** detrás de la 422, por el mismo criterio (chica, y protege el done). El orden queda **423 → 422 → 424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11f** al cerrar la **423**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **422 → 424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11g** al cerrar la **422**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -1990,7 +1997,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un CI verde con el cambio, y la anotación del paso verificada forzando un fallo en una rama (o un paquete inexistente en un run de prueba) que muestre el error de `apt` en las anotaciones. Los cuatro comandos en verde.
 - **Dependencias:** ninguna.
 
-### 422. TEST-SKILL-CONTEO-DE-SKIPS — `/test` dice que el modo sin estado vivo difiere en **1** skip del primero, y hoy difiere en **3**  ·  origen: el done de la **417** (2026-11-11) · severidad **BAJA** (un claim de skill que manda a desconfiar de un verde correcto, o a aceptar un skip de más)
+### 422. ~~TEST-SKILL-CONTEO-DE-SKIPS — `/test` dice que el modo sin estado vivo difiere en **1** skip del primero, y hoy difiere en **3**~~ · **CERRADA 2026-11-11 — dice 3, nombra el motivo, y un test lo fija contra la suite** ·  origen: el done de la **417** (2026-11-11) · severidad **BAJA** (un claim de skill que manda a desconfiar de un verde correcto, o a aceptar un skip de más)
 
 - **Qué pasa.** `.claude/commands/test.md:22`: *«Su conteo normal difiere en 1 skip del primero… el test que compara contra el settings vivo se saltea cuando no hay con qué comparar»*. En el done de la 417: **4894 passed, 2 skipped** contra **4891 passed, 5 skipped**; los tres de más dicen *«sin settings.json vivo en este entorno»*: `test_espejos_vivos_t130.py:186`, `test_killonly_no_existe_t181.py:100` y `test_espejos_direccion_faltante_t185.py:341`. El texto quedó del tiempo en que era uno solo.
 - **Alcance.** Corregir el número y nombrar los tres, o mejor, que el texto no dé un número que se desactualiza y diga cómo verificar (los skips de más tienen que ser todos *«sin settings.json vivo»*). Si algún guard de claims cubre los comandos, que cubra éste.
