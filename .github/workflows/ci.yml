@@ -20,7 +20,7 @@ permissions:
 jobs:
   lint:
     name: lint + format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # tarea 423: fijo, ver el job pytest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
 
   typecheck:
     name: mypy (best-effort)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # tarea 423: fijo, ver el job pytest
     timeout-minutes: 15
     # Best-effort: don't fail the whole pipeline yet — we're migrating
     # to type hints incrementally. Flip ``continue-on-error`` to ``false``
@@ -85,7 +85,7 @@ jobs:
 
   audit:
     name: security audit (pip-audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # tarea 423: fijo, ver el job pytest
     timeout-minutes: 15
     continue-on-error: true   # advisory only, doesn't block merges
     steps:
@@ -129,7 +129,12 @@ jobs:
 
   tests:
     name: pytest
-    runs-on: ubuntu-latest
+    # Tarea 423: fijo, no `ubuntu-latest`. Desde el 2026-10-19 esa etiqueta migra de a poco a
+    # Ubuntu 26, y el 2026-11-11 este job murió dos veces seguidas en el `apt-get` de abajo
+    # (exit 100) sin correr un test, después de 28 corridas verdes. Mismo criterio que el lock
+    # de la 391: el entorno no cambia debajo del código sin que nadie lo decida. Pasar a 26 es
+    # cambiar esta línea en las cuatro jobs, con el paso de las libs de Qt verificado allá.
+    runs-on: ubuntu-24.04
     # Tarea 318: sin techo, un cuelgue deja el run in_progress hasta 6 h (el default de
     # GitHub) y nadie tiene veredicto. Tarda ~4 min; el run más lento medido, 21 (2026-10-05).
     timeout-minutes: 45
@@ -156,10 +161,24 @@ jobs:
         # de plataforma ``xcb``, y por eso ``QT_QPA_PLATFORM=offscreen`` nunca
         # alcanzó. Esto falla al **cargar la librería compartida**, antes de que Qt
         # llegue a elegir plataforma; ``offscreen`` sólo importa después. Tarea 65.
+        #
+        # Si falla, el final de la salida de apt va como ``::error::`` (tarea 423): los logs
+        # piden token y la única pista del 2026-11-11 fue «exit code 100».
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libegl1 libgl1 libxkbcommon0 libdbus-1-3
+          set +e
+          set -o pipefail
+          {
+            sudo apt-get update \
+              && sudo apt-get install -y --no-install-recommends \
+                libegl1 libgl1 libxkbcommon0 libdbus-1-3
+          } 2>&1 | tee apt-output.txt
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            msg=$(tail -c 3500 apt-output.txt \
+              | python3 -c 'import sys;print(sys.stdin.read().replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+            echo "::error title=apt-get de las libs de Qt salió con $code::$msg"
+          fi
+          exit $code
       - name: Install
         run: |
           python -m pip install --upgrade pip
