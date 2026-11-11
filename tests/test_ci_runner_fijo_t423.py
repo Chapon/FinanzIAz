@@ -56,3 +56,12 @@ def test_el_paso_de_apt_anota_su_error_y_propaga_el_codigo():
     assert "tee apt-output.txt" in bloque
     assert re.search(r'echo "::error title=apt-get[^"]*\$code::\$msg"', bloque)
     assert bloque.rstrip().endswith("exit $code"), "el paso tiene que seguir fallando"
+
+
+def test_el_paso_de_apt_reintenta_porque_el_rojo_era_DNS_del_runner():
+    # La anotación de 4a595ab mostró la causa: `Temporary failure resolving
+    # 'azure.archive.ubuntu.com'`, también en 24.04. Un corte así se reintenta.
+    bloque = paso(_CI.read_text(encoding="utf-8"), "Qt shared libs (headless)")
+    assert re.search(r"for intento in 1 2 3; do", bloque)
+    assert '[ "$code" -eq 0 ] && break' in bloque
+    assert bloque.count("Acquire::Retries=") == 2, "update e install, los dos"
