@@ -107,7 +107,38 @@ def test_requests_de_verdad_queda_bloqueado():
 
     with pytest.raises(Exception) as e:
         requests.get("https://finnhub.io/api/v1/quote", timeout=5)
+    if not _por_el_cortafuegos(e.value) and _por_falta_de_dns(e.value):
+        # Tarea 424: `urllib3` resuelve el nombre ANTES del `connect`, y el cortafuegos deja
+        # salir el DNS a propósito. Sin DNS el pedido muere antes del corte: no se probó nada,
+        # y eso no es ni verde ni rojo. Un corte de segundos le costó al done una corrida.
+        pytest.skip(f"sin DNS: no se pudo probar el corte ({type(e.value).__name__})")
     assert _por_el_cortafuegos(e.value), f"{type(e.value).__name__}: {e.value}"
+
+
+def test_sin_dns_requests_cae_en_el_skip_y_no_pasa_por_bloqueado(monkeypatch):
+    """La rama del skip de arriba, con el fallo de resolución provocado (tarea 424).
+
+    Las dos mitades importan: que un ``gaierror`` se reconozca como falta de DNS, y que
+    **no** se cuente como bloqueo del cortafuegos —eso sería el verde vacío que la 209
+    vino a evitar—.
+    """
+    import requests
+
+    def sin_dns(*a, **k):
+        raise socket.gaierror(11001, "getaddrinfo failed")
+
+    monkeypatch.setattr(socket, "getaddrinfo", sin_dns)
+    with pytest.raises(Exception) as e:
+        requests.get("https://finnhub.io/api/v1/quote", timeout=5)
+    assert _por_falta_de_dns(e.value), f"{type(e.value).__name__}: {e.value}"
+    assert not _por_el_cortafuegos(e.value)
+
+
+def test_un_bloqueo_del_cortafuegos_no_se_confunde_con_falta_de_dns():
+    s = socket.socket()
+    with pytest.raises(RedBloqueadaEnLaSuite) as e:
+        s.connect(("finnhub.io", 443))
+    assert not _por_falta_de_dns(e.value)
 
 
 def test_curl_cffi_queda_bloqueado():
@@ -160,6 +191,18 @@ def _por_el_cortafuegos(e: BaseException) -> bool:
         if isinstance(cur, RedBloqueadaEnLaSuite):
             return True
         if "RedBloqueadaEnLaSuite" in str(cur) or "tarea 209" in str(cur):
+            return True
+        cur = cur.__cause__ or cur.__context__
+        vistos += 1
+    return False
+
+
+def _por_falta_de_dns(e: BaseException) -> bool:
+    """¿El pedido murió resolviendo el nombre? (tarea 424) ``socket.gaierror`` en la cadena,
+    o el ``NameResolutionError`` con que ``urllib3`` lo envuelve."""
+    vistos, cur = 0, e
+    while cur is not None and vistos < 12:
+        if isinstance(cur, socket.gaierror) or type(cur).__name__ == "NameResolutionError":
             return True
         cur = cur.__cause__ or cur.__context__
         vistos += 1

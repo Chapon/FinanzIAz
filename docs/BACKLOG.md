@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 340 — Tarea 424 (CORTAFUEGOS-TEST-ROJO-SIN-DNS) CERRADA 2026-11-11 — sin DNS, el test de `requests` del cortafuegos se saltea con el motivo en vez de dar rojo; con DNS sigue exigiendo el corte** (origen: el done de la 422/423, que dio rojo por un corte de DNS de segundos).
+  - **Alcance real:** de los tests de `tests/test_cortafuegos_de_red_t209.py`, sólo el de `requests` tenía el hueco: `urllib3` resuelve el nombre **antes** del `connect`. Los de `socket` (`connect`, `connect_ex`, TLS, bitácora) se cortan con el nombre sin resolver, y `curl_cffi`/`yfinance` se cortan en su propia capa; no dependen del DNS.
+  - **Cambio:** `_por_falta_de_dns` (un `socket.gaierror` o el `NameResolutionError` de `urllib3` en la cadena de causas) y, si la excepción no es del cortafuegos y es por DNS, `pytest.skip("sin DNS: no se pudo probar el corte …")`. `_por_el_cortafuegos` no cambia: la falta de DNS **no** cuenta como bloqueo.
+  - **Tests nuevos (2):** con `getaddrinfo` tirando `gaierror`, `requests` cae en *falta de DNS* y **no** en *bloqueado*; y un bloqueo real del cortafuegos no se confunde con falta de DNS. **Con `getaddrinfo` roto para toda la sesión** (plugin ad hoc), el test de `requests` sale `SKIPPED … sin DNS: no se pudo probar el corte (ConnectionError)`. **Mutaciones** (restauradas desde copia): DNS nunca reconocido → rojo; *cualquier `OSError` cuenta como bloqueo* → rojo. Una primera mutación (*cualquier `ConnectionError`*) dio verde y era **no-op**: en esa cadena no hay ningún `ConnectionError` del builtin (`requests` usa su propia clase y `gaierror` es `OSError`); se reemplazó por la de `OSError`, que sí cambia la conducta.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -539,6 +545,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-11f** al cerrar la **423**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **422 → 424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11g** al cerrar la **422**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11h** al cerrar la **424**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -1978,7 +1986,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 424. CORTAFUEGOS-TEST-ROJO-SIN-DNS — Un corte de DNS de segundos pone rojo el done: `test_requests_de_verdad_queda_bloqueado` falla con `NameResolutionError` en vez de saltearse  ·  origen: el done de la 422/423 (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
+### 424. ~~CORTAFUEGOS-TEST-ROJO-SIN-DNS — Un corte de DNS de segundos pone rojo el done: `test_requests_de_verdad_queda_bloqueado` falla con `NameResolutionError` en vez de saltearse~~ · **CERRADA 2026-11-11 — sin DNS se saltea con el motivo; la falta de DNS no cuenta como bloqueo** ·  origen: el done de la 422/423 (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
 
 - **Qué pasó.** En el modo sin estado vivo, `tests/test_cortafuegos_de_red_t209.py::test_requests_de_verdad_queda_bloqueado` dio `AssertionError: ConnectionError … Failed to resolve 'finnhub.io' ([Errno 11001] getaddrinfo failed)`; la primera suite de la misma corrida había pasado y un minuto después `nslookup finnhub.io` resolvía. El cortafuegos corta en `connect` y deja salir el DNS a propósito (su docstring), así que sin DNS el pedido muere **antes** de llegar al corte. `_por_el_cortafuegos` hace bien en no aceptar eso como un bloqueo —sería un verde vacío, que es lo que la 209 quería evitar—, pero el resultado es un **rojo** que no dice nada del código.
 - **Alcance.** Si la cadena de causas es un fallo de resolución (`socket.gaierror` / `NameResolutionError`) y no del cortafuegos, `pytest.skip` con el motivo (*«sin DNS: no se pudo probar el corte»*), no rojo ni verde. Lo mismo en los hermanos (`curl_cffi`, `yfinance`) si tienen el mismo hueco.
