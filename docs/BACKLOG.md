@@ -18,13 +18,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
-
-- **WIP 340 — Tarea 424 (CORTAFUEGOS-TEST-ROJO-SIN-DNS) CERRADA 2026-11-11 — sin DNS, el test de `requests` del cortafuegos se saltea con el motivo en vez de dar rojo; con DNS sigue exigiendo el corte** (origen: el done de la 422/423, que dio rojo por un corte de DNS de segundos).
-  - **Alcance real:** de los tests de `tests/test_cortafuegos_de_red_t209.py`, sólo el de `requests` tenía el hueco: `urllib3` resuelve el nombre **antes** del `connect`. Los de `socket` (`connect`, `connect_ex`, TLS, bitácora) se cortan con el nombre sin resolver, y `curl_cffi`/`yfinance` se cortan en su propia capa; no dependen del DNS.
-  - **Cambio:** `_por_falta_de_dns` (un `socket.gaierror` o el `NameResolutionError` de `urllib3` en la cadena de causas) y, si la excepción no es del cortafuegos y es por DNS, `pytest.skip("sin DNS: no se pudo probar el corte …")`. `_por_el_cortafuegos` no cambia: la falta de DNS **no** cuenta como bloqueo.
-  - **Tests nuevos (2):** con `getaddrinfo` tirando `gaierror`, `requests` cae en *falta de DNS* y **no** en *bloqueado*; y un bloqueo real del cortafuegos no se confunde con falta de DNS. **Con `getaddrinfo` roto para toda la sesión** (plugin ad hoc), el test de `requests` sale `SKIPPED … sin DNS: no se pudo probar el corte (ConnectionError)`. **Mutaciones** (restauradas desde copia): DNS nunca reconocido → rojo; *cualquier `OSError` cuenta como bloqueo* → rojo. Una primera mutación (*cualquier `ConnectionError`*) dio verde y era **no-op**: en esa cadena no hay ningún `ConnectionError` del builtin (`requests` usa su propia clase y `gaierror` es `OSError`); se reemplazó por la de `OSError`, que sí cambia la conducta.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -547,6 +541,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-11g** al cerrar la **422**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **424 → 418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11h** al cerrar la **424**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **418 → 419 → 421 → 420 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11i** al anotar la **425**, la **426** y la **427**, los faltantes nuevos de la segunda opinión de MU del día (que ya llegó con la 417: sabía que el precio era intradiario). La 425 y la 426 entran detrás de la 419 porque son chicas y del mismo bloque; la 427 detrás de la 420, porque es la única que agrega espera al pedido y hay que medirla. El orden queda **418 → 419 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -1986,7 +1982,29 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 424. ~~CORTAFUEGOS-TEST-ROJO-SIN-DNS — Un corte de DNS de segundos pone rojo el done: `test_requests_de_verdad_queda_bloqueado` falla con `NameResolutionError` en vez de saltearse~~ · **CERRADA 2026-11-11 — sin DNS se saltea con el motivo; la falta de DNS no cuenta como bloqueo** ·  origen: el done de la 422/423 (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
+### 427. OPINION-CLAUDE-CLASIFICAR-A-DEMANDA — Las noticias del día llegan a Claude con la heurística provisional (12 de 15 en la opinión de MU), porque qwen sólo clasifica en la corrida diaria  ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«clasificación del tono hecha por el modelo, no por la heurística provisional»*) · severidad **BAJA** · display-only
+
+- **Qué pasa.** El harvest horario no clasifica (sin GPU, a propósito: `paper_trading/scheduler.py`); qwen corre en el pipeline diario. Así que lo publicado en el día va a la opinión con `classify_missing` (la heurística de la 406), que la 413 midió floja: mismo tipo que qwen en el 40,3 % y tono no neutro en el 15,0 % contra el 44,0 %. Caso concreto: *«Micron Stocks Jump 11.2% as Memory Rebound Meets $1 Billion Anthropic Placement»* salió `other`, tono **0**. En la DB, 329 noticias del último día sin clasificar.
+- **Alcance.** Al pedir la opinión, clasificar con qwen **sólo** las ≤ 15 noticias que se mandan y que no tienen clasificación de qwen, y guardar el resultado (así la pestaña Noticias también lo aprovecha). Con tope de tiempo: si qwen no está o se pasa (≈ 3 s por noticia, 413), se manda la heurística como hoy, rotulada. Medir cuánto se alarga el pedido (hoy ~15 s).
+- **Kill-criteria.** Tests: sin qwen disponible, sale la heurística rotulada y el pedido no falla; con un clasificador falso, las provisionales pasan a `classified_by` del modelo y quedan guardadas; el tope de tiempo corta (mutación sobre el tope). Medición en vivo del tiempo con MU. Sube `version_datos`. Los cuatro comandos en verde y el CI del commit en verde.
+- **Relación:** la **415**/**416** deciden qué hacer con la clasificación diaria; ésta es acotada a lo que se manda a Claude y no depende de esa decisión.
+- **Dependencias:** la 417 (`version_datos`).
+
+### 426. OPINION-CLAUDE-RESUMEN-DE-NOTICIAS — Claude pide detalles de las noticias: se le manda sólo el título, y la DB tiene un resumen para las de Finnhub  ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«detalles de la noticia de Anthropic y de la noticia del retiro en el directorio»*) · severidad **BAJA** · display-only
+
+- **Qué hay.** `news_events.content`: en los últimos 7 días, 8.080 de 12.717 noticias traen texto (~200 caracteres; Finnhub/Yahoo 207, Benzinga 137, SeekingAlpha 123). Las de **`yfinance:search` (4.238) vienen vacías**, y las dos que pidió Claude son de esa fuente: para ésas no hay detalle en la app. `noticias_recientes` no manda `content` para ninguna.
+- **Alcance.** Agregar `resumen` (recortado a ~300 caracteres) cuando hay texto, y `resumen: null` cuando no, con una línea en el `SYSTEM_PROMPT` que diga que algunas fuentes sólo traen el título, para que no lo anote como faltante cada vez.
+- **Kill-criteria.** Tests: con `content` largo se recorta, vacío o `None` da `null`; el JSON sigue entrando en lo que se manda (medir el tamaño con 15 noticias). Sube `version_datos`. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** la 417 (`version_datos`).
+
+### 425. OPINION-CLAUDE-VOLUMEN — Claude pide el volumen y nunca se le manda; y con el mercado abierto pide «el cierre de hoy», que todavía no existe  ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«precio y volumen al cierre de hoy (el dato es intradiario)»*) · severidad **BAJA** · display-only
+
+- **Qué pasa.** Con la 417, Claude ya sabe que el precio era intradiario (`precio_consultado: 13:13 ET`, `1d` +13,7 %): la mitad del faltante es pedir un cierre que no existe. La otra mitad es real: `armar_datos` no manda volumen, y el `df` lo tiene (`Volume`).
+- **Alcance.** Un bloque `volumen` con el de la última barra, el promedio de 20 ruedas **sin contar la última**, y la relación entre los dos; si la barra es intradiaria, decir que el volumen es parcial (a esa hora) para que la relación no se lea como la de un día entero. En el `SYSTEM_PROMPT`: con el mercado abierto, el cierre del día no existe todavía; que no lo anote como faltante.
+- **Kill-criteria.** Tests puros: el promedio excluye la última barra (caso donde incluirla cambia el número; mutación sobre el corte), la marca de parcial sale sólo con `mercado_abierto`. Sube `version_datos`. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** la 417.
+
+### 424. ~~CORTAFUEGOS-TEST-ROJO-SIN-DNS — Un corte de DNS de segundos pone rojo el done: `test_requests_de_verdad_queda_bloqueado` falla con `NameResolutionError` en vez de saltearse~~ · **CERRADA 2026-11-11 — sin DNS se saltea con el motivo; la falta de DNS no cuenta como bloqueo** (`f4cd4bd`) · **movida a *Hecho reciente* con el detalle** ·  origen: el done de la 422/423 (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
 
 - **Qué pasó.** En el modo sin estado vivo, `tests/test_cortafuegos_de_red_t209.py::test_requests_de_verdad_queda_bloqueado` dio `AssertionError: ConnectionError … Failed to resolve 'finnhub.io' ([Errno 11001] getaddrinfo failed)`; la primera suite de la misma corrida había pasado y un minuto después `nslookup finnhub.io` resolvía. El cortafuegos corta en `connect` y deja salir el DNS a propósito (su docstring), así que sin DNS el pedido muere **antes** de llegar al corte. `_por_el_cortafuegos` hace bien en no aceptar eso como un bloqueo —sería un verde vacío, que es lo que la 209 quería evitar—, pero el resultado es un **rojo** que no dice nada del código.
 - **Alcance.** Si la cadena de causas es un fallo de resolución (`socket.gaierror` / `NameResolutionError`) y no del cortafuegos, `pytest.skip` con el motivo (*«sin DNS: no se pudo probar el corte»*), no rojo ni verde. Lo mismo en los hermanos (`curl_cffi`, `yfinance`) si tienen el mismo hueco.
@@ -4828,6 +4846,12 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
 
+- **WIP 340 — Tarea 424 (CORTAFUEGOS-TEST-ROJO-SIN-DNS) CERRADA 2026-11-11 — sin DNS, el test de `requests` del cortafuegos se saltea con el motivo en vez de dar rojo; con DNS sigue exigiendo el corte** (origen: el done de la 422/423, que dio rojo por un corte de DNS de segundos).
+  - **Alcance real:** de los tests de `tests/test_cortafuegos_de_red_t209.py`, sólo el de `requests` tenía el hueco: `urllib3` resuelve el nombre **antes** del `connect`. Los de `socket` (`connect`, `connect_ex`, TLS, bitácora) se cortan con el nombre sin resolver, y `curl_cffi`/`yfinance` se cortan en su propia capa; no dependen del DNS.
+  - **Cambio:** `_por_falta_de_dns` (un `socket.gaierror` o el `NameResolutionError` de `urllib3` en la cadena de causas) y, si la excepción no es del cortafuegos y es por DNS, `pytest.skip("sin DNS: no se pudo probar el corte …")`. `_por_el_cortafuegos` no cambia: la falta de DNS **no** cuenta como bloqueo.
+  - **Tests nuevos (2):** con `getaddrinfo` tirando `gaierror`, `requests` cae en *falta de DNS* y **no** en *bloqueado*; y un bloqueo real del cortafuegos no se confunde con falta de DNS. **Con `getaddrinfo` roto para toda la sesión** (plugin ad hoc), el test de `requests` sale `SKIPPED … sin DNS: no se pudo probar el corte (ConnectionError)`. **Mutaciones** (restauradas desde copia): DNS nunca reconocido → rojo; *cualquier `OSError` cuenta como bloqueo* → rojo. Una primera mutación (*cualquier `ConnectionError`*) dio verde y era **no-op**: en esa cadena no hay ningún `ConnectionError` del builtin (`requests` usa su propia clase y `gaierror` es `OSError`); se reemplazó por la de `OSError`, que sí cambia la conducta.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `f4cd4bd` VERDE.
 - **WIP 339 — Tarea 422 (TEST-SKILL-CONTEO-DE-SKIPS) CERRADA 2026-11-11 — `/test` anuncia los 3 skips de más del modo sin estado vivo, por su motivo, y un test fija el número contra la suite** (origen: el done de la 417).
   - **`.claude/commands/test.md`:** decía *«difiere en 1 skip»*; ahora dice **3** (y 3 passed menos), nombra el motivo *«sin settings.json vivo en este entorno»* y pide verificar por el motivo: un skip de más con otro motivo es para mirar.
   - **`tests/test_test_md_conteo_de_skips_t422.py`:** el número de `test.md` tiene que ser igual a la cantidad de `pytest.skip("<motivo>")` de `tests/` (hoy 130, 181 y 185), buscados sobre el texto entero para que un `skip(` partido en dos líneas no se escape —la primera versión era por línea y su propio test de control lo aceptaba sin decirlo—. **Mutación** (restaurada desde copia): volver a «1» da rojo. Si se agrega un cuarto test con ese skip, el guard pide actualizar `test.md`.
