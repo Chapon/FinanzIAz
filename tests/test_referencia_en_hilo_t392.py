@@ -17,8 +17,13 @@ from datetime import date, datetime
 
 import pytest
 
-_DEMORA_S = 1.0
-_TECHO_GUI_S = 0.2
+_DEMORA_S = 2.0
+# Tarea 428: el techo es la MITAD de la demora, no 0,2 s fijos. Lo que se distingue es si la
+# referencia corre en el hilo de la GUI —traba ≥ `_DEMORA_S`— o no; con 0,2 s absolutos el test
+# medía además la velocidad de la máquina, y con ella cargada dio 0,30 y 0,35 s y rojo sin defecto.
+# Sin carga, tildar traba ~0,1 s (uno o dos repintados del hero); con la demora en 2 s el techo de
+# 1 s aguanta una máquina ~10 veces más lenta, y una referencia en el hilo sigue dando ≥ 2 s.
+_TECHO_GUI_S = _DEMORA_S / 2
 _APP = None
 
 

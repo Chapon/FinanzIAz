@@ -18,7 +18,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 ## En curso (WIP, máx 1)
 
-_Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
+
+- **WIP 343 — Tarea 428 (TECHO-GUI-ABSOLUTO-FLAKY) CERRADA 2026-11-11 — el techo de `test_referencia_en_hilo_t392` pasa de 0,2 s fijos a la mitad de la demora, con la demora en 2 s** (origen: el done del hash de la 419).
+  - **Medido antes de elegir el número:** sin carga, tildar la paper dispara uno o dos repintados del hero de ~0,09 s; la traba total es ~0,1 s. El rojo del done fue 0,30–0,35 s con la máquina cargada (~3,5 veces). Con `_DEMORA_S = 2.0` y `_TECHO_GUI_S = _DEMORA_S / 2`, el techo aguanta ~10 veces y una referencia en el hilo de la GUI sigue dando ≥ 2 s. Cuesta ~4 s más de suite (9,9 s el archivo).
+  - **Un primer intento que no alcanzaba:** demora 1 s y techo 0,5 s. La carga simulada (0,3 s extra en cada repintado, ~6 veces lo normal) lo puso rojo; con 2 s y 1 s, verde.
+  - **Verificado** (restaurado desde copia): sin carga 4 verdes; **con la carga simulada**, techo nuevo 4 verdes y techo viejo de 0,2 s **2 rojos** (los mismos dos del done); y la mutación *la referencia en el hilo de la GUI* (`w.start()` → `w.run()` en `ui/home_tab.py`) da rojo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -549,6 +555,8 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 > **Repriorizado 2026-11-11k** al cerrar la **419**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-11l** porque el done del hash de la 419 dio rojo por dos tests de tiempos de la GUI con la máquina cargada: entra la **428** primera, por el mismo criterio que la 424 (chica, y protege el done). El orden queda **428 → 425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-11m** al cerrar la **428**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -1988,7 +1996,7 @@ _Nada en marcha._ Al arrancar una tarea, su registro va acá (máx 1); el cierre
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 428. TECHO-GUI-ABSOLUTO-FLAKY — `test_referencia_en_hilo_t392` exige que la GUI se trabe menos de 0,2 s, absolutos: con la máquina ocupada dio 0,30 y 0,35 s y puso rojo el done sin defecto  ·  origen: el done del hash de la **419** (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
+### 428. ~~TECHO-GUI-ABSOLUTO-FLAKY — `test_referencia_en_hilo_t392` exige que la GUI se trabe menos de 0,2 s, absolutos: con la máquina ocupada dio 0,30 y 0,35 s y puso rojo el done sin defecto~~ · **CERRADA 2026-11-11 — techo = la mitad de la demora, con la demora en 2 s** ·  origen: el done del hash de la **419** (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
 
 - **Qué pasó.** En el modo sin estado vivo, `test_tildar_la_paper_no_traba_la_gui_y_la_referencia_llega_despues` (0,35 s) y `test_volver_a_home_el_mismo_dia_no_la_recalcula` (0,30 s) contra `_TECHO_GUI_S = 0.2`, con una referencia lenta a propósito de `_DEMORA_S = 1.0`. Esa corrida de la suite tardó **16:50** contra ~6 min de las demás del día: la máquina estaba cargada (la primera suite de la misma corrida, 8:09, también lenta). El mismo código había pasado cinco dones seguidos ese día.
 - **Por qué importa.** Lo que el test quiere probar —que la referencia no corre en el hilo de la GUI— se distingue con mucho margen: si corriera en el hilo, la traba sería ≥ 1 s. Un techo de 0,2 s absolutos mide además la velocidad de la máquina.
