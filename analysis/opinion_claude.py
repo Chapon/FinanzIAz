@@ -61,7 +61,9 @@ DIAS_NOTICIAS = 14
 # ``claude_opinions`` no tienen el campo y son la versión 1.
 #   2 — retorno del día, si el precio es intradiario, y la hora ET de las noticias (417).
 #   3 — valuación de la tarjeta, fundamentales anuales de EDGAR y el P/E de yfinance (418).
-VERSION_DATOS = 3
+#   4 — próximo balance y sorpresas de EPS de los últimos trimestres (419).
+VERSION_DATOS = 4
+TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
 
 # Cierre de la sesión regular de NYSE/NASDAQ, en hora del Este (ET).
@@ -181,6 +183,7 @@ def armar_datos(
     obtenido: datetime | None = None,
     valuacion=None,
     anuales: list[dict] | None = None,
+    balance: dict | None = None,
 ) -> dict:
     """El resumen que se manda a Claude. **Puro**: todo llega por parámetro.
 
@@ -240,6 +243,8 @@ def armar_datos(
         datos["valuacion"] = v
     if anuales:
         datos["fundamentales_anuales"] = anuales
+    if balance:
+        datos["balance"] = balance
     yf_ = {
         "pe_trailing": _num((company or {}).get("pe_ratio")),
         "eps_trailing": _num((company or {}).get("eps")),
@@ -291,6 +296,63 @@ def bloque_valuacion(v) -> dict | None:
     if v.avisos:
         out["avisos"] = list(v.avisos)
     return out
+
+
+def bloque_balance(fecha_reporte, sorpresas: list[tuple], hoy: date) -> dict | None:
+    """El próximo reporte de resultados y las últimas sorpresas de EPS (tarea 419). **Pura.**
+
+    ``fecha_reporte`` es lo de ``get_next_earnings_date``, que **a propósito** devuelve la última
+    fecha pasada cuando no hay una futura (el Gate 6 la usa para la ventana post-balance). Acá
+    eso NO se manda como próxima: va como ``ultimo_conocido``. Las sorpresas son las filas de
+    ``collect_yfinance_earnings_history``: ``(fecha, estimado, reportado)``, la más nueva primero.
+    """
+    out: dict = {}
+    if fecha_reporte is not None:
+        dia = fecha_reporte.date() if hasattr(fecha_reporte, "date") else fecha_reporte
+        if dia >= hoy:
+            out["proximo"] = dia.isoformat()
+            out["dias_hasta"] = (dia - hoy).days
+        else:
+            out["proximo"] = None
+            out["ultimo_conocido"] = dia.isoformat()
+            out["dias_desde"] = (hoy - dia).days
+    filas = []
+    for fecha, est, rep in sorpresas[:TRIMESTRES_SORPRESA]:
+        sorpresa = _num((rep - est) / abs(est) * 100, 1) if est not in (None, 0) and rep is not None else None
+        filas.append(
+            {"fecha": fecha, "eps_estimado": _num(est), "eps_reportado": _num(rep), "sorpresa_pct": sorpresa}
+        )
+    if filas:
+        out["sorpresas_eps"] = filas
+        out["aviso"] = (
+            "el estimado es la vista ACTUAL de Yahoo, no el consenso del día anterior al reporte: "
+            "puede estar revisado después"
+        )
+    if not out:
+        return None
+    if "proximo" not in out:
+        out["proximo"] = None
+    return out
+
+
+def balance_de(ticker: str, hoy: date | None = None) -> dict | None:
+    """``bloque_balance`` con los datos de Yahoo; nunca levanta y nunca se cuelga.
+
+    La fecha sale del cache ``earnings_cache`` (24 h) o de Yahoo con tope; las sorpresas, con el
+    mismo tope (``collect_yfinance_earnings_history`` no tiene uno propio).
+    """
+    try:
+        from data.news_sources import collect_yfinance_earnings_history
+        from data.yahoo_finance import _run_with_timeout, get_next_earnings_date
+
+        fecha = get_next_earnings_date(ticker)
+        sorpresas = _run_with_timeout(collect_yfinance_earnings_history, ticker, default=[], retries=0) or []
+        return bloque_balance(fecha, sorpresas, hoy or date.today())
+    except Exception:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).exception("Balance de %s para la opinión: falló", ticker)
+        return None
 
 
 def anuales_de(ticker: str) -> list[dict]:
