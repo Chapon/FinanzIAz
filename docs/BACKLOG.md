@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338).
 
-- **WIP 343 — Tarea 428 (TECHO-GUI-ABSOLUTO-FLAKY) CERRADA 2026-11-11 — el techo de `test_referencia_en_hilo_t392` pasa de 0,2 s fijos a la mitad de la demora, con la demora en 2 s** (origen: el done del hash de la 419).
-  - **Medido antes de elegir el número:** sin carga, tildar la paper dispara uno o dos repintados del hero de ~0,09 s; la traba total es ~0,1 s. El rojo del done fue 0,30–0,35 s con la máquina cargada (~3,5 veces). Con `_DEMORA_S = 2.0` y `_TECHO_GUI_S = _DEMORA_S / 2`, el techo aguanta ~10 veces y una referencia en el hilo de la GUI sigue dando ≥ 2 s. Cuesta ~4 s más de suite (9,9 s el archivo).
-  - **Un primer intento que no alcanzaba:** demora 1 s y techo 0,5 s. La carga simulada (0,3 s extra en cada repintado, ~6 veces lo normal) lo puso rojo; con 2 s y 1 s, verde.
-  - **Verificado** (restaurado desde copia): sin carga 4 verdes; **con la carga simulada**, techo nuevo 4 verdes y techo viejo de 0,2 s **2 rojos** (los mismos dos del done); y la mutación *la referencia en el hilo de la GUI* (`w.start()` → `w.run()` en `ui/home_tab.py`) da rojo.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -559,6 +555,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-11m** al cerrar la **428**, que **no deja tareas nuevas**. Se consume el ítem de arriba sin cambios de criterio. El orden queda **425 → 426 → 421 → 420 → 427 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 > **Repriorizado 2026-11-16** por la tanda de auditoría de la **429** (`docs/auditoria_tanda_2026-11-16.md`), que deja **nueve tareas (430–438)**. Criterio: primero lo que destraba el cierre de toda tarea —la **430** (`check_ci` leyó como verde, y después como rojo, un run que quedó huérfano en un incidente de GitHub; la regla 7 depende de ese veredicto) y la **431** (el cierre no tiene camino para el «no se sabe»)—; después la **433**, porque hoy hay un WIP en el árbol (el de la 425) y la app lo corre al abrirse, y la **432** (la app en la Anaconda: reabrir la 401); la **434** va pegada a la **425**, con la que comparte `version_datos`, y la **438** con ellas (las tres tocan lo que guarda la opinión); la **435** y la **436** son chicas y van antes que el bloque de la 414; la **437** (alcance diferido y método), antes de la próxima tanda. La **429** va primera porque es la corrida misma: le falta el commit, que además dice si el CI corre. El orden queda **429 → 430 → 431 → 433 → 432 → 425 → 434 → 438 → 426 → 421 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
+
+> **Repriorizado 2026-11-19** al cerrar la **429** (y la **428**, cuyo código cubre el CI de `bc3246e`), que no dejan tareas nuevas. Se consumen los ítems de arriba sin cambios de criterio. El orden queda **430 → 431 → 433 → 432 → 425 → 434 → 438 → 426 → 421 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415).
 
 
 
@@ -2076,7 +2074,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Tests con un `fetch` falso: `queued` con 0 jobs creado hace días y el anterior en `success` → «atascado», exit 2 (hoy da VERDE: se prueba primero); `cancelled` sin jobs → exit 2 con «nunca arrancó»; `cancelled` con un job fallido → sigue ROJO (mutación sobre esa rama). Y un run del CI de `main` con jobs, terminado.
 - **Dependencias:** ninguna.
 
-### 429. TANDA-DE-AUDITORIA-12-AREAS-2026-11-16 — Correr la auditoría de las 12 áreas sobre la ventana desde la 404  ·  origen: pedido de Chapa (2026-11-16, *«correr auditorias»*, opción *«Tanda completa (12 áreas)»*) · severidad **—** (es una corrida, no un defecto)
+### 429. ~~TANDA-DE-AUDITORIA-12-AREAS-2026-11-16 — Correr la auditoría de las 12 áreas sobre la ventana desde la 404~~ · **CERRADA 2026-11-19 — nueve tareas (430–438)** (`bc3246e`) · **movida a *Hecho reciente* con el detalle** ·  origen: pedido de Chapa (2026-11-16, *«correr auditorias»*, opción *«Tanda completa (12 áreas)»*) · severidad **—** (es una corrida, no un defecto)
 
 - **Corrida hecha el 2026-11-16** (`docs/auditoria_tanda_2026-11-16.md`): ninguna ALTA (la única, [D-1], la bajó el `verificador`); seis MEDIAS → la **430**, **431**, **432**, **433**, **434** y **438**; cuatro BAJAS → la **435** ([K-2] y [D-2]), la **436**, la 431 ([A-2]) y la **437** ([H-1]); el alcance diferido y la deuda de método, también en la 437.
 - **Por qué no está en *En curso*:** la ocupa la 428, que espera el CI de un run que quedó huérfano en el incidente de GitHub del 11/11 (la 430), y el guard de la 338 no admite un segundo ítem: es el hueco de la 431.
@@ -2084,7 +2082,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Cierre (2026-11-19).** El commit lleva sólo el informe y el backlog: el WIP de la 425 se apartó con `git stash` (y una copia) para que el done pruebe lo que se commitea. No se corrió otra tanda: desde la 429 no hubo ningún commit, así que miraría el mismo código. Chapa decidió el 2026-11-19 los cuatro puntos que la tanda dejó abiertos (anotados en la 431, 432, 433 y 438). El run de este push es el primero desde el 11/11: si corre y queda verde, cubre también el código de la 428 (esta tarea sólo agrega docs encima de `6b1fdba`).
 - **Dependencias:** ninguna.
 
-### 428. ~~TECHO-GUI-ABSOLUTO-FLAKY — `test_referencia_en_hilo_t392` exige que la GUI se trabe menos de 0,2 s, absolutos: con la máquina ocupada dio 0,30 y 0,35 s y puso rojo el done sin defecto~~ · **CERRADA 2026-11-11 — techo = la mitad de la demora, con la demora en 2 s** ·  origen: el done del hash de la **419** (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
+### 428. ~~TECHO-GUI-ABSOLUTO-FLAKY — `test_referencia_en_hilo_t392` exige que la GUI se trabe menos de 0,2 s, absolutos: con la máquina ocupada dio 0,30 y 0,35 s y puso rojo el done sin defecto~~ · **CERRADA 2026-11-11 — techo = la mitad de la demora, con la demora en 2 s** (`6b1fdba`) · **movida a *Hecho reciente* con el detalle** ·  origen: el done del hash de la **419** (2026-11-11) · severidad **BAJA** (rojo falso del done; cuesta una corrida de ~15 min)
 
 - **Qué pasó.** En el modo sin estado vivo, `test_tildar_la_paper_no_traba_la_gui_y_la_referencia_llega_despues` (0,35 s) y `test_volver_a_home_el_mismo_dia_no_la_recalcula` (0,30 s) contra `_TECHO_GUI_S = 0.2`, con una referencia lenta a propósito de `_DEMORA_S = 1.0`. Esa corrida de la suite tardó **16:50** contra ~6 min de las demás del día: la máquina estaba cargada (la primera suite de la misma corrida, 8:09, también lenta). El mismo código había pasado cinco dones seguidos ese día.
 - **Por qué importa.** Lo que el test quiere probar —que la referencia no corre en el hilo de la GUI— se distingue con mucho margen: si corriera en el hilo, la traba sería ≥ 1 s. Un techo de 0,2 s absolutos mide además la velocidad de la máquina.
@@ -4955,6 +4953,20 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 344 — Tarea 429 (TANDA-DE-AUDITORIA-12-AREAS-2026-11-16) CERRADA 2026-11-19 — la tanda de 12 áreas sobre la ventana desde la 404, con sus nueve tareas (430–438)** (`bc3246e`) (origen: pedido de Chapa del 2026-11-16).
+  - **Corrida el 2026-11-16** (`docs/auditoria_tanda_2026-11-16.md`): ninguna ALTA (la única, [D-1], la bajó el `verificador`); seis MEDIAS → la 430, 431, 432, 433, 434 y 438; cuatro BAJAS → la 435, la 436, la [A-2] dentro de la 431, y la 437 (alcance diferido y deuda de método).
+  - **Se commiteó tres días después:** *En curso* lo ocupaba la 428 esperando un CI que no corría (la 430) y el guard de la 338 no admite un segundo ítem (la 431). El WIP de la 425 se apartó con `git stash` para que el done probara lo commiteado. No se corrió otra tanda: desde la 429 no hubo commits.
+  - **Decisiones de Chapa del 2026-11-19**, anotadas en sus tareas: la 431 pasa con «CI sin verificar», la 432 relanza con el `.venv`, la 433 sigue en el árbol principal con aviso, la 438 guarda un histórico de las reemplazadas.
+  - **El CI volvió a correr:** el run de `bc3246e` arrancó y terminó normal; el huérfano de `6b1fdba` sigue `queued` (el `cancel-in-progress` del push nuevo no lo desplazó), sin efecto sobre los runs nuevos.
+  - **CI:** `bc3246e` VERDE.
+
+- **WIP 343 — Tarea 428 (TECHO-GUI-ABSOLUTO-FLAKY) CERRADA 2026-11-11 — el techo de `test_referencia_en_hilo_t392` pasa de 0,2 s fijos a la mitad de la demora, con la demora en 2 s** (`6b1fdba`) (origen: el done del hash de la 419).
+  - **Medido antes de elegir el número:** sin carga, tildar la paper dispara uno o dos repintados del hero de ~0,09 s; la traba total es ~0,1 s. El rojo del done fue 0,30–0,35 s con la máquina cargada (~3,5 veces). Con `_DEMORA_S = 2.0` y `_TECHO_GUI_S = _DEMORA_S / 2`, el techo aguanta ~10 veces y una referencia en el hilo de la GUI sigue dando ≥ 2 s. Cuesta ~4 s más de suite (9,9 s el archivo).
+  - **Un primer intento que no alcanzaba:** demora 1 s y techo 0,5 s. La carga simulada (0,3 s extra en cada repintado, ~6 veces lo normal) lo puso rojo; con 2 s y 1 s, verde.
+  - **Verificado** (restaurado desde copia): sin carga 4 verdes; **con la carga simulada**, techo nuevo 4 verdes y techo viejo de 0,2 s **2 rojos** (los mismos dos del done); y la mutación *la referencia en el hilo de la GUI* (`w.start()` → `w.run()` en `ui/home_tab.py`) da rojo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `6b1fdba` no tiene run propio: quedó huérfano en `queued`, sin jobs, en el incidente de GitHub del 11/11 (la 430), y por eso este registro ocupó *En curso* ocho días (la 431). Lo cubre el run de `bc3246e` (la 429, que sólo agrega docs encima): VERDE.
 
 - **WIP 342 — Tarea 419 (OPINION-CLAUDE-PROXIMO-BALANCE) CERRADA 2026-11-11 — Claude recibe el próximo balance con sus días, nunca una fecha pasada como próxima, y las sorpresas de EPS de los últimos cuatro trimestres con su aviso** (origen: las dos opiniones de MU del día; `version_datos` pasa a **4**).
   - **La trampa:** `get_next_earnings_date` devuelve **a propósito** la última fecha pasada cuando no hay una futura (el Gate 6 la usa para la ventana post-balance). `bloque_balance` la separa: futura u hoy → `proximo` y `dias_hasta`; pasada → `proximo: null`, `ultimo_conocido` y `dias_desde`.
