@@ -9,6 +9,7 @@ el CI en rojo).
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -105,8 +106,15 @@ def _fetch_de(runs, jobs=None, anotaciones=None):
     return fetch
 
 
+# Un reloj de pared apenas después de los runs de este archivo: ninguno es un run *atascado* (eso es
+# la 430, con sus tests en `test_check_ci_atascado_t430.py`).
+_AHORA = datetime(2026, 10, 4, 10, 5, tzinfo=timezone.utc)
+
+
 def _consultar(fetch, sha=_SHA, **kw):
     lineas = []
+    kw.setdefault("ahora", lambda: _AHORA)
+    kw.setdefault("contar", lambda desde, hasta: None)
     rc = cc.consultar(_REPO, sha, fetch=fetch, out=lineas.append, dormir=lambda s: None, **kw)
     return rc, "\n".join(lineas)
 
@@ -117,7 +125,9 @@ def test_verde_solo_con_success():
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", "startup_failure"])
 def test_todo_lo_que_no_es_success_es_rojo(conclusion):
-    assert _consultar(_fetch_de([_run(conclusion)]))[0] == cc.ROJO
+    # Con un job: un `cancelled` SIN jobs nunca arrancó y no es un rojo (tarea 430).
+    jobs = [{"id": 9, "name": "pytest", "conclusion": conclusion}]
+    assert _consultar(_fetch_de([_run(conclusion)], jobs=jobs))[0] == cc.ROJO
 
 
 def test_sin_run_para_el_commit_NO_es_verde():

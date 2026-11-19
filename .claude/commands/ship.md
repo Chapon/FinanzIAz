@@ -81,7 +81,7 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    o `2` no se sabe.
    - **Rojo ⇒ la tarea NO está cerrada.** El script muestra el job y los tests que fallaron:
      arreglalo en un commit nuevo y volvé a este paso. No arranques otra tarea con el CI rojo.
-   - **No se sabe** (sin red, cuota de la API, espera agotada) ⇒ el cierre dice *«CI sin
+   - **No se sabe** (sin red, cuota de la API, espera agotada, o un run que GitHub nunca arrancó —*atascado* o cancelado sin jobs, tarea 430—) ⇒ el cierre dice *«CI sin
      verificar»*, nunca *«verde»*, y la próxima tarea arranca con `--ultimo`.
    - **Por qué:** los cuatro comandos corren en Windows y lo que sólo rompe en Linux lo ve
      únicamente el CI. Tres veces quedó rojo mientras las tareas se cerraban en verde: la 106

@@ -18,9 +18,18 @@ Uso::
     python scripts/check_ci.py --esperar       # espera a que termine (al cerrar una tarea)
     python scripts/check_ci.py --ultimo        # el último run TERMINADO en main (al abrir una)
 
-Salida: ``0`` verde · ``1`` rojo (o cancelado) · ``2`` no se sabe: sin red, sin run para ese
-commit, HEAD sin pushear, la API limitada, o se agotó la espera. **Un 2 no es un verde**: el
-cierre lo dice así (*«CI sin verificar»*) y la próxima tarea arranca con ``--ultimo``.
+Salida: ``0`` verde · ``1`` rojo (o cancelado con algún job) · ``2`` no se sabe: sin red, sin run
+para ese commit, HEAD sin pushear, la API limitada, se agotó la espera, un run **atascado** o uno
+que **nunca arrancó**. **Un 2 no es un verde**: el cierre lo dice así (*«CI sin verificar»*) y la
+próxima tarea arranca con ``--ultimo``.
+
+**Un run que GitHub nunca arrancó (tarea 430).** Los runs del 2026-11-11 quedaron huérfanos en un
+incidente de GitHub: sin ningún job, uno ``queued`` días enteros y el otro ``cancelled`` cuatro
+días después. Este script los leía como «en curso» —``--ultimo`` dio VERDE del commit anterior
+cuatro días, y después ROJO del cancelado, sin detalle—. Ahora un run sin terminar, **sin jobs** y
+más viejo que ``ATASCADO_S`` es *atascado* (no se sabe, con la hora), también cuando el anterior
+está en verde; un ``cancelled`` sin jobs es *nunca arrancó* (no se sabe, no un rojo de los tests);
+y ``--ultimo`` dice cuántos commits de ``main`` no tienen un run terminado.
 
 Usa la API **pública** de Actions, sin ``gh auth`` (60 requests/hora por IP): cada consulta son
 1-3 requests, y la espera consulta cada ``--intervalo`` segundos.
@@ -45,6 +54,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -53,6 +63,10 @@ WORKFLOW = "ci.yml"
 RAMA = "main"
 
 VERDE, ROJO, NO_SE_SABE = 0, 1, 2
+
+# Un run normal crea sus jobs en segundos y termina en ~10-15 min. Sin ningún job a la hora, GitHub
+# no lo va a arrancar: es *atascado* (tarea 430). Los del 2026-11-11 llevaban días.
+ATASCADO_S = 3600.0
 
 Fetch = Callable[[str], object]
 
@@ -134,6 +148,71 @@ def veredicto(run: dict | None) -> int:
     return VERDE if run.get("conclusion") == "success" else ROJO
 
 
+def edad_s(run: dict, ahora: datetime) -> float | None:
+    """Segundos desde que se creó el run, o ``None`` si no trae una fecha legible."""
+    try:
+        creado = datetime.fromisoformat(str(run.get("created_at")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if creado.tzinfo is None:
+        creado = creado.replace(tzinfo=timezone.utc)
+    return (ahora - creado).total_seconds()
+
+
+def jobs_del_run(repo: str, run: dict, fetch: Fetch) -> list | None:
+    """Los jobs que GitHub le creó al run, o ``None`` si la API no contestó algo usable."""
+    try:
+        datos = fetch(f"{_API}/repos/{repo}/actions/runs/{run['id']}/jobs")
+    except (SinRespuesta, KeyError):
+        return None
+    if not isinstance(datos, dict) or not isinstance(datos.get("jobs", []), list):
+        return None
+    return datos.get("jobs") or []
+
+
+def atascado(repo: str, run: dict, fetch: Fetch, ahora: datetime) -> str | None:
+    """Por qué el run está *atascado* (tarea 430), o ``None`` si no lo está.
+
+    Sin terminar, más viejo que ``ATASCADO_S`` y sin jobs. Si los jobs no se pueden leer, también
+    —un run «en curso» hace más de una hora sin poder ver nada de él no se lee como el retraso uno
+    de siempre (el principio de la 300: lo dudoso no presta un verde)—. Los jobs se piden sólo para
+    un run viejo: el caso normal no gasta requests.
+    """
+    if run.get("status") == "completed":
+        return None
+    edad = edad_s(run, ahora)
+    if edad is None or edad <= ATASCADO_S:
+        return None
+    jobs = jobs_del_run(repo, run, fetch)
+    if jobs is None:
+        return "sin poder leer sus jobs"
+    return "sin ningún job" if not jobs else None
+
+
+def nunca_arranco(repo: str, run: dict, fetch: Fetch) -> bool:
+    """Un ``cancelled`` sin ningún job: lo cancelaron antes de arrancar, no falló nada (tarea 430).
+    Un ``startup_failure`` tampoco tiene jobs y **sí** es un rojo: el workflow no se pudo leer. Si los
+    jobs no se pueden leer, sigue siendo el rojo de la 300."""
+    if run.get("status") != "completed" or run.get("conclusion") != "cancelled":
+        return False
+    return jobs_del_run(repo, run, fetch) == []
+
+
+def _contar_commits(desde: str, hasta: str) -> int | None:
+    try:
+        return int(_git("rev-list", "--count", f"{desde}..{hasta}"))
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return None
+
+
+_DESTRABAR = "Un push nuevo debería desplazarlo; si no, cancelalo en Actions y re-correlo."
+
+
+def _horas(run: dict, ahora: datetime) -> str:
+    edad = edad_s(run, ahora)
+    return "" if edad is None else f", hace {edad / 3600:.0f} h"
+
+
 def tests_que_fallaron(anotaciones: list[dict]) -> list[str]:
     """Las líneas ``FAILED …`` / ``ERROR …`` del resumen de pytest que GitHub guarda como anotación."""
     out: list[str] = []
@@ -176,18 +255,22 @@ def consultar(
     reloj: Callable[[], float] = time.monotonic,
     out=print,
     sha_main: str | None = None,
+    ahora: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    contar: Callable[[str, str], int | None] = _contar_commits,
 ) -> int:
     """Consulta (y opcionalmente espera) el CI de ``sha``; con ``sha=None``, el último terminado.
 
     ``sha_main`` (sólo con ``sha=None``) es ``origin/main``: si el último run terminado no es de
     ese commit y tampoco hay un run de ese commit en curso, la lista que devolvió la API está
-    atrasada y el veredicto es *no se sabe* (tarea 307).
+    atrasada y el veredicto es *no se sabe* (tarea 307). Si el de ``origin/main`` está *atascado*,
+    también (tarea 430): el anterior no dice nada de ``main``.
     """
     url = f"{_API}/repos/{repo}/actions/workflows/{WORKFLOW}/runs?per_page=30"
     if sha:
         url += f"&head_sha={sha}"
     limite = reloj() + timeout_s
     fallos = 0
+    trabado: str | None = None
     while True:
         try:
             datos = fetch(url)
@@ -206,7 +289,9 @@ def consultar(
         fallos = 0
         run = run_de_commit(runs, sha) if sha else ultimo_terminado(runs)
         v = veredicto(run)
-        if v != NO_SE_SABE or not esperar or reloj() >= limite:
+        # Tarea 430: esperar 15 min a un run que GitHub no va a arrancar no cambia nada.
+        trabado = atascado(repo, run, fetch, ahora()) if v == NO_SE_SABE and run is not None else None
+        if v != NO_SE_SABE or trabado or not esperar or reloj() >= limite:
             break
         estado = "sin run todavía" if run is None else f"{run.get('status')}"
         out(f"CI de {sha[:7] if sha else 'main'}: {estado} — reintento en {intervalo_s:.0f} s")
@@ -226,8 +311,40 @@ def consultar(
                 "llegó atrasada o ese commit no tiene run. NO es un verde."
             )
             return NO_SE_SABE
+        sin_run = contar(str(run.get("head_sha", "")), sha_main)
+        pendientes = (
+            f"\n  `{RAMA}` tiene {sin_run} commit(s) sin un run terminado (desde {run.get('head_sha', '')[:7]})."
+            if sin_run
+            else ""
+        )
+        motivo = atascado(repo, en_curso, fetch, ahora())
+        if motivo:
+            out(
+                f"CI: no se sabe — el run de {sha_main[:7]} (`{RAMA}`) está ATASCADO: "
+                f"{en_curso.get('status')} desde {en_curso.get('created_at')}{_horas(en_curso, ahora())}, "
+                f"{motivo} (GitHub no lo arrancó: un incidente o un run huérfano). El anterior no dice nada "
+                f"de `{RAMA}`. NO es un verde.{pendientes}\n  {en_curso.get('html_url', '')}\n  {_DESTRABAR}"
+            )
+            return NO_SE_SABE
         nota = f" — el run de {sha_main[:7]} (`{RAMA}`) sigue en curso; éste es el anterior"
+        if pendientes:
+            out(pendientes.strip("\n"))
     cab = f"CI {run.get('head_sha', '')[:7]} ({run.get('created_at')}){nota}: "
+    if trabado:
+        out(
+            cab + f"ATASCADO — {run.get('status')}{_horas(run, ahora())}, {trabado}: GitHub no lo "
+            "arrancó (un incidente o un run huérfano). NO es un verde."
+        )
+        out(f"  {run.get('html_url', '')}")
+        out(f"  {_DESTRABAR}")
+        return NO_SE_SABE
+    if v == ROJO and nunca_arranco(repo, run, fetch):
+        out(
+            cab + "no se sabe — cancelado sin ningún job: el run nunca arrancó, no es un rojo de los tests. "
+            "NO es un verde."
+        )
+        out(f"  {run.get('html_url', '')}")
+        return NO_SE_SABE
     if v == NO_SE_SABE:
         out(
             cab
