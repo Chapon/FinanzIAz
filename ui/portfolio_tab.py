@@ -51,6 +51,31 @@ _SIGNAL_LABELS = {
 }
 
 
+def motivo_sin_precio(ticker: str, fallidos: dict) -> tuple[str, str] | None:
+    """``(texto de la celda, tooltip)`` para una tenencia sin precio, si se sabe por qué (tarea 450).
+
+    EA está en la cartera «Tech» y dejó de cotizar en agosto de 2026: la 369 la marca
+    ``serie_congelada``, ``get_bulk_prices`` la saltea y la fila mostraba «—» sin decir por qué.
+    ``fallidos`` es ``{ticker: FailedTickerRow}``.
+    """
+    from data.failed_tickers import OP_SERIE_CONGELADA
+
+    fila = fallidos.get(ticker.upper())
+    if fila is None:
+        return None
+    motivo = fila.last_error or "Yahoo no devolvió precio"
+    if fila.last_operation == OP_SERIE_CONGELADA:
+        return "no cotiza", motivo
+    return "sin precio", motivo
+
+
+def fallidos_por_ticker() -> dict:
+    """``{ticker: FailedTickerRow}`` de la lista de fallidos; vacío si no se puede leer."""
+    from data.failed_tickers import get_all
+
+    return {r.ticker.upper(): r for r in get_all()}
+
+
 def nivel_de(result) -> tuple[str, bool]:
     """Lo que guarda la columna de señal: el nivel de Yahoo y si es débil (tarea 448)."""
     return result.yahoo_level, es_debil(result.overall_signal, result.overall_strength)
@@ -241,6 +266,7 @@ class PortfolioTab(QWidget):
         self._expandidos: set[str] = set()  # tickers con el desplegable abierto
         self._filas: list[tuple[str, object]] = []  # por fila de la tabla: ("pos"|"detalle", Position)
         self._prices = {}
+        self._fallidos = {}  # {ticker: FailedTickerRow} (tarea 450)
         self._dividends = {}  # {ticker: efectivo cobrado} — tarea 281
         self._signals = {}  # {ticker: yahoo_level_str}
         self._show_dividends = True  # toggle
@@ -549,6 +575,8 @@ class PortfolioTab(QWidget):
 
     def _on_prices_ready(self, prices: dict):
         self._prices = prices
+        # Tarea 450: por qué una tenencia se quedó sin precio (una tabla chica, una consulta).
+        self._fallidos = fallidos_por_ticker()
         self._render_table()
         self._update_cards()
         from datetime import datetime
@@ -645,7 +673,13 @@ class PortfolioTab(QWidget):
         self._render_comunes(row, pos, "Abierta", PALETTE["text2"])
         self.table.setItem(row, 4, cell(f"{pos.quantity:,.4g}", right=True))
         self.table.setItem(row, 5, cell(f"${pos.avg_buy_price:,.2f}", right=True))
-        self.table.setItem(row, 6, cell(dinero(current_price), right=True))
+        sin_precio = motivo_sin_precio(pos.ticker, self._fallidos) if current_price is None else None
+        if sin_precio:
+            item = cell(sin_precio[0], right=True, color=PALETTE["text3"])
+            item.setToolTip(sin_precio[1])
+            self.table.setItem(row, 6, item)
+        else:
+            self.table.setItem(row, 6, cell(dinero(current_price), right=True))
         self.table.setItem(row, 7, cell(pct(change_pct), right=True, color=self._color(change_pct)))
         self.table.setItem(row, 8, cell(dinero(invested), right=True))
         self.table.setItem(row, 9, cell(dinero(current_val), right=True))
