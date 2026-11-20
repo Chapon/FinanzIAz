@@ -693,12 +693,19 @@ def pedir_opinion(
 
 
 def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None) -> None:
-    """Upsert por ``(ticker, día)``: pedirla de nuevo el mismo día la reemplaza.
+    """Upsert por ``(ticker, día)``: pedirla de nuevo el mismo día la reemplaza, y la reemplazada
+    pasa antes a ``claude_opinions_reemplazadas`` (tarea 438).
 
     Guarda también con qué código corre la app (tarea 433): el commit y si había WIP sin commitear.
     """
     from config.codigo import al_arrancar
-    from database.models import ClaudeOpinion, session_scope, utcnow_naive
+    from database.models import (
+        COLUMNAS_OPINION,
+        ClaudeOpinion,
+        ClaudeOpinionReemplazada,
+        session_scope,
+        utcnow_naive,
+    )
 
     codigo = al_arrancar()
 
@@ -716,6 +723,15 @@ def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None)
         if fila is None:
             fila = ClaudeOpinion(ticker=ticker.upper(), fecha=fecha)
             s.add(fila)
+        else:
+            # Tarea 438: la que se pisa pasa entera al histórico, en la misma transacción.
+            s.add(
+                ClaudeOpinionReemplazada(
+                    opinion_id=fila.id,
+                    reemplazada_at=utcnow_naive(),
+                    **{c: getattr(fila, c) for c in COLUMNAS_OPINION},
+                )
+            )
         fila.recomendacion = opinion.recomendacion
         fila.confianza = opinion.confianza
         fila.precio = datos.get("precio")

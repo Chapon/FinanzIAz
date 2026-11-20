@@ -581,7 +581,8 @@ class ClaudeOpinion(Base):
     **Display-only** (regla 3): ningún gate, sizing ni scan la lee. Se guarda para **medir** si
     acierta (la tarea 321): por eso se registran la recomendación, el precio del momento y los
     datos que se le mandaron, tal cual. Una por ticker y día (UNIQUE): pedirla de nuevo el mismo
-    día la reemplaza, y la medición no cuenta dos veces la misma decisión.
+    día la reemplaza, y la medición no cuenta dos veces la misma decisión. La reemplazada no se
+    pierde: pasa antes a ``claude_opinions_reemplazadas`` (tarea 438).
     """
 
     __tablename__ = "claude_opinions"
@@ -599,6 +600,52 @@ class ClaudeOpinion(Base):
     datos_json: Mapped[str] = mapped_column(Text, nullable=False)
     segundos: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Tarea 433: con qué código salió (``config.codigo``). NULL en las filas anteriores: no se sabe.
+    codigo_commit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    codigo_wip: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+# Las columnas que se copian al histórico: todas las de la opinión menos su id.
+COLUMNAS_OPINION = (
+    "ticker",
+    "fecha",
+    "creado_at",
+    "recomendacion",
+    "confianza",
+    "precio",
+    "modelo",
+    "respuesta_json",
+    "datos_json",
+    "segundos",
+    "codigo_commit",
+    "codigo_wip",
+)
+
+
+class ClaudeOpinionReemplazada(Base):
+    """Una opinión de Claude que se reemplazó al pedirla de nuevo el mismo día (tarea 438).
+
+    ``claude_opinions`` sigue con una por ``(ticker, día)`` —la medición de la 321 cuenta ésa, la
+    última— y la que se pisa se copia acá antes, entera. El 2026-11-11 la de MU se pisó dos veces y
+    con ella la evidencia de origen de ocho tareas. **Display-only**, como la otra: nada la lee para
+    decidir.
+    """
+
+    __tablename__ = "claude_opinions_reemplazadas"
+    __table_args__ = (Index("ix_claude_opinions_reemplazadas_ticker_fecha", "ticker", "fecha"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    opinion_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # el id en claude_opinions
+    reemplazada_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow_naive)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    fecha: Mapped[str] = mapped_column(String(10), nullable=False)
+    creado_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recomendacion: Mapped[str] = mapped_column(String(10), nullable=False)
+    confianza: Mapped[int] = mapped_column(Integer, nullable=False)
+    precio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    modelo: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    respuesta_json: Mapped[str] = mapped_column(Text, nullable=False)
+    datos_json: Mapped[str] = mapped_column(Text, nullable=False)
+    segundos: Mapped[float | None] = mapped_column(Float, nullable=True)
     codigo_commit: Mapped[str | None] = mapped_column(String(40), nullable=True)
     codigo_wip: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 

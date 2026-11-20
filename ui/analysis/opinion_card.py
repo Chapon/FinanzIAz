@@ -131,7 +131,9 @@ class OpinionCard(QFrame):
             opinion, cuando = hoy
             self.mostrar(opinion)
             hora = f" a las {cuando:%H:%M} UTC" if cuando else ""
-            self.estado.setText(f"Opinión pedida hoy{hora}. «Pedir de nuevo» la reemplaza.")
+            self.estado.setText(
+                f"Opinión pedida hoy{hora}. «Pedir de nuevo» la reemplaza (la anterior queda en el histórico)."
+            )
             self.boton.setText("Pedir de nuevo")
 
     # ── acción ───────────────────────────────────────────────────────────────
