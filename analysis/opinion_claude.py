@@ -70,7 +70,8 @@ DIAS_NOTICIAS = 14
 #   7 — el resumen de cada noticia, cuando la fuente lo trae (426).
 #   8 — los pares de la misma industria, el ETF del sector y los índices (420).
 #   9 — deuda, activos, patrimonio y acciones por año, y los múltiplos del último año (440).
-VERSION_DATOS = 9
+#  10 — las noticias que se mandan las clasifica qwen al pedir la opinión, con tope (427).
+VERSION_DATOS = 10
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -599,7 +600,7 @@ def resumen(texto: str | None, maximo: int = MAX_RESUMEN) -> str | None:
     return limpio if len(limpio) <= maximo else limpio[: maximo - 1].rstrip() + "…"
 
 
-def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
+def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None) -> list[dict]:
     """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
     from analysis.news_digest import classify_missing, fetch_news_window
     from database.models import utcnow_naive
@@ -607,7 +608,11 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
     filas = fetch_news_window(utcnow_naive() - timedelta(days=dias), tickers=[ticker.upper()])
     # Tarea 406: las que qwen todavía no clasificó salían con tipo y tono en None. Van con la
     # heurística al vuelo, como en la pestaña Noticias, y el campo `clasificador` lo dice.
-    filas = classify_missing(filas[:MAX_NOTICIAS])
+    filas = filas[:MAX_NOTICIAS]
+    if clasificar is not None:
+        # Tarea 427: lo que qwen todavía no vio lo clasifica ahora, con tope; el resto sigue igual.
+        filas = clasificar_a_demanda(filas, clasificar)
+    filas = classify_missing(filas)
     out = []
     zona = _zona_et()
     for f in filas:
@@ -627,6 +632,102 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
                 if f.provisional
                 else f.classified_by,
             }
+        )
+    return out
+
+
+# ── Clasificar a demanda (tarea 427) ─────────────────────────────────────────
+
+# qwen tarda ~3 s por noticia (la 413). Con 15 pendientes son ~45 s, que se suman a los ~15 s de la
+# opinión; pasado el tope se manda la heurística, rotulada, como antes. Una llamada que ya arrancó
+# puede pasarse del tope hasta su propio timeout.
+TOPE_CLASIFICAR_S = 45.0
+TIMEOUT_POR_NOTICIA_S = 20.0
+
+
+def clasificador_a_demanda():
+    """El clasificador del pipeline diario (``hybrid-ollama`` con el mismo modelo), con un timeout corto."""
+    from analysis.news_digest import DEFAULT_CLASSIFY_MODEL
+    from data.catalyst_classifier import classify, make_hybrid_backend, make_ollama_backend
+
+    backend = make_hybrid_backend(
+        llm_backend=make_ollama_backend(model=DEFAULT_CLASSIFY_MODEL, timeout=TIMEOUT_POR_NOTICIA_S)
+    )
+    return lambda titulo, contenido, fuente, ticker: classify(
+        titulo, contenido, fuente, ticker, backend=backend
+    )
+
+
+def _guardar_clasificacion(news_id: int, c) -> None:
+    """Lo mismo que guarda el classify diario (``scripts/classify_catalysts._persistir``), para una fila."""
+    from database.models import NewsEvent, session_scope, utcnow_naive
+
+    with session_scope() as s:
+        ev = s.get(NewsEvent, news_id)
+        if ev is None:
+            return
+        ev.event_type = c.event_type
+        ev.sentiment = c.sentiment
+        ev.classifier_confidence = c.confidence
+        ev.classified_at = utcnow_naive()
+        ev.classified_by = c.classifier
+        ev.sentiment_score = c.sentiment_score
+        ev.relevance = c.relevance
+
+
+def clasificar_a_demanda(
+    filas: list,
+    clasificar,
+    *,
+    tope_s: float = TOPE_CLASIFICAR_S,
+    reloj=time.monotonic,
+    guardar=_guardar_clasificacion,
+) -> list:
+    """Clasifica con el modelo las ``filas`` que todavía no tienen su clasificación, y la guarda.
+
+    Pendiente es sin clasificar o con el respaldo de un LLM caído (``fallback``, la 436). Las de
+    ``sec_8k`` no: las clasifica la heurística por diseño. Si el modelo no contesta (devuelve la
+    heurística o el respaldo), no se insiste con las demás; pasado ``tope_s``, tampoco. Lo que queda
+    sin clasificar sigue a ``classify_missing``, rotulado provisional como antes. Guardar sirve
+    también a la pestaña Noticias. Nunca levanta.
+    """
+    from dataclasses import replace
+
+    from data.catalyst_classifier import RESPALDO
+
+    limite = reloj() + tope_s
+    caido = False
+    out = []
+    for f in filas:
+        pendiente = (f.event_type is None or f.classified_by == RESPALDO) and f.source != "sec_8k"
+        if not pendiente or caido or reloj() >= limite:
+            out.append(f)
+            continue
+        try:
+            c = clasificar(f.title, f.content, f.source, f.ticker)
+        except Exception:
+            c = None
+        if c is None or c.classifier in ("heuristic", RESPALDO):
+            caido = True
+            out.append(f)
+            continue
+        try:
+            guardar(f.id, c)
+        except Exception:
+            from config.logging_config import get_logger
+
+            get_logger(__name__).exception("No se pudo guardar la clasificación de la noticia %s", f.id)
+        out.append(
+            replace(
+                f,
+                event_type=c.event_type,
+                sentiment=c.sentiment,
+                classifier_confidence=c.confidence,
+                sentiment_score=c.sentiment_score,
+                classified_by=c.classifier,
+                relevance=c.relevance,
+                provisional=False,
+            )
         )
     return out
 

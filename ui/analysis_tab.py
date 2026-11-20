@@ -715,6 +715,7 @@ class AnalysisTab(QWidget):
                 anuales_de,
                 armar_datos,
                 balance_de,
+                clasificador_a_demanda,
                 noticias_recientes,
                 pares_de,
             )
@@ -725,7 +726,7 @@ class AnalysisTab(QWidget):
                 r,
                 c,
                 a,
-                noticias_recientes(t),
+                noticias_recientes(t, clasificar=clasificador_a_demanda()),
                 s_r,
                 obtenido=ob,
                 valuacion=v,

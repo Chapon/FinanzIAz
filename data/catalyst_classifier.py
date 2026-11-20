@@ -387,6 +387,7 @@ def make_ollama_backend(
     host: str | None = None,
     *,
     http_post=None,
+    timeout: float = 60.0,
 ) -> Backend:
     """
     Build a classifier backed by a **local Ollama** model — free, no API key, no
@@ -430,7 +431,7 @@ def make_ollama_backend(
                         {"role": "user", "content": user},
                     ],
                 },
-                timeout=60,
+                timeout=timeout,  # tarea 427: la opinión lo acota; el classify diario usa 60 s
             )
             resp.raise_for_status()
             data = resp.json()
