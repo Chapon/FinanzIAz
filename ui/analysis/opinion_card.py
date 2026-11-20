@@ -25,6 +25,12 @@ CUERPO_MAX_ALTO = 260
 AVISO_HARVEST = " El harvest de noticias del día está corriendo: las de hoy pueden no estar todavía."
 
 
+AVISO_MEZCLADO = (
+    " El código de la app cambió desde que se abrió: esta opinión pudo salir con partes viejas y "
+    "nuevas (se guarda como WIP). Reabrila con abrir_app.bat."
+)
+
+
 def aviso_harvest() -> str:
     """``AVISO_HARVEST`` si el harvest in-app está corriendo, o ``""`` (tarea 442)."""
     try:
@@ -53,6 +59,7 @@ class OpinionWorker(BaseWorker):
 
     def __init__(self, ticker: str, armar_datos, parent=None):
         super().__init__(parent)
+        self.mezclado = False
         self.ticker = ticker
         self.armar_datos = armar_datos
 
@@ -64,7 +71,7 @@ class OpinionWorker(BaseWorker):
             opinion = oc.pedir_opinion(datos)
         except oc.OpinionError as e:
             return (False, str(e))
-        oc.guardar(self.ticker, opinion, datos)
+        self.mezclado = oc.guardar(self.ticker, opinion, datos)
         return (True, opinion)
 
     def on_success(self, result) -> None:
@@ -169,7 +176,8 @@ class OpinionCard(QFrame):
             return
         self.mostrar(valor)
         self.boton.setText("Pedir de nuevo")
-        self.estado.setText(f"Respondió en {valor.segundos:.0f} s ({valor.modelo}).{self._aviso}")
+        mezcla = AVISO_MEZCLADO if getattr(self._worker, "mezclado", False) else ""
+        self.estado.setText(f"Respondió en {valor.segundos:.0f} s ({valor.modelo}).{self._aviso}{mezcla}")
 
     def mostrar(self, op) -> None:
         color = _COLOR.get(op.recomendacion, PALETTE["text2"])

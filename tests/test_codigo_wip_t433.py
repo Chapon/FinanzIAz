@@ -129,6 +129,12 @@ def _opinion():
     return oc.Opinion("MANTENER", 40, "tesis", [], [], [], oc.MODELO, 1.0)
 
 
+def _arranco_con(monkeypatch, estado):
+    """El arranque y el árbol de ahora, iguales: desde la 449 ``guardar`` compara los dos."""
+    monkeypatch.setattr(codigo, "al_arrancar", lambda: estado)
+    monkeypatch.setattr(codigo, "estado_del_codigo", lambda *a, **k: estado)
+
+
 def _fila(test_db):
     from database.models import ClaudeOpinion, session_scope
 
@@ -142,7 +148,7 @@ def test_la_opinion_guardada_trae_el_commit_y_el_WIP(test_db, monkeypatch):
 
     from analysis import opinion_claude as oc
 
-    monkeypatch.setattr(codigo, "al_arrancar", lambda: _SUCIO)
+    _arranco_con(monkeypatch, _SUCIO)
     oc.guardar("MU", _opinion(), {"precio": 1.0}, hoy=date(2026, 11, 19))
     assert _fila(test_db) == ("b" * 40, True)
 
@@ -152,7 +158,7 @@ def test_la_opinion_sin_WIP_dice_False(test_db, monkeypatch):
 
     from analysis import opinion_claude as oc
 
-    monkeypatch.setattr(codigo, "al_arrancar", lambda: _LIMPIO)
+    _arranco_con(monkeypatch, _LIMPIO)
     oc.guardar("MU", _opinion(), {"precio": 1.0}, hoy=date(2026, 11, 19))
     assert _fila(test_db) == ("b" * 40, False)
 
@@ -163,6 +169,6 @@ def test_la_opinion_sin_git_no_afirma_nada(test_db, monkeypatch):
 
     from analysis import opinion_claude as oc
 
-    monkeypatch.setattr(codigo, "al_arrancar", lambda: codigo.EstadoDelCodigo(None))
+    _arranco_con(monkeypatch, codigo.EstadoDelCodigo(None))
     oc.guardar("MU", _opinion(), {"precio": 1.0}, hoy=date(2026, 11, 19))
     assert _fila(test_db) == (None, None)

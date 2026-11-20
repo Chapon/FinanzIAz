@@ -126,8 +126,10 @@ def test_cada_noticia_trae_su_relevancia(test_db, monkeypatch):
     assert rel == {"Nvidia cae": 0.0, "Micron sube": 0.9}
 
 
-def test_la_heuristica_provisional_tambien_trae_relevancia(test_db, monkeypatch):
-    """Las que qwen todavía no clasificó van con la heurística al vuelo (406): su relevancia también."""
+def test_la_heuristica_provisional_va_sin_relevancia(test_db, monkeypatch):
+    """Las que qwen todavía no clasificó van con la heurística al vuelo (406), pero SIN su relevancia
+    (449): la heurística no la mide —usa su confianza, 0,20 sin pista— y con la regla del 0,2 del
+    prompt Claude descartaba toda noticia provisional."""
     from database.models import NewsEvent, session_scope
 
     monkeypatch.setattr("database.models.utcnow_naive", lambda: datetime(2026, 11, 12, 0, 0))
@@ -143,4 +145,4 @@ def test_la_heuristica_provisional_tambien_trae_relevancia(test_db, monkeypatch)
         )
     (n,) = oc.noticias_recientes("MU")
     assert "heuristica provisional" in n["clasificador"]
-    assert isinstance(n["relevancia_0_a_1"], float)
+    assert n["relevancia_0_a_1"] is None

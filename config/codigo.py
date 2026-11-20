@@ -7,9 +7,11 @@ registraba con qué código había salido. Este módulo lo dice: el commit de ``
 modificados o sin trackear. ``main.py`` lo loguea al arrancar, la barra de estado lo avisa si hay
 WIP, y cada opinión de Claude lo guarda.
 
-Se toma **una vez por proceso** (:func:`al_arrancar`): lo que corre es lo que se importó, y un
-cambio del árbol con la app abierta no cambia el código cargado. Fail-open: sin ``git`` (o fuera
-de un repo) el commit es ``None`` y no se afirma nada.
+Se toma **una vez por proceso** (:func:`al_arrancar`). Pero un módulo que se importa tarde —el de
+la opinión se importa en el primer pedido— carga el árbol de **ese** momento: el 2026-11-20 la opinión
+de NVDA salió con la opinión de la 440 y la pestaña del arranque, registrada como el commit del
+arranque sin WIP (la 449). Por eso :func:`mezclado` compara el arranque con el árbol de ahora.
+Fail-open: sin ``git`` (o fuera de un repo) el commit es ``None`` y no se afirma nada.
 """
 
 from __future__ import annotations
@@ -87,6 +89,14 @@ def estado_del_codigo(root: str = ROOT) -> EstadoDelCodigo:
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
         return EstadoDelCodigo(None)
     return EstadoDelCodigo(commit, modificados_de_porcelana(porcelana))
+
+
+def mezclado(arranque: EstadoDelCodigo, ahora: EstadoDelCodigo) -> bool:
+    """¿Cambió el árbol desde que arrancó la app? Entonces lo que se importó después puede ser de
+    otro código que el del arranque (la 449). Sin git en alguno de los dos, no se afirma nada."""
+    if not arranque.commit or not ahora.commit:
+        return False
+    return arranque.commit != ahora.commit or arranque.modificados != ahora.modificados
 
 
 @functools.lru_cache(maxsize=1)

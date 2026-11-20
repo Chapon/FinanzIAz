@@ -73,7 +73,8 @@ DIAS_NOTICIAS = 14
 #  10 — las noticias que se mandan las clasifica qwen al pedir la opinión, con tope (427).
 #  11 — caja, capex, flujo de caja libre y ganancia operativa por año (441).
 #  12 — las noticias se bajan al pedir si la app no tiene recientes, y van con su cobertura (442).
-VERSION_DATOS = 12
+#  13 — las recomendaciones de analistas con el mes en curso, y sin la relevancia de la heurística (449).
+VERSION_DATOS = 13
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -117,7 +118,9 @@ datos_faltantes (el volumen de esa barra es parcial y así lo dice el bloque vol
 de las noticias están en hora del Este de EE.UU. (ET).
 - Cada noticia trae relevancia_0_a_1, del mismo clasificador que el tono: con 0,2 o menos, la \
 noticia trata de otra empresa o de otra cosa, aunque aparezca bajo este ticker; no la tomes como \
-un hecho de la empresa ni uses su tono. Algunas fuentes traen un resumen corto y otras sólo el \
+un hecho de la empresa ni uses su tono. Si la clasificó la heurística (provisional, heuristic o \
+fallback), la relevancia viene null: la heurística no la mide; juzgá por el título si es de la \
+empresa. Algunas fuentes traen un resumen corto y otras sólo el \
 título (resumen null): un resumen que no está no es un dato faltante, no lo anotes en datos_faltantes.
 - cobertura_noticias dice cuántas noticias del ticker tiene la app en la ventana, de qué días (ET) \
 y qué días no tiene ninguna. Si no hay noticias, es que la app no las tiene (lo dice su nota), no \
@@ -277,7 +280,8 @@ def armar_datos(
             }
     if analyst:
         datos["analistas"] = {
-            "recomendaciones": (analyst.get("recommendations") or [])[:3],
+            "recomendaciones": recomendaciones_recientes(analyst.get("recommendations")),
+            "periodos": "0m es el mes en curso, -1m el anterior; de Yahoo, por mes",
             # Sin `current`: es el precio de cuando se bajó el consenso, sin hora, y quedaba al lado
             # del `precio` de otra hora sin rótulo (tarea 434).
             "precios_objetivo": _sin_current(analyst.get("price_targets")),
@@ -341,6 +345,23 @@ DEFINICIONES_CALIDAD = {
     "deuda": "años de ganancia neta para pagar la deuda de largo plazo; 100 = la menos endeudada",
     "regularidad": "fracción de los años en que la ganancia neta creció",
 }
+
+
+def _meses_atras(r) -> int:
+    try:
+        return -int(str(r.get("period", "")).rstrip("m"))
+    except (TypeError, ValueError, AttributeError):
+        return 99
+
+
+def recomendaciones_recientes(recs, n: int = 3) -> list:
+    """Los ``n`` meses más nuevos de las recomendaciones de Yahoo, del más nuevo al más viejo (449).
+
+    Yahoo las da del más viejo al más nuevo (−3m, −2m, −1m, 0m en 518 de 563 tickers del cache el
+    2026-11-20), y tomar las tres primeras dejaba afuera el mes en curso: en NVDA, después del
+    desplome, la compra bajaba de 49 a 34 y Claude no lo veía.
+    """
+    return sorted((r for r in recs or [] if isinstance(r, dict)), key=_meses_atras)[:n]
 
 
 def _sin_current(objetivos):
@@ -686,7 +707,7 @@ def _noticias_para_claude(filas: list, clasificar, zona) -> list[dict]:
                 "tono_-3_a_3": _num((f.sentiment_score or 0) * 3, 0)
                 if f.sentiment_score is not None
                 else None,
-                "relevancia_0_a_1": _num(f.relevance, 2),
+                "relevancia_0_a_1": relevancia_medida(f),
                 "fuente": f.source,
                 "clasificador": "heuristica provisional (qwen todavia no la clasifico)"
                 if f.provisional
@@ -694,6 +715,19 @@ def _noticias_para_claude(filas: list, clasificar, zona) -> list[dict]:
             }
         )
     return out
+
+
+# La heurística no mide relevancia: usa su confianza (0,20 sin pista), y el prompt dice que con 0,2
+# o menos la noticia es de otra empresa. Con ese número, Claude descartaba toda noticia provisional
+# (14 de 15 en NVDA el 2026-11-20): va null y el prompt lo explica (tarea 449).
+_SIN_RELEVANCIA_MEDIDA = frozenset({"heuristic", "fallback"})
+
+
+def relevancia_medida(f) -> float | None:
+    """La relevancia de la fila si la midió un modelo; ``None`` si es de la heurística."""
+    if getattr(f, "provisional", False) or (f.classified_by or "") in _SIN_RELEVANCIA_MEDIDA:
+        return None
+    return _num(f.relevance, 2)
 
 
 # ── Noticias a demanda y su cobertura (tarea 442) ───────────────────────────
@@ -1215,13 +1249,16 @@ def pedir_opinion(
 # ── El registro ──────────────────────────────────────────────────────────────
 
 
-def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None) -> None:
+def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None) -> bool:
     """Upsert por ``(ticker, día)``: pedirla de nuevo el mismo día la reemplaza, y la reemplazada
     pasa antes a ``claude_opinions_reemplazadas`` (tarea 438).
 
-    Guarda también con qué código corre la app (tarea 433): el commit y si había WIP sin commitear.
+    Guarda también con qué código corre la app (tarea 433): el commit del arranque y si había WIP
+    sin commitear. **Y si el árbol cambió desde el arranque** (la 449), ``codigo_wip`` va ``True``:
+    este módulo y los demás que se importan tarde pueden ser de otro código que el del commit.
+    Devuelve si la opinión salió con código mezclado.
     """
-    from config.codigo import al_arrancar
+    from config import codigo as _codigo
     from database.models import (
         COLUMNAS_OPINION,
         ClaudeOpinion,
@@ -1230,7 +1267,17 @@ def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None)
         utcnow_naive,
     )
 
-    codigo = al_arrancar()
+    codigo = _codigo.al_arrancar()
+    mezcla = _codigo.mezclado(codigo, _codigo.estado_del_codigo())
+    if mezcla:
+        from config.logging_config import get_logger
+
+        get_logger(__name__).warning(
+            "La opinión de %s salió con código mezclado: la app arrancó en %s y el árbol cambió "
+            "después (tarea 449); se guarda como WIP",
+            ticker.upper(),
+            codigo.corto,
+        )
 
     fecha = (hoy or date.today()).isoformat()
     respuesta = {
@@ -1264,7 +1311,8 @@ def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None)
         fila.segundos = opinion.segundos
         fila.creado_at = utcnow_naive()
         fila.codigo_commit = codigo.commit
-        fila.codigo_wip = codigo.wip if codigo.commit else None
+        fila.codigo_wip = (codigo.wip or mezcla) if codigo.commit else None
+    return mezcla
 
 
 def opinion_de_hoy(ticker: str, hoy: date | None = None) -> tuple[Opinion, datetime | None] | None:
