@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 351 — Tarea 438 (OPINION-CLAUDE-SE-PISA-POR-DIA) CERRADA 2026-11-19 — pedir la opinión de nuevo el mismo día ya no pierde la anterior: pasa entera a `claude_opinions_reemplazadas`, y la tarjeta y la medición siguen con la última** (origen: `docs/auditoria_tanda_2026-11-16.md` [E-1]).
-  - **Decisión de Chapa del 2026-11-19: histórico de reemplazadas** (contra *una fila por pedido*). `claude_opinions` no cambia —una por `(ticker, día)`, la 321 cuenta ésa—; `guardar` copia la fila que va a pisar a la tabla nueva en la misma transacción, con `opinion_id` (la fila que la reemplazó) y `reemplazada_at`. Migración **0022** (idempotente por objeto, como la 0018). `COLUMNAS_OPINION` en `database/models.py` es la lista de lo que se copia, y un test exige que sea **todas** las de `claude_opinions` menos `id`: una columna nueva (como las de la 433) no se puede quedar afuera del histórico.
-  - **La tarjeta** decía *«Pedir de nuevo» la reemplaza*; ahora agrega *(la anterior queda en el histórico)*. **La 321** dice, antes de medir, que cuenta la última del día y no las reemplazadas, y que `codigo_wip` (la 433) marca las que salieron con WIP.
-  - **Mutaciones** (restauradas desde copia), las tres en rojo: sin la copia; `opinion_id` en `None`; `COLUMNAS_OPINION` sin `codigo_wip`.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -573,6 +569,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-19f** al cerrar la **425**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **434 → 438 → 426 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 > **Repriorizado 2026-11-19g** al cerrar la **434**, que deja la **439** (una noticia sin `published_at` rompe la lista de la opinión; latente, BAJA). Va después de la 426, que toca el mismo `_Row`. El orden queda **438 → 426 → 439 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
+
+> **Repriorizado 2026-11-19h** al cerrar la **438**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **426 → 439 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 
 
@@ -2020,7 +2018,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con una noticia sin `published_at` en la DB de test: `noticias_recientes` la manda con la hora de `fetched_at` (rojo hoy). Mutación: sin `fetched_at` en el `_Row`, rojo. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 438. ~~OPINION-CLAUDE-SE-PISA-POR-DIA — La opinión se guarda una por `(ticker, día)` y pedirla de nuevo la reemplaza: el 11/11 la de MU se pisó dos veces —una con código commiteado— y se perdió la evidencia de origen de ocho tareas abiertas~~ · **CERRADA 2026-11-19 — la opinión reemplazada pasa entera a claude_opinions_reemplazadas; la tarjeta y la medición siguen con la última** ·  origen: `docs/auditoria_tanda_2026-11-16.md` [E-1] (lo trajo el `verificador`) · severidad **MEDIA** · display-only
+### 438. ~~OPINION-CLAUDE-SE-PISA-POR-DIA — La opinión se guarda una por `(ticker, día)` y pedirla de nuevo la reemplaza: el 11/11 la de MU se pisó dos veces —una con código commiteado— y se perdió la evidencia de origen de ocho tareas abiertas~~ · **CERRADA 2026-11-19 — la opinión reemplazada pasa entera a claude_opinions_reemplazadas; la tarjeta y la medición siguen con la última** (`62c5381`) · **movida a *Hecho reciente* con el detalle** ·  origen: `docs/auditoria_tanda_2026-11-16.md` [E-1] (lo trajo el `verificador`) · severidad **MEDIA** · display-only
 
 - **Qué pasa.** `guardar` (`analysis/opinion_claude.py:629-655`) es un *upsert* por `(ticker, día)` a propósito (la 320), con índice único. El 11/11 la fila de MU se reemplazó dos veces: la de las 15:02Z —origen de la 417 a la 421— por la de las 18:13Z, hecha con código commiteado (`605d998`), y ésa —origen de la 425 a la 427, *«12 de 15»* provisionales— por la del WIP de las 21:00Z (la 433). En la DB queda una sola fila de MU de ese día.
 - **Por qué importa.** La evidencia de origen de ocho tareas abiertas existe sólo como cita en el backlog y en un transcript; la costumbre que la dispara (volver a pedir la opinión para ver si un cambio llegó) es razonable; y la medición de la 321 se queda con la última opinión del día, no con la que se leyó primero.
@@ -4979,6 +4977,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 351 — Tarea 438 (OPINION-CLAUDE-SE-PISA-POR-DIA) CERRADA 2026-11-19 — pedir la opinión de nuevo el mismo día ya no pierde la anterior: pasa entera a `claude_opinions_reemplazadas`, y la tarjeta y la medición siguen con la última** (`62c5381`) (origen: `docs/auditoria_tanda_2026-11-16.md` [E-1]).
+  - **Decisión de Chapa del 2026-11-19: histórico de reemplazadas** (contra *una fila por pedido*). `claude_opinions` no cambia —una por `(ticker, día)`, la 321 cuenta ésa—; `guardar` copia la fila que va a pisar a la tabla nueva en la misma transacción, con `opinion_id` (la fila que la reemplazó) y `reemplazada_at`. Migración **0022** (idempotente por objeto, como la 0018). `COLUMNAS_OPINION` en `database/models.py` es la lista de lo que se copia, y un test exige que sea **todas** las de `claude_opinions` menos `id`: una columna nueva (como las de la 433) no se puede quedar afuera del histórico.
+  - **La tarjeta** decía *«Pedir de nuevo» la reemplaza*; ahora agrega *(la anterior queda en el histórico)*. **La 321** dice, antes de medir, que cuenta la última del día y no las reemplazadas, y que `codigo_wip` (la 433) marca las que salieron con WIP.
+  - **Mutaciones** (restauradas desde copia), las tres en rojo: sin la copia; `opinion_id` en `None`; `COLUMNAS_OPINION` sin `codigo_wip`.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `62c5381` VERDE.
 
 - **WIP 350 — Tarea 434 (OPINION-CLAUDE-ROTULOS) CERRADA 2026-11-19 — lo que recibe Claude dice lo que dicen sus rótulos: la calidad con la definición de cada pata, su sentido y su corte; la fecha en que se bajaron los fundamentals; la relevancia de cada noticia; y los objetivos sin el `current` de Yahoo, que no traía hora** (`27641de`) (origen: `docs/auditoria_tanda_2026-11-16.md` [I-1]; `version_datos` 6).
   - **(a) Calidad.** `DEFINICIONES_CALIDAD` traduce las cuatro patas de `analysis/calidad.py` (`roe` es el ROE de hasta 10 años **menos su desvío**; en `deuda` **100 es la menos endeudada**), con un `sentido` (100 es lo mejor en todas) y `con_lo_presentado_antes_del` (el corte común del almacén, la 394). La `fuente` decía *«lo presentado hasta hoy»*, un literal: ahora dice el día en que se bajaron los fundamentals del ticker (`Valuacion.generado`, que pone `valuacion_de`), o sólo *«EDGAR (10-K)»* si no se sabe. Un test fija que las definiciones cubran todas las patas.
