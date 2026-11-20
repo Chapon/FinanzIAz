@@ -68,7 +68,8 @@ DIAS_NOTICIAS = 14
 #   6 — la calidad con sus definiciones y su corte, la fecha de los fundamentals, la relevancia de
 #       cada noticia, y los objetivos sin el `current` de Yahoo, que no traía hora (434).
 #   7 — el resumen de cada noticia, cuando la fuente lo trae (426).
-VERSION_DATOS = 7
+#   8 — los pares de la misma industria, el ETF del sector y los índices (420).
+VERSION_DATOS = 8
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -114,6 +115,12 @@ de las noticias están en hora del Este de EE.UU. (ET).
 noticia trata de otra empresa o de otra cosa, aunque aparezca bajo este ticker; no la tomes como \
 un hecho de la empresa ni uses su tono. Algunas fuentes traen un resumen corto y otras sólo el \
 título (resumen null): un resumen que no está no es un dato faltante, no lo anotes en datos_faltantes.
+- pares trae los retornos de tickers de la misma industria que la app tiene guardados (no la \
+industria entera), del ETF del sector y de los índices (SPY, QQQ), para separar lo que le pasa a \
+la empresa de lo que le pasa al sector y al mercado; cada uno dice a qué día llega. La app NO \
+tiene precios de commodities ni de insumos \
+(memoria, petróleo, metales, etc.): no los anotes en datos_faltantes; si te parecen decisivos, \
+decilo en los riesgos.
 - valuacion y fundamentales_anuales salen de los 10-K presentados a la SEC (EDGAR): son anuales, \
 por año fiscal. La app NO tiene el guidance de la empresa ni las cifras trimestrales: no los \
 anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bloque yfinance es \
@@ -199,6 +206,7 @@ def armar_datos(
     valuacion=None,
     anuales: list[dict] | None = None,
     balance: dict | None = None,
+    pares: dict | None = None,
 ) -> dict:
     """El resumen que se manda a Claude. **Puro**: todo llega por parámetro.
 
@@ -274,6 +282,8 @@ def armar_datos(
         datos["yfinance"] = yf_
     if noticias:
         datos["noticias"] = noticias[:MAX_NOTICIAS]
+    if pares:
+        datos["pares"] = pares
     return datos
 
 
@@ -571,6 +581,188 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
             }
         )
     return out
+
+
+# ── Los pares (tarea 420) ────────────────────────────────────────────────────
+
+MAX_PARES = 5
+# Un par cuya serie termina más de estos días antes que la del ticker no entra: el cache guarda
+# tickers que nadie refresca (el 2026-11-20, 20 de 158 terminaban entre agosto y octubre), y sus
+# retornos serían de otra ventana.
+MAX_DESFASE_DIAS = 5
+# Los índices, para separar lo que le pasa a la empresa de lo que le pasa al mercado (la opinión de
+# MSFT del 2026-11-20 lo pidió: «para saber si la caída es de Microsoft o de todo el mercado»).
+INDICES = ("SPY", "QQQ")
+# El ETF del sector: SPDR por sector de Yahoo, y SOXX para semiconductores, que es la que pidió la
+# opinión de MU (sus pares de memoria se movían ±25 %).
+ETF_POR_INDUSTRIA = {"Semiconductors": "SOXX", "Semiconductor Equipment & Materials": "SOXX"}
+ETF_POR_SECTOR = {
+    "Technology": "XLK",
+    "Communication Services": "XLC",
+    "Consumer Cyclical": "XLY",
+    "Consumer Defensive": "XLP",
+    "Energy": "XLE",
+    "Financial Services": "XLF",
+    "Healthcare": "XLV",
+    "Industrials": "XLI",
+    "Basic Materials": "XLB",
+    "Real Estate": "XLRE",
+    "Utilities": "XLU",
+}
+
+
+def _retornos(serie) -> dict | None:
+    """Retorno a 5 y 20 ruedas de una serie ``[(día, cierre)]``, contra cierres; ``None`` si es corta."""
+    if not serie or len(serie) < 6:
+        return None
+    ultimo = serie[-1][1]
+    out = {"al": serie[-1][0], "5d": _pct(ultimo / serie[-6][1] - 1)}
+    out["20d"] = _pct(ultimo / serie[-21][1] - 1) if len(serie) >= 21 else None
+    return out
+
+
+def _desfase(serie, al: str | None) -> int | None:
+    """Días entre el último cierre de ``serie`` y ``al``; ``None`` sin ``al`` o sin serie."""
+    if not serie or not al:
+        return None
+    try:
+        return (date.fromisoformat(al[:10]) - date.fromisoformat(str(serie[-1][0])[:10])).days
+    except ValueError:
+        return None
+
+
+def _al_dia(serie, al: str | None) -> bool:
+    d = _desfase(serie, al)
+    return bool(serie) and (d is None or d <= MAX_DESFASE_DIAS)
+
+
+def bloque_pares(
+    ticker: str,
+    industria,
+    sector,
+    universo: dict,
+    series,
+    maximo: int = MAX_PARES,
+    *,
+    referencia=None,
+    al: str | None = None,
+) -> dict | None:
+    """Los retornos de hasta ``maximo`` pares de la **misma industria**, del ETF del sector y de los
+    índices. **Puro**.
+
+    ``universo`` es ``{ticker: (sector, industria)}``; ``series(t)`` devuelve los cierres guardados de
+    un par (``[(día, cierre)]`` o ``None``) y ``referencia(t)`` los del ETF y los índices (por defecto,
+    ``series``; en la app los baja si faltan). ``al`` es el día de la última barra del ticker: lo que
+    termine más de ``MAX_DESFASE_DIAS`` antes no entra. Por industria y no por sector: en *Technology*
+    entran el software y los semiconductores juntos, y a MU no le dice nada cómo se mueve Microsoft.
+    ``None`` si no hay nada.
+    """
+    referencia = referencia or series
+    propio = ticker.upper()
+    industria = None if not industria or industria == "N/A" else industria
+    pares = []
+    for t in sorted(universo) if industria else ():
+        if t == propio or universo[t][1] != industria:
+            continue
+        serie = series(t)
+        r = _retornos(serie) if _al_dia(serie, al) else None
+        if r is not None:
+            pares.append({"ticker": t, **r})
+        if len(pares) >= maximo:
+            break
+
+    def _de_referencia(t):
+        if t == propio:
+            return None
+        serie = referencia(t)
+        r = _retornos(serie) if _al_dia(serie, al) else None
+        return None if r is None else {"ticker": t, **r}
+
+    etf_t = ETF_POR_INDUSTRIA.get(industria or "") or ETF_POR_SECTOR.get(sector or "")
+    etf = _de_referencia(etf_t) if etf_t else None
+    indices = [x for x in map(_de_referencia, INDICES) if x is not None]
+    if not pares and etf is None and not indices:
+        return None
+    return {
+        "industria": industria,
+        "nota": (
+            "retornos contra cierres. pares: los tickers de la misma industria que la app tiene "
+            "guardados, no la industria entera; etf_del_sector e indices: para separar lo de la "
+            "empresa de lo del sector y del mercado"
+        ),
+        "pares": pares,
+        "etf_del_sector": etf,
+        "indices": indices,
+    }
+
+
+def _dato(x) -> str | None:
+    return None if not x or x == "N/A" else str(x)
+
+
+def _ultimo_dia(df) -> str | None:
+    try:
+        i = df.index[-1]
+    except (AttributeError, IndexError, TypeError):
+        return None
+    return str(i.date()) if hasattr(i, "date") else str(i)[:10]
+
+
+def _bajar_al_cache(t: str) -> None:
+    """Baja la serie de ``t`` con el período del scan y la deja en el cache (``get_historical_data``).
+
+    El mismo período que el scan: para SPY, que el scan baja como benchmark, es el mismo frame.
+    """
+    from data.yahoo_finance import get_historical_data
+    from paper_trading.engine import _resolve_history_period
+
+    get_historical_data(t, period=_resolve_history_period(), interval="1d")
+
+
+def pares_de(ticker: str, company: dict | None, df=None, bajar=_bajar_al_cache) -> dict | None:
+    """El bloque ``pares``: la industria de ``company_info_cache`` y los cierres del cache de precios.
+
+    Los pares salen sólo del cache (sin red). El ETF del sector y los índices se bajan con ``bajar``
+    cuando el cache no los tiene o termina antes que el ticker (``df``): si no, el ETF no saldría
+    nunca (el 2026-11-20 el cache tenía SPY y ningún ETF). Corre en el worker de la opinión, no en el
+    hilo de la GUI. ``None`` si falla o no hay nada.
+    """
+    from config.logging_config import get_logger
+
+    try:
+        from data import historical_series
+        from database.models import CompanyInfoCache, session_scope
+
+        def guardada(t):
+            # Una sesión por lectura, y no una abierta durante las bajadas. La conexión de la sesión y
+            # no el archivo por fuera: así lee la misma DB que la app (y en los tests, la de memoria).
+            with session_scope() as s:
+                return historical_series.close_series(s.connection().connection.dbapi_connection, t)
+
+        with session_scope() as s:
+            universo = {f.ticker.upper(): (f.sector, f.industry) for f in s.query(CompanyInfoCache).all()}
+        guardado = universo.get(ticker.upper(), (None, None))
+        # `get_company_info` devuelve "N/A" cuando Yahoo no tiene el dato: eso no es una industria.
+        industria = _dato((company or {}).get("industry")) or _dato(guardado[1])
+        sector = _dato((company or {}).get("sector")) or _dato(guardado[0])
+        al = _ultimo_dia(df)
+
+        def de_referencia(t):
+            serie = guardada(t)
+            desfase = _desfase(serie, al)
+            if serie and (desfase is None or desfase <= 0):
+                return serie
+            try:
+                bajar(t)
+            except Exception:
+                get_logger(__name__).warning("Pares: no se pudo bajar %s", t, exc_info=True)
+                return serie
+            return guardada(t)
+
+        return bloque_pares(ticker, industria, sector, universo, guardada, referencia=de_referencia, al=al)
+    except Exception:
+        get_logger(__name__).exception("Pares de %s para la opinión: falló", ticker)
+        return None
 
 
 # ── La llamada ───────────────────────────────────────────────────────────────

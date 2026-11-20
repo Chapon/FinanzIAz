@@ -711,7 +711,13 @@ class AnalysisTab(QWidget):
         def _datos_para_claude(
             t=ticker, d=df, r=result, c=company, a=analyst, s_r=sr, ob=obtenido, v=valuacion
         ):
-            from analysis.opinion_claude import anuales_de, armar_datos, balance_de, noticias_recientes
+            from analysis.opinion_claude import (
+                anuales_de,
+                armar_datos,
+                balance_de,
+                noticias_recientes,
+                pares_de,
+            )
 
             return armar_datos(
                 t,
@@ -725,6 +731,7 @@ class AnalysisTab(QWidget):
                 valuacion=v,
                 anuales=anuales_de(t),
                 balance=balance_de(t),
+                pares=pares_de(t, c, d),
             )
 
         self.opinion_card.set_contexto(ticker, _datos_para_claude)
