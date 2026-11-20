@@ -54,6 +54,7 @@ def valuacion_de(ticker: str, precio: float | None):
         v = valuar(fund, precio, cierres, manana, get_split_events(ticker))
         if v is not None:
             v.calidad = calidad_en_el_universo(ticker, fund, manana)
+            v.generado = getattr(fund, "generado", None) or None
         return v
     except Exception:
         log.exception("Valuación de %s: falló (la tarjeta no se muestra)", ticker)

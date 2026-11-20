@@ -150,6 +150,7 @@ def fetch_news_window(
                 classifier_confidence=r.classifier_confidence,
                 sentiment_score=r.sentiment_score,
                 classified_by=r.classified_by,
+                relevance=r.relevance,
             )
             for r in rows
         ]
@@ -171,6 +172,9 @@ class _Row:
     sentiment_score: float | None = None
     classified_by: str | None = None
     provisional: bool = False  # tarea 406: clasificada al vuelo por classify_missing
+    # Tarea 434: cuánto trata la noticia de ESTE ticker, del mismo clasificador que el tono. La
+    # opinión de Claude la necesita: 7 de 15 noticias de MU eran de otras empresas.
+    relevance: float | None = None
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
@@ -210,6 +214,7 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
                     sentiment_score=c.sentiment_score,
                     classified_by=c.classifier,
                     provisional=True,
+                    relevance=c.relevance,
                 )
             )
         except Exception:

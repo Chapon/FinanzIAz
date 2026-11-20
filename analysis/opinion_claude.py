@@ -63,7 +63,9 @@ DIAS_NOTICIAS = 14
 #   3 — valuación de la tarjeta, fundamentales anuales de EDGAR y el P/E de yfinance (418).
 #   4 — próximo balance y sorpresas de EPS de los últimos trimestres (419).
 #   5 — volumen de la última barra contra el promedio de 20 ruedas, parcial si es intradiario (425).
-VERSION_DATOS = 5
+#   6 — la calidad con sus definiciones y su corte, la fecha de los fundamentals, la relevancia de
+#       cada noticia, y los objetivos sin el `current` de Yahoo, que no traía hora (434).
+VERSION_DATOS = 6
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -105,10 +107,15 @@ dice que el mercado estaba abierto, el precio es intradiario (a la hora que indi
 todavía no cerró: el cierre y el volumen del día todavía no existen, no los anotes en \
 datos_faltantes (el volumen de esa barra es parcial y así lo dice el bloque volumen). Las horas \
 de las noticias están en hora del Este de EE.UU. (ET).
+- Cada noticia trae relevancia_0_a_1, del mismo clasificador que el tono: con 0,2 o menos, la \
+noticia trata de otra empresa o de otra cosa, aunque aparezca bajo este ticker; no la tomes como \
+un hecho de la empresa ni uses su tono.
 - valuacion y fundamentales_anuales salen de los 10-K presentados a la SEC (EDGAR): son anuales, \
 por año fiscal. La app NO tiene el guidance de la empresa ni las cifras trimestrales: no los \
 anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bloque yfinance es \
-un dato de Yahoo, de otra fuente y sin verificar contra EDGAR.
+un dato de Yahoo, de otra fuente y sin verificar contra EDGAR. valuacion.calidad son percentiles \
+contra las empresas del almacén de la app (100 es lo mejor en las cuatro patas, también en deuda, \
+donde 100 es la menos endeudada); sus definiciones vienen en el bloque.
 - Horizonte: de semanas a pocos meses.
 - COMPRAR = abrir o aumentar posición; MANTENER = no hacer nada; VENDER = reducir o cerrar si \
 la tiene, y no comprar si no la tiene.
@@ -243,7 +250,9 @@ def armar_datos(
     if analyst:
         datos["analistas"] = {
             "recomendaciones": (analyst.get("recommendations") or [])[:3],
-            "precios_objetivo": analyst.get("price_targets"),
+            # Sin `current`: es el precio de cuando se bajó el consenso, sin hora, y quedaba al lado
+            # del `precio` de otra hora sin rótulo (tarea 434).
+            "precios_objetivo": _sin_current(analyst.get("price_targets")),
         }
     v = bloque_valuacion(valuacion)
     if v:
@@ -287,6 +296,23 @@ def bloque_volumen(df, intradiario: bool) -> dict | None:
     return out
 
 
+# Lo que es cada pata de la calidad (``analysis/calidad.py``), para que el percentil se lea bien:
+# en la opinión de MU del 2026-11-11, `roe: 20` con un ROE de ~61 % el último año (la pata es el
+# ROE de 10 años menos su desvío) y `deuda: 100` (es la MENOS endeudada) — tarea 434.
+DEFINICIONES_CALIDAD = {
+    "roe": "ROE medio de hasta 10 años menos su desvío: premia el retorno alto y parejo, no el del último año",
+    "rentab_bruta": "ganancia bruta sobre activos del último año fiscal",
+    "deuda": "años de ganancia neta para pagar la deuda de largo plazo; 100 = la menos endeudada",
+    "regularidad": "fracción de los años en que la ganancia neta creció",
+}
+
+
+def _sin_current(objetivos):
+    if not isinstance(objetivos, dict):
+        return objetivos
+    return {k: x for k, x in objetivos.items() if k != "current"}
+
+
 def _pct(x, nd: int = 1):
     return None if x is None else _num(float(x) * 100, nd)
 
@@ -300,7 +326,9 @@ def bloque_valuacion(v) -> dict | None:
     if v is None:
         return None
     out: dict = {
-        "fuente": "EDGAR (10-K), lo presentado hasta hoy",
+        "fuente": f"EDGAR (10-K), lo presentado hasta el {v.generado}, cuando se bajó"
+        if getattr(v, "generado", None)
+        else "EDGAR (10-K)",
         "ultimo_anio_fiscal": v.fin_ultimo_anio,
         "eps_diluido": _num(v.eps),
         "pe_con_ese_eps": _num(v.precio / v.eps, 1) if v.eps and v.eps > 0 else None,
@@ -321,7 +349,14 @@ def bloque_valuacion(v) -> dict | None:
         out["calidad"] = {
             "puntaje_0_a_100": _num(v.calidad.get("puntaje"), 0),
             "percentiles": {k: _num(p, 0) for k, p in (v.calidad.get("percentiles") or {}).items()},
+            "sentido": "percentil dentro de las empresas comparadas: 100 es lo mejor en todas las patas",
+            "definiciones": {
+                k: DEFINICIONES_CALIDAD[k]
+                for k in (v.calidad.get("percentiles") or {})
+                if k in DEFINICIONES_CALIDAD
+            },
             "empresas_comparadas": v.calidad.get("n"),
+            "con_lo_presentado_antes_del": v.calidad.get("al"),
         }
     if v.avisos:
         out["avisos"] = list(v.avisos)
@@ -515,6 +550,7 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
                 "tono_-3_a_3": _num((f.sentiment_score or 0) * 3, 0)
                 if f.sentiment_score is not None
                 else None,
+                "relevancia_0_a_1": _num(f.relevance, 2),
                 "fuente": f.source,
                 "clasificador": "heuristica provisional (qwen todavia no la clasifico)"
                 if f.provisional

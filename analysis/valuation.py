@@ -127,8 +127,11 @@ class Valuacion:
     motivo_categoria: str = ""
     fin_ultimo_anio: str | None = None
     avisos: list[str] = field(default_factory=list)
-    # El puntaje de calidad de la tarea 384 dentro del universo: {"puntaje", "percentiles", "n"}.
+    # El puntaje de calidad de la tarea 384 dentro del universo: {"puntaje", "percentiles", "n", "al"}.
     calidad: dict | None = None
+    # El día en que se bajaron de EDGAR los fundamentals de este ticker (tarea 434): lo presentado
+    # después no está, y la opinión de Claude lo dice en vez de «hasta hoy».
+    generado: str | None = None
 
 
 def valuar(
