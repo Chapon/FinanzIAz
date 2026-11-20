@@ -102,6 +102,7 @@ def test_noticias_recientes_manda_la_hora_ET(monkeypatch):
         provisional=False,
         classified_by="ollama",
         relevance=0.9,  # tarea 434: el `_Row` real la trae
+        content=None,  # tarea 426
     )
     monkeypatch.setattr(nd, "fetch_news_window", lambda *a, **k: [fila])
     monkeypatch.setattr(nd, "classify_missing", lambda filas: filas)

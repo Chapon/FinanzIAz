@@ -54,6 +54,8 @@ from pathlib import Path
 MODELO = "claude-opus-5-5"
 TIMEOUT_S = 240.0
 MAX_NOTICIAS = 15
+# El resumen de una noticia, recortado (tarea 426): 15 de 300 caracteres son ~5 KB más.
+MAX_RESUMEN = 300
 DIAS_NOTICIAS = 14
 
 # Qué recibe Claude, versionado (tarea 417): la 321 mide si las opiniones aciertan, y cambiar los
@@ -65,7 +67,8 @@ DIAS_NOTICIAS = 14
 #   5 — volumen de la última barra contra el promedio de 20 ruedas, parcial si es intradiario (425).
 #   6 — la calidad con sus definiciones y su corte, la fecha de los fundamentals, la relevancia de
 #       cada noticia, y los objetivos sin el `current` de Yahoo, que no traía hora (434).
-VERSION_DATOS = 6
+#   7 — el resumen de cada noticia, cuando la fuente lo trae (426).
+VERSION_DATOS = 7
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -109,7 +112,8 @@ datos_faltantes (el volumen de esa barra es parcial y así lo dice el bloque vol
 de las noticias están en hora del Este de EE.UU. (ET).
 - Cada noticia trae relevancia_0_a_1, del mismo clasificador que el tono: con 0,2 o menos, la \
 noticia trata de otra empresa o de otra cosa, aunque aparezca bajo este ticker; no la tomes como \
-un hecho de la empresa ni uses su tono.
+un hecho de la empresa ni uses su tono. Algunas fuentes traen un resumen corto y otras sólo el \
+título (resumen null): un resumen que no está no es un dato faltante, no lo anotes en datos_faltantes.
 - valuacion y fundamentales_anuales salen de los 10-K presentados a la SEC (EDGAR): son anuales, \
 por año fiscal. La app NO tiene el guidance de la empresa ni las cifras trimestrales: no los \
 anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bloque yfinance es \
@@ -529,6 +533,14 @@ def estado_precio(fecha_ultima: date, obtenido: datetime, zona=None) -> dict:
     }
 
 
+def resumen(texto: str | None, maximo: int = MAX_RESUMEN) -> str | None:
+    """El resumen de la noticia en una línea y recortado, o ``None`` si la fuente no trae (426)."""
+    limpio = " ".join((texto or "").split())
+    if not limpio:
+        return None
+    return limpio if len(limpio) <= maximo else limpio[: maximo - 1].rstrip() + "…"
+
+
 def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
     """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
     from analysis.news_digest import classify_missing, fetch_news_window
@@ -546,6 +558,7 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS) -> list[dict]:
             {
                 "publicada": hora_et(cuando, zona),
                 "titulo": f.title,
+                "resumen": resumen(f.content),
                 "tipo": f.event_type,
                 "tono_-3_a_3": _num((f.sentiment_score or 0) * 3, 0)
                 if f.sentiment_score is not None

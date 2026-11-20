@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from config.logging_config import get_logger
@@ -151,6 +151,7 @@ def fetch_news_window(
                 sentiment_score=r.sentiment_score,
                 classified_by=r.classified_by,
                 relevance=r.relevance,
+                content=r.content,
             )
             for r in rows
         ]
@@ -175,6 +176,9 @@ class _Row:
     # Tarea 434: cuánto trata la noticia de ESTE ticker, del mismo clasificador que el tono. La
     # opinión de Claude la necesita: 7 de 15 noticias de MU eran de otras empresas.
     relevance: float | None = None
+    # Tarea 426: el resumen o cuerpo que trae la fuente (~200 caracteres en Finnhub/Yahoo; las de
+    # yfinance:search vienen sin nada).
+    content: str | None = None
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
@@ -200,14 +204,11 @@ def classify_missing(rows: Iterable[_Row]) -> list[_Row]:
             continue
         try:
             c = heuristic_classify(r.title, None, r.source, r.ticker)
+            # `replace` y no un `_Row` nuevo: un campo que se le sume a la fila (la relevancia de la
+            # 434, el resumen de la 426) no se pierde en las provisionales.
             out.append(
-                _Row(
-                    id=r.id,
-                    ticker=r.ticker,
-                    title=r.title,
-                    source=r.source,
-                    url=r.url,
-                    published_at=r.published_at,
+                replace(
+                    r,
                     event_type=c.event_type,
                     sentiment=c.sentiment,
                     classifier_confidence=c.confidence,
