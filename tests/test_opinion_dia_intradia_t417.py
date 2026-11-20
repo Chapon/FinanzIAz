@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -92,7 +91,14 @@ def test_la_hora_de_la_noticia_va_en_ET_y_no_la_fecha_UTC():
 def test_noticias_recientes_manda_la_hora_ET(monkeypatch):
     import analysis.news_digest as nd
 
-    fila = SimpleNamespace(
+    # Un `_Row` de verdad y no un `SimpleNamespace` (tarea 439): el falso tenía `fetched_at`, que el
+    # real no, y así tapaba que una noticia sin fecha rompía la lista.
+    fila = nd._Row(
+        id=1,
+        ticker="MU",
+        url=None,
+        sentiment=None,
+        classifier_confidence=None,
         published_at=datetime(2026, 11, 11, 14, 8, 42),  # la nota de "Micron Climbs 7%"
         fetched_at=datetime(2026, 11, 11, 14, 43),
         title="Micron Climbs 7%",

@@ -152,6 +152,7 @@ def fetch_news_window(
                 classified_by=r.classified_by,
                 relevance=r.relevance,
                 content=r.content,
+                fetched_at=r.fetched_at,
             )
             for r in rows
         ]
@@ -179,6 +180,9 @@ class _Row:
     # Tarea 426: el resumen o cuerpo que trae la fuente (~200 caracteres en Finnhub/Yahoo; las de
     # yfinance:search vienen sin nada).
     content: str | None = None
+    # Tarea 439: cuándo la vimos. La consulta de arriba trae a propósito las filas sin fecha de la
+    # fuente, y la opinión de Claude usa esto como su hora; sin el campo, rompía la lista entera.
+    fetched_at: datetime | None = None
 
 
 # ── 1b) Clasificación provisional (display-only) ──────────────────────────────
