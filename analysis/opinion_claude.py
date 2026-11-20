@@ -69,7 +69,8 @@ DIAS_NOTICIAS = 14
 #       cada noticia, y los objetivos sin el `current` de Yahoo, que no traía hora (434).
 #   7 — el resumen de cada noticia, cuando la fuente lo trae (426).
 #   8 — los pares de la misma industria, el ETF del sector y los índices (420).
-VERSION_DATOS = 8
+#   9 — deuda, activos, patrimonio y acciones por año, y los múltiplos del último año (440).
+VERSION_DATOS = 9
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -127,6 +128,10 @@ anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bl
 un dato de Yahoo, de otra fuente y sin verificar contra EDGAR. valuacion.calidad son percentiles \
 contra las empresas del almacén de la app (100 es lo mejor en las cuatro patas, también en deuda, \
 donde 100 es la menos endeudada); sus definiciones vienen en el bloque.
+- fundamentales_anuales trae también la deuda de largo plazo, los activos y el patrimonio al cierre \
+de cada año fiscal, y las acciones diluidas promedio del año: una deuda null es que el 10-K no la \
+informó con los conceptos que lee la app, no que sea cero. multiplos usa el último año fiscal, y \
+su capitalización es el precio de hoy por las acciones promedio de ese año, no por las de hoy.
 - Horizonte: de semanas a pocos meses.
 - COMPRAR = abrir o aumentar posición; MANTENER = no hacer nada; VENDER = reducir o cerrar si \
 la tiene, y no comprar si no la tiene.
@@ -271,6 +276,9 @@ def armar_datos(
         datos["valuacion"] = v
     if anuales:
         datos["fundamentales_anuales"] = anuales
+    m = bloque_multiplos(ultimo, anuales)
+    if m:
+        datos["multiplos"] = m
     if balance:
         datos["balance"] = balance
     yf_ = {
@@ -466,6 +474,11 @@ def fundamentales_anuales(fund, fecha: str, splits=None, n: int = ANIOS_FUNDAMEN
     bruta = dict(fund.serie("ganancia_bruta", fecha))
     flujo = dict(fund.serie("flujo_operativo", fecha))
     eps = dict(fund.serie("eps_diluido", fecha, splits))
+    # Las acciones, como el EPS, en la base de hoy; los de balance son al cierre del año fiscal (440).
+    acciones = dict(fund.serie("acciones_diluidas", fecha, splits))
+    deuda = dict(fund.serie("deuda_lp", fecha))
+    activos = dict(fund.serie("activos", fecha))
+    patrimonio = dict(fund.serie("patrimonio", fecha))
     fines = sorted(set(ventas) | set(ganancia))[-n:]
 
     def millones(x):
@@ -493,8 +506,43 @@ def fundamentales_anuales(fund, fecha: str, splits=None, n: int = ANIOS_FUNDAMEN
                 "margen_neto_pct": margen(g, r),
                 "eps_diluido": _num(eps.get(fin)),
                 "flujo_operativo_musd": millones(flujo.get(fin)),
+                "acciones_diluidas_m": _num(acciones[fin] / 1e6, 1) if fin in acciones else None,
+                "deuda_lp_musd": millones(deuda.get(fin)),
+                "activos_musd": millones(activos.get(fin)),
+                "patrimonio_musd": millones(patrimonio.get(fin)),
             }
         )
+    return out
+
+
+def bloque_multiplos(precio, anuales: list[dict] | None) -> dict | None:
+    """Capitalización, precio/ventas y deuda/patrimonio con el último año fiscal de ``anuales`` (440).
+
+    **Puro.** La capitalización es el precio de hoy por las acciones diluidas **promedio** de ese
+    año, que es lo que trae el 10-K, y no por las de hoy: si después hubo emisiones o recompras,
+    difiere. Sin las acciones del último año no hay capitalización: las de un año anterior, con una
+    dilución como la de MARA (de ~113 a ~355 M en cuatro años), serían de otra empresa.
+    """
+    if not anuales or precio is None:
+        return None
+    u = anuales[-1]
+    acciones, ventas = u.get("acciones_diluidas_m"), u.get("ventas_musd")
+    deuda, patrimonio = u.get("deuda_lp_musd"), u.get("patrimonio_musd")
+    cap = _num(float(precio) * acciones, 0) if acciones else None
+    out = {
+        "fin_anio_fiscal": u.get("fin_anio_fiscal"),
+        "capitalizacion_musd": cap,
+        "precio_ventas": _num(cap / ventas, 2) if cap and ventas and ventas > 0 else None,
+        # Con el patrimonio negativo el cociente no dice nada (y cambia de signo): no va.
+        "deuda_lp_sobre_patrimonio": (
+            _num(deuda / patrimonio, 2) if deuda is not None and patrimonio and patrimonio > 0 else None
+        ),
+    }
+    if all(v is None for k, v in out.items() if k != "fin_anio_fiscal"):
+        return None
+    out["nota"] = (
+        "capitalización = precio de hoy × acciones diluidas promedio de ese año fiscal, no las de hoy"
+    )
     return out
 
 
