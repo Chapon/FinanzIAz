@@ -82,7 +82,10 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    - **Rojo ⇒ la tarea NO está cerrada.** El script muestra el job y los tests que fallaron:
      arreglalo en un commit nuevo y volvé a este paso. No arranques otra tarea con el CI rojo.
    - **No se sabe** (sin red, cuota de la API, espera agotada, o un run que GitHub nunca arrancó —*atascado* o cancelado sin jobs, tarea 430—) ⇒ el cierre dice *«CI sin
-     verificar»*, nunca *«verde»*, y la próxima tarea arranca con `--ultimo`.
+     verificar»*, nunca *«verde»*, y la próxima tarea arranca con `--ultimo`. **El registro no
+     se queda esperando** (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho
+     reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha
+     con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
    - **Por qué:** los cuatro comandos corren en Windows y lo que sólo rompe en Linux lo ve
      únicamente el CI. Tres veces quedó rojo mientras las tareas se cerraban en verde: la 106
      (13 tareas), la 175 (36) y la 300 (17, por un test con rutas de Windows literales).
@@ -92,6 +95,8 @@ Cerrá el trabajo en curso siguiendo el flujo del proyecto:
    la tarea que arranca; el guard acusa más de un ítem (tarea 338)— y commiteá aparte:
    `docs(backlog): hash de cierre de la tarea NN (CI verde)`. Es una edición **posterior** al
    done, así que vale la regla del paso 0: los cuatro comandos otra vez, los guards de `--staged`,
-   push, y `check_ci.py --esperar` sobre ese commit también.
+   push, y `check_ci.py --esperar` sobre ese commit también. **Con *no se sabe*,** el mismo commit
+   aparte, con el rótulo del paso 7 en el registro en lugar del verde
+   (`docs(backlog): hash de cierre de la tarea NN (CI sin verificar: <causa>)`).
 
 Recordá que el verde definitivo es en Windows con el `.venv` del repo (tarea 401); avisame si esto corre en otro entorno.
