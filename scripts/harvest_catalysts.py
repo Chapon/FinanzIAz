@@ -343,6 +343,33 @@ def resolve_universe(account_id: int | None = None) -> list[str]:
     return sorted(watch | pos)
 
 
+def tickers_de_las_carteras() -> list[str]:
+    """Los tickers de las carteras reales (tablas ``portfolios`` y ``positions``) con tenencia (445).
+
+    El 2026-11-20, 14 —MARA, EMBJ, AAPL, entre otros— no estaban en la watchlist ni en las
+    posiciones de la cuenta viva, y no tenían noticias: MARA, ninguna fila.
+    """
+    from database.models import Position
+
+    with session_scope() as s:
+        return sorted(
+            {
+                p.ticker.strip().upper()
+                for p in s.query(Position).filter(Position.quantity > 0).all()
+                if p.ticker and p.ticker.strip()
+            }
+        )
+
+
+def universo_del_harvest(account_id: int | None = None) -> list[str]:
+    """Lo que cosecha el harvest: la cuenta viva (``resolve_universe``) más las carteras reales (445).
+
+    ``resolve_universe`` no cambia: la usan también ``build_surprise_profiles`` y ``news_feed
+    --watchlist``, que son de la cuenta. Las noticias de lo que Chapa tiene son del harvest.
+    """
+    return sorted(set(resolve_universe(account_id)) | set(tickers_de_las_carteras()))
+
+
 def ordenar_por_rezago(universe: list[str], ultimos: dict[str, object]) -> list[str]:
     """El universo ordenado **por quién hace más que no se recolecta** (tarea 208).
 
@@ -775,7 +802,7 @@ def harvest(
     """
     t0 = time.monotonic()
     cerrar_corrida_de_fallas()  # tarea 289: cada corrida escribe su primer traceback por fuente
-    universe = tickers if tickers is not None else resolve_universe(account_id)
+    universe = tickers if tickers is not None else universo_del_harvest(account_id)
     # Tarea 208 — el orden decide QUIÉN se pierde cuando el presupuesto corta, así que
     # va acá y no adentro de `resolve_universe`: esa función la usan también
     # `build_surprise_profiles` y `news_feed`, que no tienen techo y a los que cambiarles

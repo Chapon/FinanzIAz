@@ -58,14 +58,19 @@ def a_dynamodb_json(item: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Arma el ítem universo/vivo para la consola de DynamoDB (T355).")
-    ap.add_argument("--tickers", default=None, help="lista separada por comas (default: la cuenta viva)")
+    ap.add_argument(
+        "--tickers",
+        default=None,
+        help="lista separada por comas (default: la cuenta viva y las carteras reales)",
+    )
     args = ap.parse_args(argv)
     if args.tickers:
         tickers = [t for t in args.tickers.split(",") if t.strip()]
     else:
-        from scripts.harvest_catalysts import resolve_universe
+        # El mismo universo que el harvest de la app, con las carteras reales (tarea 445).
+        from scripts.harvest_catalysts import universo_del_harvest
 
-        tickers = resolve_universe()
+        tickers = universo_del_harvest()
     item = item_universo(tickers, datetime.now(timezone.utc), "manual")
     print(json.dumps(a_dynamodb_json(item), indent=2))
     print(f"{len(item['tickers'])} tickers", file=sys.stderr)

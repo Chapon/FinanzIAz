@@ -20,7 +20,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 364 — Tarea 445 (HARVEST-SIN-LAS-CARTERAS-REALES) CERRADA 2026-11-20 — el harvest cosecha también los tickers con tenencia de las carteras reales, y el universo que se publica a la nube es el mismo** (origen: la 443).
+  - **`universo_del_harvest`** (`scripts/harvest_catalysts.py`) es `resolve_universe` (la cuenta viva) más `tickers_de_las_carteras` (las `positions` con cantidad > 0, en mayúsculas y una vez cada uno). Lo usan `harvest` y `scripts/universo_para_nube.py`. **`resolve_universe` no cambia**: la usan también el rebuild de perfiles de sorpresa y `news_feed --watchlist`, que son de la cuenta. La pestaña Noticias no filtra por ticker, así que las ve apenas se cosechan.
+  - **Cuánto suma:** el harvest horario cosecha 127 tickers en 300–350 s (el log del 2026-11-20), ~2,5 s por ticker; los 14 de las carteras son unos **35 s más** por corrida, dentro del techo de 20 min de la 204. El universo de la nube se publica a mano (`universo_para_nube.py`): la próxima vez que se publique, los incluye.
+  - **Docs:** `CLAUDE.md` y la skill `catalyst-pipeline` dicen qué cosecha el harvest.
+  - **El test de que `resolve_universe` no cambia** arma una cuenta viva con watchlist: sin ella devolvía `[]` y pasaba igual (el caso degenerado).
+  - **Mutaciones** (restauradas desde copia), las cinco en rojo: sin filtrar la tenencia; sin normalizar el ticker; el harvest con `resolve_universe`; la nube con `resolve_universe`; `resolve_universe` con las carteras.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2068,7 +2074,7 @@ Nada en marcha.
 - **Kill-criteria.** Tests: con el mapa, MARA recibe sus pares y `BTC-USD` y no los de *Capital Markets*; sin entrada en el mapa, lo de la 420 igual (mutación: el mapa ignorado, rojo). Una opinión en vivo de MARA. Sube `version_datos`. Los cuatro comandos y el CI en verde.
 - **Dependencias:** la 420.
 
-### 445. HARVEST-SIN-LAS-CARTERAS-REALES — 14 tickers de las carteras reales («Mis Acciones» y «Tech») no están en el universo que cosecha noticias  ·  origen: la 443 (2026-11-20) · severidad **BAJA** · display-only
+### 445. ~~HARVEST-SIN-LAS-CARTERAS-REALES — 14 tickers de las carteras reales («Mis Acciones» y «Tech») no están en el universo que cosecha noticias~~ · **CERRADA 2026-11-20 — el harvest cosecha también los tickers de las carteras reales** ·  origen: la 443 (2026-11-20) · severidad **BAJA** · display-only
 
 - **Qué pasa.** El harvest cosecha la watchlist y las posiciones de la cuenta viva (`resolve_universe`, `scripts/harvest_catalysts.py`). Las carteras reales (tablas `portfolios` y `positions`) no entran: **2357.TW, AAPL, BIDU, DELL, DLO, EA, EMBJ, GOOG, MARA, MDB, MLTX, SNOW, TEAM y UBER** quedan sin noticias (el 2026-11-20, MARA no tenía ninguna fila, y EMBJ y DLO ninguna de los últimos 14 días, hasta que las bajó la prueba de la 442). La 442 las baja al pedir la opinión, pero la pestaña Noticias no las ve hasta entonces.
 - **Alcance.** Sumar al universo del harvest los tickers de `positions`, sin duplicar, y ver si el recolector de la nube (la 355) comparte ese universo. Medir cuánto suma al harvest horario.

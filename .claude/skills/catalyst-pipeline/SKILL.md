@@ -12,7 +12,7 @@ Pipeline append-only point-in-time: recolecta noticias → clasifica → aliment
 `scripts/harvest_catalysts.py` — idempotente (UPDATE in-place, re-correr es no-op). Fuentes: yfinance, SEC 8-K (EDGAR), Finnhub (la rama `rss` se borro en la tarea 212). Dedup por URL canónica.
 
 ```
-python scripts/harvest_catalysts.py                 # la cuenta VIVA (T70), no un literal
+python scripts/harvest_catalysts.py                 # la cuenta VIVA (T70) y las carteras reales (T445)
 python scripts/harvest_catalysts.py --universe sp500
 python scripts/harvest_catalysts.py --tickers NVDA,PLTR,RKLB
 python scripts/harvest_catalysts.py --sources yfinance,sec,finnhub
