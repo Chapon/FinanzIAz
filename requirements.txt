@@ -26,6 +26,11 @@ urllib3>=2.8.0,<3
 # 399): 5.2.1 tenia PYSEC-2026-87. La mayor 6 se adopto a proposito, con la suite y el
 # parse de la tabla del S&P 500 verificados.
 lxml>=6.1.0,<7
+# soupsieve: llega con beautifulsoup4 (de yfinance); el repo no importa bs4. Minimo 4.0.0
+# (tarea 435): 2.10 tenia CVE-2026-126190 (fix 4.0.0) y CVE-2026-126191/-126193 (fix
+# 3.0.2), complejidad y ReDoS en los selectores CSS. Pide Python >= 3.11.5 (el .venv es
+# 3.12; el CI, el ultimo 3.11). beautifulsoup4 4.15 acepta soupsieve >= 1.6.1.
+soupsieve>=4.0.0,<5
 
 # Database
 SQLAlchemy>=2.0.0,<3.0
@@ -84,6 +89,7 @@ arch>=6.0,<9
 # Tarea 284: pip-audit marca PYSEC-2024-110 en 1.4.2 (fix 1.5.0). Riesgo ACEPTADO, no
 # olvidado: el aviso es sobre TfidfVectorizer (stop_words_ con datos del corpus) y el
 # proyecto no usa ningun vectorizador de texto (git grep, 2026-10-02).
+# Riesgo aceptado: PYSEC-2024-110 -- TfidfVectorizer, que el proyecto no usa (tarea 284; formato de la tarea 435).
 scikit-learn>=1.4.2,<1.8
 # xgboost: clasificador ML del engine (buy_score / ml_probability). El codigo
 # degrada con gracia si falta (ml_signals._XGB_OK -> 0.5 neutral), pero el

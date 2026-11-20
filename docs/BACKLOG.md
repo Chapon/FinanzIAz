@@ -20,7 +20,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 362 — Tarea 435 (SOUPSIEVE-CVE-Y-GUARD-399-ACEPTA-LO-CONTRARIO) CERRADA 2026-11-20 — soupsieve sube de 2.10 a 4.1.2 y el lock vuelve a tener sólo lo aceptado; el guard de la 399 pide una marca afirmativa por id y ya no acepta un comentario que lo niega** (origen: `docs/auditoria_tanda_2026-11-16.md` [K-2] y [D-2]).
+  - **[K-2] soupsieve.** El repo no importa `bs4`: llega con `beautifulsoup4` 4.15 (de yfinance), que sólo pide `soupsieve>=1.6.1`. Se subió a **4.1.2** en el `.venv` (pide Python ≥ 3.11.5, verificado en el wheel: el `.venv` es 3.12 y el CI, el último 3.11), con un piso `soupsieve>=4.0.0,<5` en `requirements.txt` y el lock regenerado desde el `.venv` (sólo cambia soupsieve: el resto del `pip freeze` coincidía con el lock). `pip-audit -r requirements.lock --no-deps --disable-pip` (2026-11-20): **sólo PYSEC-2024-110** de scikit-learn, el aceptado (lo lista dos veces).
+  - **[D-2] el guard.** `aceptados_en` toma sólo las líneas que **empiezan** con `# Riesgo aceptado: <id> -- <motivo>` (o con raya); la aceptación de PYSEC-2024-110 se escribió en ese formato. La mutación de la tanda —el comentario *«NO hay riesgo aceptado; hay que subirlo»* más su `--ignore-vuln`, que daba **verde**— es ahora un test, y da rojo. Una marca sin motivo o una mención al pasar tampoco cuentan. **Lo que no ve:** `# Riesgo aceptado: X -- no, hay que subirlo` (la negación después de la marca); poner eso es ya escribir una aceptación.
+  - **Los guards de la 284 y la 391 lo ven:** con el piso nuevo y soupsieve 2.10 todavía instalado, `test_entorno_cumple_requirements_t284` y `test_dependencias_con_techo_t391` dieron rojo (en un clon), y verde al subirlo y regenerar el lock.
+  - **Mutaciones** (restauradas desde copia), en rojo: volver al guard viejo; la marca sin motivo obligatorio. Armadas el 2026-11-19 en un clon.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2148,7 +2153,7 @@ Nada en marcha.
 - **Kill-criteria.** Tests con reloj falso: dos lotes de una corrida graban horas distintas; un timeout deja `fallback` y la fila vuelve a la cola (mutación: sin el cambio de la cola, rojo). Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 435. SOUPSIEVE-CVE-Y-GUARD-399-ACEPTA-LO-CONTRARIO — El lock ya no está limpio (soupsieve 2.10, tres CVE nuevos), y el guard de la 399 da por aceptado un id en un comentario que dice que NO se acepta  ·  origen: `docs/auditoria_tanda_2026-11-16.md` [K-2] y [D-2] · severidad **BAJA**
+### 435. ~~SOUPSIEVE-CVE-Y-GUARD-399-ACEPTA-LO-CONTRARIO — El lock ya no está limpio (soupsieve 2.10, tres CVE nuevos), y el guard de la 399 da por aceptado un id en un comentario que dice que NO se acepta~~ · **CERRADA 2026-11-20 — soupsieve 4.1.2 y el lock limpio; el guard de la 399 pide una marca afirmativa por id** ·  origen: `docs/auditoria_tanda_2026-11-16.md` [K-2] y [D-2] · severidad **BAJA**
 
 - **[K-2] Qué pasa.** `pip-audit -r requirements.lock --no-deps --disable-pip` (2026-11-16): además de PYSEC-2024-110 (aceptado), soupsieve 2.10 con CVE-2026-126190 (se corrige en 4.0.0), CVE-2026-126193 y CVE-2026-126191 (3.0.2): complejidad y ReDoS en el parseo y el matcheo de selectores CSS. El repo no importa `bs4`: llega como dependencia. El job `audit` lo vería en rojo, pero es `continue-on-error` (la 65 y la 391), y desde el 11/11 no hubo un run que lo corra (la 430).
 - **[D-2] Qué pasa.** `_aceptados_en_requirements` (`tests/test_audit_ignora_solo_lo_aceptado_t399.py:26-35`) acepta todo id de un bloque donde aparezca `riesgo\s+aceptado`. Mutado sobre copias: el comentario *«soupsieve CVE-2026-126190: NO hay riesgo aceptado; hay que subirlo»* más su `--ignore-vuln` en `ci.yml` → **VERDE**; el `--ignore-vuln` solo → rojo. Es la forma de la 173 y la 176, y muerde justo al documentar estos CVE.
