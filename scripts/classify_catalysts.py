@@ -37,10 +37,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from config.logging_config import get_logger
-from data.catalyst_classifier import SUFIJO_ESCALA_7, Classification, classify
+from data.catalyst_classifier import RESPALDO, SUFIJO_ESCALA_7, Classification, classify
 from database.models import NewsEvent, session_scope, utcnow_naive
 
 log = get_logger(__name__)
@@ -55,6 +55,11 @@ CHECKPOINT_FILAS = 10
 COLA_ATRASADA_HORAS = 48
 # Lo que se usa para estimar la duración en el aviso: qwen2.5:14b medido el 2026-11-05.
 SEGUNDOS_POR_NOTICIA = 2.9
+
+
+def _pendiente():
+    """Lo que la cola toma (tarea 436): sin clasificar, o clasificado por el respaldo de un LLM caído."""
+    return or_(NewsEvent.event_type.is_(None), NewsEvent.classified_by == RESPALDO)
 
 
 def aviso_cola_atrasada(pendientes: int, mas_vieja: datetime | None, now: datetime) -> str | None:
@@ -114,6 +119,7 @@ def classify_events(
     checkpoint: int = CHECKPOINT_FILAS,
     progreso: Callable[[int, int, int], None] | None = None,
     detener: Callable[[], bool] | None = None,
+    reloj: Callable[[], datetime] | None = None,
 ) -> ClassifyReport:
     """
     Classify ``news_events`` rows and persist labels in place (unless dry_run).
@@ -139,7 +145,14 @@ def classify_events(
     de la app tiraba lo hecho. La selección es ``event_type IS NULL``, así que lo guardado ya
     es el punto de reanudación. ``progreso(hechos, total, fallbacks)`` se llama al arrancar y
     en cada checkpoint; ``detener()`` se consulta antes de cada fila y corta guardando lo hecho.
+
+    Tarea 436 — ``classified_at`` es la hora de **cada lote**, de ``reloj()``: era el ``now`` del
+    arranque, y una corrida de 7 h grababa la misma hora en todo. Con ``now`` y sin ``reloj`` (los
+    tests de antes) se usa ``now``. La cola toma también lo rotulado ``fallback`` (el respaldo de
+    un LLM caído), que antes quedaba como clasificación definitiva.
     """
+    if reloj is None:
+        reloj = (lambda: now) if now is not None else utcnow_naive
     now = now or utcnow_naive()
     report = ClassifyReport()
     if max_confidence is not None and reclassify:
@@ -165,7 +178,7 @@ def classify_events(
         if max_confidence is not None:
             q = q.filter(NewsEvent.classifier_confidence <= max_confidence)
         elif not reclassify:
-            q = q.filter(NewsEvent.event_type.is_(None))
+            q = q.filter(_pendiente())
         if source:
             q = q.filter(NewsEvent.source == source)
         # Lo más nuevo primero (tarea 406): con una cola de días, lo que se lee —la pestaña
@@ -179,9 +192,7 @@ def classify_events(
             q = q.limit(limit)
         candidates = q.all()  # Row(id, title, content, source, ticker)
         if max_confidence is None and not reclassify:
-            mas_vieja = (
-                session.query(func.min(NewsEvent.fetched_at)).filter(NewsEvent.event_type.is_(None)).scalar()
-            )
+            mas_vieja = session.query(func.min(NewsEvent.fetched_at)).filter(_pendiente()).scalar()
             aviso = aviso_cola_atrasada(len(candidates), mas_vieja, now)
             if aviso:
                 log.warning(aviso)
@@ -232,20 +243,21 @@ def classify_events(
         if not dry_run:
             pending.append((ev_id, c))
         if report.scanned % max(1, checkpoint) == 0:
-            _persistir(pending, now)
+            _persistir(pending, reloj)
             pending.clear()
             _avisar()
 
-    _persistir(pending, now)
+    _persistir(pending, reloj)
     _avisar()
     log.info("%s%s", "[dry-run] " if dry_run else "", report.summary())
     return report
 
 
-def _persistir(pending: list[tuple[int, Classification]], now: datetime) -> None:
+def _persistir(pending: list[tuple[int, Classification]], reloj: Callable[[], datetime]) -> None:
     """Escribe un checkpoint en UNA transacción corta. Idempotente: re-escribir no cambia nada."""
     if not pending:
         return
+    now = reloj()  # tarea 436: la hora de este lote, no la del arranque
     with session_scope() as session:
         for ev_id, c in pending:
             ev = session.get(NewsEvent, ev_id)

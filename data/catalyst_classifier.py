@@ -21,7 +21,7 @@ classifier is a pure function of (title, content, source).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from config.logging_config import get_logger
 from data.catalyst_taxonomy import (
@@ -140,6 +140,17 @@ def heuristic_classify(
         return Classification("other", "neutral", _CONF_NONE, "heuristic")
 
 
+# Tarea 436: lo que el LLM no pudo clasificar (Ollama caído, timeout) cae a la heurística, y
+# quedaba rotulado `heuristic`, igual que lo que la heurística clasifica por diseño (sec_8k en los
+# backends híbridos): no se distinguía, y la cola —`event_type IS NULL`— no lo volvía a tomar.
+RESPALDO = "fallback"
+
+
+def respaldo(title: str, content: str | None, source: str, ticker: str | None = None) -> Classification:
+    """La heurística, rotulada ``fallback``: provisional, y la cola del classify la vuelve a tomar."""
+    return replace(heuristic_classify(title, content, source, ticker), classifier=RESPALDO)
+
+
 # ── Public entry point ───────────────────────────────────────────────────────
 
 
@@ -163,7 +174,7 @@ def classify(
         c = backend(title, content, source, ticker)
     except Exception:
         log.exception("classifier backend failed for %r — falling back", title)
-        return Classification("other", "neutral", _CONF_NONE, "fallback")
+        return Classification("other", "neutral", _CONF_NONE, RESPALDO)
     return _coerce(c)
 
 
@@ -298,7 +309,7 @@ def make_llm_backend(client=None, model: str = "claude-haiku-4-5-20251001") -> B
             return _parse_llm_json(text)
         except Exception:
             log.exception("LLM backend failed for %r — falling back to heuristic", title)
-            return heuristic_classify(title, content, source, ticker)
+            return respaldo(title, content, source, ticker)
 
     return _backend
 
@@ -427,6 +438,6 @@ def make_ollama_backend(
             return _parse_llm_json(text, tag="ollama")
         except Exception:
             log.exception("Ollama backend failed for %r — falling back to heuristic", title)
-            return heuristic_classify(title, content, source, ticker)
+            return respaldo(title, content, source, ticker)
 
     return _backend

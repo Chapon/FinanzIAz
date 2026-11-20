@@ -50,7 +50,10 @@ y una cosa que no se puede medir: **si alguien mira la pestaña**, porque nada l
 - **La mitad se clasifica tarde.** De las 39.784 clasificadas en la escala de 7 niveles,
   **20.476 (51 %) tenían más de 1 día** al clasificarse y 11.781 (30 %) más de 3
   (`uso.qwen7n_con_mas_de_*`). La pestaña abre en una ventana de **1 día** (se puede subir a 14).
-  Es el atraso que dejan los días con la app cerrada.
+  Es el atraso que dejan los días con la app cerrada. **Nota (tarea 436, 2026-11-19):** hasta la
+  436, `classified_at` era la hora en que **arrancó** la corrida, no la de cada fila: el atraso
+  medido es una **cota inferior** del real (hay corridas de 7 h), así que el 51 % y el 30 % son
+  mínimos y la conclusión se refuerza.
 - **El 31 % sale `other`** (35.283 de 113.338, `por_tipo`): un tercio del trabajo termina en «no es
   ninguna categoría».
 

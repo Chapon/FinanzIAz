@@ -20,7 +20,13 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 356 — Tarea 436 (CLASSIFY-METADATOS) CERRADA 2026-11-20 — `classified_at` es la hora en que se guardó cada lote, y lo que cae a la heurística porque el LLM falló queda rotulado `fallback` y vuelve a la cola** (origen: `docs/auditoria_tanda_2026-11-16.md` [I-2]).
+  - **La hora.** `classify_events` toma un `reloj` (por defecto `utcnow_naive`) y `_persistir` lo lee **al guardar cada lote** —sólo si hay algo que guardar—. Con `now` y sin `reloj`, como los tests de antes, se usa `now`.
+  - **El respaldo.** `respaldo()` en `data/catalyst_classifier.py` es la heurística rotulada `fallback`, y la devuelven los backends de Ollama y de la API cuando fallan; lo heurístico **por diseño** (el sec_8k de los híbridos) sigue `heuristic`. La cola (`_pendiente()`) toma `event_type IS NULL` **o** `classified_by = 'fallback'`, también para el aviso de la cola atrasada. La pestaña y la opinión la siguen mostrando (tiene `event_type`), rotulada `fallback`.
+  - **Va antes que la 427**, que usa su `RESPALDO` para saber qué noticias están pendientes.
+  - **Docs:** `DB_SCHEMA.md` dice qué es `fallback` y qué es `classified_at`; el informe de la 413 anota que su *«51 % tenían más de 1 día»* es una cota inferior (la conclusión se refuerza).
+  - **Mutaciones** (restauradas desde copia), en rojo: la cola sin el `fallback`; el respaldo rotulado `heuristic`; el reloj sin el `now` de compatibilidad. Armada el 2026-11-19 en un clon; re-aplicada sobre la 440 el 2026-11-20.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2078,7 +2084,7 @@ Nada en marcha.
 - **Kill-criteria.** Un test: un envío bueno deja su línea, uno bloqueado por `FINANZIAS_DISABLE_SLACK` no; la referencia recalculada a mano, con compras en fechas distintas, coincide con la de Home; cada guard de (2) se pone rojo con la declaración contraria, o se anota lo que no ve; tres tickers × dos años de EDGAR contra la SEC (con el permiso de Chapa para el `User-Agent`). Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 436. CLASSIFY-METADATOS — `classified_at` es la hora en que ARRANCÓ la corrida, y lo que cae a la heurística por timeout queda como clasificación definitiva, rotulado igual que la heurística elegida  ·  origen: `docs/auditoria_tanda_2026-11-16.md` [I-2] · severidad **BAJA**
+### 436. ~~CLASSIFY-METADATOS — `classified_at` es la hora en que ARRANCÓ la corrida, y lo que cae a la heurística por timeout queda como clasificación definitiva, rotulado igual que la heurística elegida~~ · **CERRADA 2026-11-20 — classified_at por lote, y el respaldo de un LLM caído rotulado fallback y de vuelta a la cola** ·  origen: `docs/auditoria_tanda_2026-11-16.md` [I-2] · severidad **BAJA**
 
 - **Qué pasa.** `scripts/classify_catalysts.py:143` fija `now` al empezar, y los checkpoints de la 409 (`:235`, `:239` → `:257`) graban ese mismo `now`: en la corrida del 11/11, filas que fallaron entre las 21:13 y las 21:42Z tienen `classified_at = 21:02:48Z`, y hay corridas de 7 h (06/11). Lo que cae a la heurística por timeout de Ollama queda `classified_by='heuristic'` con `event_type` puesto, y la cola sólo toma `event_type IS NULL` (`:168`): qwen no la vuelve a ver (134 en noviembre; 11 el 11/11 entre las 18:13 y las 18:42 locales). `docs/DB_SCHEMA.md:73` lista `"fallback"` entre los valores de `classified_by`, y no hay ninguno en la tabla.
 - **Por qué importa.** El único lector de `classified_at` es la 413 (`scripts/measure_news_cost_benefit_t413.py:257-259`): su *«51 % tenían más de 1 día al clasificarse»* es una cota inferior (la conclusión se refuerza). Y una heurística por respaldo no se distingue de la de sec_8k por diseño.
