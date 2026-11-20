@@ -62,7 +62,9 @@ DIAS_NOTICIAS = 14
 #   2 — retorno del día, si el precio es intradiario, y la hora ET de las noticias (417).
 #   3 — valuación de la tarjeta, fundamentales anuales de EDGAR y el P/E de yfinance (418).
 #   4 — próximo balance y sorpresas de EPS de los últimos trimestres (419).
-VERSION_DATOS = 4
+#   5 — volumen de la última barra contra el promedio de 20 ruedas, parcial si es intradiario (425).
+VERSION_DATOS = 5
+RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
 
@@ -100,7 +102,9 @@ noticias) no se detectó relación; el modelo XGBoost, el consenso y el tono de 
 están validados. Pesalos con ese escepticismo.
 - Los retornos se miden contra cierres: "1d" es contra el cierre anterior. Si el bloque precio \
 dice que el mercado estaba abierto, el precio es intradiario (a la hora que indica) y el día \
-todavía no cerró. Las horas de las noticias están en hora del Este de EE.UU. (ET).
+todavía no cerró: el cierre y el volumen del día todavía no existen, no los anotes en \
+datos_faltantes (el volumen de esa barra es parcial y así lo dice el bloque volumen). Las horas \
+de las noticias están en hora del Este de EE.UU. (ET).
 - valuacion y fundamentales_anuales salen de los 10-K presentados a la SEC (EDGAR): son anuales, \
 por año fiscal. La app NO tiene el guidance de la empresa ni las cifras trimestrales: no los \
 anotes en datos_faltantes; si te parecen decisivos, decilo en los riesgos. El bloque yfinance es \
@@ -213,6 +217,9 @@ def armar_datos(
     }
     if obtenido is not None and fecha_ultima is not None:
         datos["estado_precio"] = estado_precio(fecha_ultima, obtenido)
+    vol = bloque_volumen(df, (datos.get("estado_precio") or {}).get("mercado_abierto", False))
+    if vol:
+        datos["volumen"] = vol
     if soporte_resistencia:
         datos["soporte"] = _num(soporte_resistencia.get("support"))
         datos["resistencia"] = _num(soporte_resistencia.get("resistance"))
@@ -255,6 +262,29 @@ def armar_datos(
     if noticias:
         datos["noticias"] = noticias[:MAX_NOTICIAS]
     return datos
+
+
+def bloque_volumen(df, intradiario: bool) -> dict | None:
+    """El volumen de la última barra contra el promedio de las ``RUEDAS_VOLUMEN`` anteriores (425).
+
+    El promedio **no** cuenta la última barra: si no, la barra se compara contra sí misma, y con
+    una barra intradiaria parcial el promedio queda tirado para abajo. Si la barra es intradiaria
+    lo dice, porque a media rueda la relación no es la de un día entero.
+    """
+    if "Volume" not in df.columns or len(df) < 2:
+        return None
+    v = df["Volume"].astype(float)
+    ultimo = float(v.iloc[-1])
+    previos = v.iloc[-1 - RUEDAS_VOLUMEN : -1]
+    promedio = float(previos.mean()) if len(previos) else None
+    out = {
+        "ultima_barra": _num(ultimo, 0),
+        f"promedio_{RUEDAS_VOLUMEN}_ruedas_previas": _num(promedio, 0),
+        "relacion": _num(ultimo / promedio, 2) if promedio else None,
+    }
+    if intradiario:
+        out["parcial"] = "barra intradiaria: es el volumen hasta la hora del precio, no el del día entero"
+    return out
 
 
 def _pct(x, nd: int = 1):
