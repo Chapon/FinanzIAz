@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 349 — Tarea 425 (OPINION-CLAUDE-VOLUMEN) CERRADA 2026-11-19 — Claude recibe el volumen de la última barra contra el promedio de las 20 ruedas anteriores, rotulado parcial si es intradiario, y el prompt le dice que con el mercado abierto el cierre del día no existe todavía** (origen: la opinión de MU del 2026-11-11, 18:13 UTC; `version_datos` 5).
-  - **El WIP del 11/11, retomado:** estaba implementado y sin commitear desde el 11/11 (la 431 explica por qué); se apartó con `git stash` para el commit de la 429 y se aplicó encima de la 433, que también toca `analysis/opinion_claude.py` (en `guardar`, otro bloque). La opinión de MU de las 21:00Z del 11/11 salió de este WIP (la 433), con `version_datos=5`.
-  - **El promedio no cuenta la última barra:** si la contara, la barra se compararía contra sí misma, y una intradiaria parcial tiraría el promedio para abajo. El test elige el caso donde la diferencia se ve: 20 previas de 1.000 y la última de 3.000 dan relación 3,0 sin contarla y 2,73 contándola.
-  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: el corte del promedio incluyendo la última; la marca de parcial siempre; el bloque sin mirar `mercado_abierto`; `VERSION_DATOS` en 4.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -569,6 +565,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-19d** al cerrar la **433**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **432 → 425 → 434 → 438 → 426 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 > **Repriorizado 2026-11-19e** al cerrar la **432**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **425 → 434 → 438 → 426 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
+
+> **Repriorizado 2026-11-19f** al cerrar la **425**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **434 → 438 → 426 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 
 
@@ -2117,7 +2115,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Tests: con `content` largo se recorta, vacío o `None` da `null`; el JSON sigue entrando en lo que se manda (medir el tamaño con 15 noticias). Sube `version_datos`. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** la 417 (`version_datos`).
 
-### 425. ~~OPINION-CLAUDE-VOLUMEN — Claude pide el volumen y nunca se le manda; y con el mercado abierto pide «el cierre de hoy», que todavía no existe~~ · **CERRADA 2026-11-19 — el volumen de la última barra contra el promedio de las 20 anteriores, rotulado parcial si es intradiario** ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«precio y volumen al cierre de hoy (el dato es intradiario)»*) · severidad **BAJA** · display-only
+### 425. ~~OPINION-CLAUDE-VOLUMEN — Claude pide el volumen y nunca se le manda; y con el mercado abierto pide «el cierre de hoy», que todavía no existe~~ · **CERRADA 2026-11-19 — el volumen de la última barra contra el promedio de las 20 anteriores, rotulado parcial si es intradiario** (`00acb6c`) · **movida a *Hecho reciente* con el detalle** ·  origen: opinión de MU del 2026-11-11, 18:13 UTC (`datos_faltantes`: *«precio y volumen al cierre de hoy (el dato es intradiario)»*) · severidad **BAJA** · display-only
 
 - **Qué pasa.** Con la 417, Claude ya sabe que el precio era intradiario (`precio_consultado: 13:13 ET`, `1d` +13,7 %): la mitad del faltante es pedir un cierre que no existe. La otra mitad es real: `armar_datos` no manda volumen, y el `df` lo tiene (`Volume`).
 - **Alcance.** Un bloque `volumen` con el de la última barra, el promedio de 20 ruedas **sin contar la última**, y la relación entre los dos; si la barra es intradiaria, decir que el volumen es parcial (a esa hora) para que la relación no se lea como la de un día entero. En el `SYSTEM_PROMPT`: con el mercado abierto, el cierre del día no existe todavía; que no lo anote como faltante.
@@ -4966,6 +4964,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 349 — Tarea 425 (OPINION-CLAUDE-VOLUMEN) CERRADA 2026-11-19 — Claude recibe el volumen de la última barra contra el promedio de las 20 ruedas anteriores, rotulado parcial si es intradiario, y el prompt le dice que con el mercado abierto el cierre del día no existe todavía** (`00acb6c`) (origen: la opinión de MU del 2026-11-11, 18:13 UTC; `version_datos` 5).
+  - **El WIP del 11/11, retomado:** estaba implementado y sin commitear desde el 11/11 (la 431 explica por qué); se apartó con `git stash` para el commit de la 429 y se aplicó encima de la 433, que también toca `analysis/opinion_claude.py` (en `guardar`, otro bloque). La opinión de MU de las 21:00Z del 11/11 salió de este WIP (la 433), con `version_datos=5`.
+  - **El promedio no cuenta la última barra:** si la contara, la barra se compararía contra sí misma, y una intradiaria parcial tiraría el promedio para abajo. El test elige el caso donde la diferencia se ve: 20 previas de 1.000 y la última de 3.000 dan relación 3,0 sin contarla y 2,73 contándola.
+  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: el corte del promedio incluyendo la última; la marca de parcial siempre; el bloque sin mirar `mercado_abierto`; `VERSION_DATOS` en 4.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `00acb6c` VERDE.
 
 - **WIP 348 — Tarea 432 (APP-EN-LA-ANACONDA-REABRIR-LA-401) CERRADA 2026-11-19 — `main.py` se relanza solo con el `.venv` del repo, y si no puede, la barra de estado lo dice; todo pedido de reabrir la app dice cómo** (`8007e84`) (origen: `docs/auditoria_tanda_2026-11-16.md` [K-1]).
   - **Decisión de Chapa del 2026-11-19: relanzar.** `config/entorno.py`: `comando_para_relanzar` (puro: sí con otro intérprete y el `.venv` presente; no si ya es el `.venv`, si no existe, o si la variable `FINANZIAS_RELANZADA` dice que este proceso ya es el relanzado —sin ese corte, un `.venv` que no se reconociera como tal se relanzaría para siempre—; con `pythonw` se relanza con `pythonw`, sin consola) y `relanzar` (corre la app con el `.venv` y sale con su código; si no la pudo lanzar, vuelve y la app sigue con este intérprete). En `main.py` va **antes** del log y de la DB: dos procesos con el mismo log rotativo se pisan la rotación en Windows, y el padre no migra nada. El relanzado lo dice en el log (*«Relanzada con el .venv del repo desde …»*).
