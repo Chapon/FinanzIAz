@@ -74,7 +74,8 @@ DIAS_NOTICIAS = 14
 #  11 — caja, capex, flujo de caja libre y ganancia operativa por año (441).
 #  12 — las noticias se bajan al pedir si la app no tiene recientes, y van con su cobertura (442).
 #  13 — las recomendaciones de analistas con el mes en curso, y sin la relevancia de la heurística (449).
-VERSION_DATOS = 13
+#  14 — pares y una serie de referencia a mano cuando la industria de Yahoo no sirve (446).
+VERSION_DATOS = 14
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -127,7 +128,9 @@ y qué días no tiene ninguna. Si no hay noticias, es que la app no las tiene (l
 que el bloque se haya perdido. Si dice que el harvest estaba corriendo, las de hoy pueden faltar.
 - pares trae los retornos de tickers de la misma industria que la app tiene guardados (no la \
 industria entera), del ETF del sector y de los índices (SPY, QQQ), para separar lo que le pasa a \
-la empresa de lo que le pasa al sector y al mercado; cada uno dice a qué día llega. La app NO \
+la empresa de lo que le pasa al sector y al mercado; cada uno dice a qué día llega. Si trae \
+pares_a_mano, la industria de Yahoo no servía y los pares los eligió la app (dice por qué); \
+referencia es una serie que mueve al negocio (por ejemplo, el bitcoin para una minera). La app NO \
 tiene precios de commodities ni de insumos \
 (memoria, petróleo, metales, etc.): no los anotes en datos_faltantes; si te parecen decisivos, \
 decilo en los riesgos.
@@ -963,6 +966,24 @@ ETF_POR_SECTOR = {
 }
 
 
+# Tarea 446: cuando la industria de Yahoo no dice nada del negocio. MARA es una minera de bitcoin y
+# Yahoo la pone en *Capital Markets*: con la 420 recibía GS, MS y SCHW (2026-11-20). TTWO no tenía
+# ningún par de su industria en el cache. Cada entrada dice por qué; se agregan a mano.
+PARES_A_MANO: dict[str, tuple[tuple[str, ...], str]] = {
+    "MARA": (
+        ("RIOT", "CLSK", "CIFR", "HUT"),
+        "minera de bitcoin; Yahoo la pone en Capital Markets, con los bancos de inversión",
+    ),
+    "TTWO": (
+        ("RBLX", "NTDOY"),
+        "videojuegos; el cache no tenía ningún par de su industria (EA dejó de cotizar en 2026)",
+    ),
+}
+REFERENCIA_A_MANO: dict[str, tuple[str, str]] = {
+    "MARA": ("BTC-USD", "su ingreso es el bitcoin que mina; su precio lo sigue"),
+}
+
+
 def _retornos(serie) -> dict | None:
     """Retorno a 5 y 20 ruedas de una serie ``[(día, cierre)]``, contra cierres; ``None`` si es corta."""
     if not serie or len(serie) < 6:
@@ -1013,7 +1034,14 @@ def bloque_pares(
     propio = ticker.upper()
     industria = None if not industria or industria == "N/A" else industria
     pares = []
-    for t in sorted(universo) if industria else ():
+    a_mano = PARES_A_MANO.get(propio)
+    # Los pares a mano no están en el universo guardado: se piden como el ETF (y se bajan si faltan).
+    for t in a_mano[0][:maximo] if a_mano else ():
+        serie = referencia(t)
+        r = _retornos(serie) if _al_dia(serie, al) else None
+        if r is not None:
+            pares.append({"ticker": t, **r})
+    for t in sorted(universo) if industria and not a_mano else ():
         if t == propio or universo[t][1] != industria:
             continue
         serie = series(t)
@@ -1033,9 +1061,15 @@ def bloque_pares(
     etf_t = ETF_POR_INDUSTRIA.get(industria or "") or ETF_POR_SECTOR.get(sector or "")
     etf = _de_referencia(etf_t) if etf_t else None
     indices = [x for x in map(_de_referencia, INDICES) if x is not None]
-    if not pares and etf is None and not indices:
+    ref = None
+    if propio in REFERENCIA_A_MANO:
+        ref_t, motivo = REFERENCIA_A_MANO[propio]
+        ref = _de_referencia(ref_t)
+        if ref is not None:
+            ref["motivo"] = motivo
+    if not pares and etf is None and not indices and ref is None:
         return None
-    return {
+    out = {
         "industria": industria,
         "nota": (
             "retornos contra cierres. pares: los tickers de la misma industria que la app tiene "
@@ -1046,6 +1080,11 @@ def bloque_pares(
         "etf_del_sector": etf,
         "indices": indices,
     }
+    if a_mano:
+        out["pares_a_mano"] = a_mano[1]
+    if ref is not None:
+        out["referencia"] = ref
+    return out
 
 
 def _dato(x) -> str | None:
