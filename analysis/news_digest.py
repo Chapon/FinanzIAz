@@ -26,6 +26,7 @@ Everything is fail-soft and offline-testable (``http_post`` injectable).
 from __future__ import annotations
 
 import math
+import threading
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -34,6 +35,25 @@ from datetime import datetime, timedelta
 from config.logging_config import get_logger
 
 log = get_logger(__name__)
+
+# Tarea 442: mientras corre el harvest (el horario o la fase de harvest del refresh diario), las
+# noticias de hoy pueden no estar todavía. La opinión de MSFT del 2026-11-20 se pidió a mitad del
+# harvest y anotó como faltantes las de toda la semana.
+_COSECHANDO = threading.Event()
+
+
+def harvest_en_curso() -> bool:
+    """¿Está corriendo el harvest de noticias in-app? (tarea 442)."""
+    return _COSECHANDO.is_set()
+
+
+def _cosechar(harvest_main, argv: list[str]) -> int:
+    _COSECHANDO.set()
+    try:
+        return int(harvest_main(argv))
+    finally:
+        _COSECHANDO.clear()
+
 
 # Same local model the daily classification scheduler uses
 # (scripts/daily_catalyst_harvest.bat → --backend hybrid-ollama --model qwen2.5:14b).
@@ -524,7 +544,7 @@ def run_catalyst_harvest_only(*, harvest_main=None) -> dict:
         from scripts.harvest_catalysts import main as harvest_main
 
     try:
-        harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
+        harvest_rc = _cosechar(harvest_main, ["--sources", fuentes_del_harvest()])
     except Exception:
         log.exception("hourly catalyst harvest: crashed")
         harvest_rc = -1
@@ -564,7 +584,7 @@ def run_catalyst_refresh(
         # incluido; se saltea solo sin API key). Alineado 2026-07-12 al mover
         # todo el scheduling in-app y remover la tarea de Windows.
         if harvest:
-            harvest_rc = int(harvest_main(["--sources", fuentes_del_harvest()]))
+            harvest_rc = _cosechar(harvest_main, ["--sources", fuentes_del_harvest()])
     except Exception:
         log.exception("catalyst refresh: harvest crashed")
         harvest_rc = -1

@@ -22,6 +22,19 @@ _ROTULO = {"COMPRAR": "Comprar", "MANTENER": "Mantener", "VENDER": "Vender"}
 
 CUERPO_MAX_ALTO = 260
 
+AVISO_HARVEST = " El harvest de noticias del día está corriendo: las de hoy pueden no estar todavía."
+
+
+def aviso_harvest() -> str:
+    """``AVISO_HARVEST`` si el harvest in-app está corriendo, o ``""`` (tarea 442)."""
+    try:
+        from analysis.news_digest import harvest_en_curso
+
+        return AVISO_HARVEST if harvest_en_curso() else ""
+    except Exception:
+        return ""
+
+
 NOTA = (
     "Opinión de un modelo, no validada: que la tesis sea buena no dice que acierte. "
     "Se registra para medirlo. Usa tu suscripción de Claude Code."
@@ -67,6 +80,7 @@ class OpinionCard(QFrame):
         self._ticker = ""
         self._armar_datos = None
         self._worker: OpinionWorker | None = None
+        self._aviso = ""
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 10, 12, 10)
@@ -141,7 +155,8 @@ class OpinionCard(QFrame):
         if not self._armar_datos or (self._worker is not None and self._worker.isRunning()):
             return
         self.boton.setEnabled(False)
-        self.estado.setText(f"Consultando a Claude sobre {self._ticker}…")
+        self._aviso = aviso_harvest()
+        self.estado.setText(f"Consultando a Claude sobre {self._ticker}…{self._aviso}")
         self._worker = OpinionWorker(self._ticker, self._armar_datos, self)
         self._worker.listo.connect(self._listo)
         self._worker.error.connect(lambda e: self._listo(False, f"Error inesperado: {e}"))
@@ -154,7 +169,7 @@ class OpinionCard(QFrame):
             return
         self.mostrar(valor)
         self.boton.setText("Pedir de nuevo")
-        self.estado.setText(f"Respondió en {valor.segundos:.0f} s ({valor.modelo}).")
+        self.estado.setText(f"Respondió en {valor.segundos:.0f} s ({valor.modelo}).{self._aviso}")
 
     def mostrar(self, op) -> None:
         color = _COLOR.get(op.recomendacion, PALETTE["text2"])

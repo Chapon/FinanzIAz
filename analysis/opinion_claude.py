@@ -72,7 +72,8 @@ DIAS_NOTICIAS = 14
 #   9 — deuda, activos, patrimonio y acciones por año, y los múltiplos del último año (440).
 #  10 — las noticias que se mandan las clasifica qwen al pedir la opinión, con tope (427).
 #  11 — caja, capex, flujo de caja libre y ganancia operativa por año (441).
-VERSION_DATOS = 11
+#  12 — las noticias se bajan al pedir si la app no tiene recientes, y van con su cobertura (442).
+VERSION_DATOS = 12
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -118,6 +119,9 @@ de las noticias están en hora del Este de EE.UU. (ET).
 noticia trata de otra empresa o de otra cosa, aunque aparezca bajo este ticker; no la tomes como \
 un hecho de la empresa ni uses su tono. Algunas fuentes traen un resumen corto y otras sólo el \
 título (resumen null): un resumen que no está no es un dato faltante, no lo anotes en datos_faltantes.
+- cobertura_noticias dice cuántas noticias del ticker tiene la app en la ventana, de qué días (ET) \
+y qué días no tiene ninguna. Si no hay noticias, es que la app no las tiene (lo dice su nota), no \
+que el bloque se haya perdido. Si dice que el harvest estaba corriendo, las de hoy pueden faltar.
 - pares trae los retornos de tickers de la misma industria que la app tiene guardados (no la \
 industria entera), del ETF del sector y de los índices (SPY, QQQ), para separar lo que le pasa a \
 la empresa de lo que le pasa al sector y al mercado; cada uno dice a qué día llega. La app NO \
@@ -218,6 +222,7 @@ def armar_datos(
     anuales: list[dict] | None = None,
     balance: dict | None = None,
     pares: dict | None = None,
+    cobertura_noticias: dict | None = None,
 ) -> dict:
     """El resumen que se manda a Claude. **Puro**: todo llega por parámetro.
 
@@ -296,6 +301,9 @@ def armar_datos(
         datos["yfinance"] = yf_
     if noticias:
         datos["noticias"] = noticias[:MAX_NOTICIAS]
+    if cobertura_noticias:
+        # Va también sin noticias: es lo que dice por qué no hay (tarea 442).
+        datos["cobertura_noticias"] = cobertura_noticias
     if pares:
         datos["pares"] = pares
     return datos
@@ -618,10 +626,47 @@ def resumen(texto: str | None, maximo: int = MAX_RESUMEN) -> str | None:
 
 def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None) -> list[dict]:
     """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
-    from analysis.news_digest import classify_missing, fetch_news_window
+    return noticias_y_cobertura(ticker, dias, clasificar)[0]
+
+
+def noticias_y_cobertura(
+    ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None, bajar=None
+) -> tuple[list[dict], dict]:
+    """Las noticias para Claude y el bloque ``cobertura_noticias`` (tarea 442).
+
+    Con ``bajar`` (``bajar_noticias`` en la app), si la app no tiene noticias del ticker de las
+    últimas ``FRESCURA_NOTICIAS_H`` horas, primero las baja: TTWO y MARA no están en el universo que
+    se cosecha y el 2026-11-20 no tenían ninguna.
+    """
+    from analysis.news_digest import fetch_news_window, harvest_en_curso
     from database.models import utcnow_naive
 
-    filas = fetch_news_window(utcnow_naive() - timedelta(days=dias), tickers=[ticker.upper()])
+    ahora = utcnow_naive()
+    desde = ahora - timedelta(days=dias)
+    filas = fetch_news_window(desde, tickers=[ticker.upper()])
+    intento = bajar is not None and hay_que_bajar(filas, ahora)
+    bajadas = None
+    if intento:
+        bajadas = bajar(ticker)
+        if bajadas:
+            filas = fetch_news_window(desde, tickers=[ticker.upper()])
+    zona = _zona_et()
+    cobertura = bloque_cobertura(
+        filas,
+        desde,
+        ahora,
+        dias=dias,
+        intento_bajar=intento,
+        bajadas=bajadas,
+        harvest_en_curso=harvest_en_curso(),
+        zona=zona,
+    )
+    return _noticias_para_claude(filas, clasificar, zona), cobertura
+
+
+def _noticias_para_claude(filas: list, clasificar, zona) -> list[dict]:
+    from analysis.news_digest import classify_missing
+
     # Tarea 406: las que qwen todavía no clasificó salían con tipo y tono en None. Van con la
     # heurística al vuelo, como en la pestaña Noticias, y el campo `clasificador` lo dice.
     filas = filas[:MAX_NOTICIAS]
@@ -630,7 +675,6 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None) 
         filas = clasificar_a_demanda(filas, clasificar)
     filas = classify_missing(filas)
     out = []
-    zona = _zona_et()
     for f in filas:
         cuando = f.published_at or f.fetched_at
         out.append(
@@ -649,6 +693,115 @@ def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None) 
                 else f.classified_by,
             }
         )
+    return out
+
+
+# ── Noticias a demanda y su cobertura (tarea 442) ───────────────────────────
+
+# Las fuentes del harvest de la app menos la SEC: las 8-K se le piden a EDGAR con el User-Agent de
+# contacto y quedan para el harvest; el consenso lo junta la nube (la 356).
+FUENTES_A_DEMANDA = ("yfinance_news", "finnhub")
+TOPE_BAJAR_NOTICIAS_S = 20.0
+# Si la más nueva tiene más que esto, se bajan. Un ticker del universo tiene el harvest horario; la
+# opinión de MSFT del 2026-11-20, pedida a mitad del harvest, tenía la más nueva del 11/11.
+FRESCURA_NOTICIAS_H = 24
+
+
+def bajar_noticias(ticker: str, *, collector=None, tope_s: float = TOPE_BAJAR_NOTICIAS_S) -> int | None:
+    """Baja las noticias de ``ticker`` con las fuentes del harvest y las guarda en ``news_events``.
+
+    Con el mismo dedup del harvest (``_insert_news_if_new``, como la importación de la nube), así
+    las ve la pestaña Noticias y las clasifica qwen. Devuelve cuántas guardó, o ``None`` si no se
+    pudo (sin red, pasado el tope). Nunca levanta. **Red: sí**; corre en el worker de la opinión.
+    """
+    from config.logging_config import get_logger
+
+    try:
+        from data.news_sources import collect_all
+        from data.yahoo_finance import _run_with_timeout
+        from database.models import session_scope
+        from scripts.harvest_catalysts import _insert_news_if_new
+
+        res = _run_with_timeout(
+            collector or collect_all,
+            ticker.upper(),
+            set(FUENTES_A_DEMANDA),
+            timeout=tope_s,
+            default=None,
+            retries=0,
+        )
+        if res is None:
+            return None
+        nuevas = 0
+        vistos: set[str] = set()
+        urls: set[str] = set()
+        with session_scope() as s:
+            for item in res.news:
+                nuevas += bool(_insert_news_if_new(s, item, vistos, urls))
+        get_logger(__name__).info("Noticias de %s a demanda: %d nuevas", ticker.upper(), nuevas)
+        return nuevas
+    except Exception:
+        get_logger(__name__).exception("Noticias de %s a demanda: falló", ticker)
+        return None
+
+
+def _momentos(filas) -> list[datetime]:
+    return sorted(m for f in filas if (m := f.published_at or f.fetched_at) is not None)
+
+
+def hay_que_bajar(filas, ahora: datetime, frescura_h: float = FRESCURA_NOTICIAS_H) -> bool:
+    """Sin noticias, o con la más nueva de hace más de ``frescura_h`` horas. **Puro**."""
+    momentos = _momentos(filas)
+    return not momentos or ahora - momentos[-1] > timedelta(hours=frescura_h)
+
+
+def bloque_cobertura(
+    filas,
+    desde: datetime,
+    ahora: datetime,
+    *,
+    dias: int,
+    intento_bajar: bool = False,
+    bajadas: int | None = None,
+    harvest_en_curso: bool = False,
+    zona=None,
+) -> dict:
+    """Qué noticias tiene la app del ticker en la ventana y de qué días (ET). **Puro** (442).
+
+    ``dias_sin_noticias`` son los días de la ventana sin ninguna en la app: con un ticker muy cubierto,
+    el tope de ítems por pedido de las fuentes no llega a los más viejos (MSFT, del 12 al 17/11).
+    ``bajadas`` es lo que se bajó al pedir (``None``: no se pudo); sólo va si se intentó.
+    """
+    momentos = _momentos(filas)
+    out: dict = {
+        "ventana_dias": dias,
+        "en_la_ventana": len(filas),
+        "se_mandan": min(len(filas), MAX_NOTICIAS),
+    }
+    if momentos:
+        con = {hora_et(m, zona)[:10] for m in momentos}
+        d0 = date.fromisoformat(hora_et(desde, zona)[:10])
+        d1 = date.fromisoformat(hora_et(ahora, zona)[:10])
+        rango = [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
+        out["mas_vieja"] = hora_et(momentos[0], zona)
+        out["mas_nueva"] = hora_et(momentos[-1], zona)
+        out["dias_sin_noticias"] = [d for d in rango if d not in con]
+        nota = "se mandan las más nuevas; un día sin noticias en la app no es un día sin noticias"
+    elif intento_bajar and bajadas is None:
+        nota = (
+            f"la app no tiene noticias de este ticker de los últimos {dias} días, y al pedir la "
+            "opinión no se pudieron bajar (sin red o sin respuesta de las fuentes)"
+        )
+    elif intento_bajar:
+        nota = f"las fuentes de la app no trajeron noticias de este ticker de los últimos {dias} días"
+    else:
+        nota = f"la app no tiene noticias de este ticker de los últimos {dias} días"
+    if intento_bajar:
+        out["bajadas_al_pedir"] = bajadas
+    if harvest_en_curso:
+        out["harvest_en_curso"] = True
+        nota += "; el harvest de noticias del día estaba corriendo: las de hoy pueden no estar todavía"
+    out["nota"] = nota
     return out
 
 

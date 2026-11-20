@@ -714,10 +714,15 @@ class AnalysisTab(QWidget):
             from analysis.opinion_claude import (
                 anuales_de,
                 armar_datos,
+                bajar_noticias,
                 balance_de,
                 clasificador_a_demanda,
-                noticias_recientes,
+                noticias_y_cobertura,
                 pares_de,
+            )
+
+            noticias, cobertura = noticias_y_cobertura(
+                t, clasificar=clasificador_a_demanda(), bajar=bajar_noticias
             )
 
             return armar_datos(
@@ -726,13 +731,14 @@ class AnalysisTab(QWidget):
                 r,
                 c,
                 a,
-                noticias_recientes(t, clasificar=clasificador_a_demanda()),
+                noticias,
                 s_r,
                 obtenido=ob,
                 valuacion=v,
                 anuales=anuales_de(t),
                 balance=balance_de(t),
                 pares=pares_de(t, c, d),
+                cobertura_noticias=cobertura,
             )
 
         self.opinion_card.set_contexto(ticker, _datos_para_claude)
