@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 353 — Tarea 439 (NOTICIA-SIN-FECHA-ROMPE-LA-OPINION) CERRADA 2026-11-20 — el `_Row` trae `fetched_at`, y una noticia sin fecha de la fuente va a la opinión con la hora en que se vio en vez de romper la lista** (origen: la 434).
-  - **El campo** viaja desde `fetch_news_window`, y las provisionales lo conservan porque `classify_missing` arma las filas con `dataclasses.replace` desde la 426. La pestaña Noticias ya manejaba las filas sin fecha («s/f»): sólo rompía la opinión.
-  - **El falso que lo tapaba:** el test de la 417 armaba la fila con un `SimpleNamespace` que tenía `fetched_at`; ahora es un `_Row` de verdad, que no puede tener campos que el real no tenga. Y un test fija que los campos que lee `noticias_recientes` existan en el `_Row`.
-  - **Mutación** (restaurada desde copia): sin `fetched_at` en la consulta, rojo. Armada el 2026-11-19 en un clon y re-verificada el 2026-11-20 sobre `a599f76`.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -576,6 +572,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-19h** al cerrar la **438**, que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **426 → 439 → 420 → 427 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 > **Repriorizado 2026-11-20** al mover la **426** a *Hecho reciente* (CI de `a599f76` verde) y anotar la **440**, **441** y **442** (lo que las opiniones de TTWO y MSFT del 2026-11-20 anotaron como faltante) y la **443** (análisis: en MARA la señal general dice Comprar y Claude, Vender). El orden queda **439 → 420 → 440 → 441 → 427 → 442 → 443 → 435 → 436 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
+
+> **Repriorizado 2026-11-20b** al mover la **439** a *Hecho reciente* (CI de `ce24d55` verde). Dos cambios de orden: la **436** sube antes de la **427**, que usa su `RESPALDO` (`fallback`) para saber qué noticias están pendientes; y la **441** va después de la 427, en el orden en que se armaron (cada una sube `version_datos`). El orden queda **420 → 440 → 436 → 427 → 441 → 442 → 443 → 435 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415) y la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*).
 
 
 
@@ -2050,7 +2048,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Tests puros sobre `fundamentales_anuales` y el bloque nuevo, con un caso calculado a mano donde las acciones cambian entre años (el bloque usa las del último); sin acciones no hay capitalización. Una opinión en vivo de TTWO. Sube `version_datos`. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 439. ~~NOTICIA-SIN-FECHA-ROMPE-LA-OPINION — `noticias_recientes` usa `f.fetched_at`, que el `_Row` de `fetch_news_window` no tiene: una noticia sin `published_at` hace fallar la lista entera de la opinión de Claude~~ · **CERRADA 2026-11-20 — una noticia sin fecha de la fuente va a la opinión con la hora en que se vio** ·  origen: la 434 (2026-11-19), al llevar la relevancia por el `_Row` · severidad **BAJA** (latente: hoy no hay ninguna fila sin fecha) · display-only
+### 439. ~~NOTICIA-SIN-FECHA-ROMPE-LA-OPINION — `noticias_recientes` usa `f.fetched_at`, que el `_Row` de `fetch_news_window` no tiene: una noticia sin `published_at` hace fallar la lista entera de la opinión de Claude~~ · **CERRADA 2026-11-20 — una noticia sin fecha de la fuente va a la opinión con la hora en que se vio** (`ce24d55`) · **movida a *Hecho reciente* con el detalle** ·  origen: la 434 (2026-11-19), al llevar la relevancia por el `_Row` · severidad **BAJA** (latente: hoy no hay ninguna fila sin fecha) · display-only
 
 - **Qué pasa.** `analysis/opinion_claude.py` (`noticias_recientes`) arma la hora con `f.published_at or f.fetched_at`; `fetch_news_window` (`analysis/news_digest.py`) devuelve `_Row`, un dataclass congelado **sin** `fetched_at`, aunque su consulta incluye a propósito las filas sin `published_at` (*«if we saw it inside it (fetched_at)»*). Reproducido con una DB en memoria y una sola noticia sin fecha: `AttributeError: '_Row' object has no attribute 'fetched_at'`.
 - **Por qué no se vio:** en la DB viva hay **0** filas con `published_at` nulo (2026-11-19), y el único test de la hora de las noticias (`test_noticias_recientes_manda_la_hora_ET`, la 417) reemplaza la fila por un `SimpleNamespace` **con** `fetched_at`: la forma del falso no es la del real (la forma de la 110 y la 101).
@@ -5019,6 +5017,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 353 — Tarea 439 (NOTICIA-SIN-FECHA-ROMPE-LA-OPINION) CERRADA 2026-11-20 — el `_Row` trae `fetched_at`, y una noticia sin fecha de la fuente va a la opinión con la hora en que se vio en vez de romper la lista** (`ce24d55`) (origen: la 434).
+  - **El campo** viaja desde `fetch_news_window`, y las provisionales lo conservan porque `classify_missing` arma las filas con `dataclasses.replace` desde la 426. La pestaña Noticias ya manejaba las filas sin fecha («s/f»): sólo rompía la opinión.
+  - **El falso que lo tapaba:** el test de la 417 armaba la fila con un `SimpleNamespace` que tenía `fetched_at`; ahora es un `_Row` de verdad, que no puede tener campos que el real no tenga. Y un test fija que los campos que lee `noticias_recientes` existan en el `_Row`.
+  - **Mutación** (restaurada desde copia): sin `fetched_at` en la consulta, rojo. Armada el 2026-11-19 en un clon y re-verificada el 2026-11-20 sobre `a599f76`.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `ce24d55` VERDE.
 
 - **WIP 352 — Tarea 426 (OPINION-CLAUDE-RESUMEN-DE-NOTICIAS) CERRADA 2026-11-19 — cada noticia va con su resumen (`news_events.content`, en una línea y recortado a 300 caracteres) o `null`, y el prompt dice que un resumen que no está no es un faltante** (`a599f76`) (origen: la opinión de MU del 2026-11-11; `version_datos` 7).
   - **El resumen viaja por el `_Row`** de `fetch_news_window`, como la relevancia de la 434. Y `classify_missing` arma ahora las provisionales con `dataclasses.replace` y no con un `_Row` nuevo campo por campo: así un campo que se le sume a la fila no se pierde en las que clasifica la heurística (ya había pasado con la relevancia en la 434).
