@@ -39,6 +39,7 @@ Features nuevas de scoring/valuación entran primero como **display-only**, NO c
 
 - **.bat requieren CRLF.** Las herramientas de edición escriben LF y `cmd.exe` parsea mal el batch y muere en silencio. Escribir .bat con CRLF binario explícito y verificar.
 - **No escribir la DB desde Linux/sandbox.** `finanzias.db` devuelve "malformed" intermitente vía mounts de Linux mientras el engine de Windows escribe. Para leerla desde un entorno no-Windows: copiar a /tmp primero. Backup sano en `backups/`.
+- **Todo pedido de reabrir la app dice cómo** (`abrir_app.bat`, tarea 432): de los 13 pedidos desde el 2026-10-27, 7 no lo decían, y la app se abrió con la Anaconda en los 9 arranques que siguieron a la 401. Desde la 432 `main.py` se relanza solo con el `.venv`, pero el pedido lo dice igual.
 - **La app corre lo que haya en el árbol, WIP sin commitear incluido** (tarea 433): al arrancar lo loguea y lo avisa en la barra de estado, y cada opinión de Claude guarda el commit y la marca de WIP. Se trabaja en el árbol principal, sin `git worktree` (decisión de Chapa del 2026-11-19), así que **una sesión no le pide a Chapa que reabra la app con WIP en el árbol sin decirlo** (*«hay X sin commitear: si la abrís ahora, corre eso»*). El 2026-11-11 se pidió así y la opinión de MU salió del WIP de la 425.
 - **Null-byte padding tras edits grandes.** Las ediciones que achican un archivo pueden dejar nulls al final. Verificar con `read_bytes().count(b'\x00')`.
 

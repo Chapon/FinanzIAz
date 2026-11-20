@@ -23,21 +23,33 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from config.entorno import es_el_venv
+from config.entorno import VARIABLE_RELANZADA, comando_para_relanzar, es_el_venv, relanzar
 from config.logging_config import get_logger, setup_logging
 from database.models import init_db
 
 
+def _relanzar_con_el_venv() -> None:
+    """Tarea 432: con otro intérprete y el ``.venv`` presente, la app corre en el ``.venv`` y este
+    proceso sale con su código. Va antes del log y de la DB: dos procesos con el mismo log rotativo se
+    pisan la rotación en Windows, y el padre no tiene que migrar nada."""
+    cmd = comando_para_relanzar(sys.executable, sys.prefix, sys.argv, os.environ)
+    if cmd is not None:
+        relanzar(cmd, os.environ, sys.executable)  # sólo vuelve si no pudo lanzarla
+
+
 def main():
+    _relanzar_con_el_venv()
     # Set up centralized logging (rotating file + stderr) BEFORE any other
     # subsystem imports, so module-level loggers all attach correctly.
     setup_logging()
     log = get_logger(__name__)
     log.info("Iniciando FinanzIAs")
+    if os.environ.get(VARIABLE_RELANZADA):
+        log.info("Relanzada con el .venv del repo desde %s (tarea 432)", os.environ[VARIABLE_RELANZADA])
     if not es_el_venv(sys.prefix):
         log.warning(
             "FinanzIAs corre con %s y no con el .venv del repo, que es el entorno del lock y del "
-            "CI: las versiones pueden no ser las probadas. Abrila con abrir_app.bat (tarea 401).",
+            "CI: las versiones pueden no ser las probadas. Abrila con abrir_app.bat (tareas 401 y 432).",
             sys.executable,
         )
     # Tarea 433: con qué código corre (el commit, y si hay WIP sin commitear). Se toma una vez.

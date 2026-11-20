@@ -2,6 +2,8 @@
 Main application window — IQON-style layout with sidebar + content stack.
 """
 
+import sys
+
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QFrame,
@@ -15,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.codigo import al_arrancar
+from config.entorno import es_el_venv
 from config.logging_config import get_logger
 from config.settings_manager import settings
 from data.yahoo_finance import is_market_open
@@ -217,8 +220,11 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("FinanzIAs listo.")
         self.clasificacion_indicador = ClasificacionIndicador()
         self.status_bar.addPermanentWidget(self.clasificacion_indicador)
-        # Tarea 433: si la app corre WIP sin commitear, se ve acá y no sólo en el log.
-        self.aviso_entorno = aviso_entorno.instalar(self.status_bar, al_arrancar())
+        # Tareas 432 y 433: si la app no corre con el .venv, o corre WIP sin commitear, se ve acá y
+        # no sólo en el log.
+        self.aviso_entorno = aviso_entorno.instalar(
+            self.status_bar, al_arrancar(), es_el_venv(sys.prefix), sys.executable
+        )
         self.setStatusBar(self.status_bar)
 
     _PAGE_IDX = {
