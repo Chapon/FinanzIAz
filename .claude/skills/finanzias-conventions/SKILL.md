@@ -39,6 +39,7 @@ Features nuevas de scoring/valuación entran primero como **display-only**, NO c
 
 - **.bat requieren CRLF.** Las herramientas de edición escriben LF y `cmd.exe` parsea mal el batch y muere en silencio. Escribir .bat con CRLF binario explícito y verificar.
 - **No escribir la DB desde Linux/sandbox.** `finanzias.db` devuelve "malformed" intermitente vía mounts de Linux mientras el engine de Windows escribe. Para leerla desde un entorno no-Windows: copiar a /tmp primero. Backup sano en `backups/`.
+- **La app corre lo que haya en el árbol, WIP sin commitear incluido** (tarea 433): al arrancar lo loguea y lo avisa en la barra de estado, y cada opinión de Claude guarda el commit y la marca de WIP. Se trabaja en el árbol principal, sin `git worktree` (decisión de Chapa del 2026-11-19), así que **una sesión no le pide a Chapa que reabra la app con WIP en el árbol sin decirlo** (*«hay X sin commitear: si la abrís ahora, corre eso»*). El 2026-11-11 se pidió así y la opinión de MU salió del WIP de la 425.
 - **Null-byte padding tras edits grandes.** Las ediciones que achican un archivo pueden dejar nulls al final. Verificar con `read_bytes().count(b'\x00')`.
 
 **Guard MANUAL, y la palabra importa (tarea 98):** `python scripts/check_repo_health.py` chequea

@@ -598,6 +598,9 @@ class ClaudeOpinion(Base):
     respuesta_json: Mapped[str] = mapped_column(Text, nullable=False)
     datos_json: Mapped[str] = mapped_column(Text, nullable=False)
     segundos: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Tarea 433: con qué código salió (``config.codigo``). NULL en las filas anteriores: no se sabe.
+    codigo_commit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    codigo_wip: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class CloudImportCursor(Base):

@@ -627,8 +627,14 @@ def pedir_opinion(
 
 
 def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None) -> None:
-    """Upsert por ``(ticker, día)``: pedirla de nuevo el mismo día la reemplaza."""
+    """Upsert por ``(ticker, día)``: pedirla de nuevo el mismo día la reemplaza.
+
+    Guarda también con qué código corre la app (tarea 433): el commit y si había WIP sin commitear.
+    """
+    from config.codigo import al_arrancar
     from database.models import ClaudeOpinion, session_scope, utcnow_naive
+
+    codigo = al_arrancar()
 
     fecha = (hoy or date.today()).isoformat()
     respuesta = {
@@ -652,6 +658,8 @@ def guardar(ticker: str, opinion: Opinion, datos: dict, hoy: date | None = None)
         fila.datos_json = json.dumps(datos, ensure_ascii=False)
         fila.segundos = opinion.segundos
         fila.creado_at = utcnow_naive()
+        fila.codigo_commit = codigo.commit
+        fila.codigo_wip = codigo.wip if codigo.commit else None
 
 
 def opinion_de_hoy(ticker: str, hoy: date | None = None) -> tuple[Opinion, datetime | None] | None:

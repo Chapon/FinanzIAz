@@ -40,6 +40,10 @@ def main():
             "CI: las versiones pueden no ser las probadas. Abrila con abrir_app.bat (tarea 401).",
             sys.executable,
         )
+    # Tarea 433: con qué código corre (el commit, y si hay WIP sin commitear). Se toma una vez.
+    from config.codigo import al_arrancar, loguear_arranque
+
+    loguear_arranque(log, al_arrancar())
 
     # Tarea 278 — antes de abrir ninguna conexión: (1) el restore que el botón de Settings
     # dejó programado (copiar encima de una base en WAL con la app abierta no restauraba), y

@@ -19,6 +19,7 @@ App de escritorio de paper-trading y análisis cuantitativo. **Python + PyQt6 + 
 ## Cómo correr
 
 - App: `abrir_app.bat` (o `.venv\Scripts\python.exe main.py`). Con otro intérprete arranca igual, pero deja un WARNING en el log (tarea 401).
+- **La app corre lo que haya en el árbol, WIP sin commitear incluido** (tarea 433): al arrancar lo loguea y lo avisa en la barra de estado, y cada opinión de Claude guarda el commit y la marca de WIP. Se trabaja en el árbol principal, sin `git worktree` (decisión de Chapa del 2026-11-19), así que **una sesión no le pide a Chapa que reabra la app con WIP en el árbol sin decirlo** (*«hay X sin commitear: si la abrís ahora, corre eso»*). El 2026-11-11 se pidió así y la opinión de MU salió del WIP de la 425.
 - Tests: `python -m pytest tests/ -ra -m "not network" --tb=short`
 - Harvest de catalysts: `python scripts/harvest_catalysts.py` (ver skill `catalyst-pipeline`). **Sin `--account-id`**: desde la tarea 70 el default es la cuenta **viva**, resuelta contra `is_active`. Decía `--account-id 1` y esa cuenta está pausada, así que recolectaba para 52 tickers en vez de 128.
 

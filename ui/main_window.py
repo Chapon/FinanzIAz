@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config.codigo import al_arrancar
 from config.logging_config import get_logger
 from config.settings_manager import settings
 from data.yahoo_finance import is_market_open
@@ -22,6 +23,7 @@ from ui.styles import DARK_THEME, PALETTE
 
 log = get_logger(__name__)
 from paper_trading.scheduler import PaperScheduler
+from ui import aviso_entorno
 from ui.alerts_tab import AlertsTab
 from ui.analysis_tab import AnalysisTab
 from ui.clasificacion_indicador import ClasificacionIndicador
@@ -215,6 +217,8 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("FinanzIAs listo.")
         self.clasificacion_indicador = ClasificacionIndicador()
         self.status_bar.addPermanentWidget(self.clasificacion_indicador)
+        # Tarea 433: si la app corre WIP sin commitear, se ve acá y no sólo en el log.
+        self.aviso_entorno = aviso_entorno.instalar(self.status_bar, al_arrancar())
         self.setStatusBar(self.status_bar)
 
     _PAGE_IDX = {
