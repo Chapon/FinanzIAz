@@ -112,10 +112,27 @@ CONCEPTOS: dict[str, tuple[str, ...]] = {
         "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
         "CashFlowsFromUsedInOperatingActivities",
     ),
+    # Tarea 441: lo que pidieron las opiniones de TTWO y MSFT del 2026-11-20 para el flujo de caja
+    # libre y el margen operativo. El capex viene como pago (positivo).
+    "caja": (
+        "CashAndCashEquivalentsAtCarryingValue",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+        "Cash",
+        "CashAndCashEquivalents",
+    ),
+    "capex": (
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "PaymentsToAcquireProductiveAssets",
+        "PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
+    ),
+    "ganancia_operativa": (
+        "OperatingIncomeLoss",
+        "ProfitLossFromOperatingActivities",
+    ),
 }
 
 # Los de stock son instantáneos (un balance a una fecha); el resto cubre un período.
-INSTANTANEOS = frozenset({"patrimonio", "activos", "deuda_lp"})
+INSTANTANEOS = frozenset({"patrimonio", "activos", "deuda_lp", "caja"})
 # Los que cambian con un split: los por acción se dividen y la cantidad de acciones se multiplica.
 POR_ACCION = frozenset({"eps_diluido", "dividendo_x_accion", "acciones_diluidas"})
 UNIDADES: dict[str, str] = {

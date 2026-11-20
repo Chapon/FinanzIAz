@@ -71,7 +71,8 @@ DIAS_NOTICIAS = 14
 #   8 — los pares de la misma industria, el ETF del sector y los índices (420).
 #   9 — deuda, activos, patrimonio y acciones por año, y los múltiplos del último año (440).
 #  10 — las noticias que se mandan las clasifica qwen al pedir la opinión, con tope (427).
-VERSION_DATOS = 10
+#  11 — caja, capex, flujo de caja libre y ganancia operativa por año (441).
+VERSION_DATOS = 11
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -132,7 +133,11 @@ donde 100 es la menos endeudada); sus definiciones vienen en el bloque.
 - fundamentales_anuales trae también la deuda de largo plazo, los activos y el patrimonio al cierre \
 de cada año fiscal, y las acciones diluidas promedio del año: una deuda null es que el 10-K no la \
 informó con los conceptos que lee la app, no que sea cero. multiplos usa el último año fiscal, y \
-su capitalización es el precio de hoy por las acciones promedio de ese año, no por las de hoy.
+su capitalización es el precio de hoy por las acciones promedio de ese año, no por las de hoy. \
+También trae la caja al cierre, el capex (lo pagado por activos fijos), el flujo de caja libre \
+(flujo operativo menos capex) y la ganancia operativa. La app NO tiene las partidas no \
+recurrentes (los 10-K no las presentan de forma estándar): no las anotes en datos_faltantes; si \
+te parecen decisivas, decilo en los riesgos.
 - Horizonte: de semanas a pocos meses.
 - COMPRAR = abrir o aumentar posición; MANTENER = no hacer nada; VENDER = reducir o cerrar si \
 la tiene, y no comprar si no la tiene.
@@ -480,6 +485,9 @@ def fundamentales_anuales(fund, fecha: str, splits=None, n: int = ANIOS_FUNDAMEN
     deuda = dict(fund.serie("deuda_lp", fecha))
     activos = dict(fund.serie("activos", fecha))
     patrimonio = dict(fund.serie("patrimonio", fecha))
+    caja = dict(fund.serie("caja", fecha))
+    capex = dict(fund.serie("capex", fecha))
+    operativa = dict(fund.serie("ganancia_operativa", fecha))
     fines = sorted(set(ventas) | set(ganancia))[-n:]
 
     def millones(x):
@@ -511,6 +519,14 @@ def fundamentales_anuales(fund, fecha: str, splits=None, n: int = ANIOS_FUNDAMEN
                 "deuda_lp_musd": millones(deuda.get(fin)),
                 "activos_musd": millones(activos.get(fin)),
                 "patrimonio_musd": millones(patrimonio.get(fin)),
+                "caja_musd": millones(caja.get(fin)),
+                "capex_musd": millones(capex.get(fin)),
+                # Sin capex no hay flujo libre: tomarlo como 0 lo inflaría hasta el flujo operativo (441).
+                "flujo_caja_libre_musd": (
+                    millones(flujo[fin] - capex[fin]) if fin in flujo and fin in capex else None
+                ),
+                "ganancia_operativa_musd": millones(operativa.get(fin)),
+                "margen_operativo_pct": margen(operativa.get(fin), r),
             }
         )
     return out
