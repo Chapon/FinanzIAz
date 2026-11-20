@@ -59,9 +59,7 @@ from ui.analysis.catalog import (
 from ui.analysis.labels import (
     YAHOO_COLORS as _YAHOO_COLORS,
 )
-from ui.analysis.labels import (
-    YAHOO_LABELS_ES as _YAHOO_LABELS_ES,
-)
+from ui.analysis.labels import es_debil, rotulo_senal
 from ui.analysis.labels import (
     get_tooltip as _tt,
 )
@@ -749,7 +747,9 @@ class AnalysisTab(QWidget):
             self._current_result = result
             dynamic_tt = self._make_signal_tooltip(result)
             self._current_tooltip = dynamic_tt
-            self.overall_badge.set_signal(result.yahoo_level)
+            self.overall_badge.set_signal(
+                result.yahoo_level, debil=es_debil(result.overall_signal, result.overall_strength)
+            )
             self.overall_badge.setToolTip(dynamic_tt)
             self.summary_label.setToolTip(dynamic_tt)
             self.summary_label.setText(result.summary)
@@ -802,7 +802,10 @@ class AnalysisTab(QWidget):
             self.signals_scroll.setVisible(True)
             self.hover_panel.setVisible(False)
             if self._current_result:
-                self.overall_badge.set_signal(self._current_result.yahoo_level)
+                r = self._current_result
+                self.overall_badge.set_signal(
+                    r.yahoo_level, debil=es_debil(r.overall_signal, r.overall_strength)
+                )
                 if self._current_tooltip:
                     self.overall_badge.setToolTip(self._current_tooltip)
                 self.summary_label.setText(self._current_result.summary)
@@ -858,7 +861,7 @@ class AnalysisTab(QWidget):
             if match:
                 yahoo = to_yahoo_level(match.signal, match.strength)
                 color = _YAHOO_COLORS.get(yahoo, "#fbbf24")
-                label = _YAHOO_LABELS_ES.get(yahoo, yahoo)
+                label = rotulo_senal(match.signal, match.strength)
                 sig_lbl.setText(f"● {label}")
                 sig_lbl.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {color}; min-width: 100px;")
                 desc = match.description
@@ -877,7 +880,7 @@ class AnalysisTab(QWidget):
             day_overall, day_str, _conf = aggregate_signals(day_sigs, None)
             day_yahoo = to_yahoo_level(day_overall, day_str)
             day_color = _YAHOO_COLORS.get(day_yahoo, "#fbbf24")
-            day_label = _YAHOO_LABELS_ES.get(day_yahoo, day_yahoo)
+            day_label = rotulo_senal(day_overall, day_str)
             self.hover_overall_sig_lbl.setText(f"● {day_label}")
             self.hover_overall_sig_lbl.setStyleSheet(
                 f"font-size: 13px; font-weight: 700; color: {day_color};"

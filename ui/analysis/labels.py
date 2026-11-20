@@ -162,3 +162,23 @@ TOOLTIPS: dict[str, str] = {
 def get_tooltip(key: str) -> str:
     """Return the HTML tooltip for ``key`` or an empty string if unknown."""
     return TOOLTIPS.get(key, "")
+
+
+# ── La fuerza de la señal (tarea 448) ───────────────────────────────────────
+# `to_yahoo_level` pinta igual una compra débil que una moderada («Comprar»): en MARA, el
+# 2026-11-20, la Señal general decía «Comprar» arriba de «Consenso neutral 48/100». La débil
+# lleva el sufijo; la señal y lo que el motor hace con ella no cambian.
+SUFIJO_DEBIL = " (débil)"
+
+
+def es_debil(signal: str, strength: str) -> bool:
+    """¿Una compra o una venta débil? Un «mantener» no tiene fuerza que rotular."""
+    return signal in ("BUY", "SELL") and strength == "WEAK"
+
+
+def rotulo_senal(signal: str, strength: str) -> str:
+    """El rótulo en español de una señal, con «(débil)» si lo es."""
+    from analysis.technical import to_yahoo_level
+
+    nivel = to_yahoo_level(signal, strength)
+    return YAHOO_LABELS_ES.get(nivel, nivel) + (SUFIJO_DEBIL if es_debil(signal, strength) else "")

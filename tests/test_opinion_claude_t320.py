@@ -221,20 +221,15 @@ def test_el_worker_devuelve_el_error_esperable_sin_excepcion(monkeypatch):
     assert w.do_work() == (False, "Claude no respondió en 240 s.")
 
 
-def test_una_opinion_larga_no_aplasta_el_panel():
-    """Con la opinión real de MU (tesis de 6 oraciones, 4 riesgos) la tarjeta crecía sin techo."""
-    import os
+def test_una_opinion_larga_no_aplasta_el_panel(qapp):
+    """Con la opinión real de MU (tesis de 6 oraciones, 4 riesgos) la tarjeta crecía sin techo.
 
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
-
+    Con ``qapp`` de pytest-qt (la 448): un QApplication propio se destruye al terminar el test."""
     from ui.analysis.opinion_card import CUERPO_MAX_ALTO, OpinionCard
 
-    _app = QApplication.instance() or QApplication([])
     card = OpinionCard()
     card.mostrar(oc.Opinion("MANTENER", 40, "x " * 800, ["r"] * 4, ["c"] * 3, ["f"] * 2, oc.MODELO, 1.0))
     assert card.cuerpo_scroll.maximumHeight() == CUERPO_MAX_ALTO
-    assert _app is not None
 
 
 # ── El entorno del proceso (tarea 322) ───────────────────────────────────────

@@ -11,7 +11,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from analysis.technical import to_yahoo_level
-from ui.analysis.labels import get_tooltip
+from ui.analysis.labels import es_debil, get_tooltip
 from ui.widgets import SignalBadge
 
 
@@ -35,7 +35,7 @@ class SignalCard(QFrame):
         top.addWidget(ind_label)
         top.addStretch()
         yahoo_level = to_yahoo_level(signal.signal, signal.strength)
-        top.addWidget(SignalBadge(yahoo_level))
+        top.addWidget(SignalBadge(yahoo_level, debil=es_debil(signal.signal, signal.strength)))
         layout.addLayout(top)
 
         desc = QLabel(signal.description)

@@ -165,8 +165,7 @@ def test_la_fila_de_bollinger_del_panel_dice_MANTENER():
 
 def test_CADA_fila_del_ultimo_dia_dice_lo_mismo_que_la_senal_general():
     """El caso de MU: el último día seleccionado y la vista sin selección, indicador por indicador."""
-    from analysis.technical import to_yahoo_level
-    from ui.analysis_tab import _YAHOO_LABELS_ES, AnalysisTab
+    from ui.analysis_tab import AnalysisTab, rotulo_senal
 
     df = _serie()
     general = {s.indicator: s for s in analyze("TST", df, enable_xgboost=False).signals}
@@ -174,5 +173,5 @@ def test_CADA_fila_del_ultimo_dia_dice_lo_mismo_que_la_senal_general():
     AnalysisTab._on_chart_hover(tab, _data_del_grafico(df, len(df) - 1))
     for ind, (_val, sig) in tab._hover_ind_widgets.items():
         g = general[ind]
-        esperado = _YAHOO_LABELS_ES[to_yahoo_level(g.signal, g.strength)]
+        esperado = rotulo_senal(g.signal, g.strength)  # con «(débil)» desde la 448
         assert sig.setText.call_args[0][0] == f"● {esperado}", ind

@@ -9,7 +9,6 @@ el commit del arranque aunque el módulo que la armó se hubiera importado despu
 from __future__ import annotations
 
 import logging
-import os
 from datetime import date
 from types import SimpleNamespace
 
@@ -124,13 +123,11 @@ def test_con_el_arbol_igual_queda_como_antes(test_db, monkeypatch):
     assert _codigo_guardado() == ("a" * 40, False)
 
 
-def test_la_tarjeta_avisa_que_hay_que_reabrir():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PyQt6.QtWidgets import QApplication
-
+def test_la_tarjeta_avisa_que_hay_que_reabrir(qapp):
+    # `qapp` (pytest-qt) y no un QApplication propio: el propio se destruye al terminar el test y
+    # el que importa después la pestaña Cartera se queda sin pool de hilos (la 448).
     from ui.analysis.opinion_card import AVISO_MEZCLADO, OpinionCard
 
-    _app = QApplication.instance() or QApplication([])
     card = OpinionCard()
     op = oc.Opinion("MANTENER", 38, "tesis", [], [], [], oc.MODELO, 74.7)
     card._worker = SimpleNamespace(mezclado=True)
@@ -139,7 +136,6 @@ def test_la_tarjeta_avisa_que_hay_que_reabrir():
     card._worker = SimpleNamespace(mezclado=False)
     card._listo(True, op)
     assert AVISO_MEZCLADO not in card.estado.text()
-    assert _app is not None
 
 
 def test_sube_version_datos():

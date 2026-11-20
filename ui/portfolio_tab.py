@@ -25,6 +25,7 @@ from config.logging_config import get_logger
 from config.settings_manager import settings
 from data.yahoo_finance import get_bulk_dividend_calendar, get_bulk_prices
 from database.models import Portfolio, Position, Transaction, session_scope
+from ui.analysis.labels import SUFIJO_DEBIL, es_debil
 from ui.dialogs import (
     AddPortfolioDialog,
     AddPositionDialog,
@@ -48,6 +49,19 @@ _SIGNAL_LABELS = {
     "Underperform": "Vender",
     "Sell": "Venta Fuerte",
 }
+
+
+def nivel_de(result) -> tuple[str, bool]:
+    """Lo que guarda la columna de señal: el nivel de Yahoo y si es débil (tarea 448)."""
+    return result.yahoo_level, es_debil(result.overall_signal, result.overall_strength)
+
+
+def rotulo_de_nivel(nivel) -> tuple[str | None, str]:
+    """``(nivel, rótulo)`` de lo guardado, con «(débil)» si lo es; acepta el ``str`` de antes."""
+    yahoo_level, debil = nivel if isinstance(nivel, tuple) else (nivel, False)
+    if not yahoo_level:
+        return None, ""
+    return yahoo_level, _SIGNAL_LABELS.get(yahoo_level, yahoo_level) + (SUFIJO_DEBIL if debil else "")
 
 
 # Tarea 325: la columna 0 es la flecha del desplegable; el ticker queda limpio en la 1, porque el
@@ -152,7 +166,7 @@ class SignalWorker(BaseWorker):
     Tickers are analyzed in parallel (up to 4 threads).
     """
 
-    signals_ready = pyqtSignal(dict)  # {ticker: yahoo_level_str}
+    signals_ready = pyqtSignal(dict)  # {ticker: (yahoo_level, débil)} (tarea 448)
 
     def __init__(self, tickers: list):
         super().__init__()
@@ -192,7 +206,7 @@ class SignalWorker(BaseWorker):
                         result.overall_strength,
                         result.confidence_score,
                     )
-                    return ticker, result.yahoo_level
+                    return ticker, nivel_de(result)
                 return ticker, "Hold"
             except Exception:
                 log.exception("Signal calc failed for %s", ticker)
@@ -651,12 +665,11 @@ class PortfolioTab(QWidget):
         )
 
         # Señal técnica — colored badge cell
-        yahoo_level = self._signals.get(pos.ticker)
+        yahoo_level, label = rotulo_de_nivel(self._signals.get(pos.ticker))
         sig_widget = QLabel()
         sig_widget.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         if yahoo_level:
             color = SIGNAL_COLORS.get(yahoo_level, PALETTE["text3"])
-            label = _SIGNAL_LABELS.get(yahoo_level, yahoo_level)
             sig_widget.setText(f"● {label}")
             sig_widget.setStyleSheet(
                 f"color: {color}; font-weight: 700; font-size: 11px; "

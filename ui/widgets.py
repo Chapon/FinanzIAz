@@ -680,16 +680,19 @@ class SignalBadge(QLabel):
         "NEUTRAL": "Neutral",
     }
 
-    def __init__(self, signal: str = "Hold", parent=None):
+    def __init__(self, signal: str = "Hold", parent=None, debil: bool = False):
         super().__init__(parent)
-        self.set_signal(signal)
+        self.set_signal(signal, debil)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFixedHeight(26)
         self.setMinimumWidth(112)
 
-    def set_signal(self, signal: str):
+    def set_signal(self, signal: str, debil: bool = False):
+        """``debil``: la compra o venta débil lleva «(débil)» (tarea 448)."""
+        from ui.analysis.labels import SUFIJO_DEBIL
+
         color = SIGNAL_COLORS.get(signal, PALETTE["text3"])
-        label = self._LABELS.get(signal, signal)
+        label = self._LABELS.get(signal, signal) + (SUFIJO_DEBIL if debil else "")
         # Dot prefix mirrors Yahoo Finance's visual style
         self.setText(f"● {label}")
         self.setStyleSheet(
