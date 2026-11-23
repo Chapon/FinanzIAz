@@ -77,7 +77,8 @@ DIAS_NOTICIAS = 14
 #  14 — pares y una serie de referencia a mano cuando la industria de Yahoo no sirve (446).
 #  15 — las noticias: las más relevantes de cada día de la ventana, sin las de otras empresas (452).
 #  16 — el P/E, el EPS y la beta de Yahoo pedidos al armar la opinión, no del cache de 7 días (453).
-VERSION_DATOS = 16
+#  17 — el cierre anterior con su fecha: un lunes, «ayer» no es el cierre del viernes (454).
+VERSION_DATOS = 17
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -114,7 +115,7 @@ algo importante para opinar, ponelo en datos_faltantes.
 demostrado. Cuando se midió (su puntaje de compra contra el retorno a 5 días, y el impacto de las \
 noticias) no se detectó relación; el modelo XGBoost, el consenso y el tono de las noticias no \
 están validados. Pesalos con ese escepticismo.
-- Los retornos se miden contra cierres: "1d" es contra el cierre anterior. Si el bloque precio \
+- Los retornos se miden contra cierres: "1d" es contra cierre_anterior, que dice de qué día es y a cuánto cerró (un lunes es el del viernes: no lo llames "ayer" si no lo es). Si el bloque precio \
 dice que el mercado estaba abierto, el precio es intradiario (a la hora que indica) y el día \
 todavía no cerró: el cierre y el volumen del día todavía no existen, no los anotes en \
 datos_faltantes (el volumen de esa barra es parcial y así lo dice el bloque volumen). Las horas \
@@ -220,6 +221,14 @@ def _num(x, nd: int = 2):
     return None if math.isnan(v) or math.isinf(v) else round(v, nd)
 
 
+def _cierre_anterior(df, close) -> dict | None:
+    """La barra contra la que se mide «1d»: su fecha y su cierre (tarea 454); ``None`` con una sola."""
+    if len(close) < 2:
+        return None
+    idx = df.index[-2]
+    return {"fecha": str(idx.date() if hasattr(idx, "date") else idx), "precio": _num(close.iloc[-2])}
+
+
 def armar_datos(
     ticker: str,
     df,
@@ -257,6 +266,9 @@ def armar_datos(
         "sector": (company or {}).get("sector"),
         "fecha_datos": str(fecha_ultima) if fecha_ultima else str(df.index[-1]),
         "precio": _num(ultimo),
+        # Tarea 454: «1d» es contra esta barra; sin la fecha, un lunes Claude escribió «ayer cerró en
+        # 125,53» por el cierre del viernes.
+        "cierre_anterior": _cierre_anterior(df, close),
         "retornos_pct": {"1d": ret(1), "5d": ret(5), "20d": ret(20), "60d": ret(60), "250d": ret(250)},
         "rango_52s": {"max": _num(ventana.max()), "min": _num(ventana.min())},
         "volatilidad_anual_20d_pct": _num(close.pct_change().iloc[-20:].std() * (252**0.5) * 100),

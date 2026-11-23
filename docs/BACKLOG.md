@@ -20,7 +20,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 377 — Tarea 454 (OPINION-CIERRE-ANTERIOR-SIN-FECHA) CERRADA 2026-11-23 — la opinión recibe el cierre contra el que se mide «1d», con su fecha y su precio, y el prompt dice que un lunes es el del viernes** (origen: la opinión de NVDA del 2026-11-23, id 21; `version_datos` 17).
+  - **`cierre_anterior`** (`analysis/opinion_claude.py`, `_cierre_anterior`): la barra anterior a la última del `df` —la misma contra la que `ret(1)` mide «1d»—, con su fecha y su cierre; `None` con una sola barra. El prompt: *«"1d" es contra cierre_anterior, que dice de qué día es y a cuánto cerró (un lunes es el del viernes: no lo llames "ayer" si no lo es)»*.
+  - **Tests** con el caso de la opinión: el lunes 23/11 con el mercado abierto da el viernes 20/11 a 125,53 y «1d» 31,75; un martes a la noche, el lunes; con una sola barra, nada.
+  - **Mutaciones** (restauradas desde copia), las dos en rojo: sin el campo; la última barra en lugar de la anterior.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2071,7 +2075,7 @@ Nada en marcha.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 454. OPINION-CIERRE-ANTERIOR-SIN-FECHA — El retorno «1d» es contra el cierre anterior, pero la opinión no recibe de qué día es: un lunes, Claude escribió «ayer cerró en 125,53» por el cierre del viernes  ·  origen: la opinión de NVDA del 2026-11-23 (id 21), reportada por Chapa · severidad **BAJA** · display-only
+### 454. ~~OPINION-CIERRE-ANTERIOR-SIN-FECHA — El retorno «1d» es contra el cierre anterior, pero la opinión no recibe de qué día es: un lunes, Claude escribió «ayer cerró en 125,53» por el cierre del viernes~~ · **CERRADA 2026-11-23 — el cierre anterior va con su fecha y su precio** ·  origen: la opinión de NVDA del 2026-11-23 (id 21), reportada por Chapa · severidad **BAJA** · display-only
 
 - **Qué pasa.** `armar_datos` (`analysis/opinion_claude.py`) manda `retornos_pct.1d` y el prompt dice que es *«contra el cierre anterior»*, sin la fecha ni el precio de ese cierre. El lunes 2026-11-23, con el mercado abierto, Claude escribió *«Ayer cerró en 125,53, su mínimo de 52 semanas»*: el cierre era el del viernes 20/11. El número es correcto (165,39 / 1,3175); la fecha la inventó.
 - **Alcance.** Un `cierre_anterior` con su fecha y su precio en el bloque de precio (el último cierre completo antes del precio que se manda), y el prompt que lo nombre; sube `version_datos`.
