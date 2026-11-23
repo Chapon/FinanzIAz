@@ -151,6 +151,13 @@ curso* tenía 213 ítems. Ninguna corrida lo vio porque `claims` contrasta afirm
 código y la DB, y esto es un archivo contra su propio contrato: se cuenta lo que la sección dice
 que puede tener.
 
+**Y la configuración de una cuenta se contrasta contra su fila de `paper_accounts`, también la de la
+cuenta cerrada (tanda 2026-11-16, [A-2]).** El header del backlog decía que la cuenta 1 era
+`signal_weighted`, y la DB dice `equal_weight` desde el 07/09: la corrección (el `UPDATE` de la
+tarea 10) estaba en el backlog, la frase falsa se escribió después, y las corridas leían el header
+sin cruzarlo con la DB. Que la cuenta esté cerrada no la saca del alcance: su configuración se
+sigue citando.
+
 ### B. Chequeos por cantidad, ciegos a la muestra
 
 **Qué.** Cualquier invariante verificado **contando** en vez de comparando identidad,
@@ -361,7 +368,7 @@ lectura (`file:finanzias.db?mode=ro`) y calculá el número a mano; no alcanza c
 05/10 escribió *«la curva de Home recalculada a mano: igual a `valor_diario`»*, que es el
 instrumento contra sí mismo, sobre una cartera con todas las compras el mismo día. Con la historia
 real, cinco tickers tenían cierres sólo desde el 08/10/2025 y valían **cero** antes: un escalón de
-$4.800 que se leía como suba. Para una serie por día de una cartera: **por cada ticker en cartera,
+US$ 4.800 que se leía como suba. Para una serie por día de una cartera: **por cada ticker en cartera,
 ¿su historia de precios cubre la serie desde su primera compra?** Y el caso de prueba tiene compras
 en fechas distintas.
 
@@ -374,7 +381,7 @@ posiciones, caja, dividendos y snapshots cuenten la misma historia, y que la cue
 propios límites (`max_positions`, caja no negativa, cuenta cerrada que nadie toca).
 
 **Por qué rinde acá.** La cuenta 2 llegó a **12 posiciones con `max_positions=10`**, en nueve
-episodios y con hasta $51.093 de exposición sobre $50.000 de capital, porque los slots se
+episodios y con hasta US$ 51.093 de exposición sobre US$ 50.000 de capital, porque los slots se
 contaban descontando ventas que los gates podían frenar (93). El motor no acreditaba dividendos
 mientras el harness corría sobre series total-return (221/222). Y nadie había corrido el harness
 sobre la ventana de la cuenta para ver si su CAGR se parecía al vivo (220). Las tres eran
@@ -406,8 +413,8 @@ cuadraba (cada posición con su compra), pero ninguna corrida lo había mirado.
 
 **Y la FECHA de cada transacción se contrasta contra el precio de ese día (tarea 308).** Cuadrar
 cantidad y precio no ve una fecha falsa: las seis compras importadas por CSV figuraban del
-2026-04-14 03:19 —la hora de la importación— a precios que ese día no existieron (INTC a $30,62
-con un cierre de $63,81), y los dividendos cobrados se contaban desde ahí. Un precio de
+2026-04-14 03:19 —la hora de la importación— a precios que ese día no existieron (INTC a US$ 30,62
+con un cierre de US$ 63,81), y los dividendos cobrados se contaban desde ahí. Un precio de
 transacción fuera del rango del día de su fecha delata que la fecha no es la de la operación. Lo
 encontró la tanda del 2026-10-05; las cuatro corridas anteriores de `cuentas` habían cuadrado esas
 mismas filas.
@@ -436,6 +443,22 @@ son la vara para el scan. **(3)** Por cada `except` que loguea y sigue en un cam
 pero mirando lo que **pasó** en el log y no lo que dice el código. **(4)** Slack: lo que se manda,
 ¿llega una vez, llega a quien tiene que llegar, y lo que **debería** avisar avisa?
 
+**Los avisos que debieron salir se cuentan desde lo que los dispara, no desde el log (tanda
+2026-11-16, [H-1]).** Hasta la 437 un envío bueno a Slack no dejaba línea —sólo los fallos— y el
+bot no puede leer el canal (`missing_scope`), así que la ausencia en el log no decía nada: la tanda
+404 escribió *«ningún envío a Slack, ni fallido ni bueno»* con 10 fills de la cuenta 2 en su
+ventana. Se cuentan los disparadores —fills con `slack_notify`, caídas de Yahoo, alertas, scans
+fallidos, cuadres— y se cruzan con las líneas `Slack notify: enviado — …` (desde la 437) y con los
+WARNING de Slack. Un disparador sin ninguna de las dos es el hallazgo.
+
+**El CI y las acciones manuales se leen en la evidencia de hoy, no en su ítem (tanda 2026-11-16,
+[D-1] y [K-1]).** Antes de afirmar que *el CI no corre* o que *falla*, el run trabado se cruza
+contra `githubstatus.com` y contra el `pushed_at` del repo: sin un push posterior no hay evidencia
+de que falle hoy (los runs huérfanos del 11/11, la 430; lo cazó el `verificador`). Y una acción
+manual que lleva varios arranques sin hacerse se lee en el log —¿la app arrancó con lo que la
+acción pedía?—, no en su ítem, que sólo dice que está pendiente (la 432: la app se abrió con la
+Anaconda en 9 de 9 arranques).
+
 **Backups, restore y migraciones entran acá (tarea 271).** No son estado regenerable —un backup es
 justo lo que **no** se puede regenerar— y por eso `estado` no los mira. Las preguntas: ¿el backup
 diario se toma, y se puede **restaurar** (no sólo existe)? El botón de Settings llama
@@ -458,7 +481,7 @@ la 405 (`finanzias-recolector-*`) en *CloudWatch → Alarms*, el tópico `finanz
 con la suscripción **confirmada** (no `PendingConfirmation`), y si alguna vez disparó, si el mail
 llegó. **(4)** ¿Lo que corre es lo que está en el repo? La `version` del ítem `corrida#` contra
 el último commit que tocó `scripts/recolector_nube.py`: el zip se sube a mano y puede quedar
-viejo semanas. **(5)** La factura: US$0,00, o el mail del presupuesto.
+viejo semanas. **(5)** La factura: US$ 0,00, o el mail del presupuesto.
 
 ### I. Datos: el contenido del dato de entrada no dice lo que se cree
 
@@ -613,6 +636,11 @@ Los dos ejes van **siempre juntos**. Un HIGH/BAJA no es un hallazgo: es una preg
 
 ## Formato de hallazgo
 
+**Los montos se escriben `US$ 4.800`, con espacio (tarea 437).** El cargador de skills toma `$`
+seguido de un dígito como un argumento: invocada con argumentos, la factura en cero de la sección H
+(`US$` pegado a `0,00`) salía `UStanda,00`. Vale para toda la skill, también para lo que se copie
+del doc de una auditoría; lo fija `tests/test_skills_sin_pesos_digito_t437.py`.
+
 ```
 ### [A-3] Título en una línea
 Severidad: HIGH · Confianza: ALTA · Categoría: claims caducados
@@ -740,7 +768,7 @@ cuatro formas que va a repetir la próxima:
   **reabrirla con ese dato**, no proponer la opción descartada como si fuera nueva: eso es lo que
   el `verificador` le recortó a [D-1].
 - **Un tamaño raro no es una violación hasta mirar la orden que lo creó.** TSM con 1 acción en un
-  `equal_weight` de 10 slots era una orden de $844 (`target_dollars`): el overlay y la caja.
+  `equal_weight` de 10 slots era una orden de US$ 844 (`target_dollars`): el overlay y la caja.
   `paper_orders.target_dollars` dice cuánto quiso el motor; `fill_shares`, cuánto le dieron.
 
 

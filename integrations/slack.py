@@ -333,6 +333,9 @@ def post_to_slack(
     The bot token comes from the ``SLACK_BOT_TOKEN`` env var unless passed
     explicitly; it is never read from settings.json.
 
+    Un envío bueno deja una línea INFO con el encabezado del aviso, sin el cuerpo
+    (``encabezado_del_aviso``, tarea 437); antes sólo dejaban línea los fallos.
+
     Con ``FINANZIAS_DISABLE_SLACK=1`` **no sale nada** y devuelve ``False``
     (tarea 148). Es lo que hace la suite: tres tests del worker de alertas
     disparaban una alerta de MARA con un ``AlertManager`` sin notifier inyectado,
@@ -374,10 +377,31 @@ def post_to_slack(
                 payload.get("error", "unknown"),
             )
             return False
+        _log().info("Slack notify: enviado — %s", encabezado_del_aviso(text))
         return True
     except Exception:
         _log().exception("Slack notify: send failed (fail-open, scan unaffected).")
         return False
+
+
+# Tarea 437: hasta acá, un envío bueno no dejaba línea —sólo los fallos— y el bot no puede leer el
+# canal (`missing_scope`), así que no había cómo saber si un aviso llegó: la auditoría 404 escribió
+# «ningún envío a Slack» con 10 fills en su ventana. La línea lleva el encabezado y no el cuerpo.
+_ENCABEZADO_MAX = 100
+
+
+def encabezado_del_aviso(text: str) -> str:
+    """La primera línea del aviso, recortada, y cuántas más tiene: qué aviso salió, sin su cuerpo.
+
+    La primera línea es el encabezado de todos los formatos de este módulo (*«… — 2 nuevas
+    órdenes»*, *«Yahoo sin responder»*, *«Alerta de precio»*, *«el scan de … falló»*).
+    """
+    lineas = text.strip().splitlines() or [""]
+    primera = lineas[0].strip()
+    if len(primera) > _ENCABEZADO_MAX:
+        primera = primera[: _ENCABEZADO_MAX - 1] + "…"
+    resto = len(lineas) - 1
+    return primera + (f" (+{resto} línea{'' if resto == 1 else 's'})" if resto else "")
 
 
 def default_notifier(text: str) -> bool:
