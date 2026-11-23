@@ -246,6 +246,17 @@ class HarvestReport:
         mudas = self.sources_mudas()
         sucias = {s for s, r in tasas.items() if r > 0} | set(self.src_degraded) | set(mudas)
         salud = f" | fuentes {len(tasas) - len(sucias)}/{len(tasas)} limpias" if tasas else ""
+        # Y cuáles fallaron sin llegar a la alarma (tarea 455): desde el 2026-11-23 el resumen
+        # dijo `fuentes 3/4 limpias` todas las horas sin nombrar a Finnhub (2357.TW, 1 de 141),
+        # así que una falla nueva de otra fuente no cambiaba el renglón. Las caídas ya las nombra
+        # FUENTES CAIDAS.
+        caidas = set(self.sources_alarming())
+        con_fallas = [s for s, r in sorted(tasas.items()) if r > 0 and s not in caidas]
+        salud += (
+            " | con fallas: " + ", ".join(f"{s} {self.src_fail[s]}/{self.src_run[s]}" for s in con_fallas)
+            if con_fallas
+            else ""
+        )
         # Contexto, no alarma (tarea 210): una fuente que contesto con parte de sus
         # sub-fetches caidos. Sin esta linea, `degraded` seria un estado que el codigo
         # distingue y el reporte no — o sea el defecto de la 207 con otro nombre.

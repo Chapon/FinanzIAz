@@ -644,6 +644,28 @@ def parse_finnhub_news(ticker: str, payload) -> list[NewsItem]:
 
 _warned_no_finnhub_key = False
 
+# Yahoo escribe las clases de acciones con guion y una letra; Finnhub, con punto (tarea 455).
+_CLASE_DE_YAHOO = re.compile(r"[A-Z]+-[A-Z]")
+
+
+def simbolo_finnhub(ticker: str) -> str | None:
+    """El símbolo de Finnhub para el ``ticker`` de Yahoo, o ``None`` si el plan no lo cubre (455).
+
+    **Las clases de acciones:** Yahoo dice ``BRK-B`` y Finnhub ``BRK.B``. Medido el 2026-11-23:
+    ``BRK-B`` contesta 200 con **0** noticias y ``BRK.B`` con 132 en la semana; en ``news_events``
+    BRK-B no tenía ninguna fila de Finnhub, y ninguna alarma lo veía (un 200 vacío es ``ok``).
+
+    **Las bolsas de afuera:** en Yahoo el punto es siempre un sufijo de bolsa (``2357.TW``,
+    ``VOD.L``, ``GGAL.BA``), y el plan gratis contesta **403** *«You don't have access to this
+    resource»*. ``None`` le dice al collector que lo saltee sin pedirlo.
+    """
+    t = ticker.strip().upper()
+    if _CLASE_DE_YAHOO.fullmatch(t):
+        return t.replace("-", ".")
+    if "." in t:
+        return None
+    return t
+
 
 def _finnhub_news(
     ticker: str,
@@ -675,6 +697,12 @@ def _finnhub_news(
         # `unavailable`, no `skipped` (tarea 217): sin key la fuente no corre para NINGUN
         # ticker, ni hoy ni nunca. Como `skipped` quedaba fuera del reporte entero.
         return [], SourceOutcome("finnhub", "unavailable", 0, "sin FINNHUB_API_KEY")
+    simbolo = simbolo_finnhub(ticker)
+    if simbolo is None:
+        # Como un ticker sin CIK en la SEC: es del ticker, no de la fuente (tarea 455). Contado
+        # como falla, 2357.TW dejaba a Finnhub «sucia» en todas las corridas, con un traceback.
+        log.info("Finnhub: %s es de una bolsa que el plan no cubre — skipped", ticker)
+        return [], SourceOutcome("finnhub", "skipped", 0, "bolsa fuera del plan")
     try:
         import requests
 
@@ -684,7 +712,7 @@ def _finnhub_news(
         to = now.strftime("%Y-%m-%d")
         r = sess.get(
             f"{FINNHUB_BASE}/company-news",
-            params={"symbol": ticker.upper(), "from": frm, "to": to},
+            params={"symbol": simbolo, "from": frm, "to": to},
             # Tarea 276: la key por header, no en la URL — un error de `requests` escribe
             # la URL completa en el log, y con `?token=` la key quedaba en texto plano.
             headers={"X-Finnhub-Token": key},
