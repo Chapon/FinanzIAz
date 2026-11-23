@@ -1,7 +1,9 @@
 @echo off
 REM == FinanzIAs - Sprint 5 Catalyst Engine ==================================
 REM Daily point-in-time harvest (T-CAT-0/1) + classification (T-CAT-2).
-REM Run by Windows Task Scheduler ~18:30 ART (post NY close).
+REM Para correrlo A MANO: desde el 2026-07-12 ninguna tarea programada lo llama (la 240);
+REM el harvest y el classify corren adentro de la app. Usa el .venv del repo (la 401):
+REM con otro interprete corria fuera del lock (la 408).
 REM
 REM SEC_EDGAR_USER_AGENT is read from the persistent user environment
 REM (set once with: setx SEC_EDGAR_USER_AGENT "FinanzIAs you@example.com").
@@ -22,7 +24,7 @@ REM ==========================================================================
 
 setlocal
 set REPO=D:\Rodrigo\FinanzIAs\FinanzIAs
-set PY=C:\Users\chapa\anaconda3\python.exe
+set PY=%REPO%\.venv\Scripts\python.exe
 set LOG=%USERPROFILE%\.finanzias\catalyst_harvest.log
 
 cd /d "%REPO%"

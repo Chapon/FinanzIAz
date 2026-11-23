@@ -70,7 +70,7 @@ python scripts/classify_catalysts.py --reclassify
 - **Harvest horario** — durante RTH, harvest-only cada `catalyst_hourly_harvest_minutes` (default 60). Espera sólo a la fase de **harvest** del refresh diario, no al classify (tarea 406): antes, un classify de horas lo apagaba toda la rueda.
 - **Rebuild de surprise** — cada `surprise_build_interval_days`, con backoff tras un fallo (tarea 197).
 
-Para diagnosticar, mirar en `~/.finanzias/finanzias.log` las líneas `Harvest: X/Y tickers …` (ver arriba) y `hourly catalyst harvest done`. **App cerrada = no se captura nada**, y eso es lo que frena el reloj de T-CAT-5b: la solución de fondo es la recolección en la Pi (tarea 196, y la 245 para sincronizar lo que falte). `scripts/daily_catalyst_harvest.bat` sigue en el repo y se puede correr a mano; **si se vuelve a programar, tiene que tener CRLF** o `cmd.exe` lo mata en silencio (ver `finanzias-conventions`).
+Para diagnosticar, mirar en `~/.finanzias/finanzias.log` las líneas `Harvest: X/Y tickers …` (ver arriba) y `hourly catalyst harvest done`. **Con la app cerrada, la app no captura**; desde el 2026-10-16 la Lambda de AWS sí lo hace, en la nube (tarea 355), y la app lo baja al abrirse cuando tiene las keys de lectura (la 356, una acción manual pendiente). La recolección en la Pi (la 196) se reemplazó por AWS. `scripts/daily_catalyst_harvest.bat` sigue en el repo y se puede correr a mano; **si se vuelve a programar, tiene que tener CRLF** o `cmd.exe` lo mata en silencio (ver `finanzias-conventions`).
 
 ## Estado de los gates
 

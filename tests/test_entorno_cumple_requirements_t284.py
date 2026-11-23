@@ -4,8 +4,8 @@ El defecto (``docs/auditoria_dependencias_2026-10-02.md`` [K-3]): la Anaconda de
 corre la app— tenía ``pyarrow 14.0.2`` contra ``pyarrow>=16.0`` declarado, con el cache de
 producción (ARQ1) sobre esa versión, y nada lo veía: el CI instalaba lo último que permitían los
 rangos (desde la 391 instala con ``-c requirements.lock``). Este test corre con el intérprete del
-*done* (la Anaconda) y con el del CI, y exige que cada dependencia declarada esté instalada y
-dentro de su especificador.
+*done* (el ``.venv`` del repo desde la 401; antes, la Anaconda) y con el del CI, y exige que cada
+dependencia declarada esté instalada y dentro de su especificador.
 """
 
 from __future__ import annotations

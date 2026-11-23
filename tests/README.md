@@ -3,7 +3,7 @@
 ## Quick start
 
 El *done* del proyecto son **cuatro comandos en verde, en Windows** (ver `CLAUDE.md`, regla 1),
-y `/test` los corre con el intérprete correcto (Anaconda):
+y `/test` los corre con el intérprete correcto (el `.venv` del repo, desde la tarea 401):
 
 ```powershell
 python -m pytest tests/ -ra -m "not network" --tb=short
