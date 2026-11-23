@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 369 — Tarea 395 (FERIADOS-2026-FIJOS) CERRADA 2026-11-23 — el script de cobertura de scan no mide un rango que toca un año sin feriados NYSE cargados: sale con error y dice qué cargar** (origen: `docs/auditoria_tanda_2026-10-23.md` [C-1]).
-  - **`FERIADOS_NYSE`** (`scripts/medir_cobertura_de_scan_t265.py`) es un diccionario por año, con los diez de 2026 que ya estaban. **`feriados_para(desde, hasta)`** junta los de los años del rango y levanta si falta alguno; `main` lo muestra y sale con 2. Desde el 1/1/2027, con `--hasta` igual a hoy por default, el script se niega en vez de contar cada feriado de 2027 como un día sin scan.
-  - **2027 no se cargó de memoria:** se cargan de la página de la NYSE cuando haga falta medir ese año, y el error lo dice.
-  - **Mutaciones** (restauradas desde copia), las tres en rojo: sin el chequeo; el rango sin el último año; `main` con 2026 fijo.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -618,6 +614,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-23c** al cerrar la **415**, que deja la **451** (leer las cuatro semanas de registro y decidir con Chapa); va fuera de la cola hasta el 2026-12-21, y la 416 pasa a depender de ella. El orden queda **395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 > **Repriorizado 2026-11-23d** al mover la **415** a *Hecho reciente* (CI de `753b68c` verde). Se consume el ítem de arriba sin cambios de criterio. El orden queda **395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
+
+> **Repriorizado 2026-11-23e** al mover la **395** a *Hecho reciente* (CI de `63d9249` verde). No deja tareas nuevas: se consume el ítem de arriba sin cambios de criterio. El orden queda **397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 
 
@@ -2498,7 +2496,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Los HIGH/CRITICAL pasados por el `verificador` (o dicho que no pudo correr), el informe con lo sobreviviente, lo rechazado y el alcance **no** mirado como lista, cada hallazgo accionable como tarea, y la tabla `hallazgo → tarea` verificada de a una contra este archivo. Un barrido limpio es un resultado válido.
 - **Dependencias:** ninguna. Read-only: no toca código, config, esquema ni la DB viva.
 
-### 395. ~~FERIADOS-2026-FIJOS — El script que mide la frecuencia del desvío `barrier_eval` tiene escritos a mano los feriados de 2026, y desde el 1/1/2027 contaría los de 2027 como días sin scan~~ · **CERRADA 2026-11-23 — el script de cobertura de scan no mide un año sin feriados NYSE cargados** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [C-1] · severidad **BAJA** (latente hasta enero)
+### 395. ~~FERIADOS-2026-FIJOS — El script que mide la frecuencia del desvío `barrier_eval` tiene escritos a mano los feriados de 2026, y desde el 1/1/2027 contaría los de 2027 como días sin scan~~ · **CERRADA 2026-11-23 — el script de cobertura de scan no mide un año sin feriados NYSE cargados** (`63d9249`) · **movida a *Hecho reciente* con el detalle** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [C-1] · severidad **BAJA** (latente hasta enero)
 
 - **Qué pasa.** `scripts/medir_cobertura_de_scan_t265.py:26` (`FERIADOS_NYSE_2026`), con `--hasta` igual a hoy por default. Es lo que alimenta `SCAN_COBERTURA` del desvío `barrier_eval` (`analysis/harness_config.py:561`). Desde 2027, cada feriado de la bolsa cae como día hábil sin scan, y nada lo dice.
 - **Alcance.** Que el script falle o avise si el rango pide un año sin feriados cargados, o un calendario de la bolsa.
@@ -5122,6 +5120,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 369 — Tarea 395 (FERIADOS-2026-FIJOS) CERRADA 2026-11-23 — el script de cobertura de scan no mide un rango que toca un año sin feriados NYSE cargados: sale con error y dice qué cargar** (`63d9249`) (origen: `docs/auditoria_tanda_2026-10-23.md` [C-1]).
+  - **`FERIADOS_NYSE`** (`scripts/medir_cobertura_de_scan_t265.py`) es un diccionario por año, con los diez de 2026 que ya estaban. **`feriados_para(desde, hasta)`** junta los de los años del rango y levanta si falta alguno; `main` lo muestra y sale con 2. Desde el 1/1/2027, con `--hasta` igual a hoy por default, el script se niega en vez de contar cada feriado de 2027 como un día sin scan.
+  - **2027 no se cargó de memoria:** se cargan de la página de la NYSE cuando haga falta medir ese año, y el error lo dice.
+  - **Mutaciones** (restauradas desde copia), las tres en rojo: sin el chequeo; el rango sin el último año; `main` con 2026 fijo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `63d9249` VERDE.
 
 - **WIP 368 — Tarea 415 (USO-PESTAÑA-NOTICIAS) CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias, con cuántas noticias carga, y cuándo se pide una opinión de Claude; la lectura de las cuatro semanas queda como la 451** (`753b68c`) (origen: el spike 413).
   - **Tres líneas `INFO` que empiezan con `USO `**, sin red ni datos personales: *«USO pestaña Noticias: abierta»* al navegar a la pestaña (`NewsTab.al_mostrarse`, que llama `MainWindow._navigate`), *«USO pestaña Noticias: cargada con N noticias de D día(s)»* al cargarla, y *«USO opinión de Claude: pedida para TICKER»* al apretar el botón (también las que fallan; la tabla `claude_opinions` guarda sólo las que salen). **La de «abierta» va en la navegación y no en el refresco:** entrar con los datos frescos no refresca, y contar refrescos habría subestimado el uso.
