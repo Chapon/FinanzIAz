@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 366 — Tarea 450 (CARTERA-CON-UN-TICKER-QUE-NO-COTIZA) CERRADA 2026-11-20 — una tenencia sin precio dice por qué en la pestaña Cartera: «no cotiza» si la 369 la marcó como serie congelada, «sin precio» si es otra falla, con el motivo en el tooltip; qué hacer con EA lo decide Chapa** (origen: la medición en vivo de la 446).
-  - **`motivo_sin_precio`** (`ui/portfolio_tab.py`) lee la fila de `failed_tickers` del ticker (`fallidos_por_ticker`, una consulta a una tabla chica al llegar los precios): con `serie_congelada`, *«no cotiza»* y de tooltip el motivo que escribió la 369 (*«La serie diaria (2y) termina el 2026-08-04, hace 78 ruedas: Yahoo dejó de cotizarlo»*); con otra operación, *«sin precio»*. Sólo cuando no llegó precio: un registro viejo no tapa un precio que sí llegó. Sin registro, el «—» de siempre.
-  - **(2), qué hacer con la tenencia de EA, sigue esperando a Chapa:** la app no infiere si cerrarla ni a qué precio. Queda como acción manual.
-  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: la fila sin el motivo; siempre «sin precio»; sin leer los motivos al llegar los precios; el motivo aunque haya precio.
-  - **Deja una acción manual** (decidir qué hacer con EA en «Tech»). Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -610,6 +606,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-20p** al cerrar la **446**, que deja la **450** (EA está en la cartera real «Tech» y no cotiza desde agosto). Va primera: es chica y toca lo que Chapa ve de su cartera; la parte de qué hacer con la tenencia espera su decisión. El orden queda **450 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
 
 > **Repriorizado 2026-11-20q** al mover la **446** a *Hecho reciente* (CI de `08e638f` verde). Se consume el ítem de arriba sin cambios de criterio. El orden queda **450 → 414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
+
+> **Repriorizado 2026-11-23** al mover la **450** a *Hecho reciente* (CI de `1c5731a` verde). Se consume el ítem de arriba sin cambios de criterio. El orden queda **414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
 
 
 
@@ -2049,7 +2047,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 450. ~~CARTERA-CON-UN-TICKER-QUE-NO-COTIZA — La cartera real «Tech» tiene EA, que dejó de cotizar en agosto de 2026: la fila tiene que decir por qué no tiene precio, y qué hacer con la tenencia lo decide Chapa~~ · **CERRADA 2026-11-20 — una tenencia sin precio dice por qué en la Cartera** ·  origen: la medición en vivo de la 446 (2026-11-20) · severidad **BAJA** · display-only
+### 450. ~~CARTERA-CON-UN-TICKER-QUE-NO-COTIZA — La cartera real «Tech» tiene EA, que dejó de cotizar en agosto de 2026: la fila tiene que decir por qué no tiene precio, y qué hacer con la tenencia lo decide Chapa~~ · **CERRADA 2026-11-20 — una tenencia sin precio dice por qué en la Cartera** (`1c5731a`) · **movida a *Hecho reciente* con el detalle** ·  origen: la medición en vivo de la 446 (2026-11-20) · severidad **BAJA** · display-only
 
 - **Qué pasa.** EA está en la cartera «Tech» (tabla `positions`). Su serie en el cache termina en agosto de 2026 y Yahoo responde *«possibly delisted»* (en el log desde el 2026-10-02; la auditoría del backlog ya la tenía como *«dejó de cotizar»*). El 2026-11-20 19:13Z la detección de la 369 la marcó en `failed_tickers` como `serie_congelada` (*«termina el 2026-08-04, hace 78 ruedas: Yahoo dejó de cotizarlo»*), así que `get_bulk_prices` la saltea y la pestaña Cartera la muestra **sin precio, con «—»**, sin decir por qué.
 - **Alcance.** (1) Que la fila de una tenencia marcada `serie_congelada` diga por qué no tiene precio (*«no cotiza desde el …»*, con el último cierre), en la celda o en su tooltip, en vez de un «—» mudo. (2) **Qué hacer con la tenencia lo decide Chapa** (cerrarla al precio de la operación que la retiró, o dejarla): la app no lo infiere.
@@ -5107,6 +5105,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 366 — Tarea 450 (CARTERA-CON-UN-TICKER-QUE-NO-COTIZA) CERRADA 2026-11-20 — una tenencia sin precio dice por qué en la pestaña Cartera: «no cotiza» si la 369 la marcó como serie congelada, «sin precio» si es otra falla, con el motivo en el tooltip; qué hacer con EA lo decide Chapa** (`1c5731a`) (origen: la medición en vivo de la 446).
+  - **`motivo_sin_precio`** (`ui/portfolio_tab.py`) lee la fila de `failed_tickers` del ticker (`fallidos_por_ticker`, una consulta a una tabla chica al llegar los precios): con `serie_congelada`, *«no cotiza»* y de tooltip el motivo que escribió la 369 (*«La serie diaria (2y) termina el 2026-08-04, hace 78 ruedas: Yahoo dejó de cotizarlo»*); con otra operación, *«sin precio»*. Sólo cuando no llegó precio: un registro viejo no tapa un precio que sí llegó. Sin registro, el «—» de siempre.
+  - **(2), qué hacer con la tenencia de EA, sigue esperando a Chapa:** la app no infiere si cerrarla ni a qué precio. Queda como acción manual.
+  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: la fila sin el motivo; siempre «sin precio»; sin leer los motivos al llegar los precios; el motivo aunque haya precio.
+  - **Deja una acción manual** (decidir qué hacer con EA en «Tech»). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `1c5731a` VERDE.
 
 - **WIP 365 — Tarea 446 (OPINION-PARES-A-MANO) CERRADA 2026-11-20 — cuando la industria de Yahoo no sirve, los pares salen de un mapa a mano con su motivo, y una serie de referencia que mueve al negocio (el bitcoin para MARA)** (`08e638f`) (origen: la 443; `version_datos` 14).
   - **`PARES_A_MANO` y `REFERENCIA_A_MANO`** (`analysis/opinion_claude.py`), con el porqué de cada entrada: **MARA** → RIOT, CLSK, CIFR y HUT (*«minera de bitcoin; Yahoo la pone en Capital Markets, con los bancos de inversión»*) y `BTC-USD`; **TTWO** → RBLX y NTDOY (el cache no tenía ningún par de su industria, y EA dejó de cotizar en 2026). Con entrada en el mapa, los pares de la industria no van; los de a mano no están en el universo guardado y se piden como el ETF (se bajan si faltan, la 420). Sin entrada, todo como la 420. El bloque dice `pares_a_mano` (el motivo) y `referencia` (con el suyo), y el prompt los explica.
