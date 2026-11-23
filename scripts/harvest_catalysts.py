@@ -727,12 +727,34 @@ def _anotar_salud(report: HarvestReport, ticker: str, res) -> None:
         report.cero_resultados.append(ticker)
 
 
+def con_foto_de_hoy(ultimos: dict[str, object], today: datetime) -> set[str]:
+    """Los tickers cuya última foto de consenso ya es de hoy (tarea 414). **Puro**."""
+    return {t for t, d in ultimos.items() if isinstance(d, datetime) and d >= today}
+
+
+def fuentes_del_ticker(sources: set[str] | None, ticker: str, con_foto: set[str]) -> set[str] | None:
+    """Las fuentes para ``ticker``: sin el consenso de Yahoo si ya tiene la foto del día (414).
+
+    ``_insert_estimate_if_new_today`` guarda la **primera** foto del día y descarta las demás: el
+    harvest horario pedía el consenso de los 127 tickers en cada corrida para tirarlo (del 07/09 al
+    09/11, 104.895 filas recibidas y 29 nuevas). ``yfinance`` es noticias más consenso;
+    ``yfinance_news``, sólo noticias. ``None`` es lo que ``collect_all`` toma como ``{"yfinance"}``.
+    """
+    if ticker not in con_foto:
+        return sources
+    base = set(sources) if sources else {"yfinance"}
+    if "yfinance" not in base:
+        return sources
+    return (base - {"yfinance"}) | {"yfinance_news"}
+
+
 def _collect_fase1(
     universe: list[str],
     sources: set[str] | None,
     collector,
     report: HarvestReport,
     deadline: float | None,
+    con_foto: set[str] = frozenset(),
 ) -> list[tuple[str, _CollectResult]]:
     """Fase 1 — recolectar (RED) FUERA de toda sesión, con techo de wall-clock (T204).
 
@@ -765,7 +787,7 @@ def _collect_fase1(
             )
             break
         try:
-            res = collector(t, sources)
+            res = collector(t, fuentes_del_ticker(sources, t, con_foto))
         except Exception:
             log.exception("collect failed for %s", t)
             report.failed.append(t)
@@ -808,9 +830,11 @@ def harvest(
     # `build_surprise_profiles` y `news_feed`, que no tienen techo y a los que cambiarles
     # el orden no aporta nada. El reparto es un problema del harvest, y se arregla donde
     # está el corte.
-    universe = ordenar_por_rezago(universe, _ultimo_consenso_por_ticker())
+    ultimos = _ultimo_consenso_por_ticker()
+    universe = ordenar_por_rezago(universe, ultimos)
     now = now or utcnow_naive()
     today = _midnight(now)
+    con_foto = con_foto_de_hoy(ultimos, today)
     report = HarvestReport(tickers=len(universe), requested=len(universe))
     seen_hashes: set[str] = set()
     seen_urls: set[str] = set()
@@ -819,7 +843,7 @@ def harvest(
     deadline = None if budget is None else t0 + budget
 
     if dry_run:
-        for _t, res in _collect_fase1(universe, sources, collector, report, deadline):
+        for _t, res in _collect_fase1(universe, sources, collector, report, deadline, con_foto):
             report.news_new += len(res.news)
             report.est_new += len(res.estimates)
         report.elapsed_s = time.monotonic() - t0
@@ -827,7 +851,7 @@ def harvest(
         _resumir_fallas_de_red()
         return report
 
-    collected = _collect_fase1(universe, sources, collector, report, deadline)
+    collected = _collect_fase1(universe, sources, collector, report, deadline, con_foto)
 
     # Fase 2 — persistir en transacciones CORTAS, una por ticker. Los contadores
     # se vuelcan al report SOLO tras commit exitoso (antes un rollback por un

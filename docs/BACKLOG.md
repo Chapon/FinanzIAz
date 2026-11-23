@@ -20,7 +20,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 367 — Tarea 414 (HARVEST-HORARIO-REBAJA-CONSENSO) CERRADA 2026-11-23 — el harvest no le pide a Yahoo el consenso de un ticker que ya tiene la foto del día; la foto que se guarda es la misma** (origen: el spike 413).
+  - **`con_foto_de_hoy`** sale del mismo agregado que ya ordenaba el harvest (`_ultimo_consenso_por_ticker`, la 208): los tickers cuya última foto es de hoy (UTC, como `snapshot_date`). Para ésos, **`fuentes_del_ticker`** cambia `yfinance` (noticias y consenso) por `yfinance_news` (sólo noticias); el resto de las fuentes no cambia. La primera corrida del día —la diaria o la horaria, la que llegue antes— toma la foto como siempre, y `_insert_estimate_if_new_today` sigue quedándose con la primera.
+  - **Medido** (2026-11-20, `collect_all` sobre AAPL, KO, JPM, XOM y PFE, sin escribir): el consenso suma **0,35 a 0,85 s por ticker** (las noticias de Yahoo se memoizan y la segunda vez cuestan casi cero; el consenso no). Con 127 tickers son **45 a 110 s** de cada corrida horaria, que el log del día da en 300–350 s, y ~500 pedidos menos a Yahoo por corrida (cuatro propiedades por ticker). Los del log, «estimates +0 (dup 1267)» en cada horaria, pasan a no pedirse.
+  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: pedir siempre el consenso; `>` en vez de `>=` contra la medianoche; el harvest sin la lista de los que tienen foto; `None` (que `collect_all` toma como `yfinance`) sin el cambio.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2332,7 +2336,7 @@ Nada en marcha.
 - **Kill-criteria.** Un test por evento (actualizar la pestaña, pedir una opinión) que verifica que queda el registro, probado por mutación. Los cuatro comandos en verde y el CI del commit en verde. La decisión de las cuatro semanas va como cierre aparte, con los números del registro.
 - **Dependencias:** ninguna.
 
-### 414. HARVEST-HORARIO-REBAJA-CONSENSO — El harvest horario le pide a Yahoo el consenso de los 127 tickers en cada corrida y no guarda nada: 104.895 filas recibidas, 29 nuevas en 83 corridas  ·  origen: spike **413** (2026-11-10) · severidad **MEDIA** (desperdicio de red y de tiempo de app abierta, y más pedidos a Yahoo de los necesarios)
+### 414. ~~HARVEST-HORARIO-REBAJA-CONSENSO — El harvest horario le pide a Yahoo el consenso de los 127 tickers en cada corrida y no guarda nada: 104.895 filas recibidas, 29 nuevas en 83 corridas~~ · **CERRADA 2026-11-23 — el harvest no pide el consenso de un ticker que ya tiene la foto del día** ·  origen: spike **413** (2026-11-10) · severidad **MEDIA** (desperdicio de red y de tiempo de app abierta, y más pedidos a Yahoo de los necesarios)
 
 - **Qué pasa.** `run_catalyst_harvest_only` (`analysis/news_digest.py`) corre el harvest con `--sources yfinance,sec,finnhub`, y la fuente `yfinance` es noticias **más** consenso (`_yf_estimates`, cuatro propiedades por ticker). `_insert_estimate_if_new_today` (`scripts/harvest_catalysts.py`) se queda con la primera foto del día, que toma el diario; así que cada corrida horaria pide el consenso para tirarlo. En el log del 07/09 al 09/11: horario **104.895 recibidas, 29 nuevas**; diario 47.890 nuevas (`docs/noticias_costo_beneficio_t413_2026-11-10.md`, §1).
 - **Alcance.** Que el harvest horario no pida el consenso de un ticker que ya tiene foto del día (o que no lo pida nunca, si el diario corre primero siempre — a verificar), sin cambiar qué foto se guarda. Medir el tiempo de la corrida horaria antes y después.
