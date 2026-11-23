@@ -301,6 +301,12 @@ class _Sparkline(QWidget):
 COMPACT_MIN_HEIGHT = 92
 COMPACT_SPARK_HEIGHT = 28
 COMPACT_MIN_WIDTH = 170
+# Tarea 398: el margen del `tight_layout` de la sparkline compacta, en tamaños de letra. El de
+# matplotlib (1,08, unos 15 px arriba y otros tantos abajo) no entra en 28 px: avisaba «Tight layout
+# not applied» —al dibujarse la pestaña Métricas y en `set_series`, una vez por sesión por el filtro
+# de warnings— y la curva quedaba con los márgenes por defecto. Con 0,2 entra: el mismo alto que
+# antes (del 10% al 90%) y todo el ancho. La de Home (58 px) sigue con el de siempre.
+COMPACT_SPARK_PAD = 0.2
 
 
 class KpiCard(QFrame):
@@ -351,6 +357,7 @@ class KpiCard(QFrame):
         self.spark = _Sparkline(kind=kind, color=color)
         if compact:
             self.spark.setFixedHeight(COMPACT_SPARK_HEIGHT)
+            self.spark.figure.set_layout_engine("tight", pad=COMPACT_SPARK_PAD)
             # Que un subtítulo largo corte línea en vez de fijar el ancho mínimo de la tarjeta:
             # si no, la fila entera se pasa del ancho de la ventana y aparece el scroll horizontal.
             for lbl in (self.title_lbl, self.delta_lbl):
