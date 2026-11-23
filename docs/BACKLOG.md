@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 368 — Tarea 415 (USO-PESTAÑA-NOTICIAS) CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias, con cuántas noticias carga, y cuándo se pide una opinión de Claude; la lectura de las cuatro semanas queda como la 451** (origen: el spike 413).
-  - **Tres líneas `INFO` que empiezan con `USO `**, sin red ni datos personales: *«USO pestaña Noticias: abierta»* al navegar a la pestaña (`NewsTab.al_mostrarse`, que llama `MainWindow._navigate`), *«USO pestaña Noticias: cargada con N noticias de D día(s)»* al cargarla, y *«USO opinión de Claude: pedida para TICKER»* al apretar el botón (también las que fallan; la tabla `claude_opinions` guarda sólo las que salen). **La de «abierta» va en la navegación y no en el refresco:** entrar con los datos frescos no refresca, y contar refrescos habría subestimado el uso.
-  - **Se lee con** `grep "USO " ~/.finanzias/finanzias.log`. Empieza a contar cuando la app se reabra con este código.
-  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: entrar sin la línea; la ventana sin pasar por `al_mostrarse`; cargar sin la línea; pedir sin la línea.
-  - **Deja la 451** (leer el registro a las cuatro semanas y decidir con Chapa; la 416 depende de ella). Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -616,6 +612,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-23b** al mover la **414** a *Hecho reciente* (CI de `04ea57d` verde), que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
 
 > **Repriorizado 2026-11-23c** al cerrar la **415**, que deja la **451** (leer las cuatro semanas de registro y decidir con Chapa); va fuera de la cola hasta el 2026-12-21, y la 416 pasa a depender de ella. El orden queda **395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
+
+> **Repriorizado 2026-11-23d** al mover la **415** a *Hecho reciente* (CI de `753b68c` verde). Se consume el ítem de arriba sin cambios de criterio. El orden queda **395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 
 
@@ -2340,7 +2338,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria (a congelar antes de correr).** Pre-registro con la muestra (sorteada con semilla), las métricas —mismo tipo, mismo signo de tono, tono a ≤ 1 nivel, y acuerdo en las 50 primeras del orden de la pestaña por día— y los umbrales contra el 14b. Si no los cumple, se documenta y el modelo no cambia.
 - **Dependencias:** la **451** (la lectura de las cuatro semanas de uso que registra la 415, desde el 2026-11-23).
 
-### 415. ~~USO-PESTAÑA-NOTICIAS — Registrar cuándo se abre la pestaña Noticias y cuándo se pide una opinión a Claude: hoy no hay forma de saber si el 84 % del costo del pipeline se mira~~ · **CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias y cuándo se pide una opinión** ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · display
+### 415. ~~USO-PESTAÑA-NOTICIAS — Registrar cuándo se abre la pestaña Noticias y cuándo se pide una opinión a Claude: hoy no hay forma de saber si el 84 % del costo del pipeline se mira~~ · **CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias y cuándo se pide una opinión** (`753b68c`) · **movida a *Hecho reciente* con el detalle** ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · display
 
 - **Qué pasa.** Lo único que usa la clasificación de qwen (49,6 h de GPU en dos meses) es el orden de la pestaña Noticias, su briefing y la tarjeta de opinión. Nada registra si se abren: en el log no hay ni una línea de la pestaña salvo un error del briefing, y la tabla `claude_opinions` tiene 14 filas, todas del 2026-10-06. La 413 no pudo responder *«si alguien la mira»*, que es lo que decide entre seguir igual, no clasificar lo viejo, un modelo más chico o apagar la clasificación.
 - **Alcance.** Una línea INFO en el log (o un contador local) cuando la pestaña se actualiza con la ventana y la cantidad de filas, y cuando se pide una opinión; sin red, sin datos personales. Al cabo de cuatro semanas, leer el registro y elegir entre las opciones (a)–(d) del §4 del informe de la 413, con Chapa.
@@ -5120,6 +5118,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 368 — Tarea 415 (USO-PESTAÑA-NOTICIAS) CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias, con cuántas noticias carga, y cuándo se pide una opinión de Claude; la lectura de las cuatro semanas queda como la 451** (`753b68c`) (origen: el spike 413).
+  - **Tres líneas `INFO` que empiezan con `USO `**, sin red ni datos personales: *«USO pestaña Noticias: abierta»* al navegar a la pestaña (`NewsTab.al_mostrarse`, que llama `MainWindow._navigate`), *«USO pestaña Noticias: cargada con N noticias de D día(s)»* al cargarla, y *«USO opinión de Claude: pedida para TICKER»* al apretar el botón (también las que fallan; la tabla `claude_opinions` guarda sólo las que salen). **La de «abierta» va en la navegación y no en el refresco:** entrar con los datos frescos no refresca, y contar refrescos habría subestimado el uso.
+  - **Se lee con** `grep "USO " ~/.finanzias/finanzias.log`. Empieza a contar cuando la app se reabra con este código.
+  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: entrar sin la línea; la ventana sin pasar por `al_mostrarse`; cargar sin la línea; pedir sin la línea.
+  - **Deja la 451** (leer el registro a las cuatro semanas y decidir con Chapa; la 416 depende de ella). Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `753b68c` VERDE.
 
 - **WIP 367 — Tarea 414 (HARVEST-HORARIO-REBAJA-CONSENSO) CERRADA 2026-11-23 — el harvest no le pide a Yahoo el consenso de un ticker que ya tiene la foto del día; la foto que se guarda es la misma** (`04ea57d`) (origen: el spike 413).
   - **`con_foto_de_hoy`** sale del mismo agregado que ya ordenaba el harvest (`_ultimo_consenso_por_ticker`, la 208): los tickers cuya última foto es de hoy (UTC, como `snapshot_date`). Para ésos, **`fuentes_del_ticker`** cambia `yfinance` (noticias y consenso) por `yfinance_news` (sólo noticias); el resto de las fuentes no cambia. La primera corrida del día —la diaria o la horaria, la que llegue antes— toma la foto como siempre, y `_insert_estimate_if_new_today` sigue quedándose con la primera.
