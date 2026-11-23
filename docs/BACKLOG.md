@@ -20,7 +20,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 369 — Tarea 395 (FERIADOS-2026-FIJOS) CERRADA 2026-11-23 — el script de cobertura de scan no mide un rango que toca un año sin feriados NYSE cargados: sale con error y dice qué cargar** (origen: `docs/auditoria_tanda_2026-10-23.md` [C-1]).
+  - **`FERIADOS_NYSE`** (`scripts/medir_cobertura_de_scan_t265.py`) es un diccionario por año, con los diez de 2026 que ya estaban. **`feriados_para(desde, hasta)`** junta los de los años del rango y levanta si falta alguno; `main` lo muestra y sale con 2. Desde el 1/1/2027, con `--hasta` igual a hoy por default, el script se niega en vez de contar cada feriado de 2027 como un día sin scan.
+  - **2027 no se cargó de memoria:** se cargan de la página de la NYSE cuando haga falta medir ese año, y el error lo dice.
+  - **Mutaciones** (restauradas desde copia), las tres en rojo: sin el chequeo; el rango sin el último año; `main` con 2026 fijo.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2494,7 +2498,7 @@ Nada en marcha.
 - **Kill-criteria.** Los HIGH/CRITICAL pasados por el `verificador` (o dicho que no pudo correr), el informe con lo sobreviviente, lo rechazado y el alcance **no** mirado como lista, cada hallazgo accionable como tarea, y la tabla `hallazgo → tarea` verificada de a una contra este archivo. Un barrido limpio es un resultado válido.
 - **Dependencias:** ninguna. Read-only: no toca código, config, esquema ni la DB viva.
 
-### 395. FERIADOS-2026-FIJOS — El script que mide la frecuencia del desvío `barrier_eval` tiene escritos a mano los feriados de 2026, y desde el 1/1/2027 contaría los de 2027 como días sin scan  ·  origen: `docs/auditoria_tanda_2026-10-23.md` [C-1] · severidad **BAJA** (latente hasta enero)
+### 395. ~~FERIADOS-2026-FIJOS — El script que mide la frecuencia del desvío `barrier_eval` tiene escritos a mano los feriados de 2026, y desde el 1/1/2027 contaría los de 2027 como días sin scan~~ · **CERRADA 2026-11-23 — el script de cobertura de scan no mide un año sin feriados NYSE cargados** ·  origen: `docs/auditoria_tanda_2026-10-23.md` [C-1] · severidad **BAJA** (latente hasta enero)
 
 - **Qué pasa.** `scripts/medir_cobertura_de_scan_t265.py:26` (`FERIADOS_NYSE_2026`), con `--hasta` igual a hoy por default. Es lo que alimenta `SCAN_COBERTURA` del desvío `barrier_eval` (`analysis/harness_config.py:561`). Desde 2027, cada feriado de la bolsa cae como día hábil sin scan, y nada lo dice.
 - **Alcance.** Que el script falle o avise si el rango pide un año sin feriados cargados, o un calendario de la bolsa.
