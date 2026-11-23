@@ -20,11 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-- **WIP 377 — Tarea 454 (OPINION-CIERRE-ANTERIOR-SIN-FECHA) CERRADA 2026-11-23 — la opinión recibe el cierre contra el que se mide «1d», con su fecha y su precio, y el prompt dice que un lunes es el del viernes** (origen: la opinión de NVDA del 2026-11-23, id 21; `version_datos` 17).
-  - **`cierre_anterior`** (`analysis/opinion_claude.py`, `_cierre_anterior`): la barra anterior a la última del `df` —la misma contra la que `ret(1)` mide «1d»—, con su fecha y su cierre; `None` con una sola barra. El prompt: *«"1d" es contra cierre_anterior, que dice de qué día es y a cuánto cerró (un lunes es el del viernes: no lo llames "ayer" si no lo es)»*.
-  - **Tests** con el caso de la opinión: el lunes 23/11 con el mercado abierto da el viernes 20/11 a 125,53 y «1d» 31,75; un martes a la noche, el lunes; con una sola barra, nada.
-  - **Mutaciones** (restauradas desde copia), las dos en rojo: sin el campo; la última barra en lugar de la anterior.
-  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+Nada en marcha.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -636,6 +632,8 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 > **Repriorizado 2026-11-23l** al mover la **452** a *Hecho reciente* (CI de `37bb1e7` verde). No deja tareas nuevas: se consume el ítem de arriba sin cambios de criterio. El orden queda **453 → 454 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC; lleva también lo de la 437), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 > **Repriorizado 2026-11-23m** al mover la **453** a *Hecho reciente* (CI de `152e12c` verde). No deja tareas nuevas: se consume el ítem de arriba sin cambios de criterio. El orden queda **454 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC; lleva también lo de la 437), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
+
+> **Repriorizado 2026-11-23n** al mover la **454** a *Hecho reciente* (CI de `b28df71` verde). No deja tareas nuevas: se consume el ítem de arriba sin cambios de criterio. El orden queda **355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC; lleva también lo de la 437), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 
 
@@ -2075,7 +2073,7 @@ Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá a
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
-### 454. ~~OPINION-CIERRE-ANTERIOR-SIN-FECHA — El retorno «1d» es contra el cierre anterior, pero la opinión no recibe de qué día es: un lunes, Claude escribió «ayer cerró en 125,53» por el cierre del viernes~~ · **CERRADA 2026-11-23 — el cierre anterior va con su fecha y su precio** ·  origen: la opinión de NVDA del 2026-11-23 (id 21), reportada por Chapa · severidad **BAJA** · display-only
+### 454. ~~OPINION-CIERRE-ANTERIOR-SIN-FECHA — El retorno «1d» es contra el cierre anterior, pero la opinión no recibe de qué día es: un lunes, Claude escribió «ayer cerró en 125,53» por el cierre del viernes~~ · **CERRADA 2026-11-23 — el cierre anterior va con su fecha y su precio** (`b28df71`) · **movida a *Hecho reciente* con el detalle** ·  origen: la opinión de NVDA del 2026-11-23 (id 21), reportada por Chapa · severidad **BAJA** · display-only
 
 - **Qué pasa.** `armar_datos` (`analysis/opinion_claude.py`) manda `retornos_pct.1d` y el prompt dice que es *«contra el cierre anterior»*, sin la fecha ni el precio de ese cierre. El lunes 2026-11-23, con el mercado abierto, Claude escribió *«Ayer cerró en 125,53, su mínimo de 52 semanas»*: el cierre era el del viernes 20/11. El número es correcto (165,39 / 1,3175); la fecha la inventó.
 - **Alcance.** Un `cierre_anterior` con su fecha y su precio en el bloque de precio (el último cierre completo antes del precio que se manda), y el prompt que lo nombre; sube `version_datos`.
@@ -5163,6 +5161,13 @@ Todo lo de arriba se construye sobre datos gratuitos con límites conocidos; ten
 ## Hecho reciente
 
 Lo cerrado, del más nuevo al más viejo. **Hasta la tarea 338 (2026-10-09)** los cierres se apilaban en *En curso* como «WIP NNN … CERRADA» —eran 288 entradas: 228 «WIP», del 0 al 278, y 60 de contexto y de decisiones—; se movieron acá **enteras y en su orden**. Debajo de ellos siguen los `[x]` de julio, que es donde la sección se había dejado de usar.
+
+- **WIP 377 — Tarea 454 (OPINION-CIERRE-ANTERIOR-SIN-FECHA) CERRADA 2026-11-23 — la opinión recibe el cierre contra el que se mide «1d», con su fecha y su precio, y el prompt dice que un lunes es el del viernes** (`b28df71`) (origen: la opinión de NVDA del 2026-11-23, id 21; `version_datos` 17).
+  - **`cierre_anterior`** (`analysis/opinion_claude.py`, `_cierre_anterior`): la barra anterior a la última del `df` —la misma contra la que `ret(1)` mide «1d»—, con su fecha y su cierre; `None` con una sola barra. El prompt: *«"1d" es contra cierre_anterior, que dice de qué día es y a cuánto cerró (un lunes es el del viernes: no lo llames "ayer" si no lo es)»*.
+  - **Tests** con el caso de la opinión: el lunes 23/11 con el mercado abierto da el viernes 20/11 a 125,53 y «1d» 31,75; un martes a la noche, el lunes; con una sola barra, nada.
+  - **Mutaciones** (restauradas desde copia), las dos en rojo: sin el campo; la última barra en lugar de la anterior.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
+  - **CI:** `b28df71` VERDE.
 
 - **WIP 376 — Tarea 453 (COMPANY-INFO-CACHE-SIN-PE) CERRADA 2026-11-23 — `get_company_info(fresco=True)` saltea el cache de 7 días: la opinión recibe el P/E, el EPS y la beta de Yahoo al pedirse, el tooltip vuelve a mostrar P/E, EPS, dividendo, beta, bolsa y país, y el dividendo de Yahoo, que viene en porcentaje, se guarda como fracción** (`152e12c`) (origen: la opinión de NVDA del 2026-11-23, id 21; `version_datos` 16).
   - **`get_company_info(ticker, fresco=True)`** (`data/yahoo_finance.py`) saltea `CompanyInfoCache`; si Yahoo no contesta, devuelve lo cacheado (nombre, sector, industria) en vez del nombre pelado. Sin `fresco`, como siempre: Métricas y el import no van a Yahoo con el cache vigente.
