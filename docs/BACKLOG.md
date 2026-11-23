@@ -20,7 +20,12 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 370 — Tarea 397 (SURPRISE-VACIO-BORRA-EL-PERFIL) CERRADA 2026-11-23 — un ticker que la corrida anterior tenía con perfil de surprise y hoy viene corto se reintenta una vez y, si sigue corto, conserva el perfil anterior con un WARNING que lo nombra; el final dice cuáles cayeron** (origen: `docs/auditoria_tanda_2026-10-26.md` [I-1]).
+  - **`conservar_caidos`** (`scripts/build_surprise_profiles.py`) lee el archivo anterior (`perfiles_anteriores`): para cada ticker que tenía perfil y hoy no llega a `MIN_QUARTERS`, reintenta; si el reintento trae datos, va el reintento; si no, conserva el perfil anterior con `conservado_desde` (la fecha del archivo del que se conservó, que se arrastra) y deja un WARNING. **Pasados 28 días conservado** (`MAX_DIAS_CONSERVADO`) deja de conservarse: un deslistado como WBD cae a `insufficient_history` como antes, y un ticker que nunca tuvo perfil va ahí directo. `run_build` termina con un WARNING que nombra los que tenían perfil y hoy no.
+  - **El campo nuevo no rompe la lectura:** `make_surprise_loader` toma claves explícitas.
+  - **El (3) de la tarea** (que `/ship` no commitee el JSON si un ticker con perfil cayó a cero) no hace falta: con el (1), el archivo ya no lo pierde.
+  - **Mutaciones** (restauradas desde copia), las cinco en rojo: no conservar; sin vencimiento; el reintento ignorado; la fecha de conservado reiniciada en cada corrida; `run_build` sin conservar.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2480,7 +2485,7 @@ Nada en marcha.
 - **Kill-criteria.** La causa escrita y reproducida (o la decisión de que es benigno, con el motivo verificado). Si hay arreglo, un test offscreen con los warnings como error que dibuja la figura en la condición que lo dispara; con el código de hoy, rojo. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 397. SURPRISE-VACIO-BORRA-EL-PERFIL — Una respuesta vacía de `get_earnings_dates` borra el perfil de surprise de un ticker por una semana, sin aviso; el 2026-10-26 le pasó a ACN  ·  origen: `docs/auditoria_tanda_2026-10-26.md` [I-1] · severidad **BAJA** (sin consumidor vivo)
+### 397. ~~SURPRISE-VACIO-BORRA-EL-PERFIL — Una respuesta vacía de `get_earnings_dates` borra el perfil de surprise de un ticker por una semana, sin aviso; el 2026-10-26 le pasó a ACN~~ · **CERRADA 2026-11-23 — un vacío de Yahoo no borra el perfil de surprise de un ticker que lo tenía** ·  origen: `docs/auditoria_tanda_2026-10-26.md` [I-1] · severidad **BAJA** (sin consumidor vivo)
 
 - **Qué pasa.** El rebuild semanal de hoy (16:52–16:56) escribió `surprise ACN: n=0`; el del 19/10 tenía `n=24` (`finanzias.log`). Media hora después, `yf.Ticker("ACN").get_earnings_dates(limit=16)` devolvió 25 filas: fue un vacío transitorio. `collect_yfinance_earnings_history` (`data/news_sources.py:551`) devuelve `[]` **sin loguear** cuando el DataFrame viene vacío, y `run_build` (`scripts/build_surprise_profiles.py:106-132`) escribe el archivo con lo que haya: ACN pasa de `profiles` a `insufficient_history: {"ACN": 0}` hasta el próximo rebuild (7 días). El único aviso es el INFO del final, *«125/127 usable»*, que no dice cuál cayó ni que la semana anterior estaba.
 - **Cuánto pasa.** En los siete rebuilds del log (11/09 → 26/10), ésta es la **primera** caída de un ticker con perfil a menos del mínimo que no fue un deslistado (la otra, WBD el 19/10, sí lo fue).

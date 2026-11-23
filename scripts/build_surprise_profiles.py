@@ -103,6 +103,68 @@ def _payload(profiles: dict[str, dict], n_tickers: int) -> dict:
     }
 
 
+# Tarea 397: una respuesta vacía de `get_earnings_dates` borraba el perfil de un ticker por una
+# semana, sin aviso (ACN el 2026-10-26: n=24 el 19/10, n=0 ese día, 25 filas media hora después).
+# Un ticker que la corrida anterior tenía con perfil y hoy viene corto se reintenta una vez y, si
+# sigue corto, conserva el perfil anterior con la fecha desde la que se conserva. Pasado este
+# plazo deja de conservarse: un deslistado (WBD) cae a `insufficient_history` como antes.
+MAX_DIAS_CONSERVADO = 28
+
+
+def perfiles_anteriores(out_path: str | Path) -> tuple[dict[str, dict], str | None]:
+    """Los perfiles usables del archivo anterior y su ``built_at``; vacío si no hay o no se lee."""
+    try:
+        d = json.loads(Path(out_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, None
+    return d.get("profiles") or {}, (d.get("_meta") or {}).get("built_at")
+
+
+def conservar_caidos(
+    profiles: dict[str, dict],
+    anteriores: dict[str, dict],
+    built_at_anterior: str | None,
+    ahora: datetime,
+    reintentar=None,
+) -> list[str]:
+    """Conserva el perfil anterior de los que hoy vinieron cortos (tarea 397). Devuelve cuáles.
+
+    Modifica ``profiles``. ``reintentar(t)`` devuelve el perfil de un segundo intento.
+    """
+    conservados = []
+    for t, prof in profiles.items():
+        if prof.get("n_quarters", 0) >= MIN_QUARTERS or t not in anteriores:
+            continue
+        if reintentar is not None:
+            otro = reintentar(t)
+            if otro.get("n_quarters", 0) >= MIN_QUARTERS:
+                profiles[t] = otro
+                log.warning(
+                    "surprise %s: vino vacío y el reintento trajo n=%d (tarea 397)", t, otro["n_quarters"]
+                )
+                continue
+        previo = dict(anteriores[t])
+        desde = previo.get("conservado_desde") or built_at_anterior
+        try:
+            vencido = desde is None or (ahora - datetime.fromisoformat(desde)).days > MAX_DIAS_CONSERVADO
+        except (TypeError, ValueError):
+            vencido = True
+        if vencido:
+            continue
+        previo["conservado_desde"] = desde
+        profiles[t] = previo
+        conservados.append(t)
+        log.warning(
+            "surprise %s: vino con n=%d y la corrida anterior tenía n=%d: se conserva el perfil anterior "
+            "(desde %s) (tarea 397)",
+            t,
+            prof.get("n_quarters", 0),
+            previo.get("n_quarters", 0),
+            desde,
+        )
+    return conservados
+
+
 def run_build(
     account_id: int | None = DEFAULT_ACCOUNT_ID,  # T70: None => la cuenta viva
     limit: int = 16,
@@ -120,6 +182,19 @@ def run_build(
     profiles = build_profiles(tickers, limit=limit)
 
     out_path = Path(out)
+    anteriores, built_at_anterior = perfiles_anteriores(out_path)
+    conservados = conservar_caidos(
+        profiles,
+        anteriores,
+        built_at_anterior,
+        datetime.now(timezone.utc),
+        reintentar=lambda t: build_profiles([t], limit=limit)[t],
+    )
+    caidos = sorted(
+        t for t in anteriores if t in profiles and profiles[t].get("n_quarters", 0) < MIN_QUARTERS
+    )
+    if caidos:
+        log.warning("surprise: tenían perfil la corrida anterior y hoy no: %s (tarea 397)", ", ".join(caidos))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # `newline` explicito (tarea 173): este JSON esta VERSIONADO y el repo lo guarda en LF.
     # Sin esto, `write_text` traduce cada salto a CRLF en Windows y el archivo queda
@@ -129,7 +204,14 @@ def run_build(
         json.dumps(_payload(profiles, len(tickers)), indent=2), encoding="utf-8", newline="\n"
     )
     n_usable = sum(1 for p in profiles.values() if p.get("n_quarters", 0) >= MIN_QUARTERS)
-    return {"out": str(out_path), "n_tickers": len(tickers), "n_usable": n_usable, "profiles": profiles}
+    return {
+        "out": str(out_path),
+        "n_tickers": len(tickers),
+        "n_usable": n_usable,
+        "profiles": profiles,
+        "conservados": conservados,
+        "caidos": caidos,
+    }
 
 
 def _print_summary(profiles: dict[str, dict]) -> None:
