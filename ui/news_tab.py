@@ -301,6 +301,16 @@ class NewsTab(QWidget):
         re-carga sí o sí (lo usa el refresh diario del scheduler)."""
         self._last_loaded = None
 
+    def al_mostrarse(self):
+        """La navegación a la pestaña: deja la línea de uso (tarea 415) y refresca si hace falta.
+
+        La 413 no pudo saber si alguien mira la pestaña, que es lo único que usa la clasificación de
+        qwen (49,6 h de GPU en dos meses). Entrar con los datos frescos no refresca: por eso la línea
+        va acá y no en ``refresh``. Sin red ni datos personales; se lee con ``grep "USO "`` en el log.
+        """
+        log.info("USO pestaña Noticias: abierta (tarea 415)")
+        self.maybe_refresh()
+
     def maybe_refresh(self):
         """Llamado al navegar a la pestaña: refresca si nunca cargó o está viejo."""
         if self._last_loaded is None:
@@ -333,6 +343,11 @@ class NewsTab(QWidget):
     def _on_rows_ready(self, items: list):
         self._items = items
         self._last_loaded = datetime.utcnow()
+        log.info(
+            "USO pestaña Noticias: cargada con %d noticias de %s día(s) (tarea 415)",
+            len(items),
+            self.days_input.value(),
+        )
         self._populate_table(items)
         if items:
             self.status_lbl.setText(

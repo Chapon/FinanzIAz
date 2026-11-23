@@ -162,6 +162,10 @@ class OpinionCard(QFrame):
         if not self._armar_datos or (self._worker is not None and self._worker.isRunning()):
             return
         self.boton.setEnabled(False)
+        from config.logging_config import get_logger
+
+        # Tarea 415: cuántas veces se pide, también las que fallan (la tabla guarda sólo las que salen).
+        get_logger(__name__).info("USO opinión de Claude: pedida para %s (tarea 415)", self._ticker)
         self._aviso = aviso_harvest()
         self.estado.setText(f"Consultando a Claude sobre {self._ticker}…{self._aviso}")
         self._worker = OpinionWorker(self._ticker, self._armar_datos, self)

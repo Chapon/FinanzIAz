@@ -287,7 +287,7 @@ class MainWindow(QMainWindow):
         elif key == "news":
             # Carga lazy: refresca solo si nunca cargó o los datos están viejos.
             try:
-                self.news_tab.maybe_refresh()
+                self.news_tab.al_mostrarse()
             except Exception as e:
                 log.warning("news refresh failed: %s", e)
         elif key == "metrics":

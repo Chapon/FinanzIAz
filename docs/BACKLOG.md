@@ -20,7 +20,11 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 368 — Tarea 415 (USO-PESTAÑA-NOTICIAS) CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias, con cuántas noticias carga, y cuándo se pide una opinión de Claude; la lectura de las cuatro semanas queda como la 451** (origen: el spike 413).
+  - **Tres líneas `INFO` que empiezan con `USO `**, sin red ni datos personales: *«USO pestaña Noticias: abierta»* al navegar a la pestaña (`NewsTab.al_mostrarse`, que llama `MainWindow._navigate`), *«USO pestaña Noticias: cargada con N noticias de D día(s)»* al cargarla, y *«USO opinión de Claude: pedida para TICKER»* al apretar el botón (también las que fallan; la tabla `claude_opinions` guarda sólo las que salen). **La de «abierta» va en la navegación y no en el refresco:** entrar con los datos frescos no refresca, y contar refrescos habría subestimado el uso.
+  - **Se lee con** `grep "USO " ~/.finanzias/finanzias.log`. Empieza a contar cuando la app se reabra con este código.
+  - **Mutaciones** (restauradas desde copia), las cuatro en rojo: entrar sin la línea; la ventana sin pasar por `al_mostrarse`; cargar sin la línea; pedir sin la línea.
+  - **Deja la 451** (leer el registro a las cuatro semanas y decidir con Chapa; la 416 depende de ella). Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -610,6 +614,8 @@ Nada en marcha.
 > **Repriorizado 2026-11-23** al mover la **450** a *Hecho reciente* (CI de `1c5731a` verde). Se consume el ítem de arriba sin cambios de criterio. El orden queda **414 → 415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
 
 > **Repriorizado 2026-11-23b** al mover la **414** a *Hecho reciente* (CI de `04ea57d` verde), que no deja tareas nuevas. Se consume el ítem de arriba sin cambios de criterio. El orden queda **415 → 395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 415), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC) y la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`).
+
+> **Repriorizado 2026-11-23c** al cerrar la **415**, que deja la **451** (leer las cuatro semanas de registro y decidir con Chapa); va fuera de la cola hasta el 2026-12-21, y la 416 pasa a depender de ella. El orden queda **395 → 397 → 398 → 408 → 410 → 437 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
 
 
@@ -2049,6 +2055,13 @@ Nada en marcha.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
 - **Dependencias:** ninguna.
 
+### 451. NOTICIAS-DECIDIR-CON-EL-USO — Leer las cuatro semanas de registro de la 415 y decidir con Chapa qué hacer con la clasificación de qwen  ·  origen: el cierre de la 415 (2026-11-23) · severidad **BAJA** · **no antes del 2026-12-21**
+
+- **Qué es.** La 415 deja en el log una línea `USO ` cada vez que se entra a la pestaña Noticias, cuando carga y cuando se pide una opinión de Claude. La 413 dejó cuatro opciones (§4 de `docs/noticias_costo_beneficio_t413_2026-11-10.md`): (a) seguir igual, (b) no clasificar lo viejo, (c) un modelo más chico —la 416—, (d) apagar la clasificación.
+- **Alcance.** A partir del 2026-12-21 (cuatro semanas desde la 415, contadas desde que la app se reabrió con ese código), `grep "USO " ~/.finanzias/finanzias.log`: cuántos días se abrió la pestaña, cuántas veces, cuántas opiniones; con eso, elegir entre (a)–(d) **con Chapa** y anotar la decisión y los números.
+- **Kill-criteria.** La decisión escrita con los conteos del registro (no supuestos), y lo que se haga con ella como tarea aparte. Si el registro tiene menos de cuatro semanas reales (la app cerrada muchos días), se dice y se extiende.
+- **Dependencias:** la 415 y el paso del tiempo; la 416 espera esta decisión.
+
 ### 450. ~~CARTERA-CON-UN-TICKER-QUE-NO-COTIZA — La cartera real «Tech» tiene EA, que dejó de cotizar en agosto de 2026: la fila tiene que decir por qué no tiene precio, y qué hacer con la tenencia lo decide Chapa~~ · **CERRADA 2026-11-20 — una tenencia sin precio dice por qué en la Cartera** (`1c5731a`) · **movida a *Hecho reciente* con el detalle** ·  origen: la medición en vivo de la 446 (2026-11-20) · severidad **BAJA** · display-only
 
 - **Qué pasa.** EA está en la cartera «Tech» (tabla `positions`). Su serie en el cache termina en agosto de 2026 y Yahoo responde *«possibly delisted»* (en el log desde el 2026-10-02; la auditoría del backlog ya la tenía como *«dejó de cotizar»*). El 2026-11-20 19:13Z la detección de la 369 la marcó en `failed_tickers` como `serie_congelada` (*«termina el 2026-08-04, hace 78 ruedas: Yahoo dejó de cotizarlo»*), así que `get_bulk_prices` la saltea y la pestaña Cartera la muestra **sin precio, con «—»**, sin decir por qué.
@@ -2325,9 +2338,9 @@ Nada en marcha.
 - **Qué pasa.** La clasificación con `qwen2.5:14b` es el 84 % del costo medido del pipeline de noticias (49,6 h de GPU en dos meses, 2,96 s por noticia; `docs/noticias_costo_beneficio_t413_2026-11-10.md`) y sólo alimenta la pantalla. La heurística no la reemplaza (mismo tipo en el 40,3 %, tono no neutro en el 15,0 % contra el 44,0 %).
 - **Alcance.** Sólo si la 415 muestra que la pestaña se usa lo bastante como para seguir clasificando: clasificar con `qwen2.5:7b` (y `3b`) una muestra fija de noticias ya clasificadas por el 14b y medir acuerdo y segundos por noticia. No cambia el modelo de la app.
 - **Kill-criteria (a congelar antes de correr).** Pre-registro con la muestra (sorteada con semilla), las métricas —mismo tipo, mismo signo de tono, tono a ≤ 1 nivel, y acuerdo en las 50 primeras del orden de la pestaña por día— y los umbrales contra el 14b. Si no los cumple, se documenta y el modelo no cambia.
-- **Dependencias:** la **415**, con cuatro semanas de uso registrado.
+- **Dependencias:** la **451** (la lectura de las cuatro semanas de uso que registra la 415, desde el 2026-11-23).
 
-### 415. USO-PESTAÑA-NOTICIAS — Registrar cuándo se abre la pestaña Noticias y cuándo se pide una opinión a Claude: hoy no hay forma de saber si el 84 % del costo del pipeline se mira  ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · display
+### 415. ~~USO-PESTAÑA-NOTICIAS — Registrar cuándo se abre la pestaña Noticias y cuándo se pide una opinión a Claude: hoy no hay forma de saber si el 84 % del costo del pipeline se mira~~ · **CERRADA 2026-11-23 — el log registra cuándo se entra a la pestaña Noticias y cuándo se pide una opinión** ·  origen: spike **413** (2026-11-10) · severidad **BAJA** · display
 
 - **Qué pasa.** Lo único que usa la clasificación de qwen (49,6 h de GPU en dos meses) es el orden de la pestaña Noticias, su briefing y la tarjeta de opinión. Nada registra si se abren: en el log no hay ni una línea de la pestaña salvo un error del briefing, y la tabla `claude_opinions` tiene 14 filas, todas del 2026-10-06. La 413 no pudo responder *«si alguien la mira»*, que es lo que decide entre seguir igual, no clasificar lo viejo, un modelo más chico o apagar la clasificación.
 - **Alcance.** Una línea INFO en el log (o un contador local) cuando la pestaña se actualiza con la ventana y la cantidad de filas, y cuando se pide una opinión; sin red, sin datos personales. Al cabo de cuatro semanas, leer el registro y elegir entre las opciones (a)–(d) del §4 del informe de la 413, con Chapa.
