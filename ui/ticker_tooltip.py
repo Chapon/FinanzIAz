@@ -94,7 +94,9 @@ class _FetchRunnable(QRunnable):
             # never break the UI on startup.
             from data.yahoo_finance import get_company_info
 
-            info = get_company_info(self.ticker) or {}
+            # Tarea 453: el tooltip muestra P/E, EPS, dividendo, beta, bolsa y país, que el cache de
+            # 7 días no guarda; este cache ya es uno por sesión.
+            info = get_company_info(self.ticker, fresco=True) or {}
         except Exception as e:
             if _SHUTTING_DOWN or type(e).__name__ == "CierreDeLaApp":
                 return  # tarea 375: cerrando; ni WARNING por ticker ni emit
@@ -278,11 +280,9 @@ def _fmt_pct(value, decimals: int = 2) -> str | None:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    # yfinance dividend_yield arrives as a fraction (0.0123) sometimes and
-    # as a percentage (1.23) other times. Heuristic: <= 1 → fraction.
-    if abs(v) <= 1:
-        v = v * 100.0
-    return f"{v:.{decimals}f}%"
+    # Tarea 453: `get_company_info` da el dividendo como fracción (`dividendo_como_fraccion`). La
+    # heurística de antes (≤ 1 es fracción) leía el 0,8 % de NVDA, que Yahoo da en porcentaje, como 80 %.
+    return f"{v * 100.0:.{decimals}f}%"
 
 
 def _fmt_number(value, decimals: int = 2) -> str | None:

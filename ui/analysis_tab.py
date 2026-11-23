@@ -715,13 +715,18 @@ class AnalysisTab(QWidget):
                 bajar_noticias,
                 balance_de,
                 clasificador_a_demanda,
+                completar_cotizacion,
                 noticias_y_cobertura,
                 pares_de,
             )
+            from data.yahoo_finance import get_company_info
 
             noticias, cobertura = noticias_y_cobertura(
                 t, clasificar=clasificador_a_demanda(), bajar=bajar_noticias
             )
+            # Tarea 453: el P/E, el EPS y la beta, de Yahoo al pedir; el `company` de la pestaña es
+            # el del cache de 7 días, que no los guarda.
+            c = completar_cotizacion(c, get_company_info(t, fresco=True))
 
             return armar_datos(
                 t,

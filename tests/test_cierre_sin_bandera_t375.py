@@ -44,7 +44,9 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 app = QApplication([])
 import data.yahoo_finance as yf
-yf.get_company_info = lambda t: (time.sleep(0.6), {{"name": t}})[1]
+# El tooltip pide `fresco=True` (tarea 453): el falso acepta la firma, o el fetch tira
+# TypeError al instante, no queda en vuelo y el control deja de reproducir nada.
+yf.get_company_info = lambda t, **k: (time.sleep(0.6), {{"name": t}})[1]
 {antes_de_importar}
 import ui.ticker_tooltip as tt
 for t in ("AAPL", "MSFT", "NVDA"):
@@ -210,7 +212,7 @@ class _Espia:
 
 
 def test_el_tooltip_cortado_por_el_cierre_ni_avisa_ni_emite(monkeypatch, caplog):
-    def _cortado(t):
+    def _cortado(t, **k):  # el tooltip pide fresco=True (la 453)
         raise yfd.CierreDeLaApp("cannot schedule new futures after interpreter shutdown")
 
     espia = _Espia()
@@ -225,7 +227,7 @@ def test_el_tooltip_cortado_por_el_cierre_ni_avisa_ni_emite(monkeypatch, caplog)
 def test_el_tooltip_con_otra_falla_avisa_y_emite(monkeypatch, caplog):
     """Sanity: una falla de verdad sigue con su WARNING y con el emit (info vacía)."""
 
-    def _roto(t):
+    def _roto(t, **k):
         raise ValueError("roto")
 
     espia = _Espia()

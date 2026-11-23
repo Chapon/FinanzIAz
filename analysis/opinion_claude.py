@@ -76,7 +76,8 @@ DIAS_NOTICIAS = 14
 #  13 — las recomendaciones de analistas con el mes en curso, y sin la relevancia de la heurística (449).
 #  14 — pares y una serie de referencia a mano cuando la industria de Yahoo no sirve (446).
 #  15 — las noticias: las más relevantes de cada día de la ventana, sin las de otras empresas (452).
-VERSION_DATOS = 15
+#  16 — el P/E, el EPS y la beta de Yahoo pedidos al armar la opinión, no del cache de 7 días (453).
+VERSION_DATOS = 16
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -727,6 +728,28 @@ def _noticias_para_claude(filas: list, clasificar, zona) -> tuple[list[dict], in
             }
         )
     return out, descartadas
+
+
+# ── La cotización de Yahoo, fresca (tarea 453) ──────────────────────────────
+
+# Lo que cambia con el precio y no guarda el cache de 7 días de ``get_company_info``.
+CAMPOS_DE_COTIZACION = ("pe_ratio", "eps", "beta", "dividend_yield")
+
+
+def completar_cotizacion(company: dict | None, fresca: dict | None) -> dict:
+    """``company`` con el P/E, el EPS, la beta y el dividendo de ``fresca``, sin pisar lo demás. **Pura**.
+
+    El ``company`` de la pestaña sale del cache de ``get_company_info`` (nombre, sector, industria):
+    con fila vigente, el bloque ``yfinance`` de la 418 no salía (6 de 7 opiniones). Al pedir la
+    opinión se consulta a Yahoo de nuevo (``fresco=True``) y se suma sólo lo de cotización: si Yahoo
+    no contesta, ``fresca`` es el nombre pelado y no tiene que tapar el nombre ni el sector.
+    """
+    out = dict(company or {})
+    for k in CAMPOS_DE_COTIZACION:
+        v = (fresca or {}).get(k)
+        if v is not None:
+            out[k] = v
+    return out
 
 
 # ── Qué noticias van (tarea 452) ─────────────────────────────────────────────

@@ -1744,17 +1744,37 @@ def _write_company_info_cache(ticker_upper: str, info: dict) -> None:
         log.debug("company_info cache write failed for %s", ticker_upper, exc_info=True)
 
 
-def get_company_info(ticker: str) -> dict:
+def dividendo_como_fraccion(valor) -> float | None:
+    """El ``dividendYield`` de Yahoo como fracción (tarea 453).
+
+    yfinance (1.4.1, el del lock) lo da **en porcentaje**: KO 2,19 es 2,19 %, NVDA 0,8 es 0,8 %. El
+    tooltip suponía que ≤ 1 era una fracción y lo multiplicaba por 100: NVDA habría salido 80 %. No se
+    vio porque el cache de ``get_company_info`` lo tapaba desde el 2026-07-08.
+    """
+    try:
+        return None if valor is None else float(valor) / 100.0
+    except (TypeError, ValueError):
+        return None
+
+
+def get_company_info(ticker: str, *, fresco: bool = False) -> dict:
     """Company name, sector, description desde yfinance (cache-first, hard-timeout).
 
     Lee primero ``CompanyInfoCache`` (TTL 7d); solo si no hay fila vigente hace el
     scrape lento de ``.info`` y persiste nombre/sector/industria. El cache habilita
     la exposición sectorial del panel de concentración (V2) sin red.
+
+    **El cache guarda sólo nombre, sector e industria** (tarea 453): con fila vigente no vuelven
+    el P/E, el EPS, el dividendo, la beta, la bolsa ni el país. Así la opinión de Claude perdió el
+    P/E de Yahoo en 6 de 7 opiniones y el tooltip de ticker esos campos, desde el 2026-07-08.
+    Quien los muestra pide ``fresco=True``: saltea el cache y, si Yahoo no contesta, devuelve lo
+    cacheado (sin esos campos) en vez del nombre pelado.
     """
     ticker_upper = ticker.upper()
-    cached = _read_company_info_cache(ticker_upper)
-    if cached is not None:
-        return cached
+    if not fresco:
+        cached = _read_company_info_cache(ticker_upper)
+        if cached is not None:
+            return cached
 
     def _do_fetch() -> dict:
         t = _ticker(ticker)
@@ -1768,7 +1788,7 @@ def get_company_info(ticker: str) -> dict:
             "exchange": info.get("exchange", "N/A"),
             "pe_ratio": info.get("trailingPE"),
             "eps": info.get("trailingEps"),
-            "dividend_yield": info.get("dividendYield"),
+            "dividend_yield": dividendo_como_fraccion(info.get("dividendYield")),
             "beta": info.get("beta"),
         }
 
@@ -1777,6 +1797,10 @@ def get_company_info(ticker: str) -> dict:
     if result is not None:
         _write_company_info_cache(ticker_upper, result)
         return result
+    if fresco:
+        cached = _read_company_info_cache(ticker_upper)
+        if cached is not None:
+            return cached
     return fallback
 
 

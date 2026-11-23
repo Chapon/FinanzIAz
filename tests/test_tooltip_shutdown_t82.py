@@ -55,7 +55,9 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 app = QApplication([])
 import data.yahoo_finance as yf
-yf.get_company_info = lambda t: (time.sleep(0.6), {{"name": t}})[1]
+# El tooltip pide `fresco=True` (tarea 453): el falso acepta la firma, o el fetch tira
+# TypeError al instante, no queda en vuelo y el control deja de reproducir nada.
+yf.get_company_info = lambda t, **k: (time.sleep(0.6), {{"name": t}})[1]
 {antes}
 import ui.ticker_tooltip as tt
 for t in ("AAPL", "MSFT", "NVDA"):
@@ -136,7 +138,7 @@ def test_un_runnable_si_emite_en_operacion_normal(monkeypatch):
     espia = _Espia()
     señales = type("S", (), {"fetched": espia})()
     monkeypatch.setattr(tt, "_SHUTTING_DOWN", False)
-    monkeypatch.setattr("data.yahoo_finance.get_company_info", lambda t: {"name": t})
+    monkeypatch.setattr("data.yahoo_finance.get_company_info", lambda t, **k: {"name": t})
     tt._FetchRunnable("AAPL", señales).run()
     assert [a[0] for a in espia.emitidos] == ["AAPL"]
 
