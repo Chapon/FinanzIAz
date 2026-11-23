@@ -122,8 +122,10 @@ def test_cada_noticia_trae_su_relevancia(test_db, monkeypatch):
     with session_scope() as s:
         _noticia(s, "Nvidia cae", 0.0)
         _noticia(s, "Micron sube", 0.9)
+        _noticia(s, "Micron y el sector", 0.4)
     rel = {n["titulo"]: n["relevancia_0_a_1"] for n in oc.noticias_recientes("MU")}
-    assert rel == {"Nvidia cae": 0.0, "Micron sube": 0.9}
+    # Desde la 452, la de otra empresa (≤ 0,2) ya no va: se cuenta en cobertura_noticias.
+    assert rel == {"Micron sube": 0.9, "Micron y el sector": 0.4}
 
 
 def test_la_heuristica_provisional_va_sin_relevancia(test_db, monkeypatch):

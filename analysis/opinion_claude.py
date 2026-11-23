@@ -75,7 +75,8 @@ DIAS_NOTICIAS = 14
 #  12 — las noticias se bajan al pedir si la app no tiene recientes, y van con su cobertura (442).
 #  13 — las recomendaciones de analistas con el mes en curso, y sin la relevancia de la heurística (449).
 #  14 — pares y una serie de referencia a mano cuando la industria de Yahoo no sirve (446).
-VERSION_DATOS = 14
+#  15 — las noticias: las más relevantes de cada día de la ventana, sin las de otras empresas (452).
+VERSION_DATOS = 15
 RUEDAS_VOLUMEN = 20
 TRIMESTRES_SORPRESA = 4
 ANIOS_FUNDAMENTALES = 4
@@ -125,7 +126,10 @@ empresa. Algunas fuentes traen un resumen corto y otras sólo el \
 título (resumen null): un resumen que no está no es un dato faltante, no lo anotes en datos_faltantes.
 - cobertura_noticias dice cuántas noticias del ticker tiene la app en la ventana, de qué días (ET) \
 y qué días no tiene ninguna. Si no hay noticias, es que la app no las tiene (lo dice su nota), no \
-que el bloque se haya perdido. Si dice que el harvest estaba corriendo, las de hoy pueden faltar.
+que el bloque se haya perdido. Si dice que el harvest estaba corriendo, las de hoy pueden faltar. \
+Las noticias que se mandan no son las más nuevas: son las más relevantes de cada día de la ventana, \
+repartidas entre los días, de la más nueva a la más vieja; las de otras empresas (relevancia 0,2 o \
+menos) no van, y cobertura_noticias dice cuántas quedaron afuera por eso.
 - pares trae los retornos de tickers de la misma industria que la app tiene guardados (no la \
 industria entera), del ETF del sector y de los índices (SPY, QQQ), para separar lo que le pasa a \
 la empresa de lo que le pasa al sector y al mercado; cada uno dice a qué día llega. Si trae \
@@ -649,7 +653,8 @@ def resumen(texto: str | None, maximo: int = MAX_RESUMEN) -> str | None:
 
 
 def noticias_recientes(ticker: str, dias: int = DIAS_NOTICIAS, clasificar=None) -> list[dict]:
-    """Las noticias del ticker de los últimos ``dias``, de la DB (sólo lectura), más nuevas primero."""
+    """Las noticias para Claude de los últimos ``dias`` (las que elige ``elegir_noticias``, la 452),
+    de la DB, de la más nueva a la más vieja."""
     return noticias_y_cobertura(ticker, dias, clasificar)[0]
 
 
@@ -675,6 +680,7 @@ def noticias_y_cobertura(
         if bajadas:
             filas = fetch_news_window(desde, tickers=[ticker.upper()])
     zona = _zona_et()
+    noticias, descartadas = _noticias_para_claude(filas, clasificar, zona)
     cobertura = bloque_cobertura(
         filas,
         desde,
@@ -684,20 +690,23 @@ def noticias_y_cobertura(
         bajadas=bajadas,
         harvest_en_curso=harvest_en_curso(),
         zona=zona,
+        se_mandan=len(noticias),
+        descartadas=descartadas,
     )
-    return _noticias_para_claude(filas, clasificar, zona), cobertura
+    return noticias, cobertura
 
 
-def _noticias_para_claude(filas: list, clasificar, zona) -> list[dict]:
+def _noticias_para_claude(filas: list, clasificar, zona) -> tuple[list[dict], int]:
+    """Las noticias elegidas, como las recibe Claude, y cuántas se descartaron por ser de otra empresa."""
     from analysis.news_digest import classify_missing
 
-    # Tarea 406: las que qwen todavía no clasificó salían con tipo y tono en None. Van con la
-    # heurística al vuelo, como en la pestaña Noticias, y el campo `clasificador` lo dice.
-    filas = filas[:MAX_NOTICIAS]
+    # Tarea 452: se elige de toda la ventana, así que se clasifica antes de elegir. Lo que qwen todavía
+    # no vio lo clasifica ahora, con tope y de la más nueva a la más vieja (la 427); el resto va con la
+    # heurística al vuelo (la 406), como en la pestaña Noticias, y el campo `clasificador` lo dice.
     if clasificar is not None:
-        # Tarea 427: lo que qwen todavía no vio lo clasifica ahora, con tope; el resto sigue igual.
         filas = clasificar_a_demanda(filas, clasificar)
     filas = classify_missing(filas)
+    filas, descartadas = elegir_noticias(filas, zona)
     out = []
     for f in filas:
         cuando = f.published_at or f.fetched_at
@@ -717,7 +726,56 @@ def _noticias_para_claude(filas: list, clasificar, zona) -> list[dict]:
                 else f.classified_by,
             }
         )
-    return out
+    return out, descartadas
+
+
+# ── Qué noticias van (tarea 452) ─────────────────────────────────────────────
+
+# Con 0,2 o menos la noticia trata de otra empresa (lo dice el prompt): no va, y se cuenta.
+RELEVANCIA_DE_OTRA = 0.2
+# La que no midió un modelo (la heurística) no se descarta, ni le gana a una medida alta.
+_RELEVANCIA_DESCONOCIDA = 0.5
+
+
+def elegir_noticias(filas: list, zona=None, maximo: int = MAX_NOTICIAS) -> tuple[list, int]:
+    """Las ``maximo`` noticias para Claude, y cuántas se descartaron por ser de otra empresa. **Pura**.
+
+    Iban las más nuevas: el 2026-11-23 NVDA tenía 933 en la ventana, las 15 salieron de ese día —7 de
+    otras empresas— y quedaron afuera la renuncia del CEO y las investigaciones de los días previos,
+    con relevancia 1,0. Ahora, fuera las de relevancia medida ≤ ``RELEVANCIA_DE_OTRA``; del resto, por
+    rondas, la más relevante todavía no elegida de cada día (ET), del día más nuevo al más viejo (a igual
+    relevancia, la más nueva), hasta ``maximo``. Salen de la más nueva a la más vieja, como antes.
+    """
+
+    def momento(f):
+        return f.published_at or f.fetched_at or datetime.min
+
+    def relevancia(f) -> float:
+        r = relevancia_medida(f)
+        return _RELEVANCIA_DESCONOCIDA if r is None else r
+
+    descartadas = 0
+    por_dia: dict[str, list] = {}
+    for f in filas:
+        r = relevancia_medida(f)
+        if r is not None and r <= RELEVANCIA_DE_OTRA:
+            descartadas += 1
+            continue
+        m = f.published_at or f.fetched_at
+        por_dia.setdefault(hora_et(m, zona)[:10] if m else "", []).append(f)
+    for lista in por_dia.values():
+        lista.sort(key=lambda f: (relevancia(f), momento(f)), reverse=True)
+    dias = sorted(por_dia, reverse=True)
+    elegidas: list = []
+    ronda = 0
+    while len(elegidas) < maximo:
+        tanda = [por_dia[d][ronda] for d in dias if ronda < len(por_dia[d])]
+        if not tanda:
+            break
+        elegidas.extend(tanda[: maximo - len(elegidas)])
+        ronda += 1
+    elegidas.sort(key=momento, reverse=True)
+    return elegidas, descartadas
 
 
 # La heurística no mide relevancia: usa su confianza (0,20 sin pista), y el prompt dice que con 0,2
@@ -802,19 +860,24 @@ def bloque_cobertura(
     bajadas: int | None = None,
     harvest_en_curso: bool = False,
     zona=None,
+    se_mandan: int | None = None,
+    descartadas: int = 0,
 ) -> dict:
     """Qué noticias tiene la app del ticker en la ventana y de qué días (ET). **Puro** (442).
 
     ``dias_sin_noticias`` son los días de la ventana sin ninguna en la app: con un ticker muy cubierto,
     el tope de ítems por pedido de las fuentes no llega a los más viejos (MSFT, del 12 al 17/11).
     ``bajadas`` es lo que se bajó al pedir (``None``: no se pudo); sólo va si se intentó.
+    ``se_mandan`` y ``descartadas`` salen de ``elegir_noticias`` (la 452); sin ``se_mandan``, el tope.
     """
     momentos = _momentos(filas)
     out: dict = {
         "ventana_dias": dias,
         "en_la_ventana": len(filas),
-        "se_mandan": min(len(filas), MAX_NOTICIAS),
+        "se_mandan": min(len(filas), MAX_NOTICIAS) if se_mandan is None else se_mandan,
     }
+    if descartadas:
+        out["descartadas_de_otras_empresas"] = descartadas
     if momentos:
         con = {hora_et(m, zona)[:10] for m in momentos}
         d0 = date.fromisoformat(hora_et(desde, zona)[:10])
@@ -823,7 +886,11 @@ def bloque_cobertura(
         out["mas_vieja"] = hora_et(momentos[0], zona)
         out["mas_nueva"] = hora_et(momentos[-1], zona)
         out["dias_sin_noticias"] = [d for d in rango if d not in con]
-        nota = "se mandan las más nuevas; un día sin noticias en la app no es un día sin noticias"
+        nota = (
+            "se mandan las más relevantes de cada día, repartidas entre los días de la ventana (no las "
+            "más nuevas), sin las de otras empresas; un día sin noticias en la app no es un día sin "
+            "noticias"
+        )
     elif intento_bajar and bajadas is None:
         nota = (
             f"la app no tiene noticias de este ticker de los últimos {dias} días, y al pedir la "
