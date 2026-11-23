@@ -20,7 +20,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 372 — Tarea 410 (CLASSIFIED-AT-ES-LA-HORA-DE-ARRANQUE) CERRADA 2026-11-23 — ya la resolvió la 436: `classified_at` es la hora en que se guarda cada lote del classify** (origen: el cierre de la 406).
+  - **Sin código nuevo.** La 436 (`c96a32b`, el 2026-11-20) hizo exactamente lo que pedía la 410: `classify_events` toma un `reloj` y `_persistir` lo lee al guardar cada lote, y `DB_SCHEMA.md` lo dice. Su test `test_dos_lotes_de_una_corrida_graban_horas_distintas` (`tests/test_classify_metadatos_t436.py`) es el criterio de la 410 —dos lotes de la misma corrida con `classified_at` distintos—, y su mutación (el reloj sin el `now` de compatibilidad) y la de la cola dieron rojo.
+  - **Por qué quedaron dos tareas:** la auditoría del 2026-11-16 ([I-2]) volvió a encontrar el defecto y abrió la 436 sin nombrar a la 410 (ni la tarea ni el informe la citan), que lo tenía anotado desde el 2026-11-05: el hallazgo quedó anotado dos veces.
+  - **No deja tareas nuevas.** Los cuatro comandos corrieron **después** de escribir este registro.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2385,7 +2388,7 @@ Nada en marcha.
 - **Kill-criteria.** El objeto identificado y su test arreglado; N corridas completas seguidas sin el rojo (N lo fija la reproducción: con 1 en 6, al menos 15 para que la ausencia diga algo). Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
-### 410. CLASSIFIED-AT-ES-LA-HORA-DE-ARRANQUE — `classified_at` lleva la hora en que arrancó la corrida, no la de cada checkpoint: con la clasificación por tramos de horas (la 409), una noticia clasificada a la madrugada dice la tarde anterior  ·  origen: cierre de la **406** · severidad **BAJA** (nada lo lee hoy)
+### 410. ~~CLASSIFIED-AT-ES-LA-HORA-DE-ARRANQUE — `classified_at` lleva la hora en que arrancó la corrida, no la de cada checkpoint: con la clasificación por tramos de horas (la 409), una noticia clasificada a la madrugada dice la tarde anterior~~ · **CERRADA 2026-11-23 — ya la resolvió la 436: classified_at es la hora de cada lote** ·  origen: cierre de la **406** · severidad **BAJA** (nada lo lee hoy)
 
 - **Qué pasa.** `classify_events` toma `now` al arrancar y `_persistir(pending, now)` lo estampa en todas las filas (`scripts/classify_catalysts.py`, `ev.classified_at = now`). Hasta la 409 la corrida escribía todo junto al final y la diferencia era de minutos; con checkpoints y una cola de ~11 h, el campo dice la hora de arranque para filas clasificadas horas después. Medido el 2026-11-05: a las 18:21 (hora local), `max(classified_at)` era `19:42:35` UTC —el arranque de las 16:42— con unas 2.000 filas clasificadas después.
 - **Lo que cuesta.** Hoy nada: ningún módulo de `analysis/`, `data/`, `paper_trading/`, `ui/` ni `scripts/` lee `classified_at`. Es un dato de provenance que dice algo falso, y el que lo use para *«qué se clasificó cuándo»* (un point-in-time del tono, una auditoría) va a sacar mal la cuenta.
