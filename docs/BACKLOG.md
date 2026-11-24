@@ -645,6 +645,8 @@ Nada en marcha.
 
 > **Repriorizado 2026-11-24** al mover la **456** a *Hecho reciente* (CI de `abb9a48` verde). No deja tareas nuevas además de la 459, que ya estaba en la cola: se consume el ítem de arriba sin cambios de criterio. El orden queda **459 → 457 → 458 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC; lleva también lo de la 437), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
 
+> **Repriorizado 2026-11-24b** por el análisis integral que pidió Chapa (`docs/analisis_integral_2026-11-23.md`), que deja la **460** (el costo del proceso, medido; la decisión es de Chapa; MEDIA), la **461** (`run_scan` de 864 líneas; MEDIA), la **462** (la librería de investigación repartida entre runners; BAJA) y la **463** (el cohorte congelado sin dueño; BAJA). La 461 va detrás de la 457 y la 458, para no mover el motor mientras se modelan sus frenos, y la 462 y la 463 detrás de ella. El orden queda **459 → 457 → 458 → 461 → 462 → 463 → 355 → 362 → 356 → 381 → 196 → 245 → 321 → 327 → 342**, con la **460** fuera de la cola (espera la decisión de Chapa), la **416** fuera de la cola (condicionada a la 451), la **421** fuera de la cola (espera la respuesta de Chapa sobre *«Mis Acciones»*), la **444** fuera de la cola (espera que la app rehaga los almacenes de EDGAR, desde el 2026-11-21, o el permiso de Chapa para la SEC; lleva también lo de la 437), la **447** fuera de la cola (espera el permiso de Chapa para pedirle a la SEC con su `User-Agent`) y la **451** fuera de la cola (no antes del 2026-12-21).
+
 
 
 
@@ -2081,6 +2083,40 @@ Nada en marcha.
 - **Por qué importa.** No es un verde inventado (es el de un run viejo), y en el cierre `--esperar` filtra por el sha completo y queda del lado seguro. Pero `--ultimo` es lo que manda la regla 7 al abrir una tarea y lo que la skill `auditoria` manda leer **primero** en `guards`: ahí no hay cierre anterior que lo respalde, y una auditoría puede escribir *«CI verde»* sobre un run de hace un mes —la forma exacta de la 300—. La tanda del 2026-10-05 casi lo hace.
 - **Alcance.** (1) Pedir los runs sin el filtro `branch` (o por `actions/runs`) y filtrar `head_branch == "main"` del lado del cliente. (2) En `--ultimo`, si el sha del run no es `origin/main`, decirlo y devolver *no se sabe* salvo que la diferencia sea un run en curso. (3) En la skill `auditoria` (§ guards): el resultado del CI se lee con el sha comparado contra `origin/main`, no con el VERDE solo.
 - **Kill-criteria.** Un test con un fetch que devuelve un subconjunto viejo (sin el run de `origin/main`) da *no se sabe*, no VERDE; con la versión de hoy da VERDE (se prueba primero). Mutación: volver a poner el filtro `branch=` en la URL lo pone rojo. Los cuatro comandos en verde y el CI del commit en verde.
+- **Dependencias:** ninguna.
+
+### 460. PROCESO-MAS-LIVIANO — Sostener el proceso pesa más que el producto: 504 de 1.010 commits son `docs`, el backlog pesa 2,5 MB, 98 de 390 archivos de test verifican docs y cada tarea paga ~45 minutos fijos; nadie midió ese costo ni decidió cuánto vale  ·  origen: `docs/analisis_integral_2026-11-23.md` M5 · severidad **MEDIA** · **la decisión es de Chapa**
+
+- **Qué pasa.** Medido el 2026-11-23: **504 de 1.010** commits son `docs`, y desde el 2026-09-01 **295 de 692** tocan sólo el backlog (`git log --format=%s`). `docs/BACKLOG.md` pesa **2,5 MB**: 459 tareas, 442 cerradas, y cada cierre deja su texto entero. **98 de 390** archivos de test leen docs, skills o `CLAUDE.md`. `analysis/harness_config.py` es el archivo más grande del repo (3.444 líneas), casi todo prosa de desvíos, y el banner de la 456 imprimió 12 desvíos en 5.763 caracteres. Cada tarea paga dos commits, dos corridas de los cuatro comandos (~13 min cada una) y dos esperas del CI (~9 min): unos 45 minutos antes de cualquier trabajo. **139 de las 459** tareas nacieron de auditorías y tandas.
+- **Por qué importa.** La pregunta de producto, *¿hay ventaja?*, sigue abierta (456: NO DECIDIBLE), y el proceso crece. Cada guard tiene un defecto real detrás, y la regla 7 es de Chapa, así que nada se saca a ciegas: lo que falta es decidir cuánto vale.
+- **Opciones, para que elija Chapa** (ninguna se hace sin su OK):
+  - **(a)** Partir el backlog: lo cerrado (las tareas tachadas y *Hecho reciente*) a `docs/BACKLOG_HISTORIA.md`, y el guard de la 66 lee los dos.
+  - **(b)** El banner de los runners imprime la clave de cada desvío y una línea; la prosa pasa a un doc.
+  - **(c)** El commit del hash, que sólo toca el backlog, corre los tests del backlog y no los cuatro comandos. Riesgo conocido: la 322 dejó el CI rojo así, porque el backlog está en el corpus de los guards de la suite, y por eso la 339 pide el done entero.
+  - **(d)** Dejarlo como está, escrito como decisión.
+- **Kill-criteria.** La decisión de Chapa queda escrita acá. Cada opción que elija va con su propia tarea y su kill-criteria.
+- **Dependencias:** ninguna.
+
+### 461. RUN-SCAN-864-LINEAS — `run_scan` (`paper_trading/engine.py:847`) es una sola función de 864 líneas con todos los gates adentro: el doble que la segunda más larga del repo, y cada gate nuevo se modela aparte en el harness  ·  origen: `docs/analisis_integral_2026-11-23.md` M6 · severidad **MEDIA** · refactor sin cambio de conducta
+
+- **Qué pasa.** Medido por AST el 2026-11-23 sobre el código de producción: `run_scan` tiene **864** líneas; le siguen `portfolio_backtest` (425) y `simulate_portfolio` (363). Sólo 10 de 1.844 funciones pasan de 200 líneas. Varios gates ya viven en `paper_trading/gates.py` (`signal_sell_min_age_block`, `model_exit_fill_price`, `compute_vol_overlay`), pero el orden, los bypass y los avisos de cada uno siguen en línea dentro de `run_scan`.
+- **Por qué importa.** Un gate en línea no se testea solo, y el harness lo tiene que reimplementar. Así nacen los desvíos, que la 457 y la 458 vuelven a pagar.
+- **Alcance.** Extraer cada gate a una función pura de `gates.py`, en el mismo orden, y dejar `run_scan` como orquestador. Sin cambio de conducta.
+- **Kill-criteria.** Un test de paridad corre `run_scan` sobre un escenario fijo antes y después, con las mismas órdenes, los mismos motivos y los mismos avisos. La suite en verde sin tocar ningún test de conducta, y ninguna función del engine por encima de 200 líneas. Los cuatro comandos y el CI en verde.
+- **Dependencias:** va después de la 457 y la 458, para no mover el motor mientras se modelan sus frenos.
+
+### 462. SCRIPTS-COMO-LIBRERIA — 40 scripts importan de otros scripts: `load_bars_signals` vive en el runner de la T23 y lo importan 15; `SimCache` y `FOLDS`, en el de la T37; `NO_STOP` y `summarise`, en el de la T26; y la 456 importa un helper privado de la T219  ·  origen: `docs/analisis_integral_2026-11-23.md` M6 · severidad **BAJA** · refactor
+
+- **Qué pasa.** `git ls-files 'scripts/*.py' | xargs grep -l "^from scripts\."` da **40** archivos. Lo más importado: `precompute_pit_signals` (25), `run_tp_cal_replay_t23` (15), `baseline_metrics` (11), `run_ranking_t21` y `run_rank_neutral_t39` (9 cada uno). La librería de investigación está repartida entre experimentos cerrados, y tocar un runner viejo puede romper uno nuevo.
+- **Alcance.** Mover lo compartido a un módulo de `analysis/` y re-exportar los nombres viejos desde los runners, para que nada cambie de conducta.
+- **Kill-criteria.** Ningún `scripts/run_*.py` importa de otro `scripts/run_*.py` salvo los re-exports. Todos los runners corren `--help` desde fuera del repo. Las anclas de reproducción siguen en OK y los guards que barren runners, en verde. Los cuatro comandos y el CI en verde.
+- **Dependencias:** ninguna.
+
+### 463. COHORTE-CONGELADO-SIN-DUENO — Los artefactos del harness terminan el 2026-09-09, 53 ruedas atrás, y toda corrida nueva pide `--allow-stale-artifacts`; ninguna tarea los refresca y ninguna dice que se congelaron a propósito  ·  origen: `docs/analisis_integral_2026-11-23.md` M7 · severidad **BAJA**
+
+- **Qué pasa.** El banner de la 456: *«126 ticker(s) con el frame ATRASADO … peor caso 53 rueda(s)»*. El último refresh es el del 2026-09-09 (la 140 y la 157). Refrescar cuesta: re-anclar las constantes (157) y recalcular el store PIT (horas). Y suma poca muestra: la ventana `10y` rueda (T48).
+- **Alcance.** Escribir la política: **(a)** congelado a propósito el 2026-09-09 hasta un disparador declarado (un trimestre nuevo, o un pre-registro que lo necesite), y que el banner lo diga así en vez de *«ATRASADO»*; o **(b)** un refresh por trimestre, con el checklist de re-anclaje.
+- **Kill-criteria.** La política escrita en la skill `backtest-replay-harness`. Si es (a), un test fija el texto del banner. Los cuatro comandos y el CI en verde.
 - **Dependencias:** ninguna.
 
 ### 459. REGIMEN-PRECIO-CON-LA-SALIDA-VIEJA — El escalado por régimen a 0,25 cuesta 1,46 pp de CAGR bajo la política de salida viva, y la preferencia de la 124 se declaró con 0,29 pp, medidos con el stop duro prendido; el desvío dice además «0 de 80 BUY vivas» y desde el 2026-11-20 lo llevan 11  ·  origen: la 456 (2026-11-23) · severidad **MEDIA** · **la decisión es de Chapa**
