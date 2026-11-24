@@ -20,7 +20,7 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 379 — Tarea 456 (ACTIVO-CONTRA-PASIVO-DE-IGUAL-RIESGO) EN CURSO 2026-11-23 — pre-registro congelado en `docs/activo_pasivo_prereg_t456_2026-11-23.md`, antes del runner** (origen: pedido de Chapa, `docs/compras_ventas_efectividad_2026-11-23.md` §2).
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
