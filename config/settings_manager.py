@@ -269,6 +269,12 @@ SCHEMA: dict[str, SettingSpec] = {
     # puede decir si el alivio existe y de dónde viene (la 121 lo dijo), pero **no si
     # vale la pena pagarlo**.
     #
+    # **Y ese precio es de otro marco (tarea 459):** la 121 corrió con `AtrParams()` por
+    # defecto, con el stop duro **prendido**, la salida anterior al 2026-08-27. Con la
+    # salida viva (stop duro apagado, trailing 2.0×ATR) la 456 midió, descriptivo,
+    # **−1,46 pp de CAGR** (8,78% → 7,32%) por **−5,5 pp** de caída (28,4% → 22,9%):
+    # cinco veces el precio declarado. Confirmar o cambiar la preferencia es de Chapa.
+    #
     # **Y no se puede validar out-of-sample con la muestra que hay, medido:** el
     # **99,2%** del beneficio está antes de 2022, porque las dos únicas caídas rápidas
     # de los 10 años son `2018Q4` y `covid_2020` y las dos caen en la primera mitad;
@@ -369,6 +375,9 @@ SCHEMA: dict[str, SettingSpec] = {
             "2026-09-07 (task 115): it is the arm the harness selected in all three "
             "runs and the one that keeps the drawdown relief (−4.5pp of maxDD vs "
             "−2.2pp at 0.50). NOT re-validated on the live frame — see task 121. "
+            "Under the live exit policy (hard stop off) it costs 1.46pp of CAGR for "
+            "5.5pp less drawdown (task 456, descriptive); the 0.29pp that task 124 "
+            "declared was measured with the hard stop on (task 459). "
             "0.50 was the previous value and no longer meets the T20 kill-criteria. "
             "1.0 = no scaling. 0.0 = suppress BUYs entirely in risk-off — NOT "
             "recommended: R2a measured that binary suppression destroys "

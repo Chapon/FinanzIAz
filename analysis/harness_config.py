@@ -164,9 +164,23 @@ LIVE_VOL_OVERLAY_ENABLED = True
 LIVE_VOL_TARGET_ANNUAL = 0.12
 
 # Escalado por régimen R2b (tarea 95). En risk-off las BUY entran a un cuarto del
-# tamaño. **Nunca disparó en vivo** —0 de 80 BUY filled al 2026-09-27 (eran 0 de 62
-# cuando se escribió; tarea 233)— pero **15,96%** de las ruedas de la ventana del
-# harness son risk-off, así que sí muerde en backtest.
+# tamaño. **En vivo disparó por primera vez el 2026-11-20** —hasta ahí, 0 de 80 BUY
+# filled al 2026-09-27 (tarea 233)—, y el **15,96%** de las ruedas de la ventana del
+# harness son risk-off, así que muerde en backtest también. **El conteo no va en el
+# texto (tarea 459):** «0 de 80» quedó vencido el día que disparó, y un número que se
+# escribe a mano se vence. Las órdenes escaladas llevan `risk-off ×` en la razón
+# (`paper_trading/strategies.py`), así que se cuentan en la DB:
+# `SELECT count(*) FROM paper_orders WHERE account_id = 2 AND side = 'BUY' AND
+# status = 'filled' AND reason LIKE '%risk-off ×%'` (11 de 124 al 2026-11-24).
+#
+# **El precio que se cita tiene que ser el de la política de salida viva (tarea 459).**
+# La T121 de abajo corrió con `AtrParams()` por defecto (`run_sizing_exposure_t10_t20.py`),
+# o sea con el stop duro **prendido** a 2×ATR: la salida anterior al 2026-08-27. Con la
+# salida viva (stop duro apagado, trailing 2.0×ATR, 10 slots, 126 tickers, gates
+# modelados) la 456 midió, descriptivo, **8,78% → 7,32% de CAGR (−1,46 pp), Sharpe 0,55 →
+# 0,52, caída 28,4% → 22,9% (−5,5 pp)** (`docs/activo_pasivo_t456_2026-11-23.md` §1):
+# entre cuatro y cinco veces los 0,29–0,34 pp con que se declaró la preferencia de la 124.
+# Lo de abajo queda como historia, con su marco.
 #
 # **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
 # Chapa)**, así que el número de la T20 que este comentario citaba (+0,59 pp de
@@ -179,7 +193,10 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # - **10 slots, 127 tickers** —la config de la cuenta— con los gates modelados (T121, corrida
 #   **VÁLIDA**): ΔCAGR **−0,34 pp** (−0,47 sin gates), ΔSharpe −0,00, maxDD 33,7% → 28,9%. **No
 #   cumple** el criterio de la T20: sólo pasa el de drawdown (`docs/f025_validar_t121_2026-09-07.md`).
-# Lo que coincide es el alivio de drawdown. El banner cita los dos, cada uno con su marco.
+#   **Con el stop duro prendido** (tarea 459): es el marco de la cuenta en slots y tickers, no
+#   en la política de salida.
+# Lo que coincide es el alivio de drawdown. El banner cita los tres, cada uno con su marco, y el
+# de la cuenta es el de la 456.
 # Penalidad de volatilidad en la SELECCION (tarea 42). `compute_signal_probability`
 # le resta al score `risk_score x coef`. Se espeja aca —igual que el overlay y el
 # escalado— para que el harness de la T21 deje de duplicar el literal: lo tenia
@@ -2586,17 +2603,21 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"{100 * LIVE_VOL_TARGET_ANNUAL:.0f}% anual), que en vivo recorta **todas** las "
             f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)",
         )
-    # Tarea 95 — nunca disparó en vivo, pero sí muerde en la ventana del harness.
+    # Tarea 95 — muerde en la ventana del harness, y en vivo desde el 2026-11-20. El precio
+    # citado es el de la política de salida viva (tarea 459); el conteo vivo no va en el texto.
     if LIVE_REGIME_SCALE_ENABLED and not cfg.models_regime_scale:
         _add(
             "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
-            f"risk-off): 0 de 80 BUY vivas lo dispararon al 2026-09-27, pero el 15.96% de las ruedas de "
-            f"la ventana son risk-off. Con la config de la cuenta (10 slots, 127 tickers, gates "
-            f"modelados, T121, corrida VÁLIDA del 2026-09-07) el factor vivo mide −0.34pp de CAGR y "
-            f"−4.8pp de maxDD: NO cumple el criterio de la T20, sólo alivia el drawdown; el "
-            f"+0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers (otro marco) y NO describe a la "
-            f"cuenta",
+            f"risk-off): en vivo disparó por primera vez el 2026-11-20 (las órdenes escaladas "
+            f"llevan «risk-off ×» en la razón, y se cuentan ahí), y el 15.96% de las ruedas de la "
+            f"ventana son risk-off. Con la config de la cuenta y su salida viva (10 slots, 126 "
+            f"tickers, stop duro apagado, trailing 2.0×ATR, gates modelados, la "
+            f"456 del 2026-11-23, descriptiva) el factor vivo cuesta −1.46pp de CAGR y −0.03 de "
+            f"Sharpe por −5.5pp de maxDD: sólo alivia el drawdown. El −0.34pp/−4.8pp de la T121 "
+            f"(10 slots, 127 tickers) es con el stop duro prendido, la salida anterior al "
+            f"2026-08-27 (otro marco); el +0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers "
+            f"(otro marco): ninguno de los dos describe a la cuenta",
         )
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:

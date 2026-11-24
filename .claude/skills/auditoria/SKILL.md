@@ -247,7 +247,14 @@ código **tiene** la pata de ADV$, pero con `paper_universe_min_adv_dollars = 0.
   el marco por default de los runners que lo imprimen (tanda 2026-09-30). El de `regime_scale`
   tenía fuente, tarea y fecha, pasaba las dos reglas de arriba, y era de 5 slots/41 tickers: en el
   marco de la cuenta el CAGR da el signo contrario. Es la lección de la 43 y la 119, que el método
-  de esta área no tenía escrita.
+  de esta área no tenía escrita. **El marco incluye la política de salida** (tarea 459): el número
+  que lo reemplazó —−0,34 pp de la T121— tenía los slots y los tickers de la cuenta, y se había
+  medido con el stop duro prendido, la salida anterior al 2026-08-27; con la viva, la 456 midió
+  −1,46 pp. La regla de la 242 (`tests/test_marco_de_los_desvios_t242.py`) sólo ve slots y tickers.
+- **Un conteo vivo con fecha también se vence** (tarea 459): *«0 de 80 BUY vivas … al
+  2026-09-27»* cumplía la regla de arriba y se vendía como *«nunca disparó»*; el 2026-11-20
+  disparó. Si el conteo es un argumento, el texto da el hecho que no se vence (la primera vez, la
+  marca de la orden) y dónde se cuenta.
 - **Toda afirmación de FRECUENCIA del motor vivo se contrasta contra el REGISTRO de lo que corrió,
   no contra la perilla que la configura** (tarea 261). El desvío `barrier_eval` decía que el vivo
   evalúa las barreras *«cada ~15 min, más cerca de touch»*, y la perilla lo confirmaba; los

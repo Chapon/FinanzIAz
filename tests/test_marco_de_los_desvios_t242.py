@@ -12,7 +12,10 @@ La regla que se fija: en cada **tramo** de un texto de desvío (separado por ``;
 
 **Lo que NO ve, dicho:** una magnitud que no esté en ``pp`` (un porcentaje de ruedas, un
 factor ``×0.76``). Son proporciones de la muestra, no efectos sobre el CAGR, y se dejan afuera
-a propósito.
+a propósito. **Y la política de salida** (tarea 459): el marco que compara son slots y tickers.
+El −0.34 pp de la T121 era de 10 slots y 127 tickers —pasaba esta regla— y se midió con el stop
+duro prendido, la salida anterior al 2026-08-27; con la viva, la 456 midió −1.46 pp. Eso lo fija
+``tests/test_regimen_precio_t459.py`` para ``regime_scale``, no esta regla para todos.
 """
 
 from __future__ import annotations
@@ -84,6 +87,10 @@ def test_un_marco_ajeno_DECLARADO_pasa():
 
 
 def test_regime_scale_cita_el_numero_del_marco_de_la_cuenta():
-    """El valor que corresponde a la config de la cuenta es el de la T121 con gates."""
+    """El valor de la config de la cuenta, con su salida viva, es el de la 456 (tarea 459).
+
+    Era el de la T121 con gates, que tiene los slots de la cuenta pero el stop duro prendido.
+    El cruce contra la tabla del veredicto está en ``test_regimen_precio_t459.py``.
+    """
     t = _textos()["regime_scale"]
-    assert "−0.34pp" in t and "10 slots, 127 tickers" in t
+    assert "−1.46pp" in t and "10 slots, 126 tickers" in t and "stop duro apagado" in t

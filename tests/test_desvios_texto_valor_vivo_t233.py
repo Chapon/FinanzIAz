@@ -102,8 +102,15 @@ _FECHA = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def test_todo_conteo_de_BUY_vivas_en_los_desvios_lleva_FECHA():
+    """Desde la tarea 459 no hay ningún conteo en los desvíos, y esto puede pasar sin mirar nada.
+
+    El único era el de `regime_scale` (*«0 de 80 BUY vivas … al 2026-09-27»*): llevaba fecha y
+    se venció igual el día que disparó, así que salió del texto (ver
+    `test_regimen_precio_t459.py`). Acá decía ``assert conteos`` para que el patrón no mirara una
+    población vacía; con la población vacía a propósito, lo que prueba que el patrón todavía ve
+    son las dos contrapruebas de abajo, sobre textos fijos. La regla queda para el que vuelva.
+    """
     conteos = [m.group(0) for t in _textos().values() for m in _CONTEO.finditer(t)]
-    assert conteos, "no se encontró ningún conteo: el patrón ya no mira nada"
     sin_fecha = [c for c in conteos if not _FECHA.search(c)]
     assert not sin_fecha, f"conteos presentados como actuales sin fecha: {sin_fecha}"
 
@@ -113,6 +120,13 @@ def test_el_patron_de_conteo_ACUSA_uno_sin_fecha():
     viejo = "0 de 62 BUY vivas lo dispararon, pero el 15.96% de las ruedas"
     (c,) = [m.group(0) for m in _CONTEO.finditer(viejo)]
     assert not _FECHA.search(c)
+
+
+def test_el_patron_de_conteo_VE_uno_con_fecha():
+    """La otra contraprueba: el patrón agarra el conteo fechado, y la fecha queda adentro."""
+    fechado = "0 de 80 BUY vivas lo dispararon al 2026-09-27, pero el 15.96% de las ruedas"
+    (c,) = [m.group(0) for m in _CONTEO.finditer(fechado)]
+    assert _FECHA.search(c)
 
 
 # ── [D-4.1] el comentario de dividendos describe el motor de hoy ────────────
