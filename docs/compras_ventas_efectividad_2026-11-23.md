@@ -24,31 +24,37 @@ Este doc no propone ninguna variante de esas perillas.
 ## 2. La comparación que faltaba: la estrategia contra un pasivo del mismo riesgo
 
 Todos los experimentos de arriba comparan una variante **contra la estrategia viva**. Ninguno
-comparó la estrategia viva **contra no operar**. Sobre la misma ventana (2016-09-12 → 2026-09-09) y el
-mismo universo (los 126 de `data/harness_universe_live_acct2.txt`):
+comparó la estrategia viva **contra no operar**. Sobre las fechas en que opera la estrategia
+(2017-09-08 → 2026-09-09, después de las 250 ruedas de calentamiento del cohorte 2016-09-12 →
+2026-09-09) y el mismo universo (los 126 de `data/harness_universe_live_acct2.txt`):
 
 | | crecimiento anual | Sharpe | caída máxima | de dónde sale |
 |---|--:|--:|--:|---|
 | **Estrategia viva** (`soff_t2.0`, 10 slots) | **8,78%** | **0,55** | **28,4%** | T170 / T219 (`portfolio_sim`) |
 | Mismas salidas y rotación, compras al azar | 10,87% | 0,64 | 28,7% | `AZAR_MISMA_TASA` de la T219 |
-| Universo en partes iguales, rebalanceo mensual | 17,73% | 1,02 | 36,2% | medido hoy |
-| SPY | 15,39% | 0,89 | 33,7% | medido hoy |
-| **60% SPY + 40% caja** (sin interés) | **9,33%** | — | **20,9%** | medido hoy |
-| **80% SPY + 20% caja** (sin interés) | **12,38%** | — | **27,4%** | medido hoy |
-| 80% universo + 20% caja | 14,25% | — | 29,4% | medido hoy |
+| Universo en partes iguales, rebalanceo mensual | 17,27% | 0,96 | 36,2% | medido hoy |
+| SPY | 15,19% | 0,85 | 33,7% | medido hoy |
+| **60% SPY + 40% caja** (sin interés) | **9,23%** | 0,86 | **20,9%** | medido hoy |
+| **80% SPY + 20% caja** (sin interés) | **12,24%** | 0,85 | **27,4%** | medido hoy |
+
+> **Corregido el 2026-11-23 con la tarea 456.** La primera versión de esta tabla medía SPY, el
+> universo y las mezclas desde el 2016-09-12, y la estrategia recién opera desde el 2017-09-08. Con
+> las mismas fechas: SPY 15,39% → 15,19%, el universo 17,73% → 17,27%, 60/40 9,33% → 9,23% y 80/20
+> 12,38% → 12,24%. La fila de 80% universo + 20% caja se sacó (en la 456 el universo con caja va con
+> su propia `w`). Ninguna conclusión cambia.
 
 **Lo que dice:**
 
-- **La estrategia queda dominada por SPY con caja.** 60/40 rinde más (9,33% contra 8,78%) con
-  bastante menos caída (20,9% contra 28,4%). 80/20 rinde 3,6 puntos más por año con un punto
+- **La estrategia queda dominada por SPY con caja.** 60/40 rinde más (9,23% contra 8,78%) con
+  bastante menos caída (20,9% contra 28,4%). 80/20 rinde 3,5 puntos más por año con un punto
   menos de caída. La caja cobra 0% en el cálculo; con la tasa de las letras del Tesoro la diferencia
   sería mayor. **SPY no tiene sesgo de supervivencia**, así que esto no se lo infla el universo.
 - **Se puede descomponer, aproximadamente, dónde se va el rendimiento:**
   - **Comprar** con la señal en vez de al azar cuesta ~2,1 puntos por año (8,78% contra 10,87%), lo
     mismo que midieron la 21 y la 39.
   - **Vender y rotar** con las reglas vivas (trailing de 2 ATR, target de 4 ATR, venta por señal a
-    los 3 días, tenencia media de 7,9 días) cuesta ~6,9 puntos más, contra quedarse con el universo
-    (10,87% contra 17,73%).
+    los 3 días, tenencia media de 7,9 días) cuesta ~6,4 puntos más, contra quedarse con el universo
+    (10,87% contra 17,27%).
 
   El grueso de la pérdida está en **las ventas y la rotación**, no en las compras. Este número
   compara dos simuladores distintos, así que es una cota y no una medición; la 456 lo mide dentro
@@ -138,3 +144,13 @@ mismo universo (los 126 de `data/harness_universe_live_acct2.txt`):
 - Cuenta viva: copia de `finanzias.db` con la API de backup desde `mode=ro`
   (`paper_equity_snapshots`, `paper_orders`, `paper_positions` de la cuenta 2). Overlay: las líneas
   `portfolio vol overlay (analyze_single)` de `~/.finanzias/finanzias.log` (cubre desde septiembre).
+
+## Resultado de la 456 (2026-11-23): NO DECIDIBLE
+
+`docs/activo_pasivo_t456_2026-11-23.md`. En un solo simulador y fuera de muestra (2021-08 →
+2026-07), la estrategia de la cuenta 2 (con el escalado por régimen) rinde **2,06%** anual y SPY +
+caja con la misma caída (w = 0,65, fijada antes del test) rinde **8,45%**: +6,40 pp, el pasivo gana
+4 de 5 años y cae menos (16,4% contra 22,8%). **El intervalo del bootstrap pareado va de −1,61 a
++14,76 pp**, así que el criterio congelado no se cumple y no se cambia nada. Deja la **459**: el
+escalado por régimen cuesta 1,46 pp de CAGR bajo la política viva, y la preferencia de la 124 se
+declaró con 0,29 pp.
