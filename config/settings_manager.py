@@ -290,6 +290,14 @@ SCHEMA: dict[str, SettingSpec] = {
     #
     # **Lo que eso cuesta, dicho:** no hay nada que se dispare solo si el alivio
     # desaparece. Se re-mide cuando la muestra incorpore una caída rápida nueva.
+    #
+    # **La 465 (2026-11-25) lo midió en los dos sentidos** —la `w` de una caja constante
+    # calibrada en una mitad y medida en la otra— y dio **depende del tramo**: en
+    # 2021-08 → 2026-07 el escalado pierde contra la caja (Sharpe 0,46 contra 0,62), y en
+    # 2017 → 2021 gana (1,20 contra 1,08); los dos IC cruzan el cero. **Y la atribución por
+    # ventana de arriba es de la T121, otro marco:** con la config del vivo el escalado da
+    # −4,02 pp en `2018Q4`, +4,28 pp en `covid_2020` y −1,38 pp en `bear_2022` contra la
+    # estrategia sin escalar. Ver `docs/regimen_caja_t465_2026-11-25.md`.
     # VOLPEN (tarea 42) — la penalidad de volatilidad que entra en la SELECCIÓN.
     #
     # `calculate_buy_probability` le resta al score `risk_score × coef`. El argumento
