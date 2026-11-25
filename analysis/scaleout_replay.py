@@ -89,7 +89,13 @@ _NO_STOP = 1e9
 
 @dataclass(frozen=True)
 class CostModel:
-    """Comisión + slippage como fracción del notional (espejo de la cuenta viva)."""
+    """Comisión + slippage como fracción del notional.
+
+    **No es el espejo de la cuenta viva (tarea 468).** Los defaults (0,10% + 0,05% por lado) son con
+    los que corrió todo lo publicado hasta la 468, y por eso no se tocan. El vivo cobra IBKR Pro
+    Tiered, ~0,013% de comisión efectiva más el 0,05% de slippage: ~0,063% por lado. Para medir
+    como el vivo, ``analysis.harness_config.live_cost_model()``.
+    """
 
     commission: float = 0.001  # 0.1%
     slippage: float = 0.0005  # 0.05%

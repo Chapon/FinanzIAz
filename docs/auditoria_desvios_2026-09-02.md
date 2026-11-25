@@ -282,7 +282,10 @@ borra, no se degrada. *(Sí es cierto que ninguno de los dos aplica el tope del 
 harness no lo aplica sin `size_weight`, y `equal_weight` no está en `_VOL_SIZED_MODES`—:
 coinciden en no topear, lo que **refuerza** la refutación.)*
 
-- **P1 (costos)** — rechazado por mí antes de publicar: coinciden exacto.
+- **P1 (costos)** — rechazado por mí antes de publicar: coinciden exacto. **Corrección del 2026-11-25
+  (tarea 468): no coincidían.** El harness cobra 0,10% + 0,05% por lado; el motor cobra IBKR Pro Tiered
+  desde el 2026-05-18, ~0,013% de comisión efectiva, y el `commission = 0.001` de la cuenta es el modelo
+  legacy, que no se usa. Ver `docs/costos_t468_2026-11-25.md`.
 - **Gate 2b** — rechazado: **sí** está modelado, con los mismos valores.
 - **Gates 1 / 2 / 3** (market hours, min-holding 60 min, anti-flap 30 min) — rechazados:
   son **sub-diarios** y el harness trabaja a granularidad diaria ⇒ inertes por construcción.

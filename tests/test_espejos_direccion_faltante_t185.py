@@ -106,7 +106,9 @@ SIN_ESPEJO: dict[str, str] = {
         "NO_ES_DECISION: elige QUÉ eventos se notifican (`both`), posterior a la decisión. "
         "El harness no notifica nada, así que no hay nada que espejar"
     ),
-    "ibkr_commission_plan": "NO_ES_DECISION: el harness modela costos por su cuenta (`paper_trading/costs.py`)",
+    # `ibkr_commission_plan` estaba acá como «NO_ES_DECISION: el harness modela costos por su cuenta».
+    # Ése era el defecto de la tarea 468: el harness cobraba 0,15% por lado y el vivo ~0,063%. Desde
+    # la 468 está espejada (`LIVE_IBKR_COMMISSION_PLAN`), así que sale de esta clasificación.
     # ── SUBSISTEMA_OFF — apagados y sin camino vivo ──
     "paper_catalyst_exit_veto_enabled": (
         "SUBSISTEMA_OFF: Gate 2c, OFF por kill-criteria no superado (T-CAT-6) y además sin "

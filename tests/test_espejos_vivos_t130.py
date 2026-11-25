@@ -94,6 +94,9 @@ ESPEJOS: tuple[tuple[str, str], ...] = (
     # Tarea 292 — estaba en la 185 como «no modelable»; en vivo vale False a propósito y el
     # harness modela justamente ese valor, así que es un espejo, no una excepción.
     ("LIVE_ENFORCE_MARKET_HOURS", "paper_enforce_market_hours"),
+    # Tarea 468 — el plan bajo el que se midió la comisión del vivo. Cambiarlo deja viejas las
+    # constantes `LIVE_COMMISSION_*`, y esto se pone rojo.
+    ("LIVE_IBKR_COMMISSION_PLAN", "ibkr_commission_plan"),
 )
 
 # Los ``LIVE_*`` que **no** salen del settings, con el motivo. No es una excepción:
@@ -106,6 +109,13 @@ NO_SON_DE_SETTINGS: dict[str, str] = {
     "LIVE_ALLOCATION_MODE": "sale de paper_accounts (DB)",
     "LIVE_WATCHLIST_SIZE": "sale de paper_watchlist (DB); lo re-verifica test_watchlist_size_t89",
     "LIVE_UNIVERSE_FILE": "ruta de un archivo del repo, no una perilla",
+    # Tarea 468 — medidos sobre las órdenes de la cuenta 2, bajo `LIVE_IBKR_COMMISSION_PLAN`.
+    "LIVE_COSTS_MEASURED_ON": "fecha de la medición de los costos, no una perilla",
+    "LIVE_COMMISSION_BUY_PCT": "medido en paper_orders (DB) bajo el plan IBKR vivo",
+    "LIVE_COMMISSION_SELL_PCT": "medido en paper_orders (DB) bajo el plan IBKR vivo",
+    "LIVE_COMMISSION_PCT": "el medio de los dos de arriba",
+    "LIVE_SLIPPAGE_PCT": "sale de paper_accounts.slippage (DB)",
+    "LIVE_COST_PER_SIDE": "la suma de comisión y slippage de arriba",
     "LIVE_HISTORY_BARS": "propiedad del frame que lee el harness, no del settings",
     "LIVE_EXIT_EVAL_DESC": "texto descriptivo del banner",
     "LIVE_FILL_DESC": "texto descriptivo del banner",

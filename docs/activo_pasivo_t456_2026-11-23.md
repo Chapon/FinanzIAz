@@ -16,6 +16,10 @@ calentamiento, y los dos brazos se miden sobre esas mismas 2.262 fechas. Sin red
 > vez de 7,32% / 0,52 / 22,9%. El gate da C1 +6,49 pp, C2 4/5, C3 [−1,69, +14,89] y C4 14,0% contra
 > 25,5%: **NO DECIDIBLE**. Ver `docs/relectura_456_tajada_t466_2026-11-24.md`. Los números de abajo
 > son los publicados el 2026-11-23.
+>
+> **Y con el costo del vivo (2026-11-25, tarea 468):** todo este doc es al 0,15% por lado del harness;
+> el vivo paga ~0,063%. Con ese costo y la tajada por día, el pasivo gana +1,66 pp, IC [−6,77, +10,25]:
+> sigue **NO DECIDIBLE**, y casi toda la ventaja de abajo era costo. Ver `docs/costos_t468_2026-11-25.md`.
 
 ---
 

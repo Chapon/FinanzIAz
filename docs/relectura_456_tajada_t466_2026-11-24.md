@@ -10,6 +10,11 @@ en el que cada compra escalada del día agrandaba a la siguiente. La tarea 464 l
 el instrumento y no la pregunta: los brazos, la regla de la `w`, los folds, el bootstrap y los cuatro
 criterios son los del pre-registro. Es lo mismo que hicieron las re-lecturas de la T33 y la T36.
 
+> **Aviso del 2026-11-25 (tarea 468): esta re-lectura es al costo del harness**, 0,15% por lado. Con el
+> ~0,063% que paga el vivo, el gate da +1,66 pp para el pasivo (7,19% contra 5,52%), 4/5, IC
+> [−6,77, +10,25]: también **no decidible**, con la cuarta parte del punto estimado. Ver
+> `docs/costos_t468_2026-11-25.md` §4.
+
 ---
 
 ## VEREDICTO: **NO DECIDIBLE**, igual que la 456

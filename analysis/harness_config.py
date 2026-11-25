@@ -157,6 +157,56 @@ NO_STOP_MULT = 1e9
 #
 # Verificadas contra `~/.finanzias/settings.json` el 2026-09-02.
 
+# Costos del vivo — Tarea 468 (COSTOS-DEL-HARNESS).
+#
+# `CostModel()` cobra 0,10% de comisión + 0,05% de slippage por lado y su docstring decía «espejo
+# de la cuenta viva»; la auditoría del 2026-09-02 (§5, P1) lo dio por «coinciden exacto». **No
+# coinciden:** desde el 2026-05-18 (`e2d7e93`) el motor cobra con
+# `paper_trading.costs.get_active_commission_model()`, que por default es **IBKR Pro Tiered**: por
+# acción, con mínimo de $0,35 y tasas regulatorias en la venta. El `commission = 0.001` de la cuenta
+# es el modelo *legacy* y no se usa. Sobre las 238 órdenes filled de la cuenta 2 (2026-06-20 →
+# 2026-11-23) ese modelo reproduce cada comisión exacta, y el porcentaje efectivo da **0,0118%** en
+# compras y **0,0145%** en ventas. El slippage es el `acct.slippage` de la cuenta, 0,05%. El harness
+# trabaja con un porcentaje fijo, así que usa el medio de los dos lados: con posiciones de $500 a
+# $6.000; con más capital el porcentaje efectivo bajaría (el mínimo pesa menos).
+#
+# Cuánto importa: con ~26× el capital por año de rotación, la estrategia sin régimen da 8,78% al
+# 0,15% y 13,72% a este costo (`docs/costos_t468_2026-11-25.md`). Un costo inflado le resta casi
+# nada al pasivo y favorece siempre al brazo que opera menos.
+# El plan que hace válidas las constantes de abajo: si cambia (`fixed` o `legacy`), la comisión
+# del vivo cambia y estas quedan viejas. Es espejo del settings, así que el guard de la 130 lo acusa.
+LIVE_IBKR_COMMISSION_PLAN = "tiered"  # `ibkr_commission_plan`
+LIVE_COSTS_MEASURED_ON = "2026-11-24"
+LIVE_COMMISSION_BUY_PCT = 0.000118
+LIVE_COMMISSION_SELL_PCT = 0.000145
+LIVE_COMMISSION_PCT = 0.00013  # el medio de los dos lados, redondeado
+LIVE_SLIPPAGE_PCT = 0.0005  # `acct.slippage` de la cuenta 2
+LIVE_COST_PER_SIDE = LIVE_COMMISSION_PCT + LIVE_SLIPPAGE_PCT
+# El de `CostModel()`, con el que corrió todo lo publicado hasta la 468. Literal y no importado:
+# `analysis.scaleout_replay` importa de este módulo. Un test lo ata a los defaults de `CostModel`.
+HARNESS_DEFAULT_COST_PER_SIDE = 0.0015
+
+
+def live_cost_model():
+    """El ``CostModel`` del vivo (tarea 468): comisión media IBKR Tiered medida + slippage."""
+    from analysis.scaleout_replay import CostModel
+
+    return CostModel(commission=LIVE_COMMISSION_PCT, slippage=LIVE_SLIPPAGE_PCT)
+
+
+def costos_desc(costo_por_lado: float) -> str:
+    """El texto del desvío ``costos``: cuánto cobra el runner contra lo que paga el vivo."""
+    return (
+        f"El harness cobra {100 * costo_por_lado:.3f}% por lado y el vivo ~{100 * LIVE_COST_PER_SIDE:.3f}% "
+        f"(IBKR Pro Tiered + slippage de la cuenta, medido el {LIVE_COSTS_MEASURED_ON} sobre sus "
+        f"órdenes; tarea 468). Con la rotación de la estrategia (~26× el capital por año), en el marco "
+        f"de la cuenta (10 slots, 126 tickers, salida viva, tajada por día) la estrategia sin régimen "
+        f"da 8.78% de CAGR al 0.150% y 13.72% al costo del vivo, ~4.9pp por año, y un costo más alto "
+        f"que el vivo favorece al brazo que opera menos y al pasivo. Se corrige con "
+        f"`costs=live_cost_model()` y `announce(costo_por_lado=LIVE_COST_PER_SIDE)`"
+    )
+
+
 # Overlay de σ de cartera (tarea 94). `strategies.py:525` lo aplica a **todas** las
 # BUY nuevas. Es el que más muerde: **dispara todos los días** (medido en el log:
 # `σ=15.8% > target 12.0% … ×0.76`, y `σ=37.2% … ×0.32`).
@@ -187,6 +237,11 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # primera de su día). El vivo les da a todas la misma tajada. Con `tajada_del_dia=True` el
 # precio es **8,78% → 6,41% (−2,38 pp), Sharpe 0,55 → 0,47, caída 28,4% → 25,5% (−2,9 pp)**, y
 # la misma caída con caja constante rinde **+1,52 pp** más (`docs/tajada_t464_2026-11-24.md`).
+#
+# **Y el del costo vivo (tarea 468).** Lo de arriba es al 0,15% por lado de `CostModel()`. Con el
+# ~0,063% que paga la cuenta, el precio es **13,72% → 11,35% (−2,37 pp), Sharpe 0,79 → 0,77, caída
+# 29,5% → 21,4% (−8,1 pp)**, y el escalado rinde **+1,60 pp** más que la caja constante a la misma
+# caída: la conclusión de la 464 se da vuelta (`docs/costos_t468_2026-11-25.md`).
 # Lo de abajo queda como historia, con su marco.
 #
 # **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
@@ -202,8 +257,8 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 #   cumple** el criterio de la T20: sólo pasa el de drawdown (`docs/f025_validar_t121_2026-09-07.md`).
 #   **Con el stop duro prendido** (tarea 459): es el marco de la cuenta en slots y tickers, no
 #   en la política de salida.
-# Lo que coincide es el alivio de drawdown. El banner cita los cuatro, cada uno con su marco, y el
-# de la cuenta es el de la 464 (el de la 456 tenía el sizing secuencial).
+# Lo que coincide es el alivio de drawdown. El banner cita los cinco, cada uno con su marco, y el
+# de la cuenta es el de la 468 (la 464 tenía el costo del harness, y la 456 además el sizing secuencial).
 # Penalidad de volatilidad en la SELECCION (tarea 42). `compute_signal_probability`
 # le resta al score `risk_score x coef`. Se espeja aca —igual que el overlay y el
 # escalado— para que el harness de la T21 deje de duplicar el literal: lo tenia
@@ -2283,6 +2338,10 @@ class HarnessConfig:
     # (``simulate_portfolio(tajada_del_dia=True)``)? Default ``False``: es lo que corre todo lo
     # publicado, y un runner que no diga nada declara eso.
     tajada_del_dia: bool = False
+    # Tarea 468 — el costo por lado (comisión + slippage) con que corre el runner. El default es el
+    # de `CostModel()`, que es con el que corrió todo lo publicado, así que un runner que no diga
+    # nada declara lo que corre.
+    costo_por_lado: float = HARNESS_DEFAULT_COST_PER_SIDE
 
     # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
     # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
@@ -2438,8 +2497,8 @@ TAJADA_SECUENCIAL_DESC = (
     "agranda a la siguiente del mismo día. Con 10 lugares libres y ×0.25 el harness invierte el "
     "54.5% de la caja y el vivo el 25%, porque el vivo les da a todas las compras del scan la misma "
     "tajada. Con un lugar libre por día coinciden. En el marco de la cuenta (10 slots, 126 "
-    "tickers, salida viva, la 464) 193 de las 456 compras escaladas no son la primera de su día, y "
-    "el precio del escalado pasa de −1.46pp a −2.38pp de CAGR. Se corrige con "
+    "tickers, salida viva, al costo del harness, la 464) 193 de las 456 compras escaladas no son la "
+    "primera de su día, y el precio del escalado pasa de −1.46pp a −2.38pp de CAGR. Se corrige con "
     "`simulate_portfolio(tajada_del_dia=True)` y `announce(tajada_del_dia=True)`"
 )
 
@@ -2629,26 +2688,31 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)",
         )
     # Tarea 95 — muerde en la ventana del harness, y en vivo desde el 2026-11-20. El precio
-    # citado es el de la salida viva (459) y el sizing vivo (464); el conteo vivo no va en el texto.
+    # citado es el de la salida (459), el sizing (464) y el costo (468) vivos; el conteo vivo no va.
     if LIVE_REGIME_SCALE_ENABLED and not cfg.models_regime_scale:
         _add(
             "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
             f"risk-off): en vivo disparó por primera vez el 2026-11-20 (las órdenes escaladas "
             f"llevan «risk-off ×» en la razón, y se cuentan ahí), y el 15.96% de las ruedas de la "
-            f"ventana son risk-off. Con la config de la cuenta, su salida viva y su sizing (10 "
+            f"ventana son risk-off. Con la config de la cuenta, su salida, su sizing y su costo (10 "
             f"slots, 126 tickers, stop duro apagado, trailing 2.0×ATR, gates modelados, la misma "
-            f"tajada para todas las compras del día, la 464 del 2026-11-24, descriptiva) el factor "
-            f"vivo cuesta −2.38pp de CAGR y −0.08 de Sharpe por −2.9pp de maxDD, y la misma caída "
-            f"con caja constante rinde +1.52pp más. El −1.46pp/−5.5pp de la 456 (10 slots, 126 "
-            f"tickers) es con el sizing secuencial, que agranda cada compra escalada del día (otro "
-            f"marco); el −0.34pp/−4.8pp de la T121 (10 slots, 127 tickers) es con el stop duro "
-            f"prendido, la salida anterior al 2026-08-27 (otro marco); el +0.93pp/−4.5pp de la "
-            f"T115 es de 5 slots, 41 tickers (otro marco): ninguno de los tres describe a la cuenta",
+            f"tajada para todas las compras del día, ~0.063% por lado, la 468 del 2026-11-25, "
+            f"descriptiva) el factor vivo cuesta −2.37pp de CAGR y −0.02 de Sharpe por −8.1pp de "
+            f"maxDD, y rinde +1.60pp más que la caja constante a la misma caída. El −2.38pp/−2.9pp "
+            f"de la 464 (10 slots, 126 tickers) es al costo del harness, 0.15% por lado (otro marco); "
+            f"el −1.46pp/−5.5pp de la 456 (10 slots, 126 tickers) es con ese costo y el sizing "
+            f"secuencial, que agranda cada compra escalada del día (otro marco); el −0.34pp/−4.8pp "
+            f"de la T121 (10 slots, 127 tickers) es con el stop duro prendido, la salida anterior al "
+            f"2026-08-27 (otro marco); el +0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers (otro "
+            f"marco): ninguno de los cuatro describe a la cuenta",
         )
     # Tarea 464 — sólo existe si el runner escala: sin escalar, las dos fórmulas coinciden.
     if cfg.models_regime_scale and not cfg.tajada_del_dia and not cfg.per_trade:
         _add("tajada_secuencial", TAJADA_SECUENCIAL_DESC)
+    # Tarea 468 — incondicional mientras el runner cobre distinto del vivo (todo lo publicado).
+    if abs(cfg.costo_por_lado - LIVE_COST_PER_SIDE) > 1e-9:
+        _add("costos", costos_desc(cfg.costo_por_lado))
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
         _add("universe_screen", universe_screen_desc())
@@ -2796,6 +2860,7 @@ def announce(
     models_regime_scale: bool = False,
     models_earnings_blackout: bool = False,
     tajada_del_dia: bool = False,
+    costo_por_lado: float = HARNESS_DEFAULT_COST_PER_SIDE,
     entry_spacing: int | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
@@ -2811,6 +2876,7 @@ def announce(
         models_regime_scale=models_regime_scale,
         models_earnings_blackout=models_earnings_blackout,
         tajada_del_dia=tajada_del_dia,
+        costo_por_lado=costo_por_lado,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,

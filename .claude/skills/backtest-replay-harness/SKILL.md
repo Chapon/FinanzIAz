@@ -41,6 +41,12 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
 4. Correr sobre el backup + cache precargado.
 5. Escribir resultados en el doc, incluyendo el veredicto (ship / no-ship) y por qué.
 6. Tests offline del harness (ver `tests/` por convención de naming).
+7. **Medir como el vivo: costo y sizing (tareas 468 y 464).** `CostModel()` cobra 0,15% por lado, y el
+   vivo paga ~0,063% (IBKR Pro Tiered + slippage): para un brazo nuevo, `costs=live_cost_model()` y
+   `announce(costo_por_lado=LIVE_COST_PER_SIDE)`. Con la rotación de la estrategia, el costo del
+   harness le restaba ~4,9 pp por año, y dio vuelta una conclusión (régimen contra caja). Si el brazo
+   escala compras (régimen, overlay), `simulate_portfolio(tajada_del_dia=True)` y
+   `announce(tajada_del_dia=True)`. `CostModel()` queda sólo para reproducir lo publicado.
 
 ### Una corrida por `--cache-dir` — ya lo impone el código (T59)
 

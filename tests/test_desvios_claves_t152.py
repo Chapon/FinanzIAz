@@ -65,6 +65,8 @@ CLAVES_CONOCIDAS = frozenset(
         "regime_scale",
         # Tarea 464 — sólo con `models_regime_scale` y sin `tajada_del_dia`.
         "tajada_secuencial",
+        # Tarea 468 — el runner cobra distinto del vivo (todo lo que corre con `CostModel()`).
+        "costos",
         "universe_screen",
         "adv_cap",
         "second_opinion",
@@ -197,6 +199,8 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
         "dividendos",
         # Tarea 311 — INCONDICIONAL: el harness reinvierte la escindida; el motor, caja a mano.
         "spinoffs",
+        # Tarea 468 — con el default de `CostModel()` el harness cobra 0,15% por lado y el vivo ~0,063%.
+        "costos",
         "earnings_blackout",
         "reentry_gates",
     }

@@ -23,6 +23,12 @@ Este doc no propone ninguna variante de esas perillas.
 
 ## 2. La comparación que faltaba: la estrategia contra un pasivo del mismo riesgo
 
+> **Aviso del 2026-11-25 (tarea 468): esta tabla mezcla costos.** La estrategia (8,78%) sale de la T170,
+> al 0,15% por lado de `CostModel()`, y las mezclas pasivas usan el 0,064% de la cuenta viva. Con el
+> costo del vivo de los dos lados, la estrategia da **13,72% / 0,79 / 29,5%** y la conclusión de esta
+> sección no se sostiene como está escrita. Ver `docs/costos_t468_2026-11-25.md` y
+> `docs/compra_venta_rendimiento_2026-11-24.md`.
+
 Todos los experimentos de arriba comparan una variante **contra la estrategia viva**. Ninguno
 comparó la estrategia viva **contra no operar**. Sobre las fechas en que opera la estrategia
 (2017-09-08 → 2026-09-09, después de las 250 ruedas de calentamiento del cohorte 2016-09-12 →
