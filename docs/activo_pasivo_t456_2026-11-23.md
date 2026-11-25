@@ -10,6 +10,13 @@ Población: 126 tickers (huella verificada), 141.417 entradas `analyze BUY` PIT,
 calentamiento, y los dos brazos se miden sobre esas mismas 2.262 fechas. Sin red, sin tocar
 `finanzias.db`, **sin tocar ninguna perilla viva**.
 
+> **Re-lectura del 2026-11-24 (tarea 466): el veredicto no cambia.** El brazo `vivo` de abajo corrió
+> con el sizing secuencial de `simulate_portfolio`, en el que cada compra escalada del día agrandaba a
+> la siguiente (tarea 464). Con la misma tajada para todas, como el vivo, sale 6,41% / 0,47 / 25,5% en
+> vez de 7,32% / 0,52 / 22,9%. El gate da C1 +6,49 pp, C2 4/5, C3 [−1,69, +14,89] y C4 14,0% contra
+> 25,5%: **NO DECIDIBLE**. Ver `docs/relectura_456_tajada_t466_2026-11-24.md`. Los números de abajo
+> son los publicados el 2026-11-23.
+
 ---
 
 ## VEREDICTO: **NO DECIDIBLE** — fuera de muestra el pasivo rinde 6,4 puntos más por año, y el intervalo cruza el cero

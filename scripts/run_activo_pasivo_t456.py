@@ -328,6 +328,20 @@ def control_pasivo(fechas: list[str], precio: dict[str, float], capital: float) 
     return {"err_w1": err, "err_w0": plano, "OK": bool(err <= CONTROL_TOL and plano <= CONTROL_TOL)}
 
 
+def tags_de_corrida(run_tag: str, tajada_del_dia: bool) -> tuple[str, str]:
+    """Los tags del cache de los dos brazos: ``(vivo_sin_regimen, vivo)``.
+
+    Tarea 466. Sin la tajada por día son **los publicados**, así la 456 sigue reproduciendo
+    desde su cache. Con ella **tienen que cambiar**: si no, la re-lectura leería del cache los
+    brazos secuenciales y los publicaría como corregidos sin que nada lo acuse.
+    """
+    sufijo = "|tajada" if tajada_del_dia else ""
+    return (
+        f"t456|{VIVO_SIN_REGIMEN}|{run_tag}{sufijo}",
+        f"t456|{VIVO}|f{LIVE_REGIME_SCALE_FACTOR}|{run_tag}{sufijo}",
+    )
+
+
 def fraccion_escalada(res: PortfolioResult) -> float:
     """§5.4 — fracción de entradas con ``size_factor < 1`` (la lección de la T38)."""
     if not res.trades:
@@ -452,6 +466,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", default=None)
     p.add_argument("--allow-stale-artifacts", action="store_true")
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--tajada-del-dia",
+        action="store_true",
+        help="tarea 466: las compras escaladas del día reciben la misma tajada, como en vivo "
+        "(la re-lectura; sin la opción, el sizing secuencial con que se publicó la 456)",
+    )
     args = p.parse_args(argv)
     log = sys.stderr if args.json else sys.stdout
     cache = SimCache(Path(args.cache_dir) if args.cache_dir else None, None)
@@ -505,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         atr_stop_mult=NO_STOP,
         atr_trail_mult=LIVE_TRAIL_MULT,
         models_regime_scale=True,
+        tajada_del_dia=args.tajada_del_dia,
         file=log,
     )
     print(
@@ -513,16 +534,28 @@ def main(argv: list[str] | None = None) -> int:
         file=log,
     )
 
-    common = {**_common_kwargs(args), "so_params": _so_params(T219_BASELINE)}
+    common = {
+        **_common_kwargs(args),
+        "so_params": _so_params(T219_BASELINE),
+        "tajada_del_dia": args.tajada_del_dia,
+    }
+    print(
+        "Sizing: "
+        + (
+            "TAJADA POR DÍA (tarea 466, la re-lectura)"
+            if args.tajada_del_dia
+            else "secuencial (el publicado)"
+        ),
+        file=log,
+    )
     run_tag = f"{window}|n{len(bars_by)}|e{len(entries)}|mp{args.max_positions}|cap{args.cap_days}|${args.capital:.2f}"
     filtro = make_entry_filter(build_regime_series(spy_bars), mode="scale", factor=LIVE_REGIME_SCALE_FACTOR)
+    tag_sin, tag_vivo = tags_de_corrida(run_tag, args.tajada_del_dia)
     print(f"  corriendo {VIVO_SIN_REGIMEN}…", file=log, flush=True)
-    res_sin = cache.run(
-        f"t456|{VIVO_SIN_REGIMEN}|{run_tag}", lambda: simulate_portfolio(entries, bars_by, sigs_by, **common)
-    )
+    res_sin = cache.run(tag_sin, lambda: simulate_portfolio(entries, bars_by, sigs_by, **common))
     print(f"  corriendo {VIVO} (régimen ×{LIVE_REGIME_SCALE_FACTOR})…", file=log, flush=True)
     res_vivo = cache.run(
-        f"t456|{VIVO}|f{LIVE_REGIME_SCALE_FACTOR}|{run_tag}",
+        tag_vivo,
         lambda: simulate_portfolio(entries, bars_by, sigs_by, entry_filter=filtro, **common),
     )
 
