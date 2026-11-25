@@ -63,6 +63,9 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
 
 from analysis.harness_config import (
+    COSTO_HARNESS,
+    COSTO_VIVO,
+    COSTOS_DEL_RUNNER,
     LIVE_HARD_STOP_ENABLED,
     LIVE_MAX_POSITIONS,
     LIVE_STOP_MULT,
@@ -77,12 +80,13 @@ from analysis.harness_config import (
     announce_artifacts,
     announce_signal_store,
     artifact_window,
+    costo_del_runner,
     reproduction_check,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
 from analysis.risk_sizing import cagr
 from analysis.ruin_injection import ticker_years
-from analysis.scaleout_replay import CostModel, ScaleOutParams
+from analysis.scaleout_replay import ScaleOutParams
 from analysis.walkforward_power import paired_block_bootstrap, regime_for_date
 from scripts.precompute_pit_signals import parse_universe_file
 from scripts.run_rank_neutral_t39 import aligned_daily
@@ -474,6 +478,21 @@ def _report(summaries, wf, verdict, sanity, boot, grid, log=sys.stdout) -> None:
     print("=" * 78, file=log)
 
 
+# Tarea 469 — el `soff_t2.0` al costo del vivo: la 468 (`docs/costos_t468_2026-11-25.md` §2). Al
+# costo del vivo no hay otra ancla externa: las otras dos celdas de la T34 son lo que se mide.
+T468_VIVO_POLICY_CAGR = 0.1372
+
+
+def repro_targets_del_costo(costo: str) -> dict[str, float]:
+    """Las anclas de reproducción para ``costo``: las de la T34 al del harness, la de la 468 al
+    del vivo (tarea 469)."""
+    if costo == COSTO_VIVO:
+        return {POLICY_ARM: T468_VIVO_POLICY_CAGR}
+    if costo == COSTO_HARNESS:
+        return _repro_targets()
+    raise ValueError(f"costo desconocido: {costo!r}")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -490,6 +509,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-grid", action="store_true", help="saltea el descriptivo §7 (el gate no cambia)")
     p.add_argument("--allow-stale-artifacts", action="store_true")
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--costo",
+        choices=COSTOS_DEL_RUNNER,
+        default=COSTO_HARNESS,
+        help="tarea 469: el costo por lado; `harness` (default) es el publicado, `vivo` la re-lectura",
+    )
     args = p.parse_args(argv)
 
     log = sys.stderr if args.json else sys.stdout
@@ -514,6 +539,11 @@ def main(argv: list[str] | None = None) -> int:
         f"|mp{args.max_positions}|cap{args.cap_days}|cap${args.capital:.2f}"
         f"|{EVAL_MODE}|{FILL_MODE}|g{int(LIVE_GATES)}"
     )
+    # Tarea 469: con otro costo el tag TIENE que cambiar, o el cache devolvería los brazos del
+    # harness como si fueran la re-lectura (la lección de la 466). Sin la opción, el de siempre.
+    if args.costo != COSTO_HARNESS:
+        run_tag += f"|costo={args.costo}"
+    _cm = costo_del_runner(args.costo)
     try:
         announce_artifacts(bars_by, strict=not args.allow_stale_artifacts, file=log)
         announce_signal_store(
@@ -531,11 +561,12 @@ def main(argv: list[str] | None = None) -> int:
         eval_mode=EVAL_MODE,
         fill_mode=FILL_MODE,
         live_gates=LIVE_GATES,
+        costo_por_lado=_cm.commission + _cm.slippage,
         file=log,
     )
     print(
         f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
-        f"ticker-años: {ticker_years(bars_by):.0f}",
+        f"ticker-años: {ticker_years(bars_by):.0f} · costo {args.costo}",
         file=log,
     )
     print(
@@ -549,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
         initial_capital=args.capital,
         cap_days=args.cap_days,
         so_params=ScaleOutParams(),
-        costs=CostModel(),
+        costs=_cm,
         regime_of=regime_for_date,
         allow_reentry_while_open=False,
     )
@@ -576,7 +607,7 @@ def main(argv: list[str] | None = None) -> int:
     # 2. Reproducción (T48/T52): las mismas anclas del T37, con su población.
     pop = cfg.population(len(entries))
     repro: dict[str, dict] = {}
-    for n, esperado in _repro_targets().items():
+    for n, esperado in repro_targets_del_costo(args.costo).items():
         if n not in summaries:
             continue
         # Mismos argumentos que el T37, y el `measured_over` es la población del ANCLA

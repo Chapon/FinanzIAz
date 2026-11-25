@@ -35,6 +35,9 @@ if str(_HERE.parent) not in sys.path:
     sys.path.insert(0, str(_HERE.parent))
 
 from analysis.harness_config import (
+    COSTO_HARNESS,
+    COSTO_VIVO,
+    COSTOS_DEL_RUNNER,
     LIVE_MAX_POSITIONS,
     LIVE_REGIME_SCALE_FACTOR,
     LIVE_SIGNAL_SELL_BYPASS_SCORE,
@@ -47,10 +50,11 @@ from analysis.harness_config import (
     announce_artifacts,
     announce_signal_store,
     artifact_window,
+    costo_del_runner,
     universe_fingerprint,
 )
 from analysis.portfolio_sim import PortfolioResult, simulate_portfolio
-from analysis.scaleout_replay import AtrParams, CostModel, ScaleOutParams
+from analysis.scaleout_replay import AtrParams, ScaleOutParams
 from analysis.walkforward_power import paired_block_bootstrap, regime_for_date
 from scripts.precompute_pit_signals import parse_universe_file
 from scripts.run_stop_cal_replay_t26 import NO_STOP, summarise
@@ -102,6 +106,21 @@ T170_BASELINE_TAKEN = 2531
 REPRO_TOL_CAGR = 0.005  # 0,5 pp — holgura para redondeo del doc publicado
 REPRO_TOL_SHARPE = 0.05
 REPRO_TOL_TAKEN = 0.02  # 2% de los tomados
+
+# Tarea 469 — el mismo `soff_t2.0` al costo del vivo: la 468 (`docs/costos_t468_2026-11-25.md` §2,
+# sin régimen, que no depende de la tajada). Es la referencia externa de una re-lectura con
+# `--costo vivo`; los tomados no cambian con el costo.
+T468_VIVO_CAGR = 0.1372
+T468_VIVO_SHARPE = 0.79
+
+
+def ancla_del_costo(costo: str) -> tuple[float, float, int]:
+    """(CAGR, Sharpe, tomados) que el baseline tiene que reproducir con ``costo`` (tarea 469)."""
+    if costo == COSTO_VIVO:
+        return (T468_VIVO_CAGR, T468_VIVO_SHARPE, T170_BASELINE_TAKEN)
+    if costo == COSTO_HARNESS:
+        return (T170_BASELINE_CAGR, T170_BASELINE_SHARPE, T170_BASELINE_TAKEN)
+    raise ValueError(f"costo desconocido: {costo!r}")
 
 
 def _oraculo_salida(bars, i: int, ticker: str = "") -> bool:
@@ -174,7 +193,9 @@ def _common_kwargs(args) -> dict[str, Any]:
         # el código. `trail_mult` va SIEMPRE explícito: en `None` el trailing sigue al stop,
         # que es el acople que la T7 rompió a propósito.
         "atr_p": AtrParams(stop_mult=NO_STOP, trail_mult=LIVE_TRAIL_MULT, tp_mult=4.0),
-        "costs": CostModel(),
+        # Tarea 469: `--costo` elige el costo; sin la opción (todos los runners que importan
+        # esto), el del harness, así que nada publicado cambia.
+        "costs": costo_del_runner(getattr(args, "costo", COSTO_HARNESS)),
         "eval_mode": EVAL_MODE,
         "fill_mode": FILL_MODE,
         "live_gates": LIVE_GATES,
@@ -272,12 +293,14 @@ def evaluar(res: dict[str, dict], regimenes: dict[str, dict[str, list[float]]], 
     return veredicto
 
 
-def reproduce_t170(base: dict) -> dict:
+def reproduce_t170(base: dict, ancla: tuple[float, float, int] | None = None) -> dict:
     """¿El baseline reproduce el `soff_t2.0` que la T170 publicó? Ver el comentario de
-    ``T170_BASELINE_CAGR``: es una referencia **externa** a esta corrida."""
-    d_cagr = base["cagr"] - T170_BASELINE_CAGR
-    d_sharpe = base["sharpe"] - T170_BASELINE_SHARPE
-    d_taken = (base["n_taken"] - T170_BASELINE_TAKEN) / T170_BASELINE_TAKEN
+    ``T170_BASELINE_CAGR``: es una referencia **externa** a esta corrida. ``ancla`` (tarea 469)
+    es la de otro costo (``ancla_del_costo``); sin ella, la de la T170."""
+    cagr0, sharpe0, taken0 = ancla or (T170_BASELINE_CAGR, T170_BASELINE_SHARPE, T170_BASELINE_TAKEN)
+    d_cagr = base["cagr"] - cagr0
+    d_sharpe = base["sharpe"] - sharpe0
+    d_taken = (base["n_taken"] - taken0) / taken0
     ok = (
         abs(d_cagr) <= REPRO_TOL_CAGR
         and abs(d_sharpe) <= REPRO_TOL_SHARPE
@@ -285,20 +308,20 @@ def reproduce_t170(base: dict) -> dict:
     )
     return {
         "cagr": base["cagr"],
-        "cagr_t170": T170_BASELINE_CAGR,
+        "cagr_t170": cagr0,
         "d_cagr_pp": d_cagr * 100.0,
         "sharpe": base["sharpe"],
-        "sharpe_t170": T170_BASELINE_SHARPE,
+        "sharpe_t170": sharpe0,
         "d_sharpe": d_sharpe,
         "n_taken": base["n_taken"],
-        "n_taken_t170": T170_BASELINE_TAKEN,
+        "n_taken_t170": taken0,
         "d_taken_pct": d_taken * 100.0,
         "OK": bool(ok),
     }
 
 
-def evaluar_sanity(res: dict[str, dict]) -> dict:
-    """§5. Si alguno falla ⇒ INVÁLIDA, sin veredicto."""
+def evaluar_sanity(res: dict[str, dict], ancla: tuple[float, float, int] | None = None) -> dict:
+    """§5. Si alguno falla ⇒ INVÁLIDA, sin veredicto. ``ancla``: la de ``reproduce_t170``."""
     o, a, base = res.get(ORACULO), res.get(AZAR), res[BASELINE]
     d_cagr = (o["cagr"] - a["cagr"]) if (o and a) else 0.0
     oraculo_ok = d_cagr >= SANITY_ORACULO_VS_AZAR_CAGR
@@ -309,7 +332,7 @@ def evaluar_sanity(res: dict[str, dict]) -> dict:
     curva = [(b, (res[b]["cagr"] - base["cagr"]) * 100.0) for b in escala if b in res]
     monotona = all(curva[k][1] <= curva[k + 1][1] + 1e-9 for k in range(len(curva) - 1))
     contab = all(v.get("accounting_ok", False) for v in res.values())
-    repro = reproduce_t170(base)
+    repro = reproduce_t170(base, ancla)
     return {
         "repro_t170": repro,
         "oraculo_vs_azar_cagr_pp": d_cagr * 100.0,
@@ -404,6 +427,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resamples", type=int, default=BOOT_RESAMPLES)
     p.add_argument("--allow-stale-artifacts", action="store_true")
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--costo",
+        choices=COSTOS_DEL_RUNNER,
+        default=COSTO_HARNESS,
+        help="tarea 469: el costo por lado; `harness` (default) es el publicado, `vivo` la re-lectura",
+    )
     args = p.parse_args(argv)
     log = sys.stderr if args.json else sys.stdout
 
@@ -456,6 +485,7 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     window = artifact_window(bars_by)
+    _cm = costo_del_runner(args.costo)
     announce(
         args.max_positions,
         args.universe,
@@ -464,11 +494,12 @@ def main(argv: list[str] | None = None) -> int:
         eval_mode=EVAL_MODE,
         fill_mode=FILL_MODE,
         live_gates=LIVE_GATES,
+        costo_por_lado=_cm.commission + _cm.slippage,
         file=log,
     )
     print(
         f"Tickers: {len(bars_by)} · entradas analyze BUY: {len(entries)} · "
-        f"factor régimen vivo: {LIVE_REGIME_SCALE_FACTOR}",
+        f"factor régimen vivo: {LIVE_REGIME_SCALE_FACTOR} · costo {args.costo}",
         file=log,
     )
 
@@ -506,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception:
                 boot[b] = None
 
-    sanity = evaluar_sanity(res)
+    sanity = evaluar_sanity(res, ancla_del_costo(args.costo))
     veredicto = evaluar(res, deltas_reg, boot)
     reporte(res, veredicto, sanity, log=log)
 
@@ -523,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
                 "sanity": sanity,
                 "veredicto": veredicto,
                 "keep_prob_azar": keep,
+                "costo": args.costo,
             },
             sys.stdout,
             indent=2,

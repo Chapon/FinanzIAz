@@ -194,6 +194,25 @@ def live_cost_model():
     return CostModel(commission=LIVE_COMMISSION_PCT, slippage=LIVE_SLIPPAGE_PCT)
 
 
+# Tarea 469 — los nombres de `--costo` de los runners que se releen con el costo del vivo.
+COSTO_HARNESS = "harness"
+COSTO_VIVO = "vivo"
+COSTOS_DEL_RUNNER = (COSTO_HARNESS, COSTO_VIVO)
+
+
+def costo_del_runner(nombre: str):
+    """Tarea 469 — el ``CostModel`` de un runner por nombre: ``"harness"`` ⇒ ``CostModel()``, el de
+    todo lo publicado; ``"vivo"`` ⇒ ``live_cost_model()``. Un nombre desconocido es un error: un
+    typo que cayera al del harness publicaría una re-lectura que no lo es."""
+    if nombre == COSTO_VIVO:
+        return live_cost_model()
+    if nombre == COSTO_HARNESS:
+        from analysis.scaleout_replay import CostModel
+
+        return CostModel()
+    raise ValueError(f"costo desconocido: {nombre!r} (esperado uno de {COSTOS_DEL_RUNNER})")
+
+
 def costos_desc(costo_por_lado: float) -> str:
     """El texto del desvío ``costos``: cuánto cobra el runner contra lo que paga el vivo."""
     return (
