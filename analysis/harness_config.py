@@ -2758,14 +2758,21 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             "disputa y entra y sale como si nada. Frecuencia NO medida: sólo muerde con una "
             "cotización corrupta en vivo (casos del tipo KLAC/AVB)",
         )
-    # Tarea 96 — no se puede modelar con los datos que hay, y por eso se declara.
+    # Tarea 96 lo declaró «no modelable»: no había fechas de balance a 10 años. Era falso (tarea
+    # 458): Yahoo las tiene desde 2014, y desde la 458 se modela con `analysis.earnings_sim`.
     if LIVE_EARNINGS_BLACKOUT_DAYS > 0 and not cfg.models_earnings_blackout:
         _add(
             "earnings_blackout",
             f"NO se modela el blackout de earnings (Gate 6, ±{LIVE_EARNINGS_BLACKOUT_DAYS}d, "
             f"bloquea BUY): el harness entra en trades que el engine habría frenado. El "
-            f"15.8% de los round-trips reales son near-earnings. NO es modelable hoy — no "
-            f"hay fechas de earnings point-in-time a 10 años",
+            f"15.8% de los round-trips reales son near-earnings (n=38, 2026-06-25). La 458 lo "
+            f"modeló con la config de la cuenta, su salida, su sizing y su costo, sin régimen (10 "
+            f"slots, 126 tickers, ~0.063% por lado, 2026-11-25): suprime el 5.65% de las entradas, "
+            f"cuesta −0.58pp de CAGR sobre la muestra completa y −0.61pp fuera de muestra, NO "
+            f"distinguible del ruido; con el régimen y el overlay de la cuenta (10 slots, 126 "
+            f"tickers) cuesta −1.14pp fuera de muestra, tampoco distinguible. Se modela con "
+            f"`entry_filter=filtro_de_balances(cargar_fechas()[0])` (`analysis.earnings_sim`) y "
+            f"`announce(models_earnings_blackout=True)`",
         )
     # Tarea 220 — INCONDICIONAL: no depende de `cfg` ni de ningún flag. Desde la 222 los
     # dos lados cobran: el harness REINVIERTE (las barras vienen ajustadas) y el motor

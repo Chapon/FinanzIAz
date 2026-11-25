@@ -29,7 +29,7 @@ Flags definidos en `config/settings_manager.py` (cada uno es un `SettingSpec(tip
 | `paper_whipsaw_min_loss_pct` | `0.0` | 5 | Solo bloquear si la pérdida fue peor que −X%. 0=cualquier pérdida. |
 | `paper_churn_max_cycles` | `3` | 5b | Bloquea re-BUY si ya cerró ≥N ciclos en la ventana, sin importar P/L. (T6.5) |
 | `paper_churn_lookback_days` | `10` | 5b | Ventana (días corridos) para contar ciclos del anti-churn. |
-| `earnings_blackout_days` | `2` | 6 | Bloquea BUYs cerca de earnings (±N días). |
+| `earnings_blackout_days` | `2` | 6 | Bloquea BUYs cerca de earnings (±N días). **Backtest de la tarea 458 (2026-11-25): NO MOVER.** Con la config, la salida, el sizing y el costo de la cuenta, sin régimen, el bloqueo suprime el 5,65% de las entradas y cuesta 0,58 pp de CAGR sobre la muestra completa y 0,61 pp fuera de muestra (IC95% de sacarlo [−4,41, +5,13] pp): no alcanza el +1 pp ni los cuatro folds de la T170 para recomendar sacarlo. Con el régimen y el overlay de la cuenta, 1,14 pp fuera de muestra, también dentro del ruido (`docs/blackout_t458_2026-11-25.md`). |
 | `earnings_blackout_block_sells` | `False` | 6 | Si además bloquea SELLs de señal en blackout. |
 
 ## Liquidez (ADV cap, T10)

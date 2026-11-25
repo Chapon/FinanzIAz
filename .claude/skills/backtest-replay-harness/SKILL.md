@@ -51,6 +51,10 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
    OverlayDeVolatilidad(bars_by), tajada_del_dia=True)` (`analysis/overlay_sim.py`) y
    `announce(models_vol_overlay=True)`. Para la pregunta de un brazo nuevo, el marco de la cuenta lo
    lleva prendido; su backtest no lo distingue del ruido (`docs/vol_overlay_t457_2026-11-25.md`).
+9. **El Gate 6 (blackout de earnings) se puede modelar (tarea 458):** `entry_filter=
+   filtro_de_balances(cargar_fechas()[0])` (`analysis/earnings_sim.py`, fechas de Yahoo en
+   `data/earnings_dates/`), compuesto con el del régimen por `componer`, y
+   `announce(models_earnings_blackout=True)`. Su backtest dio NO MOVER (`docs/blackout_t458_2026-11-25.md`).
 
 ### Una corrida por `--cache-dir` — ya lo impone el código (T59)
 

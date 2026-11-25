@@ -103,9 +103,11 @@ def test_apagar_la_perilla_viva_saca_el_desvio(monkeypatch):
     assert [dv for dv in deviations_keyed(_cfg()) if dv.clave == "vol_overlay"] == []
 
 
-def test_el_de_earnings_dice_que_NO_es_modelable():
-    """El caveat que cambia la remediación: no hay fechas de earnings PIT a 10
-    años, así que el cierre honesto es declararlo, no modelarlo. Si eso no está
-    escrito, alguien va a abrir una tarea para modelar algo imposible."""
+def test_el_de_earnings_dice_como_se_modela():
+    """Tarea 458 — este test fijaba *«NO es modelable hoy — no hay fechas de earnings
+    point-in-time a 10 años»*, y era falso: Yahoo las tiene desde 2014. Ahora el texto
+    tiene que decir cómo se modela y cuánto cuesta, y no volver a decir lo contrario."""
     dev = next(dv.texto for dv in deviations_keyed(_cfg()) if dv.clave == "earnings_blackout")
-    assert "NO es modelable hoy" in dev and "point-in-time" in dev
+    assert "NO es modelable" not in dev
+    assert "filtro_de_balances" in dev and "models_earnings_blackout=True" in dev
+    assert "La 458" in dev
