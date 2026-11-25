@@ -13,9 +13,11 @@ a mano se vence, así que el texto da el hecho que no se vence (la primera vez) 
 
 Lo que fija este archivo:
 
-1. Los números del tramo de la 456 **son los de su veredicto**: se recalculan de la tabla §1 de
-   ``docs/activo_pasivo_t456_2026-11-23.md``, no se comparan contra otro literal.
-2. El −0.34 pp de la T121 sólo aparece en un tramo que dice ``otro marco``.
+1. Los números del tramo vigente **son los de su medición**: se recalculan de la tabla §1 de
+   ``docs/tajada_t464_2026-11-24.md``, no se comparan contra otro literal. **Era la 456 hasta la
+   tarea 464**, que encontró que la 456 dimensionaba en secuencial: cada compra escalada del día
+   agrandaba a la siguiente. Con el sizing del vivo el precio es −2,38 pp por −2,9 pp de caída.
+2. El −0.34 pp de la T121 y el −1.46 pp de la 456 sólo aparecen en tramos que dicen ``otro marco``.
 3. El texto no lleva un conteo ``N de M BUY``.
 4. La marca que el texto dice que se cuenta es la que el motor escribe en la razón.
 """
@@ -38,7 +40,9 @@ from config.settings_manager import settings
 from paper_trading.strategies import generate_trades_analyze_single
 from tests.test_regime_scale import _SPY_OFF, _account, _patch_analyze, _series
 
-_VEREDICTO_456 = Path(__file__).resolve().parent.parent / "docs" / "activo_pasivo_t456_2026-11-23.md"
+_DOCS = Path(__file__).resolve().parent.parent / "docs"
+_VEREDICTO_456 = _DOCS / "activo_pasivo_t456_2026-11-23.md"
+_MEDICION_464 = _DOCS / "tajada_t464_2026-11-24.md"
 _TRAMOS = re.compile(r";\s|\.\s")
 
 
@@ -49,44 +53,72 @@ def _texto() -> str:
 
 
 def _fila(tabla: str, nombre: str) -> tuple[float, float, float]:
-    """(CAGR %, Sharpe, caída %) de la fila del brazo en la tabla §1 del veredicto."""
+    """(CAGR %, Sharpe, caída %) de la fila del brazo en una tabla de brazos."""
     for linea in tabla.splitlines():
         celdas = [c.strip().replace("*", "").replace("`", "") for c in linea.strip("|").split("|")]
         if len(celdas) == 4 and celdas[0].split(" ")[0] == nombre:
             cagr, sharpe, caida = (float(c.rstrip("%").replace(",", ".")) for c in celdas[1:])
             return cagr, sharpe, caida
-    raise AssertionError(f"la tabla §1 del veredicto de la 456 no tiene la fila {nombre!r}")
+    raise AssertionError(f"la tabla no tiene la fila {nombre!r}")
 
 
-def _tabla_456() -> str:
-    doc = _VEREDICTO_456.read_text(encoding="utf-8")
-    inicio = doc.index("## 1. La muestra completa")
-    return doc[inicio : doc.index("\n## ", inicio + 1)]
+def _seccion(doc: Path, titulo: str) -> str:
+    texto = doc.read_text(encoding="utf-8")
+    inicio = texto.index(titulo)
+    return texto[inicio : texto.index("\n## ", inicio + 1)]
+
+
+def _tabla_464() -> str:
+    return _seccion(_MEDICION_464, "## 1. El precio con la tajada por día")
 
 
 def _num(patron: str, tramo: str) -> float:
     m = re.search(patron, tramo)
-    assert m, f"el tramo de la 456 no tiene {patron!r}: {tramo}"
+    assert m, f"el tramo no tiene {patron!r}: {tramo}"
     return float(m.group(1).replace("−", "-"))
 
 
-def test_el_precio_citado_es_el_del_veredicto_de_la_456():
-    """Mutación: el texto viejo (T121 como si fuera el vivo) no tiene tramo de la 456 → rojo."""
-    tramos = [t for t in _TRAMOS.split(_texto()) if "la 456" in t]
-    assert len(tramos) == 1, "el desvío tiene que citar el precio de la 456 en un solo tramo"
+def test_el_precio_citado_es_el_de_la_medicion_vigente_la_464():
+    """Mutaciones: el texto de la 459 (la 456 como si fuera el vivo) y el de antes (la T121) no
+    tienen tramo de la 464 → rojo. Los números se recalculan de la tabla, no de otro literal."""
+    tramos = [t for t in _TRAMOS.split(_texto()) if "la 464" in t]
+    assert len(tramos) == 1, "el desvío tiene que citar el precio de la 464 en un solo tramo"
     (tramo,) = tramos
-    con, sharpe_con, caida_con = _fila(_tabla_456(), "vivo")
-    sin, sharpe_sin, caida_sin = _fila(_tabla_456(), "vivo_sin_regimen")
-    assert _num(r"([+−-]?\d+\.\d+)pp de CAGR", tramo) == pytest.approx(con - sin, abs=0.005)
-    assert _num(r"([+−-]?\d+\.\d+) de Sharpe", tramo) == pytest.approx(sharpe_con - sharpe_sin, abs=0.005)
-    assert _num(r"([+−-]?\d+\.\d+)pp de maxDD", tramo) == pytest.approx(caida_con - caida_sin, abs=0.05)
+    con, sharpe_con, caida_con = _fila(_tabla_464(), "vivo")
+    sin, sharpe_sin, caida_sin = _fila(_tabla_464(), "vivo_sin_regimen")
+    # Cada celda de la tabla está redondeada: la resta de dos redondeos puede correrse una unidad del
+    # último dígito (6,41 − 8,78 = −2,37 y el Δ exacto da −2,38), así que la tolerancia es una unidad.
+    assert _num(r"([+−-]?\d+\.\d+)pp de CAGR", tramo) == pytest.approx(con - sin, abs=0.0101)
+    assert _num(r"([+−-]?\d+\.\d+) de Sharpe", tramo) == pytest.approx(sharpe_con - sharpe_sin, abs=0.0101)
+    assert _num(r"([+−-]?\d+\.\d+)pp de maxDD", tramo) == pytest.approx(caida_con - caida_sin, abs=0.101)
     assert "stop duro apagado" in tramo and f"{LIVE_MAX_POSITIONS} slots" in tramo
+    assert "la misma tajada" in tramo, "el marco vivo incluye el sizing (tarea 464)"
 
 
-def test_la_tabla_del_veredicto_es_la_que_se_cree():
-    """Contraprueba del parser: si leyera otra fila, el test de arriba compararía contra basura."""
-    assert _fila(_tabla_456(), "vivo") == (7.32, 0.52, 22.9)
-    assert _fila(_tabla_456(), "vivo_sin_regimen") == (8.78, 0.55, 28.4)
+def test_la_caja_equivalente_citada_es_la_de_la_464():
+    tramo = next(t for t in _TRAMOS.split(_texto()) if "la 464" in t)
+    citado = _num(r"rinde ([+−-]?\d+\.\d+)pp más", tramo)
+    fila = next(ln for ln in _seccion(_MEDICION_464, "## 3.").splitlines() if "(tajada por día)" in ln)
+    assert f"{citado:+.2f}".replace(".", ",") + " pp" in fila.replace("*", ""), (citado, fila)
+
+
+def test_las_tablas_son_las_que_se_creen():
+    """Contraprueba del parser: si leyera otra fila, los tests de arriba compararían contra basura."""
+    assert _fila(_tabla_464(), "vivo") == (6.41, 0.47, 25.5)
+    assert _fila(_tabla_464(), "vivo_sin_regimen") == (8.78, 0.55, 28.4)
+    tabla_456 = _seccion(_VEREDICTO_456, "## 1. La muestra completa")
+    assert _fila(tabla_456, "vivo") == (7.32, 0.52, 22.9)
+
+
+def test_el_precio_de_la_456_se_declara_de_otro_marco():
+    """El −1.46 pp de la 456 tiene los slots, los tickers y la salida de la cuenta, y el sizing
+    secuencial del harness: es otro marco, y el «otro marco» tiene que ser el suyo."""
+    tramos = [t for t in _TRAMOS.split(_texto()) if "−1.46pp" in t]
+    assert tramos, "el desvío dejó de citar a la 456; si se saca a propósito, este test se va"
+    for tramo in tramos:
+        cita = tramo[tramo.index("−1.46pp") :]
+        assert "otro marco" in cita and "secuencial" in cita, tramo
+        assert "T121" not in cita[: cita.index("otro marco")], f"el «otro marco» es de otra cita: {tramo}"
 
 
 def test_el_precio_de_la_T121_se_declara_de_otro_marco():

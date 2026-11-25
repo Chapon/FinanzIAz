@@ -180,6 +180,13 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 # modelados) la 456 midió, descriptivo, **8,78% → 7,32% de CAGR (−1,46 pp), Sharpe 0,55 →
 # 0,52, caída 28,4% → 22,9% (−5,5 pp)** (`docs/activo_pasivo_t456_2026-11-23.md` §1):
 # entre cuatro y cinco veces los 0,29–0,34 pp con que se declaró la preferencia de la 124.
+#
+# **Y también el del sizing vivo (tarea 464).** La 456 dimensionó en secuencial: cada compra
+# recibe `cash / free_slots` sobre la caja que dejó la anterior, así que lo que una compra
+# escalada no gasta agranda a la siguiente del mismo día (193 de las 456 escaladas no eran la
+# primera de su día). El vivo les da a todas la misma tajada. Con `tajada_del_dia=True` el
+# precio es **8,78% → 6,41% (−2,38 pp), Sharpe 0,55 → 0,47, caída 28,4% → 25,5% (−2,9 pp)**, y
+# la misma caída con caja constante rinde **+1,52 pp** más (`docs/tajada_t464_2026-11-24.md`).
 # Lo de abajo queda como historia, con su marco.
 #
 # **El factor vivo bajó de 0.50 a 0.25 el 2026-09-07 (tarea 115, decisión de
@@ -195,8 +202,8 @@ LIVE_VOL_TARGET_ANNUAL = 0.12
 #   cumple** el criterio de la T20: sólo pasa el de drawdown (`docs/f025_validar_t121_2026-09-07.md`).
 #   **Con el stop duro prendido** (tarea 459): es el marco de la cuenta en slots y tickers, no
 #   en la política de salida.
-# Lo que coincide es el alivio de drawdown. El banner cita los tres, cada uno con su marco, y el
-# de la cuenta es el de la 456.
+# Lo que coincide es el alivio de drawdown. El banner cita los cuatro, cada uno con su marco, y el
+# de la cuenta es el de la 464 (el de la 456 tenía el sizing secuencial).
 # Penalidad de volatilidad en la SELECCION (tarea 42). `compute_signal_probability`
 # le resta al score `risk_score x coef`. Se espeja aca —igual que el overlay y el
 # escalado— para que el harness de la T21 deje de duplicar el literal: lo tenia
@@ -2272,6 +2279,10 @@ class HarnessConfig:
     # Tarea 131 — mismo criterio y mismo default: el screen E1b dropea candidatos de
     # BUY en vivo desde el 2026-09-07 y ningún runner lo modela.
     models_universe_screen: bool = False
+    # Tarea 464 — ¿las compras escaladas del mismo día reciben la misma tajada, como en vivo
+    # (``simulate_portfolio(tajada_del_dia=True)``)? Default ``False``: es lo que corre todo lo
+    # publicado, y un runner que no diga nada declara eso.
+    tajada_del_dia: bool = False
 
     # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
     # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
@@ -2416,6 +2427,20 @@ SPINOFFS_DESC = (
     "operaron las dos cuentas desde marzo (HON 2026-06-29, comprado el mismo día del ex-date), así "
     "que sobre los veredictos el efecto es despreciable; lo que cambia es la lectura de una posición "
     "puntual que atraviese un evento"
+)
+
+
+# Tarea 464 — el sizing del harness era secuencial y el del vivo es por scan. Sólo se declara si
+# el runner escala (``models_regime_scale``): sin factor < 1, las dos fórmulas coinciden.
+TAJADA_SECUENCIAL_DESC = (
+    "El escalado se aplica candidato por candidato (tarea 464): cada compra recibe `cash / "
+    "free_slots` sobre la caja que dejó la anterior, así que lo que una compra escalada no gasta "
+    "agranda a la siguiente del mismo día. Con 10 lugares libres y ×0.25 el harness invierte el "
+    "54.5% de la caja y el vivo el 25%, porque el vivo les da a todas las compras del scan la misma "
+    "tajada. Con un lugar libre por día coinciden. En el marco de la cuenta (10 slots, 126 "
+    "tickers, salida viva, la 464) 193 de las 456 compras escaladas no son la primera de su día, y "
+    "el precio del escalado pasa de −1.46pp a −2.38pp de CAGR. Se corrige con "
+    "`simulate_portfolio(tajada_del_dia=True)` y `announce(tajada_del_dia=True)`"
 )
 
 
@@ -2604,21 +2629,26 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)",
         )
     # Tarea 95 — muerde en la ventana del harness, y en vivo desde el 2026-11-20. El precio
-    # citado es el de la política de salida viva (tarea 459); el conteo vivo no va en el texto.
+    # citado es el de la salida viva (459) y el sizing vivo (464); el conteo vivo no va en el texto.
     if LIVE_REGIME_SCALE_ENABLED and not cfg.models_regime_scale:
         _add(
             "regime_scale",
             f"NO se modela el escalado por régimen (×{LIVE_REGIME_SCALE_FACTOR:.2f} en "
             f"risk-off): en vivo disparó por primera vez el 2026-11-20 (las órdenes escaladas "
             f"llevan «risk-off ×» en la razón, y se cuentan ahí), y el 15.96% de las ruedas de la "
-            f"ventana son risk-off. Con la config de la cuenta y su salida viva (10 slots, 126 "
-            f"tickers, stop duro apagado, trailing 2.0×ATR, gates modelados, la "
-            f"456 del 2026-11-23, descriptiva) el factor vivo cuesta −1.46pp de CAGR y −0.03 de "
-            f"Sharpe por −5.5pp de maxDD: sólo alivia el drawdown. El −0.34pp/−4.8pp de la T121 "
-            f"(10 slots, 127 tickers) es con el stop duro prendido, la salida anterior al "
-            f"2026-08-27 (otro marco); el +0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers "
-            f"(otro marco): ninguno de los dos describe a la cuenta",
+            f"ventana son risk-off. Con la config de la cuenta, su salida viva y su sizing (10 "
+            f"slots, 126 tickers, stop duro apagado, trailing 2.0×ATR, gates modelados, la misma "
+            f"tajada para todas las compras del día, la 464 del 2026-11-24, descriptiva) el factor "
+            f"vivo cuesta −2.38pp de CAGR y −0.08 de Sharpe por −2.9pp de maxDD, y la misma caída "
+            f"con caja constante rinde +1.52pp más. El −1.46pp/−5.5pp de la 456 (10 slots, 126 "
+            f"tickers) es con el sizing secuencial, que agranda cada compra escalada del día (otro "
+            f"marco); el −0.34pp/−4.8pp de la T121 (10 slots, 127 tickers) es con el stop duro "
+            f"prendido, la salida anterior al 2026-08-27 (otro marco); el +0.93pp/−4.5pp de la "
+            f"T115 es de 5 slots, 41 tickers (otro marco): ninguno de los tres describe a la cuenta",
         )
+    # Tarea 464 — sólo existe si el runner escala: sin escalar, las dos fórmulas coinciden.
+    if cfg.models_regime_scale and not cfg.tajada_del_dia and not cfg.per_trade:
+        _add("tajada_secuencial", TAJADA_SECUENCIAL_DESC)
     # Tarea 131 — el screen E1b dropea candidatos de BUY en vivo desde el 2026-09-07.
     if LIVE_UNIVERSE_SCREEN_ENABLED and not cfg.models_universe_screen:
         _add("universe_screen", universe_screen_desc())
@@ -2765,6 +2795,7 @@ def announce(
     models_vol_overlay: bool = False,
     models_regime_scale: bool = False,
     models_earnings_blackout: bool = False,
+    tajada_del_dia: bool = False,
     entry_spacing: int | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
@@ -2779,6 +2810,7 @@ def announce(
         models_vol_overlay=models_vol_overlay,
         models_regime_scale=models_regime_scale,
         models_earnings_blackout=models_earnings_blackout,
+        tajada_del_dia=tajada_del_dia,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,

@@ -87,10 +87,12 @@ def test_un_marco_ajeno_DECLARADO_pasa():
 
 
 def test_regime_scale_cita_el_numero_del_marco_de_la_cuenta():
-    """El valor de la config de la cuenta, con su salida viva, es el de la 456 (tarea 459).
+    """El valor de la config de la cuenta, con su salida y su sizing vivos, es el de la 464.
 
-    Era el de la T121 con gates, que tiene los slots de la cuenta pero el stop duro prendido.
-    El cruce contra la tabla del veredicto está en ``test_regimen_precio_t459.py``.
+    Era el de la T121 con gates (los slots de la cuenta, el stop duro prendido) y después el de la
+    456 (la salida viva, el sizing secuencial, tarea 459). El cruce contra la tabla de la medición
+    está en ``test_regimen_precio_t459.py``.
     """
     t = _textos()["regime_scale"]
-    assert "−1.46pp" in t and "10 slots, 126 tickers" in t and "stop duro apagado" in t
+    assert "−2.38pp" in t and "10 slots, 126 tickers" in t and "stop duro apagado" in t
+    assert "la misma tajada" in t

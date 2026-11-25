@@ -63,6 +63,8 @@ CLAVES_CONOCIDAS = frozenset(
         "atr_trail",
         "vol_overlay",
         "regime_scale",
+        # Tarea 464 — sólo con `models_regime_scale` y sin `tajada_del_dia`.
+        "tajada_secuencial",
         "universe_screen",
         "adv_cap",
         "second_opinion",

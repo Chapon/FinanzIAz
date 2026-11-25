@@ -273,7 +273,10 @@ SCHEMA: dict[str, SettingSpec] = {
     # defecto, con el stop duro **prendido**, la salida anterior al 2026-08-27. Con la
     # salida viva (stop duro apagado, trailing 2.0×ATR) la 456 midió, descriptivo,
     # **−1,46 pp de CAGR** (8,78% → 7,32%) por **−5,5 pp** de caída (28,4% → 22,9%):
-    # cinco veces el precio declarado. Confirmar o cambiar la preferencia es de Chapa.
+    # cinco veces el precio declarado. **Y la 456 dimensionaba en secuencial (tarea 464):**
+    # cada compra escalada del día agrandaba a la siguiente. Con la misma tajada para todas,
+    # como el vivo, cuesta **−2,38 pp** (8,78% → 6,41%) por **−2,9 pp** de caída, y la misma
+    # caída con caja constante rinde **+1,52 pp** más. Confirmar o cambiar es de Chapa.
     #
     # **Y no se puede validar out-of-sample con la muestra que hay, medido:** el
     # **99,2%** del beneficio está antes de 2022, porque las dos únicas caídas rápidas
@@ -375,9 +378,10 @@ SCHEMA: dict[str, SettingSpec] = {
             "2026-09-07 (task 115): it is the arm the harness selected in all three "
             "runs and the one that keeps the drawdown relief (−4.5pp of maxDD vs "
             "−2.2pp at 0.50). NOT re-validated on the live frame — see task 121. "
-            "Under the live exit policy (hard stop off) it costs 1.46pp of CAGR for "
-            "5.5pp less drawdown (task 456, descriptive); the 0.29pp that task 124 "
-            "declared was measured with the hard stop on (task 459). "
+            "Under the live exit policy (hard stop off) and the live per-scan sizing "
+            "it costs 2.38pp of CAGR for 2.9pp less drawdown, and constant cash buys "
+            "the same drawdown 1.52pp cheaper (task 464, descriptive); the 0.29pp that "
+            "task 124 declared was measured with the hard stop on (task 459). "
             "0.50 was the previous value and no longer meets the T20 kill-criteria. "
             "1.0 = no scaling. 0.0 = suppress BUYs entirely in risk-off — NOT "
             "recommended: R2a measured that binary suppression destroys "

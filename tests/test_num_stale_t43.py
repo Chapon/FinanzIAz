@@ -36,8 +36,11 @@ _MARCA = "MAGNITUD CADUCADA"
 
 # {patrón de la cifra supersedida: por qué caducó}. Agregar una es una línea, y el
 # motivo va escrito porque una entrada sin motivo no se puede auditar después.
+# El lookbehind (tarea 467): sin él, «2,38 pp de CAGR» o «1.8 pp de CAGR» matcheaban, porque el
+# patrón agarraba el 8 final de cualquier número. Lo destapó la 464 el 2026-11-24, con cinco
+# líneas del backlog acusadas por citar −2,38 pp.
 _CIFRAS_SUPERSEDIDAS = {
-    r"~?8 (?:pp|puntos) de CAGR": (
+    r"(?<![\d.,])~?8 (?:pp|puntos) de CAGR": (
         "el ~8 pp de la T9 §13.6: medido a 5 slots/41 tickers/fill legacy/sin gates y "
         "contra un alfabético que no era neutro. La T39 lo re-midió en +1.80 pp "
         "no significativo (tarea 43)."
@@ -117,3 +120,13 @@ def test_la_nota_conserva_lo_que_NO_caduco():
     seccion = texto[i : texto.index("### 13.7")]
     assert "mecanismo" in seccion and "1.21 pp" in seccion
     assert "no tiene alpha" in seccion, "la distinción con «alpha negativo» también se sostiene"
+
+
+def test_el_patron_no_agarra_el_8_final_de_otro_numero():
+    """Tarea 467 — el falso positivo que lo destapó, y la otra dirección: la cifra vieja sigue
+    cayendo. Mutación: sacar el lookbehind pone en rojo la primera mitad."""
+    (patron,) = _CIFRAS_SUPERSEDIDAS
+    for ajeno in ("cuesta −2,38 pp de CAGR", "+1.8 pp de CAGR", "el 18 pp de CAGR", "−0,08 pp de CAGR"):
+        assert not re.search(patron, ajeno), ajeno
+    for viejo in ("~8 pp de CAGR", "vale 8 pp de CAGR", "unos 8 puntos de CAGR", "(~8 pp de CAGR)"):
+        assert re.search(patron, viejo), viejo

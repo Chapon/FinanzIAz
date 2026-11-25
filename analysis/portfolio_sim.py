@@ -197,6 +197,7 @@ def simulate_portfolio(
     eval_mode: str = "close",
     fill_mode: str = "decision",
     live_gates: bool = False,
+    tajada_del_dia: bool = False,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -266,6 +267,17 @@ def simulate_portfolio(
     —o después— no puede bloquearla, aunque el simulador ya conozca su desenlace.
     Y el candidato bloqueado hace ``continue``, así que **el slot se le ofrece al
     siguiente**, igual que en vivo.
+
+    ``tajada_del_dia`` (**Tarea 464**) ⇒ cómo se reparte la caja entre las compras
+    **escaladas** de un mismo día. Con ``False`` (el default, el de todo lo publicado),
+    cada candidato recibe ``cash / free_slots`` sobre la caja que dejó el anterior, así
+    que con un factor < 1 la caja que una compra no gasta agranda a la siguiente: con
+    10 lugares y ×0,25 se invierte el 54,5% de la caja. El motor vivo
+    (``strategies.py``, ``equal_weight``) les da a todas las compras del scan la
+    **misma** tajada por el mismo factor: el 25%. Con ``True``, la tajada sale de una
+    «caja del día» que descuenta lo que cada compra **habría costado sin escalar**, y
+    el factor se aplica encima. Una compra sin escalar descuenta su costo real, así que
+    **sin ningún factor < 1 el resultado es idéntico bit a bit** al default.
     """
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
@@ -362,6 +374,8 @@ def simulate_portfolio(
     for entry_date in sorted(by_date):
         all_dates.add(entry_date)
         _release_until(entry_date)
+        # Tarea 464 — la caja del día: la que habría si ninguna compra de hoy se escalara.
+        caja_del_dia = cash
 
         day = by_date[entry_date]
         if rank_score is None:
@@ -400,11 +414,12 @@ def simulate_portfolio(
                 res.n_no_slot += 1
                 continue
 
-            base = cash / free_slots
+            base = (caja_del_dia if tajada_del_dia else cash) / free_slots
             if size_weight is None:
                 # Comportamiento histórico (R2): el factor de régimen se capea a 1.0
                 # y no hay peso por nombre ni tope de concentración.
                 size_factor = g
+                notional_sin_g = base
                 notional = base * min(1.0, g)
             else:
                 m = float(size_weight(ticker, entry_date))
@@ -415,6 +430,7 @@ def simulate_portfolio(
                 # Tope por nombre: nunca más de max_weight de la equity (cash + costo
                 # de lo abierto) — evita que una σ diminuta concentre la cartera.
                 equity_proxy = cash + sum(ec for _, _, _, ec in open_positions)
+                notional_sin_g = min(base * m, max_weight * equity_proxy)
                 notional = min(notional, max_weight * equity_proxy)
             # Se invierte lo que se puede PAGAR, no lo que se tiene — Tarea 123.
             #
@@ -488,6 +504,16 @@ def simulate_portfolio(
                 continue
 
             cash -= cyc.entry_cost
+            if tajada_del_dia:
+                # Tarea 464. Sin escalar, el costo real: así el modo es idéntico bit a bit
+                # al default cuando nada se escala. Escalada, lo que habría costado sin el
+                # factor —topado a lo que la caja del día puede pagar—, para que la
+                # siguiente compra reciba la misma tajada que ésta, como en vivo.
+                if g >= 1.0:
+                    caja_del_dia -= cyc.entry_cost
+                else:
+                    fees = 1.0 + costs.commission + costs.slippage
+                    caja_del_dia -= min(notional_sin_g, caja_del_dia / fees) * fees
             proceeds = cyc.total_proceeds
             exit_date = cyc.legs[-1].date if cyc.legs else entry_date
             open_positions.append((exit_date, proceeds, ticker, cyc.entry_cost))
