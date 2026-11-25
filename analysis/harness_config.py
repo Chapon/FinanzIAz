@@ -209,7 +209,9 @@ def costos_desc(costo_por_lado: float) -> str:
 
 # Overlay de σ de cartera (tarea 94). `strategies.py:525` lo aplica a **todas** las
 # BUY nuevas. Es el que más muerde: **dispara todos los días** (medido en el log:
-# `σ=15.8% > target 12.0% … ×0.76`, y `σ=37.2% … ×0.32`).
+# `σ=15.8% > target 12.0% … ×0.76`, y `σ=37.2% … ×0.32`). Desde la **457** se modela con
+# `simulate_portfolio(vol_overlay=analysis.overlay_sim.OverlayDeVolatilidad(bars_by))` y
+# `announce(models_vol_overlay=True)`; su precio va en el texto del desvío.
 LIVE_VOL_OVERLAY_ENABLED = True
 LIVE_VOL_TARGET_ANNUAL = 0.12
 
@@ -2685,7 +2687,13 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             "vol_overlay",
             f"NO se modela el overlay de volatilidad de cartera (target "
             f"{100 * LIVE_VOL_TARGET_ANNUAL:.0f}% anual), que en vivo recorta **todas** las "
-            f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%)",
+            f"BUY nuevas y dispara todos los días (medido: ×0.76 con σ=15.8%, ×0.32 con σ=37.2%). "
+            f"La 457 lo modeló con la config de la cuenta, su salida, su sizing y su costo, sin "
+            f"régimen (10 slots, 126 tickers, ~0.063% por lado, 2026-11-25): achica las compras el "
+            f"71% de los días con compras, factor medio 0.79, y fuera de muestra cuesta −1.80pp "
+            f"de CAGR y −0.06 de Sharpe, NO distinguible del ruido; con el régimen de la cuenta (10 "
+            f"slots, 126 tickers) suma +0.76pp y +0.10, tampoco distinguible. Se modela con "
+            f"`simulate_portfolio(vol_overlay=OverlayDeVolatilidad(bars_by))`",
         )
     # Tarea 95 — muerde en la ventana del harness, y en vivo desde el 2026-11-20. El precio
     # citado es el de la salida (459), el sizing (464) y el costo (468) vivos; el conteo vivo no va.

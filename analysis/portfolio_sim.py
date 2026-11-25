@@ -108,6 +108,15 @@ CapDaysOf = Callable[[str, str], int]
 # `cap_days_of`, donde 0 no tiene sentido y se cae al global.
 TrailMinExcessOf = Callable[[str, str], float]
 
+# vol_overlay(fecha_iso10, tenidas, compras, valor_cartera) -> factor en (0, 1] (Tarea 457).
+#   ``tenidas``: dólares a mercado de lo que sigue en cartera después del scan (las que
+#   salen ese día no cuentan, como las ``forced_exits`` del motor). ``compras``: los
+#   dólares de cada compra del día ANTES del régimen y del overlay. ``valor_cartera``:
+#   caja + todo lo abierto a mercado. Es la firma de ``_apply_vol_overlay_to_buys``
+#   (``paper_trading/strategies.py``) sin el estado del motor; la implementación que
+#   espeja al vivo es ``analysis.overlay_sim.OverlayDeVolatilidad``.
+VolOverlay = Callable[[str, dict[str, float], dict[str, float], float], float]
+
 
 @dataclass
 class Trade:
@@ -150,6 +159,12 @@ class PortfolioResult:
     n_already_open: int = 0  # rechazadas por tener ya el ticker en cartera
     n_gate5_blocked: int = 0  # rechazadas por Gate 5 vivo (anti-whipsaw), T34
     n_gate5b_blocked: int = 0  # rechazadas por Gate 5b vivo (anti-churn), T34
+    # Tarea 457 — el factor del overlay de σ por día con compras (sólo con ``vol_overlay``).
+    # ``None`` y no ``default_factory``: los pickles de ``SimCache`` anteriores no lo traen.
+    overlay_por_dia: dict[str, float] | None = None
+    # Días en que las compras que el overlay previó NO fueron las que se tomaron (el borde
+    # de la caja). Tiene que ser 0 o casi: si no, el factor se calculó sobre otro libro.
+    n_overlay_desalineado: int = 0
 
     @property
     def total_return_pts(self) -> float:
@@ -198,6 +213,7 @@ def simulate_portfolio(
     fill_mode: str = "decision",
     live_gates: bool = False,
     tajada_del_dia: bool = False,
+    vol_overlay: VolOverlay | None = None,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -278,7 +294,27 @@ def simulate_portfolio(
     «caja del día» que descuenta lo que cada compra **habría costado sin escalar**, y
     el factor se aplica encima. Una compra sin escalar descuenta su costo real, así que
     **sin ningún factor < 1 el resultado es idéntico bit a bit** al default.
+
+    ``vol_overlay`` (**Tarea 457**) ⇒ el overlay de σ de cartera del motor (T10,
+    ``_apply_vol_overlay_to_buys``): una vez por día con compras, la σ anualizada del libro
+    que queda (lo tenido a mercado más las compras del día, **antes** del régimen) fija un
+    factor ``min(1, objetivo / σ)`` que se multiplica por el del régimen, en ese orden, como
+    en vivo. Las compras del día se **prevén** antes de comprar, replicando la aceptación de
+    abajo con el factor de régimen solo: con la tajada por día, la tajada de cada compra no
+    depende del factor, y lo único que el overlay puede mover es el borde de la caja, que se
+    cuenta en ``n_overlay_desalineado``. Exige ``tajada_del_dia=True`` (el overlay es un
+    factor por scan, y sin la tajada la caja que no gasta una compra agranda a la siguiente),
+    ``allow_reentry_while_open=False`` (lo tenido se identifica por ticker) y
+    ``size_weight=None`` (la cuenta es ``equal_weight``). ``None`` (el default) ⇒ idéntico bit
+    a bit a no tenerlo.
     """
+    if vol_overlay is not None:
+        if not tajada_del_dia:
+            raise ValueError("vol_overlay exige tajada_del_dia=True (tarea 457)")
+        if allow_reentry_while_open:
+            raise ValueError("vol_overlay exige allow_reentry_while_open=False (tarea 457)")
+        if size_weight is not None:
+            raise ValueError("vol_overlay exige size_weight=None: la cuenta es equal_weight (tarea 457)")
     res = PortfolioResult(initial_capital=initial_capital, final_equity=initial_capital)
     cash = initial_capital
     # posiciones abiertas: [(exit_date_iso10, proceeds, ticker, entry_cost)]
@@ -293,6 +329,13 @@ def simulate_portfolio(
     # a la fecha que se está procesando ⇒ los gates del T34 no pueden ver el futuro.
     closed_by_ticker: dict[str, list[tuple[str, float]]] = {}
     _ord_cache: dict[str, int] = {}
+
+    # Tarea 457 — sólo con ``vol_overlay``: la fecha de entrada de lo abierto (para marcarlo a
+    # mercado como ``_build_equity_curve``) y los cierres por ticker, armados a demanda.
+    entrada_de: dict[str, str] = {}
+    _cierres: dict[str, dict[str, float]] = {}
+    if vol_overlay is not None:
+        res.overlay_por_dia = {}
 
     def _ord(date_iso10: str) -> int:
         """iso10 → día ordinal, cacheado (se llama millones de veces)."""
@@ -362,6 +405,65 @@ def simulate_portfolio(
                 return True
         return False
 
+    def _cierre(ticker: str, d: str) -> float | None:
+        c = _cierres.get(ticker)
+        if c is None:
+            c = _cierres[ticker] = {b[0]: b[4] for b in (bars_by.get(ticker) or [])}
+        return c.get(d)
+
+    def _tenidas(d: str) -> tuple[dict[str, float], float]:
+        """Tarea 457 — lo tenido a mercado en ``d`` y el valor de la cartera (caja + todo lo
+        abierto), con la marca de ``_build_equity_curve``. Lo que sale en ``d`` suma al valor
+        pero no a la σ: el motor saca del libro las ventas del mismo scan (``forced_exits``)."""
+        tenidas: dict[str, float] = {}
+        valor = cash
+        for exit_date, _proceeds, tk, ec in open_positions:
+            px, p0 = _cierre(tk, d), _cierre(tk, entrada_de.get(tk, ""))
+            mtm = ec * (px / p0) if (px and p0 and p0 > 0) else ec
+            valor += mtm
+            if exit_date > d:
+                tenidas[tk] = tenidas.get(tk, 0.0) + mtm
+        return tenidas, valor
+
+    def _compras_previstas(d: str, dia: list[tuple[str, int]], caja: float) -> dict[str, float]:
+        """Tarea 457 — las compras que el loop de abajo va a aceptar en ``d``, con sus dólares
+        **antes** del régimen y del overlay: lo que el motor le pasa a
+        ``_apply_vol_overlay_to_buys``. Replica la aceptación con el factor de régimen solo,
+        incluido cuándo ``replay_cycle`` da ``None`` (no hay barra siguiente o el precio no
+        sirve), que no depende del tamaño."""
+        previstas: dict[str, float] = {}
+        abiertos = {tk for _, _, tk, _ in open_positions}
+        efectivo = cash
+        fees = 1.0 + costs.commission + costs.slippage
+        for ticker, idx in dia:
+            if ticker in abiertos or ticker in previstas:
+                continue
+            if live_gates and (_gate5_blocks(ticker, d) or _gate5b_blocks(ticker, d)):
+                continue
+            g = 1.0 if entry_filter is None else float(entry_filter(ticker, d))
+            if g <= 0.0:
+                continue
+            free_slots = max_positions - len(open_positions) - len(previstas)
+            if free_slots <= 0:
+                continue
+            base = caja / free_slots
+            asequible = efectivo / (1.0 + costs.commission + costs.slippage)
+            notional = min(base * min(1.0, g), asequible)
+            if notional <= 0 or not math.isfinite(notional):
+                continue
+            bars = bars_by[ticker]
+            px = bars[idx][4] if idx < len(bars) - 1 else float("nan")
+            if not math.isfinite(px) or px <= 0:
+                continue
+            costo = costs.buy_cost(notional / px, px)
+            efectivo -= costo
+            if g >= 1.0:
+                caja -= costo
+            else:
+                caja -= min(base, caja / fees) * fees
+            previstas[ticker] = min(base, asequible)
+        return previstas
+
     # Agrupadas por fecha: los candidatos de un mismo día compiten entre sí por el
     # slot, y el ranking es lo que resuelve esa competencia.
     by_date: dict[str, list[tuple[str, int]]] = {}
@@ -384,6 +486,21 @@ def simulate_portfolio(
             # Desempate alfabético para que el orden sea determinista aun cuando
             # dos candidatos empaten en score (pasa seguido con scores discretos).
             day = sorted(day, key=lambda ti: (-float(rank_score(ti[0], entry_date)), ti[0]))
+
+        # Tarea 457 — el factor del overlay del día, sobre el libro que va a quedar.
+        f_dia = 1.0
+        previstas: dict[str, float] = {}
+        tomadas: set[str] = set()
+        if vol_overlay is not None:
+            previstas = _compras_previstas(entry_date, day, caja_del_dia)
+            if previstas:
+                tenidas, valor = _tenidas(entry_date)
+                f_dia = float(vol_overlay(entry_date, tenidas, previstas, valor))
+                if not math.isfinite(f_dia) or f_dia <= 0.0 or f_dia > 1.0:
+                    raise ValueError(
+                        f"vol_overlay devolvió {f_dia!r} el {entry_date}: tiene que estar en (0, 1]"
+                    )
+                res.overlay_por_dia[entry_date] = f_dia
 
         for ticker, idx in day:
             bars = bars_by[ticker]
@@ -408,6 +525,9 @@ def simulate_portfolio(
             if g <= 0.0:
                 res.n_filtered += 1
                 continue
+            if vol_overlay is not None:
+                # Tarea 457: overlay y régimen se componen (en vivo, uno después del otro).
+                g *= f_dia
 
             free_slots = max_positions - len(open_positions)
             if free_slots <= 0:
@@ -519,6 +639,9 @@ def simulate_portfolio(
             open_positions.append((exit_date, proceeds, ticker, cyc.entry_cost))
             all_dates.add(exit_date)
             res.n_taken += 1
+            if vol_overlay is not None:
+                entrada_de[ticker] = entry_date
+                tomadas.add(ticker)
             res.trades.append(
                 Trade(
                     ticker=ticker,
@@ -532,6 +655,9 @@ def simulate_portfolio(
                     size_factor=size_factor,
                 )
             )
+
+        if vol_overlay is not None and tomadas != set(previstas):
+            res.n_overlay_desalineado += 1
 
     # cerrar todo lo que quede
     for _, proceeds, _tk, _ec in open_positions:

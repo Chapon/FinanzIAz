@@ -956,6 +956,17 @@ def _compound_cagr(rets: np.ndarray, periods: int = 252) -> float:
     return growth ** (periods / rets.size) - 1.0
 
 
+def sharpe_compuesto(rets: np.ndarray, periods: int = 252) -> float:
+    """Sharpe anualizado (rf = 0) de retornos diarios: media / desvío poblacional · √periods,
+    la fórmula de ``analysis.risk_sizing.sharpe_annual`` (tarea 457). 0 si el desvío es 0."""
+    if rets.size < 2:
+        return 0.0
+    sd = float(np.std(rets))
+    if sd <= 0 or not np.isfinite(sd):
+        return 0.0
+    return float(np.mean(rets)) / sd * math.sqrt(periods)
+
+
 def paired_block_bootstrap(
     base_rets: list[float],
     cand_rets: list[float],
@@ -964,6 +975,7 @@ def paired_block_bootstrap(
     n_resamples: int = 2000,
     seed: int = 12345,
     periods: int = 252,
+    stat: Callable[[np.ndarray, int], float] | None = None,
 ) -> PairedBootstrapResult:
     """Bootstrap de bloques móviles **pareado** sobre Δ(retorno diario de equity).
 
@@ -983,7 +995,13 @@ def paired_block_bootstrap(
 
     El gate es ``ci_low > 0``: el percentil 2.5 del ΔCAGR bootstrapeado tiene que
     seguir siendo positivo. Determinista por ``seed``.
+
+    ``stat`` (tarea 457) es el estadístico que se difiere: ``None`` ⇒ el CAGR compuesto de
+    siempre (``_compound_cagr``), así que nada publicado cambia; ``sharpe_compuesto`` ⇒ el
+    ΔSharpe, con los mismos bloques y la misma semilla.
     """
+    if stat is None:
+        stat = _compound_cagr
     a = np.asarray(base_rets, dtype=float)
     b = np.asarray(cand_rets, dtype=float)
     T = min(a.size, b.size)
@@ -992,7 +1010,7 @@ def paired_block_bootstrap(
         return PairedBootstrapResult(0.0, 0.0, 0.0, 0.0, float("nan"), T, block, 0)
     a, b = a[:T], b[:T]
 
-    observed = _compound_cagr(b, periods) - _compound_cagr(a, periods)
+    observed = stat(b, periods) - stat(a, periods)
     n_blocks = math.ceil(T / block)
     max_start = T - block  # inclusive
     rng = np.random.default_rng(seed)
@@ -1001,7 +1019,7 @@ def paired_block_bootstrap(
     for k in range(n_resamples):
         starts = rng.integers(0, max_start + 1, size=n_blocks)
         idx = (starts[:, None] + np.arange(block)[None, :]).ravel()[:T]
-        deltas[k] = _compound_cagr(b[idx], periods) - _compound_cagr(a[idx], periods)
+        deltas[k] = stat(b[idx], periods) - stat(a[idx], periods)
 
     return PairedBootstrapResult(
         observed=observed,

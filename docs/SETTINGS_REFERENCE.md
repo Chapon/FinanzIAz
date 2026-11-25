@@ -86,7 +86,7 @@ Filtra **candidatos de BUY** (nunca posiciones tenidas) por liquidez y calidad f
 | Flag | Default | Qué hace |
 |------|---------|----------|
 | `xgb_signal_enabled` | `True` | XGBoost en la señal. ON en la config viva (ver la nota del encabezado sobre dónde vive). |
-| `vol_overlay_enabled` | `True` | Vol overlay. ON en la config viva (ver la nota del encabezado sobre dónde vive). |
+| `vol_overlay_enabled` | `True` | Vol overlay. ON en la config viva (ver la nota del encabezado sobre dónde vive). **Backtest de la tarea 457 (2026-11-25): NO-SHIP, no se distingue.** Con la config, la salida, el sizing y el costo de la cuenta, fuera de muestra baja el Sharpe 0,063 (IC95% [−0,220, +0,051]) y el CAGR 1,80 pp por año sin régimen, y con el régimen sube el Sharpe 0,10 (IC [−0,111, +0,268]): ninguna de las dos se distingue del ruido. Apagarlo lo decide Chapa (`docs/vol_overlay_t457_2026-11-25.md`). |
 | `vol_overlay_trim_enabled` | `False` | De-risking activo: trimea el book cuando σ > target (T09). |
 | `hmm_enabled` | `True` (spec) · **vivo OFF** | Detección de régimen HMM. Killeado. El default del spec y el valor vivo **difieren**, y eso lo vuelve invisible a cualquier guard construido sobre `DEFAULTS` — por eso es uno de los cinco `FALTA_ESPEJO` de la tarea 185. |
 | `stacking_enabled` | `True` (spec) · **vivo OFF** | Stacking de modelos. Killeado por **no determinístico**, que es justamente por qué importa que un harness no lo herede del ambiente (tarea 181). Ídem `hmm_enabled`: spec y vivo difieren. |
@@ -157,7 +157,7 @@ ausencia era `vol_target_portfolio_annual`, que **tiene espejo** (`LIVE_VOL_TARG
 
 | Flag | Default | Qué hace |
 |------|---------|----------|
-| `vol_target_portfolio_annual` | `0.12` | **El techo de σ anualizada de la CARTERA (T10), y es el que muerde.** Si la σ del libro activo lo supera, `apply_portfolio_vol_overlay` escala **todos** los pesos activos proporcionalmente y el residual queda en cash (long-only). Lo lee `_portfolio_vol_target()` (`paper_trading/strategies.py:131`). `0` lo desactiva. La tarea **94** lo declaró como desvío harness↔engine porque el harness **no** lo modela. |
+| `vol_target_portfolio_annual` | `0.12` | **El techo de σ anualizada de la CARTERA (T10), y es el que muerde.** Si la σ del libro activo lo supera, `apply_portfolio_vol_overlay` escala **todos** los pesos activos proporcionalmente y el residual queda en cash (long-only). Lo lee `_portfolio_vol_target()` (`paper_trading/strategies.py:131`). `0` lo desactiva. La tarea **94** lo declaró como desvío harness↔engine porque el harness **no** lo modelaba; desde la **457** se modela (`simulate_portfolio(vol_overlay=...)`), y el backtest no lo distingue del ruido (ver `vol_overlay_enabled`). |
 | `vol_target_annual` | `0.2` | Techo de σ anualizada **por NOMBRE**, parámetro de `compute_vol_overlay` (`paper_trading/gates.py:489`). No confundir con el de cartera: éste entra en el sizing T06 vía `_sizing_params()`, aquél es la capa de riesgo sobre el libro entero. `≤ 0` lo desactiva. |
 | `max_position_weight` | `0.25` | Tope de peso por posición en el sizing T06 (`_sizing_params()` → `max_weight`). **Inerte bajo `equal_weight` con 10 slots**, que es el modo de la cuenta viva: 1/10 = 0,10 nunca llega al tope. |
 | `kelly_fraction` | `0.25` | Fracción de Kelly del sizing T06 (`_sizing_params()`). **No entra en la cuenta viva**, cuyo `allocation_mode` es `equal_weight`. |

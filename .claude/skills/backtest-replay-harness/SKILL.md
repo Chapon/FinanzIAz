@@ -47,6 +47,10 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
    harness le restaba ~4,9 pp por año, y dio vuelta una conclusión (régimen contra caja). Si el brazo
    escala compras (régimen, overlay), `simulate_portfolio(tajada_del_dia=True)` y
    `announce(tajada_del_dia=True)`. `CostModel()` queda sólo para reproducir lo publicado.
+8. **El overlay de σ se puede modelar (tarea 457):** `simulate_portfolio(vol_overlay=
+   OverlayDeVolatilidad(bars_by), tajada_del_dia=True)` (`analysis/overlay_sim.py`) y
+   `announce(models_vol_overlay=True)`. Para la pregunta de un brazo nuevo, el marco de la cuenta lo
+   lleva prendido; su backtest no lo distingue del ruido (`docs/vol_overlay_t457_2026-11-25.md`).
 
 ### Una corrida por `--cache-dir` — ya lo impone el código (T59)
 

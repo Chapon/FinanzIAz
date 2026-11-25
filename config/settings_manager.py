@@ -666,7 +666,9 @@ SCHEMA: dict[str, SettingSpec] = {
         doc=(
             "Enable portfolio volatility overlay (T10): scale positions down if "
             "estimated book σ exceeds vol_target_portfolio_annual. When disabled, "
-            "no scaling (full allocation)."
+            "no scaling (full allocation). Backtest de la tarea 457 (2026-11-25): "
+            "NO-SHIP, no se distingue del ruido fuera de muestra (−0,06 de Sharpe sin "
+            "régimen, +0,10 con el de la cuenta); apagarlo lo decide Chapa."
         ),
     ),
     # Sprint 4 / T05 — cross-sectional momentum ranking. When enabled, BUY
