@@ -213,6 +213,19 @@ def costo_del_runner(nombre: str):
     raise ValueError(f"costo desconocido: {nombre!r} (esperado uno de {COSTOS_DEL_RUNNER})")
 
 
+# Tarea 471 — el texto del desvío `lugar_del_bloqueado`. El precio depende del orden de los
+# candidatos del día, y el del harness (alfabético) no es el del vivo: la tarea 473.
+LUGAR_DEL_BLOQUEADO_DESC = (
+    "El pick que frena un gate de compra le deja el lugar al siguiente candidato, y en vivo no: el "
+    "motor corta los candidatos a los lugares libres antes de correr los gates, y el frenado se queda "
+    "con su lugar ese scan (tarea 471). Con el orden alfabético del harness, la regla del vivo cuesta "
+    "−1.29pp de CAGR y baja la caída 9.4pp con los gates 5 y 5b (10 slots, 126 tickers, ~0.063% por "
+    "lado, 2026-11-25); con el orden del vivo y el Gate 6 suma +1.44pp (10 slots, 126 tickers): el "
+    "signo depende del orden, que es la tarea 473. Se modela con "
+    "`simulate_portfolio(lugar_del_bloqueado=True)` y `announce(models_lugar_del_bloqueado=True)`"
+)
+
+
 def costos_desc(costo_por_lado: float) -> str:
     """El texto del desvío ``costos``: cuánto cobra el runner contra lo que paga el vivo."""
     return (
@@ -2363,6 +2376,10 @@ class HarnessConfig:
     # de `CostModel()`, que es con el que corrió todo lo publicado, así que un runner que no diga
     # nada declara lo que corre.
     costo_por_lado: float = HARNESS_DEFAULT_COST_PER_SIDE
+    # Tarea 471 — ¿el pick que frena un gate se queda con su lugar ese día, como en vivo
+    # (``simulate_portfolio(lugar_del_bloqueado=True)``)? Default ``False``: lo publicado le da el
+    # lugar al siguiente candidato.
+    models_lugar_del_bloqueado: bool = False
 
     # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
     # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
@@ -2774,6 +2791,9 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"`entry_filter=filtro_de_balances(cargar_fechas()[0])` (`analysis.earnings_sim`) y "
             f"`announce(models_earnings_blackout=True)`",
         )
+    # Tarea 471 — sólo hay pick frenado si el runner modela algún gate de compra.
+    if (cfg.live_gates or cfg.models_earnings_blackout) and not cfg.models_lugar_del_bloqueado:
+        _add("lugar_del_bloqueado", LUGAR_DEL_BLOQUEADO_DESC)
     # Tarea 220 — INCONDICIONAL: no depende de `cfg` ni de ningún flag. Desde la 222 los
     # dos lados cobran: el harness REINVIERTE (las barras vienen ajustadas) y el motor
     # acredita a la caja al ex-date, que queda quieta hasta la compra siguiente. El
@@ -2895,6 +2915,7 @@ def announce(
     models_earnings_blackout: bool = False,
     tajada_del_dia: bool = False,
     costo_por_lado: float = HARNESS_DEFAULT_COST_PER_SIDE,
+    models_lugar_del_bloqueado: bool = False,
     entry_spacing: int | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
@@ -2911,6 +2932,7 @@ def announce(
         models_earnings_blackout=models_earnings_blackout,
         tajada_del_dia=tajada_del_dia,
         costo_por_lado=costo_por_lado,
+        models_lugar_del_bloqueado=models_lugar_del_bloqueado,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,

@@ -165,6 +165,9 @@ class PortfolioResult:
     # Días en que las compras que el overlay previó NO fueron las que se tomaron (el borde
     # de la caja). Tiene que ser 0 o casi: si no, el factor se calculó sobre otro libro.
     n_overlay_desalineado: int = 0
+    # Tarea 471 — con ``lugar_del_bloqueado``: picks que frenó un gate o el filtro, y cuyo lugar
+    # se perdió ese día en vez de pasar al siguiente candidato (como en vivo).
+    n_lugar_perdido: int = 0
 
     @property
     def total_return_pts(self) -> float:
@@ -214,6 +217,7 @@ def simulate_portfolio(
     live_gates: bool = False,
     tajada_del_dia: bool = False,
     vol_overlay: VolOverlay | None = None,
+    lugar_del_bloqueado: bool = False,
 ) -> PortfolioResult:
     """Corre la cartera sobre ``entries`` (ordenadas cronológicamente).
 
@@ -282,7 +286,9 @@ def simulate_portfolio(
     antes* de la fecha del candidato. Un ciclo que cierra el mismo día que la entrada
     —o después— no puede bloquearla, aunque el simulador ya conozca su desenlace.
     Y el candidato bloqueado hace ``continue``, así que **el slot se le ofrece al
-    siguiente**, igual que en vivo.
+    siguiente**. **En vivo no es así** (tarea 471): el motor corta los candidatos a los
+    lugares libres **antes** de correr los gates, y un pick frenado se queda con su lugar
+    en ese scan. Lo modela ``lugar_del_bloqueado``.
 
     ``tajada_del_dia`` (**Tarea 464**) ⇒ cómo se reparte la caja entre las compras
     **escaladas** de un mismo día. Con ``False`` (el default, el de todo lo publicado),
@@ -307,7 +313,20 @@ def simulate_portfolio(
     ``allow_reentry_while_open=False`` (lo tenido se identifica por ticker) y
     ``size_weight=None`` (la cuenta es ``equal_weight``). ``None`` (el default) ⇒ idéntico bit
     a bit a no tenerlo.
+
+    ``lugar_del_bloqueado`` (**Tarea 471**) ⇒ cómo el vivo reparte los lugares cuando un gate
+    frena una compra. ``generate_trades_analyze_single`` toma como picks los primeros candidatos
+    no tenidos hasta llenar los lugares libres, y **después** el motor corre los gates (tamaño
+    mínimo, 5, 5b, 6): un pick frenado se queda con su lugar ese scan, y los candidatos de más
+    abajo no lo reciben. Con ``True``, cada día los primeros ``max_positions − abiertas``
+    candidatos no tenidos son los picks; uno que frena un gate, el filtro o la caja pierde su
+    lugar (``n_lugar_perdido``), y los que vienen después de los picks no se miran ese día. Con
+    ``False`` (el default, el de todo lo publicado), el lugar pasa al siguiente. Sin ningún
+    pick frenado, los dos dan lo mismo. No se combina con ``vol_overlay``, cuya previsión de
+    compras replica la regla de ``False``.
     """
+    if lugar_del_bloqueado and vol_overlay is not None:
+        raise ValueError("lugar_del_bloqueado no se combina con vol_overlay (tarea 471)")
     if vol_overlay is not None:
         if not tajada_del_dia:
             raise ValueError("vol_overlay exige tajada_del_dia=True (tarea 457)")
@@ -473,6 +492,11 @@ def simulate_portfolio(
             continue
         by_date.setdefault(bars[idx][0], []).append((ticker, idx))
 
+    def _contar_lugar_perdido(tomados_antes: int | None) -> None:
+        """Tarea 471 — un pick que no se tomó perdió su lugar."""
+        if tomados_antes is not None and res.n_taken == tomados_antes:
+            res.n_lugar_perdido += 1
+
     for entry_date in sorted(by_date):
         all_dates.add(entry_date)
         _release_until(entry_date)
@@ -502,7 +526,14 @@ def simulate_portfolio(
                     )
                 res.overlay_por_dia[entry_date] = f_dia
 
+        # Tarea 471 — los lugares del día, que en vivo se reparten entre los picks antes de los gates.
+        picks_libres = max_positions - len(open_positions)
+
+        tomados_antes: int | None = None
         for ticker, idx in day:
+            if lugar_del_bloqueado:
+                _contar_lugar_perdido(tomados_antes)
+                tomados_antes = None
             bars = bars_by[ticker]
             res.n_offered += 1
 
@@ -510,8 +541,17 @@ def simulate_portfolio(
                 res.n_already_open += 1
                 continue
 
-            # Gates de re-entrada del engine vivo (T34). Como en producción, el
-            # candidato bloqueado se saltea y **el slot queda para el siguiente**.
+            if lugar_del_bloqueado:
+                # Tarea 471: este candidato es un pick; si algo lo frena abajo, su lugar se pierde.
+                if picks_libres <= 0:
+                    res.n_no_slot += 1
+                    continue
+                picks_libres -= 1
+                tomados_antes = res.n_taken
+
+            # Gates de re-entrada del engine vivo (T34). El candidato bloqueado se saltea y
+            # **el slot queda para el siguiente**, salvo con ``lugar_del_bloqueado``: en vivo
+            # el pick frenado se queda con su lugar ese scan (tarea 471).
             if live_gates:
                 if _gate5_blocks(ticker, entry_date):
                     res.n_gate5_blocked += 1
@@ -656,6 +696,8 @@ def simulate_portfolio(
                 )
             )
 
+        if lugar_del_bloqueado:
+            _contar_lugar_perdido(tomados_antes)
         if vol_overlay is not None and tomadas != set(previstas):
             res.n_overlay_desalineado += 1
 

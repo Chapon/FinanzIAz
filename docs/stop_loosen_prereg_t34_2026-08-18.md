@@ -288,6 +288,11 @@ artefacto del techo.
    alimenta desde `_release_until` — **sólo** ciclos cuya salida ya ocurrió, así no hay look-ahead. El
    candidato bloqueado hace `continue` y **el slot se le ofrece al siguiente**, igual que en vivo.
    Contadores nuevos: `n_gate5_blocked`, `n_gate5b_blocked`.
+
+   > **Corrección 2026-11-25 (tarea 471):** *«igual que en vivo»* no es cierto. El motor corta los
+   > candidatos a los lugares libres **antes** de correr los gates, y un pick frenado se queda con su
+   > lugar en ese scan. El simulador lo modela con `lugar_del_bloqueado=True`, y el desvío se declara en
+   > el banner (`docs/lugar_del_bloqueado_t471_2026-11-25.md`). Este pre-registro no cambia.
 2. **Runner** `scripts/run_stop_loosen_t34.py`: rejilla 7×2 con gates ON (+ la misma con gates OFF,
    descriptiva), los dos brazos de sanity, el diagnóstico `D1_stop_only_M*`, el walk-forward del §6,
    el bootstrap pareado, el AND de los ocho criterios del §8 y el banner de `harness_config.announce()`.

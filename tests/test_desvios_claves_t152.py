@@ -73,6 +73,8 @@ CLAVES_CONOCIDAS = frozenset(
         "dividendos",
         "spinoffs",
         "earnings_blackout",
+        # Tarea 471 — con algún gate de compra modelado y sin `models_lugar_del_bloqueado`.
+        "lugar_del_bloqueado",
         "reentry_gates",
         "reentry_gates_no_cartera",
     }
