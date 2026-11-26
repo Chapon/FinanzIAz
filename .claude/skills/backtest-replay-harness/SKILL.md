@@ -55,6 +55,11 @@ Los harness **no leen `paper_accounts`** (y está bien: un backtest de 10 años 
    filtro_de_balances(cargar_fechas()[0])` (`analysis/earnings_sim.py`, fechas de Yahoo en
    `data/earnings_dates/`), compuesto con el del régimen por `componer`, y
    `announce(models_earnings_blackout=True)`. Su backtest dio NO MOVER (`docs/blackout_t458_2026-11-25.md`).
+10. **El orden de los candidatos del día (tareas 473 y 471):** sin `rank_score`, el simulador los
+   ordena alfabéticamente y el vivo por `ml_probability`. Para medir como la cuenta:
+   `rank_score=orden_del_vivo(score_by)` (`analysis/orden_del_dia.py`, con `load_bars_signals_scores`
+   de la T21), `announce(orden_del_vivo=True)`, y `lugar_del_bloqueado=True` si modela gates de
+   compra. Con el orden del vivo la estrategia da ~4 pp menos, y un Δ entre brazos puede cambiar de signo.
 
 ### Una corrida por `--cache-dir` — ya lo impone el código (T59)
 

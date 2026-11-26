@@ -226,6 +226,19 @@ LUGAR_DEL_BLOQUEADO_DESC = (
 )
 
 
+# Tarea 473 — el texto del desvío `orden_del_dia`.
+ORDEN_DEL_DIA_DESC = (
+    "El harness ordena los candidatos de cada día alfabéticamente (`simulate_portfolio` sin "
+    "`rank_score`) y el vivo por `ml_probability` (`_default_strength`): con ~56 candidatos por día "
+    "para 10 lugares, el orden decide quién entra (tarea 473). Con la config de la cuenta, su salida, "
+    "su sizing y su costo, sin régimen (10 slots, 126 tickers, ~0.063% por lado, 2026-11-25), el orden "
+    "del vivo da 9.75% de CAGR contra 13.72% del alfabético, −3.97pp, y 8.8pp más de caída; y en la "
+    "471 un Δ entre brazos cambió de signo con el orden. Se modela con "
+    "`rank_score=orden_del_vivo(score_by)` (`analysis.orden_del_dia`, con el store de "
+    "`load_bars_signals_scores`) y `announce(orden_del_vivo=True)`"
+)
+
+
 def costos_desc(costo_por_lado: float) -> str:
     """El texto del desvío ``costos``: cuánto cobra el runner contra lo que paga el vivo."""
     return (
@@ -233,7 +246,8 @@ def costos_desc(costo_por_lado: float) -> str:
         f"(IBKR Pro Tiered + slippage de la cuenta, medido el {LIVE_COSTS_MEASURED_ON} sobre sus "
         f"órdenes; tarea 468). Con la rotación de la estrategia (~26× el capital por año), en el marco "
         f"de la cuenta (10 slots, 126 tickers, salida viva, tajada por día) la estrategia sin régimen "
-        f"da 8.78% de CAGR al 0.150% y 13.72% al costo del vivo, ~4.9pp por año, y un costo más alto "
+        f"da 8.78% de CAGR al 0.150% y 13.72% al costo del vivo, ~4.9pp por año (con el orden alfabético de "
+        f"los candidatos; con el del vivo, 9.75%: tarea 473), y un costo más alto "
         f"que el vivo favorece al brazo que opera menos y al pasivo. Se corrige con "
         f"`costs=live_cost_model()` y `announce(costo_por_lado=LIVE_COST_PER_SIDE)`"
     )
@@ -2380,6 +2394,10 @@ class HarnessConfig:
     # (``simulate_portfolio(lugar_del_bloqueado=True)``)? Default ``False``: lo publicado le da el
     # lugar al siguiente candidato.
     models_lugar_del_bloqueado: bool = False
+    # Tarea 473 — ¿los candidatos del día se ordenan como en vivo (``rank_score=orden_del_vivo(...)``)?
+    # Default ``False``: ``simulate_portfolio`` sin ``rank_score`` los procesa en orden alfabético, que
+    # es lo que corrió todo lo publicado.
+    orden_del_vivo: bool = False
 
     # Espaciado de las entradas, en ruedas por ticker (Tarea 119). ``None`` ⇒ el
     # runner no lo declaró y el banner lo dice; los que arman con ``buy_entries``
@@ -2728,7 +2746,9 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"régimen (10 slots, 126 tickers, ~0.063% por lado, 2026-11-25): achica las compras el "
             f"71% de los días con compras, factor medio 0.79, y fuera de muestra cuesta −1.80pp "
             f"de CAGR y −0.06 de Sharpe, NO distinguible del ruido; con el régimen de la cuenta (10 "
-            f"slots, 126 tickers) suma +0.76pp y +0.10, tampoco distinguible. Se modela con "
+            f"slots, 126 tickers) suma +0.76pp y +0.10, tampoco distinguible. Con el orden de candidatos "
+            f"del vivo (tarea 473) el ΔSharpe fuera de muestra es +0.046, también dentro del ruido. Se "
+            f"modela con "
             f"`simulate_portfolio(vol_overlay=OverlayDeVolatilidad(bars_by))`",
         )
     # Tarea 95 — muerde en la ventana del harness, y en vivo desde el 2026-11-20. El precio
@@ -2749,7 +2769,8 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"secuencial, que agranda cada compra escalada del día (otro marco); el −0.34pp/−4.8pp "
             f"de la T121 (10 slots, 127 tickers) es con el stop duro prendido, la salida anterior al "
             f"2026-08-27 (otro marco); el +0.93pp/−4.5pp de la T115 es de 5 slots, 41 tickers (otro "
-            f"marco): ninguno de los cuatro describe a la cuenta",
+            f"marco): ninguno de los cuatro describe a la cuenta. Todos ordenan los candidatos "
+            f"alfabéticamente; con el orden del vivo, la 465 da vuelta qué tramo gana (tarea 473)",
         )
     # Tarea 464 — sólo existe si el runner escala: sin escalar, las dos fórmulas coinciden.
     if cfg.models_regime_scale and not cfg.tajada_del_dia and not cfg.per_trade:
@@ -2787,10 +2808,15 @@ def deviations_keyed(cfg: HarnessConfig) -> list[Deviation]:
             f"slots, 126 tickers, ~0.063% por lado, 2026-11-25): suprime el 5.65% de las entradas, "
             f"cuesta −0.58pp de CAGR sobre la muestra completa y −0.61pp fuera de muestra, NO "
             f"distinguible del ruido; con el régimen y el overlay de la cuenta (10 slots, 126 "
-            f"tickers) cuesta −1.14pp fuera de muestra, tampoco distinguible. Se modela con "
+            f"tickers) cuesta −1.14pp fuera de muestra, tampoco distinguible. Con el orden de candidatos del "
+            f"vivo (tarea 473, 10 slots, 126 tickers) sacarlo da +2.83pp fuera de muestra y gana 4 de 5 "
+            f"folds, y sólo el IC cruza el cero. Se modela con "
             f"`entry_filter=filtro_de_balances(cargar_fechas()[0])` (`analysis.earnings_sim`) y "
             f"`announce(models_earnings_blackout=True)`",
         )
+    # Tarea 473 — sólo en un harness con cartera: sin slots no hay competencia por el lugar.
+    if not cfg.per_trade and not cfg.orden_del_vivo:
+        _add("orden_del_dia", ORDEN_DEL_DIA_DESC)
     # Tarea 471 — sólo hay pick frenado si el runner modela algún gate de compra.
     if (cfg.live_gates or cfg.models_earnings_blackout) and not cfg.models_lugar_del_bloqueado:
         _add("lugar_del_bloqueado", LUGAR_DEL_BLOQUEADO_DESC)
@@ -2916,6 +2942,7 @@ def announce(
     tajada_del_dia: bool = False,
     costo_por_lado: float = HARNESS_DEFAULT_COST_PER_SIDE,
     models_lugar_del_bloqueado: bool = False,
+    orden_del_vivo: bool = False,
     entry_spacing: int | None = None,
     file: TextIO | None = None,
 ) -> HarnessConfig:
@@ -2933,6 +2960,7 @@ def announce(
         tajada_del_dia=tajada_del_dia,
         costo_por_lado=costo_por_lado,
         models_lugar_del_bloqueado=models_lugar_del_bloqueado,
+        orden_del_vivo=orden_del_vivo,
         max_positions=max_positions,
         universe_file=universe_file,
         n_tickers=n_tickers,

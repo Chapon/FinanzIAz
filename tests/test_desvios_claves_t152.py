@@ -75,6 +75,8 @@ CLAVES_CONOCIDAS = frozenset(
         "earnings_blackout",
         # Tarea 471 — con algún gate de compra modelado y sin `models_lugar_del_bloqueado`.
         "lugar_del_bloqueado",
+        # Tarea 473 — todo harness con cartera que no ordena los candidatos como el vivo.
+        "orden_del_dia",
         "reentry_gates",
         "reentry_gates_no_cartera",
     }
@@ -204,6 +206,8 @@ def test_la_config_viva_declara_este_CONJUNTO_de_desvios():
         # Tarea 468 — con el default de `CostModel()` el harness cobra 0,15% por lado y el vivo ~0,063%.
         "costos",
         "earnings_blackout",
+        # Tarea 473 — sin `orden_del_vivo` el harness ordena los candidatos alfabéticamente.
+        "orden_del_dia",
         "reentry_gates",
     }
 
