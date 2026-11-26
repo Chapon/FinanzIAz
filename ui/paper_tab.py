@@ -1274,7 +1274,10 @@ class PaperTradingTab(QWidget):
             self.equity_chart.set_data([])
             return
         try:
-            snaps = get_equity_curve(self._current_account_id, limit=500)
+            # La curva ENTERA (tarea 474): el overlay de SPY se normaliza al capital inicial en el
+            # primer snapshot, así que supone que la curva arranca con la cuenta. Con ``limit=500``
+            # la pestaña dibujaba los primeros 500, y desde el 2026-09-02 no avanzaba.
+            snaps = get_equity_curve(self._current_account_id)
         except Exception as e:
             log.warning("equity refresh failed: %s", e)
             snaps = []

@@ -331,18 +331,26 @@ def _a_valor_de_mercado():
     return or_(col.is_(None), col == 0)
 
 
-def get_equity_curve(account_id: int, limit: int = 5_000) -> list[PaperEquitySnapshot]:
+def get_equity_curve(account_id: int, limit: int | None = None) -> list[PaperEquitySnapshot]:
     """La curva de Paper, **sin** los snapshots con posiciones a costo (tarea 376): un punto así
-    es un retorno inventado y su rebote, y en una curva por scan el vecino lo reemplaza."""
+    es un retorno inventado y su rebote, y en una curva por scan el vecino lo reemplaza.
+
+    Ascendente. Sin ``limit``, todos; con ``limit``, los **últimos** ``limit`` (tarea 474). Antes
+    ordenaba ascendente y recién ahí cortaba, o sea que devolvía los **primeros**: la pestaña Paper
+    pedía 500, y desde el 2026-09-02 (el snapshot 500 de la cuenta 2) dibujó una curva que no
+    avanzaba, ~2.000 dólares arriba de la tarjeta *«Equity total»*.
+    """
     with session_scope() as session:
-        rows = (
+        q = (
             session.query(PaperEquitySnapshot)
             .filter(PaperEquitySnapshot.account_id == account_id)
             .filter(_a_valor_de_mercado())
-            .order_by(PaperEquitySnapshot.snapshot_at.asc())
-            .limit(limit)
-            .all()
         )
+        if limit is None:
+            rows = q.order_by(PaperEquitySnapshot.snapshot_at.asc(), PaperEquitySnapshot.id.asc()).all()
+        else:
+            ultimos = q.order_by(PaperEquitySnapshot.snapshot_at.desc(), PaperEquitySnapshot.id.desc())
+            rows = ultimos.limit(limit).all()[::-1]
         session.expunge_all()
         return rows
 
