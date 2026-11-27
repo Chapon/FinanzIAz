@@ -82,6 +82,33 @@ del bootstrap sobre la **muestra completa**. Y la regla cuenta como *«decidible
 entero negativo, que en todo caso diría que esa celda es **peor** que la viva. No cambia el
 veredicto (la rejilla es descriptiva), y queda como la tarea **472**.
 
+> **La 472, 2026-11-27: con el IC fuera de muestra, `s2.0_t3.0` da [−3,66, +7,31] y cruza el
+> cero, y son otras cuatro las que lo excluyen, por arriba.** El IC de cada celda sale ahora de
+> las mismas curvas fuera de muestra que su ΔCAGR, como congeló el §7, y la lectura separa el
+> intervalo entero positivo (candidata) del entero negativo (peor que la viva). Al costo del
+> vivo (`--costo vivo`, la misma muestra; el gate no cambia):
+
+| celda | ΔCAGR OOS | IC95% OOS | p | folds ganados | Δ caída OOS |
+|---|--:|---|--:|--:|--:|
+| **`soff_toff`** | +4,16 pp | [+0,69, +8,82] | 0,009 | 3/5 | −3,6 pp |
+| **`s4.0_toff`** | +4,14 pp | [+0,66, +8,57] | 0,011 | 4/5 | −3,4 pp |
+| **`s6.0_toff`** | +4,00 pp | [+0,49, +8,63] | 0,011 | 3/5 | −3,6 pp |
+| **`s4.0_t3.0`** | +3,68 pp | [+0,31, +8,13] | 0,015 | 4/5 | +0,7 pp |
+| `s3.0_t3.0` | +3,41 pp | [−0,57, +8,55] | 0,048 | 4/5 | +0,7 pp |
+| `soff_t3.0` | +2,80 pp | [−0,61, +7,46] | 0,053 | 4/5 | +1,4 pp |
+| `s6.0_t3.0` | +2,79 pp | [−0,66, +7,49] | 0,052 | 4/5 | +1,4 pp |
+| `s2.0_t2.0` | +2,11 pp | [−2,63, +7,09] | 0,193 | 3/5 | −3,0 pp |
+| `s2.0_toff` | +1,94 pp | [−3,25, +8,22] | 0,212 | 2/5 | −0,9 pp |
+| `s3.0_toff` | +1,54 pp | [−2,80, +6,60] | 0,216 | 3/5 | +3,8 pp |
+| `s2.0_t3.0` | +1,40 pp | [−3,66, +7,31] | 0,245 | 2/5 | +1,8 pp |
+| `s6.0_t2.0` | +0,36 pp | [−1,11, +2,08] | 0,332 | 3/5 | −0,6 pp |
+| `s4.0_t2.0` | −0,35 pp | [−2,42, +1,68] | 0,651 | 2/5 | +3,2 pp |
+| `s3.0_t2.0` | −1,54 pp | [−5,43, +2,18] | 0,793 | 2/5 | +3,0 pp |
+
+> Son las mismas cuatro que al costo del harness (`docs/exit_policy_t170_2026-09-10.md` §3):
+> `soff_toff`, `s4.0_toff`, `s6.0_toff` y `s4.0_t3.0`. Cada una abre su propio pre-registro,
+> con gate de multiplicidad: la tarea **477**. Nada se cabla.
+
 ## 4. Lo que queda
 
 - **Para la cuenta:** nada cambia. La salida viva se sostiene con el costo real, y demorar la venta

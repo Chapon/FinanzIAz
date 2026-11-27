@@ -417,7 +417,7 @@ que se puede mirar *antes* de congelar y por eso **fija la grilla**. La efectiva
 corrido el brazo**: es un sanity **post-corrida**. Un pre-registro que la pida como criterio de
 grilla está pidiendo un número que todavía no existe.
 
-## La rejilla de SALIDA stop × trailing está CERRADA (T167 → T170)
+## La rejilla de SALIDA stop × trailing (T167 → T170 → 472): no se barre otra vez, y cuatro celdas esperan su pre-registro (477)
 
 Antes de pre-registrar otro barrido de `atr_hard_stop_enabled`/`atr_stop_mult` × `atr_trail_mult`,
 leer esto: **esa rejilla no se vuelve a correr sobre la misma ventana rodante.**
@@ -447,9 +447,21 @@ fuera de muestra (pareado contra el vivo) que excluya el cero. **La serie 26 →
 eligió una celda distinta cada vez porque estaba leyendo ruido.** Doc:
 `docs/exit_policy_t170_2026-09-10.md`.
 
+**Corregido por la 472 (2026-11-27): esa lectura salió del intervalo equivocado.** El IC de cada
+celda venía del bootstrap sobre la muestra **completa**, y el §7 congeló el del ΔCAGR **fuera de
+muestra**. Con el IC de las mismas curvas OOS, **cuatro celdas lo tienen entero positivo**, a los
+dos costos: `soff_toff`, `s4.0_toff`, `s6.0_toff` y `s4.0_t3.0` (el trailing apagado o en 3,0),
+de +3,2 a +4,2 pp por año. Por la regla congelada, cada una abre su propio pre-registro con gate de
+multiplicidad —la **477**—, y con un Bonferroni sobre las 14 ninguna pasaría. El veredicto del gate
+(NO MOVER) no cambia. **La lección:** un descriptivo que pone en la misma línea un punto de una
+muestra y un intervalo de otra se lee mal sin que nada avise; se notó recién cuando el costo del
+vivo (la 469) dio un punto positivo con el intervalo entero negativo.
+
 **Tres reglas que salen de ahí:**
 
-1. **La rejilla queda cerrada hasta que haya muestra nueva.** Refrescar la ventana `10y` unas
+1. **Ningún barrido nuevo sobre esta ventana: las cuatro candidatas de la 472 van por la 477,**
+   con su pre-registro y gate de multiplicidad (decía *«la rejilla queda cerrada»*, sobre la
+   lectura que corrigió la 472). Refrescar la ventana `10y` unas
    semanas después **no** es muestra nueva: comparte casi todas las barras (T48). Un sexto barrido
    sobre esa ventana sólo puede producir otro orden del mismo ruido. El pre-registro que la reabra
    tiene que declarar **qué** la hace muestra nueva.

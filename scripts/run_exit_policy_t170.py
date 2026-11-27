@@ -57,6 +57,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 _HERE = Path(__file__).resolve().parent
@@ -304,21 +305,40 @@ def evaluate_sanity(summaries: dict, repro: dict) -> dict:
 
 
 def grid_descriptive(
-    entries, bars_by, sigs_by, common: dict, results: dict, *, tag: str, resamples: int, log=sys.stdout
+    entries, bars_by, sigs_by, common: dict, *, tag: str, resamples: int, log=sys.stdout
 ) -> dict:
     """ΔCAGR OOS y IC95% de **cada celda** contra el vivo. NO es un gate.
 
     La regla de lectura está congelada en el §7 del pre-registro: si ningún IC
     excluye el cero, *«no es decidible con esta muestra»* y la rejilla queda cerrada.
+
+    **El IC sale de las mismas curvas que el ΔCAGR (tarea 472):** las fuera de muestra,
+    encadenadas por fold, que es lo que congeló el §7 (*«el IC95% del ΔCAGR OOS»*). Salía
+    del bootstrap sobre ``results``, las corridas de la muestra **completa**, y al costo del
+    vivo eso dio una celda con el punto en +1,40 pp y el intervalo en [−12,59, −0,07]. Por
+    eso la función ya no recibe ``results``: no tiene de dónde leer la muestra completa.
+
+    **Y la lectura distingue el signo (tarea 472):** un intervalo entero positivo es una
+    ``candidata`` —abre su propio pre-registro— y uno entero negativo dice que la celda es
+    **peor** que la viva (``peores``). Los dos excluyen el cero, así que para la regla del §7
+    los dos cuentan en ``decidibles``.
+
+    **Los folds ganados también los congeló el §7, y no se medían (tarea 472):** van en
+    ``folds_ganados``, con la regla del D2 (el Δ del fold > 0). ``dmaxdd_oos`` (la caída
+    máxima de la curva OOS de la celda menos la de la viva) es descriptivo y no está en el §7:
+    sirve para leer a las candidatas, porque la caída es lo que mató a las celdas que operan
+    menos en la T170, la T7 y la 219.
     """
     celdas = [c for c in grid_cells() if arm_name(*c) != POLICY_ARM]
     tests = [entries_between(entries, bars_by, lo, hi) for _, lo, hi in FOLDS]
 
-    def _oos_curve(cell: tuple[float, float]) -> list[tuple[str, float]]:
-        """La curva OOS encadenada de una celda, con el equity compuesto entre folds."""
+    def _oos_curve(cell: tuple[float, float]) -> tuple[list[tuple[str, float]], list[float]]:
+        """La curva OOS encadenada de una celda, con el equity compuesto entre folds, y el CAGR
+        de cada fold (como en el walk-forward del gate)."""
         name = arm_name(*cell)
         eq = float(common["initial_capital"])
         curve: list[tuple[str, float]] = []
+        por_fold: list[float] = []
         for fi, test in enumerate(tests, 1):
             r = _sim(
                 f"wf{fi}|test|{name}|eq{eq:.6f}|{tag}",
@@ -329,21 +349,29 @@ def grid_descriptive(
                 **{**common, "initial_capital": eq},
             )
             curve.extend(r.equity_curve)
+            por_fold.append(cagr(r.equity_curve))
             eq = r.final_equity
-        return curve
+        return curve, por_fold
 
     # El brazo vivo se corre **una sola vez**: su trayectoria no depende de la celda
     # contra la que se lo compara, y `SimCache` sin `--cache-dir` no memoiza nada, así
     # que calcularlo adentro del loop serían 14 corridas idénticas pagadas 14 veces.
-    curve_l = _oos_curve(POLICY_CELL)
+    curve_l, folds_l = _oos_curve(POLICY_CELL)
     cagr_l = cagr(curve_l)
+    dd_l = max_drawdown(curve_l)
+    capital = float(common["initial_capital"])
+
+    def _como_resultado(curve: list[tuple[str, float]]) -> SimpleNamespace:
+        """Lo que ``aligned_daily`` lee de un resultado: la curva y el capital de arranque."""
+        return SimpleNamespace(equity_curve=curve, initial_capital=capital)
 
     out: dict[str, dict] = {}
     for i, cell in enumerate(celdas, 1):
         name = arm_name(*cell)
         print(f"    celda {i}/{len(celdas)} {name} …", file=log, flush=True)
-        curve_c = _oos_curve(cell)
-        daily = aligned_daily(results, [POLICY_ARM, name])
+        curve_c, folds_c = _oos_curve(cell)
+        oos = {POLICY_ARM: _como_resultado(curve_l), name: _como_resultado(curve_c)}
+        daily = aligned_daily(oos, [POLICY_ARM, name])
         b = paired_block_bootstrap(
             [r for _, r in daily[POLICY_ARM]],
             [r for _, r in daily[name]],
@@ -353,13 +381,22 @@ def grid_descriptive(
         )
         out[name] = {
             "dcagr_oos": cagr(curve_c) - cagr_l,
+            "folds_ganados": sum(1 for c, v in zip(folds_c, folds_l, strict=True) if c - v > 0.0),
+            "dmaxdd_oos": max_drawdown(curve_c) - dd_l,
             "ci_low": b.ci_low,
             "ci_high": b.ci_high,
             "p_value": b.p_value,
             "excludes_zero": bool(b.ci_low > 0.0 or b.ci_high < 0.0),
+            "signo": "candidata" if b.ci_low > 0.0 else "peor" if b.ci_high < 0.0 else None,
         }
     decidible = [n for n, v in out.items() if v["excludes_zero"]]
-    return {"celdas": out, "decidibles": decidible, "es_decidible": bool(decidible)}
+    return {
+        "celdas": out,
+        "decidibles": decidible,
+        "es_decidible": bool(decidible),
+        "candidatas": [n for n, v in out.items() if v["signo"] == "candidata"],
+        "peores": [n for n, v in out.items() if v["signo"] == "peor"],
+    }
 
 
 # ── Reporte ──────────────────────────────────────────────────────────────────
@@ -367,6 +404,45 @@ def grid_descriptive(
 
 def _f(x, w=9, p=2, suf="") -> str:
     return f"{'—':>{w}}" if x is None else f"{100 * x if suf == '%' else x:>{w}.{p}f}{suf}"
+
+
+def _report_grid(grid: dict, log=sys.stdout) -> None:
+    """El descriptivo del §7: cada celda con su ΔCAGR OOS, su IC y su signo, y la lectura (tarea 472)."""
+    print("\n§7 — La rejilla, DESCRIPTIVO (ninguna celda se cabla desde acá):", file=log)
+    print("  (el ΔCAGR y su IC95% salen de las mismas curvas: las fuera de muestra, encadenadas)", file=log)
+    marcas = {
+        "candidata": " ← IC entero positivo: candidata",
+        "peor": " ← IC entero negativo: peor que la viva",
+    }
+    for n, v in sorted(grid["celdas"].items(), key=lambda kv: -kv[1]["dcagr_oos"]):
+        marca = marcas.get(v.get("signo") or "", "")
+        print(
+            f"  {n:<12} ΔCAGR OOS {100 * v['dcagr_oos']:>+7.2f} pp · "
+            f"IC95% [{100 * v['ci_low']:+.2f}, {100 * v['ci_high']:+.2f}] p={v['p_value']:.3f} · "
+            f"folds {v['folds_ganados']}/{len(FOLDS)} · Δcaída {100 * v['dmaxdd_oos']:+.1f} pp{marca}",
+            file=log,
+        )
+    if grid["es_decidible"]:
+        if grid.get("candidatas"):
+            print(
+                f"\n  LECTURA (§7): {len(grid['candidatas'])} celda(s) con el IC entero POSITIVO "
+                f"({', '.join(grid['candidatas'])}). NO se cablan: cada una abre su propio "
+                "pre-registro, con gate de multiplicidad.",
+                file=log,
+            )
+        if grid.get("peores"):
+            print(
+                f"\n  LECTURA (§7): {len(grid['peores'])} celda(s) con el IC entero NEGATIVO "
+                f"({', '.join(grid['peores'])}): son PEORES que la viva, y no abren nada.",
+                file=log,
+            )
+    else:
+        print(
+            "\n  LECTURA (§7): **ninguna** celda excluye el cero ⇒ con esta muestra la "
+            "elección de celda NO es decidible. La rejilla queda CERRADA hasta que haya "
+            "muestra nueva.",
+            file=log,
+        )
 
 
 def _report(summaries, wf, verdict, sanity, boot, grid, log=sys.stdout) -> None:
@@ -428,7 +504,7 @@ def _report(summaries, wf, verdict, sanity, boot, grid, log=sys.stdout) -> None:
         ),
         (
             "D4",
-            "bootstrap pareado, IC95% inferior > 0",
+            "bootstrap pareado (muestra completa), IC95% inferior > 0",
             "—"
             if boot is None
             else f"[{100 * boot.ci_low:+.2f}, {100 * boot.ci_high:+.2f}] p={boot.p_value:.3f}",
@@ -447,28 +523,7 @@ def _report(summaries, wf, verdict, sanity, boot, grid, log=sys.stdout) -> None:
     )
 
     if grid is not None:
-        print("\n§7 — La rejilla, DESCRIPTIVO (ninguna celda se cabla desde acá):", file=log)
-        for n, v in sorted(grid["celdas"].items(), key=lambda kv: -kv[1]["dcagr_oos"]):
-            marca = " ← excluye el cero" if v["excludes_zero"] else ""
-            print(
-                f"  {n:<12} ΔCAGR OOS {100 * v['dcagr_oos']:>+7.2f} pp · "
-                f"IC95% [{100 * v['ci_low']:+.2f}, {100 * v['ci_high']:+.2f}] p={v['p_value']:.3f}{marca}",
-                file=log,
-            )
-        if grid["es_decidible"]:
-            print(
-                f"\n  LECTURA (§7): {len(grid['decidibles'])} celda(s) excluyen el cero "
-                f"({', '.join(grid['decidibles'])}). NO se cablan: cada una abre su propio "
-                "pre-registro, con gate de multiplicidad.",
-                file=log,
-            )
-        else:
-            print(
-                "\n  LECTURA (§7): **ninguna** celda excluye el cero ⇒ con esta muestra la "
-                "elección de celda NO es decidible. La rejilla queda CERRADA hasta que haya "
-                "muestra nueva.",
-                file=log,
-            )
+        _report_grid(grid, log)
 
     print("\n" + "=" * 78, file=log)
     if not sanity["all_ok"]:
@@ -646,7 +701,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_grid:
         print("\n§7 — descriptivo de la rejilla (NO es gate) …", file=log, flush=True)
         grid = grid_descriptive(
-            entries, bars_by, sigs_by, common, results, tag=run_tag, resamples=args.resamples, log=log
+            entries, bars_by, sigs_by, common, tag=run_tag, resamples=args.resamples, log=log
         )
 
     _report(summaries, wf, verdict, sanity, boot, grid, log=log)

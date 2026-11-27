@@ -263,7 +263,7 @@ def _grid_con(monkeypatch, *, ic_por_celda: dict[str, tuple[float, float]]):
     monkeypatch.setattr(m, "paired_block_bootstrap", _fake_boot)
     monkeypatch.setattr(m, "aligned_daily", lambda res, arms: {a: [("2020-01-01", 0.0)] for a in arms})
     return m.grid_descriptive(
-        entries, bars_by, {}, {"initial_capital": 1000.0}, {}, tag="t", resamples=10, log=io.StringIO()
+        entries, bars_by, {}, {"initial_capital": 1000.0}, tag="t", resamples=10, log=io.StringIO()
     )
 
 
@@ -299,6 +299,95 @@ def test_el_GATE_no_mira_la_rejilla(monkeypatch):
     assert grid["es_decidible"] is True
     v = m.evaluate(_wf(dcagr=0.0), _sum(), _tails(), _Boot(0.5, 5.0))
     assert v["mover"] is False  # el gate sólo mira los dos brazos nombrados
+
+
+# ── §7 — el IC sale de la misma muestra que el ΔCAGR, y el signo se lee (tarea 472) ──
+
+
+def _grid_oos_contra_completa(monkeypatch, pasos: tuple[float, ...] = (0.001,) * 5):
+    """Una rejilla donde la viva queda plana fuera de muestra y cada celda sube 0,1% por rueda.
+
+    El bootstrap falso devuelve un intervalo angosto alrededor del Δ medio anualizado de lo que
+    **recibe** (candidata menos viva), así que el signo del IC dice qué curvas le llegaron. Con
+    el código de antes, el IC salía de ``results`` —la muestra completa— y al costo del vivo
+    eso dio el punto en +1,40 pp con el intervalo en [−12,59, −0,07] (``s2.0_t3.0``). Desde la
+    472 la función no recibe ``results``, así que ese camino no existe; lo que queda por fijar
+    es que el IC sea el de **estas** curvas, y en este orden.
+    """
+    from datetime import date, timedelta
+
+    bars_by = {"AAA": _bars(3000)}
+    entries = [("AAA", i) for i in range(300, 2900, 37)]
+
+    def _curva(desde: str, n: int, capital: float, paso: float) -> list[tuple[str, float]]:
+        d0 = date.fromisoformat(desde)
+        return [((d0 + timedelta(days=k)).isoformat(), capital * (1.0 + paso) ** k) for k in range(n)]
+
+    def _fake_sim(tag, ent, bars, sigs, **kw):
+        fold, nombre = int(tag.split("|")[0].removeprefix("wf")), tag.split("|")[2]
+        paso = 0.0 if nombre == m.POLICY_ARM else pasos[fold - 1]
+        curve = _curva(f"202{fold}-01-01", 30, kw["initial_capital"], paso)
+        return _Res(curve, curve[-1][1])
+
+    def _fake_boot(xs, ys, **kw):
+        delta = 252.0 * (sum(ys) - sum(xs)) / len(xs)
+        return _Boot(delta - 0.001, delta + 0.001)
+
+    monkeypatch.setattr(m, "_sim", _fake_sim)
+    monkeypatch.setattr(m, "paired_block_bootstrap", _fake_boot)
+    return m.grid_descriptive(
+        entries, bars_by, {}, {"initial_capital": 1000.0}, tag="t", resamples=10, log=io.StringIO()
+    )
+
+
+def test_el_IC_de_cada_celda_sale_de_las_curvas_FUERA_de_muestra(monkeypatch):
+    """El §7 congeló *«el IC95% del ΔCAGR OOS»*: el punto y el intervalo, de la misma muestra."""
+    grid = _grid_oos_contra_completa(monkeypatch)
+    assert len(grid["celdas"]) == 14
+    for nombre, v in grid["celdas"].items():
+        assert v["dcagr_oos"] > 0, nombre
+        assert v["ci_low"] > 0, (
+            f"{nombre}: el IC no es el de sus curvas OOS contra las de la viva ({v['ci_low']:+.4f})"
+        )
+    assert sorted(grid["candidatas"]) == sorted(grid["celdas"]) and grid["peores"] == []
+
+
+def test_los_folds_ganados_por_celda_son_los_del_D2(monkeypatch):
+    """El §7 congeló también *«folds ganados»* y la rejilla no los medía. La regla es la del
+    D2: el Δ del fold > 0, así que un fold empatado no cuenta. Con la viva plana y cada celda
+    que sube en tres folds, empata en uno y baja en otro, son 3 de 5; con ≥ 0 serían 4."""
+    grid = _grid_oos_contra_completa(monkeypatch, pasos=(0.001, 0.001, 0.0, -0.001, 0.001))
+    for nombre, v in grid["celdas"].items():
+        assert v["folds_ganados"] == 3, nombre
+        # La celda baja en el fold 4 y la viva es plana: su caída OOS es mayor.
+        assert v["dmaxdd_oos"] > 0.0, nombre
+
+
+def test_un_IC_entero_NEGATIVO_es_una_celda_PEOR_y_no_una_candidata(monkeypatch):
+    """Las dos direcciones excluyen el cero —la regla del §7 las cuenta a las dos—, pero sólo
+    la positiva abre un pre-registro: la negativa dice que la celda es peor que la viva."""
+    grid = _grid_con(
+        monkeypatch,
+        ic_por_celda={"s3.0_t3.0": (0.004, 0.02), "s2.0_t3.0": (-0.1259, -0.0007)},
+    )
+    assert set(grid["decidibles"]) == {"s3.0_t3.0", "s2.0_t3.0"}
+    assert grid["candidatas"] == ["s3.0_t3.0"]
+    assert grid["peores"] == ["s2.0_t3.0"]
+    assert grid["celdas"]["s2.0_toff"]["signo"] is None
+
+
+def test_el_reporte_no_le_dice_candidata_a_una_celda_PEOR(monkeypatch):
+    """La línea impresa decía *«NO se cablan: cada una abre su propio pre-registro»* también
+    para un intervalo entero negativo, como si fuera un candidato."""
+    grid = _grid_con(monkeypatch, ic_por_celda={"s2.0_t3.0": (-0.1259, -0.0007)})
+    out = io.StringIO()
+    m._report_grid(grid, log=out)
+    texto = out.getvalue()
+    assert "PEORES que la viva" in texto and "s2.0_t3.0" in texto
+    assert "abre su propio" not in texto
+    assert "peor que la viva" in next(
+        linea for linea in texto.splitlines() if linea.strip().startswith("s2.0_t3.0")
+    )
 
 
 # ── La clave de cache describe el CÓMPUTO, no el nombre ──────────────────────
