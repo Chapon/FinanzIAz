@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import QApplication
 
 from ui.paper.equity_chart import (
     build_benchmark_overlay,
+    cierre_de_la_rueda,
     overlay_is_stale,
 )
 
@@ -49,13 +50,14 @@ def test_overlay_normalizes_to_start_equity_within_window():
         ("2026-02-02", 430.0),
     ]
     out = build_benchmark_overlay(snaps, spy)
-    # Arranca en la equity inicial sobre la base (close del primer día de ventana).
-    assert out[0] == (datetime.fromisoformat("2026-01-01"), pytest.approx(50000.0))
+    # Arranca en la equity inicial sobre la base (close del primer día de ventana). Cada
+    # punto va en el cierre de su rueda, 16:00 de Nueva York = 21:00 UTC en enero (tarea 476).
+    assert out[0] == (datetime(2026, 1, 1, 21), pytest.approx(50000.0))
     # Escalado: 420/400 * 50000 = 52500 el último día de la ventana.
-    assert out[-1][0] == datetime.fromisoformat("2026-01-31")
+    assert out[-1][0] == cierre_de_la_rueda("2026-01-31")
     assert out[-1][1] == pytest.approx(52500.0)
     # Excluye las barras fuera de [2026-01-01, 2026-01-31].
-    assert all(datetime(2026, 1, 1) <= d <= datetime(2026, 1, 31) for d, _ in out)
+    assert all(datetime(2026, 1, 1) <= d <= datetime(2026, 1, 31, 23, 59) for d, _ in out)
     assert len(out) == 3
 
 

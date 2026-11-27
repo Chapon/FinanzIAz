@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterable
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
 import matplotlib
@@ -80,8 +80,19 @@ def build_benchmark_overlay(
         if d < start_day or d > end_day:
             continue
         with contextlib.suppress(ValueError):
-            out.append((datetime.fromisoformat(d), c * scale))
+            out.append((cierre_de_la_rueda(d), c * scale))
     return out
+
+
+def cierre_de_la_rueda(dia: str | date) -> datetime:
+    """El cierre de una rueda, 16:00 de Nueva York, en UTC sin zona como ``snapshot_at`` (tarea 476).
+
+    Es donde va el punto de SPY de ese día: con el close de la rueda está marcada la equity
+    del scan de las 16:05 ET. Iba a la medianoche UTC del día, que es antes de la apertura y,
+    con el eje en la hora de Buenos Aires, la noche del día anterior.
+    """
+    d = dia if isinstance(dia, date) else date.fromisoformat(str(dia)[:10])
+    return datetime.combine(d, time(16), tzinfo=_NUEVA_YORK).astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def overlay_is_stale(snapshots: list, spy_pairs: list[tuple[str, float]] | None) -> bool:
@@ -129,6 +140,23 @@ def overlay_empieza_tarde(snapshots: list, spy_pairs: list[tuple[str, float]] | 
 
 
 _NUEVA_YORK = ZoneInfo("America/New_York")
+
+# El eje X (tarea 476). Los datos siguen en UTC sin zona —``snapshot_at``, las bandas de la
+# 475, los cierres de SPY—, y lo que pasa a la hora local es el eje: el localizador pone las
+# marcas en las medianoches y en las horas locales, y el formateador las rotula en esa zona.
+# El formato depende de lo que separa a las marcas: en una curva de meses, «08/2026»; de
+# días, «24/11»; de horas, «21:00», con la fecha en el cambio de día («01/07») y el día
+# entero en el desplazamiento del eje («01/07/2026»).
+_FORMATOS_DEL_EJE = ["%Y", "%m/%Y", "%d/%m", "%H:%M", "%H:%M", "%S"]
+_FORMATOS_EN_EL_CERO = ["", "%Y", "%d/%m", "%d/%m", "%H:%M", "%H:%M"]
+_FORMATOS_DEL_DESPLAZAMIENTO = ["", "", "%m/%Y", "%d/%m/%Y", "%d/%m/%Y", "%d/%m/%Y %H:%M"]
+
+
+def zona_local() -> tzinfo:
+    """La zona del sistema, con sus cambios de horario: la de ``ui.time_utils.fmt_local`` (tarea 476)."""
+    from dateutil.tz import tzlocal
+
+    return tzlocal()
 
 
 def tramos_sin_scan(snapshots_utc: Iterable, ruedas: Iterable) -> list[tuple[datetime, datetime, int]]:
@@ -206,8 +234,10 @@ class EquityCurveChart(QWidget):
     rewrite, etc.).
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, zona: tzinfo | None = None):
         super().__init__(parent)
+        # La zona en la que se rotula el eje X (tarea 476); los datos no se convierten.
+        self.zona = zona if zona is not None else zona_local()
         for k, v in CHART_STYLE.items():
             with contextlib.suppress(Exception):
                 matplotlib.rcParams[k] = v  # type: ignore[index]  # matplotlib tipa las claves con un Literal
@@ -391,9 +421,26 @@ class EquityCurveChart(QWidget):
             # Con aviso, la esquina de arriba a la izquierda es del aviso.
             self.ax.legend(loc="upper right" if benchmark_aviso else "upper left", fontsize=8, frameon=False)
         self.ax.set_ylabel("Equity ($)", color=PALETTE["text2"], fontsize=10)
-        self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
-        self.figure.autofmt_xdate(rotation=15)
+        self._formatear_eje_x()
         self.canvas.draw()
+
+    def _formatear_eje_x(self) -> None:
+        """Las marcas del eje X en la hora local, con un formato según el rango (tarea 476).
+
+        Rotulaba ``%d/%m %H:%M`` en UTC, que es como matplotlib lee un datetime sin zona: la
+        marca «01/07 00:00» era el 30/06 a las 21:00 en Buenos Aires.
+        """
+        localizador = mdates.AutoDateLocator(tz=self.zona)
+        self.ax.xaxis.set_major_locator(localizador)
+        self.ax.xaxis.set_major_formatter(
+            mdates.ConciseDateFormatter(
+                localizador,
+                tz=self.zona,
+                formats=_FORMATOS_DEL_EJE,
+                zero_formats=_FORMATOS_EN_EL_CERO,
+                offset_formats=_FORMATOS_DEL_DESPLAZAMIENTO,
+            )
+        )
 
     def _incremental_update(self, xs: list, ys: list) -> None:
         self._line.set_data(xs, ys)

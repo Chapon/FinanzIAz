@@ -349,7 +349,7 @@ def test_la_curva_de_equity_ancla_IGUAL_que_la_tarjeta():
     """
     pytest.importorskip("PyQt6.QtWidgets")
     pytest.importorskip("matplotlib")
-    from ui.paper.equity_chart import build_benchmark_overlay
+    from ui.paper.equity_chart import build_benchmark_overlay, cierre_de_la_rueda
 
     costo = 23.011825
     snaps = [
@@ -363,7 +363,7 @@ def test_la_curva_de_equity_ancla_IGUAL_que_la_tarjeta():
     # La base es el close del jueves (el que tiene puesto la equity), no el del lunes, y
     # la escala sale del CAPITAL, no del snapshot post-fricción.
     escala = _CAPITAL / 744.8902587890625
-    assert out[-1][0] == datetime.fromisoformat(_FIN)
+    assert out[-1][0] == cierre_de_la_rueda(_FIN)  # el cierre de la rueda (tarea 476)
     assert out[-1][1] == pytest.approx(744.9202270507812 * escala)
     # Y el hueco del arranque ES el costo de entrada: SPY parte del capital y la equity
     # de la cuenta arranca $23 más abajo. Verlo es el punto.
