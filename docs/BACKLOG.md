@@ -20,7 +20,10 @@ _Última actualización: 2026-10-09 (**Tarea 338**: *En curso* vuelve al contrat
 
 Al arrancar una tarea, su registro va acá (máx 1); el cierre se escribe acá antes del done, y el commit del hash —con el CI en verde— lo mueve a *Hecho reciente* (tarea 338). Si el CI no contesta (tarea 431): *no se sabe* ⇒ el registro pasa igual a *Hecho reciente*, rotulado *«CI sin verificar»* con la causa, y la tarea siguiente relee ese sha con `python scripts/check_ci.py --sha <sha>` antes de cerrarse.
 
-Nada en marcha.
+- **WIP 394 — Tarea 477 (CANDIDATAS-DE-LA-REJILLA-T170) EN CURSO — pre-registro congelado** (origen: la 472, 2026-11-27). CI de `3c48ebe` verde al abrir.
+  - **El pre-registro** (`docs/candidatas_rejilla_prereg_t477_2026-11-27.md`), antes de codear: la familia son **las 14 celdas** de la rejilla, no las cuatro que marcó la 472; el marco que decide es el que nadie miró —**orden de candidatos y costo del vivo**— y el alfabético se reporta, sin decidir. Una celda pasa con **seis** criterios: **M1**, el p ajustado por Romano-Wolf sobre las 14 (< 0,05, mismos bloques que la T170); los **D1, D2, D3 y D5** de la T170 sin tocar un umbral; y el **C9** de la T37 (ruina inyectada a 2,60%/50% y 0,47%/70%, peor de tres semillas), que la T170 no corrió. El D4 de la T170 no se usa: M1 es su versión fuera de muestra y corregida.
+  - **Resultado esperado, escrito antes:** ninguna pasa; las tres sin trailing por C9 y `s4.0_t3.0` por M1 o D2. Si alguna pasa, nada se cablea: decide Chapa, con lo que la tarea no decide (el *«no shipeable»* de la T37 y la perilla, `atr_trail_enabled=false`).
+  - **Lo que sigue:** `romano_wolf_stepdown` con sus tests, el runner `scripts/run_candidatas_t477.py`, la corrida y el veredicto.
 
 ## Acciones manuales pendientes (Chapa, en Windows — fuera del repo)
 
@@ -2205,6 +2208,7 @@ Nada en marcha.
 - **Alcance.** Pre-registro (propuesta de criterios: los D1–D5 de la T170 más el gate de multiplicidad), runner sobre el de la T170, corrida con sanity y veredicto. Si pasa, nada se cablea solo: se le presenta a Chapa, como el §8 de la T170.
 - **Kill-criteria.** Los del pre-registro, fijados antes de correr. Los cuatro comandos y el CI en verde.
 - **Dependencias:** la 472. Va antes de la 461: es plata y una decisión de Chapa, y las que siguen son refactors.
+- **Al abrirla (2026-11-27):** el pre-registro de la T37 declaró el trailing `off` **no shipeable** (su §5: *«dejaría la política de salida colgando de un solo mecanismo»*) y anticipó que si el instrumento lo elegía era evidencia de **sesgo de supervivencia**, no de una regla mejor (su §8): el universo son los 126 que sobrevivieron diez años. Su cota era el **C9** (ruina inyectada, `analysis/ruin_injection.py`), y la T170 no lo corrió. Tres de las cuatro candidatas son `trail off`: el pre-registro trae el C9 de vuelta.
 
 ### 467. ~~NUM-STALE-SIN-BORDE — El guard de la 43 acusa cualquier número terminado en 8: «−2,38 pp de CAGR» le matchea como el «~8 pp» caducado de la T9~~ · **CERRADA 2026-11-24 — arreglada al encontrarla** (`tests/test_num_stale_t43.py`) ·  origen: el done de la 464 · severidad **BAJA**
 
