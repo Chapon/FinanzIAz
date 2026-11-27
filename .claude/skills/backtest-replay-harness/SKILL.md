@@ -417,7 +417,7 @@ que se puede mirar *antes* de congelar y por eso **fija la grilla**. La efectiva
 corrido el brazo**: es un sanity **post-corrida**. Un pre-registro que la pida como criterio de
 grilla está pidiendo un número que todavía no existe.
 
-## La rejilla de SALIDA stop × trailing (T167 → T170 → 472): no se barre otra vez, y cuatro celdas esperan su pre-registro (477)
+## La rejilla de SALIDA stop × trailing (T167 → T170 → 472 → T477): no se barre otra vez, y el marco del vivo necesita la 478
 
 Antes de pre-registrar otro barrido de `atr_hard_stop_enabled`/`atr_stop_mult` × `atr_trail_mult`,
 leer esto: **esa rejilla no se vuelve a correr sobre la misma ventana rodante.**
@@ -457,11 +457,23 @@ multiplicidad —la **477**—, y con un Bonferroni sobre las 14 ninguna pasarí
 muestra y un intervalo de otra se lee mal sin que nada avise; se notó recién cuando el costo del
 vivo (la 469) dio un punto positivo con el intervalo entero negativo.
 
+**T477 — las cuatro no sobreviven a la multiplicidad, y el marco del vivo rompe el sanity del
+oráculo.** Pre-registro con la familia entera (las 14, no las cuatro), Romano-Wolf sobre el mismo
+bootstrap pareado (`romano_wolf_stepdown`), los D1–D5 de la T170 y el C9 de ruina de la T37, y el
+marco del vivo (orden y costo) como el que decide. **Corrida INVÁLIDA:** con el orden del vivo, el
+oráculo del stop baja la caída sólo 3,61 pp contra su control (el sanity pide 5,00) — la **478**.
+En los dos marcos alfabéticos, que sí son válidos, ninguna celda pasa: los p sin corregir de 0,009
+a 0,021 quedan en 0,115–0,208 ajustados. Doc: `docs/candidatas_rejilla_t477_2026-11-27.md`. **Dos
+lecciones:** (a) un sanity calibrado en un marco puede no pasar en otro, y eso deja al marco sin
+veredicto, no al revés: antes de pre-registrar en el marco del vivo, la 478; (b) la correlación
+entre celdas no abarató la corrección tanto como se esperaba: para la primera de la tabla,
+Romano-Wolf quedó en el orden de Bonferroni.
+
 **Tres reglas que salen de ahí:**
 
-1. **Ningún barrido nuevo sobre esta ventana: las cuatro candidatas de la 472 van por la 477,**
-   con su pre-registro y gate de multiplicidad (decía *«la rejilla queda cerrada»*, sobre la
-   lectura que corrigió la 472). Refrescar la ventana `10y` unas
+1. **Ningún barrido nuevo sobre esta ventana: las cuatro candidatas de la 472 ya pasaron por la
+   477 y no sobrevivieron** (decía *«la rejilla queda cerrada»*, sobre la lectura que corrigió la
+   472). Refrescar la ventana `10y` unas
    semanas después **no** es muestra nueva: comparte casi todas las barras (T48). Un sexto barrido
    sobre esa ventana sólo puede producir otro orden del mismo ruido. El pre-registro que la reabra
    tiene que declarar **qué** la hace muestra nueva.
