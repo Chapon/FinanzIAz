@@ -1033,6 +1033,106 @@ def paired_block_bootstrap(
     )
 
 
+# ── Multiplicidad: Romano-Wolf sobre el mismo bootstrap pareado (tarea 477) ──
+
+
+@dataclass(frozen=True)
+class RomanoWolfResult:
+    """p ajustados por Romano-Wolf de varias candidatas contra una misma referencia."""
+
+    observed: dict[str, float]  # Δ observado (candidata − referencia), por candidata
+    p_raw: dict[str, float]  # p unilateral sin corregir: fracción de resamples con Δ ≤ 0
+    p_adjusted: dict[str, float]  # p ajustado (stepdown); controla el FWER
+    n_obs: int
+    block: int
+    n_resamples: int
+
+
+def romano_wolf_stepdown(
+    base_rets: list[float],
+    cand_rets: dict[str, list[float]],
+    *,
+    block: int = 20,
+    n_resamples: int = 2000,
+    seed: int = 12345,
+    periods: int = 252,
+    stat: Callable[[np.ndarray, int], float] | None = None,
+) -> RomanoWolfResult:
+    """p ajustados por **Romano y Wolf (2005)** para *«la candidata k le gana a la referencia»*.
+
+    Existe por el §7 de la T170: una celda elegida entre varias por su intervalo necesita un gate
+    que corrija por haber mirado a todas, y el pre-registro de la 477 lo congeló así. Controla la
+    probabilidad de **al menos un** falso positivo entre todas las candidatas (el FWER), y a
+    diferencia de Bonferroni aprovecha la correlación entre ellas: con candidatas idénticas, el p
+    ajustado es el sin corregir.
+
+    **El mismo bootstrap que ``paired_block_bootstrap``:** bloques móviles, la misma semilla y la
+    misma secuencia de índices por resample, aplicada a **todas** las series a la vez (pareado
+    entre todas). Con una sola candidata, ``p_raw`` y ``p_adjusted`` son exactamente el
+    ``p_value`` de ``paired_block_bootstrap``.
+
+    **La versión percentil**, que es la convención del repo (el ``ci_low > 0`` y el ``p_value`` de
+    ``paired_block_bootstrap``): el estadístico centrado de la candidata k en el resample b es
+    ``Δ_k − Δ*_kb`` (observado menos bootstrapeado). Se ordenan las candidatas por Δ observado de
+    mayor a menor, y el p ajustado de la j-ésima es el máximo entre el de la anterior y la fracción
+    de resamples en que el **máximo** de los estadísticos centrados de las candidatas j…m alcanza su
+    Δ observado. Es el algoritmo de p ajustados de Romano-Wolf con ese centrado; con una sola
+    candidata se reduce al test percentil.
+    """
+    if stat is None:
+        stat = _compound_cagr
+    names = list(cand_rets)
+    a = np.asarray(base_rets, dtype=float)
+    series = [np.asarray(cand_rets[n], dtype=float) for n in names]
+    T = min([a.size, *(s.size for s in series)]) if names else a.size
+    block = max(1, min(int(block), T)) if T > 0 else 1
+    if not names or T < 2 or n_resamples < 1:
+        nan = float("nan")
+        return RomanoWolfResult(
+            {n: 0.0 for n in names}, {n: nan for n in names}, {n: nan for n in names}, T, block, 0
+        )
+    a = a[:T]
+    mats = np.vstack([s[:T] for s in series])
+
+    base_obs = stat(a, periods)
+    observed = np.array([stat(m, periods) - base_obs for m in mats])
+    n_blocks = math.ceil(T / block)
+    max_start = T - block  # inclusive
+    rng = np.random.default_rng(seed)
+
+    boot = np.empty((n_resamples, len(names)), dtype=float)
+    for k in range(n_resamples):
+        starts = rng.integers(0, max_start + 1, size=n_blocks)
+        idx = (starts[:, None] + np.arange(block)[None, :]).ravel()[:T]
+        base_b = stat(a[idx], periods)
+        for j, m in enumerate(mats):
+            boot[k, j] = stat(m[idx], periods) - base_b
+
+    p_raw = (boot <= 0.0).mean(axis=0)
+    centrado = observed[None, :] - boot
+    orden = np.argsort(-observed, kind="stable")
+    p_adj = np.empty(len(names), dtype=float)
+    previo = 0.0
+    for pos, j in enumerate(orden):
+        # El término de la propia candidata, ``Δ_j − Δ*_j ≥ Δ_j``, se escribe ``Δ*_j ≤ 0``: es lo
+        # mismo, y así el p ajustado nunca queda por debajo del sin corregir por un redondeo.
+        alcanza = boot[:, j] <= 0.0
+        otras = orden[pos + 1 :]
+        if otras.size:
+            alcanza |= centrado[:, otras].max(axis=1) >= observed[j]
+        previo = max(previo, float(np.mean(alcanza)))
+        p_adj[j] = previo
+
+    return RomanoWolfResult(
+        observed={n: float(observed[i]) for i, n in enumerate(names)},
+        p_raw={n: float(p_raw[i]) for i, n in enumerate(names)},
+        p_adjusted={n: float(p_adj[i]) for i, n in enumerate(names)},
+        n_obs=T,
+        block=block,
+        n_resamples=n_resamples,
+    )
+
+
 # ── A1 con variantes de stop-mult: matriz de retornos por config ─────────────
 
 # Variantes del eje "cuán apretado es el stop/trail" para el PBO/DSR de A1.
