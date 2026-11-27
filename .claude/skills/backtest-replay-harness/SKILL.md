@@ -465,7 +465,13 @@ oráculo del stop baja la caída sólo 3,61 pp contra su control (el sanity pide
 En los dos marcos alfabéticos, que sí son válidos, ninguna celda pasa: los p sin corregir de 0,009
 a 0,021 quedan en 0,115–0,208 ajustados. Doc: `docs/candidatas_rejilla_t477_2026-11-27.md`. **Dos
 lecciones:** (a) un sanity calibrado en un marco puede no pasar en otro, y eso deja al marco sin
-veredicto, no al revés: antes de pre-registrar en el marco del vivo, la 478; (b) la correlación
+veredicto, no al revés. **La 478 midió por qué, y era peor:** el control «igualado en tasa» no
+lo está desde que la población pasó a 10 slots y 126 tickers (deja ~65% de las salidas por stop
+contra ~50% del oráculo), y contra **un** sorteo el ΔmaxDD varía 5 a 11 pp: el sanity pasa en 10 a
+17 de cada 21 sorteos según el marco. Se descarta como gate en cualquier marco; el reemplazo es la
+**479**, y hasta entonces ningún test de salida nuevo (`docs/oraculo_sanity_t478_2026-11-27.md`).
+**Antes de confiar en un sanity contra un control aleatorio, correrlo con varios sorteos y medir
+que el control iguale lo que dice igualar.** (b) la correlación
 entre celdas no abarató la corrección tanto como se esperaba: para la primera de la tabla,
 Romano-Wolf quedó en el orden de Bonferroni.
 
