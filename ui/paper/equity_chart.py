@@ -9,7 +9,9 @@ a future "compare two accounts" view).
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime
+from collections.abc import Iterable
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import matplotlib
 
@@ -126,6 +128,76 @@ def overlay_empieza_tarde(snapshots: list, spy_pairs: list[tuple[str, float]] | 
     return benchmark_start_gap_bdays(spy_first, ref_day) > BENCHMARK_STALE_BDAYS
 
 
+_NUEVA_YORK = ZoneInfo("America/New_York")
+
+
+def tramos_sin_scan(snapshots_utc: Iterable, ruedas: Iterable) -> list[tuple[datetime, datetime, int]]:
+    """Los días hábiles sin ningún scan, agrupados en tramos, en las coordenadas del gráfico (tarea 475).
+
+    Chapa pidió ver en la curva los días en que la app no corrió: entre dos scans la curva
+    dibuja una recta, y se lee como si la cuenta hubiera operado. Un snapshot es un
+    ``run_scan`` completado (tarea 265), y la app escanea al arrancar, cada 15 minutos con el
+    mercado abierto y a las 16:05 ET, así que una rueda sin ningún snapshot es una rueda en la
+    que la app no estuvo abierta. Validado contra ``finanzias.log`` el 2026-11-27: en los
+    tramos que el log cubre, la app no escribió ni una línea.
+
+    ``snapshots_utc``: los ``snapshot_at`` de **todos** los snapshots de la cuenta (UTC sin
+    zona, ``datetime`` o ISO), **también** los de posiciones a costo (tarea 376): la curva los
+    saca, pero son un scan que corrió.
+    ``ruedas``: los días con rueda (``date`` o ``"AAAA-MM-DD"``). En la pestaña son los de la
+    serie de SPY: el proyecto no tiene calendario NYSE, y un día que no está —un feriado, o
+    cualquiera después del último cierre— no se marca.
+
+    El día es el de **Nueva York**, como en ``cobertura_de_scan``: un arranque a las 00:40 de
+    Buenos Aires es un scan de las 22:40 ET del día anterior. Sólo se miran las ruedas
+    **entre** el primer y el último día con scan: antes la cuenta no existía, y después
+    todavía no se sabe. Dos ruedas sin scan van en el mismo tramo si entre ellas no hay
+    ninguna rueda ni ningún día con scan: un fin de semana sin snapshots las une, y uno con la
+    app abierta las corta.
+
+    Devuelve ``[(inicio, fin, ruedas)]``. ``inicio`` es la medianoche de Nueva York del primer
+    día y ``fin`` la del día siguiente al último, en UTC sin zona, porque el eje del gráfico
+    es ``snapshot_at``. ``ruedas`` es cuántos días hábiles cubre el tramo. Función pura (sin Qt).
+    """
+
+    def _dia(ts) -> date:
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts[:26])
+        return ts.replace(tzinfo=timezone.utc).astimezone(_NUEVA_YORK).date()
+
+    def _medianoche(d: date) -> datetime:
+        return datetime.combine(d, time(0), tzinfo=_NUEVA_YORK).astimezone(timezone.utc).replace(tzinfo=None)
+
+    con_scan = {_dia(ts) for ts in snapshots_utc if ts is not None}
+    if not con_scan:
+        return []
+    primero, ultimo = min(con_scan), max(con_scan)
+    dias = sorted({r if isinstance(r, date) else date.fromisoformat(str(r)[:10]) for r in ruedas})
+    tramos: list[list[date]] = []
+    abierto = False
+    for d in dias:
+        if not primero < d < ultimo:
+            continue
+        if d in con_scan:
+            abierto = False
+            continue
+        previa = tramos[-1][-1] if abierto else None
+        if previa is not None and not any(
+            previa + timedelta(days=k) in con_scan for k in range(1, (d - previa).days)
+        ):
+            tramos[-1].append(d)
+        else:
+            tramos.append([d])
+        abierto = True
+    return [(_medianoche(t[0]), _medianoche(t[-1] + timedelta(days=1)), len(t)) for t in tramos]
+
+
+def etiqueta_sin_scan(ruedas: int) -> str:
+    """El rótulo de las bandas en la leyenda (tarea 475): dice de dónde sale el «cerrada»."""
+    dias = "1 día hábil" if ruedas == 1 else f"{ruedas} días hábiles"
+    return f"App cerrada ({dias} sin scan)"
+
+
 class EquityCurveChart(QWidget):
     """
     Minimal line chart for the equity curve. Supports incremental updates
@@ -193,8 +265,14 @@ class EquityCurveChart(QWidget):
         snapshots: list,
         benchmark: list[tuple[datetime, float]] | None = None,
         benchmark_aviso: str | None = None,
+        sin_scan: list[tuple[datetime, datetime, int]] | None = None,
     ) -> None:
         """Render the equity curve from a list of ``PaperEquitySnapshot``.
+
+        ``sin_scan`` (tarea 475): los tramos de ruedas sin ningún scan, como los da
+        :func:`tramos_sin_scan`. Se pintan como bandas rojas traslúcidas detrás de la curva,
+        porque ahí la curva es una recta entre dos scans y no algo que la cuenta hizo. Con
+        tramos, el redibujo es completo, igual que con benchmark.
 
         ``benchmark`` (opcional, V1): línea SPY normalizada a la equity inicial,
         ``[(datetime, valor)]`` — se dibuja punteada para comparar el modelo vs
@@ -227,6 +305,7 @@ class EquityCurveChart(QWidget):
         same_series = (
             not benchmark
             and not benchmark_aviso
+            and not sin_scan
             and self._line is not None
             and self._plotted_count > 0
             and len(snapshots) >= self._plotted_count
@@ -236,7 +315,7 @@ class EquityCurveChart(QWidget):
         if same_series:
             self._incremental_update(xs, ys)
         else:
-            self._full_redraw(xs, ys, benchmark, benchmark_aviso)
+            self._full_redraw(xs, ys, benchmark, benchmark_aviso, sin_scan)
 
         self._plotted_count = len(snapshots)
         self._first_xs = xs[0]
@@ -248,9 +327,23 @@ class EquityCurveChart(QWidget):
         ys: list,
         benchmark: list[tuple[datetime, float]] | None = None,
         benchmark_aviso: str | None = None,
+        sin_scan: list[tuple[datetime, datetime, int]] | None = None,
     ) -> None:
         self.ax.clear()
         self._style_axes()
+        # Días sin scan (tarea 475): detrás de todo, y un solo rótulo para todas las bandas.
+        if sin_scan:
+            rotulo = etiqueta_sin_scan(sum(n for _, _, n in sin_scan))
+            for i, (inicio, fin, _n) in enumerate(sin_scan):
+                self.ax.axvspan(
+                    inicio,
+                    fin,
+                    color=PALETTE["red"],
+                    alpha=0.3,
+                    linewidth=0,
+                    zorder=0,
+                    label=rotulo if i == 0 else "_nolegend_",
+                )
         (self._line,) = self.ax.plot(xs, ys, color=PALETTE["accent"], linewidth=1.8, label="Equity")
         self._fill = self.ax.fill_between(
             xs,
@@ -294,7 +387,9 @@ class EquityCurveChart(QWidget):
                 alpha=0.9,
                 label="SPY (normalizado)",
             )
-            self.ax.legend(loc="upper left", fontsize=8, frameon=False)
+        if (benchmark and not benchmark_aviso) or sin_scan:
+            # Con aviso, la esquina de arriba a la izquierda es del aviso.
+            self.ax.legend(loc="upper right" if benchmark_aviso else "upper left", fontsize=8, frameon=False)
         self.ax.set_ylabel("Equity ($)", color=PALETTE["text2"], fontsize=10)
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
         self.figure.autofmt_xdate(rotation=15)

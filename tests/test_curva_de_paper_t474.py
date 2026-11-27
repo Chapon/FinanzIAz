@@ -74,7 +74,7 @@ def test_la_pestana_paper_dibuja_la_curva_entera_hasta_el_ultimo_snapshot(test_d
 
     falso = SimpleNamespace(
         _current_account_id=cuenta,
-        _load_spy_overlay=lambda snaps, account_id: (None, None),
+        _load_contexto_de_la_curva=lambda snaps, account_id: (None, None, []),
         equity_chart=SimpleNamespace(set_data=lambda snaps, **kw: dibujado.update(snaps=snaps)),
     )
     PaperTradingTab._refresh_equity_curve(falso)
